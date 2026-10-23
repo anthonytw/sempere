@@ -336,6 +336,19 @@ extension Vault {
         return admitted
     }
 
+    /// True when `data` is the approval of a joining device that holds one of `identities` (design §6.2 step 3):
+    /// the same vault and root as the local `vault.json` (`local`), which lists none of the keys, while `data`
+    /// lists one and its wrap opens to a key of its epoch. Taking it pins nothing: the device confirms the vault
+    /// with the reply words (`confirmJoin`), and writes nothing until then.
+    public static func isJoinApproval(_ data: Data, local: Data, identities: [any AgeIdentity]) -> Bool {
+        guard !identities.isEmpty, let incoming = try? readManifest(data), let mine = try? readManifest(local),
+              incoming.vaultId == mine.vaultId, incoming.root == mine.root else { return false }
+        let held = Set(identities.compactMap(recipientString))
+        guard !mine.keys.contains(where: { held.contains($0.key) }),
+              let entry = incoming.devices.first(where: { held.contains($0.key) }) else { return false }
+        return (try? EpochKeyWrap.open(entry.wrap, with: identities, vaultId: incoming.vaultId, epoch: incoming.epoch)) != nil
+    }
+
     // MARK: - Sightings (design §4.3, §5.5)
 
     /// The sightings of this vault in the device's trust store (none without one).

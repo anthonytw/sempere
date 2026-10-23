@@ -254,9 +254,13 @@ final class EpochSyncScenarioTests: SyncTestCase {
 
     /// D writes while it reaches only T2; B bridges T1 and T2; home A, on T1, removes X after a pull that
     /// cannot reach T2, so D's file is not sealed. Returns the world and D's note.
-    private func unsealedOnTwoTargets() throws -> (EpochSyncWorld, UUID) {
+    private func unsealedOnTwoTargets(_ t2Server: MockDAV? = nil) throws -> (EpochSyncWorld, UUID) {
         let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "D", "X"], targets: ["T1", "T2"])
         let t1 = w.target("T1"), t2 = w.target("T2")
+        if let t2Server {
+            let client = try client(t2Server)
+            t2.reach = { _ in WebDAVSyncRemote(client) }
+        }
         try w["B"].sync(t2); try w["D"].sync(t2)
         let nd = try w["D"].write("D, offline from T1")
         try w["D"].sync(t2)
@@ -283,6 +287,7 @@ final class EpochSyncScenarioTests: SyncTestCase {
         let path = "notes/\(nd.uuidString.lowercased())/"
         let file = try XCTUnwrap(t2.paths.first { $0.hasPrefix(path) })
         let old = try XCTUnwrap(t2.file(file))
+        XCTAssertNotNil(old)
 
         // B takes the change: D's file under the old key is set aside on B (kept in place, never uploaded).
         let b1 = try w["B"].sync(t1)
@@ -339,5 +344,203 @@ final class EpochSyncScenarioTests: SyncTestCase {
         let b3 = try w["B"].sync(t2)
         XCTAssertTrue(b3.replaced.contains(.init(side: "local", path: file)), "\(b3)")
         XCTAssertEqual(try w["B"].titles()[nd], "D, offline from T1")
+    }
+
+    func testATargetWithoutStrongVersionTagsKeepsItsCopyAndSaysSo() throws {
+        let server = MockDAV()
+        server.weakFileETags = true
+        let (w, nd) = try unsealedOnTwoTargets(server)
+        try w["B"].sync(w.target("T1"))
+        try w["B"].sync(w.target("T2"))
+        let dir = w["D"].folder.appendingPathComponent("notes/\(nd.uuidString.lowercased())")
+        let name = try XCTUnwrap(try FileManager.default.contentsOfDirectory(atPath: dir.path).first { RevisionName($0) != nil })
+        let path = "notes/\(nd.uuidString.lowercased())/\(name)"
+        let before = try XCTUnwrap(server.file(path))
+        let d = try w["D"].sync(w.target("T2"))
+        XCTAssertEqual(d.epoch?.taken, 2)
+        XCTAssertTrue(d.replaced.isEmpty, "never replaced without a strong version tag: \(d)")
+        XCTAssertTrue(d.skipped.contains { $0.message.contains("strong version tag") }, "\(d.skipped)")
+        XCTAssertEqual(server.file(path), before)
+    }
+
+    // MARK: - A removed device that writes anyway (J3)
+
+    func testFilesARemovedDeviceUploadsAfterItsRemovalAreSetAsideEverywhereNeverPlaced() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "X"])
+        let t1 = w.target("T1")
+        try w["X"].sync(t1); try w["A"].sync(t1)
+        var a = try w["A"].open()
+        try a.removeDevices([w["X"].id])
+        try w["A"].sync(t1)
+        try w["B"].sync(t1)
+        // X has not seen its removal; modified software uploads what it writes anyway.
+        let planted = try w["X"].write("planted after removal")
+        let folder = w["X"].folder.appendingPathComponent("notes/\(planted.uuidString.lowercased())")
+        for name in try FileManager.default.contentsOfDirectory(atPath: folder.path) {
+            t1.store.putDirect(["notes", planted.uuidString.lowercased(), name], try Data(contentsOf: folder.appendingPathComponent(name)))
+        }
+        let b = try w["B"].sync(t1)
+        XCTAssertFalse(b.setAside.isEmpty, "\(b)")
+        XCTAssertTrue(b.quarantined.isEmpty, "set aside, not quarantined: \(b.quarantined)")
+        XCTAssertNil(try w["B"].titles()[planted])
+        XCTAssertTrue(w["B"].setAside.items(vaultId: w.vaultId).contains { $0.path.hasPrefix("notes/\(planted.uuidString.lowercased())/") })
+        let again = try w["B"].sync(t1)
+        XCTAssertTrue(again.setAside.isEmpty && again.downloaded.isEmpty, "not fetched again while unchanged: \(again)")
+        XCTAssertNil(try w["A"].titles()[planted])
+    }
+
+    // MARK: - joins/
+
+    func testAJoinRequestReachesHomeThroughATargetAndIsDeletedEverywhereOnceApproved() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B"])
+        let t1 = w.target("T1")
+        let n = EpochSyncDevice("N", root: tmp)
+        try n.syncLocked(t1)
+        let request = try Vault.writeJoinRequest(at: n.folder, device: n.keys, name: "N", kind: "cli")
+        let up = try n.syncLocked(t1)
+        XCTAssertTrue(up.uploaded.contains("joins/\(request.fileName)"), "\(up)")
+        try w["A"].sync(t1)
+        var a = try w["A"].open()
+        let found = try XCTUnwrap(a.joinRequests().first { $0.name == request.fileName }?.request)
+        let words = try a.approveDevice(found)
+        let home = try w["A"].sync(t1)
+        XCTAssertTrue(home.deleted.contains(.init(side: "remote", path: "joins/\(request.fileName)")), "\(home)")
+        XCTAssertFalse(t1.paths.contains("joins/\(request.fileName)"))
+        // N: its request is gone from the target, so from its copy too; with its key it takes the approval.
+        try n.syncLocked(t1) { $0.firstPullIdentities = [n.identity] }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: n.folder.appendingPathComponent("joins/\(request.fileName)").path))
+        try n.sync(t1)
+        var nv = try n.open()
+        try nv.confirmJoin(words: words)
+        XCTAssertNoThrow(try n.write("N joined"))
+        XCTAssertTrue(try n.sync(t1).uploaded.contains { $0.hasPrefix("notes/") })
+    }
+
+    func testHomeDeletesStaleRequestsAndThoseOfListedKeys() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B"])
+        let t1 = w.target("T1")
+        let old = EpochSyncDevice("Old", root: tmp)
+        try old.syncLocked(t1)
+        let request = try Vault.writeJoinRequest(at: old.folder, device: old.keys, name: "Old", kind: "cli",
+                                                 created: Date().addingTimeInterval(-8 * 86_400))
+        try old.syncLocked(t1)
+        try w["A"].sync(t1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: w["A"].folder.appendingPathComponent("joins/\(request.fileName)").path)
+                      || !t1.paths.contains("joins/\(request.fileName)"))
+        try w["A"].sync(t1)
+        XCTAssertFalse(t1.paths.contains("joins/\(request.fileName)"), "older than 7 days: deleted by home")
+        // B (not home) never deletes a request on its own.
+        let fresh = EpochSyncDevice("Fresh", root: tmp)
+        try fresh.syncLocked(t1)
+        let r2 = try Vault.writeJoinRequest(at: fresh.folder, device: fresh.keys, name: "Fresh", kind: "cli")
+        try fresh.syncLocked(t1)
+        try w["B"].sync(t1); try w["B"].sync(t1)
+        XCTAssertTrue(t1.paths.contains("joins/\(r2.fileName)"))
+    }
+
+    // MARK: - keys/ (design §8.2)
+
+    func testASupersededPassphraseCopyIsDeletedFromTargetsAndNeverComesBack() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "C"])
+        let t1 = w.target("T1")
+        for n in ["A", "B", "C"] { try w[n].sync(t1) }
+        let oldCopy = try XCTUnwrap(t1.paths.first { $0.hasPrefix("keys/recovery-") })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: w["B"].folder.appendingPathComponent(oldCopy).path),
+                      "the copy reaches every device")
+        var a = try w["A"].open()
+        try a.replaceRecoveryKit(try MLKEM768X25519Identity(), keep: [w["B"].id, w["C"].id], remove: [],
+                                 passphrase: "another long passphrase for the new kit", workFactor: 10)
+        try w["A"].sync(t1); try w["A"].sync(t1)
+        let copies = t1.paths.filter { $0.hasPrefix("keys/") }
+        XCTAssertEqual(copies.count, 1, "\(copies)")
+        XCTAssertFalse(copies.contains(oldCopy))
+        // C, still holding the old copy, takes the change and never uploads the old copy again.
+        try w["C"].sync(t1); try w["C"].sync(t1)
+        XCTAssertFalse(t1.paths.contains(oldCopy))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: w["C"].folder.appendingPathComponent(oldCopy).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: w["C"].folder.appendingPathComponent(copies.first ?? "").path))
+    }
+
+    // MARK: - synced (design §5.5)
+
+    func testACompleteTwoWayRunRecordsSyncedWhichHomeReadsForTheStaleRemovalWarning() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B"])
+        let t1 = w.target("T1")
+        let twelveDaysAgo = Date().addingTimeInterval(-12 * 86_400)
+        try w["B"].sync(t1) { $0.recordSynced = true; $0.now = twelveDaysAgo }
+        try w["A"].sync(t1)
+        let seen = try XCTUnwrap(try w["A"].open().lastSynced(device: w["B"].id))
+        XCTAssertEqual(seen.timeIntervalSince1970, twelveDaysAgo.timeIntervalSince1970, accuracy: 1)
+        // Not rewritten within the interval; rewritten after it.
+        let r = try w["B"].sync(t1) { $0.recordSynced = true; $0.now = twelveDaysAgo.addingTimeInterval(60) }
+        XCTAssertFalse(r.uploaded.contains { $0.hasPrefix("summaries/") }, "\(r.uploaded)")
+        try w["B"].sync(t1) { $0.recordSynced = true }
+        try w["A"].sync(t1)
+        XCTAssertLessThan(abs(try XCTUnwrap(try w["A"].open().lastSynced(device: w["B"].id)).timeIntervalSinceNow), 60)
+    }
+
+    // MARK: - Restores (design §5.4 "Restores")
+
+    func testARestoreOfTheSameDeviceCatchesUpFromItsBackupState() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "X"])
+        let t1 = w.target("T1")
+        let b0 = try w["B"].write("B before the backup")
+        try w["B"].sync(t1)
+        // The backup: B's working copy, ledger and trust record as they are now.
+        let backup = tmp.appendingPathComponent("B-backup.sempere")
+        try FileManager.default.copyItem(at: w["B"].folder, to: backup)
+        let ledger = try w["B"].ledger.entries(), keys = try w["B"].ledger.epochKeys()
+        let trust = try XCTUnwrap(try w["B"].trust.record(for: w.vaultId))
+        let b1 = try w["B"].write("B after the backup")
+        try w["B"].sync(t1); try w["A"].sync(t1)
+        var a = try w["A"].open()
+        try a.removeDevices([w["X"].id])
+        try w["A"].sync(t1)
+        // The same device, restored: the same keys, its ledger and trust record at the backup's state.
+        let restored = EpochSyncDevice("B-restored", root: tmp, identity: w["B"].identity)
+        try FileManager.default.copyItem(at: backup, to: restored.folder)
+        try restored.ledger.append(ledger)
+        for k in keys { try restored.ledger.rememberKey(epoch: k.epoch, key: k.key) }
+        try restored.trust.save(trust)
+        let r = try restored.sync(t1)
+        XCTAssertEqual(r.epoch?.taken, 2, "\(r)")
+        let titles = try restored.titles()
+        XCTAssertEqual(titles[b0], "B before the backup")
+        XCTAssertEqual(titles[b1], "B after the backup", "what it wrote after the backup comes back from the target")
+        let b2 = try restored.write("B restored writes")
+        try restored.sync(t1); try w["A"].sync(t1)
+        XCTAssertEqual(try w["A"].titles()[b2], "B restored writes")
+    }
+
+    func testARestoreOntoAnotherDeviceIsAJoinSourceWhoseUnacceptedFilesAreOfferedForExport() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "X"])
+        let t1 = w.target("T1")
+        let b0 = try w["B"].write("B synced")
+        try w["B"].sync(t1); try w["A"].sync(t1)
+        var a = try w["A"].open()
+        try a.removeDevices([w["X"].id])
+        try w["A"].sync(t1)
+        // B writes under the old key without syncing, then is lost; its working copy survives in a backup.
+        let lost = try w["B"].write("B never synced")
+        let backup = tmp.appendingPathComponent("B-backup.sempere")
+        try FileManager.default.copyItem(at: w["B"].folder, to: backup)
+        // A new device joins by approval (its own keys) and takes the backup as a source.
+        let n = EpochSyncDevice("N", root: tmp)
+        a = try w["A"].open()
+        let words = try a.approveDevice(n.keys.joinRequest(vaultId: w.vaultId, name: "N", kind: "cli"))
+        try w["A"].sync(t1)
+        try n.sync(t1)
+        var nv = try n.open()
+        try nv.confirmJoin(words: words)
+        let outcomes = EpochChangePull.run(vault: try n.open(), folder: n.folder,
+                                           targets: [.init(name: "backup", remote: FolderRemote(root: backup))],
+                                           scratch: n.root.appendingPathComponent("import"))
+        let report = try XCTUnwrap(outcomes.first?.report)
+        XCTAssertTrue(report.setAside.contains { $0.path.hasPrefix("notes/\(lost.uuidString.lowercased())/") }, "\(report)")
+        XCTAssertEqual(try n.titles()[b0], "B synced")
+        XCTAssertNil(try n.titles()[lost])
+        let item = try XCTUnwrap(n.setAside.items(vaultId: w.vaultId).first { $0.path.contains(lost.uuidString.lowercased()) })
+        let out = tmp.appendingPathComponent("export")
+        XCTAssertNoThrow(try n.open().exportSetAside(item, to: out))
     }
 }

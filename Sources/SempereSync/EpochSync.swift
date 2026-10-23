@@ -690,19 +690,36 @@ extension SyncEngine {
     /// While unlisted: this device's own changes that the target does not hold, by its sync state (the files
     /// of its write ledger whose path the last runs did not find on both sides).
     func unsyncedChangeCount() -> Int {
-        guard let ledger = vault?.ledger, let entries = try? ledger.entries() else { return 0 }
-        var paths = Set(entries.map(\.path))
-        paths = paths.filter { p in
-            let parts = p.split(separator: "/").map(String.init)
-            if parts.count >= 3, parts[0] == Vault.notesName { return state.files[parts.dropFirst().joined(separator: "/")] == nil }
-            if parts.count == 2, parts[0] == CaptureFile.folderName { return state.inbox?[parts[1]] == nil }
-            if p == SharedSettings.fileName {
-                let file = root.appendingPathComponent(p)
-                let sha = (try? FileDigest.sha256(of: file).hex)
-                return state.mutable[p]?.hash != sha
-            }
-            return true
-        }
+        guard let v = vault, let paths = try? UnsyncedChanges.paths(vault: v, states: [state]) else { return 0 }
         return paths.count
+    }
+}
+
+/// This device's own changes that no target holds (key-hierarchy design §5.5: the unlisted device's count, and
+/// what its Export copies): the files of its write ledger whose path no given target's sync state shows as held
+/// on both sides.
+public enum UnsyncedChanges {
+    /// The paths, from the sync states at `stateURLs` (unreadable ones count as holding nothing).
+    public static func paths(vault: Vault, stateURLs: [URL]) throws -> [String] {
+        try paths(vault: vault, states: stateURLs.compactMap { (try? SyncState.load($0)) ?? nil })
+    }
+
+    static func paths(vault: Vault, states: [SyncState]) throws -> [String] {
+        guard let ledger = vault.ledger else { return [] }
+        let all = Set(try ledger.entries().map(\.path))
+        return all.filter { p in
+            let file = vault.url.appendingPathComponent(p)
+            guard FileManager.default.fileExists(atPath: file.path) else { return false }
+            let parts = p.split(separator: "/").map(String.init)
+            return !states.contains { state in
+                if parts.count >= 3, parts[0] == Vault.notesName { return state.files[parts.dropFirst().joined(separator: "/")] != nil }
+                if parts.count == 2, parts[0] == CaptureFile.folderName { return state.inbox?[parts[1]] != nil }
+                if parts.count == 2, parts[0] == NotebookRecords.folderName { return state.notebookNames?.contains(parts[1]) == true }
+                if p == SharedSettings.fileName {
+                    return state.mutable[p]?.hash == (try? FileDigest.sha256(of: file).hex)
+                }
+                return false
+            }
+        }.sorted()
     }
 }

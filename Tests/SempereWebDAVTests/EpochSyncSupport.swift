@@ -111,6 +111,16 @@ final class EpochSyncDevice: @unchecked Sendable {
                               options: o).run()
     }
 
+    /// A two-way run with no key (a device that has not joined yet, or a locked vault).
+    @discardableResult
+    func syncLocked(_ target: EpochTarget, _ edit: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
+        var o = SyncOptions(deviceLabel: name)
+        tune(&o)
+        edit(&o)
+        return try SyncEngine(directory: folder, vault: nil, remote: target.remote(for: name), stateURL: stateURL(target),
+                              options: o).run()
+    }
+
     /// An upload-only run (the app's run of a vault nobody unlocked): no vault, push-only, server changes kept.
     @discardableResult
     func push(_ target: EpochTarget) throws -> SyncReport {

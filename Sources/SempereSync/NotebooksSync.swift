@@ -37,6 +37,7 @@ extension SyncEngine {
                 report.errors.append(.init(path: path, message: Self.describe(error)))
             }
         }
+        var uploadedNames = Set<String>()
         for (k, sha) in locked({ placedShas }) where k.hasPrefix(folder + "/") {
             state.notebookShas = state.notebookShas ?? [:]
             state.notebookShas?[k] = sha
@@ -46,7 +47,16 @@ extension SyncEngine {
             let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: NotebookRecords.maxFileBytes)
             if options.dryRun { report.uploaded.append(path); continue }
             try ensureCollection([folder])
-            if try transport.write([folder, name], .data(data), condition: .create) { report.uploaded.append(path) }
+            if try transport.write([folder, name], .data(data), condition: .create) {
+                report.uploaded.append(path)
+                uploadedNames.insert(name)
+            }
+        }
+        defer {
+            if !options.dryRun {
+                let held = Set((try? LocalFS.entries(localDir)) ?? []).intersection(remote.union(uploadedNames))
+                state.notebookNames = held.isEmpty ? nil : held.sorted()
+            }
         }
         guard !options.pushOnly else { return }
         for name in remote.subtracting(local).sorted() {

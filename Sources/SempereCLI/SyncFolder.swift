@@ -112,6 +112,7 @@ struct SyncFolderCommand: ParsableCommand {
 
         var options = SyncOptions(dryRun: dryRun)
         options.deviceID = SyncCLI.deviceID()
+        options.recordSynced = true
         options.pushOnly = pushOnly
         options.keepServerChanges = keepServerChanges
         options.deleteExtraneous = deleteExtraneous
@@ -141,7 +142,12 @@ struct SyncFolderCommand: ParsableCommand {
             throw CLIError.usage("--web-viewer needs the vault unlocked (--identity or a stored key's passphrase)")
         }
         // A first pull checks what it copies in under the vault.json it takes (format.md §9.1).
-        if vault == nil { options.firstPullIdentities = try access.explicitIdentities() }
+        // A first pull, or a joining machine taking its approval (KH4), checks the vault.json it pulls with its key.
+        if let vault, !vault.canRead {
+            options.firstPullIdentities = try access.readingIdentities(vaultId: vault.vaultId)
+        } else if vault == nil {
+            options.firstPullIdentities = try access.explicitIdentities()
+        }
         options.deviceLabel = device ?? ProcessInfo.processInfo.hostName
 
         let remote = FolderRemote(root: target)

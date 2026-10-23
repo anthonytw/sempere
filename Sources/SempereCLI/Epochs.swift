@@ -15,8 +15,14 @@ struct EpochChangeOutput: Encodable {
     var removed: [String]
     var home: String
     var sealed: Int
+    /// The remover's pull, per target of a store vault (design §5.2 step 2; KH4).
+    var pulled: [PullOutput]?
+    /// The devices removed, with their last syncs (design §5.5).
+    var removedDevices: [RemovedDeviceOutput]?
 
-    init(_ r: EpochChangeReport) {
+    init(_ r: EpochChangeReport, pulled: [PullOutput]? = nil, removedDevices: [RemovedDeviceOutput]? = nil) {
+        self.pulled = pulled
+        self.removedDevices = removedDevices
         epoch = r.epoch
         epochId = Hex.encode(r.epochId)
         reason = r.reason.rawValue
@@ -43,6 +49,8 @@ struct DevicesRemove: ParsableCommand {
             write is under the new key; files a removed device writes later are set aside on every device, \
             never placed. The removed device is told it was removed when it opens the vault (exit 8 there). \
             Only the home device removes, and never itself (hand the home role over first).
+
+            For a store vault with sync targets, this machine first pulls from each (10 seconds each; --no-pull             skips it): what verifies is placed and sealed too, and an unreachable target is reported (the devices             that wrote there catch their files up themselves). A removed device that last synced more than a day             ago, or never, is named: changes it made since will not reach the vault. The change reaches the             targets with the next `store sync`. --json adds `pulled` and `removedDevices` (`lastSynced`, `stale`).
             """
     )
 
@@ -51,6 +59,7 @@ struct DevicesRemove: ParsableCommand {
     @Argument(help: ArgumentHelp("The devices' ids (or 4+ leading hex digits).", valueName: "id"))
     var ids: [String] = []
 
+    @OptionGroup var pull: EpochPullOptions
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
@@ -59,15 +68,21 @@ struct DevicesRemove: ParsableCommand {
 
     func run() throws {
         var vault = try access.openVault(.required)
+        let pulled = pull.noPull ? [] : EpochTargets.pull(vault, passwordEnv: pull.passwordEnv, output: output)
+        if !pulled.isEmpty { vault = try access.openVault(.required) }
         let names = Dictionary(vault.devices.compactMap { d in d.id.map { ($0, DeviceName.display(d.name)) } },
                                uniquingKeysWith: { a, _ in a })
+        let removed = EpochTargets.removed(vault, ids: ids)
         let report = try vault.removeDevices(ids)
-        if output.json { return try output.emitJSON(EpochChangeOutput(report)) }
+        if output.json {
+            return try output.emitJSON(EpochChangeOutput(report, pulled: pulled.isEmpty ? nil : pulled, removedDevices: removed))
+        }
         for fp in report.removed {
             let id = String(Hex.encode(fp).prefix(8))
             output.info("Removed \(names[id] ?? "the recovery key") (\(id)).")
         }
         output.info("Epoch \(report.epoch): a new vault key; \(report.sealed) files from before are sealed.")
+        EpochTargets.warn(removed, output: output)
         output.info(storageAdvice)
     }
 }
@@ -88,13 +103,16 @@ struct DevicesHandoff: ParsableCommand {
     @Argument(help: ArgumentHelp("The new home's id (or 4+ leading hex digits).", valueName: "id"))
     var id: String
 
+    @OptionGroup var pull: EpochPullOptions
     @OptionGroup var output: OutputOptions
 
     func run() throws {
         var vault = try access.openVault(.required)
+        let pulled = pull.noPull ? [] : EpochTargets.pull(vault, passwordEnv: pull.passwordEnv, output: output)
+        if !pulled.isEmpty { vault = try access.openVault(.required) }
         let target = try vault.resolveDevice(id)
         let report = try vault.handOff(to: target.id ?? id)
-        if output.json { return try output.emitJSON(EpochChangeOutput(report)) }
+        if output.json { return try output.emitJSON(EpochChangeOutput(report, pulled: pulled.isEmpty ? nil : pulled)) }
         output.info("Epoch \(report.epoch): \(DeviceName.display(target.name)) (\(target.id ?? "?")) manages devices now.")
     }
 }
@@ -147,6 +165,7 @@ struct RecoveryTakeover: ParsableCommand {
     @Flag(name: .long, help: "Take over (without it the choices are printed and nothing is written).")
     var yes = false
 
+    @OptionGroup var pull: EpochPullOptions
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
@@ -201,6 +220,16 @@ struct RecoveryTakeover: ParsableCommand {
         if madeKeys {
             _ = try DeviceKeyStore.save(device, vaultId: locked.vaultId, passphrase: nil)
         }
+        // A store vault with sync targets: what this machine can reach is pulled first (design §5.2 step 2),
+        // with its device key when it is listed.
+        var pulled: [PullOutput] = []
+        if !pull.noPull, !madeKeys {
+            var a = access
+            a.recoveryKey = nil
+            if let mine = try? a.openVault(at: url, .ifPossible), mine.canRead {
+                pulled = EpochTargets.pull(mine, passwordEnv: pull.passwordEnv, output: output)
+            }
+        }
         let result: (vault: Vault, report: EpochChangeReport)
         do {
             result = try Vault.takeover(
@@ -212,7 +241,7 @@ struct RecoveryTakeover: ParsableCommand {
             if madeKeys { try? FileManager.default.removeItem(at: DeviceKeyStore.directory(vaultId: locked.vaultId)) }
             throw error
         }
-        if output.json { return try output.emitJSON(EpochChangeOutput(result.report)) }
+        if output.json { return try output.emitJSON(EpochChangeOutput(result.report, pulled: pulled.isEmpty ? nil : pulled)) }
         output.info("Epoch \(result.report.epoch): this machine (\(device.id)) took over with the recovery kit and "
             + "manages devices now; \(result.report.removed.count) key(s) dropped.")
         output.info("Every other listed device will show the takeover. If a device was stolen, also replace the "
@@ -266,11 +295,17 @@ struct RecoveryReplace: ParsableCommand {
                                                                   visibility: .private))
     var workFactor = RecoveryPassphraseCopy.workFactor
 
+    @OptionGroup var pull: EpochPullOptions
     @OptionGroup var output: OutputOptions
 
     func run() throws {
         var vault = try access.openVault(.required)
         guard vault.isHome else { throw CLIError.failure("only the home device replaces the recovery kit") }
+        var pulled: [PullOutput] = []
+        if yes, !pull.noPull {
+            pulled = EpochTargets.pull(vault, passwordEnv: pull.passwordEnv, output: output)
+            if !pulled.isEmpty { vault = try access.openVault(.required) }
+        }
         let review = try vault.kitReview()
         let named = Set(try (keep + remove).map { try vault.resolveDevice($0).fingerprint })
         guard yes, review.allSatisfy({ named.contains($0.device.fingerprint) }) else {
@@ -316,7 +351,7 @@ struct RecoveryReplace: ParsableCommand {
             try? FileManager.default.removeItem(atPath: recoveryOut)
             throw error
         }
-        if output.json { return try output.emitJSON(EpochChangeOutput(report)) }
+        if output.json { return try output.emitJSON(EpochChangeOutput(report, pulled: pulled.isEmpty ? nil : pulled)) }
         output.info("Epoch \(report.epoch): a new recovery kit. The old kit no longer opens or takes over this vault "
             + "on any device that sees this change.")
         output.info("New recovery key: \(recoveryOut). Print the kit (sempere keys paper --vault \(vault.url.path) "

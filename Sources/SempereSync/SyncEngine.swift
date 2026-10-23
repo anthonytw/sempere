@@ -664,6 +664,10 @@ public final class SyncEngine {
             state.mutable[name] = .init(hash: localHash, stamp: stamp)
             return
         }
+        // A joining device's approval (design §6.2 step 3): taken, whatever moved since the last run.
+        if name == Vault.manifestName, vault == nil, Vault.isJoinApproval(remoteData, local: local, identities: options.firstPullIdentities) {
+            return try accept(name, remoteData, stamp: stamp)
+        }
         // Another epoch on the remote (KH4): judged by the device-change rules, never by which side moved.
         if name == Vault.manifestName, Self.otherEpochs(local, remoteData) {
             return try syncManifestAcrossEpochs(local: local, remoteData: remoteData, stamp: stamp,
@@ -762,9 +766,11 @@ public final class SyncEngine {
     func accept(_ name: String, _ data: Data, stamp: String?, judged: Bool = false) throws {
         try requireLocalWrite("write \(name)")
         if name == Vault.manifestName, !judged {
-            // Never let a list nobody with the key wrote replace ours (design §4.3, §5.1).
+            // Never let a list nobody with the key wrote replace ours (design §4.3, §5.1). A joining device takes the
+            // approval that lists it (design §6.2 step 3; it confirms it with the reply words before any write).
             let local = try localMutable(name)
-            if let why = Vault.incomingManifestProblem(data, local: local, vault: vault) {
+            let joining = vault == nil && local.map { Vault.isJoinApproval(data, local: $0, identities: options.firstPullIdentities) } == true
+            if !joining, let why = Vault.incomingManifestProblem(data, local: local, vault: vault) {
                 report.rejected.append(.init(path: name, message: SyncReport.printable(why)))
                 return
             }

@@ -105,6 +105,8 @@ struct SyncState: Codable, Equatable {
     /// Notebook records (`notebooks/<name>`) whose bytes both sides held when this device last knew them
     /// equal, as `FileRecord.sha256` does for revisions (key-hierarchy design §5.4 step 4; KH4).
     var notebookShas: [String: String]?
+    /// Notebook records both sides held at the end of the last run (for `UnsyncedChanges`; KH4).
+    var notebookNames: [String]?
     /// `epochs/` as the last run left it in step on both sides: the remote folder's strong ETag and a digest of
     /// the local names. With `skipUnchangedNotes` on a server seen to change folder ETags, an unchanged pair is
     /// not listed again (KH4).
