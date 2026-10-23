@@ -45,6 +45,10 @@ struct SempereApp: App {
         // An open vault of the in-app store holds a lease, so it is never removed while open. Its sync
         // targets (folder and WebDAV) are in the store's registry.
         model.vaultStore = library.vaultStore
+        // The write ledger and set-aside store (key-hierarchy design §5.4, §5.8), in the App Group beside the store.
+        let writeStores = DeviceWriteStores.app(storeRoot: library.vaultStore.root)
+        model.writeStores = writeStores
+        model.quickCapture.writeStores = writeStores
         // Voice notes go straight into their vault's in-app inbox, and its targets upload them
         // (`QuickCapture.deliveredNotification`).
         model.quickCapture.vaultStore = library.vaultStore

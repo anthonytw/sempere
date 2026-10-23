@@ -49,8 +49,18 @@ public struct EpochChangeReport: Hashable, Sendable {
 extension Vault {
     /// The write lock every writer of this vault's `vault.json` takes (design §5.2): the store's, when the
     /// vault is a store vault (`VaultStore.writeLock(for:)`), else a hidden lock file in the vault folder.
+    ///
+    /// It excludes the other writers of `vault.json` and `settings.age` (approvals, renames, a sync run's
+    /// placing), not every note write: a revision another process writes under the old key after the seal
+    /// is not sealed, and its writer re-encrypts it from its ledger (design §5.2 step 2, §5.4; J1).
     var epochWriteLock: VaultFileLock {
-        VaultFileLock.at(url.appendingPathComponent(".sempere-write.lock"))
+        let idFolder = url.deletingLastPathComponent()
+        let root = idFolder.deletingLastPathComponent()
+        if idFolder.lastPathComponent == vaultId.uuidString.lowercased(),
+           FileIO.isDirectory(root.appendingPathComponent(VaultStore.locksName, isDirectory: true)) {
+            return VaultStore(root: root).writeLock(for: vaultId)
+        }
+        return VaultFileLock.at(url.appendingPathComponent(".sempere-write.lock"))
     }
 
     // MARK: - Sealing (design §5.2 step 3)

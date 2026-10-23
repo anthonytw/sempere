@@ -324,11 +324,14 @@ extension AppModel {
         let keys = unlockKeys
         let trust = keys.root == nil ? self.trust : nil
         let url = start.url
+        let stores = writeStores
+        let vaultId = vault?.vaultId
         do {
             let next: Vault
             do {
                 next = try await offMain {
-                    try Vault.open(at: url, identities: keys.identities, signing: keys.signing, trust: trust, root: keys.root)
+                    try Vault.open(at: url, identities: keys.identities, signing: keys.signing, trust: trust, root: keys.root,
+                                   ledger: vaultId.flatMap { stores?.ledger(for: $0) }, setAside: stores?.setAside)
                 }
             } catch VaultError.keyNotListed {
                 guard generation == gen else { return }

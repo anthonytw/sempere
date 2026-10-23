@@ -3073,9 +3073,11 @@ vault-wide capture key: every capture is sealed with a device capture key.
 Each device capture key authenticates inbox files and nothing else. It cannot decrypt anything,
 tag a revision (§4), name a blob (§8.1.2) or derive a per-device cache key
 (§10), and HKDF does not reveal `K_e`. It changes with the epoch: removing a
-device starts a new one (KH3), which revokes every capture key handed out
-before; what then happens to inbox files sealed under the old epoch is
-specified with that phase. A capturing device stores the key and `v_e` (a
+device starts a new one (§15.14), which revokes every capture key handed out
+before. An inbox file sealed under an earlier epoch is adopted when the record
+that closed that epoch seals it with its exact bytes; the device that sealed
+one later re-seals it from its write ledger (§15.14 "Catch-up"); any other
+stays in the inbox, set aside, never adopted. A capturing device stores the key and `v_e` (a
 *capture profile*); how it stores them is up to the implementation. The
 profile is made only from a vault whose `vault.json` checked (§2.1) when it
 was made or refreshed, and a capturing device seals to its profile's `v_e`
@@ -4071,10 +4073,16 @@ caught up to (or `sempere vault catch-up`) first takes each ledger entry of an e
 the chain, it is kept (or pruned when final); otherwise its file is re-encrypted under the current key
 (revisions, notebook records and `settings.age` keep their name and get a new file key and tag; a blob
 is written under its new name and the old name stays), the copy is decrypted and its body compared,
-the old bytes are set aside, the new entry is recorded, and only then the copy replaces the file. Inbox
-files are not caught up by this version (a capture profile seals without the vault key; the app's
-capture extension keeps its own ledger, KH5). Every other file the acceptance rule sets aside is then
-copied into the set-aside store.
+the old bytes are set aside, the new entry is recorded, and only then the copy replaces the file. An
+inbox file (§11) is re-sealed the same way: its plaintext's tag is checked under the device's own
+capture key of the epoch it was written under, re-tagged under the device's capture key of the current
+epoch (the JSON line and payload unchanged), and the result encrypted to the current `v_e`. A capturing
+device records each inbox file in the ledger before placing it, under its profile's epoch (a profile
+records `epoch` and `epochId`; the CLI's `inbox capture` does so when the device key is stored without
+a passphrase, the app always). Every other file the acceptance rule sets aside (inbox files included)
+is then copied into the set-aside store. The app keeps its ledger and set-aside store in its App Group
+container, the ledger sealed with a key in a this-device-only Keychain item of class
+`AfterFirstUnlockThisDeviceOnly`.
 
 **The set-aside store** (design §5.8): device-local, outside the vault
 (`$XDG_STATE_HOME/sempere/setaside/<vaultId>/<vault path>/<sha256>.age`, with a `<sha256>.json` holding

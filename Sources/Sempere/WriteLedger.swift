@@ -146,7 +146,10 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
     public let folder: URL
     let vaultId: UUID
     private let directory: URL
-    private enum KeySource { case fixed(SymmetricKey), device(MLKEM768X25519Identity) }
+    private enum KeySource {
+        case fixed(SymmetricKey), device(MLKEM768X25519Identity)
+        case provided(@Sendable () throws -> Data)
+    }
     private let source: KeySource
     private let keyLock = NSLock()
     private var cachedKey: SymmetricKey?
@@ -166,6 +169,13 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
     /// The ledger of `vaultId` under `directory`, keyed by `key` (the app's, from a Keychain item).
     public convenience init(directory: URL, vaultId: UUID, key: SymmetricKey) {
         self.init(directory: directory, vaultId: vaultId, source: .fixed(key))
+    }
+
+    /// The ledger of `vaultId` under `directory`, keyed by the 32 bytes `key` returns when the ledger is first
+    /// used (the app's: a Keychain item of class `AfterFirstUnlockThisDeviceOnly`, design §5.4). A key that
+    /// cannot be read, or is not 32 bytes, makes the ledger unreadable: it fails closed.
+    public convenience init(directory: URL, vaultId: UUID, keyBytes key: @escaping @Sendable () throws -> Data) {
+        self.init(directory: directory, vaultId: vaultId, source: .provided(key))
     }
 
     /// The ledger of `vaultId`, keyed by a key sealed to `device` in `key.age` (made with the first record).
@@ -194,6 +204,11 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
         switch source {
         case .fixed(let k):
             cachedKey = k
+        case .provided(let provide):
+            let raw: Data
+            do { raw = try provide() } catch { throw VaultError.ledgerUnreadable("the ledger key is not available: \(error)") }
+            guard raw.count == 32 else { throw VaultError.ledgerUnreadable("the ledger key is not 32 bytes") }
+            cachedKey = SymmetricKey(data: raw)
         case .device(let device):
             let keyURL = folder.appendingPathComponent("key.age")
             if !FileIO.exists(keyURL) {

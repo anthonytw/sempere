@@ -513,6 +513,24 @@ final class EpochScenarioTests: VaultTestCase {
         XCTAssertEqual(again.listStatus, .verified(.newEpoch), "a run later the takeover counts")
     }
 
+    /// An epoch change of a store vault takes the store's write lock (the one every other writer of its
+    /// `vault.json` shares, `VaultStore.writeLock(for:)`); a plain folder its own hidden lock file.
+    func testAStoreVaultsEpochChangeTakesTheStoresWriteLock() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B"])
+        let a = try w.open("A")
+        XCTAssertFalse(a.epochWriteLock === VaultStore(root: tmp).writeLock(for: a.vaultId))
+        let root = tmp.appendingPathComponent("store")
+        let folder = root.appendingPathComponent(a.vaultId.uuidString.lowercased())
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".locks"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let moved = folder.appendingPathComponent("Shared.sempere")
+        try FileManager.default.moveItem(at: w.url, to: moved)
+        var inStore = try w["A"].open(moved)
+        XCTAssertTrue(inStore.epochWriteLock === VaultStore(root: root).writeLock(for: a.vaultId))
+        try inStore.removeDevices([w["B"].id])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: moved.appendingPathComponent(".sempere-write.lock").path))
+    }
+
     // MARK: - EpochFaults (design §11.1, core points)
 
     func testACrashAfterTheRecordLeavesAnOrphanThatNothingReads() throws {
