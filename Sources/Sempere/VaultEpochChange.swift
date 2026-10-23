@@ -23,6 +23,8 @@ struct EpochFaults: Hashable, Sendable {
         case catchUpWritten(Int)
         /// Catch-up of file n: the copy verified, not put in place.
         case catchUpVerified(Int)
+        /// Catch-up of file n: its new ledger entry is durable, the copy not put in place (review M2).
+        case catchUpRecorded(Int)
         /// Catch-up of file n: in place; the ledger not updated.
         case catchUpPlaced(Int)
     }
@@ -167,6 +169,8 @@ extension Vault {
         var recoverySigner: (keys: DeviceSigningKeys, author: ChainAuthor)?
         /// The sealed set of the parent epoch.
         var sealed: [String: String]
+        /// SHA-256 of the parent epoch's record file (format.md §15.6): the hash link down the chain.
+        var parentRecordHash: Data
         var created: Date
         var label: String?
         var features: [String]
@@ -199,7 +203,8 @@ extension Vault {
         let removed = Set(plan.parentList).subtracting(firstList)
         let record = EpochRecord(vaultId: vaultId, root: manifest.root, epoch: epoch, epochId: key.epochId,
                                  parent: EpochRecordParent(epoch: parentEntry.epoch, epochId: parentEntry.epochId,
-                                                           key: plan.parentKey, sealed: plan.sealed),
+                                                           key: plan.parentKey, sealed: plan.sealed,
+                                                           recordHash: plan.parentRecordHash),
                                  chain: chain, created: stamp, by: authorId, reason: plan.reason.rawValue,
                                  removed: removed.sorted { $0.lexicographicallyPrecedes($1) })
         let recordFile = try record.seal(key: key)
@@ -347,7 +352,7 @@ extension Vault {
                                  parentList: m.keys.map(\.fingerprint), parentAdditions: currentAdditions(),
                                  devices: d.devices, recovery: recovery, home: d.home, author: d.author, signing: d.signing,
                                  recoverySigner: d.recoverySigner.map { (keys: $0.0, author: $0.1) }, sealed: sealed,
-                                 created: now, label: m.label, features: m.features)
+                                 parentRecordHash: m.epochRecordHash, created: now, label: m.label, features: m.features)
             let (written, key) = try writeEpoch(plan)
             result = (written, key, sealed.count)
         }
@@ -426,25 +431,32 @@ extension Vault {
         let recoveryEntry = EpochKeyEntry(role: .recovery, key: newKey, sign: newSign, added: RFC3339.string(now),
                                           name: "Recovery kit", wrap: "")
         // The new passphrase copy is in place before vault.json names the key; the old ones go after.
-        var copyName: String?
         if let passphrase {
             let copy = RecoveryPassphraseCopy(created: RFC3339.string(now), vaultId: vaultId, root: manifest.root, identity: newRecovery)
             let path = try copy.path()
             try FileIO.createDirectory(keysURL)
             try FileIO.writeAtomically(try copy.seal(passphrase: passphrase, workFactor: workFactor),
                                        to: url.appendingPathComponent(path), replacing: true)
-            copyName = URL(fileURLWithPath: path).lastPathComponent
         }
         let report = try changeEpoch(reason: .recovery, now: now) { m in
             (m.devices.filter { !gone.contains($0.fingerprint) }, recoveryEntry, home, signing, m.home, oldSigner)
         }
-        // Superseded copies (design §8.2): no key of vault.json is theirs.
-        let current = try KeyFingerprint.recovery(identity: newRecovery)
-        for name in passphraseCopyNames() where name != copyName {
-            let hex = name.dropFirst("recovery-".count).dropLast(".key.age".count)
-            if Hex.decode(String(hex)) != current { try? FileIO.remove(keysURL.appendingPathComponent(name)) }
-        }
+        sweepSupersededPassphraseCopies()
         return report
+    }
+
+    /// Deletes passphrase copies of a recovery key the current `vault.json` no longer lists (design §8.2):
+    /// on home, at a verified epoch, so also after a kit replacement that crashed between its `vault.json` and
+    /// this step (review S6). A leaked superseded copy would still open every earlier epoch.
+    func sweepSupersededPassphraseCopies() {
+        guard isHome, case .verified = listStatus, let current = manifest.recoveryFingerprint,
+              let chain = verifiedChain?.entries else { return }
+        // Only kits the chain retired: a copy written for a kit not adopted yet (a replacement in progress) stays.
+        let retired = Set(chain.map(\.recovery)).subtracting([current])
+        for name in passphraseCopyNames() {
+            let hex = name.dropFirst("recovery-".count).dropLast(".key.age".count)
+            if let fp = Hex.decode(String(hex)), retired.contains(fp) { try? FileIO.remove(keysURL.appendingPathComponent(name)) }
+        }
     }
 
     // MARK: - Takeover (design §5.6 rule 3, §6.3)
@@ -454,9 +466,28 @@ extension Vault {
     public struct TakeoverCandidate: Hashable, Sendable {
         public var fingerprint: Data
         public var id: String
+        /// Its name as this device's trust record knows it when it does (`nameTrusted`), else as the current
+        /// `vault.json` says it, which a stolen home may have renamed (review S3).
         public var name: String
-        /// On the parent epoch's list (checked by default).
+        public var nameTrusted: Bool
+        /// On the parent epoch's list.
         public var listed: Bool
+        /// Removed by an epoch the takeover drops (`TakeoverPlan.dropped`): not checked by default, since
+        /// the home of that epoch may have removed it for a reason (review S3).
+        public var removedByDroppedEpoch: Bool
+        /// Checked by default on the takeover screen (design §6.3): on the parent's list and not removed by a
+        /// dropped epoch.
+        public var checkedByDefault: Bool { listed && !removedByDroppedEpoch }
+    }
+
+    /// An epoch above the takeover's parent that the takeover drops (design §5.6 rule 4), as the screen shows it.
+    public struct DroppedEpoch: Hashable, Sendable {
+        public var epoch: Int
+        public var reason: String
+        /// The id of the device that signed it.
+        public var author: String
+        /// The devices it removed (fingerprints): computed from its signed parent and first lists.
+        public var removed: [Data]
     }
 
     /// What a takeover starts from: the epoch it is made under and the devices the user may pick.
@@ -465,6 +496,8 @@ extension Vault {
         public var parentEpoch: Int
         public var parentId: Data
         public var candidates: [TakeoverCandidate]
+        /// The epochs above the parent that the vault holds and the takeover drops, oldest first.
+        public var dropped: [DroppedEpoch]
     }
 
     /// Opens the vault at `url` with the recovery key `recovery` for a takeover by `device` (design §6.3):
@@ -561,7 +594,8 @@ extension Vault {
             let plan = EpochPlan(reason: .takeover, parentKey: ctx.parentKey, parentChain: ctx.parentChain,
                                  parentList: ctx.parentList, parentAdditions: ctx.parentAdditions, devices: devices,
                                  recovery: ctx.recoveryEntry, home: device.fingerprint, author: homeEntry, signing: device.signing,
-                                 recoverySigner: (keys: recoverySigning, author: recoveryAuthor), sealed: sealed, created: now,
+                                 recoverySigner: (keys: recoverySigning, author: recoveryAuthor), sealed: sealed,
+                                 parentRecordHash: ctx.parentRecordHash, created: now,
                                  label: vault.manifest.label, features: vault.manifest.features)
             let (written, _) = try vault.writeEpoch(plan)
             result = (written, sealed.count)
@@ -619,6 +653,9 @@ struct TakeoverContext {
     var parentChain: [ChainEntry]
     var parentList: [Data]
     var parentAdditions: [ChainAddition]
+    /// SHA-256 of the parent epoch's record (the current one's from vault.json; an earlier one's as the hash
+    /// links down the chain bound it).
+    var parentRecordHash: Data
     var recoveryEntry: EpochKeyEntry
     var view: Vault.SealView
     /// Entries of the current `vault.json`, by fingerprint.
@@ -670,11 +707,13 @@ struct TakeoverContext {
         if parentIndex == chain.count - 1 {
             parentKey = try v.requireSecret()
             view = try v.currentSealView()
+            parentRecordHash = v.manifest.epochRecordHash
         } else {
-            guard let k = older.first(where: { $0.epochId == parent.epochId }) else {
+            guard let k = older.first(where: { $0.epochId == parent.epochId }), let h = k.recordHash else {
                 throw VaultError.epochChangeRefused("the key of epoch \(parent.epoch) is not readable from the records")
             }
             parentKey = k.key
+            parentRecordHash = h
             view = Vault.SealView(current: (k.epochId, k.key, k.identity), older: older.filter { $0.epoch < parent.epoch })
         }
         // The parent's list includes its same-epoch additions: carried in the next entry for an earlier
@@ -706,11 +745,22 @@ struct TakeoverContext {
             entries[d.fingerprint] = d
             if let s = d.sign { keys[d.fingerprint] = (d.key, s, d.kind ?? "cli") }
         }
+        // The epochs this takeover drops (above its parent on the vault's chain), and whom they removed.
+        let dropped = chain[(parentIndex + 1)...].map { e in
+            Vault.DroppedEpoch(epoch: e.epoch, reason: e.reason, author: String(Hex.encode(e.author.fingerprint).prefix(8)),
+                               removed: Set(e.parentList).subtracting(e.list).sorted { $0.lexicographicallyPrecedes($1) })
+        }
+        let removedByDropped = Set(dropped.flatMap(\.removed))
+        // Names this device verified itself (its trust record), never the current file's when it has them.
+        var trustedNames: [Data: String] = [:]
+        for e in record?.list ?? [] { trustedNames[e.fingerprint] = e.name }
         let candidates = ancestry.filter { $0 != device.fingerprint && keys[$0] != nil }.map { fp in
-            Vault.TakeoverCandidate(fingerprint: fp, id: String(Hex.encode(fp).prefix(8)),
-                                    name: DeviceName.display(entries[fp]?.name ?? "Device \(Hex.encode(fp).prefix(8))"),
-                                    listed: parentListSet.contains(fp))
-        }.sorted { ($0.listed ? 0 : 1, $0.id) < ($1.listed ? 0 : 1, $1.id) }
+            Vault.TakeoverCandidate(
+                fingerprint: fp, id: String(Hex.encode(fp).prefix(8)),
+                name: DeviceName.display(trustedNames[fp] ?? entries[fp]?.name ?? "Device \(Hex.encode(fp).prefix(8))"),
+                nameTrusted: trustedNames[fp] != nil, listed: parentListSet.contains(fp),
+                removedByDroppedEpoch: removedByDropped.contains(fp))
+        }.sorted { ($0.checkedByDefault ? 0 : 1, $0.id) < ($1.checkedByDefault ? 0 : 1, $1.id) }
         // The parent's own list as its author saw it, and its additions: from the parent's vault.json when it is
         // the current one, else from the chain (the parent's first list plus the additions the next epoch carried).
         let parentList: [Data]
@@ -735,6 +785,6 @@ struct TakeoverContext {
         self.parentList = parentList; self.parentAdditions = parentAdditions; self.view = view; self.entries = entries
         keysByFingerprint = keys
         self.approvals = approvals
-        plan = Vault.TakeoverPlan(parentEpoch: parent.epoch, parentId: parent.epochId, candidates: candidates)
+        plan = Vault.TakeoverPlan(parentEpoch: parent.epoch, parentId: parent.epochId, candidates: candidates, dropped: dropped)
     }
 }

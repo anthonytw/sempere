@@ -194,6 +194,23 @@ def setting_values(name):
     pat = re.compile(r'^\s*"?' + re.escape(name) + r'(\[[^\]]*\])?"?\s*=\s*(.*?);\s*$', re.M)
     return [m.group(2).strip().strip('"') for m in pat.finditer(pbx)]
 
+# The write ledger's unsigned-build key file (DeviceWriteStores.swift, review S1) exists only under DEBUG: no
+# Release configuration may define it, and the fallback must stay inside `#if DEBUG`.
+for block in re.findall(r'^\t\t[0-9A-F]{24} /\* Release \*/ = \{(.*?)^\t\t\};', pbx, re.S | re.M):
+    m = re.search(r'SWIFT_ACTIVE_COMPILATION_CONDITIONS = "?([^";]*)"?;', block)
+    if m and re.search(r'\bDEBUG\b', m.group(1)):
+        errors.append("a Release configuration sets DEBUG in SWIFT_ACTIVE_COMPILATION_CONDITIONS: it would enable "
+                      "debug-only code, among it the write ledger's unsigned-build key file")
+ledger_keys = os.path.join(app_dir, "SempereApp", "DeviceWriteStores.swift")
+if os.path.isfile(ledger_keys):
+    depth = 0
+    for i, line in enumerate(read(ledger_keys).splitlines(), 1):
+        t = line.strip()
+        if t.startswith("#if DEBUG"): depth += 1
+        elif t.startswith("#endif") and depth: depth -= 1
+        elif "fileKey(" in t and "func fileKey" not in t and depth == 0:
+            errors.append(f"{rel(ledger_keys)}:{i}: the write ledger's key file fallback outside `#if DEBUG` (review S1)")
+
 # Objects are the entries two tabs deep (`\t\tID /* name */ = {`); a duplicate is a silent clash (one
 # definition wins, the other's references now point at it), which plutil does not report.
 object_ids = re.findall(r'^\t\t([0-9A-F]{24})\b[^\n]*= \{', pbx, re.M)

@@ -155,6 +155,9 @@ extension Vault {
         guard let entry else { throw CaptureError.notARecipient }
         let fingerprint = CaptureKey.fingerprint(of: entry.key)
         let nb = NoteOps.normalizedNotebook(notebook) ?? CaptureProfile.defaultNotebook
+        // The ledger keeps the key of every epoch this device may write under, a profile's included: its captures
+        // are caught up even if a takeover drops that epoch before this device writes anything else under it.
+        try ledger?.rememberKey(epoch: manifest.epoch, key: secret)
         return CaptureProfile(vaultId: vaultId, recipients: [try vaultRecipient().string],
                               key: CaptureKey.derive(from: secret, device: fingerprint).bytes,
                               device: device.rawValue, notebook: nb, recipient: fingerprint,
@@ -442,11 +445,17 @@ public enum CaptureFile {
 public struct SealedCapture: Hashable, Sendable {
     public var name: String
     public var data: Data
+    /// The epoch of the profile that sealed it (key-hierarchy design §5.4): the one its ledger entry names,
+    /// whatever profile is current when it reaches the vault (review M4). Nil from a profile without one.
+    public var epoch: Int?
+    public var epochId: Data?
 
-    /// A sealed file as read back, e.g. from a device-local queue.
-    public init(name: String, data: Data) {
+    /// A sealed file as read back, e.g. from a device-local queue, with the epoch it was sealed under when known.
+    public init(name: String, data: Data, epoch: Int? = nil, epochId: Data? = nil) {
         self.name = name
         self.data = data
+        self.epoch = epoch
+        self.epochId = epochId
     }
 }
 
@@ -483,7 +492,8 @@ public struct CaptureWriter: Sendable {
                                        audio: BlobRef(content: audio, type: type), info: info, recipient: profile.recipient)
         let name = CaptureFile.name(id, .capture)
         let plain = try CaptureFile.frame(line: try InkJSON.encoder().encode(manifest), payload: audio, filename: name, key: key)
-        return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients))
+        return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients), epoch: profile.epoch,
+                             epochId: profile.epochId.flatMap { Hex.decode($0) })
     }
 
     /// Seals the transcript of capture `id` (its `recording` must be the
@@ -500,7 +510,8 @@ public struct CaptureWriter: Sendable {
         let name = CaptureFile.name(id, .transcript)
         let plain = try CaptureFile.frame(line: try transcript.encoded(), payload: Data(audio.sha256.utf8), filename: name,
                                           key: key)
-        return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients))
+        return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients), epoch: profile.epoch,
+                             epochId: profile.epochId.flatMap { Hex.decode($0) })
     }
 
     /// Records `sealed` in this device's write ledger (key-hierarchy design §5.4, intent first: before the
@@ -508,7 +519,10 @@ public struct CaptureWriter: Sendable {
     /// is caught up (`Vault.catchUp` re-seals it). Nothing without a ledger or with a profile that names no
     /// epoch; a ledger that cannot record throws, and the caller must not place the file.
     public func record(_ sealed: SealedCapture, in ledger: (any WriteLedgerStore)?) throws {
-        guard let ledger, let epoch = profile.epoch, let hex = profile.epochId, let id = Hex.decode(hex) else { return }
+        // The epoch it was sealed under (never the current profile's, which may be newer: review M4).
+        let sealedUnder: (Int, Data)? = sealed.epoch.flatMap { e in sealed.epochId.map { (e, $0) } }
+            ?? profile.epoch.flatMap { e in profile.epochId.flatMap { Hex.decode($0) }.map { (e, $0) } }
+        guard let ledger, let (epoch, id) = sealedUnder else { return }
         try ledger.append([LedgerEntry(path: "\(CaptureFile.folderName)/\(sealed.name)", sha256: FileDigest.sha256(sealed.data),
                                        epoch: epoch, epochId: id)])
     }

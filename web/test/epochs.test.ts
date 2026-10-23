@@ -63,4 +63,20 @@ describe("a vault at epoch 3", () => {
     const note = await loadNote(source, vault, before);
     expect(note.failures[0]?.message).toMatch(/^undecryptable:/);
   });
+  it("does not take an earlier record that does not hash to the link above it (review M1)", async () => {
+    const source = new NodeDirSource(join(fixtures, "epochs.sempere"));
+    const manifest = parseManifest(await source.read("vault.json", 1 << 24));
+    const record = await readOptional(source, manifest.epochRecord, limits.epochRecordBytes);
+    // Every older record read back with one byte changed: the walk stops at the first one.
+    const vault = await UnlockedVault.unlock(manifest, sampleIdentity(), record, async (p) => {
+      const bytes = await readOptional(source, p, limits.epochRecordBytes);
+      if (!bytes) return bytes;
+      const copy = new Uint8Array(bytes);
+      copy[copy.length - 1] = (copy[copy.length - 1] ?? 0) ^ 1;
+      return copy;
+    });
+    expect(vault.older.map((o) => o.epoch)).toEqual([2]);
+    const note = await loadNote(source, vault, before);
+    expect(note.failures[0]?.message).toMatch(/^undecryptable:/);
+  });
 });

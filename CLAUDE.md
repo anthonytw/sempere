@@ -849,7 +849,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   WebDAV password is only in the Keychain (`KeychainWebDAVPasswordStore`, keyed by target id); certificate pins
   are checked by `PinnedServerTrust` (Security, app only) behind the library's `WebDAVServerTrust` hook, never by
   disabling evaluation. `epochs/`, `joins/` and `keys/` are synced (KH4, `format.md` §15.15); key
-  management in the app waits for KH5. The app does not record `synced` yet (`SyncOptions.recordSynced`, CLI only). A folder target synced before that is gone is never recreated (`FolderTargetRun.check`).
+  management in the app waits for KH5. Two-way runs record `synced` (`SyncOptions.recordSynced`, the app and the CLI). A folder target synced before that is gone is never recreated (`FolderTargetRun.check`).
   App tests use `FakeWebDAVRemote` (scripted), `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`:
   `TwoDeviceSyncAppTests`), folders under `EvictingFolderProvider` (`AppModel.folderProvider`:
   `FolderTargetAppTests`) and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav

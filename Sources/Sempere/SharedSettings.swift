@@ -441,9 +441,8 @@ extension Vault {
     /// Decrypts, verifies and decodes the bytes of a `settings.age` (a copy from
     /// a sync server, say), as `readSharedSettingsFile` does the vault's own.
     public func openSharedSettings(_ data: Data, allowNewerReader: Bool = false) throws -> SharedSettings.Decoded {
-        let secret = try requireReadable()
+        _ = try requireReadable()
         guard data.count <= SharedSettings.maxFileBytes else { throw SharedSettingsError.tooLarge }
-        _ = secret
         let plain: Data, key: VaultEpochKey, older: OlderEpoch?
         switch openUnderEpochs(data) {
         case .opened(let p, let k, let o): plain = p; key = k; older = o

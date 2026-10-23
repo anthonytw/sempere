@@ -221,8 +221,12 @@ extension AppModel {
                     var options = SyncOptions(deviceLabel: "app")
                     options.summaryCacheDirectory = cacheDirectory
                     options.localWriteLock = lock
-                    options.deviceID = FileManager.default.fileExists(atPath: deviceState.path)
-                        ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil
+                    // The vault device's id names its summaries file and sync state, as in the CLI (review nit); the
+                    // state file's only when the vault is not open here.
+                    options.deviceID = vault?.writerDevice ?? (FileManager.default.fileExists(atPath: deviceState.path)
+                        ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil)
+                    // A complete two-way run records this device's last sync, for home's stale-removal warning (KH4).
+                    options.recordSynced = true
                     request.apply(to: &options)
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }

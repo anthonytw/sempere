@@ -427,7 +427,8 @@ final class EpochInterleavingTests: SyncTestCase {
         let plan = Vault.EpochPlan(reason: .remove, parentKey: try v.requireSecret(), parentChain: try v.currentChain(),
                                    parentList: v.manifest.keys.map(\.fingerprint), parentAdditions: v.currentAdditions(),
                                    devices: v.manifest.devices, recovery: recovery, home: me.fingerprint, author: me,
-                                   signing: TestVaults.signing(x.identity), recoverySigner: nil, sealed: [:], created: Date(),
+                                   signing: TestVaults.signing(x.identity), recoverySigner: nil, sealed: [:],
+                                   parentRecordHash: v.manifest.epochRecordHash, created: Date(),
                                    label: nil, features: v.manifest.features)
         let (m, _) = try v.writeEpoch(plan)
         let manifest = try Data(contentsOf: x.folder.appendingPathComponent(Vault.manifestName))

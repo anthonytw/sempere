@@ -232,10 +232,9 @@ extension Vault {
     /// Decrypts, verifies and decodes the bytes of the record `fileName`
     /// (a file of this vault, or a copy from a sync server).
     public func openNotebookRecord(_ data: Data, fileName: String) throws -> NotebookRecord {
-        let secret = try requireReadable()
+        _ = try requireReadable()
         guard let id = NotebookRecords.id(ofFileName: fileName) else { throw NotebookRecordError.invalid("not a record name") }
         guard data.count <= NotebookRecords.maxFileBytes else { throw NotebookRecordError.tooLarge }
-        _ = secret
         let plain: Data, key: VaultEpochKey, older: OlderEpoch?
         switch openUnderEpochs(data) {
         case .opened(let p, let k, let o): plain = p; key = k; older = o

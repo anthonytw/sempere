@@ -36,17 +36,23 @@ struct OlderEpoch: Sendable {
     /// Its sealed set (path → SHA-256 hex), from the record whose parent it is; nil for an epoch off the
     /// chain (its files are set aside whatever they are).
     var sealed: [String: String]?
+    /// SHA-256 of this epoch's own record file, as the record above it binds it (format.md §15.6); nil off
+    /// the chain.
+    var recordHash: Data?
 
-    init(epoch: Int, epochId: Data, key: VaultEpochKey, sealed: [String: String]?) throws {
-        self.epoch = epoch; self.epochId = epochId; self.key = key; self.sealed = sealed
+    init(epoch: Int, epochId: Data, key: VaultEpochKey, sealed: [String: String]?, recordHash: Data? = nil) throws {
+        self.epoch = epoch; self.epochId = epochId; self.key = key; self.sealed = sealed; self.recordHash = recordHash
         identity = .mlkem768x25519(try key.vaultIdentity())
     }
 }
 
 /// The keys of the earlier epochs of a vault's chain (design §5.3): read from the epoch records newest
-/// first, each record giving its parent's key and sealed set, only as far as a reader needs them. A record
-/// that is missing or does not open stops the walk: the keys below it are unknown, and files under them
-/// are **pending** (rule 3). Shared by a `Vault` value and its copies.
+/// first, each record giving its parent's key, sealed set and the SHA-256 of the parent's own record, only
+/// as far as a reader needs them. Every record below the current one must hash to what the record above it
+/// says (format.md §15.6): the current one is bound by `vault.json`'s `epochRecordHash`, so a holder of an
+/// earlier key cannot rewrite an earlier sealed set (review M1). A record that is missing, does not hash
+/// to its link or does not open stops the walk: the keys below it are unknown, and files under them are
+/// **pending** (rule 3). Shared by a `Vault` value and its copies.
 final class EpochKeyring: @unchecked Sendable {
     private let lock = NSLock()
     private let url: URL
@@ -56,7 +62,7 @@ final class EpochKeyring: @unchecked Sendable {
     private let withoutLinks: Bool
     private var loaded: [OlderEpoch] = []
     /// The epoch whose record is opened next, and its key.
-    private var next: (epoch: Int, key: VaultEpochKey)?
+    private var next: (epoch: Int, key: VaultEpochKey, recordHash: Data?)?
     private var stoppedEarly = false
     /// Keys of epochs off the chain (this device's ledger), tried last.
     private var offChain: [OlderEpoch] = []
@@ -68,13 +74,14 @@ final class EpochKeyring: @unchecked Sendable {
         self.url = url; self.vaultId = vaultId; self.chainIds = chainIds; self.withoutLinks = withoutLinks
         guard let parent else { return }
         guard let key = parent.key, chainIds.count >= 2, key.epochId == chainIds[chainIds.count - 2],
-              let older = try? OlderEpoch(epoch: parent.epoch, epochId: key.epochId, key: key, sealed: parent.sealed) else {
+              let older = try? OlderEpoch(epoch: parent.epoch, epochId: key.epochId, key: key, sealed: parent.sealed,
+                                          recordHash: parent.recordHash) else {
             // A re-encryption record carries no parent key (KH6): what is below it is not read here.
             stoppedEarly = parent.epoch >= 1
             return
         }
         loaded = [older]
-        next = parent.epoch >= 2 ? (parent.epoch, key) : nil
+        next = parent.epoch >= 2 ? (parent.epoch, key, parent.recordHash) : nil
     }
 
     /// Adds keys of epochs that are not on the chain (set aside whatever they hold).
@@ -126,7 +133,7 @@ final class EpochKeyring: @unchecked Sendable {
     private func epoch(at i: Int) -> OlderEpoch? {
         lock.lock(); defer { lock.unlock() }
         while loaded.count <= i {
-            guard let (j, key) = next else { return nil }
+            guard let (j, key, expected) = next else { return nil }
             next = nil
             // Record j holds K_{j-1} and the sealed set of epoch j-1.
             let name = EpochRecord.fileName(epoch: j, epochId: key.epochId)
@@ -134,15 +141,18 @@ final class EpochKeyring: @unchecked Sendable {
             guard let data = try? (withoutLinks
                     ? BoundedRead.contents(under: url, path, maxBytes: EpochRecord.maxBytes)
                     : BoundedRead.contents(of: url.appendingPathComponent(path), maxBytes: EpochRecord.maxBytes)),
+                  let expected, Vault.epochMutations.contains(.olderRecordNotHashChecked)
+                    || Data(SHA256.hash(data: data)) == expected,
                   let record = try? EpochRecord.open(data, key: key, vaultId: vaultId, epoch: j),
                   j - 1 >= 1, chainIds.count >= j, record.epochId == chainIds[j - 1],
                   let parent = record.parent, let pk = parent.key, pk.epochId == chainIds[j - 2],
-                  let older = try? OlderEpoch(epoch: j - 1, epochId: pk.epochId, key: pk, sealed: parent.sealed) else {
+                  let older = try? OlderEpoch(epoch: j - 1, epochId: pk.epochId, key: pk, sealed: parent.sealed,
+                                              recordHash: parent.recordHash) else {
                 stoppedEarly = true
                 return nil
             }
             loaded.append(older)
-            next = j - 1 >= 2 ? (j - 1, pk) : nil
+            next = j - 1 >= 2 ? (j - 1, pk, parent.recordHash) : nil
         }
         return loaded[i]
     }
@@ -161,6 +171,16 @@ enum EpochMutation: Hashable, Sendable, CaseIterable {
     case corruptReencryption
     /// J2, J5a: a writer keeps the previous epoch's key for its writes.
     case writeUnderOldKey
+    /// J3 (review M1): a record below the current one is taken without checking its hash link.
+    case olderRecordNotHashChecked
+    /// J3 (§11.2): catch-up by device id instead of the ledger: an unaccepted revision under an earlier key whose
+    /// name carries this device's id is re-encrypted as if it were its own.
+    case catchUpByDeviceId
+    /// J1 (§11.2, "ledger pruned on upload"): an entry goes as soon as it is written.
+    case ledgerPrunedOnWrite
+    /// J3 (§11.2, "a dropped epoch's sealed set honored"): a file under the key of an epoch a takeover dropped is
+    /// accepted.
+    case droppedEpochAccepted
     /// J4 (KH4): two takeovers are settled by which a device met first, not by `epochId`.
     case takeoverByArrival
 }
@@ -206,7 +226,7 @@ extension Vault {
     /// (the current epoch, rule 1).
     func setAsideReason(_ older: OlderEpoch?, path: String, sha256 hex: @autoclosure () -> String) -> SetAsideReason? {
         guard let older, !Self.epochMutations.contains(.acceptUnsealed) else { return nil }
-        guard let sealed = older.sealed else { return .dropped }
+        guard let sealed = older.sealed else { return Self.epochMutations.contains(.droppedEpochAccepted) ? nil : .dropped }
         guard let digest = sealed[path] else { return .notSealed }
         return digest == hex() ? nil : .bytesDiffer
     }

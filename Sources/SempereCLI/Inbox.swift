@@ -366,5 +366,5 @@ struct InboxImport: ParsableCommand {
 func captureLedger(vaultId: UUID) -> FileWriteLedger? {
     guard case .plain(let path) = DeviceKeyStore.stored(vaultId: vaultId),
           let keys = try? readAccessKeyFile(path), case .mlkem768x25519(let pq) = keys.identity else { return nil }
-    return FileWriteLedger(directory: FileWriteLedger.cliDirectory(environment: Env.vars), vaultId: vaultId, device: pq)
+    return cliLedger(vaultId: vaultId, device: pq)
 }

@@ -201,8 +201,9 @@ the tag or name uses changes.
   bytes), lowercase hex; for the recovery entry, the recovery key's derived pair (§5.6), which a
   takeover's `recoverySig` verifies under. They never change for an entry: a device whose signing keys
   are lost leaves and joins again (§6.1).
-- `id`: the first 8 hex digits of the device fingerprint. It is the `<device>` of revision names (§5)
-  and of `summaries/<device>.sealed` (§12.5). **Ids are for file names and the interface only**: no
+- `id`: the first 8 hex digits of the device fingerprint. It is the `<device>` of
+  `summaries/<device>.sealed` (§12.5) and of sync state; revision names keep the writing machine's own id
+  (format.md §5), as before (KH3 review, deviation a). **Ids are for file names and the interface only**: no
   security decision reads one. A join is refused if the id equals that of a fingerprint in the current
   list or in any `list` of the epoch record's `chain` (§5.2), which keeps every list since epoch 1,
   re-encryption included; the joining device then generates another key. Eight hex digits keep file
@@ -383,8 +384,12 @@ A device that is not home and about to be removed cannot add anything: it never 
 
 On home A (only home removes, §5.6; home itself is removed only after a handoff or by a takeover),
 in this order, each step durable before the next. A holds the vault's write
-lock (`VaultFileLock`) from step 3 to step 5, so no write lands between sealing and the new
-`vault.json`.
+lock (`VaultFileLock`; the store's for a store vault) from step 3 to step 5. It excludes the other
+writers of `vault.json` and `settings.age`, not every note write: a file another process writes under
+`K_e` between the seal and the new `vault.json` (the app or the widget of home itself, another device on
+the same folder) is not sealed, and its writer re-encrypts it from its ledger (§5.4). Its ledger entry is
+of epoch `e`, which clears the device's caught-up mark, so the next write catches it up (J1; KH3 review,
+deviation b and M3).
 
 1. **Preconditions**: the working copy is complete (format.md §1.2 rule 3) and `vault.json`
    verifies. Nothing about targets or re-encryption: a removal never waits for a network or for other
@@ -431,7 +436,8 @@ revision). The JSON:
 { "format": "sempere-epoch/1", "vaultId": "…", "root": "…", "epoch": 4, "epochId": "…",
   "parent": { "epoch": 3, "epochId": "…", "key": "…(64 hex: K_3)…",
               "identity": "AGE-SECRET-KEY-PQ-1…",
-              "sealed": { "notes/<id>/<name>.delta.age": "<sha256 hex>", … } },
+              "sealed": { "notes/<id>/<name>.delta.age": "<sha256 hex>", … },
+              "recordHash": "…(64 hex: SHA-256 of the parent epoch's record)…" },
   "chain": [ { "epoch": 1, "epochId": "…", "linkPublicKeys": { "ed25519": "…", "mldsa65": "…" },
                "reason": "create", "list": ["<fingerprint>", …], "parentList": [],
                "author": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" }, "epochSig": { … },
@@ -449,7 +455,9 @@ revision). The JSON:
   "removed": ["<fingerprint>", …] }
 ```
 
-- `parent` carries the parent's key, identity and sealed set. A re-encryption epoch carries no `key`
+- `parent` carries the parent's key, identity, sealed set and `recordHash`, the SHA-256 of the parent's
+  own record: the current record is bound by `epochRecordHash`, each earlier one by the link above it,
+  so a holder of an earlier key cannot rewrite an earlier sealed set (KH3 review, M1). A re-encryption epoch carries no `key`
   or `identity` there (§7). Epoch 1 has no `parent`.
 - `chain` holds only public values, one entry per epoch on this epoch's ancestry from epoch 1, each
   with the first list and the signed parent list of §4.1, the author's public keys (whose
@@ -1593,7 +1601,7 @@ the implementation found a gap, it decided:
 | Keys a device holds | the key of every epoch it pinned, not only those it wrote under: after competing takeovers, files under a dropped epoch then read as set aside (dropped), not unreadable, and the accepted copy replaces them |
 | When the replacement rule looks (§5.4 step 4) | paths this device set aside that are still in place (judged again under the current chain: a takeover may seal them), paths whose latest ledger bytes differ from what the target was last known to hold (any epoch), and paths it holds set-aside copies of (a bridge carries a replacement to its other target). Revisions and notebook records; inbox files heal through adoption instead |
 | Joins | a joining device takes, over a sync, a later `vault.json` of the same vault and root that newly lists its key and whose wrap opens; the reply words still confirm it |
-| `synced` | in the per-device summaries file, rewritten at most hourly by a complete two-way run (`SyncOptions.recordSynced`, set by the CLI's sync commands). The app's runs name that file by the machine id (the KH3 review's nit), so the app records none until the ids are one rule |
+| `synced` | in the per-device summaries file (named by the vault device id), rewritten at most hourly by a complete two-way run (`SyncOptions.recordSynced`, set by the app and the CLI's sync commands) |
 | Restores | a same-device restore (keys, ledger and trust at the backup's state) catches up like an offline device; a restore onto another device joins anew and takes the backup as a pull-only source (`EpochChangePull`): what verifies is placed, the rest is set aside and exportable |
 
 Tests: `EpochSyncScenarioTests` (the §11.1 scenarios that need sync), `EpochInterleavingTests` (J1–J6, J8–J10 over

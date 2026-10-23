@@ -518,7 +518,7 @@ export function epochRecordPath(epoch: number, epochId: Uint8Array): string {
  * naming that epoch; returns its parent's key and sealed set (undefined at epoch 1 or without a key).
  */
 async function recordParent(bytes: Uint8Array, path: string, epoch: number, keys: EpochKeys, vaultId: string):
-  Promise<{ epoch: number; key: Uint8Array; sealed: Map<string, string> } | undefined> {
+  Promise<{ epoch: number; key: Uint8Array; sealed: Map<string, string>; recordHash: string } | undefined> {
   if (bytes.length > limits.epochRecordBytes) throw new Error("record too large");
   const d = new Decrypter();
   d.addIdentity(keys.identity);
@@ -532,14 +532,18 @@ async function recordParent(bytes: Uint8Array, path: string, epoch: number, keys
   const key = unhex(parent.key, 32);
   if (!key || typeof parent.epoch !== "number" || parent.epoch !== epoch - 1 || !isObject(parent.sealed)) return undefined;
   if (parent.epochId !== hex(epochKeys(key).epochId)) throw new Error("the parent's key is not its epoch's");
+  // The hash link to the parent's own record (format.md §15.6): without it the walk stops here.
+  if (typeof parent.recordHash !== "string" || !/^[0-9a-f]{64}$/.test(parent.recordHash)) return undefined;
   const sealed = new Map<string, string>();
   for (const [p, v] of Object.entries(parent.sealed)) if (typeof v === "string") sealed.set(p, v);
-  return { epoch: parent.epoch, key, sealed };
+  return { epoch: parent.epoch, key, sealed, recordHash: parent.recordHash };
 }
 
 /**
- * The earlier epochs of the chain, newest first (format.md §15.14): the current record gives the parent's key and
- * sealed set, then each parent's record the next. Stops at the first record that cannot be read or opened.
+ * The earlier epochs of the chain, newest first (format.md §15.14): the current record (bound by vault.json's
+ * `epochRecordHash`) gives the parent's key, sealed set and the SHA-256 of the parent's own record; each earlier
+ * record is taken only when it hashes to that link (§15.6), so a holder of an earlier key cannot rewrite an earlier
+ * sealed set. Stops at the first record that cannot be read, does not hash to its link or does not open.
  */
 async function olderEpochs(manifest: VaultManifest, current: EpochKeys, record: Uint8Array,
   readRecord: (path: string) => Promise<Uint8Array | undefined>): Promise<OlderEpoch[]> {
@@ -566,6 +570,7 @@ async function olderEpochs(manifest: VaultManifest, current: EpochKeys, record: 
     } catch {
       bytes = undefined;
     }
+    if (bytes && hex(sha256(bytes)) !== parent.recordHash) bytes = undefined;
   }
   return out;
 }

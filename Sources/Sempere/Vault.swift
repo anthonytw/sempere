@@ -446,6 +446,17 @@ public struct Vault: Sendable {
             if let notice = removalNotice(manifest, held: held, signing: signing, trust: trust) {
                 throw VaultError.removedFromVault(notice)
             }
+            // A device this vault listed when it pinned an earlier epoch, which missed more than one change: it
+            // cannot verify who left it out (the records are under keys it does not hold), so it is not told it
+            // was removed (an unverified epoch never counts as a removal), but neither that it never joined.
+            if let trust, let record = try? trust.record(for: manifest.vaultId), let pinned = record.pinned,
+               record.root == manifest.root, manifest.epoch > pinned.epoch,
+               record.list.contains(where: { $0.role == EpochKeyEntry.Role.device.rawValue && held.contains($0.key) }) {
+                throw VaultError.keyNotListed("this device is not on the device list of epoch \(manifest.epoch) (it last "
+                    + "verified epoch \(pinned.epoch)), and it cannot verify the changes between them: it holds none of their "
+                    + "keys, so it reads nothing newer and writes nothing. If it was removed by mistake, a takeover with the "
+                    + "recovery kit undoes it")
+            }
             throw VaultError.keyNotListed("none of the keys is listed in vault.json: this device has not joined the vault")
         }
         let key: VaultEpochKey
@@ -466,7 +477,11 @@ public struct Vault: Sendable {
         vault.verifiedChain = check.chain
         vault.droppedEpochs = check.dropped
         vault.pinnable = check.pinnable
-        if case .read(let record) = recordRead {
+        // Earlier keys only from a chain that verified (review S2): an untrusted vault.json is still read,
+        // but never launders files under older keys through its record's sealed sets.
+        let chainTrusted = check.chain != nil
+            && (check.status.problem == nil || check.status.problem?.reason == .rootUnconfirmed)
+        if case .read(let record) = recordRead, chainTrusted {
             vault.keyring = EpochKeyring(url: url, vaultId: manifest.vaultId, chainIds: record.chain.map(\.epochId),
                                          parent: record.parent, withoutLinks: readsWithoutLinks(url))
         } else if manifest.epoch > 1 {

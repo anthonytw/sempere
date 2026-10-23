@@ -28,9 +28,13 @@ public struct EpochRecordParent: Hashable, Sendable {
     public var key: VaultEpochKey?
     /// Paths and SHA-256 digests (lowercase hex) of the files the change kept.
     public var sealed: [String: String]
+    /// SHA-256 of the parent epoch's own record file (`epochs/<parent>-<idprefix>.epoch.age`), so every record
+    /// is bound from the current `epochRecordHash` downward (format.md §15.6): a holder of an earlier key
+    /// cannot rewrite an earlier record's sealed set. Absent only in a parent without a record.
+    public var recordHash: Data?
 
-    public init(epoch: Int, epochId: Data, key: VaultEpochKey?, sealed: [String: String]) {
-        self.epoch = epoch; self.epochId = epochId; self.key = key; self.sealed = sealed
+    public init(epoch: Int, epochId: Data, key: VaultEpochKey?, sealed: [String: String], recordHash: Data? = nil) {
+        self.epoch = epoch; self.epochId = epochId; self.key = key; self.sealed = sealed; self.recordHash = recordHash
     }
 }
 
@@ -141,7 +145,7 @@ extension EpochRecord: Codable {
     enum CodingKeys: String, CodingKey {
         case format, vaultId, root, epoch, epochId, parent, chain, created, by, reason, removed
     }
-    enum ParentKeys: String, CodingKey { case epoch, epochId, key, identity, sealed }
+    enum ParentKeys: String, CodingKey { case epoch, epochId, key, identity, sealed, recordHash }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -173,8 +177,10 @@ extension EpochRecord: Codable {
             for (path, digest) in sealed where path.isEmpty || Hex.decode(digest) == nil {
                 throw EpochFileError.malformed("sealed: \(path)")
             }
+            let recordHash = p.contains(.recordHash) ? try ChainEntry.hex32(p, .recordHash) : nil
             parent = EpochRecordParent(epoch: try p.decode(Int.self, forKey: .epoch),
-                                       epochId: try ChainEntry.hex32(p, .epochId), key: key, sealed: sealed)
+                                       epochId: try ChainEntry.hex32(p, .epochId), key: key, sealed: sealed,
+                                       recordHash: recordHash)
         } else {
             parent = nil
         }
@@ -202,6 +208,7 @@ extension EpochRecord: Codable {
                 try p.encode(try k.vaultIdentity().string, forKey: .identity)
             }
             try p.encode(parent.sealed, forKey: .sealed)
+            if let h = parent.recordHash { try p.encode(Hex.encode(h), forKey: .recordHash) }
         }
         try c.encode(chain, forKey: .chain)
         try c.encode(created, forKey: .created)
