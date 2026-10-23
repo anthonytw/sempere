@@ -422,11 +422,13 @@ extension SyncEngine {
 
     /// Both sides hold revision `n` of note `id`: when this device set its copy aside, or rewrote it since both
     /// sides last matched, the remote's is read; the accepted one replaces an unaccepted one.
-    func replaceUnacceptedRevision(_ id: String, _ n: RevisionName, entry: RemoteEntry?) throws {
+    func replaceUnacceptedRevision(_ id: String, _ n: RevisionName, entry: RemoteEntry?, recordedShared: Bool) throws {
         let k = key(id, n)
         let path = "\(Vault.notesName)/\(k)"
+        // Both sides came to hold it on their own (neither copied it to the other): compared once.
+        let unknown = !recordedShared && locked({ placedShas[k] }) == nil
         try replaceUnaccepted(path, remotePath: [Vault.notesName, id, n.filename], recordKey: k, entry: entry,
-                              recorded: state.files[k]?.sha256) { data in
+                              recorded: state.files[k]?.sha256, unknown: unknown) { data in
             guard let checker = checker(), let uuid = UUID(uuidString: id) else { return }
             try checker.checkIncomingRevision(data, noteId: uuid, name: n)
         }
@@ -435,18 +437,18 @@ extension SyncEngine {
     /// The shared path `path` (remote `remotePath`): see `replaceUnacceptedRevision`. `check` must accept the
     /// remote copy before it is placed here.
     func replaceUnaccepted(_ path: String, remotePath: [String], recordKey: String, entry: RemoteEntry?, recorded: String?,
-                           check: (Data) throws -> Void) throws {
+                           unknown: Bool = false, check: (Data) throws -> Void) throws {
         guard !options.dryRun, let v = epochJudge, v.setAsideStore != nil else { return }
         let here = unacceptedHere[path]
         let rewritten = ledgerShas[path]
         let wasAside = asidePaths.contains(path)
-        guard here != nil || (rewritten != nil && rewritten != recorded) || wasAside else { return }
+        guard here != nil || (rewritten != nil && rewritten != recorded) || wasAside || unknown else { return }
         // A copy set aside here is compared again only when the remote's version changed.
         if here != nil, let stamp = entry?.stamp, locked({ state.comparedAside?[path] }) == stamp { return }
         let file = root.appendingPathComponent(path)
         let local = try BoundedRead.contents(of: file, maxBytes: options.maxFileBytes)
         let localSha = FileDigest.sha256(local)
-        guard localSha == here || (localSha != recorded && (localSha == rewritten || wasAside)) else { return }
+        guard localSha == here || (localSha != recorded && (localSha == rewritten || wasAside || unknown)) else { return }
         defer {
             if here != nil, let stamp = entry?.stamp {
                 locked { state.comparedAside = state.comparedAside ?? [:]; state.comparedAside?[path] = stamp }
@@ -463,7 +465,11 @@ extension SyncEngine {
         let mine = v.acceptance(of: local, path: path), theirs = v.acceptance(of: got.data, path: path)
         guard let store = v.setAsideStore else { return }
         let etag = got.etag ?? entry?.etag
-        if mine.isAccepted, case .setAside(let reason) = theirs {
+        // The target's copy is unaccepted: set aside by the rule, or opened by no key this device holds while no
+        // record it waits for is missing (under the key of an epoch dropped before this device saw it, or junk).
+        var unaccepted: SetAsideReason?
+        if case .setAside(let r) = theirs { unaccepted = r } else if theirs == .unreadable { unaccepted = .dropped }
+        if mine.isAccepted, let reason = unaccepted {
             // The target holds an unaccepted copy: set aside here first (J6), then replaced under its version tag.
             guard let etag, Self.isStrong(etag) else {
                 report.skipped.append(.init(path: path, message: "the target's copy is not accepted, and the target gives no "

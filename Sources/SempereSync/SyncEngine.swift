@@ -1183,7 +1183,7 @@ public final class SyncEngine {
         // Both sides hold the path, with other bytes (design §5.4 step 4): the accepted copy replaces an
         // unaccepted one, after it is set aside (KH4, `EpochSync.swift`).
         for n in L.intersection(R).sorted() {
-            try attempt(n) { try replaceUnacceptedRevision(id, n, entry: entries[n]) }
+            try attempt(n) { try replaceUnacceptedRevision(id, n, entry: entries[n], recordedShared: S.contains(n)) }
         }
 
         // Blob deletions are judged against the revisions both sides hold now.

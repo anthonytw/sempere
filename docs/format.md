@@ -4188,8 +4188,10 @@ changed since the last run:
 - **An accepted copy replaces an unaccepted one** (design §5.4 step 4), for revisions and notebook records:
   when both sides hold a path with other bytes, and this device set its copy aside, or rewrote it since both
   sides last held the same bytes (a catch-up), or holds set-aside copies of the path (a bridge carrying a
-  replacement from one target to another), the target's copy is read. An accepted copy (current preferred,
-  else sealed) replaces an unaccepted one (not sealed, other bytes, or under a dropped epoch's key), on the
+  replacement from one target to another), or both sides came to hold it on their own (neither copied it to
+  the other), the target's copy is read. An accepted copy (current preferred, else sealed) replaces an
+  unaccepted one (not sealed, other bytes, under a dropped epoch's key, or opened by no key this device holds
+  while no record it waits for is missing: a dropped epoch it never held), on the
   target under its strong version tag (a target without one keeps its copy, reported) or here; the unaccepted
   copy is set aside on this device first, and a copy that cannot be kept stops the replacement. An accepted
   copy is never replaced. A file this device set aside is never uploaded.

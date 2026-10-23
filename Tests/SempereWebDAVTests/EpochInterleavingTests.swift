@@ -353,6 +353,7 @@ final class EpochInterleavingTests: SyncTestCase {
             if wr.listed, listed.contains(wr.writer) {
                 for r in readers where titles[r]?[wr.note] != wr.title {
                     out.append("J1: \(r) does not read \(wr.title) (\(wr.writer))")
+                    if tracing { trace += diagnose(note: wr.note, reader: r) }
                 }
             }
             if !wr.listed {
@@ -361,6 +362,29 @@ final class EpochInterleavingTests: SyncTestCase {
                 }
             }
         }
+        /// Which device's keys (current, and every key it held) open each copy of `note`'s files.
+        func diagnose(note: UUID, reader: String) -> [String] {
+            var lines = ["DIAG note \(note.uuidString.prefix(8)) reader \(reader) epochs " + names.map { n in
+                "\(n):\((try? w[n].open()).map { "\($0.manifest.epoch)/\(Hex.encode($0.manifest.epochId).prefix(6))" } ?? "?")"
+            }.joined(separator: " ")]
+            let id = note.uuidString.lowercased()
+            var copies: [(String, String, Data)] = []
+            for n in names {
+                let dir = w[n].folder.appendingPathComponent("notes/\(id)")
+                for f in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] where RevisionName(f) != nil {
+                    if let d = try? Data(contentsOf: dir.appendingPathComponent(f)) { copies.append((n, f, d)) }
+                }
+            }
+            for tg in targets { for p in tg.paths where p.hasPrefix("notes/\(id)/") { if let d = tg.file(p) { copies.append((tg.name, String(p.split(separator: "/").last ?? ""), d)) } } }
+            for (src, f, d) in copies {
+                let openers = names.filter { (try? AgeFile.decrypt(d, with: w[$0].open().identities)) != nil }
+                let heldBy = names.filter { (try? AgeFile.decrypt(d, with: held[$0] ?? [])) != nil }
+                let acc = (try? w[reader].open()).map { "\($0.acceptance(of: d, path: "notes/\(id)/\(f)"))" } ?? "?"
+                lines.append("DIAG  \(src) \(f.suffix(24)) sha \(FileDigest.sha256(d).prefix(8)) current-key of \(openers) held-by \(heldBy) at-reader \(acc)")
+            }
+            return lines
+        }
+
         // J4, J9: one kept chain, list and note set on every listed device and target.
         let epochs = Dictionary(readers.map { ($0, (try? w[$0].open().manifest.epochId).map { Hex.encode($0) } ?? "?") },
                                 uniquingKeysWith: { a, _ in a })
