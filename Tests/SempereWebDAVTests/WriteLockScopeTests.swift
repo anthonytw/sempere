@@ -1,9 +1,10 @@
 import Foundation
+import VaultTestSupport
 import XCTest
 @testable import Sempere
 @testable import SempereSync
 
-/// F7: a run never holds the vault's write lock across a request. A server that hangs while the run reads the
+/// Lock scope: a run never holds the vault's write lock across a request. A server that hangs while the run reads the
 /// mutable files, or while it uploads them, does not block another writer of the vault on this device.
 final class WriteLockScopeTests: SyncTestCase {
     struct World {
@@ -116,36 +117,51 @@ final class WriteLockScopeTests: SyncTestCase {
 }
 
 extension WriteLockScopeTests {
+    /// A run of `name` over `remote` as the caller's engine would: `vault` open (or nil: a locked vault), the
+    /// write lock held for the judging, `configure` for the other options.
+    @discardableResult
+    func runWith(_ name: String, vault: Vault?, _ remote: any SyncRemote, _ configure: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
+        var options = SyncOptions(deviceLabel: name)
+        options.localWriteLock = lock
+        configure(&options)
+        return try SyncEngine(directory: dir(name), vault: vault, remote: remote,
+                              stateURL: tmp.appendingPathComponent("state-\(name).json"), options: options).run()
+    }
+
+    func watched(_ remote: any SyncRemote) -> LockWatchingRemote { LockWatchingRemote(base: remote, lock: lock) }
+
+    func check(_ label: String, _ r: LockWatchingRemote, _ report: SyncReport, line: UInt = #line) {
+        XCTAssertTrue(r.violations.isEmpty, "\(label): requests under the write lock: \(r.violations)", line: line)
+        XCTAssertGreaterThan(r.requests, 0, label, line: line)
+        XCTAssertTrue(report.errors.isEmpty, "\(label): \(report.errors)", line: line)
+    }
+
     /// Every request of every kind, over runs that take, merge, keep and upload the mutable files, finds the
-    /// write lock free: the tripwire for any request added under the lock later (F7). Conflict versions are a
-    /// folder provider's local files (WebDAV has none), so those three verbs are not network requests.
+    /// write lock free: the tripwire for any request added under the lock later. Conflict versions are a folder
+    /// provider's own files (WebDAV has none), so those three verbs are not network requests.
     func testNoRequestIsMadeUnderTheLock() throws {
         let w = try world()
-        let watch = { (remote: any SyncRemote) in LockWatchingRemote(base: remote, lock: self.lock) }
-        func check(_ label: String, _ r: LockWatchingRemote, _ report: SyncReport) {
-            XCTAssertTrue(r.violations.isEmpty, "\(label): requests under the write lock: \(r.violations)")
-            XCTAssertGreaterThan(r.requests, 0, label)
-            XCTAssertTrue(report.errors.isEmpty, "\(label): \(report.errors)")
-        }
         // Server moved on (settings, label): taken.
         try changeSettings(w.a, "pixel")
         var a = w.a
         try a.setLabel("Renamed on A")
         try run("A", a, w.remote)
-        var r = watch(w.remote)
+        var r = watched(w.remote)
         check("pull", r, try run("B", w.b, r, locked: true))
-        // Only this side changed: uploaded after the lock.
+        // Only this side changed: uploaded after the lock (the manifest over the copy read, the settings merged).
+        var b = try openVault("B")
+        try b.setLabel("Renamed on B")
         try changeSettings(w.b, "object")
-        r = watch(w.remote)
+        r = watched(w.remote)
         check("push", r, try run("B", try openVault("B"), r, locked: true))
         // Both sides changed: merged under the lock, uploaded after it.
         try changeSettings(w.a, "tip")
         try run("A", try openVault("A"), w.remote)
         try changeSettings(w.b, "ink")
-        r = watch(w.remote)
+        r = watched(w.remote)
         check("merge", r, try run("B", try openVault("B"), r, locked: true))
         // Nothing changed: in step.
-        r = watch(w.remote)
+        r = watched(w.remote)
         check("in step", r, try run("B", try openVault("B"), r, locked: true))
         // The server's copy moves between the read and the upload: judged again, still never under the lock.
         try changeSettings(w.b, "late")
@@ -156,8 +172,187 @@ extension WriteLockScopeTests {
         let racing = InterposedRemote(base: w.remote) { written in
             if written == [SharedSettings.fileName], fired.next() == 1 { store.putDirect(path, aSettings) }
         }
-        r = watch(racing)
+        r = watched(racing)
         check("refused upload", r, try run("B", try openVault("B"), r, locked: true))
+    }
+
+    /// A first upload to an empty server: the files are created, with nothing read under the lock.
+    func testFirstUploadToAnEmptyServerMakesNoRequestUnderTheLock() throws {
+        let a = try makeVault("C")
+        try delta(a, device: devA, t: 1, title: "first")
+        try changeSettings(a, "pixel")
+        let r = watched(MemoryRemote(store: MemoryStore(name: "empty"), base: ["dav", "v"]))
+        let report = try runWith("C", vault: a, r)
+        check("create", r, report)
+        XCTAssertTrue(report.uploaded.contains(Vault.manifestName) && report.uploaded.contains(SharedSettings.fileName), "\(report.uploaded)")
+    }
+
+    /// Push-only runs (the mirror), with and without `keepServerChanges`: a replace of the server's file, a merge
+    /// of the settings, and a copy kept because the server changed.
+    func testPushOnlyRunMakesNoRequestUnderTheLock() throws { try pushOnlyScenario(keep: false) }
+    func testPushOnlyKeepServerChangesMakesNoRequestUnderTheLock() throws { try pushOnlyScenario(keep: true) }
+
+    func pushOnlyScenario(keep: Bool) throws {
+        do {
+            let w = try world()
+            var b = w.b
+            try b.setLabel(keep ? "Mirror label keep" : "Mirror label")
+            try changeSettings(w.b, "object")
+            var r = watched(w.remote)
+            var report = try runWith("B", vault: try openVault("B"), r) { $0.pushOnly = true; $0.keepServerChanges = keep }
+            check("push-only keep=\(keep)", r, report)
+            XCTAssertTrue(report.uploaded.contains(Vault.manifestName), "\(report)")
+            // Nothing changed: in step. Then the server's settings change elsewhere and this side's too: merged.
+            try changeSettings(w.a, "tip")
+            try run("A", try openVault("A"), w.remote)
+            try changeSettings(w.b, "ink")
+            r = watched(w.remote)
+            report = try runWith("B", vault: try openVault("B"), r) { $0.pushOnly = true; $0.keepServerChanges = keep }
+            check("push-only merge keep=\(keep)", r, report)
+            XCTAssertTrue(report.uploaded.contains(SharedSettings.fileName), "\(report)")
+        }
+    }
+
+    /// A vault that is locked (no key): `vault.json` and `settings.age` follow the keep-both rule, taking the
+    /// server's when only it changed.
+    func testALockedVaultMakesNoRequestUnderTheLock() throws {
+        let w = try world()
+        try changeSettings(w.a, "pixel")
+        var a = w.a
+        try a.setLabel("Renamed on A")
+        try run("A", a, w.remote)
+        var r = watched(w.remote)
+        check("locked pull", r, try runWith("B", vault: nil, r))
+        // Both changed: a conflict copy, no replacement.
+        try changeSettings(w.a, "tip")
+        try run("A", try openVault("A"), w.remote)
+        try changeSettings(w.b, "ink")
+        r = watched(w.remote)
+        check("locked conflict", r, try runWith("B", vault: nil, r))
+        // Only this side's settings changed, and the vault is locked: the file is replaced as vault.json is.
+        try run("A", try openVault("A"), w.remote)
+        try run("B", try openVault("B"), w.remote)
+        try changeSettings(try openVault("B"), "locked edit")
+        r = watched(w.remote)
+        let report = try runWith("B", vault: nil, r)
+        check("locked replace", r, report)
+        XCTAssertTrue(report.uploaded.contains(SharedSettings.fileName), "\(report)")
+    }
+
+    /// `vault.json` of this side is a later version of the server's (the home device renamed a device further):
+    /// pushed over it, conditional on the copy read.
+    func testALaterVersionOfVaultJSONIsPushedWithoutARequestUnderTheLock() throws {
+        let w = try world()
+        var a = w.a
+        let id = try XCTUnwrap(a.devices.first?.id)
+        try a.renameDevice(id: id, to: "Named once")
+        // Another device put this version on the server; the home device then approves a device (a longer list).
+        w.remote.store.putDirect(w.remote.base + [Vault.manifestName], try vaultJSON("A"))
+        try TestVaults.approve(pqIdentity(), into: &a, name: "Approved")
+        let r = watched(w.remote)
+        let report = try runWith("A", vault: a, r)
+        check("later version", r, report)
+        XCTAssertTrue(report.uploaded.contains(Vault.manifestName), "the later version is pushed: \(report)")
+        XCTAssertEqual(w.remote.store.file(w.remote.base + [Vault.manifestName]), try vaultJSON("A"))
+    }
+
+    /// A metadata pull of a partial copy writes `vault.json` and `settings.age` under the write lock, like a full
+    /// run, and makes no request under it; while another writer holds the lock it leaves them to the next run.
+    func testAPartialCopysMetadataPullTakesTheLockAndMakesNoRequestUnderIt() throws {
+        let w = try world()
+        try changeSettings(w.a, "pixel")
+        try run("A", w.a, w.remote)
+        let held = try lock.withLock(timeout: 2) { () -> SyncReport in
+            let blocked = (try? runWith("P", vault: nil, w.remote) { $0.partial = .metadata; $0.localWriteLockTimeout = 0.2 })
+            return blocked ?? SyncReport()
+        }
+        XCTAssertTrue(held.skipped.contains { $0.path == Vault.manifestName && $0.message.hasPrefix("not synced this run") }, "\(held)")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir("P").appendingPathComponent(Vault.manifestName).path),
+                       "nothing written while another writer held the lock")
+        let r = watched(w.remote)
+        let report = try runWith("P", vault: nil, r) { $0.partial = .metadata }
+        check("partial metadata pull", r, report)
+        XCTAssertTrue(report.downloaded.contains(Vault.manifestName), "\(report)")
+    }
+
+    /// A server with no version tokens: an upload is made only if the server still holds the bytes judged, so a
+    /// copy another device put there in between is merged, never overwritten.
+    func testWithoutVersionTokensAMovedCopyIsNotOverwritten() throws {
+        let w = try world()
+        // Settings on the server, and in step on both devices.
+        try changeSettings(w.b, "seed")
+        try run("B", try openVault("B"), w.remote)
+        try run("A", try openVault("A"), w.remote)
+        try changeSettings(try openVault("B"), "late")
+        try changeSettings(try openVault("A"), "later")
+        let store = w.remote.store, path = w.remote.base + [SharedSettings.fileName]
+        let aSettings = try BoundedRead.contents(of: dir("A").appendingPathComponent(SharedSettings.fileName), maxBytes: 1 << 20)
+        let bBefore = try BoundedRead.contents(of: dir("B").appendingPathComponent(SharedSettings.fileName), maxBytes: 1 << 20)
+        let fired = CallCounter()
+        // A puts its settings on the server right after this run's first read of them (before the lock).
+        XCTAssertNotNil(store.file(path), "the server holds settings")
+        let blind = TokenlessRemote(base: w.remote) { path_ in
+            if path_ == [SharedSettings.fileName], fired.next() == 1 { return { store.putDirect(path, aSettings) } }
+            return nil
+        }
+        let report = try runWith("B", vault: try openVault("B"), blind)
+        XCTAssertTrue(report.errors.isEmpty, "\(report.errors)")
+        let server = try XCTUnwrap(store.file(path))
+        XCTAssertNotEqual(server, bBefore, "the settings another device put there were not overwritten")
+        XCTAssertEqual(server, try BoundedRead.contents(of: dir("B").appendingPathComponent(SharedSettings.fileName), maxBytes: 1 << 20),
+                       "the two sides end in step on the merge")
+    }
+}
+
+/// A remote that gives no version tokens (nothing strong to put an `If-Match` on). `afterRead` returns, for a
+/// read of a path, an action to run right after that read returns.
+struct TokenlessRemote: SyncRemote {
+    var base: any SyncRemote
+    let afterRead: @Sendable ([String]) -> (@Sendable () -> Void)?
+
+    init(base: any SyncRemote, afterRead: @escaping @Sendable ([String]) -> (@Sendable () -> Void)?) {
+        self.base = base; self.afterRead = afterRead
+    }
+
+    private func bare(_ e: RemoteEntry?) -> RemoteEntry? { e.map { var e = $0; e.etag = nil; return e } }
+    var location: String { base.location }
+    var capabilities: RemoteCapabilities { base.capabilities }
+    var interrupt: (@Sendable () -> (any Error)?)? {
+        get { base.interrupt }
+        set { base.interrupt = newValue }
+    }
+    func list(_ path: [String]) throws -> [RemoteEntry]? { try base.list(path)?.map { bare($0)! } }
+    func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? { try base.listTree(path, maxBytes: maxBytes) }
+    func stat(_ path: [String]) throws -> RemoteEntry? { bare(try base.stat(path)) }
+    func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) {
+        let got = try base.read(path, maxBytes: maxBytes)
+        afterRead(path)?()
+        return (got.data, nil)
+    }
+    func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int,
+                  segmentBytes: Int, progress: ((Int) throws -> Void)?) throws -> DownloadResult {
+        try base.download(path, to: file, resumeFrom: resumeFrom, ifETag: nil, maxBytes: maxBytes,
+                          segmentBytes: segmentBytes, progress: progress)
+    }
+    func requestDownload(_ paths: [[String]]) throws { try base.requestDownload(paths) }
+    func conflictVersions(_ path: [String]) -> [RemoteVersion] { base.conflictVersions(path) }
+    func readVersion(_ path: [String], _ version: RemoteVersion, maxBytes: Int) throws -> Data {
+        try base.readVersion(path, version, maxBytes: maxBytes)
+    }
+    func changes() -> AsyncStream<RemoteChange>? { base.changes() }
+    func missingCollectionError(_ path: [String]) -> any Error { base.missingCollectionError(path) }
+    func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool {
+        // A server that ignores `If-Match`: only `create` is honoured.
+        try base.write(path, body, condition: condition == .create ? .create : .unconditional)
+    }
+    func moveNoOverwrite(_ path: [String], to destination: [String]) throws -> Bool {
+        try base.moveNoOverwrite(path, to: destination)
+    }
+    func makeCollection(_ path: [String]) throws -> CollectionResult { try base.makeCollection(path) }
+    func createBase() throws { try base.createBase() }
+    func delete(_ path: [String], ifETag: String?) throws -> Bool { try base.delete(path, ifETag: nil) }
+    func resolveConflicts(_ path: [String], _ versions: [RemoteVersion]) throws {
+        try base.resolveConflicts(path, versions)
     }
 }
 

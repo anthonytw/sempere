@@ -13,7 +13,7 @@ public struct SyncOptions: Sendable {
     /// The vault's write lock on this device (`VaultFileLock`, docs/design/device-first-sync.md §4): held
     /// while the run judges and replaces the local mutable files (`vault.json`, `settings.age`), so a writer
     /// of them in the same process (the app's settings) or another (the CLI) never interleaves with the read,
-    /// merge and write. Never held across a request (F7): the server's copies are read before it is taken
+    /// merge and write. Never held across a request ("lock scope": the server's copies are read before it is taken
     /// and the uploads it decides are made after it is released (`MutableLockScope.swift`). Nil: no lock.
     public var localWriteLock: VaultFileLock?
     /// How long a run waits for `localWriteLock` before it leaves the mutable files to the next run.
@@ -244,11 +244,16 @@ public final class SyncEngine {
     /// The remote `vault.json` as `checkSameVault` fetched it this run, for
     /// the mutable-file sync to compare instead of fetching it again.
     var fetchedManifest: (data: Data, etag: String?)?
-    /// The server's mutable files read before the write lock was taken, consumed by the judging under it (F7).
+    /// The server's mutable files read before the write lock was taken, consumed by the judging under it (lock scope).
     var mutablePrefetch: [String: (data: Data, etag: String?)] = [:]
-    /// Under the write lock: uploads are recorded here instead of made, and made once it is released (F7).
+    /// What the server held of each mutable file when this round read it (hash of the bytes, version token): the
+    /// base an upload without a precondition of its own is made against (`push`).
+    var mutableSeen: [String: (hash: String, etag: String?)] = [:]
+    /// Under the write lock: uploads are recorded here instead of made, and made once it is released (lock scope).
     var deferringUploads = false
     var deferredUploads: [DeferredUpload] = []
+    /// The server's current `vault.json`, read before the write lock for settling its conflict versions.
+    var conflictCurrent: Data?
     /// Push-only on a partial copy: server files kept because the copy has
     /// not fetched them yet (format.md §1.2).
     var pendingKept = 0
@@ -372,7 +377,7 @@ public final class SyncEngine {
         try checkSameVault(remoteRoot)
         removeLeftoverRemoteTemps()
         // The local mutable files are judged and replaced under the vault's write lock (`localWriteLock`), which
-        // is never held across a request (F7): the server's copies are read first, the uploads made after.
+        // is never held across a request (lock scope): the server's copies are read first, the uploads made after.
         syncMutableFiles(remoteRoot)
 
         // Notebook records (format.md §14): write-once, so the union of both sides. (Epoch records, §15.6,
@@ -552,7 +557,8 @@ public final class SyncEngine {
 
         guard let remote else {
             // Never on the server, or wiped there: (re)create it, never overwriting.
-            if try push(name, local, condition: .create) { try recordMutable(name, hash: localHash) }
+            try push(name, local, condition: .create)
+            try recordMutable(name, hash: localHash)
             return
         }
 
@@ -571,8 +577,7 @@ public final class SyncEngine {
             // Only the server moved on: take it (an atomic replace, the one in-place write sync makes).
             try accept(name, remoteData, stamp: stamp)
         case (true, false):
-            try replaceUnchanged(name, local: local, localHash: localHash, remoteData: remoteData,
-                                 etag: remote.etag ?? getETag, record: record)
+            try replaceUnchanged(name, local: local, localHash: localHash, etag: remote.etag ?? getETag)
         case (true, true):
             try bothChanged(name, local: local, remoteData: remoteData, stamp: stamp, record: record)
         }
@@ -592,50 +597,27 @@ public final class SyncEngine {
             // conflict, never merged.
             if vault.laterVersion(remoteData) != nil { return try accept(name, remoteData, stamp: stamp) }
             if let remote = try? EpochManifest.parse(remoteData), vault.isLaterVersion(vault.manifest, of: remote) {
-                if try push(name, local, condition: .unconditional) { return try recordMutable(name, hash: FileDigest.sha256(local)) }
-                return
+                // Over the copy read this round (`push` makes it conditional on that copy).
+                try push(name, local, condition: .unconditional)
+                return try recordMutable(name, hash: FileDigest.sha256(local))
             }
         }
         try conflict(name, remote: remoteData,
                      detail: record == nil ? "both sides differ and there is no common ancestor" : "changed on both sides since the last sync")
     }
 
-    /// How many times a replace of a mutable file is tried while the server's
-    /// version token moves over unchanged bytes.
+    /// How many rounds `syncMutableFiles` makes over a mutable file whose upload the server refused because its
+    /// copy moved on since it was read (`MutableLockScope.swift`).
     static let stampRetries = 3
 
-    /// Uploads a mutable file this side changed over a server copy that did
-    /// not change since the last sync (`remoteData`), only if it is still that
-    /// copy (`If-Match`). A failed precondition is judged by the bytes, not
-    /// the token: the copy is read again, and only different bytes are a
-    /// change on the server (then both sides changed: `bothChanged`). A token
-    /// that moved over the same bytes (a server that stamps again, a touch, a
-    /// listing older than the read) is tried again with the new token; one
-    /// that keeps moving leaves the upload to the next run, and never makes a
-    /// conflict copy identical to the server's.
-    private func replaceUnchanged(_ name: String, local: Data, localHash: String, remoteData: Data, etag: String?,
-                                  record: SyncState.MutableRecord?) throws {
-        let seenHash = FileDigest.sha256(remoteData)
-        var etag = etag
-        for _ in 0..<Self.stampRetries {
-            if try push(name, local, condition: Self.replaceCondition(etag: etag)) {
-                return try recordMutable(name, hash: localHash)
-            }
-            let fresh = try transport.read([name], maxBytes: Self.maxMutableReadBytes)
-            try budget.downloaded(fresh.data.count)
-            let freshHash = FileDigest.sha256(fresh.data)
-            if freshHash == localHash {
-                // Another writer put the same bytes there meanwhile: in step.
-                state.mutable[name] = .init(hash: localHash, stamp: fresh.etag)
-                return
-            }
-            guard freshHash == seenHash else {
-                return try bothChanged(name, local: local, remoteData: fresh.data, stamp: fresh.etag, record: record)
-            }
-            etag = fresh.etag
-        }
-        report.skipped.append(.init(path: name, message: "the server's version of it kept changing over the same bytes "
-                                    + "while uploading; uploaded on a later run"))
+    /// Uploads a mutable file this side changed over a server copy that did not change since the last sync,
+    /// made once the write lock is released and only if the server still holds that copy (`If-Match`; a server
+    /// with no strong token has it read again and compared first, see `flushDeferredUploads`). A copy that
+    /// moved on is refused there and judged again in the next round, by its bytes: only different bytes are a
+    /// change on the server (then both sides changed: `bothChanged`).
+    private func replaceUnchanged(_ name: String, local: Data, localHash: String, etag: String?) throws {
+        try push(name, local, condition: Self.replaceCondition(etag: etag))
+        try recordMutable(name, hash: localHash)
     }
 
     /// GETs a mutable file, or takes the copy `checkSameVault` fetched
@@ -646,6 +628,7 @@ public final class SyncEngine {
             return fetched
         }
         if let fetched = mutablePrefetch.removeValue(forKey: name) { return fetched }
+        guard !deferringUploads else { throw SyncError.io("internal: \(name) was not read before the write lock") }
         return try transport.read([name], maxBytes: Self.maxMutableReadBytes)
     }
 
@@ -680,24 +663,34 @@ public final class SyncEngine {
         return .replace(etag: etag)
     }
 
-    /// Uploads a mutable file; false when the precondition failed.
-    func push(_ name: String, _ data: Data, condition: PutCondition) throws -> Bool {
-        if options.dryRun { report.uploaded.append(name); return true }
-        if deferringUploads {
-            // Under the write lock: made once it is released (`flushDeferredUploads`).
-            deferredUploads.append(DeferredUpload(name: name, data: data, condition: condition))
-            return true
+    /// Uploads a mutable file, in the rounds of `syncMutableFiles`: under the write lock it is recorded
+    /// (`deferredUploads`) and made once the lock is released. An upload without a precondition of its own
+    /// (a weak or missing token) is made against the copy this round read: `If-Match` on that copy's strong
+    /// token, or, with none, after reading the server's file again and finding the same bytes.
+    func push(_ name: String, _ data: Data, condition: PutCondition) throws {
+        if options.dryRun { report.uploaded.append(name); return }
+        guard deferringUploads else { throw SyncError.io("internal: \(name) uploaded outside the write-lock rounds") }
+        var condition = condition
+        var verifyHash: String?
+        if condition == .unconditional, let seen = mutableSeen[name] {
+            if let etag = seen.etag, Self.isStrong(etag) { condition = .replace(etag: etag) } else { verifyHash = seen.hash }
         }
-        try ensureCollection([])
-        guard try transport.write([name], .data(data), condition: condition) else { return false }
-        report.uploaded.append(name)
-        return true
+        deferredUploads.append(DeferredUpload(name: name, data: data, condition: condition, verifyHash: verifyHash))
+    }
+
+    /// Runs `apply` (a report entry for a file the run replaced) once the file's deferred upload has succeeded;
+    /// at once when none is pending for it.
+    func afterUpload(_ name: String, _ apply: @escaping () -> Void) {
+        guard let i = deferredUploads.lastIndex(where: { $0.name == name }) else { return apply() }
+        let before = deferredUploads[i].afterUpload
+        deferredUploads[i].afterUpload = { before?(); apply() }
     }
 
     func recordMutable(_ name: String, hash: String) throws {
         guard !options.dryRun else { return }
-        if deferringUploads, let i = deferredUploads.lastIndex(where: { $0.name == name }) {
-            deferredUploads[i].recordHash = hash   // recorded when the upload is made
+        if deferringUploads {
+            // Recorded when the upload is made (its stamp is the server's after it).
+            if let i = deferredUploads.lastIndex(where: { $0.name == name }) { deferredUploads[i].recordHash = hash }
             return
         }
         let entry = try transport.stat([name])
