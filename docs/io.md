@@ -1105,14 +1105,28 @@ hashed or fetched again every run. Push-only runs upload and follow explained de
 server, never write locally.
 
 **Per-device summaries** (`DeviceSummariesSync.swift`, format.md §12.5). `summaries/<device>.sealed`
-is written only by its device. This device's own file (`SyncOptions.deviceID`; the CLI's device id
-when it has one) replaces the remote's whenever they differ and is never taken from the remote.
-Another device's file is copied to the side that lacks it; when both sides hold different copies,
-the side that changed since the last run (`SyncState.deviceSummaries`) wins, the remote's if both did,
-so a device with two targets carries a newer copy from one to the other. A received file is placed
-only when it starts with `SMPU` `0x01` and, unlocked, opens under the vault's secret; otherwise it is
-listed in `skipped` (a hint, not quarantined: after a key change an older file is only stale).
-Nothing is deleted.
+is written only by its device (`Vault.writeDevicePublishedSummaries`, `sempere vault summaries
+--device-file`), with its device id and a `version` inside the sealed content. A copy is ordered when
+it opens, names the device and has a version at most 7 days ahead of this device's clock
+(`PublishedSummaries.accepted`). Another device's file is copied to the side that lacks it; when both
+sides hold different copies, the later ordered copy wins (equal versions: the greater SHA-256), so an
+older copy never replaces a newer one and a device with two targets carries the newer one from one to
+the other. "The side that changed since the last run wins", the earlier rule, has no order between
+versions and let two versions circle two bridges for ever (`testTwoBridgesSettleAnotherDevicesSummaries`).
+This device's own file (`SyncOptions.deviceID`; the CLI's device id when it has one) replaces the
+remote's whenever they differ, is never taken from the remote, and leaves a remote copy ordered after
+it (another install with the same device id, or a copy forged within the window) until its next later
+write, or until that copy's version is more than the window in the past, when it seals its own entries
+again at the clock and puts them (`SyncState.MutableRecord.recheckAfter`; a forgery holds a quiet
+device's file back for at most twice the window). Runs go quiet meanwhile. A copy this device cannot
+open is never replaced when its clear header (`SMPU` `0x02`, format.md §12.5) names an epoch above its
+key's and no later than its local `vault.json`'s, or than the server's when that is the next epoch signed
+by the home this device knows (a lagging or removed device holds no key for it; recorded);
+anything else that does not open (damaged, stale, or a header nobody with the key wrote) is replaced. Locked, a differing copy is left on both sides,
+except that a locked staging run (pull-only) stages the remote copy for the placing run to order;
+push-only runs never replace a later copy. A received file is placed only when it is ordered
+(unlocked) or starts with `SMPU` `0x01` or `0x02` (locked); otherwise it is listed in `skipped` (a hint, not
+quarantined: after a key change an older file is only stale). Nothing is deleted.
 
 **Push-only mirror** (`--push-only`, `SyncOptions.pushOnly`). A two-way
 sync rejects a `vault.json` that is not a later version by the home device

@@ -303,6 +303,15 @@ extension SyncEngine {
     /// write lock, before the notes are judged or uploaded.
     func afterEpochTaken() {
         guard epochTaken, !options.dryRun, !options.pushOnly, let v = vault else { return }
+        // This device's own summaries file, as the key it was sealed under opens it: resealed under the new key.
+        var ownSummaries: (device: DeviceID, contents: PublishedSummaries.Contents)?
+        if let me = v.writerDevice, v.canRead {
+            let url = v.devicePublishedSummariesURL(me)
+            if let data = try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes),
+               let contents = try? v.openDevicePublishedSummaries(data, device: me, now: options.now) {
+                ownSummaries = (me, contents)
+            }
+        }
         do {
             let fresh = try v.reopened()
             vault = fresh.canRead ? fresh : nil
@@ -330,6 +339,9 @@ extension SyncEngine {
             } else {
                 // Pinned (the trust record), nothing to catch up without a ledger.
                 try fresh.requireWritable()
+            }
+            if let own = ownSummaries, fresh.writerDevice == own.device, options.deviceID == nil || options.deviceID == own.device {
+                try? withLocalWriteLock { try fresh.resealOwnSummaries(own.contents, device: own.device, now: options.now) }
             }
         } catch {
             report.skipped.append(.init(path: Vault.manifestName, message: "the new epoch was taken; "

@@ -176,6 +176,28 @@ extension WriteLockScopeTests {
         check("refused upload", r, try run("B", try openVault("B"), r, locked: true))
     }
 
+    /// Per-device summaries (format.md §12.5): another device's file placed, and this device's own file sealed
+    /// again over an old later copy (a local write under the lock) and uploaded, with no request under the lock.
+    func testDeviceSummariesMakeNoRequestUnderTheLock() throws {
+        let w = try world()
+        let day: TimeInterval = 86_400
+        try w.a.writeDevicePublishedSummaries([:], device: devA)
+        try run("A", w.a, w.remote)
+        let mine = try w.b.writeDevicePublishedSummaries([:], device: devB, now: Date().addingTimeInterval(-30 * day))
+        let held = try w.a.sealPublishedSummaries(PublishedSummaries.Contents(
+            entries: [:], device: devB, version: PublishedSummaries.millis(Date().addingTimeInterval(-20 * day))))
+        try w.remote.write([PublishedSummaries.deviceFolderName, PublishedSummaries.deviceFileName(devB)], .data(held),
+                           condition: .unconditional)
+        let r = watched(w.remote)
+        let report = try runWith("B", vault: w.b, r) { $0.deviceID = devB }
+        check("summaries", r, report)
+        XCTAssertTrue(report.downloaded.contains("summaries/\(PublishedSummaries.deviceFileName(devA))"), "\(report)")
+        XCTAssertTrue(report.uploaded.contains("summaries/\(PublishedSummaries.deviceFileName(devB))"), "\(report)")
+        let resealed = try XCTUnwrap(w.remote.store.file(w.remote.base + ["summaries", PublishedSummaries.deviceFileName(devB)]))
+        XCTAssertNotEqual(resealed, mine)
+        XCTAssertNotEqual(resealed, held)
+    }
+
     /// A first upload to an empty server: the files are created, with nothing read under the lock.
     func testFirstUploadToAnEmptyServerMakesNoRequestUnderTheLock() throws {
         let a = try makeVault("C")

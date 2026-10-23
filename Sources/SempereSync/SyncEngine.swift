@@ -258,6 +258,9 @@ public final class SyncEngine {
     var deferredUploads: [DeferredUpload] = []
     /// The server's current `vault.json`, read before the write lock for settling its conflict versions.
     var conflictCurrent: Data?
+    /// The epoch of a home-signed child of this device's epoch that the server's `vault.json` names (per-device
+    /// summaries, `DeviceSummariesSync.swift`): read at most once per run, when first needed.
+    var remoteChildEpoch: Int??
     /// Push-only on a partial copy: server files kept because the copy has
     /// not fetched them yet (format.md §1.2).
     var pendingKept = 0

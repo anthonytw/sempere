@@ -45,10 +45,11 @@ struct VaultSummaries: ParsableCommand {
         // Into the vault only if it may be written (format.md §7.3: exit 7), as `vault index`.
         if out == nil { try vault.requireWritable() }
         var inVault = vault.publishedSummariesURL
+        var device: DeviceID?
         if deviceFile {
-            let device = try vault.writerDevice ?? DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
-            inVault = vault.devicePublishedSummariesURL(device)
-            try FileManager.default.createDirectory(at: inVault.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let id = try vault.writerDevice ?? DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
+            device = id
+            inVault = vault.devicePublishedSummariesURL(id)
         }
         let target = out.map { $0 == "-" ? nil : URL(fileURLWithPath: $0) } ?? inVault
         let reuse = target.map { url -> [UUID: PublishedSummaries.Entry] in
@@ -56,17 +57,25 @@ struct VaultSummaries: ParsableCommand {
             return (try? vault.openPublishedSummaries(data)) ?? [:]
         } ?? [:]
         let (entries, read) = try vault.publishedSummaryEntries(reuse: reuse, cache: cache.cache(for: vault))
-        let data = plaintext ? try PublishedSummaries.encode(entries, vaultId: vault.vaultId)
-            : try vault.sealPublishedSummaries(entries)
         let notes = try vault.noteIDs().count
+        let data: Data
+        if let device {
+            // The device's own file names it and carries its next version (format.md §12.5), or no other
+            // device takes it.
+            data = try vault.writeDevicePublishedSummaries(entries, device: device)
+        } else {
+            data = plaintext ? try PublishedSummaries.encode(entries, vaultId: vault.vaultId)
+                : try vault.sealPublishedSummaries(entries)
+        }
         guard let target else {
             FileHandle.standardOutput.write(data)
             return
         }
         // The plaintext holds titles and text: owner-only from the moment it exists (0600), never chmod'ed later.
+        // (The device file was written above.)
         if plaintext {
             try writePrivateFile(data, to: target)
-        } else {
+        } else if device == nil {
             try data.write(to: target, options: .atomic)
         }
         if output.json {

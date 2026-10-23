@@ -130,11 +130,7 @@ final class SyncDevice: @unchecked Sendable {
     @discardableResult
     func publishSummaries() throws -> Data {
         let v = try vault()
-        let data = try v.sealPublishedSummaries(try v.publishedSummaryEntries().entries)
-        let url = v.devicePublishedSummariesURL(device)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: url, options: .atomic)
-        return data
+        return try v.writeDevicePublishedSummaries(try v.publishedSummaryEntries().entries, device: device, now: now)
     }
 
     /// The visible files of a root folder (`inbox`, `summaries`) with their bytes.

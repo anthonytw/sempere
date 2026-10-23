@@ -105,6 +105,105 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertEqual(locked.readPublishedSummaries(), [:])
     }
 
+    /// A per-device file (format.md §12.5) names its device and carries a version, both inside the sealed
+    /// content; each write is a later version, and a file naming another device or without a version does
+    /// not open as that device's.
+    func testDeviceFilesCarryTheirDeviceAndAVersion() throws {
+        let vault = try makeVault(pqIdentity())
+        let (entries, _) = try vault.publishedSummaryEntries()
+        let t0 = Date(timeIntervalSince1970: 1_790_000_000)
+        let first = try vault.writeDevicePublishedSummaries(entries, device: devA, now: t0)
+        let opened = try vault.openDevicePublishedSummaries(first, device: devA)
+        XCTAssertEqual(opened.device, devA)
+        XCTAssertEqual(opened.version, 1_790_000_000_000)
+        XCTAssertEqual(opened.entries, entries)
+        XCTAssertEqual(try Data(contentsOf: vault.devicePublishedSummariesURL(devA)), first)
+        // The clock went back: still one more than the last one.
+        let second = try vault.writeDevicePublishedSummaries(entries, device: devA, now: t0.addingTimeInterval(-3600))
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(second, device: devA).version, 1_790_000_000_001)
+        // The file lost: the clock still gives a later one than before.
+        try FileManager.default.removeItem(at: vault.devicePublishedSummariesURL(devA))
+        let third = try vault.writeDevicePublishedSummaries(entries, device: devA, now: t0.addingTimeInterval(60))
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(third, device: devA).version, 1_790_000_060_000)
+
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(first, device: devB)) { XCTAssert($0 is PublishedSummariesError) }
+        let plain = try vault.sealPublishedSummaries(entries)
+        XCTAssertNil(try vault.openPublishedSummariesContents(plain).version)
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(plain, device: devA)) { XCTAssert($0 is PublishedSummariesError) }
+        // The root file's JSON is unchanged (no `device`, no `version`).
+        let json = String(decoding: try PublishedSummaries.encode([:], vaultId: vault.vaultId), as: UTF8.self)
+        XCTAssertFalse(json.contains("version") || json.contains("device"), json)
+    }
+
+    /// The previous own file does not open (sealed under an earlier epoch's key, here another vault's) or
+    /// has a version beyond the window: the next write starts at the clock, on purpose (review of #83).
+    func testAnUnreadableOrFarFuturePreviousFileRestartsAtTheClock() throws {
+        let vault = try makeVault(pqIdentity())
+        let other = try makeVault(pqIdentity(), name: "Other")
+        let t0 = Date(timeIntervalSince1970: 1_790_000_000)
+        let url = vault.devicePublishedSummariesURL(devA)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try other.sealPublishedSummaries(PublishedSummaries.Contents(entries: [:], device: devA, version: 1_890_000_000_000))
+            .write(to: url)
+        let first = try vault.writeDevicePublishedSummaries([:], device: devA, now: t0)
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(first, device: devA, now: t0).version, 1_790_000_000_000)
+        // One beyond the 7-day window is no version, for the writer as for readers.
+        let ahead = try vault.sealPublishedSummaries(PublishedSummaries.Contents(
+            entries: [:], device: devA, version: 1_790_000_000_000 + 8 * 86_400_000))
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(ahead, device: devA, now: t0))
+        XCTAssertNoThrow(try vault.openDevicePublishedSummaries(ahead, device: devA, now: t0.addingTimeInterval(2 * 86_400)))
+        try ahead.write(to: url)
+        let second = try vault.writeDevicePublishedSummaries([:], device: devA, now: t0.addingTimeInterval(1))
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(second, device: devA, now: t0).version, 1_790_000_001_000)
+        XCTAssertNil(PublishedSummaries.accepted(PublishedSummaries.maxVersion, now: t0))
+        XCTAssertEqual(PublishedSummaries.accepted(1_790_000_000_000 + 7 * 86_400_000, now: t0), 1_790_000_000_000 + 7 * 86_400_000)
+    }
+
+    /// A per-device file is `SMPU 0x02 ‖ epoch (u32 BE) ‖ nonce ‖ ciphertext ‖ tag`, the header bound as
+    /// associated data (format.md §12.5); the root file keeps `SMPU 0x01`.
+    func testDeviceFilesCarryTheirEpochInAnAuthenticatedHeader() throws {
+        let vault = try makeVault(pqIdentity())
+        let file = try vault.sealPublishedSummaries(PublishedSummaries.Contents(entries: [:], device: devA, version: 5))
+        XCTAssertEqual(Array(file.prefix(9)), [0x53, 0x4D, 0x50, 0x55, 0x02, 0, 0, 0, UInt8(vault.manifest.epoch)])
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(file), vault.manifest.epoch)
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(file, device: devA, now: Date(timeIntervalSince1970: 0)).version, 5)
+        var changed = file
+        changed[8] ^= 0x02
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(changed), vault.manifest.epoch ^ 2)
+        XCTAssertThrowsError(try vault.openPublishedSummaries(changed), "the header is authenticated")
+        let root = try vault.sealPublishedSummaries([:])
+        XCTAssertEqual(Array(root.prefix(5)), [0x53, 0x4D, 0x50, 0x55, 0x01])
+        XCTAssertNil(PublishedSummaries.sealedEpoch(root))
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(root, device: devA), "a per-device file has the epoch header")
+        XCTAssertNil(PublishedSummaries.sealedEpoch(Data([0x53, 0x4D, 0x50, 0x55, 0x02, 0])))
+        // Sealed with this vault's key under another epoch number: authentic, but not this epoch's file.
+        let json = try PublishedSummaries.encode([:], vaultId: vault.vaultId, device: devA, version: 5)
+        let otherEpoch = try PublishedSummaries.seal(try Gzip.compress(json), secret: try vault.requireSecret(),
+                                                     vaultId: vault.vaultId, epoch: vault.manifest.epoch + 1)
+        XCTAssertThrowsError(try vault.openPublishedSummaries(otherEpoch)) { XCTAssert($0 is PublishedSummariesError) }
+    }
+
+    func testVersionsAreBoundedAndMalformedOnesAreDroppedAlone() throws {
+        XCTAssertNil(PublishedSummaries.nextVersion(after: PublishedSummaries.maxVersion, now: Date()))
+        XCTAssertEqual(PublishedSummaries.nextVersion(after: nil, now: Date(timeIntervalSince1970: -5)), 1)
+        XCTAssertEqual(PublishedSummaries.nextVersion(after: PublishedSummaries.maxVersion - 1, now: .distantFuture),
+                       PublishedSummaries.maxVersion)
+        let vid = UUID()
+        func contents(_ extra: String) throws -> PublishedSummaries.Contents {
+            try PublishedSummaries.decodeContents(Data(#"{"format":"sempere-summaries/1","vaultId":"\#(vid.uuidString.lowercased())","notes":{}\#(extra)}"#.utf8),
+                                                  vaultId: vid)
+        }
+        XCTAssertEqual(try contents(#","device":"aaaaaaaa","version":42"#).version, 42)
+        XCTAssertEqual(try contents(#","device":"aaaaaaaa","version":42"#).device, DeviceID("aaaaaaaa"))
+        for bad in [#","version":0"#, #","version":-1"#, #","version":9007199254740992"#, #","version":1.5"#,
+                    #","version":"7""#, #","version":1e300"#] {
+            let c = try contents(bad)
+            XCTAssertNil(c.version, bad)
+        }
+        XCTAssertNil(try contents(#","device":"AAAAAAAA""#).device)
+        XCTAssertNil(try contents(#","device":7"#).device)
+    }
+
     func testMalformedEntriesAreDroppedAlone() throws {
         let vid = UUID()
         let good = #""revisions":["17596320000000000-a1b2c3d4-1.delta.age"],"title":"T","tags":[],"favorite":false,"deleted":false,"created":"2026-10-04T16:20:00.000Z","modified":"2026-10-04T16:20:00.000Z","pages":1,"pageTexts":[{"page":1,"text":"x"}]"#
