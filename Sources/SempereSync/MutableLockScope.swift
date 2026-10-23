@@ -129,8 +129,8 @@ extension SyncEngine {
                         got = fetched
                     } else {
                         do { got = try transport.read([name], maxBytes: limit) } catch where options.pushOnly {
-                            // A server file that cannot be read (too large, malformed) is just different: the
-                            // mirror replaces it, over a copy this run did not see.
+                            // A server file that cannot be read (too large, malformed; also a transient read error)
+                            // is just different: the mirror replaces it, over a copy this run did not see.
                             ready.insert(name)
                             continue
                         }
@@ -152,10 +152,13 @@ extension SyncEngine {
         let uploads = deferredUploads
         deferredUploads = []
         var refused: Set<String> = []
-        var manifestMissed = false
+        var manifestMissed = false, manifestRefused = false
         for upload in uploads where !refused.contains(upload.name) {
             if upload.name == SharedSettings.fileName, manifestMissed {
-                report.skipped.append(.init(path: upload.name, message: "held back: vault.json did not reach the server; synced on a later run"))
+                // Refused (its copy moved on): judged again with it in the next round. Failed: a later run.
+                if manifestRefused { refused.insert(upload.name) } else {
+                    report.skipped.append(.init(path: upload.name, message: "held back: vault.json did not reach the server; synced on a later run"))
+                }
                 continue
             }
             do {
@@ -165,13 +168,13 @@ extension SyncEngine {
                     let limit = upload.name == SharedSettings.fileName ? SharedSettings.maxFileBytes : Self.maxMutableReadBytes
                     guard let now = try? transport.read([upload.name], maxBytes: limit), FileDigest.sha256(now.data) == hash else {
                         refused.insert(upload.name)
-                        if upload.name == Vault.manifestName { manifestMissed = true }
+                        if upload.name == Vault.manifestName { manifestMissed = true; manifestRefused = true }
                         continue
                     }
                 }
                 guard try transport.write([upload.name], .data(upload.data), condition: upload.condition) else {
                     refused.insert(upload.name)
-                    if upload.name == Vault.manifestName { manifestMissed = true }
+                    if upload.name == Vault.manifestName { manifestMissed = true; manifestRefused = true }
                     continue
                 }
                 report.uploaded.append(upload.name)

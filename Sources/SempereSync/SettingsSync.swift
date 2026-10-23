@@ -35,8 +35,8 @@ extension SyncEngine {
         var etag: String?
         if remote != nil {
             // Read before the write lock was taken (`MutableLockScope.swift`); never a request under it.
-            guard let got = mutablePrefetch.removeValue(forKey: name) else { throw SyncError.io("internal: \(name) was not read before the write lock") }
-            try budget.downloaded(got.data.count)
+            // Left in place until consumed: the fallbacks to the keep-both rule below read it again.
+            guard let got = mutablePrefetch[name] else { throw SyncError.io("internal: \(name) was not read before the write lock") }
             remoteData = got.data
             etag = remote?.etag ?? got.etag
         }
@@ -66,6 +66,9 @@ extension SyncEngine {
         func take(_ data: Data) throws {
             if options.pushOnly { return }
             try download(name, data, stamp: stamp)
+        }
+        if !(newer.contains("local") && newer.contains("server")), let got = mutablePrefetch.removeValue(forKey: name) {
+            try budget.downloaded(got.data.count)
         }
         switch (newer.contains("local"), newer.contains("server")) {
         case (true, true):
