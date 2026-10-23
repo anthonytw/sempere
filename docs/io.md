@@ -1509,6 +1509,12 @@ syncs with both ways.
   `SyncOptions.localWriteLock`), and the model holds it while it writes `settings.age`, so a merge
   never interleaves with the app's own write. A run that cannot take it within 30 s leaves those
   files to the next run (listed as skipped). Revisions and blobs are write-once and need no lock.
+  A run never holds it across a request (`MutableLockScope.swift`): the server's copies are read
+  before it is taken, the judging and local writes happen under it, and the uploads it decided are made
+  after it is released, each only over the copy judging saw: create-only, `If-Match` on the version read,
+  or, for a server with no strong version token, after reading the file again and finding the same bytes.
+  One the server refuses because its copy moved on is judged again in another round (three at most, then
+  the next run); `settings.age` is not uploaded when `vault.json` from the same round did not land. A hung or slow server never blocks an edit (`WriteLockScopeTests`).
 - **Leftovers of "Download Again"** (earlier builds): at launch, before any session runs,
   `LocalCopy.recoverInterruptedRedownload` puts a copy back from `<copy>.old` when the copy is missing,
   removes an unfinished `<copy>.download` and its state, and removes `<copy>.old` only when the copy
