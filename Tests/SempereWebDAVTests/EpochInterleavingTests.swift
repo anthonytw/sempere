@@ -376,6 +376,9 @@ final class EpochInterleavingTests: SyncTestCase {
                 }
             }
             for tg in targets { for p in tg.paths where p.hasPrefix("notes/\(id)/") { if let d = tg.file(p) { copies.append((tg.name, String(p.split(separator: "/").last ?? ""), d)) } } }
+            let items = w[reader].setAside.items(vaultId: w.vaultId).filter { $0.path.contains(id) }
+            lines.append("DIAG  \(reader) set aside: \(items.map { "\($0.sha256.prefix(8)) \($0.reason)" }) scanned-ledger "
+                + "\((try? w[reader].ledger.entries().filter { $0.path.contains(id) }.map { "\($0.epoch):\($0.sha256.prefix(8))" }) ?? [])")
             for (src, f, d) in copies {
                 let openers = names.filter { (try? AgeFile.decrypt(d, with: w[$0].open().identities)) != nil }
                 let heldBy = names.filter { (try? AgeFile.decrypt(d, with: held[$0] ?? [])) != nil }

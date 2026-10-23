@@ -114,6 +114,10 @@ struct SyncState: Codable, Equatable {
     /// Paths this device set aside that are still in place here, with the remote version they were last
     /// compared with: read again only when the remote's changes (design §5.4 step 4; KH4).
     var comparedAside: [String: String]?
+    /// The epoch (id, hex) and local `epochs/` names (a digest) whose working copy this device last scanned for
+    /// files the acceptance rule no longer takes (`Vault.setAsideScan`): once per epoch and record set, whoever made
+    /// the change (KH4).
+    var scannedEpoch: String?
 
     struct EpochsStamp: Codable, Equatable {
         var etag: String

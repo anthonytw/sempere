@@ -571,4 +571,27 @@ final class EpochSyncScenarioTests: SyncTestCase {
         XCTAssertLessThan(record, manifest)
         XCTAssertEqual(try w["B"].sync(t1).epoch?.taken, 2)
     }
+
+    func testACutUploadOfAReEncryptedFileLeavesTheOldOrTheNewCopyNeverAMix() throws {
+        let (w, nd) = try unsealedOnTwoTargets()
+        let t2 = w.target("T2")
+        let prefix = "notes/\(nd.uuidString.lowercased())/"
+        let file = try XCTUnwrap(t2.paths.first { $0.hasPrefix(prefix) })
+        let old = try XCTUnwrap(t2.file(file))
+        try w["B"].sync(w.target("T1")); try w["B"].sync(t2)
+        // Every write to the note's folder on T2 is cut off mid-body or lost.
+        let faults = MemoryFaults(seed: 3, rates: MemoryFaults.Rates([.cutBody: 1, .loseAnswer: 0.5]))
+        faults.eligible = { _, verb, path in verb == .write && path.starts(with: [Vault.notesName, nd.uuidString.lowercased()]) }
+        t2.reach = { _ in MemoryRemote(store: t2.store, faults: faults) }
+        _ = try? w["D"].sync(t2)
+        let after = try XCTUnwrap(t2.file(file))
+        let local = try Data(contentsOf: w["D"].folder.appendingPathComponent(file))
+        XCTAssertTrue(after == old || after == local, "the target holds a whole copy, old or new")
+        // Without faults the next run finishes the replacement, and every device reads the note.
+        t2.reach = nil
+        try w["D"].sync(t2)
+        XCTAssertEqual(t2.file(file), local)
+        try w["B"].sync(t2)
+        XCTAssertEqual(try w["B"].titles()[nd], "D, offline from T1")
+    }
 }

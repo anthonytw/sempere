@@ -444,6 +444,25 @@ public final class SyncEngine {
         // A later epoch taken: the vault reopened under it, pinned, and this device's own files caught up
         // (design §5.4), before anything else is judged or uploaded.
         afterEpochTaken()
+        // A catch-up an earlier run or write could not finish is tried again before anything is judged (design §5.4):
+        // until it runs, this device's unaccepted copies are not set aside, so nothing would replace them.
+        if !epochTaken, epochHold == nil, !options.dryRun, !options.pushOnly, let v = epochJudge, v.ledger != nil,
+           v.listStatus.allowsWriting, !v.isReadOnly {
+            try? v.requireWritable()
+        }
+        // Once per epoch: the working copy's files the acceptance rule no longer takes are set aside (a change this
+        // device made itself, or a takeover's chain, can leave some in place), so accepted copies replace them.
+        if epochHold == nil, !options.dryRun, !options.pushOnly, let v = epochJudge, v.setAsideStore != nil,
+           v.manifest.epoch > 1, !v.isRecordPending, state.scannedEpoch != Hex.encode(v.manifest.epochId) + ":" + epochsDigest {
+            do {
+                try v.setAsideScan()
+                // Keyed on the local records too: a record that arrives later turns pending files into set-aside ones.
+                state.scannedEpoch = Hex.encode(v.manifest.epochId) + ":" + epochsDigest
+            } catch {
+                report.skipped.append(.init(path: Vault.notesName, message: "not scanned for files from before a device "
+                    + "change: \(SyncReport.printable(Self.describe(error)))"))
+            }
+        }
         if let hold = epochHold, !Self.epochMutations.contains(.uploadWhileWaiting) {
             // Unverified-pending or unlisted (design §4.3, §5.5): nothing new is uploaded (J5b), nothing else
             // is synced until the change is verified (or a takeover lists this device again).
