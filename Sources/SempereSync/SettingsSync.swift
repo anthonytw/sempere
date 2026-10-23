@@ -34,8 +34,9 @@ extension SyncEngine {
         var remoteData: Data?
         var etag: String?
         if remote != nil {
-            let got = try transport.read([name], maxBytes: SharedSettings.maxFileBytes)
-            try budget.downloaded(got.data.count)
+            // Read before the write lock was taken (`MutableLockScope.swift`); never a request under it.
+            // Left in place until consumed: the fallbacks to the keep-both rule below read it again.
+            guard let got = mutablePrefetch[name] else { throw SyncError.io("internal: \(name) was not read before the write lock") }
             remoteData = got.data
             etag = remote?.etag ?? got.etag
         }
@@ -65,6 +66,9 @@ extension SyncEngine {
         func take(_ data: Data) throws {
             if options.pushOnly { return }
             try download(name, data, stamp: stamp)
+        }
+        if !(newer.contains("local") && newer.contains("server")), let got = mutablePrefetch.removeValue(forKey: name) {
+            try budget.downloaded(got.data.count)
         }
         switch (newer.contains("local"), newer.contains("server")) {
         case (true, true):
@@ -98,27 +102,25 @@ extension SyncEngine {
             } else if merged == m {
                 try upload(name, local: local ?? Data(), over: remote, etag: etag)
             } else if options.pushOnly {
-                report.merged.append(name)
-                guard !options.dryRun else { return }
+                guard !options.dryRun else { return report.merged.append(name) }
                 try upload(name, local: try vault.sealSharedSettings(merged), over: remote, etag: etag)
+                afterUpload(name) { [self] in report.merged.append(name) }
             } else {
                 try requireLocalWrite("write \(name)")
-                report.merged.append(name)
-                guard !options.dryRun else { return }
+                guard !options.dryRun else { return report.merged.append(name) }
                 try vault.writeSharedSettings(merged)
                 let written = try BoundedRead.contents(of: localURL, maxBytes: SharedSettings.maxFileBytes)
                 try upload(name, local: written, over: remote, etag: etag)
+                // Reported once the merge is on the server too; a refused upload is judged again next round.
+                afterUpload(name) { [self] in report.merged.append(name) }
             }
         }
     }
 
     private func upload(_ name: String, local: Data, over remote: RemoteEntry?, etag: String?) throws {
         let condition: PutCondition = remote == nil ? .create : Self.replaceCondition(etag: etag)
-        if try push(name, local, condition: condition) {
-            try recordMutable(name, hash: FileDigest.sha256(local))
-        } else {
-            report.skipped.append(.init(path: name, message: "the server copy changed while uploading; merged on the next run"))
-        }
+        try push(name, local, condition: condition)
+        try recordMutable(name, hash: FileDigest.sha256(local))
     }
 
     private func download(_ name: String, _ data: Data, stamp: String?) throws {

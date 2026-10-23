@@ -157,6 +157,19 @@ final class SettingsSyncTests: SyncTestCase {
         XCTAssertEqual(try Data(contentsOf: a.sharedSettingsURL), newer)
         XCTAssertEqual(server.file("settings.age"), newer)
         XCTAssertThrowsError(try openVault("A").readSharedSettings())
+        // Both sides then hold different files that need a newer reader: the keep-both rule, run after run,
+        // never an error (the server's copy is read before the write lock and handed to the fallback).
+        var laterB = SharedSettings(schemaVersion: 9, minReaderVersion: 9)
+        laterB.slots[SettingSlotKey("eraser.mode")] = SettingSlot(value: .string("tip"), meta: nil)
+        try openVault("B").writeSharedSettings(laterB)
+        XCTAssertTrue(try sync("B", server).errors.isEmpty)
+        var laterA = SharedSettings(schemaVersion: 9, minReaderVersion: 9)
+        laterA.slots[SettingSlotKey("eraser.mode")] = SettingSlot(value: .string("ink"), meta: nil)
+        try openVault("A").writeSharedSettings(laterA)
+        for _ in 0..<2 {
+            let both = try sync("A", server)
+            XCTAssertTrue(both.errors.isEmpty, "\(both)")
+        }
     }
 
     func testDryRunChangesNothing() throws {

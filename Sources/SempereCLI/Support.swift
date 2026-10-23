@@ -23,6 +23,7 @@ enum ExitStatus {
     // 5 is unused.
     static let untrustedList: Int32 = 6
     static let readOnly: Int32 = 7
+    static let removed: Int32 = 8
 }
 
 /// A failure with its exit code. Messages are one line.
@@ -42,11 +43,13 @@ enum CLIError: Error {
     /// version may read it but not change it (format.md §7.3); or it was
     /// opened with the recovery key, which never writes.
     case readOnly(String)
+    /// Exit 8: this machine's device is not on the vault's newest device list (key-hierarchy design §5.5).
+    case removed(String)
 
     var message: String {
         switch self {
         case .failure(let m), .usage(let m), .unhealthy(let m), .cannotDecrypt(let m),
-             .untrustedList(let m), .readOnly(let m): return m
+             .untrustedList(let m), .readOnly(let m), .removed(let m): return m
         }
     }
 
@@ -58,6 +61,7 @@ enum CLIError: Error {
         case .cannotDecrypt: return ExitStatus.cannotDecrypt
         case .untrustedList: return ExitStatus.untrustedList
         case .readOnly: return ExitStatus.readOnly
+        case .removed: return ExitStatus.removed
         }
     }
 
@@ -76,6 +80,8 @@ enum CLIError: Error {
             return .untrustedList(text)
         case VaultError.readOnly, VaultError.recoveryKeyReadOnly:
             return .readOnly(text)
+        case VaultError.removedFromVault:
+            return .removed(text)
         case SharedSettingsError.needsNewerReader(let min):
             return .readOnly("the vault's settings need a newer sempere (settings reader \(min) or later; this is "
                 + "\(SharedSettingsMigrations.current)): they are neither read nor written")
@@ -492,8 +498,14 @@ extension AccessOptions {
                 keys = [(device.nativeIdentity, device.signing)]
             }
         }
+        // This device's write ledger and set-aside store (design §5.4, §5.8), sealed to its key.
+        let ledger = keys.lazy.compactMap { k -> FileWriteLedger? in
+            guard case .mlkem768x25519(let pq) = k.identity else { return nil }
+            return cliLedger(vaultId: locked.vaultId, device: pq)
+        }.first
         let vault = try Vault.open(at: url, identities: keys.map(\.identity), signing: keys.compactMap(\.signing).first,
-                                   trust: trust ?? trustStore(), root: given)
+                                   trust: trust ?? trustStore(), root: given, ledger: ledger,
+                                   setAside: SetAsideStore(directory: SetAsideStore.cliDirectory(environment: Env.vars)))
         OpenedVaults.shared.recordUnlocked(vault)
         return vault
     }
@@ -532,4 +544,13 @@ enum ReadOnlyNotice {
         printStderr("sempere: warning: read-only: " + vault.readOnlyReasons.descriptions.joined(separator: "; ")
             + "; this version can read it but not change it")
     }
+}
+
+/// This machine's write ledger of `vaultId` for the device key `device`: `$XDG_STATE_HOME/sempere/ledger/<first 16
+/// hex of the key's fingerprint>/<vault id>/`, so two device keys used on one machine (`--identity`) never share a
+/// ledger sealed to the other's key.
+func cliLedger(vaultId: UUID, device: MLKEM768X25519Identity) -> FileWriteLedger {
+    let dir = FileWriteLedger.cliDirectory(environment: Env.vars)
+        .appendingPathComponent(String(CaptureKey.fingerprint(of: device.recipient.string).prefix(16)), isDirectory: true)
+    return FileWriteLedger(directory: dir, vaultId: vaultId, device: device)
 }

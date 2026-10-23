@@ -3,7 +3,7 @@ import Foundation
 
 /// Entry point: maps every failure to one stderr line and the documented
 /// exit code (docs/cli.md): 0 ok, 1 failure, 2 usage, 3 unhealthy or
-/// incomplete, 4 cannot decrypt, 6 untrusted recipients list, 7 read-only (newer format version).
+/// incomplete, 4 cannot decrypt, 6 untrusted device list, 7 read-only (newer format version), 8 removed.
 func runCLI(_ arguments: [String]) -> Int32 {
     // Whatever the command wrote, even when it then failed (format.md §1:
     // the index is an unknown file; docs/web-viewer.md "Hosting").

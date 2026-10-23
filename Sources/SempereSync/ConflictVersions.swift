@@ -30,6 +30,22 @@ extension SyncEngine {
     static let versionedRootFiles = [Vault.manifestName, SharedSettings.fileName,
                                      PublishedSummaries.fileName, WebIndex.fileName]
 
+    /// Before the write lock: the current `vault.json` the settling of its conflict versions compares them with,
+    /// which a provider may first have to download (`conflictCurrent`; none: nothing is settled this run).
+    func prefetchConflictCurrent(_ remoteRoot: [String: RemoteEntry]) {
+        conflictCurrent = nil
+        let name = Vault.manifestName
+        guard !options.pushOnly, !options.dryRun, let entry = remoteRoot[name], !entry.isCollection,
+              !transport.conflictVersions([name]).isEmpty else { return }
+        do {
+            // The current copy is compared against; one not downloaded yet waits for a later run.
+            guard try available([name], entry: entry) else { return }
+            conflictCurrent = try fetchedManifest?.data ?? transport.read([name], maxBytes: BoundedRead.maxManifestBytes).data
+        } catch {
+            report.errors.append(.init(path: name, message: "conflict versions: " + Self.describe(error)))
+        }
+    }
+
     func settleConflictVersions(_ remoteRoot: [String: RemoteEntry]) {
         guard !options.pushOnly, !options.dryRun else { return }
         for name in Self.versionedRootFiles {
@@ -38,7 +54,7 @@ extension SyncEngine {
             guard !versions.isEmpty else { continue }
             do {
                 switch name {
-                case Vault.manifestName: try settleRootFileVersions(name, entry: entry, versions)
+                case Vault.manifestName: try settleRootFileVersions(name, versions)
                 case SharedSettings.fileName: try settleSettingsVersions(versions)
                 default:
                     try transport.resolveConflicts([name], versions)
@@ -53,10 +69,8 @@ extension SyncEngine {
 
     /// `vault.json`: the same file (or label only) is dropped, anything else kept as a local conflict
     /// copy and reported.
-    private func settleRootFileVersions(_ name: String, entry: RemoteEntry, _ versions: [RemoteVersion]) throws {
-        // The current copy is compared against; one not downloaded yet waits for a later run.
-        guard try available([name], entry: entry) else { return }
-        let current = try transport.read([name], maxBytes: BoundedRead.maxManifestBytes).data
+    private func settleRootFileVersions(_ name: String, _ versions: [RemoteVersion]) throws {
+        guard let current = conflictCurrent else { return }
         var settled: [RemoteVersion] = []
         for v in versions {
             let data = try transport.readVersion([name], v, maxBytes: BoundedRead.maxManifestBytes)

@@ -50,6 +50,18 @@ grep -q $'^FileTimestamp\tSources/Sempere/FileIO.swift:' <<<"$listing" \
 fresh; edit "$pbx" 's.replace("A1000000000000000000B008 /* SempereImport in Frameworks */ = {", "A1000000000000000000B008 /* Other in Frameworks */ = {isa = PBXBuildFile; };\n\t\tA1000000000000000000B008 /* SempereImport in Frameworks */ = {", 1)'
 expect "an object id defined twice (two merged branches)" fail "object id A1000000000000000000B008 is defined more than once"
 
+fresh; edit "$pbx" 's.replace("SWIFT_COMPILATION_MODE = wholemodule;", "SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;\n\t\t\t\tSWIFT_COMPILATION_MODE = wholemodule;", 1)'
+expect "DEBUG in a Release configuration" fail "a Release configuration sets DEBUG"
+
+fresh; edit "Apps/Sempere/SempereApp/DeviceWriteStores.swift" 's.replace("            #if DEBUG\n            return try fileKey(", "            #if canImport(Foundation)\n            return try fileKey(", 1)'
+expect "the ledger key file fallback outside #if DEBUG" fail "outside .#if DEBUG."
+
+fresh; edit "Apps/Sempere/SempereApp/DeviceWriteStores.swift" 's.replace("            #else\n            throw Failure.missingEntitlement\n", "            #else\n            return try fileKey(unsignedFallback, ledgerDirectory: ledgerDirectory, now: now)\n", 1)'
+expect "the ledger key file fallback in the #else of #if DEBUG" fail "outside .#if DEBUG."
+
+fresh; edit "$pbx" 's.replace("SWIFT_COMPILATION_MODE = wholemodule;", "OTHER_SWIFT_FLAGS = \"-D DEBUG\";\n\t\t\t\tSWIFT_COMPILATION_MODE = wholemodule;", 1)'
+expect "-D DEBUG in a Release configuration" fail "a Release configuration sets DEBUG .OTHER_SWIFT_FLAGS."
+
 fresh; edit "$pbx" 's.replace("MARKETING_VERSION = 1.0.0;", "MARKETING_VERSION = 1.0.1;", 1)'
 expect "marketing version mismatch" fail "MARKETING_VERSION differs"
 

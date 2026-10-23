@@ -32,6 +32,10 @@ public enum ListStatus: Hashable, Sendable {
         case added
         /// Home renamed devices since, and added none.
         case renamed
+        /// A later epoch than the one this device pinned, whose chain it follows (design §4.3 step 2, §5.6):
+        /// a removal, a handoff, a takeover or a kit replacement since. Files of this device's ledger that
+        /// the change did not seal are caught up (`Vault.catchUp`).
+        case newEpoch
     }
 
     /// True unless refused.

@@ -47,7 +47,7 @@ struct VaultSummaries: ParsableCommand {
         var inVault = vault.publishedSummariesURL
         var device: DeviceID?
         if deviceFile {
-            let id = try DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
+            let id = try vault.writerDevice ?? DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
             device = id
             inVault = vault.devicePublishedSummariesURL(id)
         }

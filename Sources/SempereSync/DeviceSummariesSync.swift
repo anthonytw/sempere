@@ -28,7 +28,9 @@ import Sempere
 //   device ids and their signing keys.
 // - a copy that does not open and whose clear header (`SMPU` `0x02`, bound as
 //   associated data) names an epoch above this device's key's, and no later
-//   than the one its local vault.json names, is never replaced, own file or
+//   than the one its local vault.json names (or the next one, when the
+//   server's vault.json is that epoch signed by the home device it knows),
+//   is never replaced, own file or
 //   not: this device holds no key for it (a removed or lagging device would
 //   otherwise put its stale copy back on every run). The header of a copy
 //   that does not open is not authenticated, so for a current device (its
@@ -190,13 +192,35 @@ extension SyncEngine {
             // run, and taken only as home's later version): anyone who can write to the storage can put any
             // header on bytes that do not open. For a current device that is its key's epoch, so such a copy is
             // repaired; a removed or lagging device leaves copies of the epochs it knows of but has no key for.
+            // Or a home-signed next epoch on the server (`serverChildEpoch`), for a device that learns of a key
+            // change only through sync.
             if let epoch = PublishedSummaries.sealedEpoch(data), epoch > v.manifest.epoch,
-               let known = localManifestEpoch(), epoch <= known {
+               epoch <= (localManifestEpoch() ?? 0) || epoch <= (serverChildEpoch(of: v) ?? 0) {
                 return .laterEpoch
             }
             return .unordered
         }
         return contents.version.map { .ordered($0) } ?? .unordered
+    }
+
+    /// The epoch the server's `vault.json` names when it is the next epoch after this device's, made by the home
+    /// device this device knows (`epochSig` over the file's own lists verifies under its signing keys, and its
+    /// parent is this device's epoch): what a device learns of a key change it cannot take until epoch records
+    /// travel (KH4), e.g. a removed one. Anything else (an unsigned claim, an epoch further on) is not believed.
+    /// Read at most once per run.
+    func serverChildEpoch(of v: Vault) -> Int? {
+        if let known = remoteChildEpoch { return known }
+        var found: Int?
+        if let got = try? transport.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes),
+           (try? budget.downloaded(got.data.count)) != nil,
+           let m = try? EpochManifest.parse(got.data), m.vaultId == v.manifest.vaultId, m.root == v.manifest.root,
+           m.epoch == v.manifest.epoch + 1, m.parent == v.manifest.epochId,
+           let home = v.manifest.keys.first(where: { $0.role == .device && $0.fingerprint == v.manifest.home })?.sign,
+           let message = m.epochMessage, m.epochSig.verifies(message, keys: home) {
+            found = m.epoch
+        }
+        remoteChildEpoch = .some(found)
+        return found
     }
 
     /// The epoch the local `vault.json` names (its `epoch` field alone; the file was checked when it was
@@ -219,7 +243,11 @@ extension SyncEngine {
         let path = "\(PublishedSummaries.deviceFolderName)/\(name)"
         try requireLocalWrite("write \(path)")
         let url = root.appendingPathComponent(PublishedSummaries.deviceFolderName, isDirectory: true).appendingPathComponent(name)
-        guard try LocalFS.write(data, to: url, replacing: true) else { return nil }
+        // Written under the vault's write lock, as the device's own writers do; the upload comes after it
+        // is released (no request under the lock).
+        var written = false
+        try withLocalWriteLock { written = try LocalFS.write(data, to: url, replacing: true) }
+        guard written else { return nil }
         return (data, FileDigest.sha256(data))
     }
 

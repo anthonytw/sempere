@@ -180,7 +180,8 @@ struct QuickCaptureTests {
         #expect(outcome.delivery == .queued)
         #expect(qc.notice?.result == .savedOnDevice, "the banner says the note is on this device, not in the vault yet")
         let vaultID = stored.profile.vaultId
-        #expect(Self.leftovers(qc.queueFolder(vaultID)) == [CaptureFile.name(outcome.id, .capture)])
+        #expect(Self.leftovers(qc.queueFolder(vaultID)).sorted()
+                == [CaptureFile.name(outcome.id, .capture), CaptureFile.name(outcome.id, .capture) + ".epoch"])
         #expect(Self.inbox(url).isEmpty)
         #expect(qc.flushQueue(into: url, vaultId: vaultID, coordinated: false) == 1)
         #expect(Self.inbox(url) == [CaptureFile.name(outcome.id, .capture)])
@@ -205,7 +206,7 @@ struct QuickCaptureTests {
         #expect(Self.inbox(url).isEmpty, "nothing written into the read-only vault")
         #expect(qc.flushQueue(into: url, vaultId: vaultID, coordinated: false) == 0)
         #expect(Self.inbox(url).isEmpty)
-        #expect(Self.leftovers(qc.queueFolder(vaultID)) == [CaptureFile.name(outcome.id, .capture)])
+        #expect(Self.leftovers(qc.queueFolder(vaultID)).filter { CaptureFile.parse(name: $0) != nil } == [CaptureFile.name(outcome.id, .capture)])
     }
 
     /// The widget and Control Center fired together: the second start used to
@@ -866,6 +867,49 @@ struct QuickCaptureTests {
         qc.store = MemoryCaptureProfileStore()
         await qc.sweep()
         #expect(Self.leftovers(qc.root).isEmpty)
+    }
+
+    /// A queued voice note is recorded under the epoch of the profile that SEALED it, not the profile current when
+    /// the queue is flushed (review M4: else it would be set aside for good).
+    @Test func aQueuedVoiceNoteKeepsTheEpochItWasSealedUnder() async throws {
+        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
+        let stores = DeviceWriteStores.inMemoryKey(root: try TestTemp.directory("ledger-queue"))
+        qc.writeStores = stores
+        let other = Self.temp("not-the-vault-2")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        var stored = try #require(try qc.store.load())
+        let sealedEpoch = try #require(stored.profile.epoch)
+        stored.bookmark = try other.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        try qc.store.save(stored)
+        try await qc.start()
+        let outcome = try await qc.stop()
+        #expect(outcome.delivery == .queued)
+        // The profile is refreshed to a later epoch before the queue is flushed.
+        stored.profile.epoch = sealedEpoch + 1
+        stored.profile.epochId = String(repeating: "ab", count: 32)
+        try qc.store.save(stored)
+        #expect(qc.flushQueue(into: url, vaultId: stored.profile.vaultId, coordinated: false) == 1)
+        let entry = try #require(try stores.ledger(for: stored.profile.vaultId).entries()
+            .first { $0.path == "inbox/\(CaptureFile.name(outcome.id, .capture))" })
+        #expect(entry.epoch == sealedEpoch)
+        #expect(Self.leftovers(qc.queueFolder(stored.profile.vaultId)).isEmpty, "the sidecar goes with the file")
+    }
+
+    /// A voice note is recorded in its vault's ledger, under the profile's epoch, before it is placed in the
+    /// inbox (design §5.4, §5.7): a device change before it is adopted is caught up from there.
+    @Test func voiceNotesAreRecordedInTheLedgerBeforeTheInbox() async throws {
+        let (url, _, _, qc, _) = try Self.setUp()
+        let stores = DeviceWriteStores.inMemoryKey(root: try TestTemp.directory("ledger-capture"))
+        qc.writeStores = stores
+        try await qc.start()
+        let outcome = try await qc.stop()
+        #expect(outcome.delivery == .vault)
+        let vault = try Vault.open(at: url)
+        let entries = try stores.ledger(for: vault.vaultId).entries()
+        let name = CaptureFile.name(outcome.id, .capture)
+        let entry = try #require(entries.first { $0.path == "inbox/\(name)" })
+        #expect(entry.epoch == vault.manifest.epoch)
+        #expect(entry.sha256 == FileDigest.sha256(try Data(contentsOf: url.appendingPathComponent("inbox/\(name)"))))
     }
 }
 

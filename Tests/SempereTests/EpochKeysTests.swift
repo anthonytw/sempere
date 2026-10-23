@@ -368,8 +368,8 @@ final class EpochKeysTests: VaultTestCase {
         let sign = try XCTUnwrap(EpochTrustRecord.SigningKeys(p256: Data(repeating: 4, count: 65),
                                                               mldsa65: Data(repeating: 7, count: 1952)))
         let fpA = Data(repeating: 0xa1, count: 32), fpR = Data(repeating: 0xb2, count: 32)
-        let chain = [try EpochTrustRecord.ChainEpoch(epoch: 1, key: k1, parent: nil, list: [fpA, fpR]),
-                     try EpochTrustRecord.ChainEpoch(epoch: 2, key: k2, parent: k1.epochId, list: [fpA])]
+        let chain = [try EpochTrustRecord.ChainEpoch(epoch: 1, key: k1, parent: nil, list: [fpA, fpR], recovery: fpR, home: fpA, reason: "create"),
+                     try EpochTrustRecord.ChainEpoch(epoch: 2, key: k2, parent: k1.epochId, list: [fpA, fpR], recovery: fpR, home: fpA, reason: "remove")]
         let record = try EpochTrustRecord(
             vaultId: vaultId, root: root, chain: chain,
             list: [.init(role: "device", key: "age1pq1d", sign: sign, name: "Ñandú / ☕️"),
@@ -411,6 +411,9 @@ final class EpochKeysTests: VaultTestCase {
             ("short epochId", try mutateChain(1) { $0["epochId"] = "00" }),
             ("short fingerprint", try mutateChain(1) { $0["list"] = ["00"] }),
             ("short link key", try mutateChain(0) { $0["linkPublicKeys"] = ["ed25519": "00", "mldsa65": "00"] }),
+            ("no recovery in the chain", try mutateChain(1) { $0["recovery"] = nil }),
+            ("short home in the chain", try mutateChain(0) { $0["home"] = "00" }),
+            ("unknown reason", try mutateChain(1) { $0["reason"] = "resolve" }),
             ("no list", try mutate { $0["list"] = nil }),
             ("no home", try mutate { $0["home"] = nil }),
             ("short home", try mutate { $0["home"] = "00" }),

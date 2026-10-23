@@ -44,12 +44,18 @@ public struct VerifyReport: Hashable, Sendable {
         /// leniently (the detail says what was skipped), or not readable by
         /// this version at all. Healthy; the vault is read-only.
         case newer
+        /// Under an earlier epoch's key and not taken by the acceptance rule (key-hierarchy design §5.3):
+        /// set aside, never placed. Healthy (Repair lists it); written by a removed device, or by a listed one
+        /// that has not caught up yet.
+        case setAside
+        /// Under a key whose epoch record has not arrived (design §5.3 rule 3). Healthy; it waits.
+        case pending
 
         /// True for a status that makes the vault unhealthy. `ok`, `unknownFile`,
         /// `notChecked`, `unreferenced` and `newer` are healthy.
         public var isProblem: Bool {
             switch self {
-            case .ok, .unknownFile, .notChecked, .unreferenced, .newer: return false
+            case .ok, .unknownFile, .notChecked, .unreferenced, .newer, .setAside, .pending: return false
             case .tagMismatch, .undecryptable, .corruptBody, .undecodable, .extraStanzas, .unlistable,
                  .missing, .invalid: return true
             }
@@ -96,6 +102,8 @@ extension VerifyReport.Status {
         case .corruptBody: self = .corruptBody
         case .undecodable: self = .undecodable
         case .newer: self = .newer
+        case .setAside: self = .setAside
+        case .pending: self = .pending
         }
     }
 }
@@ -243,6 +251,8 @@ extension Vault {
             case .framing(.tagMismatch): status = .tagMismatch
             case .framing: status = .corruptBody
             case .undecryptable: status = .undecryptable
+            case .setAside: status = .setAside
+            case .pending: status = .pending
             case .tooLarge, .invalid, .clockExhausted, .needsNewerReader: status = .undecodable
             }
             return .init(path: path, status: status, detail: "\(e)")
@@ -276,6 +286,8 @@ extension Vault {
             case .framing(.tagMismatch): status = .tagMismatch
             case .framing: status = .corruptBody
             case .undecryptable: status = .undecryptable
+            case .setAside: status = .setAside
+            case .pending: status = .pending
             case .tooLarge, .invalid: status = .undecodable
             }
             return .init(path: path, status: status, detail: "\(e)")
@@ -362,8 +374,7 @@ extension Vault {
                 continue
             }
             do {
-                let (header, _) = try Self.readBlobFile(url, identities: identities, secrets: blobSecrets, expected: nil,
-                                                        maxContent: BlobRef.maxSize)
+                let header = try readAnyAcceptedBlob(url, note: UUID(uuidString: note) ?? UUID(), maxContent: BlobRef.maxSize)
                 let stanzas = Self.stanzaCounts(blob: url)
                 let used = kinds[header.sha256]?.contains(parsed.kind) == true
                 if used { resolved.insert("\(header.sha256)/\(parsed.kind.rawValue)") }
@@ -376,6 +387,10 @@ extension Vault {
                 } else {
                     report.files.append(.init(path: path, status: .ok, detail: nil))
                 }
+            } catch BlobError.setAside(let reason) {
+                report.files.append(.init(path: path, status: .setAside, detail: reason.text))
+            } catch BlobError.pending {
+                report.files.append(.init(path: path, status: .pending, detail: "\(BlobError.pending)"))
             } catch {
                 report.files.append(.init(path: path, status: .invalid, detail: "\(error)"))
             }
@@ -416,7 +431,23 @@ extension Vault {
     /// whose last entry is this epoch. Other names are unknown files (an orphan record included).
     private func verifyEpochRecord(_ name: String) -> VerifyReport.FileResult {
         let path = "\(Self.epochsName)/\(name)"
-        guard Self.epochsName + "/" + name == manifest.epochRecord else { return .init(path: path, status: .unknownFile, detail: nil) }
+        guard Self.epochsName + "/" + name == manifest.epochRecord else {
+            // An earlier epoch's record on the verified chain (its key opens it as readers need it); any other
+            // name, an orphan record included, is an unknown file (design §5.2 step 4).
+            if let chain = verifiedChain?.entries.dropLast(),
+               chain.contains(where: { EpochRecord.fileName(epoch: $0.epoch, epochId: $0.epochId) == name }) {
+                // Bound by the hash link of the record above it (format.md §15.6).
+                guard let o = olderEpochs.first(where: { EpochRecord.fileName(epoch: $0.epoch, epochId: $0.epochId) == name }),
+                      let expected = o.recordHash else {
+                    return .init(path: path, status: .notChecked, detail: "an earlier epoch's record below one that did not open")
+                }
+                let actual = try? FileDigest.sha256(of: epochsURL.appendingPathComponent(name)).hex
+                return actual == Hex.encode(expected)
+                    ? .init(path: path, status: .ok, detail: "an earlier epoch's record")
+                    : .init(path: path, status: .invalid, detail: "its hash is not the one the record above it links")
+            }
+            return .init(path: path, status: .unknownFile, detail: nil)
+        }
         do {
             let data = try readFile(epochsURL.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes)
             guard Data(SHA256.hash(data: data)) == manifest.epochRecordHash else {

@@ -559,6 +559,88 @@ final class InboxSummariesOverMemoryTests: InboxSummariesScenarioCase {
         XCTAssertEqual(try y.vault().reconstruct(noteId: CaptureAdoption.ids(for: id).note).recordings.count, 1)
     }
 
+    /// KH3's removal (key-hierarchy design §5.2) with per-device summaries: A (home) removes X, so A's file is
+    /// sealed under epoch 2. B, still listed, catches up and opens it. X learns of the change (its folder gets
+    /// the epoch-2 vault.json, as a shared folder brings it) but holds no key for it: X never replaces A's
+    /// epoch-2 file with its own epoch-1 copy, run after run (review of #83, M2). The engine opens nothing for
+    /// X once the keys changed under it (KH3), so X orders nothing.
+    func testARemovedDeviceLeavesTheNewEpochsSummaries() throws {
+        try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26 (always on Linux)")
+        let ids = [pqIdentity(), pqIdentity(), pqIdentity()]
+        let trusts = ids.map { _ in MemoryEpochTrustStore() }
+        let shared = tmp.appendingPathComponent("Shared.sempere"), xFolder = tmp.appendingPathComponent("X.sempere")
+        let root = try TestVaults.create(at: shared, identities: ids, names: ["A", "B", "X"]).root
+        func open(_ i: Int, _ url: URL) throws -> Vault {
+            try Vault.open(at: url, identities: [ids[i]], signing: TestVaults.signing(ids[i]), trust: trusts[i], root: root)
+        }
+        var a = try open(0, shared)
+        let aDev = try XCTUnwrap(a.writerDevice), xDev = try XCTUnwrap(try open(2, shared).writerDevice)
+        let name = PublishedSummaries.deviceFileName(aDev)
+        let a1 = try a.writeDevicePublishedSummaries([:], device: aDev)
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(a1), 1)
+        try FileManager.default.copyItem(at: shared, to: xFolder)   // X's own copy, from before the change
+        let x = try open(2, xFolder)
+
+        try a.removeDevices([xDev.rawValue])
+        XCTAssertEqual(a.manifest.epoch, 2)
+        let a2 = try a.writeDevicePublishedSummaries([:], device: aDev)
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(a2), 2)
+        let remote = MemoryRemote(store: MemoryStore(name: "kh3"), base: ["vault"])
+        func sync(_ folder: URL, _ vault: Vault, _ device: DeviceID, _ state: String) throws -> SyncReport {
+            var o = SyncOptions(deviceLabel: state)
+            o.deviceID = device
+            return try SyncEngine(directory: folder, vault: vault, remote: remote,
+                                  stateURL: tmp.appendingPathComponent("state-kh3-\(state).json"), options: o).run()
+        }
+        _ = try sync(shared, a, aDev, "A")
+        XCTAssertEqual(try remote.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, a2)
+
+        // B, still listed, catches up and reads A's new file.
+        let b = try open(1, shared)
+        XCTAssertEqual(b.manifest.epoch, 2)
+        XCTAssertEqual(try b.openDevicePublishedSummaries(a2, device: aDev).device, aDev)
+
+        // X learns of the change only through the remote: its vault.json of epoch 2 is refused (KH4 carries
+        // epoch changes), but it is the next epoch signed by the home X knows, so X leaves A's file.
+        for round in 0..<2 {
+            let r = try sync(xFolder, x, xDev, "X-remote")
+            XCTAssertFalse(r.uploaded.contains("summaries/\(name)"), "round \(round): \(StressWorld.brief(r))")
+        }
+        XCTAssertEqual(try remote.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, a2)
+        // An unsigned claim of a later epoch on the server is not believed: a forged vault.json makes X repair.
+        let forgedFolder = tmp.appendingPathComponent("F.sempere")
+        try FileManager.default.copyItem(at: xFolder, to: forgedFolder)
+        let f = try open(2, forgedFolder)
+        let forgedRemote = MemoryRemote(store: MemoryStore(name: "kh3-forged"), base: ["vault"])
+        for path in remote.store.filePaths(under: remote.base) {
+            forgedRemote.store.putDirect(path, try XCTUnwrap(remote.store.file(path)))   // same base, ["vault"]
+        }
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: try XCTUnwrap(
+            forgedRemote.store.file(["vault", Vault.manifestName]))) as? [String: Any])
+        json["epochReason"] = "forged"
+        forgedRemote.store.putDirect(["vault", Vault.manifestName], try JSONSerialization.data(withJSONObject: json))
+        var o = SyncOptions(deviceLabel: "F")
+        o.deviceID = xDev
+        let forgedRun = try SyncEngine(directory: forgedFolder, vault: f, remote: forgedRemote,
+                                       stateURL: tmp.appendingPathComponent("state-kh3-F.json"), options: o).run()
+        XCTAssertTrue(forgedRun.uploaded.contains("summaries/\(name)"), StressWorld.brief(forgedRun))
+        // X: the epoch-2 vault.json, no key for it.
+        try FileManager.default.removeItem(at: xFolder.appendingPathComponent(Vault.manifestName))
+        try FileManager.default.copyItem(at: shared.appendingPathComponent(Vault.manifestName),
+                                        to: xFolder.appendingPathComponent(Vault.manifestName))
+        for round in 0..<2 {
+            let r = try sync(xFolder, x, xDev, "X")
+            XCTAssertFalse(r.uploaded.contains("summaries/\(name)"), "round \(round): \(StressWorld.brief(r))")
+            if round == 0 {
+                // KH3's checker opens nothing for a device the keys changed under (structure only), so X
+                // orders nothing and replaces nothing; the later-epoch rule is the second line behind it.
+                XCTAssertTrue(r.skipped.contains { $0.path == "summaries/\(name)" }, "\(r.skipped)")
+            }
+        }
+        XCTAssertEqual(try remote.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, a2)
+        XCTAssertEqual(try Data(contentsOf: xFolder.appendingPathComponent("summaries/\(name)")), a1)
+    }
+
     /// A run killed while it checked a received capture leaves its staging folder in `inbox/`
     /// (hidden: no reader lists it). A later run removes it once it is an hour old, and the
     /// capture arrives whole.

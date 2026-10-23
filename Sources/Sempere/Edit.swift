@@ -176,6 +176,11 @@ extension NoteOps {
 }
 
 extension Vault {
+    /// This device's id in the vault, the first 8 hex digits of its fingerprint (format.md §15.4;
+    /// key-hierarchy design §3): it names its published summaries file and sync state. Nil unless the vault
+    /// was opened as a listed device. Revision names keep the machine's state-file id (`writeDelta`).
+    public var writerDevice: DeviceID? { deviceEntry?.id.flatMap(DeviceID.init) }
+
     /// Writes one delta for an existing note whose ops `build` computes from
     /// the note as it is on disk now, as this device (see
     /// `apply(_:to:deviceState:app:wall:)`). Nothing is written, and nil is
@@ -230,15 +235,18 @@ extension Vault {
     func writeDelta(_ ops: [Op], to noteId: UUID, loaded: LoadedNote, deviceState: URL, app: String,
                     wall: Date, checkpoint: Checkpoint? = nil) throws -> Revision {
         var state = try DeviceState.loadOrCreate(at: deviceState)
+        // Revision names keep the machine's own id (its state file's), as before the key hierarchy: ids decide
+        // nothing (format.md §15.14 "Revision names").
+        let device = state.device
         var clock = state.clock
         for r in loaded.revisions { clock.observe(r.hlc, wall: wall) }
         let hlc = clock.tick(wall: wall)
         let seq = loaded.failures.isEmpty
-            ? Vault.nextSeq(from: loaded.revisions, device: state.device)
-            : try nextSeq(noteId: noteId, device: state.device)
+            ? Vault.nextSeq(from: loaded.revisions, device: device)
+            : try nextSeq(noteId: noteId, device: device)
         state.clock = clock
         try state.save(to: deviceState)
-        let revision = Revision(noteId: noteId, device: state.device, seq: seq, hlc: hlc, wall: wall, app: app,
+        let revision = Revision(noteId: noteId, device: device, seq: seq, hlc: hlc, wall: wall, app: app,
                                 body: .delta(ops: ops), checkpoint: checkpoint)
         try write(revision)
         return revision

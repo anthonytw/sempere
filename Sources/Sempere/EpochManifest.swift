@@ -237,6 +237,13 @@ public struct EpochManifest: Hashable, Sendable {
     ///     the file's own `home` and `parentList` never stand in for the parent's home or recovery key.
     /// - Returns: the entries admitted now, in admission order (each approved by home).
     public func check(key: VaultEpochKey, verifiedList: Set<Data>, parent: VerifiedParent? = nil) throws -> [EpochKeyEntry] {
+        try check(key: key, verifiedList: verifiedList, parent: parent, mutations: [])
+    }
+
+    /// `check` with the test-only mutations of `EpochChain.verify`: with any of them, an epoch whose author
+    /// names itself home and was on the parent's list signs too (the chain check decides which).
+    func check(key: VaultEpochKey, verifiedList: Set<Data>, parent: VerifiedParent?,
+               mutations: Set<PrecedenceMutation>) throws -> [EpochKeyEntry] {
         guard key.epochId == epochId else { throw ProblemError(problem: .wrap) }
         guard EpochListTag.verify(listTag, key: key, vaultId: vaultId, root: Hex.encode(root), epoch: epoch,
                                   epochId: Hex.encode(epochId), epochRecordHash: Hex.encode(epochRecordHash),
@@ -261,7 +268,9 @@ public struct EpochManifest: Hashable, Sendable {
             signer = devices(withId: epochAuthor).first { e in
                 e.fingerprint == parent?.home && parentKnown.contains(e.fingerprint)
                     && (reason == .handoff ? e.fingerprint != home : e.fingerprint == home)
-            }
+            } ?? (mutations.isEmpty ? nil : devices(withId: epochAuthor).first {
+                parentKnown.contains($0.fingerprint) && $0.fingerprint == home
+            })
         }
         guard let epochMessage, let signer, let signerKeys = signer.sign,
               epoch > 1 || verifiedList.contains(signer.fingerprint),

@@ -235,7 +235,7 @@ struct StoreSync: ParsableCommand {
         defer { lease.release() }
 
         var base = SyncOptions()
-        base.deviceID = SyncCLI.deviceID()
+        base.deviceID = vault.writerDevice ?? SyncCLI.deviceID()
         base.deviceLabel = ProcessInfo.processInfo.hostName
         base.summaryCacheDirectory = SummaryCache.cliDirectory(environment: Env.vars)
         base.arrivalWait = TimeInterval(wait ?? 30)

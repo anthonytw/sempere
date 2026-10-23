@@ -5,7 +5,8 @@ import Sempere
 
 // The device list from the CLI (docs/design/key-hierarchy.md §5.1, §6.1, §6.2, §6.4; phase KH2):
 // `sempere device init|confirm` on a joining machine, `sempere devices list|approve|rename` on the vault's
-// home. Removal, handoff and takeover start new epochs (KH3, KH4).
+// home. Removal and handoff (`sempere devices remove|handoff`), the takeover and kit replacement (`sempere
+// recovery`) start new epochs (KH3, Epochs.swift).
 
 /// This machine's device keys, one set per vault (design §6.1): `$XDG_STATE_HOME/sempere/devices/<vault
 /// id>/device.key` (mode 0600 in a 0700 folder), or `device.key.age` when passphrase-wrapped. They never
@@ -210,8 +211,9 @@ struct DeviceConfirm: ParsableCommand {
 struct DevicesCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "devices",
-        abstract: "List the vault's devices; approve and rename them (on the home device).",
-        subcommands: [DevicesList.self, DevicesApprove.self, DevicesRename.self]
+        abstract: "List the vault's devices; approve, rename, remove them and hand the home role over (on the home device); take over with the recovery kit.",
+        subcommands: [DevicesList.self, DevicesApprove.self, DevicesRename.self, DevicesRemove.self, DevicesHandoff.self,
+                      RecoveryTakeover.self]
     )
 }
 

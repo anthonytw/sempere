@@ -14,6 +14,7 @@ encrypt anything real to them.**
 | `notability/synthetic.note` | The importer tests' synthetic Notability note (`SyntheticNote.package()` in `Tests/SempereImportTests`): no personal data. The app's Notability import tests read it |
 | `notability/portrait.heic`, `notability/portrait-heic.note` | A landscape HEIC turned upright to portrait by its `irot` (red top, blue bottom, green top right; written by ImageIO with orientation 6), and a Notability note holding it (`PortraitHEICTests`, `SEMPERE_UPDATE_FIXTURES=1`). The app's `PortraitHEICAppTests` check its exports (device check c35) |
 | `items.sempere/`, `newer.sempere/` | Vaults with items and of a later format version (below) |
+| `epochs.sempere/` | A vault at epoch 3 (two removals; vault id `…000000000003`, home `sample.key`): a sealed epoch-1 note with a blob, an epoch-2 note, and an unsealed epoch-1 revision that readers set aside (`format.md` §15.14). `SEMPERE_REGENERATE_EPOCHS_FIXTURE=1 swift test --filter EpochsFixtureTests/testRegenerateEpochsFixture`; read by `EpochsFixtureTests` and `web/test/epochs.test.ts` |
 | `audio/`, `video/` | Synthetic tones and test-pattern clips; each folder's README has the ffmpeg commands |
 | `text/` | Text-box line breaks and Markdown layout expected by the renderers and the web viewer |
 | `settings/` | Shared-settings files (`format.md` §13) of this version and of later ones |
