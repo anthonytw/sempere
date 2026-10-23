@@ -155,8 +155,11 @@ public struct LockedStaging: Sendable {
 
     // MARK: - Files
 
-    /// Write-once vault files: revisions and blobs (`notes/`), `keys/`, `inbox/`, notebook records and
-    /// devices' published summaries. Everything else at the root is mutable.
+    /// Files linked into the shadow rather than copied once: revisions and blobs (`notes/`), `keys/`,
+    /// `inbox/`, notebook records (write-once) and devices' published summaries. Summaries are not
+    /// write-once (their device replaces them by an atomic rename, so the shadow keeps a link to the old
+    /// file); the placing run orders a staged copy by its version, so an older one never replaces a newer.
+    /// Everything else at the root is mutable.
     static func isWriteOnce(_ rel: [String]) -> Bool {
         guard rel.count >= 2, let first = rel.first, !(rel.last ?? "").hasPrefix(".") else { return false }
         return [Vault.notesName, Vault.keysName, CaptureFile.folderName, NotebookRecords.folderName,

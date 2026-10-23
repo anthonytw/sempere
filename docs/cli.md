@@ -492,8 +492,10 @@ sempere vault catch-up [--json]
   target, then renamed over it). `--json` emits `path`, `notes`, `entries`,
   `read` (notes summarized again) and `bytes`. `--device-file` writes this
   machine's own copy instead, `summaries/<device>.sealed` (`format.md` §12.5,
-  the device id of the CLI's device state): the per-device files the apps
-  publish so that another device lists a vault's notes before they arrive.
+  the device id of the CLI's device state), naming that device and under the
+  next version (one more than the file there, at least the clock in
+  milliseconds): the per-device files the apps publish so that another device
+  lists a vault's notes before they arrive.
 - `merge-copy FROM` merges another copy of the same vault into the vault
   (`format.md` §1.3): the losing side of an iCloud Drive conflict, a copy taken
   from another device, a folder restored from a backup. Every revision, blob,
@@ -2578,8 +2580,10 @@ Voice notes waiting in `inbox/` (`format.md` §11.4) are copied to the side that
 checked before it is placed (unlocked, as `inbox import` reads it); one that one side deleted since
 the last run is deleted on the other only when its adoption explains it (the note made from it is
 here, with the vault unlocked), and otherwise copied back. Each device's `summaries/<device>.sealed`
-(`format.md` §12.5) is copied to the side that lacks it, a newer copy replaces an older one, and this
-machine's own file (its device id from `device.json`) is only ever uploaded.
+(`format.md` §12.5) is copied to the side that lacks it, and of two copies the later version (sealed
+inside the file) is kept on both sides; a copy that does not open is never replaced. This machine's
+own file (its device id from `device.json`) is only ever uploaded, and left alone where the remote
+holds a later copy of it (another install with the same device state).
 With the vault unlocked, the server's `sempere-summaries.sealed` (`format.md`
 §12; the note list the web viewer reads first) is rewritten after the sync to
 describe what the server then holds (an entry per note whose revisions there

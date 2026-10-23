@@ -1,4 +1,5 @@
 import CLITestSupport
+import Sempere
 import Foundation
 import XCTest
 
@@ -83,6 +84,30 @@ final class CLISummariesTests: CLITestCase {
         let notes = try XCTUnwrap(try plaintext(vault)["notes"] as? [String: [String: Any]])
         XCTAssertEqual(notes[Self.lecture]?["title"] as? String, "Synthetic renamed")
         XCTAssertEqual((notes[Self.lecture]?["revisions"] as? [String])?.count, 6)
+    }
+}
+
+/// `vault summaries --device-file` writes this machine's own `summaries/<device>.sealed` (format.md §12.5):
+/// naming its device, under a version each run raises, so other devices order and place it (review of #83, M1).
+final class CLIDeviceSummariesFileTests: CLITestCase {
+    func testTheDeviceFileNamesItsDeviceAndRaisesItsVersion() throws {
+        let (vault, _, keyPath) = try makeVault()
+        func write() throws -> (DeviceID, Data) {
+            let r = try cli(["vault", "summaries", "--device-file", "--vault", vault.url.path, "--identity", keyPath, "--json"])
+            XCTAssertEqual(r.status, 0, r.err)
+            let path = try XCTUnwrap((r.json as? [String: Any])?["path"] as? String)
+            let url = URL(fileURLWithPath: path)
+            XCTAssertEqual(url.deletingLastPathComponent().lastPathComponent, PublishedSummaries.deviceFolderName)
+            let device = try XCTUnwrap(PublishedSummaries.device(ofFileName: url.lastPathComponent))
+            return (device, try Data(contentsOf: url))
+        }
+        let (device, first) = try write()
+        let opened = try vault.openDevicePublishedSummaries(first, device: device)
+        XCTAssertEqual(opened.device, device)
+        XCTAssertEqual(opened.entries.count, try vault.noteIDs().count)
+        let (_, second) = try write()
+        let v1 = try XCTUnwrap(opened.version), v2 = try XCTUnwrap(try vault.openDevicePublishedSummaries(second, device: device).version)
+        XCTAssertGreaterThan(v2, v1)
     }
 }
 

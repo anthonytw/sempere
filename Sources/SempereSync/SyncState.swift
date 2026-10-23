@@ -12,6 +12,9 @@ struct SyncState: Codable, Equatable {
         var hash: String
         /// The remote ETag (else Last-Modified) at that time.
         var stamp: String?
+        /// Compared again from then on even when neither side changed (a device's own summaries file left
+        /// behind a later copy: re-sealed once that copy is older than the window, format.md §12.5).
+        var recheckAfter: Date? = nil
     }
 
     /// A revision or blob file both sides had.
