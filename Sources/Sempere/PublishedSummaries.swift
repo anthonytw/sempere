@@ -113,29 +113,59 @@ public enum PublishedSummaries {
         HKDF<SHA256>.deriveKey(inputKeyMaterial: secret.key, info: Data(keyInfo.utf8), outputByteCount: 32)
     }
 
-    static func aad(vaultId: UUID) -> Data {
-        Data(magic) + Data("sempere/1".utf8) + Data([0]) + Data(vaultId.uuidString.lowercased().utf8)
+    /// `SMPU` then version 2: a per-device file (format.md §12.5), whose header also carries its epoch.
+    static let deviceMagic: [UInt8] = [0x53, 0x4D, 0x50, 0x55, 0x02]
+    /// `deviceMagic` and the epoch (4 bytes, big-endian).
+    static let deviceHeaderSize = 9
+
+    static func aad(vaultId: UUID) -> Data { aad(header: Data(magic), vaultId: vaultId) }
+
+    static func aad(header: Data, vaultId: UUID) -> Data {
+        header + Data("sempere/1".utf8) + Data([0]) + Data(vaultId.uuidString.lowercased().utf8)
+    }
+
+    /// True when `data` starts like a sealed summaries file (`SMPU` `0x01` or `0x02`).
+    public static func looksSealed(_ data: Data) -> Bool {
+        data.starts(with: magic) || data.starts(with: deviceMagic)
+    }
+
+    /// The epoch in the clear header of a per-device file (`SMPU` `0x02`, format.md §12.5), nil for any other
+    /// bytes. It is bound to the content as associated data, so a file whose header was changed does not
+    /// open; read without the key, it tells whether a file that does not open is of a later epoch.
+    public static func sealedEpoch(_ data: Data) -> Int? {
+        guard data.count >= deviceHeaderSize, data.starts(with: deviceMagic) else { return nil }
+        let b = Array(data.prefix(deviceHeaderSize).suffix(4))
+        return Int(b[0]) << 24 | Int(b[1]) << 16 | Int(b[2]) << 8 | Int(b[3])
     }
 
     // MARK: - Sealing
 
-    /// `SMPU 0x01 ‖ nonce ‖ AES-256-GCM(plaintext) ‖ tag`; `nonce` is random unless given (test vectors).
-    static func seal(_ plaintext: Data, secret: VaultEpochKey, vaultId: UUID, nonce: Data? = nil) throws -> Data {
+    /// `SMPU 0x01 ‖ nonce ‖ AES-256-GCM(plaintext) ‖ tag`, or with `epoch` (a per-device file, §12.5)
+    /// `SMPU 0x02 ‖ epoch (u32 BE) ‖ nonce ‖ … ‖ tag`; the header is the associated data's start.
+    /// `nonce` is random unless given (test vectors).
+    static func seal(_ plaintext: Data, secret: VaultEpochKey, vaultId: UUID, epoch: Int? = nil, nonce: Data? = nil) throws -> Data {
+        var header = Data(magic)
+        if let epoch {
+            guard (0...Int(UInt32.max)).contains(epoch) else { throw PublishedSummariesError.damaged("epoch out of range") }
+            let e = UInt32(epoch)
+            header = Data(deviceMagic) + Data([UInt8(e >> 24), UInt8(e >> 16 & 0xff), UInt8(e >> 8 & 0xff), UInt8(e & 0xff)])
+        }
         let n = try nonce.map { try AES.GCM.Nonce(data: $0) } ?? AES.GCM.Nonce()
-        let box = try AES.GCM.seal(plaintext, using: key(secret), nonce: n, authenticating: aad(vaultId: vaultId))
+        let box = try AES.GCM.seal(plaintext, using: key(secret), nonce: n, authenticating: aad(header: header, vaultId: vaultId))
         guard let combined = box.combined else { throw PublishedSummariesError.damaged("cannot seal") }
-        return Data(magic) + combined
+        return header + combined
     }
 
     /// The plaintext of a sealed file; throws `damaged` for anything that is not one of this vault's.
     static func open(_ data: Data, secret: VaultEpochKey, vaultId: UUID) throws -> Data {
         guard data.count <= maxFileBytes else { throw PublishedSummariesError.damaged("larger than \(maxFileBytes) bytes") }
-        guard data.count >= magic.count + nonceSize + tagSize, data.prefix(magic.count).elementsEqual(magic) else {
+        let headerSize = data.starts(with: deviceMagic) ? deviceHeaderSize : magic.count
+        guard data.count >= headerSize + nonceSize + tagSize, looksSealed(data) else {
             throw PublishedSummariesError.damaged("not a published summaries file")
         }
         do {
-            let box = try AES.GCM.SealedBox(combined: data.dropFirst(magic.count))
-            return try AES.GCM.open(box, using: key(secret), authenticating: aad(vaultId: vaultId))
+            let box = try AES.GCM.SealedBox(combined: data.dropFirst(headerSize))
+            return try AES.GCM.open(box, using: key(secret), authenticating: aad(header: Data(data.prefix(headerSize)), vaultId: vaultId))
         } catch {
             throw PublishedSummariesError.damaged("does not authenticate (another vault, another secret, or altered)")
         }
@@ -345,7 +375,9 @@ extension Vault {
     public func sealPublishedSummaries(_ contents: PublishedSummaries.Contents) throws -> Data {
         let json = try PublishedSummaries.encode(contents.entries, vaultId: vaultId, device: contents.device,
                                                  version: contents.version)
-        return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId)
+        // A per-device file carries its epoch in the clear (format.md §12.5).
+        return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId,
+                                           epoch: contents.device == nil ? nil : manifest.epoch)
     }
 
     /// The valid entries of a sealed file of this vault.
@@ -373,6 +405,9 @@ extension Vault {
     /// rest. Anything else throws `damaged`: such a copy is never placed and never ordered against another.
     public func openDevicePublishedSummaries(_ data: Data, device: DeviceID, now: Date = Date()) throws
         -> PublishedSummaries.Contents {
+        guard data.starts(with: PublishedSummaries.deviceMagic) else {
+            throw PublishedSummariesError.damaged("not a per-device file (no epoch header)")
+        }
         let contents = try openPublishedSummariesContents(data)
         guard contents.device == device else {
             throw PublishedSummariesError.damaged("written for another device than its name says")

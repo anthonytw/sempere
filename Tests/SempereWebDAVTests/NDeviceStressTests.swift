@@ -698,7 +698,10 @@ final class StressWorld {
             if Set(d.rootFolderFiles(CaptureFile.folderName).keys) != Set(inbox.keys) { fail("\(d.name) holds another inbox than A") }
             if d.rootFolderFiles(PublishedSummaries.deviceFolderName) != summaries { fail("\(d.name) holds other summaries than A") }
             if let mine = published[d.name], summaries[PublishedSummaries.deviceFileName(d.device)] != mine {
-                fail("\(d.name)'s own summaries file is not the one it wrote")
+                let va = try a.vault()
+                func info(_ x: Data?) -> String { x.map { (try? va.openPublishedSummariesContents($0)).map { "v\($0.version ?? -1) dev \($0.device?.rawValue ?? "-") n\($0.entries.count)" } ?? "unreadable" } ?? "nil" }
+                let own = d.rootFolderFiles(PublishedSummaries.deviceFolderName)[PublishedSummaries.deviceFileName(d.device)]
+                fail("\(d.name)'s own summaries file is not the one it wrote: A has \(info(summaries[PublishedSummaries.deviceFileName(d.device)])), wrote \(info(mine)), own now \(info(own)), now \(d.now.timeIntervalSince1970)")
             }
         }
         for t in targets {

@@ -3375,9 +3375,24 @@ write per-device files (§12.5).
 ### 12.5 Per-device files
 
 A vault may also hold `summaries/<device>.sealed`, where `<device>` is a
-writer's device id (§5, 8 lowercase hex digits): the same file as §12.1 and
-§12.2 (same key, same associated data, same content), written only by that
-device, from its own listing, when the notes it has read change. Since no two
+writer's device id (§5, 8 lowercase hex digits): the file of §12.1 and §12.2
+(same key, same content) with a longer header that carries the epoch in the
+clear:
+
+| Offset | Size | Content |
+| --- | --- | --- |
+| 0 | 4 | ASCII `SMPU` |
+| 4 | 1 | version `0x02` |
+| 5 | 4 | the epoch (§15.2) whose key sealed it, big-endian |
+| 9 | 12 | nonce, random per write |
+| 21 | rest | AES-256-GCM ciphertext under `key`, then its 16-byte tag |
+
+The associated data is the first 9 bytes ‖ `"sempere/1"` ‖ `0x00` ‖ `vaultId`,
+so a changed epoch does not open. A device that cannot open a copy reads the
+epoch to tell a copy of a later epoch (sealed under a key it does not hold:
+left as it is) from a damaged or stale one (of its epoch or an earlier one:
+replaced). It is written only by that device, from its own listing, when the
+notes it has read change. Since no two
 devices ever write one file, a file-sync service never has two versions of
 it to reconcile (§1.3), whatever the devices do at once. Names that are not
 `<device>.sealed` with a valid device id are ignored. Its content names that device in `device` and
@@ -3410,16 +3425,19 @@ device keeps the same one). The version is read only from a copy that opens,
 names the device and is within the 7-day window, so storage cannot forge one; a
 copy without one never replaces one with. "The side that changed since the last
 sync" is not an order: two devices that each sync two places can hand two
-versions round them for ever. A sealed copy (`SMPU` `0x01`) a device cannot open
-is never replaced by it: it may be sealed under a later epoch's key that device
-lacks. Without the key nothing is ordered, and differing copies stay as they are.
+versions round them for ever. A copy a device cannot open is never replaced by
+it when its header names a later epoch than the device's own (sealed under a key
+the device lacks); one of the device's epoch or an earlier one is damaged or
+stale and is replaced. Without the key nothing is ordered, and differing copies
+stay as they are (a locked staging run takes the other side's copy, which the
+run that places it orders).
 A device's own file is only ever written by that device: a sync never replaces
 it with another copy, and replaces any other copy with it except one ordered
 after it, which is left until the device writes a later version. Another key
 holder can therefore hold back a device's file with a forged version for at
 most the 7-day window (summaries are hints; a device signature over the version
 would end this, and is not in this version). A received file is placed only
-when it starts with `SMPU` `0x01` and, with the vault unlocked, opens as that
+when it starts with `SMPU` `0x02` and, with the vault unlocked, opens as that
 device's file (§12.3); otherwise it is skipped (a hint, never quarantined).
 Nothing is ever deleted.
 

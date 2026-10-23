@@ -159,6 +159,25 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertEqual(PublishedSummaries.accepted(1_790_000_000_000 + 7 * 86_400_000, now: t0), 1_790_000_000_000 + 7 * 86_400_000)
     }
 
+    /// A per-device file is `SMPU 0x02 ‖ epoch (u32 BE) ‖ nonce ‖ ciphertext ‖ tag`, the header bound as
+    /// associated data (format.md §12.5); the root file keeps `SMPU 0x01`.
+    func testDeviceFilesCarryTheirEpochInAnAuthenticatedHeader() throws {
+        let vault = try makeVault(pqIdentity())
+        let file = try vault.sealPublishedSummaries(PublishedSummaries.Contents(entries: [:], device: devA, version: 5))
+        XCTAssertEqual(Array(file.prefix(9)), [0x53, 0x4D, 0x50, 0x55, 0x02, 0, 0, 0, UInt8(vault.manifest.epoch)])
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(file), vault.manifest.epoch)
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(file, device: devA, now: Date(timeIntervalSince1970: 0)).version, 5)
+        var changed = file
+        changed[8] ^= 0x02
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(changed), vault.manifest.epoch ^ 2)
+        XCTAssertThrowsError(try vault.openPublishedSummaries(changed), "the header is authenticated")
+        let root = try vault.sealPublishedSummaries([:])
+        XCTAssertEqual(Array(root.prefix(5)), [0x53, 0x4D, 0x50, 0x55, 0x01])
+        XCTAssertNil(PublishedSummaries.sealedEpoch(root))
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(root, device: devA), "a per-device file has the epoch header")
+        XCTAssertNil(PublishedSummaries.sealedEpoch(Data([0x53, 0x4D, 0x50, 0x55, 0x02, 0])))
+    }
+
     func testVersionsAreBoundedAndMalformedOnesAreDroppedAlone() throws {
         XCTAssertNil(PublishedSummaries.nextVersion(after: PublishedSummaries.maxVersion, now: Date()))
         XCTAssertEqual(PublishedSummaries.nextVersion(after: nil, now: Date(timeIntervalSince1970: -5)), 1)

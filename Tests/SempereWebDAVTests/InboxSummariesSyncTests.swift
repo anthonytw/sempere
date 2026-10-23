@@ -360,17 +360,23 @@ class InboxSummariesScenarioCase: SyncTestCase {
         try settle("A"); try settle("B")
     }
 
-    /// Review of #83 (M2): a sealed copy B cannot open (here sealed under another vault's key, as a copy
-    /// under a later epoch is for a removed or lagging device) is never replaced by B's older readable one;
-    /// B reports it and goes quiet.
-    func scenarioAnUnreadableCopyIsNeverReplaced() throws {
+    /// Review of #83 (M2): a copy B cannot open whose clear header names a later epoch (here sealed under
+    /// another vault's key with epoch 2 in the header, as a copy of a later epoch is for a removed or lagging
+    /// device) is never replaced by B's older readable one, nor by the owner; B reports it and goes quiet.
+    /// One of B's own epoch that does not open (damaged, cut short by a server) is replaced.
+    func scenarioALaterEpochCopyIsNeverReplaced() throws {
         try twoDevices()
         let a1 = try publish("A")
         try run("A"); try run("B")
         XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], a1, label)
-        let other = try makeVault("X")
-        let later = try other.sealPublishedSummaries(
-            PublishedSummaries.Contents(entries: [:], device: device("A"), version: nowMillis + 10_000))
+        let a = try openVault("A"), other = try makeVault("X")
+        func sealed(epoch: Int) throws -> Data {
+            let json = try PublishedSummaries.encode([:], vaultId: a.vaultId, device: device("A"), version: nowMillis + 10_000)
+            return try PublishedSummaries.seal(try Gzip.compress(json), secret: try other.requireSecret(), vaultId: a.vaultId,
+                                               epoch: epoch)
+        }
+        let later = try sealed(epoch: a.manifest.epoch + 1)
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(later), a.manifest.epoch + 1)
         if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
         try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(later), condition: .unconditional)
         let r = try run("B")
@@ -381,6 +387,14 @@ class InboxSummariesScenarioCase: SyncTestCase {
         // The owner leaves it too (it may be its own file under a key it no longer holds).
         XCTAssertFalse(try run("A").uploaded.contains("summaries/aaaaaaaa.sealed"), label)
         XCTAssertEqual(try remoteA(), later, label)
+        try settle("A"); try settle("B")
+
+        // Of this epoch but not opening (damaged): replaced by the readable copy.
+        let damaged = try sealed(epoch: a.manifest.epoch)
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+        try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(damaged), condition: .unconditional)
+        XCTAssertTrue(try run("B").uploaded.contains("summaries/aaaaaaaa.sealed"), label)
+        XCTAssertEqual(try remoteA(), a1, label)
         try settle("A"); try settle("B")
     }
 
@@ -525,7 +539,7 @@ final class InboxSummariesOverMemoryTests: InboxSummariesScenarioCase {
     func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
     func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
     func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
-    func testAnUnreadableCopyIsNeverReplaced() throws { try scenarioAnUnreadableCopyIsNeverReplaced() }
+    func testALaterEpochCopyIsNeverReplaced() throws { try scenarioALaterEpochCopyIsNeverReplaced() }
     func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
     func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
     func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
@@ -546,7 +560,7 @@ final class InboxSummariesOverWebDAVMockTests: InboxSummariesScenarioCase {
     func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
     func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
     func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
-    func testAnUnreadableCopyIsNeverReplaced() throws { try scenarioAnUnreadableCopyIsNeverReplaced() }
+    func testALaterEpochCopyIsNeverReplaced() throws { try scenarioALaterEpochCopyIsNeverReplaced() }
     func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
     func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
     func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
@@ -565,7 +579,7 @@ final class InboxSummariesOverFolderTests: InboxSummariesScenarioCase {
     func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
     func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
     func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
-    func testAnUnreadableCopyIsNeverReplaced() throws { try scenarioAnUnreadableCopyIsNeverReplaced() }
+    func testALaterEpochCopyIsNeverReplaced() throws { try scenarioALaterEpochCopyIsNeverReplaced() }
     func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
     func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
     func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }

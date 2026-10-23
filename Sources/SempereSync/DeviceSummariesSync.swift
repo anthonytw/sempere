@@ -23,11 +23,12 @@ import Sempere
 //   beyond it (the cap included) never wins. Device signatures over the
 //   version would end forgery: TODO(KH4/KH5), once summaries use the vault's
 //   device ids and their signing keys.
-// - a sealed copy (`SMPU` `0x01`) this device cannot open is never replaced,
-//   own file or not: it may be sealed under a later epoch's key (a removed or
-//   lagging device would otherwise put its stale copy back on every run).
-//   TODO(KH4): an epoch number in the clear (bound as associated data) would
-//   let a device replace copies of earlier epochs only.
+// - a copy that does not open and whose clear header (`SMPU` `0x02`, bound as
+//   associated data) names a later epoch than this device's is never
+//   replaced, own file or not: this device holds no key for it (a removed or
+//   lagging device would otherwise put its stale copy back on every run). One
+//   that does not open but is of this epoch or an earlier one is damaged or
+//   stale, and is replaced like any unordered copy.
 // - locked, nothing is ordered: a differing copy is left on both sides, except
 //   that a locked staging run (pull-only, `LockedStaging`) stages the remote
 //   copy, which the placing run then orders under the key.
@@ -45,7 +46,6 @@ import Sempere
 // upload, and never replace a later version.
 
 extension SyncEngine {
-    static let sealedMagic = Data("SMPU".utf8) + Data([1])
 
     func syncDeviceSummaries(remoteRoot: [String: RemoteEntry]) throws {
         let folder = PublishedSummaries.deviceFolderName
@@ -117,12 +117,12 @@ extension SyncEngine {
         }
         let local = classifySummary(localData, device: device, vault: v)
         let remoteCopy = classifySummary(got.data, device: device, vault: v)
-        // Never replace a sealed copy this device cannot open: it may be sealed under a later epoch's key that
-        // this device does not hold (a removed or lagging device would otherwise fight the others for ever).
-        if case .unreadable = remoteCopy {
-            report.skipped.append(.init(path: path, message: "the remote copy does not open under this device's keys "
-                                        + "(a later key, or damaged); left as it is"))
-            return .init(hash: localHash, stamp: stamp)
+        // Never replace a copy sealed under a later epoch than this device's: it holds no key for it (a removed
+        // or lagging device would otherwise put its stale copy back on every run). Not recorded, so it is read
+        // again next run (a server's changed answer can make a copy look like one).
+        if case .laterEpoch = remoteCopy {
+            report.skipped.append(.init(path: path, message: "the remote copy is sealed under a later epoch's key; left as it is"))
+            return record
         }
         let later = Self.laterSummary(local: (local.version, localHash), remote: (remoteCopy.version, remoteHash))
         if own {
@@ -147,8 +147,9 @@ extension SyncEngine {
             return record
         case nil:
             // Neither copy is ordered: each opens but names another device (another device's file put under
-            // this name), has no version or one beyond the window, or is not a sealed file at all. Recorded,
-            // so neither is fetched again until one side changes.
+            // this name), has no version or one beyond the window, or does not open and is of this epoch or an
+            // earlier one (damaged, cut, stale), or is not a sealed file at all. Recorded, so neither is fetched
+            // again until one side changes.
             report.skipped.append(.init(path: path, message: "neither copy opens as this device's file; neither is replaced"))
             return .init(hash: localHash, stamp: stamp)
         }
@@ -156,25 +157,27 @@ extension SyncEngine {
 
     /// What one copy of a device's file is to this run.
     enum SummaryCopy {
-        /// Opens, names the device, and has a version within the window (`PublishedSummaries.accepted`).
+        /// Opens as the device's file and has a version within the window (`PublishedSummaries.accepted`).
         case ordered(Int64)
-        /// Opens under the key but is not ordered: another device's name, no version, or one too far ahead.
+        /// Not ordered, and replaceable: it opens but names another device, has no version or one too far
+        /// ahead; or it does not open and its clear header names this device's epoch or an earlier one (or
+        /// none: damaged, cut, or not a sealed file at all).
         case unordered
-        /// A sealed file (`SMPU` `0x01`) that does not open: never replaced.
-        case unreadable
-        /// Not a sealed file at all.
-        case junk
+        /// Does not open, and its clear header names a later epoch than this device's: never replaced.
+        case laterEpoch
 
         var version: Int64? { if case .ordered(let v) = self { return v } else { return nil } }
     }
 
     func classifySummary(_ data: Data, device: DeviceID, vault v: Vault) -> SummaryCopy {
-        guard data.starts(with: Self.sealedMagic) else { return .junk }
-        guard let contents = try? v.openPublishedSummariesContents(data) else { return .unreadable }
-        guard contents.device == device, let version = PublishedSummaries.accepted(contents.version, now: options.now) else {
+        guard let contents = try? v.openDevicePublishedSummaries(data, device: device, now: options.now) else {
+            if let epoch = PublishedSummaries.sealedEpoch(data), epoch > v.manifest.epoch,
+               (try? v.openPublishedSummariesContents(data)) == nil {
+                return .laterEpoch
+            }
             return .unordered
         }
-        return .ordered(version)
+        return contents.version.map { .ordered($0) } ?? .unordered
     }
 
     enum SummarySide { case local, remote }
@@ -222,7 +225,7 @@ extension SyncEngine {
     private func placeDeviceSummary(_ name: String, _ data: Data, stamp: String?, replacing: Bool) throws -> SyncState.MutableRecord? {
         let folder = PublishedSummaries.deviceFolderName
         let path = "\(folder)/\(name)"
-        guard data.starts(with: Self.sealedMagic) else {
+        guard PublishedSummaries.looksSealed(data) else {
             report.skipped.append(.init(path: path, message: "not a sealed summaries file; not placed"))
             return nil
         }
