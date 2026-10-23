@@ -793,6 +793,11 @@ public final class SyncEngine {
                 + "on the target yet"))
             return false
         }
+        if name == Vault.manifestName, epochHold != nil {
+            // Waiting for a device change, or unlisted (design §4.3, §5.5): this device's vault.json is not spread.
+            report.skipped.append(.init(path: name, message: "not uploaded while a device change is not verified here"))
+            return false
+        }
         if options.dryRun { report.uploaded.append(name); return true }
         try ensureCollection([])
         guard try transport.write([name], .data(data), condition: condition) else { return false }
@@ -1034,6 +1039,8 @@ public final class SyncEngine {
             try attempt(n) { if try download(id, n, entry: entries[n]) { L.insert(n) } }
         }
         for n in newLocal.subtracting(backLocal).sorted() {
+            // Set aside here (design §5.8): never uploaded, so it is placed nowhere else.
+            if heldAside("notes/\(key(id, n))") { continue }
             // The pre-upload pass may have made it already (`preuploadNewFiles`), or tried and reported it.
             switch preuploadOutcome(id, key(id, n)) {
             case .uploaded: R.insert(n)

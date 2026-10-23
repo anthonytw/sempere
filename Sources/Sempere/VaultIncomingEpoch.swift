@@ -154,7 +154,8 @@ extension Vault {
         if ours.ids.contains(incoming.epochId) { return .behind }
         let held = identityRecipients
         guard let entry = incoming.devices.first(where: { held.contains($0.key) }) else {
-            if let notice = Self.removalNotice(incoming, held: held, signing: signing, trust: trustStore) {
+            if let notice = Self.removalNotice(incoming, held: held, signing: signing, trust: trustStore)
+                ?? takeoverWithoutThisDevice(incoming) {
                 // Verified from the pinned epoch (link and signatures): unlisted, unless this device's own chain
                 // drops it (a takeover that re-admitted this device, design §5.6).
                 if let node = manifestNode(incoming),
@@ -243,6 +244,25 @@ extension Vault {
         }
         if ids.isEmpty { ids = [manifest.epochId] }
         return (ids, nodes)
+    }
+
+    /// A takeover under an epoch of this device's pinned chain (not only its frontier) that does not list it,
+    /// verified from the pinned chain alone (design §5.6 rule 3): the link under that epoch's link keys,
+    /// `recoverySig` by the kit `TakeoverRule` names for this device, `epochSig` by the new home. Why, or nil.
+    func takeoverWithoutThisDevice(_ m: EpochManifest) -> String? {
+        guard EpochReason(rawValue: m.epochReason) == .takeover, let record = trustedRecord(),
+              let i = record.chain.firstIndex(where: { $0.epochId == m.parent }), m.epoch == record.chain[i].epoch + 1,
+              EpochLinks.verify(m.epochLink, keys: record.chain[i].linkPublicKeys, epoch: m.epoch, childEpochId: m.epochId,
+                                vaultId: m.vaultId),
+              let message = m.epochMessage, let rs = m.recoverySig, let recovery = m.recoveryEntry, let rk = recovery.sign,
+              TakeoverRule.recoveryKey(parentRecovery: record.chain[i].recovery, parentPath: record.chain[...i].map(\.epochId),
+                                       pinned: record.chain.map { TakeoverRule.PinnedEpoch(epochId: $0.epochId, recovery: $0.recovery) })
+                == recovery.fingerprint,
+              rs.verifies(message, keys: rk), let home = m.homeEntry, let hk = home.sign, m.epochSig.verifies(message, keys: hk)
+        else { return nil }
+        return "this device is not on the newest device list of the vault: \(DeviceName.display(home.name)) (\(home.id ?? "?")) "
+            + "took over with the recovery kit (epoch \(m.epoch)). It writes nothing to the vault. If that is a mistake, a "
+            + "takeover with the recovery kit undoes it, and this device rejoins when the vault shows it."
     }
 
     /// The precedence rule's view of a `vault.json` whose record this device cannot read, from its own signed

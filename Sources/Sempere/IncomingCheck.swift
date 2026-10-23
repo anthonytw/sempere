@@ -33,7 +33,8 @@ extension Vault {
     /// signing keys, the trust store and the given root): after `vault.json` was replaced (a sync took a
     /// later version), so the list is checked again and files under the key it carries now.
     public func reopened() throws -> Vault {
-        try Vault.open(at: url, identities: unlockIdentities, signing: signing, trust: trustStore, root: givenRoot)
+        try Vault.open(at: url, identities: unlockIdentities, signing: signing, trust: trustStore, root: givenRoot,
+                       ledger: ledger, setAside: setAsideStore)
     }
 
     /// Checks a revision file received from elsewhere before it is placed as

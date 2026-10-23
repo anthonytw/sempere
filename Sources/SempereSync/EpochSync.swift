@@ -394,6 +394,13 @@ extension SyncEngine {
         ledgerShas = latest
     }
 
+    /// True when this device set the working copy's file at `path` aside (design §5.8): it is never uploaded.
+    func heldAside(_ path: String) -> Bool {
+        guard unacceptedHere[path] != nil else { return false }
+        locked { report.skipped.append(.init(path: path, message: "set aside here (from before a device change); not uploaded")) }
+        return true
+    }
+
     /// Both sides hold revision `n` of note `id`: when this device set its copy aside, or rewrote it since both
     /// sides last matched, the remote's is read; the accepted one replaces an unaccepted one.
     func replaceUnacceptedRevision(_ id: String, _ n: RevisionName, entry: RemoteEntry?) throws {
@@ -414,16 +421,23 @@ extension SyncEngine {
         let here = unacceptedHere[path]
         let rewritten = ledgerShas[path]
         guard here != nil || (rewritten != nil && rewritten != recorded) else { return }
+        // A copy set aside here is compared again only when the remote's version changed.
+        if here != nil, let stamp = entry?.stamp, locked({ state.comparedAside?[path] }) == stamp { return }
         let file = root.appendingPathComponent(path)
         let local = try BoundedRead.contents(of: file, maxBytes: options.maxFileBytes)
         let localSha = FileDigest.sha256(local)
-        guard localSha == here || localSha == rewritten, localSha != recorded else { return }
+        guard localSha == here || (localSha == rewritten && localSha != recorded) else { return }
+        defer {
+            if here != nil, let stamp = entry?.stamp {
+                locked { state.comparedAside = state.comparedAside ?? [:]; state.comparedAside?[path] = stamp }
+            }
+        }
         if try !available(remotePath, entry: entry) { return }
         let got = try transport.read(remotePath, maxBytes: options.maxFileBytes)
         try locked { try budget.downloaded(got.data.count) }
         let remoteSha = FileDigest.sha256(got.data)
         if remoteSha == localSha {
-            locked { placedShas[recordKey] = localSha }
+            if here == nil { locked { placedShas[recordKey] = localSha } }
             return
         }
         let mine = v.acceptance(of: local, path: path), theirs = v.acceptance(of: got.data, path: path)
@@ -462,6 +476,7 @@ extension SyncEngine {
                 report.downloaded.append(path)
                 report.replaced.append(.init(side: "local", path: path))
                 placedShas[recordKey] = remoteSha
+                state.comparedAside?[path] = nil
             }
         } else if mine.isAccepted, theirs.isAccepted {
             // Both accepted (a sealed copy and its re-encryption: the same body): neither is replaced.

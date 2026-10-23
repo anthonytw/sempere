@@ -109,6 +109,9 @@ struct SyncState: Codable, Equatable {
     /// the local names. With `skipUnchangedNotes` on a server seen to change folder ETags, an unchanged pair is
     /// not listed again (KH4).
     var epochsStamp: EpochsStamp?
+    /// Paths this device set aside that are still in place here, with the remote version they were last
+    /// compared with: read again only when the remote's changes (design §5.4 step 4; KH4).
+    var comparedAside: [String: String]?
 
     struct EpochsStamp: Codable, Equatable {
         var etag: String

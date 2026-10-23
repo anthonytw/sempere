@@ -64,6 +64,7 @@ extension SyncEngine {
             let dir = root.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
             let revisions = local.subtracting(remote).subtracting(options.pushOnly ? [] : recorded)
                 .compactMap(RevisionName.init).sorted()
+                .filter { !heldAside("notes/\(key(id, $0))") }
                 .filter { n in
                     // Read whole to upload: only small ones here, so memory stays bounded.
                     guard let size = LocalFS.regularFileSize(dir.appendingPathComponent(n.filename)) else { return false }
@@ -71,7 +72,7 @@ extension SyncEngine {
                 }
                 .map { PreuploadItem(note: id, blob: nil, revision: $0, key: key(id, $0)) }
             var blobs: [PreuploadItem] = []
-            if let names = preuploadBlobNames(id, remoteAtt: remoteAtt) {
+            if let names = preuploadBlobNames(id, remoteAtt: remoteAtt)?.filter({ !heldAside("notes/\(blobKey(id, $0))") }) {
                 blobs = names.map { PreuploadItem(note: id, blob: $0, revision: nil, key: blobKey(id, $0)) }
             }
             guard !blobs.isEmpty || !revisions.isEmpty else { continue }

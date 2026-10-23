@@ -141,7 +141,7 @@ extension SyncEngine {
                 if let size = try downloadBlob(id, name, entry: set.remote[name]) { set.local[name] = size }
             }
         }
-        for name in ordered(newLocal, { set.local[$0] ?? 0 }) {
+        for name in ordered(newLocal, { set.local[$0] ?? 0 }) where !heldAside("notes/\(blobKey(id, name))") {
             // The pre-upload pass may have made it already (`preuploadNewFiles`), or tried and reported it.
             switch preuploadOutcome(id, blobKey(id, name)) {
             case .uploaded: set.remote[name] = RemoteEntry(name: name, isCollection: false)
