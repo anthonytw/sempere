@@ -139,7 +139,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ tomó el control de los dispositivos de “%2$@” con el kit de recuperación, %3$@. Si no fue usted, reemplace el kit de recuperación en un dispositivo que aún gestione los dispositivos."
+            "value" : "%1$@ tomó el control de los dispositivos de “%2$@” con el kit de recuperación, %3$@. Si no fuiste tú, reemplaza el kit de recuperación en un dispositivo que aún gestione los dispositivos."
           }
         }
       }
@@ -960,19 +960,19 @@
               "many" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld archivos de este dispositivo no están en ningún destino de sincronización y se perderán. Expórtelos antes para conservarlos."
+                  "value" : "%lld archivos de este dispositivo no están en ningún destino de sincronización y se perderán. Expórtalos antes para conservarlos."
                 }
               },
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld archivo de este dispositivo no está en ningún destino de sincronización y se perderá. Expórtelo antes para conservarlo."
+                  "value" : "%lld archivo de este dispositivo no está en ningún destino de sincronización y se perderá. Expórtalo antes para conservarlo."
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld archivos de este dispositivo no están en ningún destino de sincronización y se perderán. Expórtelos antes para conservarlos."
+                  "value" : "%lld archivos de este dispositivo no están en ningún destino de sincronización y se perderán. Expórtalos antes para conservarlos."
                 }
               }
             }
@@ -2568,7 +2568,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una copia de la nueva clave de recuperación en la bóveda protegida con una frase, para que la frase sola permita tomar el control. Déjela vacía para no tener ninguna; cualquier copia antigua se borra."
+            "value" : "Una copia de la nueva clave de recuperación en la bóveda protegida con una frase, para que la frase sola permita tomar el control. Déjala vacía para no tener ninguna; cualquier copia antigua se borra."
           }
         }
       }
@@ -5138,7 +5138,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Confirme cada dispositivo"
+            "value" : "Confirma cada dispositivo"
           }
         }
       }
@@ -6125,7 +6125,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Borra la copia de la bóveda de este dispositivo. La bóveda en sus otros dispositivos y destinos de sincronización no cambia."
+            "value" : "Borra la copia de la bóveda de este dispositivo. La bóveda en tus otros dispositivos y destinos de sincronización no cambia."
           }
         }
       }
@@ -7688,7 +7688,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Archivos con una clave anterior que ningún cambio de dispositivos conservó: escritos después de una retirada, por un dispositivo quitado o por uno que no se había puesto al día. Nunca se leen como notas y nunca se borran salvo que usted lo haga. Mantenga pulsado uno para ver sus acciones."
+            "value" : "Archivos con una clave anterior que ningún cambio de dispositivos conservó: escritos después de una retirada, por un dispositivo quitado o por uno que no se había puesto al día. Nunca se leen como notas y nunca se borran salvo que lo hagas tú. Mantén pulsado uno para ver sus acciones."
           }
         }
       }
@@ -8669,7 +8669,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si la culpa es de un servicio de sincronización o de otro dispositivo, la próxima sincronización de un dispositivo que gestiona los dispositivos restaura la lista. Si no, tome el control con el kit de recuperación en Ajustes ▸ Sincronización y dispositivos ▸ Dispositivos."
+            "value" : "Si la culpa es de un servicio de sincronización o de otro dispositivo, la próxima sincronización de un dispositivo que gestiona los dispositivos restaura la lista. Si no, toma el control con el kit de recuperación en Ajustes ▸ Sincronización y dispositivos ▸ Dispositivos."
           }
         }
       }
@@ -8692,7 +8692,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si aún tiene el kit actual, su clave deja constancia de que su titular estuvo de acuerdo. No cambia nada más."
+            "value" : "Si aún tienes el kit actual, su clave deja constancia de que su titular estuvo de acuerdo. No cambia nada más."
           }
         }
       }
@@ -9350,7 +9350,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aún puede acceder a su almacenamiento. Cambie la contraseña de %@ o cierre su sesión de iCloud si ya no lo controla."
+            "value" : "Aún puede acceder a tu almacenamiento. Cambia la contraseña de %@ o cierra su sesión de iCloud si ya no lo controlas."
           }
         }
       }
@@ -9362,7 +9362,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aún puede acceder a su almacenamiento. Cierre su sesión de iCloud (o del servicio que guarda su carpeta de sincronización) si ya no lo controla."
+            "value" : "Aún puede acceder a tu almacenamiento. Cierra su sesión de iCloud (o del servicio que guarda tu carpeta de sincronización) si ya no lo controlas."
           }
         }
       }
@@ -14957,7 +14957,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quite cualquier dispositivo que ya no tenga o que no reconozca."
+            "value" : "Quita cualquier dispositivo que ya no tengas o que no reconozcas."
           }
         }
       }
@@ -15399,7 +15399,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reemplace ahora el kit de recuperación: el dispositivo quitado creó el actual."
+            "value" : "Reemplaza ahora el kit de recuperación: el dispositivo quitado creó el actual."
           }
         }
       }
@@ -17229,7 +17229,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Algunas son cambios que este dispositivo comprobó, como su propia retirada. Si las olvida, vuelve a escribir y a subir hasta que una sincronización encuentre de nuevo el cambio."
+            "value" : "Algunas son cambios que este dispositivo comprobó, como su propia retirada. Si las olvidas, vuelve a escribir y a subir hasta que una sincronización encuentre de nuevo el cambio."
           }
         }
       }
@@ -19566,7 +19566,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se reemplazó el kit de recuperación. Guarde el kit nuevo en un lugar seguro y destruya el antiguo."
+            "value" : "Se reemplazó el kit de recuperación. Guarda el kit nuevo en un lugar seguro y destruye el antiguo."
           }
         }
       }
@@ -20076,7 +20076,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pueden venir de un dispositivo quitado. Conserve solo lo que reconozca. Se añaden con la clave actual de la bóveda."
+            "value" : "Pueden venir de un dispositivo quitado. Conserva solo lo que reconozcas. Se añaden con la clave actual de la bóveda."
           }
         }
       }
@@ -20533,7 +20533,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este dispositivo gestiona los dispositivos: los añade, renombra y quita. Mantenga pulsado un dispositivo para ver sus acciones."
+            "value" : "Este dispositivo gestiona los dispositivos: los añade, renombra y quita. Mantén pulsado un dispositivo para ver sus acciones."
           }
         }
       }
@@ -21419,7 +21419,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Escriba la línea %lld de la clave impresa"
+            "value" : "Escribe la línea %lld de la clave impresa"
           }
         }
       }
@@ -21616,7 +21616,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desbloquee una bóveda para ver sus dispositivos."
+            "value" : "Desbloquea una bóveda para ver sus dispositivos."
           }
         }
       }
@@ -23426,7 +23426,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” gestiona los dispositivos: añádalos, renómbrelos y quítelos allí. Si se pierde, tome el control con el kit de recuperación."
+            "value" : "“%@” gestiona los dispositivos: añádelos, renómbralos y quítalos allí. Si se pierde, toma el control con el kit de recuperación."
           }
         }
       }
@@ -23437,7 +23437,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” reemplazó el kit de recuperación mientras gestionaba los dispositivos. Vuelva a reemplazar el kit después."
+            "value" : "“%@” reemplazó el kit de recuperación mientras gestionaba los dispositivos. Vuelve a reemplazar el kit después."
           }
         }
       }
