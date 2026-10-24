@@ -20561,6 +20561,18 @@
         }
       }
     },
+    "The request to join expired: the device that manages devices deletes requests after 7 days. Ask to join again." : {
+      "comment" : "Join screen: the request expired while waiting",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La solicitud para unirse caducó: el dispositivo que gestiona los dispositivos borra las solicitudes a los 7 días. Vuelve a pedir unirte."
+          }
+        }
+      }
+    },
     "The restored vault has problems; open it and check its notes." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21911,6 +21923,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se puede leer el registro que este dispositivo guarda de los dispositivos de la bóveda, así que la lista no se puede comprobar con él."
+          }
+        }
+      }
+    },
+    "This device's request to join the vault has expired: the device that manages devices deletes requests after 7 days. Forget this key, then join again." : {
+      "comment" : "Unlock sheet: this device's join request expired",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La solicitud de este dispositivo para unirse a la bóveda ha caducado: el dispositivo que gestiona los dispositivos borra las solicitudes a los 7 días. Olvida esta clave y vuelve a unirte."
           }
         }
       }

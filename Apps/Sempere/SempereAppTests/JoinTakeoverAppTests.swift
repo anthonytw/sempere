@@ -306,6 +306,29 @@ struct JoinTakeoverAppTests {
         #expect(why == RememberedKeys.strayText)
     }
 
+    /// Second re-check of #88: the marker lapses once home would have deleted the request (7 days): the device is
+    /// told the request expired and to join again, never left waiting.
+    @Test func aJoinWhoseRequestHomeDeletedExpires() async throws {
+        let w = try await Self.world()
+        defer { w.home.close() }
+        let (phone, phoneKeys) = try await Self.newDevice(w.url)
+        defer { phone.close() }
+        let id = try #require(phone.vault?.vaultId)
+        _ = try await phone.startJoin(store: phoneKeys.store)
+        let keys = try await phoneKeys.store.keys(for: id, reason: "")
+        #expect(phone.joinRequested(keys, vaultID: id) == .open)
+        phone.setJoinRequested(keys, vaultID: id, at: Date().addingTimeInterval(-8 * 86_400))
+        #expect(phone.joinRequested(keys, vaultID: id) == .lapsed)
+        // Home deleted it.
+        try FileManager.default.removeItem(at: w.url.appendingPathComponent("joins"))
+        guard case .keyProblem(let why) = await phoneKeys.unlockWithDeviceKey(phone) else { Issue.record("not expired"); return }
+        #expect(why == RememberedKeys.expiredText)
+        #expect(phoneKeys.joinStage == nil, "no longer waiting")
+        try await phoneKeys.forgetKeys(phone)
+        guard case .waiting = try await phone.startJoin(store: phoneKeys.store) else { Issue.record("cannot join again"); return }
+        #expect(phone.joinRequested(try await phoneKeys.store.keys(for: id, reason: ""), vaultID: id) == .open)
+    }
+
     @Test func theTakeoverScreenTellsTheKitsCodesApart() {
         #expect(TakeoverView.kitCode("sempere-root:abcd") == .root)
         #expect(TakeoverView.kitCode("AGE-SECRET-KEY-PQ-1QQQ") == .key)

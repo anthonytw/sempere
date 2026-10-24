@@ -218,8 +218,15 @@ struct JoinDeviceView: View {
 
     private func recheck() async {
         await model.refreshLockedManifest()
-        _ = await keys.unlockWithDeviceKey(model)
+        if case .keyProblem(let why) = await keys.unlockWithDeviceKey(model), why == RememberedKeys.expiredText {
+            // Home deleted the request (second re-check of #88): this join is over; Ask to Join starts a new one.
+            await model.cancelJoin(store: keys.store)
+            try? await keys.forgetKeys(model)
+            failure = Self.expiredText
+        }
     }
+
+    static let expiredText = String(localized: "The request to join expired: the device that manages devices deletes requests after 7 days. Ask to join again.")
 
     private func confirm(qr: String?) {
         working = true

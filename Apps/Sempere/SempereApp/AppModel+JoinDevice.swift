@@ -77,18 +77,30 @@ extension AppModel {
 
     /// This device asked to join `vaultID` with `keys` and has neither confirmed nor given up: while it is set, a
     /// copy without the request file (home took it with its approval, which has not arrived) still counts as
-    /// waiting, never as keys to forget.
-    func setJoinRequested(_ keys: DeviceKeys, vaultID: UUID) {
-        takeoverDefaults.set(Self.idText(keys.fingerprint), forKey: Self.joinRequestedKey(vaultID))
+    /// waiting, never as keys to forget. Kept as the keys' fingerprint and the time of the request.
+    func setJoinRequested(_ keys: DeviceKeys, vaultID: UUID, at date: Date = Date()) {
+        takeoverDefaults.set("\(Self.idText(keys.fingerprint)) \(RFC3339.string(date))", forKey: Self.joinRequestedKey(vaultID))
     }
 
     func clearJoinRequested(_ vaultID: UUID) {
         takeoverDefaults.removeObject(forKey: Self.joinRequestedKey(vaultID))
     }
 
-    func joinRequested(_ keys: DeviceKeys, vaultID: UUID) -> Bool {
-        takeoverDefaults.string(forKey: Self.joinRequestedKey(vaultID)) == Self.idText(keys.fingerprint)
+    /// The marker of `keys`' join of `vaultID`.
+    enum JoinMarker: Equatable { case none, open, lapsed }
+
+    /// The marker lapses once home has deleted the request, which it does `joinRequestLifetime` after the request
+    /// (design §6.2; second re-check of #88): the join is over, and the device is told to join again.
+    func joinRequested(_ keys: DeviceKeys, vaultID: UUID, now: Date = Date()) -> JoinMarker {
+        guard let text = takeoverDefaults.string(forKey: Self.joinRequestedKey(vaultID)) else { return .none }
+        let parts = text.split(separator: " ", maxSplits: 1).map(String.init)
+        guard parts.first == Self.idText(keys.fingerprint) else { return .none }
+        guard parts.count == 2, let date = RFC3339.parse(parts[1]) else { return .lapsed }
+        return now.timeIntervalSince(date) > Self.joinRequestLifetime ? .lapsed : .open
     }
+
+    /// How long home keeps a join request before it deletes it (design §6.2; `SyncEngine`'s rule).
+    nonisolated static let joinRequestLifetime: TimeInterval = 7 * 86_400
 
     nonisolated static func joinRequestedKey(_ vaultID: UUID) -> String {
         "Sempere.joinRequested.\(vaultID.uuidString.lowercased())"
@@ -103,6 +115,9 @@ extension AppModel {
         /// join cannot go on with (a failed kit join, a request home deleted). They are offered to be forgotten
         /// (review of #88, S3).
         case stray
+        /// Not listed, no request in the copy, and this device's request is older than home keeps one: home deleted
+        /// it. The device joins again (second re-check of #88).
+        case expired
     }
 
     /// Where this device's join of the open, locked vault stands, from its keys: a member when the vault lists the
@@ -122,9 +137,14 @@ extension AppModel {
         }
         let request = url.appendingPathComponent("joins").appendingPathComponent(
             keys.joinRequest(vaultId: locked.vaultId, name: "", kind: "").fileName)
-        // No request in the copy: home may have taken it with an approval this copy has not received yet.
-        guard FileManager.default.fileExists(atPath: request.path) || joinRequested(keys, vaultID: locked.vaultId) else {
-            return .stray
+        // No request in the copy: home may have taken it with an approval this copy has not received yet, until
+        // home would have deleted it anyway.
+        if !FileManager.default.fileExists(atPath: request.path) {
+            switch joinRequested(keys, vaultID: locked.vaultId) {
+            case .none: return .stray
+            case .lapsed: return .expired
+            case .open: break
+            }
         }
         joinIdentity = keys.nativeIdentity
         let codes = Self.joinCodes(keys, vaultId: locked.vaultId, kind: ThisDevice.kind)

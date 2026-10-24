@@ -41,6 +41,7 @@ final class RememberedKeys {
     private(set) var keyProblem: String?
 
     static let unreadableText = String(localized: "This device's key for the vault can no longer be read, for example after Face ID was set up again. Forget it, then join again or take over with the recovery kit.")
+    static let expiredText = String(localized: "This device's request to join the vault has expired: the device that manages devices deletes requests after 7 days. Forget this key, then join again.")
     static let strayText = String(localized: "This device has a key for the vault that is not on its device list and has no request to join. Forget it, then join again or take over with the recovery kit.")
     /// True while Face ID / the Keychain is being asked.
     private(set) var isUnlocking = false
@@ -134,7 +135,12 @@ final class RememberedKeys {
             return .joining
         case .stray:
             keyProblem = Self.strayText
+            joinStage = nil
             return .keyProblem(Self.strayText)
+        case .expired:
+            keyProblem = Self.expiredText
+            joinStage = nil
+            return .keyProblem(Self.expiredText)
         case .member:
             break
         }
