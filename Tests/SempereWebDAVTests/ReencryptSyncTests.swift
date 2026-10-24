@@ -127,6 +127,29 @@ final class ReencryptSyncTests: SyncTestCase {
         XCTAssertEqual(try w["B"].titles()[after], "C after")
     }
 
+    /// Sync stress seed 10 (KH6): a device that jumped epochs never held the keys between; while the re-encryption is
+    /// pending it takes them from the bound journal into its ledger, so after the finish it can still judge (set aside
+    /// and delete on the targets it bridges) a file a removed device uploaded under one of them, instead of reading it
+    /// as undecryptable and only quarantining it.
+    func testADeviceThatJumpedEpochsKeepsTheJournalsKeys() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "C"], targets: ["T1"])
+        let t1 = w.target("T1")
+        try w["A"].sync(t1); try w["B"].sync(t1); try w["C"].sync(t1)
+        // C is offline through epochs 2 (B removed, by a kit replacement keeping C) and 3 (the re-encryption).
+        var a = try w["A"].open()
+        let c = try XCTUnwrap(a.manifest.devices.first { $0.fingerprint == w["C"].keys.fingerprint }?.id)
+        let b = try XCTUnwrap(a.manifest.devices.first { $0.fingerprint == w["B"].keys.fingerprint }?.id)
+        _ = try a.replaceRecoveryKit(try MLKEM768X25519Identity(), keep: [c], remove: [b])
+        let epoch2 = try w["A"].open().manifest.epochId
+        try w["A"].sync(t1)
+        try Self.start(w, home: "A", targets: [t1])
+        try w["A"].sync(t1)
+        XCTAssertFalse(try w["C"].ledger.epochKeys().contains { $0.key.epochId == epoch2 }, "C never opened epoch 2")
+        try w["C"].sync(t1)
+        XCTAssertTrue(try w["C"].open().isReencryptPending)
+        XCTAssertTrue(try w["C"].ledger.epochKeys().contains { $0.key.epochId == epoch2 }, "taken from the bound journal")
+    }
+
     /// §7.2: a device offline for the whole re-encryption comes back after the finish (journal and earlier records
     /// gone everywhere): its copies are replaced by the current ones, its own write from the offline time is caught
     /// up from its ledger, and its working copy then holds nothing under an earlier key.

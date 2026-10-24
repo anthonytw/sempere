@@ -112,7 +112,18 @@ extension Vault {
     mutating func attachReencryptKeys() {
         guard let keyring, reencryptEpoch != nil else { return }
         var keys: [(epoch: Int, key: VaultEpochKey)] = []
-        if let (_, j) = localBoundJournal() { keys += j.keys.map { ($0.epoch, $0.key) } }
+        if let (_, j) = localBoundJournal() {
+            keys += j.keys.map { ($0.epoch, $0.key) }
+            // The journal's keys are this device's own from now on (kept after the finish, owner decision "keep"): a
+            // device that jumped epochs never held some of them, and without them, after the finish, it could neither
+            // judge nor delete a file a removed device uploaded under one (it read as undecryptable and was only
+            // quarantined, so a bridged target kept it).
+            if case .device = openedWith, let ledger {
+                for k in j.keys where ledgerMemo.needsKey(k.key.epochId) {
+                    if (try? ledger.rememberKey(epoch: k.epoch, key: k.key)) != nil { ledgerMemo.keyRemembered(k.key.epochId) }
+                }
+            }
+        }
         if case .device = openedWith, let held = try? ledger?.epochKeys() { keys += held }
         keyring.addFallback(keys)
         if !isReencryptPending, let m = reencryptEpoch { keyring.setFinishedReencryption(m.epoch) }

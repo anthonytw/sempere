@@ -268,7 +268,8 @@ final class EpochInterleavingTests: SyncTestCase {
         /// Hashes of the files under `notes/` of `n`'s working copy.
         func hashes(_ n: String) -> [String: String] {
             var h: [String: String] = [:]
-            for p in SyncDevice.noteFiles(in: w[n].folder) {
+            // A resumable blob download in progress (`att/.sempere-tmp-part-…`) is not a vault file: it grows between runs.
+            for p in SyncDevice.noteFiles(in: w[n].folder) where !(p as NSString).lastPathComponent.hasPrefix(".") {
                 if let d = try? Data(contentsOf: w[n].folder.appendingPathComponent(p)) {
                     let sha = FileDigest.sha256(d)
                     h[p] = sha
