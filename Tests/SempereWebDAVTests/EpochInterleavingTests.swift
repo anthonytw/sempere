@@ -248,6 +248,9 @@ final class EpochInterleavingTests: SyncTestCase {
         var home = "A"
         var removedEpoch: [String: Int] = [:]
         var planted: [(EpochTarget, Data)] = []
+        /// Path and SHA-256 of bytes storage or a removed device put on a target (J7 cannot hold against storage replanting old
+        /// ciphertext, design §7.3 and §10: it is out of the guarantee).
+        var plantedShas = Set<String>()
         var changed = false
         var writes: [Write] = []
         var held: [String: [any AgeIdentity]] = [:]
@@ -434,6 +437,7 @@ final class EpochInterleavingTests: SyncTestCase {
                 if lean == .forge, let forged = try? forge(w[victim]) {
                     // The removed device strikes at once, on the target home is not about to update.
                     for tg in targets where tg !== tgHome { tg.put(forged.1.path, forged.1.data); tg.put(Vault.manifestName, forged.0) }
+                    plantedShas.insert(forged.1.path + "|" + FileDigest.sha256(forged.1.data))
                     // A listed device that has not seen the removal meets the forgery first.
                     for tg in targets where tg !== tgHome {
                         let stale = listed.subtracting([home]).sorted().filter {
@@ -479,7 +483,10 @@ final class EpochInterleavingTests: SyncTestCase {
                 writes.append(Write(writer: x, note: note, title: title, listed: false))
                 let dir = w[x].folder.appendingPathComponent("notes/\(note.uuidString.lowercased())")
                 for f in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] {
-                    if let d = try? Data(contentsOf: dir.appendingPathComponent(f)) { tg.put("notes/\(note.uuidString.lowercased())/\(f)", d) }
+                    if let d = try? Data(contentsOf: dir.appendingPathComponent(f)) {
+                        tg.put("notes/\(note.uuidString.lowercased())/\(f)", d)
+                        plantedShas.insert("notes/\(note.uuidString.lowercased())/\(f)|" + FileDigest.sha256(d))
+                    }
                 }
             case .forge:
                 // A removed device forges an epoch under one where it was listed, names itself home, plants it.
@@ -487,6 +494,7 @@ final class EpochInterleavingTests: SyncTestCase {
                 guard let (manifest, record) = try? forge(w[x]) else { break }
                 tg.put(record.path, record.data)
                 tg.put(Vault.manifestName, manifest)
+                plantedShas.insert(record.path + "|" + FileDigest.sha256(record.data))
             case .settings:
                 let n = listed.sorted().randomElement(using: &rng) ?? "A"
                 guard let v = try? w[n].open(), v.canRead else { break }
@@ -502,6 +510,7 @@ final class EpochInterleavingTests: SyncTestCase {
                 guard let victim = recs.filter({ !$0.contains("/1-") }).randomElement(using: &rng),
                       let donor = recs.filter({ $0 != victim }).randomElement(using: &rng), let bytes = tg.file(donor) else { break }
                 tg.put(victim, bytes)
+                plantedShas.insert(victim + "|" + FileDigest.sha256(bytes))
                 trace.append("\(step) junk \(tg.name) \(victim.suffix(30))")
             case .reencrypt:
                 if startReencryption(home) {
@@ -531,8 +540,10 @@ final class EpochInterleavingTests: SyncTestCase {
         // device that met only the planted one on it puts its own back, as any target lacking vault.json gets).
         for (tg, fake) in planted where tg.file(Vault.manifestName) == fake { tg.remove(Vault.manifestName) }
 
-        // Quiescence: no faults; every device (removed ones too: they keep pulling) syncs its targets.
+        // Quiescence: no faults; every device (removed ones too: they keep pulling) syncs its targets. Unreferenced blobs
+        // a collector deleted are followed at once (format.md §8.1.6 rule 4's wait is days; J7 looks at the end of it).
         faultRate.value = 0
+        for n in names { w[n].tune = { $0.concurrency = 1; $0.blobRetention = 0 } }
         // Until a whole round changes nothing (a repair may cross a bridge, then a comparison, a round each).
         var quiet = false
         for _ in 0..<14 where !quiet {
@@ -613,7 +624,8 @@ final class EpochInterleavingTests: SyncTestCase {
             var sources: [(String, [String: Data])] = listed.sorted().map { ($0, ReencryptSyncTests.files(w[$0].folder)) }
             sources += targets.map { ($0.name, ReencryptSyncTests.files($0)) }
             for (src, files) in sources {
-                for p in ReencryptSyncTests.openWithOld(files: files, old).prefix(3) { out.append("J7: \(src):\(p) opens with a key from before the re-encryption") }
+                let kept = files.filter { !plantedShas.contains($0.key + "|" + FileDigest.sha256($0.value)) }
+                for p in ReencryptSyncTests.openWithOld(files: kept, old).prefix(3) { out.append("J7: \(src):\(p) opens with a key from before the re-encryption") }
             }
         }
         // J4, J9: one kept chain, list and note set on every listed device and target.

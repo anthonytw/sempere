@@ -241,6 +241,38 @@ final class ReencryptSyncTests: SyncTestCase {
         }
         XCTAssertEqual(Self.openWithOld(files: Self.files(t1), old), [])
     }
+
+    /// §7.2 "a re-encryption that meets a takeover": a takeover above it (by a device that pinned it, under the new kit)
+    /// keeps it, bound, and its new home finishes it.
+    func testATakeoverAboveTheReencryptionKeepsItAndItsNewHomeFinishesIt() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B"], targets: ["T1"])
+        let t1 = w.target("T1")
+        var titles: [UUID: String] = [:]
+        titles[try w["A"].write("A one")] = "A one"
+        titles[try w["B"].write("B one")] = "B one"
+        try w["A"].sync(t1); try w["B"].sync(t1); try w["A"].sync(t1)
+        let old = try Self.keysSoFar(w, w["A"])
+        let kit = try Self.start(w, home: "A", targets: [t1])
+        try w["A"].sync(t1); try w["B"].sync(t1)
+        XCTAssertTrue(try w["B"].open().isReencryptPending)
+        let (taken, _) = try Vault.takeover(at: w["B"].folder, device: w["B"].keys, recovery: kit, keep: [w["A"].fingerprint],
+                                            trust: w["B"].trust, root: w.root, ledger: w["B"].ledger, setAside: w["B"].setAside)
+        XCTAssertTrue(taken.isReencryptPending, "the takeover keeps the re-encryption bound")
+        XCTAssertNotNil(taken.localBoundJournal())
+        var finished = false
+        for _ in 0..<6 where !finished {
+            try w["A"].sync(t1)
+            finished = try Self.advance(w, home: "B", targets: [t1]).finished
+        }
+        XCTAssertTrue(finished)
+        for _ in 0..<2 { try w["A"].sync(t1); try w["B"].sync(t1) }
+        w.recovery = kit
+        for n in ["A", "B"] {
+            XCTAssertEqual(try w[n].titles(), titles, n)
+            XCTAssertEqual(Self.openWithOld(files: Self.files(w[n].folder), old), [], "J7 at \(n)")
+        }
+        XCTAssertEqual(Self.openWithOld(files: Self.files(t1), old), [])
+    }
 }
 
 /// Paths of every regular file below a folder (relative), hidden ones left out.
