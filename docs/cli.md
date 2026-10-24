@@ -293,7 +293,8 @@ its device id in the vault.
   pull-only pass, at most 10 seconds each, that places what verifies, so the
   change seals it; an unreachable target is named on stderr, and the devices
   that wrote there catch their files up themselves; `--no-pull` skips it,
-  `--password-env` gives a WebDAV target's password), then catches up its own
+  `--password-env` names the variable holding the password of every WebDAV
+  target of the vault: one variable for all of them), then catches up its own
   files, then starts the epoch. A removed device that last completed a two-way
   sync more than a day ago (or never, as far as its summaries file says) is
   named: changes it made since will not reach the vault. The removed machine gets

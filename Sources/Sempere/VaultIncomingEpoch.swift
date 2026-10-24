@@ -90,7 +90,9 @@ public struct EpochSighting: Hashable, Sendable {
 /// Printable, bounded text for names that come from elsewhere.
 enum SyncTextClean {
     static func line(_ s: String, max: Int) -> String {
-        String(s.unicodeScalars.map { $0.properties.generalCategory == .control ? "?" : Character($0) }.prefix(max))
+        // Controls and format characters (bidi overrides among them) never reach a status line.
+        String(s.unicodeScalars.map { [.control, .format].contains($0.properties.generalCategory) ? "?" : Character($0) }
+            .prefix(max))
     }
 }
 
@@ -163,8 +165,8 @@ extension Vault {
         // A child of a pinned epoch is checked against it before anything else, with or without its record: one
         // whose link or signatures do not verify is refused, never waited for (a forged vault.json whose record
         // is missing would otherwise hold every device back).
-        if pinnedParentRefuses(incoming) {
-            return .refused("it claims to follow epoch \(incoming.epoch - 1) but is not linked and signed as that epoch requires")
+        if let parentEpoch = pinnedParentRefuses(incoming) {
+            return .refused("it claims to follow epoch \(parentEpoch) but is not linked and signed as that epoch requires")
         }
         if Self.epochMutations.contains(.takeoverByArrival), incoming.epochReason == EpochReason.takeover.rawValue,
            manifest.epochReason == EpochReason.takeover.rawValue {
@@ -225,16 +227,16 @@ extension Vault {
         }
     }
 
-    /// True when `m`'s parent is an epoch of this device's pinned chain and `m` does not verify from it (its link
-    /// under the parent's link keys, and its signatures: by the parent's home, or for a takeover by the kit the
-    /// takeover rule names and its new home). False when it verifies, or its parent is not pinned here.
-    func pinnedParentRefuses(_ m: EpochManifest) -> Bool {
+    /// The parent's epoch number when `m`'s parent is an epoch of this device's pinned chain and `m` does not verify
+    /// from it (its link under the parent's link keys, and its signatures: by the parent's home, or for a takeover
+    /// by the kit the takeover rule names and its new home). Nil when it verifies, or its parent is not pinned here.
+    func pinnedParentRefuses(_ m: EpochManifest) -> Int? {
         guard let record = trustedRecord(), let parent = m.parent,
-              let c = record.chain.first(where: { $0.epochId == parent }) else { return false }
+              let c = record.chain.first(where: { $0.epochId == parent }) else { return nil }
         let frontier = EpochFrontier(vaultId: record.vaultId, root: record.root, epoch: c.epoch, epochId: c.epochId,
                                      linkPublicKeys: c.linkPublicKeys, recovery: c.recovery, home: c.home)
-        if frontier.verifiedChild(m) != nil { return false }
-        return !takeoverVerifiesFromPinned(m, record: record)
+        if frontier.verifiedChild(m) != nil || takeoverVerifiesFromPinned(m, record: record) { return nil }
+        return c.epoch
     }
 
     /// This device's trust record of this vault, nil when it has none or it cannot be read.
