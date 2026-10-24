@@ -25,6 +25,9 @@ final class RememberedKeys {
         case cancelled
         /// The keys could not be read, or did not open the vault.
         case failed(String)
+        /// This device has keys for the vault that cannot be used (unreadable after a Face ID change, or of a join
+        /// that cannot go on): the unlock sheet offers to forget them and join again (review of #88, M3).
+        case keyProblem(String)
     }
 
     let store: any DeviceKeyStore
@@ -34,6 +37,11 @@ final class RememberedKeys {
     private(set) var requiresBiometry = false
     /// While the open, locked vault is being joined by this device: where it stands.
     var joinStage: JoinStage?
+    /// This device's keys for the open vault cannot be used: why (`Attempt.keyProblem`).
+    private(set) var keyProblem: String?
+
+    static let unreadableText = String(localized: "This device's key for the vault can no longer be read, for example after Face ID was set up again. Forget it, then join again or take over with the recovery kit.")
+    static let strayText = String(localized: "This device has a key for the vault that is not on its device list and has no request to join. Forget it, then join again or take over with the recovery kit.")
     /// True while Face ID / the Keychain is being asked.
     private(set) var isUnlocking = false
     /// True while an unlock with a passphrase or pasted key runs.
@@ -41,6 +49,12 @@ final class RememberedKeys {
 
     init(store: any DeviceKeyStore = KeychainDeviceKeyStore()) {
         self.store = store
+    }
+
+    /// Deletes the file where earlier builds kept the folders each remembered key was offered at (no keys in it).
+    static func removeOldLocationsFile() {
+        try? FileManager.default.removeItem(at: DeviceClock.defaultURL.deletingLastPathComponent()
+            .appendingPathComponent("RememberedKeyLocations.json"))
     }
 
     /// "this iPad", "this iPhone", or "this Mac" under Mac Catalyst.
@@ -92,11 +106,10 @@ final class RememberedKeys {
         let gen = model.generation
         isUnlocking = true
         defer { isUnlocking = false }
+        keyProblem = nil
         let reason = model.vaultName.map { String(localized: "Unlock “\($0)”", comment: "Face ID prompt") }
             ?? String(localized: "Unlock the vault", comment: "Face ID prompt")
-        var has = await store.hasKeys(for: id)
-        if !has { has = await store.moveLegacyKey(for: id, vaultName: model.vaultName ?? "", reason: reason) }
-        guard has else {
+        guard await store.hasKeys(for: id) else {
             if model.vault?.vaultId == id { hasKeysVaultID = nil }
             return .noKey
         }
@@ -110,14 +123,21 @@ final class RememberedKeys {
         } catch DeviceKeyStoreError.cancelled {
             return .cancelled
         } catch {
-            return .failed(String(localized: "This device's key could not be read: \(String(describing: error))",
-                                  comment: "The error text follows (English)"))
+            keyProblem = Self.unreadableText
+            return .keyProblem(Self.unreadableText)
         }
-        if let stage = await model.joinStage(keys) {
+        switch await model.joinStage(keys) {
+        case .stage(let stage):
             joinStage = stage
             return .joining
+        case .stray:
+            keyProblem = Self.strayText
+            return .keyProblem(Self.strayText)
+        case .member:
+            break
         }
         joinStage = nil
+        keyProblem = nil
         do {
             try await model.unlock(device: keys, awaitNotes: false)
             return .unlocked
@@ -141,6 +161,16 @@ final class RememberedKeys {
         isManualUnlocking = true
         defer { isManualUnlocking = false }
         try await model.unlock(passphrase: passphrase, awaitNotes: false)
+    }
+
+    /// Forgets this device's keys for the open vault (a key that cannot be used, review of #88 M3): the unlock
+    /// sheet then offers Join and Take Over.
+    func forgetKeys(_ model: AppModel) async throws {
+        guard let id = model.vault?.vaultId else { return }
+        try await store.delete(for: id)
+        keyProblem = nil
+        joinStage = nil
+        await refresh(model)
     }
 
     /// Keeps the keys of a vault this device just created (its home), with no other copy anywhere.

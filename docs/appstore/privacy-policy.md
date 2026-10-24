@@ -44,9 +44,11 @@ times, but not what you wrote, drew or recorded.
 ## Your keys
 
 Each of your devices generates its own keys, which never leave it: its decryption key is kept in
-that device's Keychain (not synced) and its signing key in the device's Secure Enclave. The
-vault's recovery key is shown once, for you to print as a recovery kit or keep in a password
-manager; no device keeps it. **We cannot recover your key or your notes. If you lose every copy of
+that device's Keychain (not synced) and its signing key in the device's Secure Enclave where the
+device has one (otherwise in its Keychain, not synced). The vault's recovery key is shown once, for
+you to print as a recovery kit or keep in a password manager; the app keeps no copy of it. Test
+builds before 1.0 could save keys in the Keychain, optionally synced through iCloud Keychain; such
+a saved key stays there until it is deleted. **We cannot recover your key or your notes. If you lose every copy of
 your key, nobody can decrypt your notes.**
 
 ## On-device features
@@ -82,10 +84,10 @@ policy will be updated before such a version is released.
 
 Sempere asks for a permission only when you use the feature that needs it:
 
-- the camera, to add photos and video, and to scan another device's join code (iPad and iPhone);
+- the camera, to add photos and video, and to scan the codes of another device or of a recovery kit (iPad and iPhone);
 - the microphone, to record audio;
 - speech recognition, to transcribe recordings on the device;
-- Face ID or Touch ID, to unlock a vault that you set to ask for it;
+- Face ID or Touch ID, to unlock a vault that you set to ask for it, and to confirm it is you before letting a device into a vault or replacing its recovery kit;
 - Live Activities, to show a voice note in progress.
 
 Photos and files are chosen with the system pickers, which give the app only what you pick.

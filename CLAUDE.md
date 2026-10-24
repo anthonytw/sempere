@@ -518,8 +518,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `INFOPLIST_KEY_NSFaceIDUsageDescription` (pbxproj). A device without keys joins (`AppModel+JoinDevice`,
   `JoinDeviceView`: request, six words and a QR code; the open locked vault's runs are keyless join runs with
   `firstPullIdentities`; home's reply words or code confirm) or takes over with the kit (`TakeoverView`). Home
-  approves with Add Device (owner check first). The key a pre-KH5 build remembered (`vault-key` item) is moved
-  at the first unlock (`moveLegacyKey`; remove before v1).
+  approves with Add Device (owner check first). Keys that cannot be used (unreadable after a Face ID change, or a
+  stray of a join that cannot go on) are forgotten from the unlock sheet. A run without the vault's key (a
+  joiner's) never uploads `vault.json` (`keylessManifestHeld`). Items of the pre-KH5 `vault-key` service are
+  neither read nor deleted (a one-time cleanup is the owner's call: `KeychainDeviceKeyStore`).
 - The object eraser is the app's (`ObjectEraser.swift`, `EraserGeometry.swift`):
   PencilKit's `.vector` eraser has no size. When the palette's eraser is in
   object mode, `PageCanvasHost` disables `drawingGestureRecognizer` and

@@ -207,7 +207,7 @@ struct JoinDeviceView: View {
             do {
                 keys.joinStage = try await model.startJoin(store: keys.store)
                 await keys.refresh(model)
-            } catch { failure = "\(error)" }
+            } catch { failure = DeviceChangeText.message(error) }
         }
     }
 
@@ -241,7 +241,7 @@ struct JoinDeviceView: View {
                 keys.joinStage = nil
             } catch VaultError.replyMismatch {
                 failure = String(localized: "These are not the words of this vault's approval. Check them on the other device.")
-            } catch { failure = "\(error)" }
+            } catch { failure = DeviceChangeText.message(error) }
         }
     }
 
@@ -263,6 +263,7 @@ struct AddDeviceSheet: View {
     let done: (String) -> Void
     @State private var words = ""
     @State private var reply: JoinReply?
+    @State private var waiting: [JoinRequest] = []
     @State private var working = false
     @State private var failure: String?
 
@@ -281,7 +282,6 @@ struct AddDeviceSheet: View {
                 } else {
                     Section {
                         Text("On the new device, open the vault and choose Join This Device. It shows six words: type them here.")
-                        let waiting = model.pendingJoinRequests
                         if waiting.isEmpty {
                             Text("No device has asked to join yet. Its request arrives with a sync.").foregroundStyle(.secondary)
                         } else {
@@ -318,7 +318,10 @@ struct AddDeviceSheet: View {
                 }
             }
             .disabled(working)
-            .task { model.syncSessions.forEach { $0.demand() } }
+            .task {
+                model.syncSessions.forEach { $0.demand() }
+                waiting = await model.pendingJoinRequests()
+            }
         }
         .accessibilityIdentifier("addDeviceSheet")
     }
@@ -331,7 +334,7 @@ struct AddDeviceSheet: View {
             do {
                 reply = try await model.approveDevice(words: qr == nil ? TypedWords.split(words) : nil, qr: qr)
             } catch is CancellationError {
-            } catch { failure = "\(error)" }
+            } catch { failure = DeviceChangeText.message(error) }
         }
     }
 }
@@ -365,11 +368,14 @@ struct TakeoverView: View {
                         .font(.body.monospaced())
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                    QRScanButton { rootText = $0 }
+                    // The kit's two codes (design §6.3): the key's and the root's; each lands in its field.
+                    QRScanButton { text in
+                        if text.hasPrefix("sempere-root:") { rootText = text } else { keyText = text }
+                    }
                 } header: {
                     Text("The recovery kit")
                 } footer: {
-                    Text("The root is on the kit, under its key (or its second QR code). A device that has opened this vault before does not need it.")
+                    Text("Scan the kit's two codes, or type the key and the root printed under it. A device that has opened this vault before does not need the root.")
                 }
                 Section {
                     SecureField("Passphrase", text: $passphrase)
@@ -391,7 +397,10 @@ struct TakeoverView: View {
         .navigationTitle("Take Over")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { onDone() }.help("Close without taking over")
+                Button("Cancel") {
+                    draft = nil
+                    onDone()
+                }.help("Close without taking over")
             }
         }
         .disabled(working)
@@ -402,7 +411,8 @@ struct TakeoverView: View {
         if !d.plan.dropped.isEmpty {
             Section {
                 ForEach(d.plan.dropped, id: \.epoch) { e in
-                    Text("Change \(e.epoch) (\(e.reason)) by \(e.author)", comment: "Takeover: an epoch it drops; values are an epoch number, its reason and author")
+                    Text("Change \(e.epoch) (\(e.reason)) by \(model.rememberedDeviceNames(model.vault?.vaultId ?? UUID())[e.author] ?? e.author)",
+                         comment: "Takeover: an epoch it drops; values are an epoch number, its reason and author")
                 }
             } header: {
                 Text("The takeover undoes")
@@ -415,9 +425,15 @@ struct TakeoverView: View {
                 Toggle(isOn: Binding(get: { keep.contains(c.fingerprint) },
                                      set: { if $0 { keep.insert(c.fingerprint) } else { keep.remove(c.fingerprint) } })) {
                     VStack(alignment: .leading) {
-                        Text(verbatim: DeviceName.display(c.name))
-                        Text(c.listed ? String(localized: "On the current list") : String(localized: "Removed by a later change"))
-                            .font(.caption).foregroundStyle(.secondary)
+                        HStack {
+                            Text(verbatim: DeviceName.display(c.name))
+                            Text(verbatim: c.id).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        }
+                        if !c.nameTrusted {
+                            Text("Name not confirmed: the device that changed the list may have renamed it")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        Text(TakeoverView.status(c)).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -432,6 +448,13 @@ struct TakeoverView: View {
         }
     }
 
+    /// A candidate's line (review of #88, S6): on the current list, removed by a change this takeover undoes, or
+    /// removed by an earlier change.
+    static func status(_ c: Vault.TakeoverCandidate) -> String {
+        if c.removedByDroppedEpoch { return String(localized: "Removed by a change this takeover undoes") }
+        return c.listed ? String(localized: "On the current list") : String(localized: "Removed by an earlier change")
+    }
+
     private func plan() {
         working = true
         failure = nil
@@ -444,7 +467,7 @@ struct TakeoverView: View {
                 keep = Set(d.plan.candidates.filter(\.checkedByDefault).map(\.fingerprint))
                 draft = d
                 keyText = ""; passphrase = ""
-            } catch { failure = "\(error)" }
+            } catch { failure = DeviceChangeText.message(error) }
         }
     }
 
@@ -455,9 +478,13 @@ struct TakeoverView: View {
             defer { working = false }
             do {
                 _ = try await model.takeOver(d, keep: keep, store: keys.store)
+                draft = nil
                 await keys.refresh(model)
                 onDone()
-            } catch { failure = "\(error)" }
+            } catch {
+                draft = nil   // the recovery key is not kept after a failure either
+                failure = DeviceChangeText.message(error)
+            }
         }
     }
 }

@@ -54,8 +54,9 @@ protocol DeviceKeyStore: Sendable {
     func setRequiresBiometry(_ on: Bool, for vaultID: UUID, vaultName: String) async throws
     /// Deletes the keys (the vault removed from this device, or a join given up).
     func delete(for vaultID: UUID) async throws
-    /// Moves a device key an earlier build remembered for `vaultID` into this store; false when there is none.
-    func moveLegacyKey(for vaultID: UUID, vaultName: String, reason: String) async -> Bool
+    /// The device fingerprint of the keys stored for `vaultID`, without a prompt (whether this device is a vault's
+    /// home, before its copy is deleted); nil when there are none.
+    func fingerprint(for vaultID: UUID) async -> Data?
 }
 
 /// A signing pair in the Secure Enclave (design §4.1): the enclave's key blobs, which only this device's enclave
@@ -102,10 +103,13 @@ struct StoredSigning: Codable, Equatable {
     var mldsa65: Data
     var publicP256: Data?
     var publicMLDSA65: Data?
+    /// The device fingerprint of the keys (read without the device key, which may need Face ID).
+    var fingerprint: Data?
 
     static let enclave = "enclave", software = "software"
 
-    init(_ signer: any AuthorSigner) throws {
+    init(_ signer: any AuthorSigner, fingerprint: Data? = nil) throws {
+        self.fingerprint = fingerprint
         if let se = signer as? SecureEnclaveSigner {
             kind = Self.enclave
             p256 = se.p256Blob; mldsa65 = se.mldsa65Blob
@@ -133,50 +137,120 @@ struct StoredSigning: Codable, Equatable {
     }
 }
 
+/// The Keychain calls `KeychainDeviceKeyStore` makes, so its order of adds, updates and deletes (and their failures)
+/// can be tested without a Keychain (unsigned test builds have none).
+protocol KeychainItems: Sendable {
+    func add(_ item: [String: Any]) -> OSStatus
+    func update(_ query: [String: Any], _ changes: [String: Any]) -> OSStatus
+    func delete(_ query: [String: Any]) -> OSStatus
+    /// `SecItemCopyMatching`: the status and the result.
+    func copy(_ query: [String: Any]) -> (OSStatus, Any?)
+}
+
+/// `KeychainItems` on the real Keychain.
+struct SystemKeychainItems: KeychainItems {
+    func add(_ item: [String: Any]) -> OSStatus { SecItemAdd(item as CFDictionary, nil) }
+    func update(_ query: [String: Any], _ changes: [String: Any]) -> OSStatus {
+        SecItemUpdate(query as CFDictionary, changes as CFDictionary)
+    }
+    func delete(_ query: [String: Any]) -> OSStatus { SecItemDelete(query as CFDictionary) }
+    func copy(_ query: [String: Any]) -> (OSStatus, Any?) {
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        return (status, result)
+    }
+}
+
 /// `DeviceKeyStore` on the Keychain: two generic-password items per vault, account the vault id.
 ///
 /// - `service` (the device key, `AGE-SECRET-KEY-PQ-1…`): `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, and with
-///   "Require Face ID" a `SecAccessControl` of `.biometryCurrentSet` (`.userPresence` without biometrics).
-/// - `signingService` (`StoredSigning`): `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`; for enclave keys only
-///   blobs the enclave of this device can use.
+///   "Require Face ID" a `SecAccessControl` of `.biometryCurrentSet` (`.userPresence` without biometrics). Its
+///   `kSecAttrGeneric` says which (`biometry` or `none`), so the setting reads without a prompt.
+/// - `signingService` (`StoredSigning`, with the fingerprint): `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`;
+///   for enclave keys only blobs the enclave of this device can use.
 ///
-/// Never synchronizable; no extra entitlement (the app's default access group). Unsigned builds get
-/// `errSecMissingEntitlement`, so tests use `MemoryDeviceKeyStore`.
+/// Turning "Require Face ID" on or off never deletes the key first (review of #88, M2): the new item is added under
+/// a `.pending` account, the old one deleted, and the pending one renamed; reads fall back to a pending item an
+/// interrupted change left. Never synchronizable; no extra entitlement (the app's default access group). Unsigned
+/// builds get `errSecMissingEntitlement`, so app tests use `MemoryDeviceKeyStore`, and the order of these steps is
+/// tested on `FakeKeychainItems`.
 struct KeychainDeviceKeyStore: DeviceKeyStore {
     static let service = "io.github.anthonytw.sempere.device-key"
     static let signingService = "io.github.anthonytw.sempere.device-signing"
+    static let biometryMarker = Data("biometry".utf8), plainMarker = Data("none".utf8)
 
-    static func query(_ service: String, _ vaultID: UUID) -> [String: Any] {
+    // ONE-TIME CLEANUP (owner decision pending, review of #88): builds before KH5 kept remembered keys as items of
+    // `io.github.anthonytw.sempere.vault-key` (this-device-only device key files, and recovery keys that the user
+    // may have chosen to sync through iCloud Keychain). Nothing reads or deletes them any more. Whether to delete
+    // them once (both kinds, synchronizable or not, with a note to the user) is the owner's call; do it here.
+
+    let items: any KeychainItems
+
+    init(items: any KeychainItems = SystemKeychainItems()) { self.items = items }
+
+    static func query(_ service: String, _ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
-         kSecAttrAccount as String: vaultID.uuidString.lowercased(),
+         kSecAttrAccount as String: account,
          kSecUseDataProtectionKeychain as String: true]
     }
 
-    /// The device key item's state without reading it: absent, plain, or behind an access control.
-    private func seedItemState(_ vaultID: UUID) -> (exists: Bool, guarded: Bool) {
-        var q = Self.query(Self.service, vaultID)
+    static func account(_ vaultID: UUID) -> String { vaultID.uuidString.lowercased() }
+    static func pendingAccount(_ vaultID: UUID) -> String { account(vaultID) + ".pending" }
+
+    /// The device key item's state without reading its data: absent, and whether it asks for Face ID.
+    func seedState(_ account: String) -> (exists: Bool, biometry: Bool) {
+        var q = Self.query(Self.service, account)
         q[kSecReturnAttributes as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         let context = LAContext()
         context.interactionNotAllowed = true
         q[kSecUseAuthenticationContext as String] = context
-        var result: CFTypeRef?
-        switch SecItemCopyMatching(q as CFDictionary, &result) {
+        let (status, result) = items.copy(q)
+        switch status {
         case errSecSuccess:
-            let attrs = result as? [String: Any]
-            return (true, attrs?[kSecAttrAccessControl as String] != nil)
+            let generic = (result as? [String: Any])?[kSecAttrGeneric as String] as? Data
+            return (true, generic == Self.biometryMarker)
         case errSecInteractionNotAllowed: return (true, true)
         default: return (false, false)
         }
     }
 
     func hasKeys(for vaultID: UUID) async -> Bool {
-        await Task.detached(priority: .userInitiated) { seedItemState(vaultID).exists }.value
+        await Task.detached(priority: .userInitiated) {
+            seedState(Self.account(vaultID)).exists || seedState(Self.pendingAccount(vaultID)).exists
+        }.value
     }
 
     func requiresBiometry(for vaultID: UUID) async -> Bool {
-        await Task.detached(priority: .userInitiated) { seedItemState(vaultID).guarded }.value
+        await Task.detached(priority: .userInitiated) {
+            let main = seedState(Self.account(vaultID))
+            return main.exists ? main.biometry : seedState(Self.pendingAccount(vaultID)).biometry
+        }.value
+    }
+
+    func fingerprint(for vaultID: UUID) async -> Data? {
+        await Task.detached(priority: .userInitiated) { try? readSigning(vaultID).fingerprint }.value
+    }
+
+    func readSigning(_ vaultID: UUID) throws -> StoredSigning {
+        var s = Self.query(Self.signingService, Self.account(vaultID))
+        s[kSecReturnData as String] = true
+        s[kSecMatchLimit as String] = kSecMatchLimitOne
+        let (status, result) = items.copy(s)
+        guard status == errSecSuccess, let data = result as? Data else { throw Self.error(status) }
+        do { return try JSONDecoder().decode(StoredSigning.self, from: data) } catch { throw DeviceKeyStoreError.malformed }
+    }
+
+    /// The device key's text from `account`, read with `context` (it prompts when the item asks for Face ID).
+    func readSeed(_ account: String, context: LAContext?) throws -> Data {
+        var q = Self.query(Self.service, account)
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        if let context { q[kSecUseAuthenticationContext as String] = context }
+        let (status, result) = items.copy(q)
+        guard status == errSecSuccess, let seed = result as? Data else { throw Self.error(status) }
+        return seed
     }
 
     func keys(for vaultID: UUID, reason: String) async throws -> DeviceKeys {
@@ -184,20 +258,14 @@ struct KeychainDeviceKeyStore: DeviceKeyStore {
         context.localizedReason = reason
         let box = KeychainContextBox(context)
         return try await Task.detached(priority: .userInitiated) { () throws -> DeviceKeys in
-            var q = Self.query(Self.service, vaultID)
-            q[kSecReturnData as String] = true
-            q[kSecMatchLimit as String] = kSecMatchLimitOne
-            q[kSecUseAuthenticationContext as String] = box.context
-            var result: CFTypeRef?
-            let status = SecItemCopyMatching(q as CFDictionary, &result)
-            guard status == errSecSuccess, let seed = result as? Data else { throw Self.error(status) }
-            var s = Self.query(Self.signingService, vaultID)
-            s[kSecReturnData as String] = true
-            s[kSecMatchLimit as String] = kSecMatchLimitOne
-            var signing: CFTypeRef?
-            let ss = SecItemCopyMatching(s as CFDictionary, &signing)
-            guard ss == errSecSuccess, let data = signing as? Data else { throw Self.error(ss) }
-            let stored = try JSONDecoder().decode(StoredSigning.self, from: data)
+            let seed: Data
+            do { seed = try readSeed(Self.account(vaultID), context: box.context) } catch DeviceKeyStoreError.notFound {
+                // A Face ID change interrupted after the old item went: the new one is still pending.
+                seed = try readSeed(Self.pendingAccount(vaultID), context: box.context)
+                _ = items.update(Self.query(Self.service, Self.pendingAccount(vaultID)),
+                                 [kSecAttrAccount as String: Self.account(vaultID)])
+            }
+            let stored = try readSigning(vaultID)
             do {
                 return try DeviceKeys(identity: try MLKEM768X25519Identity(string: String(decoding: seed, as: UTF8.self)),
                                       signing: try stored.signer())
@@ -209,31 +277,50 @@ struct KeychainDeviceKeyStore: DeviceKeyStore {
 
     func generate() throws -> DeviceKeys {
         let identity = try MLKEM768X25519Identity()
-        if let enclave = try? SecureEnclaveSigner.generate() {
-            return try DeviceKeys(identity: identity, signing: enclave)
+        // Software only where there is no enclave (a simulator, a Mac without one); any other enclave error is
+        // reported, never papered over (review of #88, S1).
+        guard SecureEnclave.isAvailable else { return try DeviceKeys(identity: identity, signing: DeviceSigningKeys.generate()) }
+        return try DeviceKeys(identity: identity, signing: try SecureEnclaveSigner.generate())
+    }
+
+    /// The device key item for `account`, with or without the Face ID requirement.
+    static func seedItem(_ seed: Data, account: String, vaultName: String, biometry: Bool, canBiometrics: Bool) throws -> [String: Any] {
+        var item = query(service, account)
+        item[kSecAttrLabel as String] = "Sempere — \(vaultName)"
+        item[kSecAttrDescription as String] = "Sempere device key"
+        item[kSecAttrGeneric as String] = biometry ? biometryMarker : plainMarker
+        item[kSecValueData as String] = seed
+        if biometry {
+            var cfError: Unmanaged<CFError>?
+            guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                                                               canBiometrics ? .biometryCurrentSet : .userPresence, &cfError)
+            else { cfError?.release(); throw DeviceKeyStoreError.keychain(errSecParam) }
+            item[kSecAttrAccessControl as String] = access
+        } else {
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         }
-        // No Secure Enclave (an old Mac, a simulator): the pair in software, kept the same way.
-        return try DeviceKeys(identity: identity, signing: DeviceSigningKeys.generate())
+        return item
     }
 
     func save(_ keys: DeviceKeys, for vaultID: UUID, vaultName: String) async throws {
-        let stored = try JSONEncoder().encode(try StoredSigning(keys.signing))
+        let stored = try JSONEncoder().encode(try StoredSigning(keys.signing, fingerprint: keys.fingerprint))
         let seed = Data(keys.identity.string.utf8)
         try await Task.detached(priority: .userInitiated) {
-            var signing = Self.query(Self.signingService, vaultID)
+            let account = Self.account(vaultID)
+            // A signing item without a device key (a key lost to a Face ID change and forgotten, a failed save) is
+            // an orphan: it goes, or it would block these keys for good (review of #88, M3).
+            if !seedState(account).exists, !seedState(Self.pendingAccount(vaultID)).exists {
+                _ = items.delete(Self.query(Self.signingService, account))
+            }
+            var signing = Self.query(Self.signingService, account)
             signing[kSecAttrLabel as String] = "Sempere — \(vaultName) (signing)"
             signing[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             signing[kSecValueData as String] = stored
-            var item = Self.query(Self.service, vaultID)
-            item[kSecAttrLabel as String] = "Sempere — \(vaultName)"
-            item[kSecAttrDescription as String] = "Sempere device key"
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-            item[kSecValueData as String] = seed
-            let a = SecItemAdd(signing as CFDictionary, nil)
-            guard a == errSecSuccess else { throw a == errSecDuplicateItem ? DeviceKeyStoreError.keychain(a) : Self.error(a) }
-            let b = SecItemAdd(item as CFDictionary, nil)
+            let a = items.add(signing)
+            guard a == errSecSuccess else { throw Self.error(a) }
+            let b = items.add(try Self.seedItem(seed, account: account, vaultName: vaultName, biometry: false, canBiometrics: false))
             guard b == errSecSuccess else {
-                SecItemDelete(Self.query(Self.signingService, vaultID) as CFDictionary)
+                _ = items.delete(Self.query(Self.signingService, account))
                 throw Self.error(b)
             }
         }.value
@@ -241,35 +328,43 @@ struct KeychainDeviceKeyStore: DeviceKeyStore {
 
     func setRequiresBiometry(_ on: Bool, for vaultID: UUID, vaultName: String) async throws {
         let reason = String(localized: "Change how “\(vaultName)” opens on this device", comment: "Face ID prompt; the value is the vault name")
-        let keys = try await keys(for: vaultID, reason: reason)
-        let seed = Data(keys.identity.string.utf8)
+        let context = LAContext()
+        context.localizedReason = reason
         let canBiometrics = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        let box = KeychainContextBox(context)
         try await Task.detached(priority: .userInitiated) {
-            var item = Self.query(Self.service, vaultID)
-            item[kSecAttrLabel as String] = "Sempere — \(vaultName)"
-            item[kSecAttrDescription as String] = "Sempere device key"
-            item[kSecValueData as String] = seed
-            if on {
-                var cfError: Unmanaged<CFError>?
-                guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                                                                   canBiometrics ? .biometryCurrentSet : .userPresence, &cfError)
-                else { cfError?.release(); throw DeviceKeyStoreError.keychain(errSecParam) }
-                item[kSecAttrAccessControl as String] = access
-            } else {
-                item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-            }
-            // The key was read just now; replaced in place (delete, then add the same seed back).
-            let deleted = SecItemDelete(Self.query(Self.service, vaultID) as CFDictionary)
-            guard deleted == errSecSuccess || deleted == errSecItemNotFound else { throw Self.error(deleted) }
-            let added = SecItemAdd(item as CFDictionary, nil)
-            guard added == errSecSuccess else { throw Self.error(added) }
+            try replaceSeed(vaultID, vaultName: vaultName, biometry: on, canBiometrics: canBiometrics, context: box.context)
         }.value
+    }
+
+    /// The device key item again with or without the Face ID requirement, never losing it: add the new item under
+    /// the pending account, delete the old, rename the new (review of #88, M2). A failed add leaves the old item;
+    /// a failed delete removes the new one; a failed rename leaves the key pending, where reads find it.
+    func replaceSeed(_ vaultID: UUID, vaultName: String, biometry: Bool, canBiometrics: Bool, context: LAContext?) throws {
+        let account = Self.account(vaultID), pending = Self.pendingAccount(vaultID)
+        let seed = try readSeed(account, context: context)
+        _ = items.delete(Self.query(Self.service, pending))   // a leftover of an earlier attempt
+        let added = items.add(try Self.seedItem(seed, account: pending, vaultName: vaultName, biometry: biometry,
+                                                canBiometrics: canBiometrics))
+        guard added == errSecSuccess else { throw Self.error(added) }
+        var old = Self.query(Self.service, account)
+        if let context { old[kSecUseAuthenticationContext as String] = context }
+        let deleted = items.delete(old)
+        guard deleted == errSecSuccess || deleted == errSecItemNotFound else {
+            _ = items.delete(Self.query(Self.service, pending))
+            throw Self.error(deleted)
+        }
+        var renaming = Self.query(Self.service, pending)
+        if let context { renaming[kSecUseAuthenticationContext as String] = context }
+        let renamed = items.update(renaming, [kSecAttrAccount as String: account])
+        guard renamed == errSecSuccess else { throw Self.error(renamed) }   // the key is safe under `pending`
     }
 
     func delete(for vaultID: UUID) async throws {
         try await Task.detached(priority: .userInitiated) {
-            for service in [Self.service, Self.signingService] {
-                let status = SecItemDelete(Self.query(service, vaultID) as CFDictionary)
+            for (service, account) in [(Self.service, Self.account(vaultID)), (Self.service, Self.pendingAccount(vaultID)),
+                                       (Self.signingService, Self.account(vaultID))] {
+                let status = items.delete(Self.query(service, account))
                 guard status == errSecSuccess || status == errSecItemNotFound else { throw Self.error(status) }
             }
         }.value
@@ -298,15 +393,19 @@ final class MemoryDeviceKeyStore: DeviceKeyStore, @unchecked Sendable {
     private var stored: [UUID: (keys: DeviceKeys, biometry: Bool)] = [:]
     /// Reads made (tests count Face ID prompts).
     private(set) var reads = 0
+    /// Set: every read fails as an unreadable key would (Face ID re-enrolled), tests.
+    var unreadable = false
 
     init() {}
 
     func hasKeys(for vaultID: UUID) async -> Bool { lock.withLock { stored[vaultID] != nil } }
     func requiresBiometry(for vaultID: UUID) async -> Bool { lock.withLock { stored[vaultID]?.biometry ?? false } }
+    func fingerprint(for vaultID: UUID) async -> Data? { lock.withLock { stored[vaultID]?.keys.fingerprint } }
 
     func keys(for vaultID: UUID, reason: String) async throws -> DeviceKeys {
         try lock.withLock {
             reads += 1
+            if unreadable { throw DeviceKeyStoreError.notFound }
             guard let k = stored[vaultID]?.keys else { throw DeviceKeyStoreError.notFound }
             return k
         }
@@ -328,40 +427,10 @@ final class MemoryDeviceKeyStore: DeviceKeyStore, @unchecked Sendable {
         }
     }
 
-    func delete(for vaultID: UUID) async throws { _ = lock.withLock { stored.removeValue(forKey: vaultID) } }
-
-    func moveLegacyKey(for vaultID: UUID, vaultName: String, reason: String) async -> Bool { false }
-}
-
-// MARK: - Keys remembered by earlier builds
-
-extension KeychainDeviceKeyStore {
-    /// TestFlight builds before KH5 remembered this device's key file (`DeviceKeys.fileText`, software signing
-    /// pair) as `io.github.anthonytw.sempere.vault-key`. At the first unlock that finds no keys, it is moved here
-    /// (it asks for Face ID, as the old item did) and the old item deleted. Remove before v1 (no back-compat then).
-    static let legacyService = "io.github.anthonytw.sempere.vault-key"
-
-    func moveLegacyKey(for vaultID: UUID, vaultName: String, reason: String) async -> Bool {
-        let context = LAContext()
-        context.localizedReason = reason
-        let box = KeychainContextBox(context)
-        let text: String? = await Task.detached(priority: .userInitiated) { () -> String? in
-            var q = Self.query(Self.legacyService, vaultID)
-            q[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
-            q[kSecReturnData as String] = true
-            q[kSecMatchLimit as String] = kSecMatchLimitOne
-            q[kSecUseAuthenticationContext as String] = box.context
-            var result: CFTypeRef?
-            guard SecItemCopyMatching(q as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-            return String(data: data, encoding: .utf8)
-        }.value
-        guard let text, DeviceKeys.isDeviceKeyFile(text), let keys = try? DeviceKeys.parse(text) else { return false }
-        guard (try? await save(keys, for: vaultID, vaultName: vaultName)) != nil else { return false }
-        await Task.detached(priority: .userInitiated) {
-            var q = Self.query(Self.legacyService, vaultID)
-            q[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
-            SecItemDelete(q as CFDictionary)
-        }.value
-        return true
+    func delete(for vaultID: UUID) async throws {
+        lock.withLock {
+            stored[vaultID] = nil
+            unreadable = false
+        }
     }
 }

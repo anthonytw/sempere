@@ -8261,6 +8261,17 @@
         }
       }
     },
+    "Forget This Device's Key…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Olvidar la clave de este dispositivo…"
+          }
+        }
+      }
+    },
     "Forget Unchecked Lists" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8303,6 +8314,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Olvidar el archivo de clave y pegar una clave"
+          }
+        }
+      }
+    },
+    "Forget this device's key for the vault?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Olvidar la clave de este dispositivo para la bóveda?"
           }
         }
       }
@@ -9843,6 +9865,17 @@
         }
       }
     },
+    "Its notes and this device's key for it are deleted from this device. Unless you have a backup or another copy, the notes cannot be recovered; to use the vault here again, this device joins it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sus notas y la clave de este dispositivo para ella se borran de este dispositivo. Sin una copia de seguridad u otra copia, las notas no se pueden recuperar; para volver a usar la bóveda aquí, este dispositivo se une de nuevo."
+          }
+        }
+      }
+    },
     "Its notes are deleted from this device. Unless you have a backup or another copy, they cannot be recovered." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11162,6 +11195,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nombre (opcional)"
+          }
+        }
+      }
+    },
+    "Name not confirmed: the device that changed the list may have renamed it" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nombre sin confirmar: el dispositivo que cambió la lista pudo renombrarlo"
           }
         }
       }
@@ -13231,6 +13275,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir esta bóveda"
+          }
+        }
+      }
+    },
+    "Open to Make Another Device Home" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir para hacer principal a otro"
           }
         }
       }
@@ -15613,6 +15668,17 @@
         }
       }
     },
+    "Removed by a change this takeover undoes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitado por un cambio que esta toma de control deshace"
+          }
+        }
+      }
+    },
     "Removed by a later change" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15620,6 +15686,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quitado por un cambio posterior"
+          }
+        }
+      }
+    },
+    "Removed by an earlier change" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitado por un cambio anterior"
           }
         }
       }
@@ -16754,6 +16831,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Escanear código QR…"
+          }
+        }
+      }
+    },
+    "Scan the kit's two codes, or type the key and the root printed under it. A device that has opened this vault before does not need the root." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanea los dos códigos del kit, o escribe la clave y la raíz impresa debajo. Un dispositivo que ya abrió esta bóveda no necesita la raíz."
           }
         }
       }
@@ -19863,6 +19951,17 @@
         }
       }
     },
+    "The copy on this device, this device's key for it and the saved password are deleted. The vault on the server is not changed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se borran la copia de este dispositivo, la clave de este dispositivo para ella y la contraseña guardada. La bóveda del servidor no cambia."
+          }
+        }
+      }
+    },
     "The editor's own menus change these too." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21340,6 +21439,17 @@
         }
       }
     },
+    "This device has a key for the vault that is not on its device list and has no request to join. Forget it, then join again or take over with the recovery kit." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo tiene una clave para la bóveda que no está en su lista de dispositivos y no tiene petición para unirse. Olvídala y únete de nuevo o toma el control con el kit de recuperación."
+          }
+        }
+      }
+    },
     "This device has no key for this vault." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21513,6 +21623,17 @@
         }
       }
     },
+    "This device manages the vault's devices, and its key goes with this copy: then only the recovery kit can manage them. Open the vault and make another device home first (Settings ▸ Sync & Devices ▸ Devices ▸ Make Home). Its notes on this device are deleted too." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo gestiona los dispositivos de la bóveda, y su clave se va con esta copia: entonces solo el kit de recuperación podrá gestionarlos. Abre la bóveda y haz principal a otro dispositivo antes (Ajustes ▸ Sincronización y dispositivos ▸ Dispositivos ▸ Hacer principal). También se borran sus notas en este dispositivo."
+          }
+        }
+      }
+    },
     "This device manages the vault's devices." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21520,6 +21641,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo gestiona los dispositivos de la bóveda."
+          }
+        }
+      }
+    },
+    "This device then joins the vault again (approved by the device that manages devices), or takes over with the recovery kit. Its notes stay in the vault." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Después este dispositivo se vuelve a unir a la bóveda (lo aprueba el dispositivo que gestiona los dispositivos) o toma el control con el kit de recuperación. Sus notas siguen en la bóveda."
           }
         }
       }
@@ -21589,6 +21721,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El archivo de clave de este dispositivo abre la bóveda para leer y escribir. La clave de recuperación la abre solo para lectura."
+          }
+        }
+      }
+    },
+    "This device's key for the vault can no longer be read, for example after Face ID was set up again. Forget it, then join again or take over with the recovery kit." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de este dispositivo para la bóveda ya no se puede leer, por ejemplo después de volver a configurar Face ID. Olvídala y únete de nuevo o toma el control con el kit de recuperación."
           }
         }
       }

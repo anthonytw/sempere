@@ -449,6 +449,44 @@ final class EpochSyncScenarioTests: SyncTestCase {
         XCTAssertNoThrow(try nv.confirmJoin(words: words))
     }
 
+    /// Review of #88, M1: storage forges an approval on T1 (home's real one with the joiner's wrap replaced, which needs
+    /// only the joiner's public key). The joiner takes it there, but its keyless run on T2 never uploads it: T2 keeps
+    /// home's list. With the guard removed (mutation), the forged list spreads to T2.
+    func testAJoinerNeverSpreadsAnApprovalItTookToAnotherTarget() throws {
+        for mutated in [false, true] {
+            SyncEngine.epochMutations = mutated ? [.keylessUploadsManifest] : []
+            defer { SyncEngine.epochMutations = [] }
+            let dir = tmp.appendingPathComponent("spread-\(mutated)")
+            let w = try EpochSyncWorld(in: dir, names: ["A", "B"], targets: ["T1", "T2"])
+            let t1 = w.target("T1"), t2 = w.target("T2")
+            try w["A"].sync(t1)
+            try w["A"].sync(t2)
+            let n = EpochSyncDevice("N", root: dir)
+            try n.syncLocked(t1) { $0.firstPullIdentities = [n.identity] }
+            _ = try Vault.writeJoinRequest(at: n.folder, device: n.keys, name: "N", kind: "cli")
+            try n.syncLocked(t2) { $0.firstPullIdentities = [n.identity] }
+            try n.syncLocked(t1) { $0.firstPullIdentities = [n.identity] }
+            let before = try XCTUnwrap(t2.file(Vault.manifestName))
+            // Home approves (not synced anywhere); storage builds a fake from it on T1.
+            try w["A"].sync(t1)
+            var a = try w["A"].open()
+            let request = try XCTUnwrap(a.joinRequests().first?.request)
+            _ = try a.approveDevice(request)
+            var m = try EpochManifest.parse(try Data(contentsOf: a.url.appendingPathComponent(Vault.manifestName)))
+            let i = try XCTUnwrap(m.keys.firstIndex { $0.key == request.key })
+            m.keys[i].wrap = try EpochKeyWrap.seal(VaultEpochKey.random(), vaultId: m.vaultId, epoch: m.epoch,
+                                                  to: try NativeRecipient(string: request.key))
+            t1.put(Vault.manifestName, try JSONEncoder().encode(m))
+            try n.syncLocked(t1) { $0.firstPullIdentities = [n.identity] }
+            try n.syncLocked(t2) { $0.firstPullIdentities = [n.identity] }
+            if mutated {
+                XCTAssertNotEqual(t2.file(Vault.manifestName), before, "the mutation must spread the forged list")
+            } else {
+                XCTAssertEqual(t2.file(Vault.manifestName), before, "T2 keeps home's list")
+            }
+        }
+    }
+
     func testHomeDeletesStaleRequestsAndThoseOfListedKeys() throws {
         let w = try EpochSyncWorld(in: tmp, names: ["A", "B"])
         let t1 = w.target("T1")

@@ -58,19 +58,35 @@ extension AppModel {
         guard let locked = vault, let url = vaultURL, phase == .locked else { throw ModelError.noVaultOpen }
         let keys = try store.generate()
         let kind = ThisDevice.kind, name = ThisDevice.name
-        _ = try await offMain { try Vault.writeJoinRequest(at: url, device: keys, name: name, kind: kind) }
+        // The keys first: a request whose keys are not kept could never be confirmed (review of #88, M3).
         try await store.save(keys, for: locked.vaultId, vaultName: vaultName ?? "")
+        do {
+            _ = try await offMain { try Vault.writeJoinRequest(at: url, device: keys, name: name, kind: kind) }
+        } catch {
+            try? await store.delete(for: locked.vaultId)
+            throw error
+        }
         joinIdentity = keys.nativeIdentity
         syncSessions.forEach { $0.demand() }
         let codes = Self.joinCodes(keys, vaultId: locked.vaultId, kind: kind)
         return .waiting(words: codes.words, qr: codes.qr)
     }
 
-    /// Where this device's join of the open, locked vault stands, from its keys: nil when the vault lists the
-    /// keys and this device confirmed it (it unlocks), `.confirming` when listed but not confirmed yet,
-    /// `.waiting` when not listed yet (the runs then keep looking for the approval).
-    func joinStage(_ keys: DeviceKeys) async -> JoinStage? {
-        guard let locked = vault, let url = vaultURL else { return nil }
+    /// Where this device's keys stand in the open, locked vault.
+    enum JoinCheck: Equatable {
+        /// Listed and confirmed: they unlock it.
+        case member
+        case stage(JoinStage)
+        /// Not listed, and no request of them in the copy: a join that cannot go on (a failed kit join, a request
+        /// home deleted). The keys are offered to be forgotten (review of #88, S3).
+        case stray
+    }
+
+    /// Where this device's join of the open, locked vault stands, from its keys: a member when the vault lists the
+    /// keys and this device confirmed it, `.confirming` when listed but not confirmed yet, `.waiting` while its
+    /// request is in the copy (the runs then keep looking for the approval), else stray.
+    func joinStage(_ keys: DeviceKeys) async -> JoinCheck {
+        guard let locked = vault, let url = vaultURL else { return .member }
         let trust = self.trust
         let listed = locked.manifest.devices.contains { $0.key == keys.key }
         if listed {
@@ -79,11 +95,14 @@ extension AppModel {
                 else { return false }
                 return v.listStatus.problem?.reason == .rootUnconfirmed
             }.value
-            return unconfirmed ? .confirming : nil
+            return unconfirmed ? .stage(.confirming) : .member
         }
+        let request = url.appendingPathComponent("joins").appendingPathComponent(
+            keys.joinRequest(vaultId: locked.vaultId, name: "", kind: "").fileName)
+        guard FileManager.default.fileExists(atPath: request.path) else { return .stray }
         joinIdentity = keys.nativeIdentity
         let codes = Self.joinCodes(keys, vaultId: locked.vaultId, kind: ThisDevice.kind)
-        return .waiting(words: codes.words, qr: codes.qr)
+        return .stage(.waiting(words: codes.words, qr: codes.qr))
     }
 
     /// The open vault's `vault.json` as on disk now (a run may have taken the approval since it opened).
@@ -130,10 +149,13 @@ extension AppModel {
 
     // MARK: - Approving (home)
 
-    /// The join requests waiting in the open vault's `joins/`, readable and of this vault.
-    var pendingJoinRequests: [JoinRequest] {
+    /// The join requests waiting in the open vault's `joins/`, readable and of this vault, at most `limit` (their
+    /// names are storage's to choose: shown, never trusted), read off the main actor.
+    func pendingJoinRequests(limit: Int = 20) async -> [JoinRequest] {
         guard let vault else { return [] }
-        return vault.joinRequests().compactMap(\.request).filter { $0.vaultId == vault.vaultId }
+        return await Task.detached(priority: .userInitiated) {
+            Array(vault.joinRequests().compactMap(\.request).filter { $0.vaultId == vault.vaultId }.prefix(limit))
+        }.value
     }
 
     /// Approves the request whose commitment `words` (typed) or `qr` (scanned) gives (design §6.2 step 2), after
@@ -212,9 +234,7 @@ extension AppModel {
         // A device with no record of the vault needs the root (design §4.3 step 4).
         let hasRecord = ((try? trust?.record(for: current.vaultId)) ?? nil) != nil
         if !hasRecord, root == nil { throw DeviceJoinError.rootNeeded }
-        let plan = try await offMain {
-            try Vault.takeoverPlan(at: url, device: keys, recovery: recovery, trust: trust, root: hasRecord ? root : root)
-        }
+        let plan = try await offMain { try Vault.takeoverPlan(at: url, device: keys, recovery: recovery, trust: trust, root: root) }
         return TakeoverDraft(recovery: recovery, root: root, plan: plan, newKeys: own == nil ? keys : nil)
     }
 
@@ -240,9 +260,16 @@ extension AppModel {
         await closeWindowEditors()
         let trust = self.trust, stores = writeStores, root = draft.root, recovery = draft.recovery
         let name = ThisDevice.name, kind = ThisDevice.kind
-        let (next, report) = try await offMain {
-            try Vault.takeover(at: url, device: keys, recovery: recovery, keep: keep, name: name, kind: kind, trust: trust,
-                               root: root, ledger: stores?.ledger(for: current.vaultId), setAside: stores?.setAside)
+        let next: Vault, report: EpochChangeReport
+        do {
+            (next, report) = try await offMain {
+                try Vault.takeover(at: url, device: keys, recovery: recovery, keep: keep, name: name, kind: kind, trust: trust,
+                                   root: root, ledger: stores?.ledger(for: current.vaultId), setAside: stores?.setAside)
+            }
+        } catch {
+            // A kit join that did not happen leaves no keys behind (review of #88, S3).
+            if draft.newKeys != nil { try? await store.delete(for: current.vaultId) }
+            throw error
         }
         // The takeover was this device's: acknowledged, never alerted.
         takeoverDefaults.set(next.manifest.epoch, forKey: Self.takeoverAckKey(next.vaultId))

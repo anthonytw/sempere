@@ -3,6 +3,7 @@ import Foundation
 import Sempere
 import SempereSync
 import SempereWebDAV
+import CryptoKit
 import Testing
 @testable import SempereApp
 
@@ -23,12 +24,12 @@ struct JoinTakeoverAppTests {
         let homeKeys: RememberedKeys
     }
 
-    static func world() async throws -> World {
+    static func world(passphrase: String? = nil) async throws -> World {
         let parent = TestTemp.root.appendingPathComponent("Join-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         let trust = MemoryEpochTrustStore()
         let keys = RememberedKeys(store: MemoryDeviceKeyStore())
-        var request = NewVaultRequest(name: "Mine", keySource: .generate, passphrase: nil)
+        var request = NewVaultRequest(name: "Mine", keySource: .generate, passphrase: passphrase)
         request.deviceName = "Home iPad"
         request.workFactor = 10
         request.device = try keys.store.generate()
@@ -69,10 +70,10 @@ struct JoinTakeoverAppTests {
         await #expect(throws: DeviceJoinError.self) {
             _ = try await w.home.approveDevice(words: ["abandon", "ability", "able", "about", "above", "absent"], qr: nil)
         }
-        #expect(w.home.pendingJoinRequests.count == 1)
+        #expect(await w.home.pendingJoinRequests().count == 1)
         let reply = try await w.home.approveDevice(words: words, qr: nil)
         #expect(reply.words.count == 6)
-        #expect(w.home.pendingJoinRequests.isEmpty)
+        #expect(await w.home.pendingJoinRequests().isEmpty)
         #expect(w.home.vault?.devices.count == 2)
 
         // The phone sees the approval and confirms with the reply.
@@ -111,10 +112,10 @@ struct JoinTakeoverAppTests {
         let (pad, padKeys) = try await Self.newDevice(w.url)
         defer { pad.close() }
         _ = try await pad.startJoin(store: padKeys.store)
-        #expect(w.home.pendingJoinRequests.count == 1)
+        #expect(await w.home.pendingJoinRequests().count == 1)
         await pad.cancelJoin(store: padKeys.store)
         #expect(!(await padKeys.store.hasKeys(for: try #require(pad.vault?.vaultId))))
-        #expect(w.home.pendingJoinRequests.isEmpty)
+        #expect(await w.home.pendingJoinRequests().isEmpty)
     }
 
     @Test func aKitJoinTakesOverAndTheOldHomeIsAlerted() async throws {
@@ -148,6 +149,90 @@ struct JoinTakeoverAppTests {
         _ = try await newcomer.createNote(title: "After", paper: Paper(kind: .ruled), notebook: nil)
     }
 
+    /// Review of #88, M3: a key this device can no longer read is offered to be forgotten, and then the device can
+    /// join again; keys of no request and not listed (a stray) likewise.
+    @Test func anUnreadableOrStrayKeyIsForgottenAndTheDeviceJoinsAgain() async throws {
+        let w = try await Self.world()
+        defer { w.home.close() }
+        let (phone, phoneKeys) = try await Self.newDevice(w.url)
+        defer { phone.close() }
+        let store = try #require(phoneKeys.store as? MemoryDeviceKeyStore)
+        _ = try await phone.startJoin(store: store)
+        store.unreadable = true
+        guard case .keyProblem = await phoneKeys.unlockWithDeviceKey(phone) else { Issue.record("no key problem"); return }
+        #expect(phoneKeys.keyProblem == RememberedKeys.unreadableText)
+        try await phoneKeys.forgetKeys(phone)
+        #expect(!phoneKeys.hasKeys(for: phone))
+        #expect(await phoneKeys.unlockWithDeviceKey(phone) == .noKey)
+        // A stray: keys stored, not listed, no request in the copy.
+        let id = try #require(phone.vault?.vaultId)
+        try await store.save(try store.generate(), for: id, vaultName: "Mine")
+        guard case .keyProblem(let why) = await phoneKeys.unlockWithDeviceKey(phone) else { Issue.record("not stray"); return }
+        #expect(why == RememberedKeys.strayText)
+        try await phoneKeys.forgetKeys(phone)
+        guard case .waiting = try await phone.startJoin(store: store) else { Issue.record("cannot join again"); return }
+    }
+
+    /// A takeover with the passphrase alone (its copy carries the root), keeping only some devices: the others are
+    /// removed (design §6.3).
+    @Test func aTakeoverWithThePassphraseKeepsOnlyTheCheckedDevices() async throws {
+        let pass = "tangerine wombat quarry velvet mosaic lantern"
+        let w = try await Self.world(passphrase: pass)
+        let homeID = try #require(w.home.vault?.vaultId)
+        // Two more devices join by approval.
+        var joined: [DeviceKeys] = []
+        for _ in 0..<2 {
+            let (d, k) = try await Self.newDevice(w.url)
+            guard case .waiting(let words, _) = try await d.startJoin(store: k.store) else { return }
+            let reply = try await w.home.approveDevice(words: words, qr: nil)
+            await d.refreshLockedManifest()
+            let keys = try await k.store.keys(for: homeID, reason: "")
+            try await d.confirmJoin(words: reply.words, keys: keys)
+            joined.append(keys)
+            d.close()
+        }
+        w.home.close()
+        let (newcomer, newKeys) = try await Self.newDevice(w.url)
+        defer { newcomer.close() }
+        let given = try await newcomer.recoveryForTakeover(keyText: nil, rootText: nil, passphrase: pass)
+        #expect(given.root == newcomer.vault?.root)
+        let draft = try await newcomer.planTakeover(recovery: given.identity, root: given.root, store: newKeys.store)
+        let keep: Set<Data> = [joined[0].fingerprint]
+        let report = try await newcomer.takeOver(draft, keep: keep, store: newKeys.store)
+        #expect(Set(report.removed).contains(joined[1].fingerprint))
+        #expect(!Set(report.removed).contains(joined[0].fingerprint))
+        #expect(newcomer.vault?.devices.count == 2, "the newcomer and the one kept")
+    }
+
+    /// Review of #88, S3: a kit join that fails leaves no keys behind.
+    @Test func aFailedKitJoinLeavesNoKeys() async throws {
+        let w = try await Self.world()
+        let id = try #require(w.home.vault?.vaultId)
+        w.home.close()
+        let (newcomer, newKeys) = try await Self.newDevice(w.url)
+        defer { newcomer.close() }
+        let root = try #require(newcomer.vault?.root)
+        let draft = try await newcomer.planTakeover(recovery: w.recovery, root: root, store: newKeys.store)
+        await #expect(throws: (any Error).self, "a device that is no candidate cannot be kept") {
+            _ = try await newcomer.takeOver(draft, keep: [Data(repeating: 9, count: 32)], store: newKeys.store)
+        }
+        #expect(!(await newKeys.store.hasKeys(for: id)))
+    }
+
+    /// Review of #88, M4: deleting a vault this device manages devices of, with others listed, is warned about.
+    @Test func deletingTheHomesCopyIsRecognized() async throws {
+        let w = try await Self.world()
+        defer { w.home.close() }
+        let id = try #require(w.home.vault?.vaultId)
+        #expect(!(await StoredVaultsSection.isHomeWithOthers(vaultID: id, at: w.url, store: w.homeKeys.store)), "alone: nothing to hand over")
+        let (phone, phoneKeys) = try await Self.newDevice(w.url)
+        defer { phone.close() }
+        guard case .waiting(let words, _) = try await phone.startJoin(store: phoneKeys.store) else { return }
+        _ = try await w.home.approveDevice(words: words, qr: nil)
+        #expect(await StoredVaultsSection.isHomeWithOthers(vaultID: id, at: w.url, store: w.homeKeys.store))
+        #expect(!(await StoredVaultsSection.isHomeWithOthers(vaultID: id, at: w.url, store: phoneKeys.store)))
+    }
+
     @Test func theTypedWordsIgnoreNumbersAndPunctuation() {
         #expect(TypedWords.split("1. Abandon 2. ability, able\n4.about above  absent") == ["abandon", "ability", "able", "about", "above", "absent"])
     }
@@ -177,11 +262,13 @@ struct JoinTakeoverAppTests {
     /// The enclave pair signs what the package verifies in software (design §4.1). Where the test host has no
     /// Secure Enclave (or may not use it unsigned), it says so and checks nothing.
     @Test func anEnclavePairSignsWhatSoftwareVerifies() throws {
-        let signer: SecureEnclaveSigner
-        do { signer = try SecureEnclaveSigner.generate() } catch {
-            print("SKIPPED: no Secure Enclave for this test host: \(error)")
+        // Where there is no enclave the store makes software pairs and this checks nothing; where there is one, any
+        // error is a failure (review of #88, S1: a broken access control or flag must not pass silently).
+        guard SecureEnclave.isAvailable else {
+            print("SKIPPED: this test host has no Secure Enclave")
             return
         }
+        let signer = try SecureEnclaveSigner.generate()
         let message = AuthorMessage.manifest(vaultId: UUID(), root: Data(count: 32), epoch: 1, epochId: Data(count: 32),
                                              epochRecordHash: Data(count: 32), listMessage: Data("l".utf8),
                                              format: "sempere/1", features: [])

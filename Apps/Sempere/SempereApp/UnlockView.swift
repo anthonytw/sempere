@@ -13,6 +13,7 @@ struct UnlockView: View {
     @State private var failure: String?
     @State private var joining = false
     @State private var takingOver = false
+    @State private var confirmForget = false
 
     var body: some View {
         NavigationStack {
@@ -30,7 +31,14 @@ struct UnlockView: View {
 
     private var unlockForm: some View {
         Form {
-            if keys.hasKeys(for: model) {
+            if let problem = keys.keyProblem {
+                Section {
+                    Label(problem, systemImage: "key.slash").foregroundStyle(.orange)
+                    Button("Forget This Device's Key…", systemImage: "trash", role: .destructive) { confirmForget = true }
+                        .accessibilityIdentifier("unlock.forgetKey")
+                }
+            }
+            if keys.hasKeys(for: model), keys.keyProblem == nil {
                 Section {
                     Button("Unlock", systemImage: "faceid") { Task { await tryDeviceKey() } }
                         .disabled(keys.isUnlocking)
@@ -53,6 +61,7 @@ struct UnlockView: View {
                     .font(.body.monospaced())
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .privacySensitive()
                     .accessibilityIdentifier("unlock.keyText")
                 Button("Unlock with Key") { unlock { try await keys.unlock(model, identityText: identityText) } }
                     .disabled(identityText.isEmpty)
@@ -84,6 +93,16 @@ struct UnlockView: View {
             }
         }
         .disabled(model.isBusy || keys.isUnlocking)
+        .confirmationDialog("Forget this device's key for the vault?", isPresented: $confirmForget, titleVisibility: .visible) {
+            Button("Forget Key", role: .destructive) {
+                Task {
+                    do { try await keys.forgetKeys(model) } catch { failure = DeviceChangeText.message(error) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This device then joins the vault again (approved by the device that manages devices), or takes over with the recovery kit. Its notes stay in the vault.")
+        }
         .task(id: model.vault?.vaultId) {
             await keys.refresh(model)
             await tryDeviceKey()
@@ -98,7 +117,7 @@ struct UnlockView: View {
         failure = nil
         switch await keys.unlockWithDeviceKey(model) {
         case .failed(let message): failure = message
-        case .unlocked, .noKey, .cancelled, .joining: break
+        case .unlocked, .noKey, .cancelled, .joining, .keyProblem: break
         }
     }
 

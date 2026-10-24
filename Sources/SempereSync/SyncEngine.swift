@@ -709,6 +709,9 @@ public final class SyncEngine {
 
         guard let remote else {
             if name == Vault.manifestName { refreshDetachedSightings(nil); applyDetachedHolds() }
+            // A joining device's run never spreads its `vault.json` (review of #88, M1): it may be an approval storage
+            // forged on another target, and only a device that can check it may upload it.
+            if name == Vault.manifestName, keylessManifestHeld { return }
             // Never on the server, or wiped there: (re)create it, never overwriting.
             try push(name, local, condition: .create)
             try recordMutable(name, hash: localHash)
@@ -746,6 +749,12 @@ public final class SyncEngine {
             // Only the server moved on: take it (an atomic replace, the one in-place write sync makes).
             try accept(name, remoteData, stamp: stamp)
         case (true, false):
+            // A keyless run never replaces a target's `vault.json` (review of #88, M1): what it holds is unchecked here
+            // (a joiner's approval may be one storage forged on another target). The target's copy stays.
+            if name == Vault.manifestName, vault == nil, !Self.epochMutations.contains(.keylessUploadsManifest) {
+                report.skipped.append(.init(path: name, message: "not uploaded by a run without the vault's key"))
+                return
+            }
             try replaceUnchanged(name, local: local, localHash: localHash, etag: remote.etag ?? getETag)
         case (true, true):
             try bothChanged(name, local: local, remoteData: remoteData, stamp: stamp, record: record)
@@ -825,6 +834,12 @@ public final class SyncEngine {
         guard !options.dryRun else { return }
         try LocalFS.write(data, to: root.appendingPathComponent(name), replacing: true)
         state.mutable[name] = .init(hash: FileDigest.sha256(data), stamp: stamp)
+    }
+
+    /// A joining run (no vault, the joiner's key given) never uploads `vault.json`, not even to a target without
+    /// one (review of #88, M1).
+    var keylessManifestHeld: Bool {
+        vault == nil && !options.firstPullIdentities.isEmpty && !Self.epochMutations.contains(.keylessUploadsManifest)
     }
 
     /// The precondition for replacing a server copy that was just fetched

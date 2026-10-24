@@ -4089,7 +4089,8 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
   the BIP-39 English list (2048 words, SHA-256 of the list file
   `2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda`). Typed words compare ignoring case
   and surrounding spaces.
-- The joining device's QR payload: the vault id's 16 bytes (RFC 4122 order), then `c`: 48 bytes.
+- The joining device's QR payload: the vault id's 16 bytes (RFC 4122 order), then `c`: 48 bytes, encoded in the
+  code as standard base64 text (64 characters; the app's codes are text, so a version 4 code).
 - Reverse code: six words of `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root) ‖
   lp(frontier))` (`c` raw; `root` and `frontier`, the approver's current `epochId`, hex); its QR is
   `sempere-reply:<vaultId>:<root hex>:<frontier hex>`. The approver is home (design §5.6). The joining

@@ -10,4 +10,5 @@
 
 - Each device keeps its own key in its Keychain, never synced or exported, and its signing key in the Secure
   Enclave. A vault opens by itself on a device that holds its key; the "Remember key" sheet, the iCloud Keychain
-  option and the sidebar's Vault Key menu are gone. A key saved by an earlier build is moved at the first unlock.
+  option and the sidebar's Vault Key menu are gone. A vault made by a build before this one is joined again (or
+  taken over with its recovery kit) on each device.

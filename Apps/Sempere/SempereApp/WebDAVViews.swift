@@ -400,6 +400,7 @@ struct WebDAVStatusBar: View {
 struct JoiningWebDAVRows: View {
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var library: VaultLibrary
+    @AppEnvironmentObject private var keys: RememberedKeys
     let locations: [WebDAVLocation]
     @State private var removing: WebDAVLocation?
     @State private var removingUnconfirmed = 0
@@ -438,7 +439,13 @@ struct JoiningWebDAVRows: View {
                                         isPresented: Binding(get: { removing?.id == location.id }, set: { if !$0 { removing = nil } }),
                                         titleVisibility: .visible, presenting: removing) { removed in
                         Button("Remove", role: .destructive) {
-                            Task { await model.report { try await model.removeWebDAVLocation(removed.id, library: library) } }
+                            Task {
+                                await model.report {
+                                    try await model.removeWebDAVLocation(removed.id, library: library)
+                                    // The same rule as Delete from This Device: this device's keys for it go too.
+                                    if let id = UUID(uuidString: removed.vaultId) { try? await keys.store.delete(for: id) }
+                                }
+                            }
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: { _ in
@@ -446,7 +453,7 @@ struct JoiningWebDAVRows: View {
                             let fileCount = removingUnconfirmed
                             Text("\(fileCount) changes on this device have not reached the server and will be lost. Open the vault and sync first to keep them.")
                         } else {
-                            Text("The copy on this device and the saved password are deleted. The vault on the server is not changed.")
+                            Text("The copy on this device, this device's key for it and the saved password are deleted. The vault on the server is not changed.")
                         }
                     }
                 }
