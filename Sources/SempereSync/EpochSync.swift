@@ -802,13 +802,19 @@ extension SyncEngine {
         let remoteManifest = remoteManifestData.flatMap { try? EpochManifest.parse($0) }
         var named = Set<Data>()
         for m in [localManifest, remoteManifest].compactMap({ $0 }) { for k in m.keys { named.insert(k.fingerprint) } }
+        // Only a kit this device verified as an epoch's recovery key that a later kept epoch replaced is superseded;
+        // an unknown fingerprint (a new kit whose vault.json has not arrived) is never deleted (review of #86, S4).
+        let retired: Set<Data> = {
+            guard let v = epochJudge, let record = try? v.publicTrustStore?.record(for: v.vaultId) else { return [] }
+            return Set(record.chain.map(\.recovery)).subtracting(named)
+        }()
         func superseded(_ name: String) -> Bool {
             guard localManifest != nil, let fp = Vault.passphraseCopyFingerprint(name) else { return false }
-            return !named.contains(fp)
+            return !named.contains(fp) && retired.contains(fp)
         }
-        // Deleting on the target needs this device's own verified epoch at least the target's.
+        // Deleting needs this device's own verified epoch at least the target's, and a run that is not held.
         let mayDelete: Bool = {
-            guard let v = epochJudge, case .verified = v.listStatus else { return false }
+            guard epochHold == nil, let v = epochJudge, case .verified = v.listStatus else { return false }
             return v.manifest.epoch >= (remoteManifest?.epoch ?? 0)
         }()
         for name in local.union(listed.keys).sorted() {
@@ -817,8 +823,11 @@ extension SyncEngine {
             switch (local.contains(name), listed[name]) {
             case (true, .some):
                 if superseded(name), mayDelete, !options.pushOnly {
-                    // Kept by nobody: deleted on both sides, never brought back.
-                    if !options.dryRun { _ = try transport.delete([folder, name], ifETag: nil) }
+                    // Kept by nobody: deleted on both sides, never brought back (under the version listed).
+                    if !options.dryRun {
+                        let etag = listed[name]?.etag.flatMap { Self.isStrong($0) ? $0 : nil }
+                        guard try transport.delete([folder, name], ifETag: etag) else { continue }
+                    }
                     report.deleted.append(.init(side: "remote", path: path))
                     try requireLocalWrite("delete \(path)")
                     if !options.dryRun { try LocalFS.remove(localDir.appendingPathComponent(name)) }

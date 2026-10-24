@@ -463,6 +463,23 @@ final class EpochSyncScenarioTests: SyncTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: w["C"].folder.appendingPathComponent(copies.first ?? "").path))
     }
 
+    /// A new kit's passphrase copy that reaches a target before the vault.json naming it (home's upload of it
+    /// failed) is not superseded: no device deletes a fingerprint it never verified as a recovery key (S4).
+    func testANewPassphraseCopyAheadOfItsVaultJSONIsKept() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "C"])
+        let t1 = w.target("T1")
+        for n in ["A", "B"] { try w[n].sync(t1) }
+        var a = try w["A"].open()
+        try a.replaceRecoveryKit(try MLKEM768X25519Identity(), keep: [w["B"].id, w["C"].id], remove: [],
+                                 passphrase: "another long passphrase for the new kit", workFactor: 10)
+        let keysDir = w["A"].folder.appendingPathComponent("keys")
+        let names = try FileManager.default.contentsOfDirectory(atPath: keysDir.path)
+        let fresh = try XCTUnwrap(names.first { !t1.paths.contains("keys/\($0)") })
+        t1.put("keys/\(fresh)", try Data(contentsOf: keysDir.appendingPathComponent(fresh)))
+        try w["B"].sync(t1); try w["B"].sync(t1)
+        XCTAssertTrue(t1.paths.contains("keys/\(fresh)"), "a copy no device verified as replaced was deleted")
+    }
+
     // MARK: - synced (design §5.5)
 
     func testACompleteTwoWayRunRecordsSyncedWhichHomeReadsForTheStaleRemovalWarning() throws {

@@ -4336,10 +4336,12 @@ changed since the last run:
 - **`joins/`**: the union, and a request one side deleted since both held it (home approved it, or it expired)
   is deleted on the other. A received request must parse, name this vault and be named after its own key.
   Home deletes requests older than 7 days and those of keys already listed.
-- **`keys/`**: the union of passphrase copies (one `scrypt` stanza, at most their bound), except a copy whose
-  fingerprint (in its name) matches no key of the local or the target's `vault.json`: superseded (§15.11). A
-  device whose own verified epoch is at least the target's deletes it there and here, and never uploads it
-  again.
+- **`keys/`**: the union of passphrase copies (one `scrypt` stanza, at most their bound), except a superseded
+  copy (§15.11): its fingerprint (in its name) is a recovery key of the chain this device pinned and matches no
+  key of the local or the target's `vault.json` (a later kept epoch replaced it). A fingerprint the device never
+  verified as a recovery key (a new kit whose `vault.json` has not arrived) is never superseded. A device whose
+  own verified epoch is at least the target's, in a run that is not held, deletes a superseded copy there (under
+  the version listed) and here, and never uploads it again.
 - **`synced`**: at the end of a complete two-way run (no error, every note listed) a device records the time in
   its own `summaries/<device>.sealed` (§12.5), at most once an hour; home reads it to warn that a device it
   removes last synced long ago.
