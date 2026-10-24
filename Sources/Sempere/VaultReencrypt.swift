@@ -601,6 +601,10 @@ extension Vault {
     package static var keepsOldRecords: Bool { epochMutations.contains(.keepOldRecords) }
     package static var keepsOldBlobNames: Bool { epochMutations.contains(.keepOldBlobNames) }
 
+    /// Records in this device's ledger a current copy a sync placed here in place of an older accepted one (rewrap-replace,
+    /// KH6): the device's runs with its other targets then compare that path there too (a bridge carries it).
+    public func recordReplacedCopy(path: String, bytes: Data) throws { try recordWrite(path: path, bytes: bytes) }
+
     /// True when `data` (an age file) opens under the key of an epoch below `m` this value holds.
     public func opensUnderEpoch(below m: Int, _ data: Data) -> Bool {
         (olderEpochs + (keyring?.offChainEpochs() ?? [])).contains { $0.epoch < m && (try? AgeFile.decrypt(data, with: [$0.identity])) != nil }
@@ -622,6 +626,21 @@ extension Vault {
             return .old(epoch: o.epoch, accepted: ok)
         }
         return nil
+    }
+
+    /// After a finished re-encryption (design §7.3: nothing in a working copy opens with an earlier key): the files of
+    /// the working copy this device set aside that are still in place (`unacceptedInPlace`: kept in the set-aside store,
+    /// never read as notes) are removed from it. Nothing while one is pending. Returns their paths.
+    @discardableResult
+    public func removeSetAsideCopiesBelowReencryption() -> [String] {
+        guard recordsObsoleteBelow != nil, !isReadOnly, case .device = openedWith else { return [] }
+        var out: [String] = []
+        for (path, sha) in unacceptedInPlace().sorted(by: { $0.key < $1.key }) {
+            let file = url.appendingPathComponent(path)
+            guard (try? FileDigest.sha256(of: file).hex) == sha, (try? FileIO.remove(file)) != nil else { continue }
+            out.append(path)
+        }
+        return out
     }
 
     /// The epoch below which records are obsolete (a finished re-encryption on this device's verified chain), for the

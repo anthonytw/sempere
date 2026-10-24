@@ -129,16 +129,15 @@ extension SyncEngine {
         // In step only when both sides held the same records before any transfer.
         if local != Set(listed.keys) { transferred = true }
         // Pushed by every device that holds one, unlisted ones excepted (they upload nothing). A device waiting for a
-        // change it cannot verify pushes only the record the target's vault.json names and records above its own pinned
-        // epoch (KH6): one below may be a record a finished re-encryption deleted there, which it cannot know.
+        // change it cannot verify pushes only the record the target's vault.json names (KH6): another may be a record a
+        // finished re-encryption deleted there, which it cannot know.
         let waiting = vault?.waitingNotice != nil || epochHold != nil
             || (vault?.sightings().contains { $0.epoch > (vault?.manifest.epoch ?? 0) } ?? false)
         let targetRecord = fetchedManifest.flatMap { try? EpochManifest.parse($0.data) }
             .map { String($0.epochRecord.dropFirst(Vault.epochsName.count + 1)) }
-        let pinnedEpoch = vault.flatMap { v in ((try? v.publicTrustStore?.record(for: v.vaultId)) ?? nil)?.pinned?.epoch ?? v.manifest.epoch } ?? 0
         if epochStatus.unlisted == nil {
             for name in local.subtracting(listed.keys).sorted() {
-                if waiting, name != targetRecord, (Int(name.split(separator: "-").first ?? "") ?? 0) <= pinnedEpoch { continue }
+                if waiting, name != targetRecord { continue }
                 try checkCancelled()
                 let path = "\(folder)/\(name)"
                 let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes)
@@ -584,6 +583,7 @@ extension SyncEngine {
                 } else if let file {
                     try store.keep(file: file, path: path, vaultId: checker.vaultId, reason: reason)
                 }
+                deleteObsoleteUnaccepted(path, entry: entry, data: data, file: file)
                 locked {
                     report.setAside.append(.init(path: path, message: SyncReport.printable(problem.reason)))
                     state.quarantined = state.quarantined ?? [:]
@@ -795,6 +795,8 @@ extension SyncEngine {
                     return
                 }
                 try requireLocalWrite("replace \(path)")
+                // In the ledger first (intent first), so this device's runs with its other targets carry it there too.
+                try v.recordReplacedCopy(path: path, bytes: got.data)
                 try LocalFS.write(got.data, to: file, replacing: true)
                 locked {
                     report.downloaded.append(path)

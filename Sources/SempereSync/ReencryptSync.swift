@@ -193,6 +193,19 @@ extension SyncEngine {
         }
     }
 
+    /// A received file set aside here (kept first) that opens under a key from before a finished re-encryption: deleted on
+    /// the target where this device's list stands (J7 on a target home does not confirm, a bridge's), never otherwise.
+    func deleteObsoleteUnaccepted(_ path: String, entry: RemoteEntry?, data: Data?, file: URL?) {
+        guard !options.dryRun, !options.pushOnly, epochHold == nil, epochStatus.conflict == nil, let v = epochJudge,
+              let m = v.recordsObsoleteBelow, listStandsHere(v),
+              let bytes = data ?? file.flatMap({ try? BoundedRead.contents(of: $0, maxBytes: options.maxFileBytes) }),
+              v.opensUnderEpoch(below: m, bytes) else { return }
+        let etag = (entry?.etag).flatMap { Self.isStrong($0) ? $0 : nil }
+        if (try? transport.delete(path.split(separator: "/").map(String.init), ifETag: etag)) == true {
+            locked { report.deleted.append(.init(side: "remote", path: path)) }
+        }
+    }
+
     // MARK: Epoch records below a finished re-encryption
 
     /// The epoch below which records are obsolete for this run (a finished re-encryption on the verified chain).

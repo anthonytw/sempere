@@ -203,6 +203,10 @@ public enum EpochPrecedence {
                 guard c.recoverySigner == p.recovery, c.signer == c.home, c.recovery == p.recovery,
                       TakeoverRule.listAllowed(c.list, home: c.home, ancestorLists: ancestorLists,
                                                retiredKits: kits.subtracting([p.recovery])) else { return .invalid }
+                // A takeover on this device's pinned chain was judged under the frontier of its time; a kit replacement
+                // pinned above it since does not undo it (KH6; `EpochChain.verify` likewise).
+                let own = path(c.epochId)
+                if own.count <= pinnedEpochs.count, zip(own, pinnedEpochs).allSatisfy({ $0 == $1.epochId }) { return .valid }
                 let required: Data?
                 if mut.contains(.retiredKitAccepted) {
                     required = p.recovery

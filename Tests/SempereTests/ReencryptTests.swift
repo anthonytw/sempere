@@ -299,3 +299,28 @@ enum SyncFiles {
         return out.sorted()
     }
 }
+
+/// A kit replacement (a re-encryption is one) above a takeover this device pinned: the takeover stays valid on the
+/// pinned chain (found by the KH6 interleaving runs: the frontier kit rule re-judged it under the new kit).
+final class TakeoverThenKitReplacementTests: VaultTestCase {
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26 (always on Linux)")
+    }
+
+    func testAKitReplacementAboveAPinnedTakeoverKeepsTheVaultWritable() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B"])
+        let (b, _) = try Vault.takeover(at: w.url, device: w["B"].keys, recovery: w.recovery, keep: [w["A"].fingerprint],
+                                        trust: w["B"].trust, root: w.root, ledger: w["B"].ledger, setAside: w["B"].setAside)
+        var home = b
+        try home.replaceRecoveryKit(try MLKEM768X25519Identity(), keep: [w["A"].id], remove: [])
+        let again = try w.open("B")
+        XCTAssertNil(again.listStatus.problem, "\(again.listStatus)")
+        XCTAssertNoThrow(try again.requireWritable())
+        var r = try w.open("B")
+        let prep = try r.prepareReencryption(try MLKEM768X25519Identity(), keep: [w["A"].id], remove: [])
+        try r.beginReencryption(prep)
+        XCTAssertNil(try w.open("B").listStatus.problem)
+        XCTAssertNil(try w.open("A").listStatus.problem)
+    }
+}

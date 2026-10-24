@@ -487,6 +487,8 @@ public final class SyncEngine {
            v.manifest.epoch > 1, !v.isRecordPending, state.scannedEpoch != Hex.encode(v.manifest.epochId) + ":" + epochsDigest {
             do {
                 try v.setAsideScan()
+                // After a finished re-encryption the set-aside copies leave the working copy (KH6, J7).
+                for p in v.removeSetAsideCopiesBelowReencryption() { report.deleted.append(.init(side: "local", path: p)) }
                 // Keyed on the local records too: a record that arrives later turns pending files into set-aside ones.
                 state.scannedEpoch = Hex.encode(v.manifest.epochId) + ":" + epochsDigest
             } catch {

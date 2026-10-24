@@ -143,8 +143,10 @@ public enum ReencryptCoordinator {
             c.files += 1
             if let tag = entry.etag, SyncEngine.isStrong(tag), memo[p] == tag { c.current += 1; return }
             do {
-                let got = try r.read(path, maxBytes: BoundedRead.maxRevisionBytes)
                 let isInbox = path.first == CaptureFile.folderName
+                let limit = isInbox ? CaptureFile.maxSealedBytes(CaptureFile.parse(name: path[1])?.kind ?? .capture)
+                    : path == [SharedSettings.fileName] ? SharedSettings.maxFileBytes : BoundedRead.maxRevisionBytes
+                let got = try r.read(path, maxBytes: limit)
                 let epoch: Int?
                 var unaccepted: SetAsideReason?
                 if isInbox {
@@ -168,7 +170,7 @@ public enum ReencryptCoordinator {
                     return
                 }
                 let localURL = v.url.appendingPathComponent(p)
-                if epoch != nil, let local = try? BoundedRead.contents(of: localURL, maxBytes: BoundedRead.maxRevisionBytes),
+                if epoch != nil, let local = try? BoundedRead.contents(of: localURL, maxBytes: limit),
                    isInbox ? sameInbox(v, local, got.data, name: path[1], scratch: scratch)
                            : (v.acceptedKeyEpoch(of: local, path: p).map { $0 >= m } ?? false)
                              && v.plainBody(of: local, path: p) == v.plainBody(of: got.data, path: p) {
@@ -239,6 +241,7 @@ public enum ReencryptCoordinator {
         public var targets: [Confirmation] = []
         /// True once `vault.json` was rewritten without the binding (and the runs after carried it).
         public var finished = false
+        public init() {}
     }
 
     /// One step of a pending re-encryption on home (design §7.1 steps 5–7): the pass, a run with every target (`sync`),

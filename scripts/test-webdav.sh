@@ -60,7 +60,7 @@ export SEMPERE_WEBDAV_TEST_USER=sempere
 export SEMPERE_WEBDAV_TEST_PASSWORD=test-password
 log="$work/test.log"
 status=0
-tests="${SEMPERE_WEBDAV_TESTS:-WebDAVIntegrationTests|BlobIntegrationTests|CLIWebDAVTests|SyncFaultProxyTests|WsgidavConformanceTests|EngineOverWsgidavTests|InboxSummariesOverWsgidavTests|EpochInterleavingTests/testInvariantsHoldOverWsgidav}"
+tests="${SEMPERE_WEBDAV_TESTS:-WebDAVIntegrationTests|BlobIntegrationTests|CLIWebDAVTests|SyncFaultProxyTests|WsgidavConformanceTests|EngineOverWsgidavTests|InboxSummariesOverWsgidavTests|EpochInterleavingTests/testInvariantsHoldOverWsgidav|ReencryptOverFaultProxyTests}"
 swift test --filter "$tests" "$@" 2>&1 | tee "$log" || status=${PIPESTATUS[0]}
 [ "$status" -eq 0 ] || exit "$status"
 # XCTest prints "Executed N tests, with M tests skipped and 0 failures" when a test skipped.
