@@ -153,7 +153,12 @@ extension SyncEngine {
             }
         }
         remoteEpochRecords = Set(listed.keys).subtracting(wrong).union(options.dryRun ? local : [])
+        targetHasUnknownRecords = !Set(listed.keys).subtracting(local).isEmpty
         guard !options.pushOnly else { return }
+        defer {
+            let now = Set(((try? LocalFS.entries(localDir)) ?? []).filter(Vault.isEpochRecordFileName))
+            targetHasUnknownRecords = !Set(listed.keys).subtracting(now).isEmpty
+        }
         for name in Set(listed.keys).subtracting(local).sorted() {
             try checkCancelled()
             let path = "\(folder)/\(name)"
@@ -546,6 +551,11 @@ extension SyncEngine {
         ledgerShas = latest
     }
 
+    /// True when the target's `vault.json` is this device's own epoch, as this run last knew it (read, or uploaded).
+    func listStandsHere(_ v: Vault) -> Bool {
+        locked { targetEpochId } == v.manifest.epochId
+    }
+
     /// True when this device set the working copy's file at `path` aside (design §5.8): it is never uploaded.
     func heldAside(_ path: String) -> Bool {
         guard unacceptedHere[path] != nil else { return false }
@@ -560,8 +570,12 @@ extension SyncEngine {
         let path = "\(Vault.notesName)/\(k)"
         // Both sides came to hold it on their own (neither copied it to the other): compared once.
         let unknown = !recordedShared && locked({ placedShas[k] }) == nil
+        // The target's copy was replaced since both sides last matched (its version tag moved): compared.
+        let recordedStamp = locked { state.files[k]?.stamp }
+        let moved = recordedStamp != nil && entry?.stamp != nil && entry?.stamp != recordedStamp
         try replaceUnaccepted(path, remotePath: [Vault.notesName, id, n.filename], recordKey: k, entry: entry,
-                              recorded: state.files[k]?.sha256, unknown: unknown) { data in
+                              recorded: state.files[k]?.sha256, unknown: unknown, remoteMoved: moved,
+                              stampKnown: recordedStamp != nil) { data in
             guard let checker = checker(), let uuid = UUID(uuidString: id) else { return }
             try checker.checkIncomingRevision(data, noteId: uuid, name: n)
         }
@@ -570,10 +584,14 @@ extension SyncEngine {
     /// The shared path `path` (remote `remotePath`): see `replaceUnacceptedRevision`. `check` must accept the
     /// remote copy before it is placed here.
     func replaceUnaccepted(_ path: String, remotePath: [String], recordKey: String, entry: RemoteEntry?, recorded: String?,
-                           unknown: Bool = false, check: (Data) throws -> Void) throws {
+                           unknown: Bool = false, remoteMoved: Bool = false, stampKnown: Bool = false,
+                           check: (Data) throws -> Void) throws {
         guard !options.dryRun, let v = epochJudge, v.setAsideStore != nil else { return }
-        // After another branch's vault.json was replaced on this target, every shared file is compared once.
+        // After another branch's vault.json was replaced on this target, every shared file is compared once: only
+        // those whose version tag moved since both sides matched, when that is known (a losing branch can only
+        // have replaced a file by changing its tag).
         let compareAll = locked { state.compareShared == true } && locked({ placedShas[recordKey] }) == nil
+            && (!stampKnown || remoteMoved) || remoteMoved
         let unknown = unknown || compareAll
         let here = unacceptedHere[path]
         let rewritten = ledgerShas[path]
@@ -606,12 +624,16 @@ extension SyncEngine {
         let etag = got.etag ?? entry?.etag
         // The target's copy is unaccepted: set aside by the rule, or opened by no key this device holds while no
         // record it waits for is missing (under the key of an epoch dropped before this device saw it, or junk).
+        // A copy no key here opens counts as under a dropped key only when every epoch the target shows is
+        // accounted for: its vault.json is this device's own, and its epochs/ holds no record unknown here (S2).
+        let standing = listStandsHere(v)
         var unaccepted: SetAsideReason?
-        if case .setAside(let r) = theirs { unaccepted = r } else if theirs == .unreadable { unaccepted = .dropped }
+        if case .setAside(let r) = theirs { unaccepted = r } else if theirs == .unreadable, standing,
+           !locked({ targetHasUnknownRecords }) { unaccepted = .dropped }
         if mine.isAccepted, let reason = unaccepted {
-            // Only a run whose own device list stands on this target replaces its files: not one that met a
-            // vault.json there it cannot place (a conflict, or held for a device change).
-            guard epochStatus.conflict == nil, epochHold == nil else {
+            // Only a run whose own device list stands on this target replaces its files: its vault.json is this
+            // device's (read so, or uploaded this run), and no conflict or hold was met (S1).
+            guard standing, epochStatus.conflict == nil, epochHold == nil else {
                 report.skipped.append(.init(path: path, message: "the target's copy is not accepted here, but its device "
                     + "list is not one this device can place; not replaced"))
                 return
@@ -631,6 +653,7 @@ extension SyncEngine {
                 report.uploaded.append(path)
                 report.replaced.append(.init(side: "remote", path: path))
                 placedShas[recordKey] = localSha
+                remoteRewritten.insert(recordKey)
             }
         } else if theirs.isAccepted, !mine.isAccepted, mine != .pending {
             // This device's copy is not accepted, the target's is: kept aside first (J6), then replaced here.

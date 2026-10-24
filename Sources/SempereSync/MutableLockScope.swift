@@ -180,6 +180,7 @@ extension SyncEngine {
                     continue
                 }
                 report.uploaded.append(upload.name)
+                if upload.name == Vault.manifestName { targetEpochId = Self.epochOf(upload.data)?.epochId }
                 upload.afterUpload?()
                 if let hash = upload.recordHash { try recordMutable(upload.name, hash: hash) }
             } catch {

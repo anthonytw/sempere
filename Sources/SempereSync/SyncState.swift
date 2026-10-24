@@ -31,6 +31,9 @@ struct SyncState: Codable, Equatable {
         /// compared with the remote's, and the accepted one replaces an unaccepted one (key-hierarchy design
         /// §5.4 step 4). Nil in older state files and for blobs.
         var sha256: String?
+        /// The target's version tag (`RemoteEntry.stamp`) of a revision when this device last knew both sides
+        /// equal: another one means the target's copy was replaced since, and it is compared (KH4, review of #86).
+        var stamp: String?
     }
 
     /// A blob download that was interrupted: its partial file

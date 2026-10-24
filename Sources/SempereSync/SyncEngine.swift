@@ -280,6 +280,14 @@ public final class SyncEngine {
     }
     /// What a held run may still write (`HoldGate.swift`).
     let holdGate = HoldGate()
+    /// Revisions this run wrote over on the target (their version tag is new and unknown until listed again).
+    var remoteRewritten: Set<String> = []
+    /// The epoch id of the `vault.json` the target holds, as this run last knew it (read, or uploaded): only a run
+    /// whose own list stands on the target replaces files there (review of #86, S1).
+    var targetEpochId: Data?
+    /// Records the target's `epochs/` holds that this device does not (could not take): a copy no key here opens
+    /// is then not taken for one under a dropped key (S2).
+    var targetHasUnknownRecords = false
     /// Detached sightings this target showed when last looked at (M3), until its `vault.json` is read.
     var detachedPending: [Data: (why: String, seen: Date)] = [:]
     /// True once this run took a later epoch's `vault.json`: the vault is reopened, pinned and caught up.
@@ -688,6 +696,7 @@ public final class SyncEngine {
         let stamp = remote.etag ?? getETag ?? remote.lastModified
         if name == Vault.manifestName {
             remoteManifestData = remoteData
+            targetEpochId = Self.epochOf(remoteData)?.epochId
             refreshDetachedSightings(remoteData)
             applyDetachedHolds()
         }
@@ -1227,8 +1236,10 @@ public final class SyncEngine {
         }
         for n in shared {
             let k = key(id, n)
+            let rewritten = locked { remoteRewritten.contains(k) }
             state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included,
-                                                  sha256: locked({ placedShas[k] }) ?? state.files[k]?.sha256)
+                                                  sha256: locked({ placedShas[k] }) ?? state.files[k]?.sha256,
+                                                  stamp: rewritten ? nil : (entries[n]?.stamp ?? state.files[k]?.stamp))
             // In step on both sides again: no longer a settled deletion.
             state.thinned?[k] = nil
         }
