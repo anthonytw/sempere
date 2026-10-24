@@ -386,7 +386,11 @@ final class EpochInterleavingTests: SyncTestCase {
         }
 
         for step in 0..<steps {
-            var op = Op.allCases.randomElement(using: &rng) ?? .write
+            // Runs leaning on a KH4 op keep KH4's mix (re-encryptions change every trajectory, and a mutation must still
+            // meet its invariant on the seeds KH4 chose); the others meet re-encryptions too.
+            let mix = lean.map { $0 == .reencrypt ? Op.allCases : Op.allCases.filter { $0 != .reencrypt && $0 != .reencryptStep } }
+                ?? Op.allCases
+            var op = mix.randomElement(using: &rng) ?? .write
             let roll = Int.random(in: 0..<100, using: &rng)
             if roll < 30 { op = .write } else if roll < 62 { op = .sync } else if roll < 72, let lean { op = lean }
             if tracing { trace.append("\(step) op \(op) home \(home) listed \(listed.sorted())") }
