@@ -446,9 +446,29 @@ extension Vault {
     /// run back (J5b). Otherwise it is detached: see `EpochSighting.sources`.
     public func isAnchoredSighting(_ s: EpochSighting) -> Bool {
         guard let m = try? Self.readManifest(s.manifest), let parent = m.parent else { return false }
+        // A child of a pinned epoch is refused unless it verifies from it (`pinnedParentRefuses`).
         if trustedRecord()?.chain.contains(where: { $0.epochId == parent }) == true { return true }
-        if canRead, case .device = openedWith { return ownChain().ids.contains(parent) }
-        return false
+        // A child of the epoch this device follows with its record pending: its signatures must check against this
+        // device's own verified vault.json of that epoch (the link needs the record); a forgery is detached (N1).
+        guard canRead, case .device = openedWith, parent == manifest.epochId, listStatus.allowsWriting else { return false }
+        return signedFromLocal(m)
+    }
+
+    /// `m`'s signatures check against this vault's `vault.json` (its parent): `epochSig` by its home, or for a
+    /// takeover `recoverySig` by its recovery kit and `epochSig` by the new home. The link is not checked here.
+    func signedFromLocal(_ m: EpochManifest) -> Bool {
+        guard m.vaultId == vaultId, m.root == manifest.root, m.epoch == manifest.epoch + 1, let message = m.epochMessage
+        else { return false }
+        let signer: EpochKeyEntry?
+        if EpochReason(rawValue: m.epochReason) == .takeover {
+            guard let rs = m.recoverySig, let entry = m.recoveryEntry, let rk = entry.sign,
+                  entry.fingerprint == manifest.recoveryEntry?.fingerprint, rs.verifies(message, keys: rk) else { return false }
+            signer = m.homeEntry
+        } else {
+            signer = m.keys.first { $0.role == .device && $0.fingerprint == manifest.home }
+        }
+        guard let signer, let keys = signer.sign else { return false }
+        return m.epochSig.verifies(message, keys: keys)
     }
 
     /// A target (`source`) showed `data` as its `vault.json` (nil: none): each detached sighting it no longer shows

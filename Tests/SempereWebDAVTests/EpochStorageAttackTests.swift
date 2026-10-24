@@ -207,4 +207,56 @@ final class EpochStorageAttackTests: SyncTestCase {
         XCTAssertNil(other.epoch?.waiting)
         XCTAssertFalse(other.uploaded.isEmpty)
     }
+
+    /// N1 (re-check of #86): a forged child of the epoch this device follows with its record pending (no key: the
+    /// real vault.json with its id changed, this device removed) is detached, not anchored: it holds only the target
+    /// that shows it, and a target that never showed it is not held.
+    func testAForgedChildOfARecordPendingEpochIsDetached() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "X"], targets: ["T1", "T2"])
+        let t1 = w.target("T1"), t2 = w.target("T2")
+        try w["B"].sync(t2)
+        var a = try w["A"].open()
+        try a.removeDevices([w["X"].id])
+        try w["A"].sync(t1)
+        let name = try XCTUnwrap(records(t1).first { $0.hasPrefix("2-") })
+        t1.store.removeDirect([Vault.epochsName, name])
+        let r0 = try w["B"].sync(t1)
+        XCTAssertEqual(r0.epoch?.recordPending, true, "\(r0)")
+        let real = try XCTUnwrap(t1.file(Vault.manifestName))
+        var m = try EpochManifest.parse(real)
+        m.parent = m.epochId
+        m.epoch = 3
+        m.epochId = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
+        m.epochRecord = "epochs/" + EpochRecord.fileName(epoch: 3, epochId: m.epochId)
+        m.keys.removeAll { $0.fingerprint == w["B"].fingerprint }
+        t1.put(Vault.manifestName, try JSONEncoder().encode(m))
+        XCTAssertNotNil(try w["B"].sync(t1).epoch?.waiting, "the target that shows it holds the run")
+        let v = try w["B"].open()
+        XCTAssertEqual(v.sightings().map { v.isAnchoredSighting($0) }, [false])
+        t1.put(Vault.manifestName, real)
+        _ = try w["B"].write("after forgery")
+        let r2 = try w["B"].sync(t2)
+        XCTAssertNil(r2.epoch?.waiting, "a forged child of the record-pending epoch holds a target that never showed it")
+        XCTAssertFalse(r2.uploaded.isEmpty)
+        XCTAssertNil(try w["B"].sync(t1).epoch?.waiting)
+        XCTAssertTrue(try w["B"].open().sightings().isEmpty)
+    }
+
+    /// N1: a real child of the record-pending epoch, signed by its home, stays anchored.
+    func testARealChildOfARecordPendingEpochIsAnchored() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "X", "Y"], targets: ["T1"])
+        let t1 = w.target("T1")
+        var a = try w["A"].open()
+        try a.removeDevices([w["X"].id])
+        try w["A"].sync(t1)
+        let r2 = try XCTUnwrap(records(t1).first { $0.hasPrefix("2-") })
+        t1.store.removeDirect([Vault.epochsName, r2])
+        XCTAssertEqual(try w["B"].sync(t1).epoch?.recordPending, true)
+        try a.removeDevices([w["B"].id])
+        try w["A"].sync(t1)
+        for r in records(t1) where !r.hasPrefix("1-") { t1.store.removeDirect([Vault.epochsName, r]) }
+        _ = try w["B"].sync(t1)
+        let v = try w["B"].open()
+        XCTAssertEqual(v.sightings().map { v.isAnchoredSighting($0) }, [true], "\(v.sightings().map(\.epoch))")
+    }
 }
