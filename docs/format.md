@@ -4431,6 +4431,6 @@ Over sync (§15.15, in addition):
   names. A `vault.json` whose record is missing and whose signed fields already lose to the device's own chain (a
   sibling takeover with a larger id) is replaced by the device's own, never waited for.
 - **After a finish**, a device removes from its working copy the files it set aside that are still in place (they
-  stay in the set-aside store), and a received file it sets aside that opens under a key from before the finish is
-  deleted on the target where its list stands.
+  stay in the set-aside store), and a received file it sets aside that opens under a key from before the finish (a
+  `settings.age` it cannot use included) is deleted on the target where its list stands.
 - **Blob collection** (§8.1.6 rule 2) deletes nothing while a re-encryption is pending.
