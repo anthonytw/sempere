@@ -579,8 +579,8 @@
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "CemeteryDoor ShadowS InkWind";
 				INFOPLIST_KEY_CFBundleDisplayName = Sempere;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Sempere uses the camera to add photos to your notes.";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sempere uses Face ID to unlock vaults with keys saved in the Keychain.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Sempere uses the camera to add photos to your notes and to scan another device's join code.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sempere uses Face ID to unlock a vault that asks for it on this device.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sempere uses the microphone to record audio into your notes. Recordings are encrypted in your vault.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Sempere transcribes your recordings on this device. Audio is never sent to a server.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
@@ -619,8 +619,8 @@
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "CemeteryDoor ShadowS InkWind";
 				INFOPLIST_KEY_CFBundleDisplayName = Sempere;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Sempere uses the camera to add photos to your notes.";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sempere uses Face ID to unlock vaults with keys saved in the Keychain.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Sempere uses the camera to add photos to your notes and to scan another device's join code.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sempere uses Face ID to unlock a vault that asks for it on this device.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sempere uses the microphone to record audio into your notes. Recordings are encrypted in your vault.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Sempere transcribes your recordings on this device. Audio is never sent to a server.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;

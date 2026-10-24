@@ -1618,8 +1618,8 @@ replays from its seed, and quiescence runs until a whole round changes nothing),
 
 ### 16.11 KH5 as built, part 1: the device list, removal, banners and Repair
 
-KH5 lands in two PRs (each about half of the row in §12): this one has the device list and history, home's changes
-(rename, removal, Make Home, Replace Recovery Kit), the banners and Repair; the second has device keys in the
+KH5 lands in two PRs (each about half of the row in §12): the first has the device list and history, home's changes
+(rename, removal, Make Home, Replace Recovery Kit), the banners and Repair; the second (§16.12) has device keys in the
 Keychain and signing pairs in the Secure Enclave, joining by approval and the takeover screen. Shared logic is in
 the package (`Sources/Sempere/DeviceOverview.swift`) and the CLI uses it too (`sempere devices history`,
 `devices remove`'s warnings, `devices status`, `set-aside keep --own-dropped`).
@@ -1636,3 +1636,17 @@ the package (`Sources/Sempere/DeviceOverview.swift`) and the CLI uses it too (`s
 | Held-back banner (review of #86) | after a day held back (the vault's oldest anchored sighting, or a run's `heldSince`). Sightings are listed in Repair; Forget forgets the detached ones, Forget All the anchored ones too after a warning |
 | Home conflicts | a run that reports a conflict shows a banner; the device stays on its list until a takeover settles it. Picking a branch in the app (§5.6 rule 4's user pick) is not offered: the engine does not take a pick yet |
 | Locked runs keep no sighting (§16.10) | left as built: the app's locked and upload-only runs honor sightings by epoch number, and the open vault's two-way runs record them, which is all the banners need |
+
+### 16.12 KH5 as built, part 2: device keys, joins and takeovers
+
+| Point | Decision |
+| --- | --- |
+| Device keys (§6.1) | `KeychainDeviceKeyStore`: per vault, the X-Wing seed as a generic password `WhenUnlockedThisDeviceOnly` (with "Require Face ID to open this vault", off by default: `.biometryCurrentSet`, or `.userPresence` without biometrics), and the signing pair's Secure Enclave blobs (`SecureEnclave.P256.Signing`, `SecureEnclave.MLDSA65`, both `AfterFirstUnlockThisDeviceOnly`) with their public keys in a second item, `AfterFirstUnlockThisDeviceOnly`. Nothing synchronizable, no export. Where there is no enclave (a simulator, a Mac without one) the pair is made in software and kept in that second item |
+| Signing in the package | `AuthorSigner` (a protocol: public keys, sign) replaces the concrete software pair wherever a vault signs; `DeviceSigningKeys` (software) and the app's `SecureEnclaveSigner` conform. The enclave signer checks both signatures against its public keys before handing them out, and ECDSA signatures are made low-S as the software ones are. `DeviceKeys.fileText` throws for an enclave pair |
+| Unlocking | a vault this device has keys for unlocks by itself when it opens (Face ID first when required). The store keeps the device key as its `AGE-SECRET-KEY-PQ-1…` text (the package keeps the seed accessor internal). The remember sheet, the iCloud Keychain choice, the per-folder binding of remembered keys (S16: a store vault is the app's own copy, one per vault id) and the sidebar's Vault Key menu are gone. Pasting a key stays for the recovery key (read-only) and for a device key file made with `sempere` |
+| Join by approval (§6.2) | the new device's unlock sheet offers Join This Device: keys made and stored, `joins/<id>.join.json` written into the copy, six words and a QR code (`JoinCodes.commitmentQR`, base64). While it waits, the open vault's runs are keyless two-way runs with `firstPullIdentities` (the CLI's join run), so the request goes out and home's approval comes in; the sheet checks every few seconds. Once listed, the user types home's six words or scans its reply code (the words are computed from the code, so both check the same); `Vault.confirmJoin` pins the chain, then the vault unlocks |
+| Approving (home) | Devices ▸ Add Device…: the six words typed (never compared) or the new device's code scanned; the owner check first (`OwnerAuthenticator`, security review P1), then `approveDevice` under the vault's write lock; the reply words and code are shown |
+| QR scanning | VisionKit's `DataScannerViewController` on an iPhone or iPad (the camera permission text now names it); a Mac types the words |
+| Takeover (§6.3) | Take Over with Recovery Kit… on the unlock sheet (a kit join: new keys, stored once the epoch is written) and on any device's list. The key typed or pasted, with the root (16 groups and their checksums, `KitRecovery.parseRootText`, shared with the CLI's `--root`, or the kit's root QR), or the passphrase alone (the copy carries the root); a device with a trust record of the vault needs no root. Then a checkbox per candidate (checked by default as `TakeoverCandidate.checkedByDefault`) and the epochs the takeover drops; the recovery key is dropped after the one signature |
+| Existing TestFlight vaults | a device key remembered by an earlier build (the `vault-key` Keychain item holding a device key file) is moved into the new store at the first unlock (software signing pair: no key can move into the enclave), and the old item deleted. Remove before v1 |
+| P10 (device-first-sync §10) | nothing left to delete: `requireLocalKeyChanges` and the outgoing-identity guard went with KH2; the row is marked done |

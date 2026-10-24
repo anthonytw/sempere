@@ -97,7 +97,6 @@ final class LaunchSmokeUITests: XCTestCase {
         requireSheet("restoreBackupSheet", titled: "Restore from Backup", "Restore from Backup sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "restore sheet")
-        // TODO(KH5): Save Key… (Sync & Devices ▸ Device Keys) comes back with device management.
         app.typeKey("w", modifierFlags: .command)   // closes the Settings window
         // The close is asynchronous: a shortcut typed while the window is still going is lost.
         XCTAssertTrue(settings.waitForNonExistence(timeout: 10), "the Settings window closed")
@@ -111,6 +110,12 @@ final class LaunchSmokeUITests: XCTestCase {
         requireSheet("replaceKitSheet", titled: "Replace Recovery Kit", "Replace Recovery Kit sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "replace kit sheet")
+        let add = app.buttons["devices.add"].firstMatch
+        require(add, "Add Device…", in: app)
+        add.click()
+        requireSheet("addDeviceSheet", titled: "Add Device", "Add Device sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "add device sheet")
         let repair = app.descendants(matching: .any)["devices.repair"].firstMatch
         require(repair, "Repair", in: app)
         repair.click()

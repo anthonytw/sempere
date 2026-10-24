@@ -258,9 +258,9 @@ final class FixtureTests: XCTestCase {
             let old = (try? String(contentsOf: keyURL, encoding: .utf8)).flatMap { try? IdentityFile.parse($0) }
             let identity: MLKEM768X25519Identity
             if case .mlkem768x25519(let pq)? = old { identity = pq } else { identity = try MLKEM768X25519Identity() }
-            let device = try DeviceKeys(identity: identity, signing: .generate())
+            let device = try DeviceKeys(identity: identity, signing: DeviceSigningKeys.generate())
             try ("# TEST-ONLY throwaway device key for Tests/SempereTests/Fixtures. Never use it for real notes.\n"
-                + device.fileText(created: SampleFixture.at(0))).write(to: keyURL, atomically: true, encoding: .utf8)
+                + (try device.fileText(created: SampleFixture.at(0)))).write(to: keyURL, atomically: true, encoding: .utf8)
         }
         if (try? IdentityFile.parse(String(contentsOf: recoveryURL, encoding: .utf8))) == nil {
             try ("# TEST-ONLY throwaway recovery key for Tests/SempereTests/Fixtures. Never use it for real notes.\n"

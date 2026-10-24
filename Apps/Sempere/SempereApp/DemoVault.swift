@@ -97,7 +97,7 @@ enum DemoVault {
         let vault = try Vault.create(at: vaultURL, device: device, deviceName: "Demo iPad", kind: "ipad",
                                      recovery: recovery, recoveryPassphrase: passphrase, workFactor: 15, created: created,
                                      trust: trust)
-        let text = device.fileText(created: created)
+        let text = try device.fileText(created: created)
         let recoveryText = IdentityFile.render(.mlkem768x25519(recovery), created: created)
         let clock = try DeviceClock(url: directory.appendingPathComponent("device.json"))
         var ids: [String: UUID] = [:]

@@ -90,14 +90,11 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 
 - **An unlocked device.** While a vault is unlocked, the app holds the key and
   shows your notes. Anyone using the device, or software that controls it, can
-  read them. Use a device passcode; the remembered key is behind Face ID or
-  Touch ID when you choose it. A remembered key is offered only for the folder
-  it opened before (any folder can claim a vault's id): the same path, or for a
-  vault On This Device the same name there, so a vault moved or renamed in
-  Files, or a WebDAV vault removed and added again (its copy is a new folder),
-  needs the key or passphrase once more; the app then offers to remember the
-  key there too. A vault handed to the app from
-  another app or AirDrop asks before it closes the open one.
+  read them. Use a device passcode. This device's key for a vault is in its
+  Keychain, never synced or exported, and its signing key in the Secure Enclave;
+  a vault opens by itself on the device that holds its key, unless you set it to
+  ask for Face ID or Touch ID (Settings ▸ Sync & Devices). A vault handed to the
+  app from another app or AirDrop asks before it closes the open one.
 - **Plaintext the app keeps on the device for speed or safety:** attachments
   opened for display, a recording until it is saved into the note, a voice note
   until it is sealed, and files staged for an export or a drag; on a Mac, the

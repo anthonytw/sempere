@@ -487,13 +487,13 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   requires each mutation (`EpochMutation`, `SyncEpochMutation`, `PrecedenceMutation`) to break ITS invariant;
   `SEMPERE_EPOCH_TRACE=1` prints a failing run's ops. There is no rewrap, no recipients list, no vault
   secret, no rewrap journal, no migration from the old format. The app creates vaults (this device home, a recovery kit,
-  an optional passphrase copy) and unlocks with the remembered device key (`DeviceKeys.fileText` in the
-  Keychain); the recovery key and its passphrase copy open read-only. The device list (KH5,
+  an optional passphrase copy) and unlocks with this device's keys (`DeviceKeyStore`); the recovery key and its
+  passphrase copy open read-only, or sign a takeover. The device list (KH5,
   `DevicesView`, `AppModel+Devices`, design §16.11) renames, removes, hands home over and replaces the kit
   through the package's calls (`Vault.removeDevices` …, history and review in `DeviceOverview.swift`, shared
   with `sempere devices`), each after `performDeviceChange`'s bounded run of every target, with the editors
   closed and the vault reopened under the new epoch; banners and the unlisted screen are
-  `AppModel+DeviceNotices`. Joining devices and takeovers in the app are stubbed with `TODO(KH5)`.
+  `AppModel+DeviceNotices`; joining and takeovers are `AppModel+JoinDevice` (below, "This device's keys").
 - `vault.json` is authenticated (`format.md` §2.1, `VaultCheck.swift`, `VaultTrust.swift`): `listTag`
   and `markersTag` (HMACs under keys derived from `K_e`), `epochSig`, `authorSig`, `addSig` (home's
   signatures). `Vault.open(…, trust:, root:)` classifies it (`listStatus`) against the device's trust
@@ -508,31 +508,18 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   Capture profiles hold their device's capture key (`CaptureKey.derive(from:device:)`, §11.1, keyed by
   `fingerprint(of:)` of the device's `age1pq1…` key, not the §15.4 fingerprint) and `v_e`;
   `Vault.captureKeyRing` is what verifies inbox files, never one key alone.
-- Remembered vault keys (`VaultKeyStore.swift`, `RememberedKeys.swift`): a remembered key is the
-  secret text of an age identity (`AGE-SECRET-KEY-PQ-1…`) whose key `vault.json` lists; it is stored only in the Keychain, never logged, never in
-  `UserDefaults` or files. Device-only items are
-  `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` + `SecAccessControl`
-  `.biometryCurrentSet` (`.userPresence` without enrolled biometrics; a new
-  Face ID enrollment invalidates the item, which reads as "no key").
-  Synchronizable (iCloud Keychain) items cannot carry an access control or a
-  `ThisDeviceOnly` class: reading one is gated by `LAContext.evaluatePolicy`
-  in the app, and the UI says so. No entitlement is added: items use the
-  app's default access group (its application identifier), which free
-  personal-team builds have. Unsigned builds (CI, simulator tests) get
-  `errSecMissingEntitlement`, so tests use `FakeKeyStore`, never the real
-  Keychain. Face ID needs `INFOPLIST_KEY_NSFaceIDUsageDescription` (pbxproj).
-  Generic-password items from apps are generally not listed in the Passwords app.
-  Saving never deletes before the new key is stored: `KeychainVaultKeyStore.replace`
-  adds (or updates the same-storage item) first and only then deletes the
-  other storage's copy (`KeychainReplaceTests` pin the order with
-  `FakeKeychainItems`). Device-only keys are Face ID only, no passcode
-  fallback: after a lockout the user unlocks with the key or passphrase, and
-  the remember sheet says so (`RememberedKeys.deviceOnlyFooter`).
-  A remembered key is offered only at folders it opened (`RememberedKeyLocations`, S16); a manual
-  unlock elsewhere binds the folder silently only when the trust record confirms the list, and
-  otherwise brings the remember sheet (`Offer.replacing`), never nothing: a WebDAV copy's list is a
-  first use until the device writes, so without the sheet the key was needed at every launch
-  (`RememberedKeysWebDAVTests`).
+- This device's keys (`DeviceKeyStore.swift`, `RememberedKeys.swift`; key-hierarchy design §6.1, §16.12): per vault, the
+  X-Wing device key in a Keychain item `WhenUnlockedThisDeviceOnly` (with "Require Face ID to Open":
+  `.biometryCurrentSet`, or `.userPresence` without biometrics) and the signing pair in the Secure Enclave
+  (`SecureEnclaveSigner`, an `AuthorSigner`; its blobs in a second item `AfterFirstUnlockThisDeviceOnly`, software
+  where there is no enclave). Never synchronizable, never exported, never logged; a vault with keys here unlocks by
+  itself when it opens. No entitlement is added (the app's default access group); unsigned builds get
+  `errSecMissingEntitlement`, so tests use `MemoryDeviceKeyStore`, never the real Keychain. Face ID needs
+  `INFOPLIST_KEY_NSFaceIDUsageDescription` (pbxproj). A device without keys joins (`AppModel+JoinDevice`,
+  `JoinDeviceView`: request, six words and a QR code; the open locked vault's runs are keyless join runs with
+  `firstPullIdentities`; home's reply words or code confirm) or takes over with the kit (`TakeoverView`). Home
+  approves with Add Device (owner check first). The key a pre-KH5 build remembered (`vault-key` item) is moved
+  at the first unlock (`moveLegacyKey`; remove before v1).
 - The object eraser is the app's (`ObjectEraser.swift`, `EraserGeometry.swift`):
   PencilKit's `.vector` eraser has no size. When the palette's eraser is in
   object mode, `PageCanvasHost` disables `drawingGestureRecognizer` and
@@ -853,7 +840,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   WebDAV password is only in the Keychain (`KeychainWebDAVPasswordStore`, keyed by target id); certificate pins
   are checked by `PinnedServerTrust` (Security, app only) behind the library's `WebDAVServerTrust` hook, never by
   disabling evaluation. `epochs/`, `joins/` and `keys/` are synced (KH4, `format.md` §15.15); key
-  management in the app is KH5 (the device list; joins and takeovers next). Two-way runs record `synced` (`SyncOptions.recordSynced`, the app and the CLI). A folder target synced before that is gone is never recreated (`FolderTargetRun.check`).
+  management in the app is KH5 (the device list, joins, takeovers). Two-way runs record `synced` (`SyncOptions.recordSynced`, the app and the CLI). A folder target synced before that is gone is never recreated (`FolderTargetRun.check`).
   App tests use `FakeWebDAVRemote` (scripted), `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`:
   `TwoDeviceSyncAppTests`), folders under `EvictingFolderProvider` (`AppModel.folderProvider`:
   `FolderTargetAppTests`) and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav

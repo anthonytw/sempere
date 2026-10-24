@@ -274,9 +274,8 @@ struct NewVaultView: View {
     /// the recovery key. A failure says so (the vault stays open until it closes).
     private func rememberDeviceKey(_ created: CreatedVault) async {
         do {
-            try await keys.rememberThisDeviceKey(created.device, vaultID: created.vaultID,
-                                                   vaultName: VaultLibrary.displayName(of: created.url),
-                                                   folder: model.vault?.vaultId == created.vaultID ? model.vaultURL : nil)
+            try await keys.saveCreatedVaultKeys(created.device, vaultID: created.vaultID,
+                                                vaultName: VaultLibrary.displayName(of: created.url))
         } catch {
             model.errorMessage = String(localized: "The vault was created, but this device's key could not be saved in the Keychain: \(String(describing: error)). Once the vault is closed, this device can only read it with the recovery key.",
                                         comment: "The error text follows (English)")
@@ -306,7 +305,7 @@ struct NewVaultView: View {
         // a layout loop that hung the main thread (iPad simulator, iOS 27).
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         working = true
-        let request = NewVaultRequest(
+        var request = NewVaultRequest(
             name: name,
             keySource: keySource,
             passphrase: wrap ? passphrase : nil,
@@ -315,6 +314,8 @@ struct NewVaultView: View {
         Task {
             defer { working = false }
             do {
+                // This device's keys: the signing pair in the Secure Enclave where there is one (design §4.1).
+                request.device = try keys.store.generate()
                 let result = try await model.createVault(request, library: library)
                 await rememberDeviceKey(result)
                 if let copyFolder, let vault = model.vault?.vaultId {

@@ -196,6 +196,9 @@ struct NewVaultRequest: Sendable {
     var deviceKind = "ipad"
     /// The passphrase copy's scrypt work factor: writers use 20; tests less.
     var workFactor = RecoveryPassphraseCopy.workFactor
+    /// This device's keys for the vault (`DeviceKeyStore.generate`, the signing pair in the Secure Enclave);
+    /// nil makes software keys (tests).
+    var device: DeviceKeys?
 }
 
 /// The outcome of creating a vault.
@@ -210,8 +213,8 @@ struct CreatedVault: Sendable {
     var recoveryKey: KeyFile?
     /// The vault as the kit prints it (id, creation date, root).
     var kitVault: RecoveryKit.VaultInfo
-    /// This device's key file (`DeviceKeys.fileText`): it opens the vault to
-    /// read and write, and nothing else holds it once the app remembers it.
+    /// This device's key file (`DeviceKeys.fileText`) when its signing pair is in software (tests); nil for an
+    /// enclave pair, which never leaves the device.
     var unlockKey: String?
     /// This device's keys (the vault's home).
     var device: DeviceKeys
@@ -513,7 +516,7 @@ final class VaultLibrary {
         if let passphrase, let problem = PassphraseStrength.storedKeyProblem(passphrase) {
             throw LibraryError.weakPassphrase(problem)
         }
-        let device = try DeviceKeys.generate()
+        let device = try request.device ?? DeviceKeys.generate()
         let vault = try Vault.create(at: url, device: device, deviceName: request.deviceName, kind: request.deviceKind,
                                      recovery: recovery, recoveryPassphrase: passphrase, workFactor: request.workFactor,
                                      trust: trust)
@@ -523,6 +526,6 @@ final class VaultLibrary {
                             recoveryKey: generated ? KeyFile(identity: identity, label: String(localized: "Recovery key of \(name)",
                                                                                                  comment: "Label of a vault's recovery key; the value is the vault's name")) : nil,
                             kitVault: RecoveryKit.VaultInfo(vault: vault, name: name),
-                            unlockKey: device.fileText(created: Date()), device: device)
+                            unlockKey: try? device.fileText(created: Date()), device: device)
     }
 }

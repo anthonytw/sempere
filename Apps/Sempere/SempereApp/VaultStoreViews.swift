@@ -58,7 +58,8 @@ struct StoredVaultsSection: View {
         Task {
             await model.report {
                 try await library.removeStored(entry)
-                keys.locations.unbind(entry.vaultId, from: entry.url)
+                // This device's keys for it go with it (key-hierarchy KH5): it would join again.
+                try? await keys.store.delete(for: entry.vaultId)
             }
         }
     }

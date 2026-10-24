@@ -2976,6 +2976,28 @@
         }
       }
     },
+    "Add Device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir dispositivo"
+          }
+        }
+      }
+    },
+    "Add Device…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir dispositivo…"
+          }
+        }
+      }
+    },
     "Add Folder…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3731,6 +3753,62 @@
         }
       }
     },
+    "Approve" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobar"
+          }
+        }
+      }
+    },
+    "Approved: type the six words the other device shows" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobado: escribe las seis palabras que muestra el otro dispositivo"
+          }
+        }
+      }
+    },
+    "Approving gives the new device the vault's key. Approve only a device you hold." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobar da al dispositivo nuevo la clave de la bóveda. Aprueba solo un dispositivo que tengas en la mano."
+          }
+        }
+      }
+    },
+    "Ask to Join" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pedir unirse"
+          }
+        }
+      }
+    },
+    "Asked to join: %@" : {
+      "comment" : "Add Device; the value lists device names",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pidieron unirse: %@"
+          }
+        }
+      }
+    },
     "Attachment Cache" : {
       "comment" : "Settings ▸ Storage: size of a cache (label)",
       "extractionState" : "manual",
@@ -4420,6 +4498,18 @@
         }
       }
     },
+    "Change %lld (%@) by %@" : {
+      "comment" : "Takeover: an epoch it drops; values are an epoch number, its reason and author",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambio %1$lld (%2$@) de %3$@"
+          }
+        }
+      }
+    },
     "Change Backup Folder…" : {
       "comment" : "Settings ▸ Backups: button",
       "extractionState" : "manual",
@@ -4428,6 +4518,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cambiar carpeta de copia…"
+          }
+        }
+      }
+    },
+    "Change how “%@” opens on this device" : {
+      "comment" : "Face ID prompt; the value is the vault name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar cómo se abre “%@” en este dispositivo"
           }
         }
       }
@@ -4450,6 +4552,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Los cambios van en ambos sentidos entre la copia y la carpeta, así que los otros dispositivos que usan la carpeta están al día."
+          }
+        }
+      }
+    },
+    "Changes made after this device's last checked list, for example by a stolen device that managed devices." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambios hechos después de la última lista comprobada por este dispositivo, por ejemplo por un dispositivo robado que gestionaba los dispositivos."
           }
         }
       }
@@ -4533,6 +4646,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volver a comprobar"
+          }
+        }
+      }
+    },
+    "Check Now" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobar ahora"
           }
         }
       }
@@ -5072,6 +5196,17 @@
         }
       }
     },
+    "Close without taking over" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar sin tomar el control"
+          }
+        }
+      }
+    },
     "Code" : {
       "comment" : "Markdown bar: mark the selection as `code`",
       "extractionState" : "manual",
@@ -5128,6 +5263,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paleta compacta"
+          }
+        }
+      }
+    },
+    "Confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmar"
           }
         }
       }
@@ -6869,6 +7015,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cada PDF se convierte en una nota nueva en «%@», con una página por cada página del PDF, para escribir encima. Los PDF se guardan cifrados en la bóveda."
+          }
+        }
+      }
+    },
+    "Each device has its own key, kept in its Keychain and never copied; its signing key is in the Secure Enclave. One device manages the others: it adds and removes them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada dispositivo tiene su propia clave, guardada en su llavero y nunca copiada; su clave de firma está en el Secure Enclave. Un dispositivo gestiona los demás: los añade y los quita."
           }
         }
       }
@@ -9485,6 +9642,40 @@
         }
       }
     },
+    "Join This Device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unir este dispositivo"
+          }
+        }
+      }
+    },
+    "Join This Device…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unir este dispositivo…"
+          }
+        }
+      }
+    },
+    "Join “%@”" : {
+      "comment" : "Face ID prompt; the value is the vault name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unirse a “%@”"
+          }
+        }
+      }
+    },
     "Joining from %@" : {
       "comment" : "Welcome list: a WebDAV vault whose first download is not finished; %@ is the server",
       "extractionState" : "manual",
@@ -9689,6 +9880,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mantener la pantalla encendida mientras esta nota esté abierta"
+          }
+        }
+      }
+    },
+    "Keep these devices" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conservar estos dispositivos"
           }
         }
       }
@@ -10028,6 +10230,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "De izquierda a derecha"
+          }
+        }
+      }
+    },
+    "Let a new device into the vault" : {
+      "comment" : "Face ID prompt before an approval",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar entrar un dispositivo nuevo en la bóveda"
           }
         }
       }
@@ -11203,6 +11417,28 @@
         }
       }
     },
+    "No device has asked to join yet. Its request arrives with a sync." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún dispositivo ha pedido unirse todavía. Su petición llega con una sincronización."
+          }
+        }
+      }
+    },
+    "No device that asked to join has these words. Check them on the new device, and sync both devices." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún dispositivo que pidió unirse tiene estas palabras. Compruébalas en el dispositivo nuevo y sincroniza los dos."
+          }
+        }
+      }
+    },
     "No devices known yet: this target has not synced." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12191,6 +12427,28 @@
         }
       }
     },
+    "On the current list" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En la lista actual"
+          }
+        }
+      }
+    },
+    "On the new device, open the vault and choose Join This Device. It shows six words: type them here." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En el dispositivo nuevo, abre la bóveda y elige Unir este dispositivo. Muestra seis palabras: escríbelas aquí."
+          }
+        }
+      }
+    },
     "Once a day, autosaves older than %@ are removed from this vault on every device. Saved versions and the last autosave of each editing session are always kept, and stay restorable. With Sync Settings on, every device that syncs with this vault uses the same setting." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12858,6 +13116,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opciones"
+          }
+        }
+      }
+    },
+    "Or read with the recovery key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O lee con la clave de recuperación"
+          }
+        }
+      }
+    },
+    "Or scan the code there. Keep this screen open: the approval arrives with the next sync." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O escanea allí el código. Deja esta pantalla abierta: la aprobación llega con la próxima sincronización."
+          }
+        }
+      }
+    },
+    "Or scan this code there. They prove to the new device that this is the vault it asked to join." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O escanea allí este código. Demuestran al dispositivo nuevo que esta es la bóveda a la que pidió unirse."
           }
         }
       }
@@ -13991,6 +14282,17 @@
         }
       }
     },
+    "QR code" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código QR"
+          }
+        }
+      }
+    },
     "Quality" : {
       "comment" : "Settings ▸ Recording: bit rate picker",
       "extractionState" : "manual",
@@ -15088,6 +15390,17 @@
         }
       }
     },
+    "Removed by a later change" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitado por un cambio posterior"
+          }
+        }
+      }
+    },
     "Removes %@ from %@." : {
       "comment" : "Thinning preview: “Removes 120 old autosaves (1.2 MB) from 4 notes.”",
       "extractionState" : "manual",
@@ -15451,6 +15764,18 @@
         }
       }
     },
+    "Require %@ to Open" : {
+      "comment" : "Settings toggle; the value is Face ID, Touch ID or “the Passcode”",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pedir %@ al abrir"
+          }
+        }
+      }
+    },
     "Reset" : {
       "comment" : "Button: undo the crop changes",
       "extractionState" : "manual",
@@ -15709,6 +16034,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "De derecha a izquierda"
+          }
+        }
+      }
+    },
+    "Root fingerprint (16 groups)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Huella raíz (16 grupos)"
           }
         }
       }
@@ -16114,6 +16450,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardando la nota de voz…"
+          }
+        }
+      }
+    },
+    "Scan QR Code…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanear código QR…"
+          }
+        }
+      }
+    },
+    "Scan the other device's code with the camera" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanear con la cámara el código del otro dispositivo"
           }
         }
       }
@@ -17033,6 +17391,17 @@
         }
       }
     },
+    "Six words" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seis palabras"
+          }
+        }
+      }
+    },
     "Size" : {
       "comment" : "Text style bar: font size menu",
       "extractionState" : "manual",
@@ -17562,6 +17931,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detener y guardar la nota de voz"
+          }
+        }
+      }
+    },
+    "Stop joining; this device's new key is deleted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de unirse; se borra la clave nueva de este dispositivo"
           }
         }
       }
@@ -18190,6 +18570,28 @@
         }
       }
     },
+    "Take Over" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tomar el control"
+          }
+        }
+      }
+    },
+    "Take Over with Recovery Kit…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tomar el control con el kit…"
+          }
+        }
+      }
+    },
     "Take Photo…" : {
       "comment" : "Insert menu item: use the camera",
       "extractionState" : "manual",
@@ -18198,6 +18600,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hacer foto…"
+          }
+        }
+      }
+    },
+    "Take over with the recovery kit" : {
+      "comment" : "Face ID prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tomar el control con el kit de recuperación"
           }
         }
       }
@@ -18578,6 +18992,17 @@
         }
       }
     },
+    "That code is not this vault's approval." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese código no es la aprobación de esta bóveda."
+          }
+        }
+      }
+    },
     "That file is encrypted to keys, not to a passphrase: it is not a key file." : {
       "comment" : "Picked an age file not protected by a passphrase",
       "extractionState" : "manual",
@@ -18668,6 +19093,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esa carpeta está dentro de la bóveda “%@”. Elige directamente “%@”."
+          }
+        }
+      }
+    },
+    "That is not a recovery key (AGE-SECRET-KEY-PQ-1…)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eso no es una clave de recuperación (AGE-SECRET-KEY-PQ-1…)."
           }
         }
       }
@@ -18784,6 +19220,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esa contraseña no abre este PDF. Vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "That root fingerprint belongs to another vault." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa huella raíz es de otra bóveda."
           }
         }
       }
@@ -19560,6 +20007,39 @@
         }
       }
     },
+    "The recovery key is used for this one signature and is not kept on this device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de recuperación se usa solo para esta firma y no se guarda en este dispositivo."
+          }
+        }
+      }
+    },
+    "The recovery key opens the vault read-only. A device key file made with sempere opens it to write." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de recuperación abre la bóveda en solo lectura. Un archivo de clave de dispositivo hecho con sempere la abre para escribir."
+          }
+        }
+      }
+    },
+    "The recovery kit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El kit de recuperación"
+          }
+        }
+      }
+    },
     "The recovery kit was replaced. Keep the new kit somewhere safe and destroy the old one." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19590,6 +20070,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La bóveda restaurada tiene problemas; ábrela y revisa sus notas."
+          }
+        }
+      }
+    },
+    "The root fingerprint is 16 groups of 4 letters and digits (0–9, a–f)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La huella raíz son 16 grupos de 4 letras y cifras (0–9, a–f)."
+          }
+        }
+      }
+    },
+    "The root is on the kit, under its key (or its second QR code). A device that has opened this vault before does not need it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La raíz está en el kit, debajo de su clave (o en su segundo código QR). Un dispositivo que ya abrió esta bóveda no la necesita."
           }
         }
       }
@@ -19774,6 +20276,17 @@
         }
       }
     },
+    "The takeover undoes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La toma de control deshace"
+          }
+        }
+      }
+    },
     "The transcript could not be read." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19872,6 +20385,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La bóveda guarda una copia de su clave de recuperación con frase de contraseña si se eligió una al crearla. Abre la bóveda solo para lectura. Para escribir desde este dispositivo, este debe unirse a la bóveda; eso aún no está disponible en la app."
+          }
+        }
+      }
+    },
+    "The vault keeps a copy of its recovery key under a passphrase when one was chosen. It opens the vault read-only." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bóveda guarda una copia de su clave de recuperación protegida con una frase cuando se eligió una. Abre la bóveda en solo lectura."
           }
         }
       }
@@ -19990,6 +20514,17 @@
         }
       }
     },
+    "The vault's recovery key was shown once, when the vault was created: keep its printed kit, or the key in a password manager, somewhere apart from this device. No device keeps it. It opens the vault read-only, and if the device that manages devices is lost, it takes over." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de recuperación de la bóveda se mostró una vez, al crearla: guarda su kit impreso, o la clave en un gestor de contraseñas, lejos de este dispositivo. Ningún dispositivo la guarda. Abre la bóveda en solo lectura y, si se pierde el dispositivo que gestiona los dispositivos, toma el control."
+          }
+        }
+      }
+    },
     "The vault's recovery key was shown once, when the vault was created: keep its printed kit, or the key in a password manager, somewhere apart from this device. No device keeps it; it opens the vault read-only." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20059,6 +20594,17 @@
         }
       }
     },
+    "These are not the words of this vault's approval. Check them on the other device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estas no son las palabras de la aprobación de esta bóveda. Compruébalas en el otro dispositivo."
+          }
+        }
+      }
+    },
     "These attachments have been unused for at least 30 days. This cannot be undone." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20077,6 +20623,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pueden venir de un dispositivo quitado. Conserva solo lo que reconozcas. Se añaden con la clave actual de la bóveda."
+          }
+        }
+      }
+    },
+    "They prove this is the vault that device approved, not a copy someone else made." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demuestran que esta es la bóveda que aprobó ese dispositivo, no una copia hecha por otra persona."
           }
         }
       }
@@ -20422,6 +20979,17 @@
         }
       }
     },
+    "This device has no key for this vault." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo no tiene clave para esta bóveda."
+          }
+        }
+      }
+    },
     "This device has no record of the vault's devices yet, and nothing to check the list against." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20440,6 +21008,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo no se ha unido a la bóveda: la clave no es la de ninguno de sus dispositivos ni su clave de recuperación."
+          }
+        }
+      }
+    },
+    "This device has not opened the vault before: type the root fingerprint from the kit too (16 groups), or use the passphrase." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo no ha abierto antes la bóveda: escribe también la huella raíz del kit (16 grupos) o usa la frase."
           }
         }
       }
@@ -20475,6 +21054,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo es el principal de la bóveda: gestiona sus dispositivos."
+          }
+        }
+      }
+    },
+    "This device makes its own key and asks to join “%@”. On the device that manages devices, open Settings ▸ Sync & Devices ▸ Devices ▸ Add Device and type the six words shown next." : {
+      "comment" : "Join screen; the value is the vault name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo crea su propia clave y pide unirse a “%@”. En el dispositivo que gestiona los dispositivos, abre Ajustes ▸ Sincronización y dispositivos ▸ Dispositivos ▸ Añadir dispositivo y escribe las seis palabras que aparecerán."
           }
         }
       }
@@ -20572,6 +21163,30 @@
         }
       }
     },
+    "This device's key could not be read: %@" : {
+      "comment" : "The error text follows (English)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer la clave de este dispositivo: %@"
+          }
+        }
+      }
+    },
+    "This device's key did not unlock the vault: %@" : {
+      "comment" : "The error text follows (English)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de este dispositivo no desbloqueó la bóveda: %@"
+          }
+        }
+      }
+    },
     "This device's key file opens the vault to read and write. The recovery key opens it read-only." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20579,6 +21194,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El archivo de clave de este dispositivo abre la bóveda para leer y escribir. La clave de recuperación la abre solo para lectura."
+          }
+        }
+      }
+    },
+    "This device's key for the vault cannot be read." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede leer la clave de este dispositivo para la bóveda."
+          }
+        }
+      }
+    },
+    "This device's key for the vault is in its Keychain." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de este dispositivo para la bóveda está en su llavero."
           }
         }
       }
@@ -21184,6 +21821,17 @@
         }
       }
     },
+    "To write from this device, it joins the vault: the device that manages devices approves it with six words. If that device is lost, take over with the recovery kit." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para escribir desde este dispositivo, se une a la bóveda: el dispositivo que gestiona los dispositivos lo aprueba con seis palabras. Si ese dispositivo se pierde, toma el control con el kit de recuperación."
+          }
+        }
+      }
+    },
     "Too easy to guess for a copy stored with the vault. Add more random words or characters." : {
       "comment" : "Shown while the passphrase for the stored key copy is too weak",
       "extractionState" : "manual",
@@ -21490,6 +22138,29 @@
         }
       }
     },
+    "Type these on the device that manages devices" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escríbelas en el dispositivo que gestiona los dispositivos"
+          }
+        }
+      }
+    },
+    "Type these on “%@”" : {
+      "comment" : "Add Device: the value is the new device's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escríbelas en “%@”"
+          }
+        }
+      }
+    },
     "Typed text (characters)" : {
       "comment" : "Notability import report: not imported",
       "extractionState" : "manual",
@@ -21522,6 +22193,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Palabra dudosa. Reproduce desde aquí."
+          }
+        }
+      }
+    },
+    "Uncheck any device you no longer have. This device manages devices from now on; every unchecked device is removed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desmarca cualquier dispositivo que ya no tengas. Desde ahora este dispositivo gestiona los dispositivos; se quita cada uno que esté desmarcado."
           }
         }
       }
@@ -21654,6 +22336,18 @@
         }
       }
     },
+    "Unlock the vault" : {
+      "comment" : "Face ID prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquear la bóveda"
+          }
+        }
+      }
+    },
     "Unlock the vault first." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21757,6 +22451,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Desbloquear con la clave guardada"
+          }
+        }
+      }
+    },
+    "Unlock “%@”" : {
+      "comment" : "Face ID prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquear “%@”"
           }
         }
       }
@@ -22446,6 +23152,17 @@
         }
       }
     },
+    "Waiting for the approval…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando la aprobación…"
+          }
+        }
+      }
+    },
     "Warnings" : {
       "comment" : "Notability import report: section of the importer's warnings",
       "extractionState" : "manual",
@@ -23086,6 +23803,18 @@
         }
       }
     },
+    "the Passcode" : {
+      "comment" : "Require …: without biometrics",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "el código"
+          }
+        }
+      }
+    },
     "the file cannot be read" : {
       "comment" : "Why a PDF cannot be added: lower case, no final period (shown inside a sentence)",
       "extractionState" : "manual",
@@ -23438,6 +24167,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” reemplazó el kit de recuperación mientras gestionaba los dispositivos. Vuelve a reemplazar el kit después."
+          }
+        }
+      }
+    },
+    "“%@” was added." : {
+      "comment" : "After an approval",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se añadió “%@”."
           }
         }
       }

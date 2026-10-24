@@ -1,6 +1,6 @@
 # Sempere Privacy Policy
 
-*Effective: 2026-10-06. Last updated: 2026-10-09.*
+*Effective: 2026-10-06. Last updated: 2026-10-24.*
 
 This page is the Privacy Policy URL App Store Connect has today. The same text is served by
 GitHub Pages from [`docs/privacy/index.html`](../privacy/index.html), at
@@ -43,9 +43,10 @@ times, but not what you wrote, drew or recorded.
 
 ## Your keys
 
-Your encryption key (an "age" identity) is generated on your device. You can keep it in the
-iOS/macOS Keychain (optionally synced through iCloud Keychain, if you choose that), print a
-recovery kit or export it. **We cannot recover your key or your notes. If you lose every copy of
+Each of your devices generates its own keys, which never leave it: its decryption key is kept in
+that device's Keychain (not synced) and its signing key in the device's Secure Enclave. The
+vault's recovery key is shown once, for you to print as a recovery kit or keep in a password
+manager; no device keeps it. **We cannot recover your key or your notes. If you lose every copy of
 your key, nobody can decrypt your notes.**
 
 ## On-device features
@@ -81,10 +82,10 @@ policy will be updated before such a version is released.
 
 Sempere asks for a permission only when you use the feature that needs it:
 
-- the camera, to add photos and video (iPad and iPhone);
+- the camera, to add photos and video, and to scan another device's join code (iPad and iPhone);
 - the microphone, to record audio;
 - speech recognition, to transcribe recordings on the device;
-- Face ID or Touch ID, to unlock a key saved in the Keychain;
+- Face ID or Touch ID, to unlock a vault that you set to ask for it;
 - Live Activities, to show a voice note in progress.
 
 Photos and files are chosen with the system pickers, which give the app only what you pick.

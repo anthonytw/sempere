@@ -1705,8 +1705,10 @@ The copy is a store vault like any other; while it is partial (`partialCopyRoot`
 **When it syncs, the status, other writers**: "Sync targets in the app" below.
 
 **Key changes for a WebDAV vault**: the sync carries `joins/`, `epochs/` and `keys/` (KH4), so a device change
-made on home (the device list, KH5) or with the CLI reaches every device over a WebDAV target. Joining a device and
-takeovers in the app come with KH5's second part.
+made on home (the device list, KH5) or with the CLI reaches every device over a WebDAV target. A device joining a WebDAV or folder
+vault in the app makes its keys and request from the unlock sheet (Join This Device); while it waits, the vault's
+runs are keyless two-way join runs (`SyncOptions.firstPullIdentities`) that carry the request up and take home's
+approval down, then the reply words confirm it (`AppModel+JoinDevice`).
 
 **Removing** ("Remove from This Device", on the welcome screen) deletes the
 local copy, its sync state, the Keychain password and the recent entry. When

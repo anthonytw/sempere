@@ -62,7 +62,7 @@ struct SceneRestorationTests {
         view.appEnvironment(model: model,
                             library: VaultLibrary(storeURL: TestTemp.root
                                 .appendingPathComponent(UUID().uuidString).appendingPathComponent("recents.json")),
-                            keys: RememberedKeys(store: FakeKeyStore()))
+                            keys: RememberedKeys(store: MemoryDeviceKeyStore()))
     }
 
     static func lay<V: View>(_ view: V) {

@@ -93,7 +93,7 @@ struct AppModelEnvironmentTests {
 
     @Test func theLibraryAndKeysFallBackTooAndAnInjectedOneWins() {
         let saved = RememberedKeys.current
-        let shared = RememberedKeys(store: FakeKeyStore())
+        let shared = RememberedKeys(store: MemoryDeviceKeyStore())
         RememberedKeys.current = shared
         defer { RememberedKeys.current = saved }
         let fallbacks = AppModelEnvironment.fallbacks
@@ -104,7 +104,7 @@ struct AppModelEnvironmentTests {
         #expect(bare.models.allSatisfy { $0 == ObjectIdentifier(shared) })
         #expect(AppModelEnvironment.fallbacks > fallbacks)
 
-        let own = RememberedKeys(store: FakeKeyStore())
+        let own = RememberedKeys(store: MemoryDeviceKeyStore())
         let injected = ModelProbeLog()
         let (w2, _) = Self.host(KeysProbe(log: injected).environment(own))
         defer { w2.isHidden = true }

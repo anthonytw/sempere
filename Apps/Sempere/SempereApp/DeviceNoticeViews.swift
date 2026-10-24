@@ -72,6 +72,7 @@ private extension View {
 struct UnlistedDeviceView: View {
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var library: VaultLibrary
+    @AppEnvironmentObject private var keys: RememberedKeys
     @Environment(\.dismiss) private var dismiss
     @State private var facts: UnlistedFacts?
     @State private var confirmRemove = false
@@ -157,6 +158,7 @@ struct UnlistedDeviceView: View {
             model.close()
             do {
                 try await library.removeStored(entry)
+                try? await keys.store.delete(for: entry.vaultId)
                 dismiss()
             } catch {
                 failure = "\(error)"

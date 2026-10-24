@@ -187,7 +187,6 @@ struct RootView: View {
                                     set: { if !$0 { showingVoiceSettings = false } })) {
             SettingsView(scrollTo: QuickCaptureSettingsSection.anchor)
         }
-        .onChange(of: model.vaultURL) { keys.discardStaleOffer(model) }
         #if DEBUG
         .task {
             if DebugLaunch.isActive {

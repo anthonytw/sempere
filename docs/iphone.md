@@ -284,8 +284,8 @@ Activities or the microphone are off for Sempere.
 All of them are the shared views and model code: handwriting search over the recognized text
 (Vision recognition also runs on the iPhone if switched on; the text is stored in the vault so
 the iPad's recognition is searchable here), share/export sheets, the history browser and its
-restore, and key unlock. Status texts say "this device". Remembered keys use the Keychain with Face ID exactly as on the iPad
-(`RememberedKeys`, "Remember on this iPhone"); the unlock screen is a sheet.
+restore, and key unlock. Status texts say "this device". This device's keys are in the Keychain and the Secure Enclave exactly as on the
+iPad (`DeviceKeyStore`, `RememberedKeys`); the unlock screen (join, takeover, the recovery key) is a sheet.
 
 ## iCloud Drive in the folder picker
 

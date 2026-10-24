@@ -117,10 +117,21 @@ extension DeviceSigningPublicKeys: Codable {
     }
 }
 
+/// A device's signing pair, wherever its private halves are (design §4.1): software (`DeviceSigningKeys`, the
+/// CLI's and tests'), or the Secure Enclave (the app's, `Apps/`). Both signatures are over the same message.
+public protocol AuthorSigner: Sendable {
+    /// The public keys (`sign` in `vault.json`).
+    ///
+    /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
+    func publicKeys() throws -> DeviceSigningPublicKeys
+    /// Both signatures over `message` (P-256 `r ‖ s` low-S, ML-DSA-65 pure with an empty context).
+    func sign(_ message: Data) throws -> AuthorSignature
+}
+
 /// A software signing pair (the CLI's, and tests'): a P-256 private scalar
 /// and an ML-DSA-65 seed (FIPS 204 `KeyGen_internal`). Apple devices keep
 /// theirs in the Secure Enclave instead (KH5).
-public struct DeviceSigningKeys: Sendable {
+public struct DeviceSigningKeys: AuthorSigner {
     let p256: P256.Signing.PrivateKey
     let mldsa65Seed: Data
 
@@ -152,7 +163,7 @@ public struct DeviceSigningKeys: Sendable {
 
     /// `r ‖ s` with `s` replaced by `n − s` when `s > n/2`, so signatures are canonical (low-S)
     /// whichever library made them (review L1). Both forms verify; this only fixes the bytes.
-    static func lowS(_ rs: Data) -> Data {
+    public static func lowS(_ rs: Data) -> Data {
         guard rs.count == 64 else { return rs }
         let s = [UInt8](rs.suffix(32))
         // n/2, rounded down: shift n right by one bit.
@@ -196,6 +207,9 @@ public struct DeviceSigningKeys: Sendable {
     public static func recovery(identity: MLKEM768X25519Identity) throws -> DeviceSigningKeys {
         try recovery(seed: identity.seedBytes)
     }
+
+    /// The ML-DSA-65 seed (32 bytes), for keeping the pair on the device that made it.
+    public var mldsa65SeedBytes: Data { mldsa65Seed }
 
     /// The P-256 scalar (32 bytes), for storing a CLI device's keys.
     public var p256Scalar: Data { p256.rawRepresentation }
