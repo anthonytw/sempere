@@ -111,6 +111,8 @@ final class EpochSyncDevice: @unchecked Sendable {
     let ledger = MemoryWriteLedger()
     let setAside: SetAsideStore
     var tune: (inout SyncOptions) -> Void = { _ in }
+    /// The wall clock of this device's writes; nil: now (a replaying run sets it).
+    var wall: (() -> Date)?
 
     init(_ name: String, root: URL, identity: NativeIdentity = pqIdentity()) {
         self.name = name
@@ -138,7 +140,8 @@ final class EpochSyncDevice: @unchecked Sendable {
     /// A new note titled `title`, written as this device; its id.
     @discardableResult
     func write(_ title: String, id: UUID = UUID()) throws -> UUID {
-        try open().apply(NoteOps.newNote(title: title, paper: .ruled, pageId: UUID()), to: id, deviceState: deviceState, app: "test/1")
+        try open().apply(NoteOps.newNote(title: title, paper: .ruled, pageId: UUID()), to: id, deviceState: deviceState, app: "test/1",
+                         wall: wall?() ?? Date())
         return id
     }
 
@@ -219,10 +222,16 @@ final class EpochSyncWorld {
         try self.init(in: dir, names: names, made: targetNames.map { EpochTarget($0) })
     }
 
-    init(in dir: URL, names: [String], made: [EpochTarget]) throws {
-        devices = names.map { EpochSyncDevice($0, root: dir) }
+    /// - Parameter seed: derive every device key and the recovery key from it (a run that replays).
+    init(in dir: URL, names: [String], made: [EpochTarget], seed: UInt64? = nil) throws {
+        var rng = SeededRNG(seed ?? 0)
+        func key() throws -> MLKEM768X25519Identity {
+            guard seed != nil else { return try MLKEM768X25519Identity() }
+            return try MLKEM768X25519Identity(seed: Data((0..<32).map { _ in UInt8.random(in: 0...255, using: &rng) }))
+        }
+        devices = try names.map { EpochSyncDevice($0, root: dir, identity: .mlkem768x25519(try key())) }
         targets = made
-        recovery = try MLKEM768X25519Identity()
+        recovery = try key()
         let home = devices[0]
         var vault = try Vault.create(at: home.folder, device: home.keys, deviceName: home.name, recovery: recovery,
                                      recoveryPassphrase: "correct horse battery staple vault", workFactor: 10,

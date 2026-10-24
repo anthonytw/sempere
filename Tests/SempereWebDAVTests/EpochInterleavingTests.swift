@@ -31,6 +31,7 @@ final class EpochInterleavingTests: SyncTestCase {
     }
 
     static func clearMutations() {
+        VaultEpochKey.testRandomSource = nil
         Vault.epochMutations = []
         Vault.precedenceMutations = []
         SyncEngine.epochMutations = []
@@ -168,12 +169,33 @@ final class EpochInterleavingTests: SyncTestCase {
         Self.clearMutations()
         defer { Self.clearMutations() }
         var rng = SeededRNG(seed)
+        // Keys, epoch ids and note ids from the seed too, and one transfer at a time: a failing seed replays.
+        let ids = Locked(SeededRNG(seed &+ 0x5EED))
+        let idLock = NSLock()
+        @Sendable func bytes(_ n: Int) -> Data {
+            idLock.lock(); defer { idLock.unlock() }
+            var g = ids.value
+            let out = Data((0..<n).map { _ in UInt8.random(in: 0...255, using: &g) })
+            ids.value = g
+            return out
+        }
+        func noteId() -> UUID { UUID(uuid: bytes(16).withUnsafeBytes { $0.load(as: uuid_t.self) }) }
+        VaultEpochKey.testRandomSource = { bytes(32) }
         let faultRate = Locked(0.0)
         let t = [try transport(kind), try transport(kind)]
         let targets = t.enumerated().map { i, x in EpochTarget.over(x, name: "T\(i + 1)", seed: seed &+ UInt64(i), faults: { faultRate.value }) }
         let names = Array(["A", "B", "C", "D", "E"].prefix(count))
         let dir = tmp.appendingPathComponent("il-\(kind.rawValue)-\(seed)-\(mutation.map { "\($0)" } ?? "none")-\(UUID().uuidString.prefix(6))")
-        let w = try EpochSyncWorld(in: dir, names: names, made: targets)
+        let w = try EpochSyncWorld(in: dir, names: names, made: targets, seed: seed)
+        // One transfer at a time, a seeded device id and a step clock: revision names (and so the fault rolls,
+        // keyed by path) replay.
+        let clock = Locked(Date(timeIntervalSince1970: 1_900_000_000))
+        for (i, n) in names.enumerated() {
+            w[n].tune = { $0.concurrency = 1 }
+            w[n].wall = { clock.value = clock.value.addingTimeInterval(1); return clock.value }
+            try? DeviceState(device: DeviceID(String(format: "%08x", 0x1000_0000 + i * 0x1111 + Int(seed % 0x1000)))!)
+                .save(to: w[n].deviceState)
+        }
         // Who syncs where: A and B bridge both targets, the others one each.
         var reach: [String: [EpochTarget]] = [:]
         for (i, n) in names.enumerated() { reach[n] = i < 2 ? targets : [targets[i % 2]] }
@@ -183,9 +205,10 @@ final class EpochInterleavingTests: SyncTestCase {
 
         var out: [String] = []
         var trace: [String] = []
-        let tracing = ProcessInfo.processInfo.environment["SEMPERE_EPOCH_TRACE"] == "1"
+        let traceMode = ProcessInfo.processInfo.environment["SEMPERE_EPOCH_TRACE"]
+        let tracing = traceMode == "1" || traceMode == "all"
         defer {
-            if tracing, !out.isEmpty { print(trace.joined(separator: "\n")) }
+            if tracing, !out.isEmpty || traceMode == "all" { print(trace.joined(separator: "\n")) }
         }
         var listed = Set(names)
         var home = "A"
@@ -258,7 +281,7 @@ final class EpochInterleavingTests: SyncTestCase {
                 let title = "\(n)-\(step)"
                 let before = hashes(n)
                 defer { checkAside(n, before: before, step: step); checkBodies(n, before: before, step: step) }
-                guard let note = try? w[n].write(title) else { trace.append("\(step) write \(n) failed"); break }
+                guard let note = try? w[n].write(title, id: noteId()) else { trace.append("\(step) write \(n) failed"); break }
                 trace.append("\(step) write \(n) \(title) \(note.uuidString.prefix(8)) epoch \((try? w[n].open().manifest.epoch) ?? -1)")
                 writes.append(Write(writer: n, note: note, title: title, listed: true))
                 // J5a: written under the key of the epoch it verified, none earlier.
@@ -332,9 +355,9 @@ final class EpochInterleavingTests: SyncTestCase {
                       let v = try? Vault.open(at: w[x].folder, identities: [w[x].identity], signing: TestVaults.signing(w[x].identity))
                 else { break }
                 held[x, default: []] += v.identities
-                let note = UUID(), title = "\(x)-rogue-\(step)"
+                let note = noteId(), title = "\(x)-rogue-\(step)"
                 guard (try? v.apply(NoteOps.newNote(title: title, paper: .ruled, pageId: UUID()), to: note,
-                                    deviceState: w[x].deviceState, app: "test/1")) != nil else { break }
+                                    deviceState: w[x].deviceState, app: "test/1", wall: w[x].wall?() ?? Date())) != nil else { break }
                 writes.append(Write(writer: x, note: note, title: title, listed: false))
                 let dir = w[x].folder.appendingPathComponent("notes/\(note.uuidString.lowercased())")
                 for f in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] {
