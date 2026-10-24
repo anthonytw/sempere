@@ -273,6 +273,9 @@ struct KeychainDeviceKeyStore: DeviceKeyStore {
             } else {
                 // A Face ID change interrupted after the old item went: the new one is still pending.
                 seed = try Self.replaceLock.withLock { () throws -> Data in
+                    // Looked at again under the lock: a toggle may have renamed its pending item into place since
+                    // the check above, and is done now (second re-check of #88).
+                    if seedState(account).exists { return try readSeed(account, context: box.context) }
                     let seed = try readSeed(pending, context: box.context)
                     _ = items.update(Self.query(Self.service, pending), [kSecAttrAccount as String: account])
                     return seed

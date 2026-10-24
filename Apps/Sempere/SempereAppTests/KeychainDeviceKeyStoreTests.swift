@@ -17,6 +17,8 @@ final class FakeKeychainItems: KeychainItems, @unchecked Sendable {
     /// Data reads that answer a status, by account (attribute reads still find the item): a key gone after a Face
     /// ID change, a canceled prompt, a failed one, a Keychain error.
     var dataStatus: [String: OSStatus] = [:]
+    /// Accounts whose next attribute read answers "not found" once (a toggle's rename lands just after it).
+    var hiddenOnce: Set<String> = []
     private(set) var log: [String] = []
 
     private func key(_ q: [String: Any]) -> Key {
@@ -63,6 +65,9 @@ final class FakeKeychainItems: KeychainItems, @unchecked Sendable {
     func copy(_ query: [String: Any]) -> (OSStatus, Any?) {
         lock.withLock {
             guard let item = items[key(query)] else { return (errSecItemNotFound, nil) }
+            if query[kSecReturnData as String] as? Bool != true, hiddenOnce.remove(name(key(query))) != nil {
+                return (errSecItemNotFound, nil)
+            }
             let context = query[kSecUseAuthenticationContext as String] as? LAContext
             let guarded = item[kSecAttrAccessControl as String] != nil
             if guarded, context?.interactionNotAllowed == true { return (errSecInteractionNotAllowed, nil) }
@@ -226,5 +231,17 @@ struct KeychainDeviceKeyStoreTests {
             #expect(fake.has(KeychainDeviceKeyStore.service, KeychainDeviceKeyStore.account(vaultID)), "\(label): kept")
             model.close()
         }
+    }
+
+    /// Second re-check of #88: a toggle that renames its pending item into place between the read's first look and
+    /// its lock does not make the key read as "not found": the main item is looked at again under the lock.
+    @Test func aToggleFinishingDuringTheReadStillReadsTheKey() async throws {
+        let fake = FakeKeychainItems()
+        let store = KeychainDeviceKeyStore(items: fake)
+        let keys = try DeviceKeys.generate()
+        try await store.save(keys, for: id, vaultName: "V")
+        fake.hiddenOnce = [account]   // the first look misses it; the pending item is already gone
+        #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint)
+        #expect(fake.hiddenOnce.isEmpty)
     }
 }
