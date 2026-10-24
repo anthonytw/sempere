@@ -1708,12 +1708,20 @@ The copy is a store vault like any other; while it is partial (`partialCopyRoot`
 made on home (the device list, KH5) or with the CLI reaches every device over a WebDAV target. A device joining a WebDAV or folder
 vault in the app makes its keys and request from the unlock sheet (Join This Device); while it waits, the vault's
 runs are keyless two-way join runs (`SyncOptions.firstPullIdentities`) that carry the request up and take home's
-approval down, then the reply words confirm it (`AppModel+JoinDevice`).
+approval down, then the reply words confirm it (`AppModel+JoinDevice`). A run without the vault's key (a locked vault,
+a join) never replaces a target's `vault.json` with a later one of the same epoch from another target, and never
+creates `vault.json` on a target whose root already showed `epochs/` (only where the vault is being created): spreading
+a list is left to a run that can check it.
 
 **Removing** ("Remove from This Device", on the welcome screen) deletes the
-local copy, its sync state, the Keychain password and the recent entry. When
-the copy holds changes the server has not confirmed, the confirmation says how
-many will be lost and to open the vault and sync first.
+local copy, its sync state, the Keychain password, the recent entry and this
+device's keys for the vault. When the copy holds changes the server has not
+confirmed, the confirmation says how many will be lost and to open the vault
+and sync first. The same check as Delete from This Device runs first
+(`KeyRemoval`): when this device manages the vault's devices it offers to open
+the vault and make another device home, when it is the vault's only device it
+says that only the recovery kit restores write access, and when another local
+copy opens with the same keys they are kept.
 
 **Recents.** A WebDAV vault is a recent entry with its location id and no
 bookmark (`RecentVault.webdav`), so "reopen the last vault" at launch opens

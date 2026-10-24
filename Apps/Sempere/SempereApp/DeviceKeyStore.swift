@@ -197,6 +197,9 @@ struct KeychainDeviceKeyStore: DeviceKeyStore {
 
     static func account(_ vaultID: UUID) -> String { vaultID.uuidString.lowercased() }
     static func pendingAccount(_ vaultID: UUID) -> String { account(vaultID) + ".pending" }
+    /// Serializes the pending item's handling within this process: a toggle's add-delete-rename, and a read's
+    /// fallback to or cleanup of a pending item.
+    static let replaceLock = NSLock()
 
     /// The device key item's state without reading its data: absent, and whether it asks for Face ID.
     func seedState(_ account: String) -> (exists: Bool, biometry: Bool) {
@@ -259,11 +262,21 @@ struct KeychainDeviceKeyStore: DeviceKeyStore {
         let box = KeychainContextBox(context)
         return try await Task.detached(priority: .userInitiated) { () throws -> DeviceKeys in
             let seed: Data
-            do { seed = try readSeed(Self.account(vaultID), context: box.context) } catch DeviceKeyStoreError.notFound {
+            let account = Self.account(vaultID), pending = Self.pendingAccount(vaultID)
+            if seedState(account).exists {
+                // The main item is there: it is the key, even when it cannot be read now (a Face ID change
+                // invalidated it): a pending item is never read in its place (re-check of #88, M2).
+                seed = try readSeed(account, context: box.context)
+                // A pending item left by a toggle that stopped after its add: removed, unless a toggle is
+                // running now (it holds the lock between its add and its rename).
+                Self.replaceLock.withLock { _ = items.delete(Self.query(Self.service, pending)) }
+            } else {
                 // A Face ID change interrupted after the old item went: the new one is still pending.
-                seed = try readSeed(Self.pendingAccount(vaultID), context: box.context)
-                _ = items.update(Self.query(Self.service, Self.pendingAccount(vaultID)),
-                                 [kSecAttrAccount as String: Self.account(vaultID)])
+                seed = try Self.replaceLock.withLock { () throws -> Data in
+                    let seed = try readSeed(pending, context: box.context)
+                    _ = items.update(Self.query(Self.service, pending), [kSecAttrAccount as String: account])
+                    return seed
+                }
             }
             let stored = try readSigning(vaultID)
             do {
@@ -343,6 +356,10 @@ struct KeychainDeviceKeyStore: DeviceKeyStore {
     func replaceSeed(_ vaultID: UUID, vaultName: String, biometry: Bool, canBiometrics: Bool, context: LAContext?) throws {
         let account = Self.account(vaultID), pending = Self.pendingAccount(vaultID)
         let seed = try readSeed(account, context: context)
+        // Held from the add to the rename: a read meanwhile neither deletes the pending item as a leftover nor
+        // renames it under the toggle (re-check of #88, M2).
+        Self.replaceLock.lock()
+        defer { Self.replaceLock.unlock() }
         _ = items.delete(Self.query(Self.service, pending))   // a leftover of an earlier attempt
         let added = items.add(try Self.seedItem(seed, account: pending, vaultName: vaultName, biometry: biometry,
                                                 canBiometrics: canBiometrics))

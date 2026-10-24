@@ -117,15 +117,17 @@ final class RememberedKeys {
         let keys: DeviceKeys
         do {
             keys = try await store.keys(for: id, reason: reason)
-            try model.ensureCurrent(gen)
-        } catch is CancellationError {
-            return .cancelled
-        } catch DeviceKeyStoreError.cancelled {
-            return .cancelled
         } catch {
-            keyProblem = Self.unreadableText
-            return .keyProblem(Self.unreadableText)
+            switch Self.readOutcome(error) {
+            case .keyProblem:
+                keyProblem = Self.unreadableText
+                return .keyProblem(Self.unreadableText)
+            case let other:
+                return other
+            }
         }
+        // The vault changed meanwhile: nothing about these keys is known from that (re-check of #88, R1).
+        do { try model.ensureCurrent(gen) } catch { return .cancelled }
         switch await model.joinStage(keys) {
         case .stage(let stage):
             joinStage = stage
@@ -149,6 +151,20 @@ final class RememberedKeys {
         }
     }
 
+    /// What a failed read of this device's keys means (re-check of #88, R1): only keys that are gone (a Face ID
+    /// change invalidated them) or do not read as keys are a key problem, offered to be forgotten; a cancel is a
+    /// cancel; anything else (a failed Face ID, a Keychain error, a build without the entitlement) is a failure
+    /// that leaves the keys alone and Unlock offered again.
+    static func readOutcome(_ error: any Error) -> Attempt {
+        if error is CancellationError { return .cancelled }
+        switch error as? DeviceKeyStoreError {
+        case .notFound, .malformed: return .keyProblem(unreadableText)
+        case .cancelled: return .cancelled
+        case let e?: return .failed(e.description)
+        case nil: return .failed(String(describing: error))
+        }
+    }
+
     /// Unlocks with pasted key text: the recovery key (read-only), or a device key file made with sempere.
     func unlock(_ model: AppModel, identityText: String) async throws {
         isManualUnlocking = true
@@ -168,6 +184,7 @@ final class RememberedKeys {
     func forgetKeys(_ model: AppModel) async throws {
         guard let id = model.vault?.vaultId else { return }
         try await store.delete(for: id)
+        model.clearJoinRequested(id)
         keyProblem = nil
         joinStage = nil
         await refresh(model)

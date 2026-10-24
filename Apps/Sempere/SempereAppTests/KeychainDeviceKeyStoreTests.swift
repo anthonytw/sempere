@@ -14,6 +14,9 @@ final class FakeKeychainItems: KeychainItems, @unchecked Sendable {
     private(set) var items: [Key: [String: Any]] = [:]
     /// Calls that fail, by kind and account (`add:<account>`, `delete:<account>`, `update:<account>`).
     var failing: Set<String> = []
+    /// Data reads that answer a status, by account (attribute reads still find the item): a key gone after a Face
+    /// ID change, a canceled prompt, a failed one, a Keychain error.
+    var dataStatus: [String: OSStatus] = [:]
     private(set) var log: [String] = []
 
     private func key(_ q: [String: Any]) -> Key {
@@ -63,9 +66,17 @@ final class FakeKeychainItems: KeychainItems, @unchecked Sendable {
             let context = query[kSecUseAuthenticationContext as String] as? LAContext
             let guarded = item[kSecAttrAccessControl as String] != nil
             if guarded, context?.interactionNotAllowed == true { return (errSecInteractionNotAllowed, nil) }
-            if query[kSecReturnData as String] as? Bool == true { return (errSecSuccess, item[kSecValueData as String]) }
+            if query[kSecReturnData as String] as? Bool == true {
+                if let status = dataStatus[name(key(query))] { return (status, nil) }
+                return (errSecSuccess, item[kSecValueData as String])
+            }
             return (errSecSuccess, item.filter { $0.key != kSecValueData as String })
         }
+    }
+
+    /// Replaces the stored data of an item (keys that do not read as keys).
+    func setData(_ data: Data, service: String, account: String) {
+        lock.withLock { items[Key(service: service, account: account)]?[kSecValueData as String] = data }
     }
 
     func has(_ service: String, _ account: String) -> Bool { lock.withLock { items[Key(service: service, account: account)] != nil } }
@@ -145,6 +156,75 @@ struct KeychainDeviceKeyStoreTests {
             #expect(await store.hasKeys(for: id), "\(step)")
             #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint, "\(step): the key reads")
             #expect(fake.has(KeychainDeviceKeyStore.service, account), "\(step): back under its account after a read")
+        }
+    }
+
+    /// Re-check of #88, M2: a pending item is read only when the main one does not exist; one left beside a main
+    /// item that reads is deleted.
+    @Test func aPendingItemIsReadOnlyWhenTheMainOneIsGone() async throws {
+        let fake = FakeKeychainItems()
+        let store = KeychainDeviceKeyStore(items: fake)
+        let keys = try DeviceKeys.generate()
+        try await store.save(keys, for: id, vaultName: "V")
+        let main = try #require(fake.items[.init(service: KeychainDeviceKeyStore.service, account: account)])
+        // A leftover pending item (a toggle that stopped after its add) holding other bytes.
+        var leftover = main
+        leftover[kSecAttrAccount as String] = pending
+        leftover[kSecValueData as String] = Data("junk".utf8)
+        #expect(fake.add(leftover) == errSecSuccess)
+        #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint)
+        #expect(!fake.has(KeychainDeviceKeyStore.service, pending), "deleted after the main item read")
+        // The main item there but unreadable (a Face ID change): the pending one is never read in its place.
+        #expect(fake.add(leftover) == errSecSuccess)
+        fake.dataStatus = [account: errSecItemNotFound]
+        await #expect(throws: DeviceKeyStoreError.notFound) { _ = try await store.keys(for: id, reason: "") }
+        #expect(fake.has(KeychainDeviceKeyStore.service, pending))
+        // The main item gone: the pending one is the key, renamed back.
+        fake.dataStatus = [:]
+        _ = fake.delete(KeychainDeviceKeyStore.query(KeychainDeviceKeyStore.service, pending))
+        var moved = main
+        moved[kSecAttrAccount as String] = pending
+        _ = fake.delete(KeychainDeviceKeyStore.query(KeychainDeviceKeyStore.service, account))
+        #expect(fake.add(moved) == errSecSuccess)
+        #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint)
+        #expect(fake.has(KeychainDeviceKeyStore.service, account))
+        #expect(!fake.has(KeychainDeviceKeyStore.service, pending))
+    }
+
+    /// Re-check of #88, R1, through the Keychain seam: only keys that are gone or do not read as keys are offered
+    /// to be forgotten; a cancel is a cancel; any other error is a failure that keeps the keys and Unlock.
+    @MainActor
+    @Test func eachKeychainErrorEndsTheUnlockAsItShould() async throws {
+        let cases: [(String, (FakeKeychainItems, String) -> Void, RememberedKeys.Attempt?)] = [
+            ("gone", { f, a in f.dataStatus = [a: errSecItemNotFound] }, .keyProblem(RememberedKeys.unreadableText)),
+            ("malformed", { f, a in f.setData(Data("not a key".utf8), service: KeychainDeviceKeyStore.service, account: a) },
+             .keyProblem(RememberedKeys.unreadableText)),
+            ("canceled", { f, a in f.dataStatus = [a: errSecUserCanceled] }, .cancelled),
+            ("auth failed", { f, a in f.dataStatus = [a: errSecAuthFailed] }, nil),
+            ("entitlement", { f, a in f.dataStatus = [a: errSecMissingEntitlement] }, nil),
+            ("io", { f, a in f.dataStatus = [a: errSecIO] }, nil),
+        ]
+        let w = try await JoinTakeoverAppTests.world()
+        let vaultID = try #require(w.home.vault?.vaultId)
+        let home = try await w.homeKeys.store.keys(for: vaultID, reason: "")
+        w.home.close()
+        for (label, breakIt, expected) in cases {
+            let fake = FakeKeychainItems()
+            let keys = RememberedKeys(store: KeychainDeviceKeyStore(items: fake))
+            try await keys.store.save(home, for: vaultID, vaultName: "Mine")
+            let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: w.home.trust)
+            model.takeoverDefaults = DevicesAppTests.defaults()
+            try await model.openVault(at: w.url)
+            breakIt(fake, KeychainDeviceKeyStore.account(vaultID))
+            let attempt = await keys.unlockWithDeviceKey(model)
+            if let expected {
+                #expect(attempt == expected, "\(label)")
+            } else {
+                guard case .failed = attempt else { Issue.record("\(label): \(attempt)"); model.close(); continue }
+                #expect(keys.keyProblem == nil, "\(label): Unlock stays, no Forget")
+            }
+            #expect(fake.has(KeychainDeviceKeyStore.service, KeychainDeviceKeyStore.account(vaultID)), "\(label): kept")
+            model.close()
         }
     }
 }

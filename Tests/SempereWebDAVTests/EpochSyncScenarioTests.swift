@@ -487,6 +487,25 @@ final class EpochSyncScenarioTests: SyncTestCase {
         }
     }
 
+    /// Re-check of #88: a run without the key creates `vault.json` only where the vault is being created (a target
+    /// that showed no `epochs/`), never on a target that holds the vault's records but lost its `vault.json`.
+    func testAKeylessRunCreatesVaultJSONOnlyWhereTheVaultIsNew() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B"], targets: ["T1", "T2"])
+        let t1 = w.target("T1"), t2 = w.target("T2")
+        try w["A"].sync(t1)
+        XCTAssertTrue(t1.paths.contains { $0.hasPrefix(Vault.epochsName + "/") })
+        t1.remove(Vault.manifestName)
+        let report = try w["B"].syncLocked(t1)
+        XCTAssertNil(t1.file(Vault.manifestName), "\(report.skipped)")
+        XCTAssertTrue(report.skipped.contains { $0.path == Vault.manifestName })
+        // An empty target: the vault is created there, records first, then vault.json.
+        try w["B"].syncLocked(t2)
+        XCTAssertNotNil(t2.file(Vault.manifestName))
+        // A run that can check the list restores the first target.
+        try w["A"].sync(t1)
+        XCTAssertNotNil(t1.file(Vault.manifestName))
+    }
+
     func testHomeDeletesStaleRequestsAndThoseOfListedKeys() throws {
         let w = try EpochSyncWorld(in: tmp, names: ["A", "B"])
         let t1 = w.target("T1")

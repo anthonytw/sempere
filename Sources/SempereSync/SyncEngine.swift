@@ -309,6 +309,9 @@ public final class SyncEngine {
     /// The epoch records the target holds after the epoch step (nil: not known): a `vault.json` is never
     /// uploaded to a target that lacks its record (design §5.2: record first, then `vault.json`).
     var remoteEpochRecords: Set<String>?
+    /// The target's root listing showed `epochs/` before this run's epoch step (a vault already there, its
+    /// `vault.json` missing): a run without the key then never creates `vault.json` (re-check of #88).
+    var remoteHadEpochs = false
     /// Working-copy files this device set aside that are still in place (path → SHA-256): an accepted copy on
     /// the remote replaces them (design §5.4 step 4).
     var unacceptedHere: [String: String] = [:]
@@ -443,6 +446,7 @@ public final class SyncEngine {
         let rootEntries = try transport.list([]) ?? []
         try budget.list(rootEntries.count)
         let remoteRoot = Dictionary(rootEntries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+        remoteHadEpochs = remoteRoot[Vault.epochsName] != nil
         // A provider's evicted root files are asked for at once; vault.json is waited for (`Arrivals.swift`).
         try awaitRootFiles(remoteRoot)
         try checkSameVault(remoteRoot)
@@ -712,6 +716,14 @@ public final class SyncEngine {
             // A joining device's run never spreads its `vault.json` (review of #88, M1): it may be an approval storage
             // forged on another target, and only a device that can check it may upload it.
             if name == Vault.manifestName, keylessManifestHeld { return }
+            // Without the key, vault.json is created only where the vault is being created: a target that held no
+            // device-change records before this run (re-check of #88). Elsewhere a run that can check it does it.
+            if name == Vault.manifestName, vault == nil, remoteHadEpochs,
+               !Self.epochMutations.contains(.keylessUploadsManifest) {
+                report.skipped.append(.init(path: name, message: "not uploaded: without the vault's key, vault.json is "
+                    + "only created on a target that holds no device-change records"))
+                return
+            }
             // Never on the server, or wiped there: (re)create it, never overwriting.
             try push(name, local, condition: .create)
             try recordMutable(name, hash: localHash)

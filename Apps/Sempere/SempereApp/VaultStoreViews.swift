@@ -11,8 +11,8 @@ struct StoredVaultsSection: View {
     var open: (VaultStore.Entry) -> Void
 
     @State private var deleting: VaultStore.Entry?
-    /// The vault about to be deleted is one this device manages devices of, with other devices listed.
-    @State private var deletingHome = false
+    /// What deleting it does to this device's key (`KeyRemoval`: home, other local copies).
+    @State private var removal = KeyRemoval()
 
     var body: some View {
         let vaults = library.storedVaultsByUse
@@ -37,7 +37,7 @@ struct StoredVaultsSection: View {
             .alert(Text("Delete “\(deleting?.name ?? "")” from this device?", comment: "%@ is the vault's name"),
                    isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                    presenting: deleting) { entry in
-                if deletingHome {
+                if removal.offersMakeHome {
                     Button("Open to Make Another Device Home") {
                         deleting = nil
                         open(entry)
@@ -46,8 +46,9 @@ struct StoredVaultsSection: View {
                 Button("Delete", role: .destructive) { delete(entry) }
                 Button("Cancel", role: .cancel) { deleting = nil }
             } message: { _ in
-                if deletingHome {
-                    Text("This device manages the vault's devices, and its key goes with this copy: then only the recovery kit can manage them. Open the vault and make another device home first (Settings ▸ Sync & Devices ▸ Devices ▸ Make Home). Its notes on this device are deleted too.")
+                if let warning = removal.removalWarning() {
+                    Text("\(warning) Its notes on this device are deleted too.",
+                         comment: "Delete from This Device: the warning about this device's key, then this")
                 } else {
                     Text("Its notes and this device's key for it are deleted from this device. Unless you have a backup or another copy, the notes cannot be recovered; to use the vault here again, this device joins it again.")
                 }
@@ -60,21 +61,11 @@ struct StoredVaultsSection: View {
         Button(String(localized: "Delete from This Device…", comment: "Removes a vault from the in-app store"),
                systemImage: "trash", role: .destructive) {
             Task {
-                deletingHome = await Self.isHomeWithOthers(vaultID: entry.vaultId, at: entry.url, store: keys.store)
+                removal = await KeyRemoval.check(vaultID: entry.vaultId, at: entry.url, store: keys.store,
+                                                 library: library, except: entry.url)
                 deleting = entry
             }
         }
-    }
-
-    /// Whether this device manages the devices of the vault at `entry` and other devices are listed (review of #88,
-    /// M4: deleting the copy deletes home's keys). Read without the key: the list's home and the fingerprint kept
-    /// with this device's signing item.
-    static func isHomeWithOthers(vaultID: UUID, at url: URL, store: any DeviceKeyStore) async -> Bool {
-        guard let mine = await store.fingerprint(for: vaultID) else { return false }
-        return await Task.detached(priority: .userInitiated) {
-            guard let m = try? Vault.open(at: url).manifest else { return false }
-            return m.home == mine && m.devices.count > 1
-        }.value
     }
 
     private func recent(of entry: VaultStore.Entry) -> RecentVault? {
@@ -86,8 +77,9 @@ struct StoredVaultsSection: View {
         Task {
             await model.report {
                 try await library.removeStored(entry)
-                // This device's keys for it go with it (key-hierarchy KH5): it would join again.
-                try? await keys.store.delete(for: entry.vaultId)
+                // This device's keys for it go with it (key-hierarchy KH5): it would join again. Kept while another
+                // local copy opens with them (re-check of #88).
+                if removal.deletesKeys { try? await keys.store.delete(for: entry.vaultId) }
             }
         }
     }

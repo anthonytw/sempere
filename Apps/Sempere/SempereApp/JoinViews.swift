@@ -370,7 +370,11 @@ struct TakeoverView: View {
                         .textInputAutocapitalization(.never)
                     // The kit's two codes (design §6.3): the key's and the root's; each lands in its field.
                     QRScanButton { text in
-                        if text.hasPrefix("sempere-root:") { rootText = text } else { keyText = text }
+                        switch Self.kitCode(text) {
+                        case .root: rootText = text; failure = nil
+                        case .key: keyText = text; failure = nil
+                        case nil: failure = Self.notAKitCode
+                        }
                     }
                 } header: {
                     Text("The recovery kit")
@@ -447,6 +451,19 @@ struct TakeoverView: View {
                 .accessibilityIdentifier("takeover.confirm")
         }
     }
+
+    enum KitCode: Equatable { case key, root }
+
+    /// Which of the recovery kit's two codes `text` is (re-check of #88): the key's (`AGE-SECRET-KEY-…`) or the
+    /// root's (`sempere-root:…`); nil for any other code, which fills no field.
+    static func kitCode(_ text: String) -> KitCode? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("sempere-root:") { return .root }
+        if t.uppercased().hasPrefix("AGE-SECRET-KEY-") { return .key }
+        return nil
+    }
+
+    static let notAKitCode = String(localized: "That code is not one of the recovery kit's. Scan the code next to the kit's key, or the one next to its root.")
 
     /// A candidate's line (review of #88, S6): on the current list, removed by a change this takeover undoes, or
     /// removed by an earlier change.

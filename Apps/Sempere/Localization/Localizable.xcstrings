@@ -48,6 +48,42 @@
         }
       }
     },
+    "%@ Its notes on this device are deleted too." : {
+      "comment" : "Delete from This Device: the warning about this device's key, then this",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Sus notas en este dispositivo también se borran."
+          }
+        }
+      }
+    },
+    "%@ Its notes stay in the vault." : {
+      "comment" : "Forget Key: the warning when this device is home, then this",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Sus notas se quedan en la bóveda."
+          }
+        }
+      }
+    },
+    "%@ The vault on the server is not changed." : {
+      "comment" : "Remove a WebDAV vault from this device: the warning about this device's key, then this",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ La bóveda del servidor no cambia."
+          }
+        }
+      }
+    },
     "%@ has not delivered all of this note's files yet. Try again in a moment." : {
       "comment" : "%@ is a server's host name",
       "extractionState" : "manual",
@@ -19407,6 +19443,18 @@
         }
       }
     },
+    "That code is not one of the recovery kit's. Scan the code next to the kit's key, or the one next to its root." : {
+      "comment" : "Take Over: a scanned QR code that is not one of the recovery kit's two",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese código no es del kit de recuperación. Escanea el código junto a la clave del kit, o el que está junto a su raíz."
+          }
+        }
+      }
+    },
     "That code is not this vault's approval." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21553,6 +21601,30 @@
         }
       }
     },
+    "This device is the vault's only device, and its key goes with this copy: afterwards only the recovery kit restores write access to the vault (Take Over)." : {
+      "comment" : "Removing a vault from this device when it is the vault's only device",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este es el único dispositivo de la bóveda, y su clave se va con esta copia: después solo el kit de recuperación devuelve el acceso de escritura a la bóveda (Tomar el control)."
+          }
+        }
+      }
+    },
+    "This device is the vault's only device: once its key is forgotten, only the recovery kit restores write access to the vault (Take Over)." : {
+      "comment" : "Forget Key, when this device is the vault's only device",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este es el único dispositivo de la bóveda: una vez olvidada su clave, solo el kit de recuperación devuelve el acceso de escritura a la bóveda (Tomar el control)."
+          }
+        }
+      }
+    },
     "This device makes its own key and asks to join “%@”. On the device that manages devices, open Settings ▸ Sync & Devices ▸ Devices ▸ Add Device and type the six words shown next." : {
       "comment" : "Join screen; the value is the vault name",
       "extractionState" : "manual",
@@ -21624,13 +21696,14 @@
         }
       }
     },
-    "This device manages the vault's devices, and its key goes with this copy: then only the recovery kit can manage them. Open the vault and make another device home first (Settings ▸ Sync & Devices ▸ Devices ▸ Make Home). Its notes on this device are deleted too." : {
+    "This device manages the vault's devices, and its key goes with this copy: then only the recovery kit can manage them. Open the vault and make another device home first (Settings ▸ Sync & Devices ▸ Devices ▸ Make Home)." : {
+      "comment" : "Removing a vault from this device when it manages the vault's devices",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este dispositivo gestiona los dispositivos de la bóveda, y su clave se va con esta copia: entonces solo el kit de recuperación podrá gestionarlos. Abre la bóveda y haz principal a otro dispositivo antes (Ajustes ▸ Sincronización y dispositivos ▸ Dispositivos ▸ Hacer principal). También se borran sus notas en este dispositivo."
+            "value" : "Este dispositivo gestiona los dispositivos de la bóveda, y su clave se va con esta copia: entonces solo el kit de recuperación podrá gestionarlos. Abre la bóveda y haz principal a otro dispositivo antes (Ajustes ▸ Sincronización y claves ▸ Dispositivos ▸ Hacer principal)."
           }
         }
       }
@@ -21642,6 +21715,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo gestiona los dispositivos de la bóveda."
+          }
+        }
+      }
+    },
+    "This device manages the vault's devices: once its key is forgotten, only the recovery kit can manage them (Take Over)." : {
+      "comment" : "Forget Key, when this device manages the vault's devices",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo gestiona los dispositivos de la bóveda: una vez olvidada su clave, solo el kit de recuperación podrá gestionarlos (Tomar el control)."
           }
         }
       }
@@ -21767,6 +21852,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La clave de este dispositivo para la bóveda está en su llavero."
+          }
+        }
+      }
+    },
+    "This device's key for the vault stays: it also opens %@ on this device." : {
+      "comment" : "Removing a vault from this device; the value is a list of vault folder names",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de este dispositivo para la bóveda se queda: también abre %@ en este dispositivo."
           }
         }
       }

@@ -14,6 +14,8 @@ struct UnlockView: View {
     @State private var joining = false
     @State private var takingOver = false
     @State private var confirmForget = false
+    /// What forgetting the key costs (`KeyRemoval`): warned of when this device is home.
+    @State private var forgetRemoval = KeyRemoval()
 
     var body: some View {
         NavigationStack {
@@ -34,7 +36,7 @@ struct UnlockView: View {
             if let problem = keys.keyProblem {
                 Section {
                     Label(problem, systemImage: "key.slash").foregroundStyle(.orange)
-                    Button("Forget This Device's Key…", systemImage: "trash", role: .destructive) { confirmForget = true }
+                    Button("Forget This Device's Key…", systemImage: "trash", role: .destructive) { Task { await askToForget() } }
                         .accessibilityIdentifier("unlock.forgetKey")
                 }
             }
@@ -101,7 +103,11 @@ struct UnlockView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This device then joins the vault again (approved by the device that manages devices), or takes over with the recovery kit. Its notes stay in the vault.")
+            if let warning = forgetRemoval.forgetWarning {
+                Text("\(warning) Its notes stay in the vault.", comment: "Forget Key: the warning when this device is home, then this")
+            } else {
+                Text("This device then joins the vault again (approved by the device that manages devices), or takes over with the recovery kit. Its notes stay in the vault.")
+            }
         }
         .task(id: model.vault?.vaultId) {
             await keys.refresh(model)
@@ -111,6 +117,14 @@ struct UnlockView: View {
 
     private var vaultTitle: String {
         model.vaultName ?? String(localized: "Vault", comment: "Fallback name of a vault in “Unlock Vault”")
+    }
+
+    /// Forget Key asks after the home check (re-check of #88, R1): forgetting home's key leaves only the kit.
+    private func askToForget() async {
+        if let id = model.vault?.vaultId {
+            forgetRemoval = await KeyRemoval.check(vaultID: id, at: model.vaultURL, store: keys.store, library: nil)
+        }
+        confirmForget = true
     }
 
     private func tryDeviceKey() async {

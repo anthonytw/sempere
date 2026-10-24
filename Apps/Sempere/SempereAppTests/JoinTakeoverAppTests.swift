@@ -219,18 +219,64 @@ struct JoinTakeoverAppTests {
         #expect(!(await newKeys.store.hasKeys(for: id)))
     }
 
-    /// Review of #88, M4: deleting a vault this device manages devices of, with others listed, is warned about.
+    /// Review of #88, M4, and its re-check (R2, SHOULD): the one check behind every removal of this device's keys
+    /// tells home alone from home with others, and says what each costs.
     @Test func deletingTheHomesCopyIsRecognized() async throws {
         let w = try await Self.world()
         defer { w.home.close() }
         let id = try #require(w.home.vault?.vaultId)
-        #expect(!(await StoredVaultsSection.isHomeWithOthers(vaultID: id, at: w.url, store: w.homeKeys.store)), "alone: nothing to hand over")
+        let alone = await KeyRemoval.check(vaultID: id, at: w.url, store: w.homeKeys.store, library: nil)
+        #expect(alone.home == .alone)
+        #expect(alone.removalWarning()?.contains("recovery kit") == true)
+        #expect(alone.forgetWarning?.contains("recovery kit") == true)
+        #expect(!alone.offersMakeHome)
         let (phone, phoneKeys) = try await Self.newDevice(w.url)
         defer { phone.close() }
         guard case .waiting(let words, _) = try await phone.startJoin(store: phoneKeys.store) else { return }
         _ = try await w.home.approveDevice(words: words, qr: nil)
-        #expect(await StoredVaultsSection.isHomeWithOthers(vaultID: id, at: w.url, store: w.homeKeys.store))
-        #expect(!(await StoredVaultsSection.isHomeWithOthers(vaultID: id, at: w.url, store: phoneKeys.store)))
+        let withOthers = await KeyRemoval.check(vaultID: id, at: w.url, store: w.homeKeys.store, library: nil)
+        #expect(withOthers.home == .withOthers)
+        #expect(withOthers.offersMakeHome)
+        #expect(withOthers.forgetWarning != nil)
+        let member = await KeyRemoval.check(vaultID: id, at: w.url, store: phoneKeys.store, library: nil)
+        #expect(member.home == .no)
+        #expect(member.removalWarning() == nil)
+        #expect(member.forgetWarning == nil)
+        // Another local copy that opens with the same keys keeps them, and says so.
+        let kept = KeyRemoval(home: .withOthers, otherCopies: ["Mine"])
+        #expect(!kept.deletesKeys)
+        #expect(!kept.offersMakeHome)
+        #expect(kept.removalWarning()?.contains("“Mine”") == true)
+    }
+
+    /// Re-check of #88 (stray): a joiner whose request the copy no longer holds (home took it with an approval that
+    /// has not arrived) is still waiting while its join is open here, never told to forget its keys; given up, the
+    /// marker goes.
+    @Test func aJoinerWhoseRequestWasTakenStillWaits() async throws {
+        let w = try await Self.world()
+        defer { w.home.close() }
+        let (phone, phoneKeys) = try await Self.newDevice(w.url)
+        defer { phone.close() }
+        let id = try #require(phone.vault?.vaultId)
+        _ = try await phone.startJoin(store: phoneKeys.store)
+        try FileManager.default.removeItem(at: w.url.appendingPathComponent("joins"))
+        #expect(await phoneKeys.unlockWithDeviceKey(phone) == .joining)
+        #expect(phoneKeys.keyProblem == nil)
+        await phone.cancelJoin(store: phoneKeys.store)
+        #expect(phone.takeoverDefaults.string(forKey: AppModel.joinRequestedKey(id)) == nil)
+        // The same keys with no open join here: a stray.
+        let keys = try phoneKeys.store.generate()
+        try await phoneKeys.store.save(keys, for: id, vaultName: "Mine")
+        guard case .keyProblem(let why) = await phoneKeys.unlockWithDeviceKey(phone) else { Issue.record("not stray"); return }
+        #expect(why == RememberedKeys.strayText)
+    }
+
+    @Test func theTakeoverScreenTellsTheKitsCodesApart() {
+        #expect(TakeoverView.kitCode("sempere-root:abcd") == .root)
+        #expect(TakeoverView.kitCode("AGE-SECRET-KEY-PQ-1QQQ") == .key)
+        #expect(TakeoverView.kitCode(" age-secret-key-1qqq\n") == .key)
+        #expect(TakeoverView.kitCode("sempere-reply:xyz") == nil)
+        #expect(TakeoverView.kitCode("https://example.com") == nil)
     }
 
     @Test func theTypedWordsIgnoreNumbersAndPunctuation() {

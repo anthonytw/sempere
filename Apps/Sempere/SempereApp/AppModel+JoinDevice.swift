@@ -67,9 +67,31 @@ extension AppModel {
             throw error
         }
         joinIdentity = keys.nativeIdentity
+        setJoinRequested(keys, vaultID: locked.vaultId)
         syncSessions.forEach { $0.demand() }
         let codes = Self.joinCodes(keys, vaultId: locked.vaultId, kind: kind)
         return .waiting(words: codes.words, qr: codes.qr)
+    }
+
+    // MARK: - The join-requested marker (re-check of #88, stray)
+
+    /// This device asked to join `vaultID` with `keys` and has neither confirmed nor given up: while it is set, a
+    /// copy without the request file (home took it with its approval, which has not arrived) still counts as
+    /// waiting, never as keys to forget.
+    func setJoinRequested(_ keys: DeviceKeys, vaultID: UUID) {
+        takeoverDefaults.set(Self.idText(keys.fingerprint), forKey: Self.joinRequestedKey(vaultID))
+    }
+
+    func clearJoinRequested(_ vaultID: UUID) {
+        takeoverDefaults.removeObject(forKey: Self.joinRequestedKey(vaultID))
+    }
+
+    func joinRequested(_ keys: DeviceKeys, vaultID: UUID) -> Bool {
+        takeoverDefaults.string(forKey: Self.joinRequestedKey(vaultID)) == Self.idText(keys.fingerprint)
+    }
+
+    nonisolated static func joinRequestedKey(_ vaultID: UUID) -> String {
+        "Sempere.joinRequested.\(vaultID.uuidString.lowercased())"
     }
 
     /// Where this device's keys stand in the open, locked vault.
@@ -77,14 +99,15 @@ extension AppModel {
         /// Listed and confirmed: they unlock it.
         case member
         case stage(JoinStage)
-        /// Not listed, and no request of them in the copy: a join that cannot go on (a failed kit join, a request
-        /// home deleted). The keys are offered to be forgotten (review of #88, S3).
+        /// Not listed, no request of them in the copy, and no join of them asked for here and still open: keys a
+        /// join cannot go on with (a failed kit join, a request home deleted). They are offered to be forgotten
+        /// (review of #88, S3).
         case stray
     }
 
     /// Where this device's join of the open, locked vault stands, from its keys: a member when the vault lists the
     /// keys and this device confirmed it, `.confirming` when listed but not confirmed yet, `.waiting` while its
-    /// request is in the copy (the runs then keep looking for the approval), else stray.
+    /// request is in the copy or its join is still open here (`joinRequested`) (the runs then keep looking for the approval), else stray.
     func joinStage(_ keys: DeviceKeys) async -> JoinCheck {
         guard let locked = vault, let url = vaultURL else { return .member }
         let trust = self.trust
@@ -99,7 +122,10 @@ extension AppModel {
         }
         let request = url.appendingPathComponent("joins").appendingPathComponent(
             keys.joinRequest(vaultId: locked.vaultId, name: "", kind: "").fileName)
-        guard FileManager.default.fileExists(atPath: request.path) else { return .stray }
+        // No request in the copy: home may have taken it with an approval this copy has not received yet.
+        guard FileManager.default.fileExists(atPath: request.path) || joinRequested(keys, vaultID: locked.vaultId) else {
+            return .stray
+        }
         joinIdentity = keys.nativeIdentity
         let codes = Self.joinCodes(keys, vaultId: locked.vaultId, kind: ThisDevice.kind)
         return .stage(.waiting(words: codes.words, qr: codes.qr))
@@ -122,6 +148,7 @@ extension AppModel {
             try v.confirmJoin(words: words)
         }
         joinIdentity = nil
+        if let id = vault?.vaultId { clearJoinRequested(id) }
         try await unlock(device: keys, awaitNotes: false)
     }
 
@@ -144,6 +171,7 @@ extension AppModel {
             try? FileManager.default.removeItem(at: file)
         }
         try? await store.delete(for: locked.vaultId)
+        clearJoinRequested(locked.vaultId)
         joinIdentity = nil
     }
 
@@ -271,8 +299,11 @@ extension AppModel {
             if draft.newKeys != nil { try? await store.delete(for: current.vaultId) }
             throw error
         }
-        // The takeover was this device's: acknowledged, never alerted.
-        takeoverDefaults.set(next.manifest.epoch, forKey: Self.takeoverAckKey(next.vaultId))
+        // The takeover was this device's: acknowledged (by id, as `applyTakeovers` keeps them), never alerted.
+        let ackKey = Self.takeoverAckKey(next.vaultId)
+        let acknowledged = (takeoverDefaults.stringArray(forKey: ackKey) ?? []) + [Self.idText(next.manifest.epochId)]
+        takeoverDefaults.set(Array(acknowledged.suffix(Self.acknowledgedTakeoversLimit)), forKey: ackKey)
+        clearJoinRequested(next.vaultId)
         isChangingKeys = false
         if phase == .unlocked {
             adoptReopened(next)
