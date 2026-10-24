@@ -478,6 +478,16 @@ extension Vault {
         return out
     }
 
+    /// A digest of every epoch key this vault holds now (the current one, the chain's as far as its records read,
+    /// and the off-chain ones of its ledger): a file that waited for a key is worth fetching again once it moves.
+    public var heldKeysDigest: String {
+        var ids = [manifest.epochId] + (keyring?.all().map(\.epochId) ?? []) + (keyring?.offChainEpochs().map(\.epochId) ?? [])
+        ids.sort { $0.lexicographicallyPrecedes($1) }
+        var data = Data()
+        for id in ids { data.append(id) }
+        return String(Hex.encode(Data(SHA256.hash(data: data))).prefix(16))
+    }
+
     /// The trust store this vault was opened with, if any.
     public var publicTrustStore: (any EpochTrustStore)? { trustStore }
 

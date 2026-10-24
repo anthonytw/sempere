@@ -475,7 +475,13 @@ final class EpochInterleavingTests: SyncTestCase {
             for (src, f, d) in copies {
                 let openers = names.filter { (try? AgeFile.decrypt(d, with: w[$0].open().identities)) != nil }
                 let heldBy = names.filter { (try? AgeFile.decrypt(d, with: held[$0] ?? [])) != nil }
-                let acc = (try? w[reader].open()).map { "\($0.acceptance(of: d, path: "notes/\(id)/\(f)"))" } ?? "?"
+                let acc = (try? w[reader].open()).map { v in
+                    var check = "ok"
+                    if let n = RevisionName(f) {
+                        do { try v.checkIncomingRevision(d, noteId: note, name: n) } catch { check = "\(error)".prefix(60).description }
+                    }
+                    return "\(v.acceptance(of: d, path: "notes/\(id)/\(f)")) incoming:\(check) incomplete:\(v.keyring?.isIncomplete ?? false)"
+                } ?? "?"
                 lines.append("DIAG  \(src) \(f.suffix(24)) sha \(FileDigest.sha256(d).prefix(8)) current-key of \(openers) held-by \(heldBy) at-reader \(acc)")
             }
             return lines

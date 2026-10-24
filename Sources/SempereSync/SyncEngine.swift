@@ -285,6 +285,8 @@ public final class SyncEngine {
     }
     /// What a held run may still write (`HoldGate.swift`).
     let holdGate = HoldGate()
+    /// `heldKeys`, once per vault value (reset when the run reopens it).
+    var cachedHeldKeys: String?
     /// Revisions this run wrote over on the target (their version tag is new and unknown until listed again).
     var remoteRewritten: Set<String> = []
     /// The epoch id of the `vault.json` the target holds, as this run last knew it (read, or uploaded): only a run
@@ -484,6 +486,8 @@ public final class SyncEngine {
                     + "change: \(SyncReport.printable(Self.describe(error)))"))
             }
         }
+        // What keys the notes are judged with (a file that waited for one is fetched again once this moves).
+        cachedHeldKeys = epochJudge?.heldKeysDigest
         if let hold = epochHold, !Self.epochMutations.contains(.uploadWhileWaiting) {
             // Unverified-pending or unlisted (design §4.3, §5.5): nothing new is uploaded (J5b), nothing else
             // is synced until the change is verified (or a takeover lists this device again).
@@ -1257,10 +1261,13 @@ public final class SyncEngine {
         }
         for n in shared {
             let k = key(id, n)
-            let rewritten = locked { remoteRewritten.contains(k) }
-            state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included,
-                                                  sha256: locked({ placedShas[k] }) ?? state.files[k]?.sha256,
-                                                  stamp: rewritten ? nil : (entries[n]?.stamp ?? state.files[k]?.stamp))
+            // The target's version tag when both sides were last known equal: moved on only when this run
+            // established that (a comparison or a replacement); a first sighting takes the listing's.
+            let (rewritten, placed) = locked { (remoteRewritten.contains(k), placedShas[k]) }
+            let old = state.files[k]
+            let stamp = rewritten ? nil : (placed != nil ? entries[n]?.stamp : (old?.stamp ?? entries[n]?.stamp))
+            state.files[k] = SyncState.FileRecord(included: coverage[n] ?? old?.included, sha256: placed ?? old?.sha256,
+                                                  stamp: stamp)
             // In step on both sides again: no longer a settled deletion.
             state.thinned?[k] = nil
         }

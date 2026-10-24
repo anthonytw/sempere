@@ -238,8 +238,14 @@ extension SyncEngine {
 
     /// A digest of the names in the local `epochs/` (a new record makes pending files worth fetching again).
     static func localEpochsDigest(_ root: URL) -> String {
-        let names = ((try? LocalFS.entries(root.appendingPathComponent(Vault.epochsName))) ?? []).filter(Vault.isEpochRecordFileName)
-        return String(FileDigest.sha256(Data(names.sorted().joined(separator: "\n").utf8)).prefix(16))
+        // Names and bytes: junk set aside and the right record fetched under the same name is a change too.
+        let dir = root.appendingPathComponent(Vault.epochsName)
+        let names = ((try? LocalFS.entries(dir)) ?? []).filter(Vault.isEpochRecordFileName).sorted()
+        let lines = names.map { n in
+            n + " " + ((try? BoundedRead.contents(of: dir.appendingPathComponent(n), maxBytes: EpochRecord.maxBytes))
+                .map(FileDigest.sha256) ?? "?")
+        }
+        return String(FileDigest.sha256(Data(lines.joined(separator: "\n").utf8)).prefix(16))
     }
 
     // MARK: vault.json of another epoch
@@ -536,8 +542,15 @@ extension SyncEngine {
     }
 
     /// The remote version and the local root a pending file was judged against.
+    /// `Vault.heldKeysDigest` of this run's vault, set before the notes are judged (`cachedHeldKeys`).
+    var heldKeys: String { cachedHeldKeys ?? "" }
+
     func pendingStamp(_ entry: RemoteEntry?) -> String {
-        "\(Self.quarantineStamp(entry) ?? "")|\(manifestHash() ?? "")|\(epochsDigest)"
+        // Also what this device pinned: a record that arrived is pinned a run later, and only then are the files
+        // that waited for it readable.
+        let pinned = (try? vault?.publicTrustStore?.record(for: vault?.vaultId ?? UUID()))??.pinned?.epochId
+        return "\(Self.quarantineStamp(entry) ?? "")|\(manifestHash() ?? "")|\(epochsDigest)|"
+            + "\(pinned.map { Hex.encode($0).prefix(16) } ?? "")|\(vault?.isRecordPending == true)|\(heldKeys)"
     }
 
     /// True when `key` waited for a record in an earlier run and neither its remote version nor the local
