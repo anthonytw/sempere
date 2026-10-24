@@ -51,6 +51,7 @@ final class DeviceOverviewTests: VaultTestCase {
         XCTAssertEqual(takeovers.first?.newHome?.name, "B")
         XCTAssertEqual(takeovers.first?.removed.map(\.fingerprint), [w["A"].fingerprint])
         XCTAssertTrue(c.takeovers(after: 2).isEmpty, "acknowledged")
+        XCTAssertEqual(c.takeoverEpochIds(), [c.manifest.epochId])
     }
 
     func testRemovalReviewNamesStaleDevicesTheDevicesAFormerHomeApprovedAndItsKitReplacement() throws {
@@ -74,6 +75,26 @@ final class DeviceOverviewTests: VaultTestCase {
                        "A approved B and C at creation; C manages devices now and is never offered")
         XCTAssertFalse(review[1].replacedKit)
         XCTAssertThrowsError(try c.removalReview(["ffff0000"]))
+
+        // Review S3: once home replaces the kit again, B's kit is retired and no longer counts.
+        var home = try w.open("C")
+        try home.replaceRecoveryKit(try MLKEM768X25519Identity(), keep: [w["A"].id, w["B"].id, d.id], remove: [])
+        XCTAssertFalse(try XCTUnwrap(try w.open("C").removalReview([w["B"].id]).first).replacedKit)
+    }
+
+    /// Review S4: right after a device change, a device whose summaries file is still sealed under the earlier epoch
+    /// has "not synced since the change", and is stale only once that change is older than the bound.
+    func testAfterAChangeADeviceIsNotStaleUntilTheChangeIsOld() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B", "X"])
+        try w.open("B").recordSynced(device: try XCTUnwrap(DeviceID(w["B"].id)), now: Date(), granularity: 0)
+        var a = try w.open("A")
+        let t = Date()
+        try a.removeDevices([w["X"].id], now: t)
+        let item = try XCTUnwrap(try w.open("A").removalReview([w["B"].id], now: t.addingTimeInterval(60)).first)
+        XCTAssertNil(item.lastSynced)
+        XCTAssertEqual(try XCTUnwrap(item.notSyncedSinceChange).timeIntervalSince1970, t.timeIntervalSince1970, accuracy: 1)
+        XCTAssertFalse(item.stale)
+        XCTAssertTrue(try XCTUnwrap(try w.open("A").removalReview([w["B"].id], now: t.addingTimeInterval(2 * 86_400)).first).stale)
     }
 
     func testRemovalReviewReadsTheLastSyncFromTheDevicesOwnSummaries() throws {

@@ -45,13 +45,18 @@ public struct RemovalReviewItem: Hashable, Sendable {
     public var device: EpochKeyEntry
     /// When it last completed a two-way sync (its own summaries file), nil when unknown.
     public var lastSynced: Date?
-    /// True when that was longer ago than the bound, or is unknown: its later changes will not reach the vault.
+    /// When `lastSynced` is unknown because its summaries file is still sealed under an earlier epoch: it has not
+    /// completed a sync since the current device change, made at this date. Nil otherwise.
+    public var notSyncedSinceChange: Date?
+    /// True when its last sync was longer ago than the bound, or is unknown (and, when it is only known not to be
+    /// since the current change, that change is older than the bound): its later changes will not reach the vault.
     public var stale: Bool
     /// Listed devices it approved (`addedBy` its id): while it was home, before a handoff. The sheet offers
     /// to remove them too, checked when the device is marked lost or stolen. Never the current home.
     public var approved: [EpochKeyEntry]
-    /// It made a kit replacement (a `recovery` or `reencrypt` epoch) while it was home: the sheet suggests
-    /// replacing the kit again (design §5.2.1).
+    /// It made the current recovery kit (the last `recovery` or `reencrypt` epoch of the chain) while it was home:
+    /// the sheet suggests replacing the kit again (design §5.2.1). A kit it made that a later replacement retired
+    /// does not count.
     public var replacedKit: Bool
 }
 
@@ -183,13 +188,37 @@ extension Vault {
             let approved = manifest.devices.filter {
                 $0.addedBy == d.id && $0.fingerprint != d.fingerprint && $0.fingerprint != manifest.home && d.id != nil
             }
-            let kit = chain.contains {
-                ($0.reason == EpochReason.recovery.rawValue || $0.reason == EpochReason.reencrypt.rawValue)
-                    && $0.author.fingerprint == d.fingerprint
+            let currentKit = chain.last {
+                $0.reason == EpochReason.recovery.rawValue || $0.reason == EpochReason.reencrypt.rawValue
             }
-            return RemovalReviewItem(device: d, lastSynced: last, stale: last.map { now.timeIntervalSince($0) > staleAfter } ?? true,
+            let kit = currentKit?.author.fingerprint == d.fingerprint && currentKit?.recovery == manifest.recoveryFingerprint
+            var sinceChange: Date?
+            if last == nil, let id = d.id, let summaryEpoch = summariesEpoch(device: id), summaryEpoch < manifest.epoch {
+                sinceChange = recordDates()[manifest.epoch] ?? Date.distantPast
+            }
+            let stale: Bool
+            if let last { stale = now.timeIntervalSince(last) > staleAfter } else if let sinceChange {
+                stale = now.timeIntervalSince(sinceChange) > staleAfter
+            } else { stale = true }
+            return RemovalReviewItem(device: d, lastSynced: last, notSyncedSinceChange: sinceChange, stale: stale,
                                      approved: approved, replacedKit: kit)
         }
+    }
+
+    /// The epoch the device `id`'s summaries file is sealed under, without its key; nil when it has none.
+    func summariesEpoch(device id: String) -> Int? {
+        guard let device = DeviceID(id) else { return nil }
+        let url = devicePublishedSummariesURL(device)
+        guard FileIO.exists(url), let data = try? FileIO.read(url, maxBytes: PublishedSummaries.maxFileBytes),
+              let (sealed, _) = PublishedSummaries.split(data) else { return nil }
+        return PublishedSummaries.sealedEpoch(sealed)
+    }
+
+    /// The `epochId`s of the takeovers on the chain this device follows (the alerts of design §6.3 acknowledge
+    /// takeovers by id: a takeover's epoch number can be at or below one this device saw before, since it beats
+    /// every home epoch that is not its ancestor).
+    public func takeoverEpochIds() -> [Data] {
+        (verifiedChain?.entries ?? []).filter { $0.reason == EpochReason.takeover.rawValue }.map(\.epochId)
     }
 
     // MARK: - This device's state (design §4.3, §5.5)

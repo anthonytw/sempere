@@ -306,9 +306,11 @@ its device id in the vault.
   password of a WebDAV target the device used, or sign it out of iCloud.
   `--json`: `epoch`, `epochId`, `reason` (`remove`), `removed` (ids), `home`,
   `sealed` (files), `pulled` (`[{target, reached, downloaded, error}]`, store
-  vaults) and `removedDevices` (`[{id, name, lastSynced, stale, approved, replacedKit}]`). A removed device that
+  vaults) and `removedDevices` (`[{id, name, lastSynced, notSyncedSinceChange, stale, approved, replacedKit}]`). Right
+  after a device change a device whose summaries file is still under the earlier key has `notSyncedSinceChange` (the
+  change's date) and is stale only once that change is a day old. A removed device that
   managed devices for a while is named with the listed devices it approved then (`approved`: remove those too if it
-  was lost or stolen) and whether it replaced the recovery kit then (`replacedKit`: replace the kit again). The app's
+  was lost or stolen) and whether it made the current recovery kit (`replacedKit`: replace the kit again). The app's
   removal sheet shows the same (`Vault.removalReview`).
 - `devices status [--export DIR] [--forget-sightings [--all]]`: this machine's state in the vault: `listed`;
   `waiting` (a sync met a later device list it cannot verify yet: it writes

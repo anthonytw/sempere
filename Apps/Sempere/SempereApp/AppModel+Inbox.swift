@@ -100,6 +100,7 @@ extension AppModel {
     /// rotates both), attributed to the key this device unlocked with
     /// (format.md §11.1, security review 2026-10, C2).
     func refreshQuickCaptureProfile() {
+        suspendQuickCaptureIfUnlisted()
         // Never a list that does not check (format.md §2.1, §11.1): captures are sealed to it.
         let current: StoredCaptureProfile?
         do { current = try storedQuickCaptureProfile() } catch {

@@ -1,9 +1,10 @@
 import Sempere
 import SwiftUI
 
-/// Removing a device (on home: key-hierarchy design §5.2, §5.5): what the removal cannot do and the stale
-/// warning, "Lost or stolen" (then the devices it approved while it managed devices go too, and a kit it
-/// replaced is pointed out), then Remove: every target synced first (at most 10 seconds each), and a new key.
+/// Removing a device (on home: key-hierarchy design §5.2, §5.5): the stale warning and what the removal cannot do;
+/// the devices it approved while it managed devices, listed and checked so they go too (the owner's default,
+/// review of #87); "Lost or Stolen", which points out a kit it made; then Remove: every target synced first (at
+/// most 10 seconds each, skippable), and a new key.
 struct RemoveDeviceSheet: View {
     @AppModelEnvironment private var model
     @Environment(\.dismiss) private var dismiss
@@ -12,7 +13,8 @@ struct RemoveDeviceSheet: View {
     let done: (String) -> Void
     @State private var review: RemovalReviewItem?
     @State private var lost = false
-    @State private var alsoApproved = true
+    /// The approved devices to remove too, by id (all of them, checked, to start with).
+    @State private var alsoRemove: Set<String> = []
     @State private var working = false
     @State private var failure: String?
 
@@ -32,6 +34,7 @@ struct RemoveDeviceSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(working)
                 }
                 ToolbarItem(placement: .destructiveAction) {
                     Button("Remove", role: .destructive) { remove() }
@@ -41,13 +44,14 @@ struct RemoveDeviceSheet: View {
                 }
             }
             .disabled(working)
-            .overlay {
-                if working {
-                    ProgressView("Syncing, then changing the vault's key…").padding().background(.regularMaterial, in: .rect(cornerRadius: 12))
-                }
-            }
+            .interactiveDismissDisabled(working)
+            .overlay { if working { DeviceChangeSyncOverlay() } }
             .task {
-                do { review = try await model.removalReview([device.id]).first } catch { failure = "\(error)" }
+                do {
+                    let r = try await model.removalReview([device.id]).first
+                    review = r
+                    alsoRemove = Set(r?.approved.compactMap(\.id) ?? [])
+                } catch { failure = DeviceChangeText.message(error) }
             }
         }
         .accessibilityIdentifier("removeDeviceSheet")
@@ -57,13 +61,7 @@ struct RemoveDeviceSheet: View {
         Section {
             if r.stale {
                 Label {
-                    if let last = r.lastSynced {
-                        Text("“\(device.name)” last synced \(last, format: .relative(presentation: .named)). Changes it made since then will not reach this vault. It will be told it was removed, and can export them.",
-                             comment: "Removal warning; the values are a device name and a relative date")
-                    } else {
-                        Text("“\(device.name)” has no recorded sync. Changes it made will not reach this vault. It will be told it was removed, and can export them.",
-                             comment: "Removal warning; the value is a device name")
-                    }
+                    Text(Self.staleText(device.name, r))
                 } icon: {
                     Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.orange)
                 }
@@ -76,45 +74,77 @@ struct RemoveDeviceSheet: View {
         } footer: {
             Text("The vault gets a new key. Notes from before stay readable to the removed device; nothing written after reaches it.")
         }
+        if !r.approved.isEmpty {
+            Section {
+                ForEach(r.approved, id: \.fingerprint) { e in
+                    let id = e.id ?? ""
+                    Toggle(DeviceName.display(e.name), isOn: Binding(get: { alsoRemove.contains(id) },
+                                                                     set: { if $0 { alsoRemove.insert(id) } else { alsoRemove.remove(id) } }))
+                }
+            } header: {
+                Text("Also remove the devices “\(device.name)” added", comment: "Removal sheet; the value is a device name")
+            } footer: {
+                Text("“\(device.name)” managed devices for a while and added these. If someone else has it, they could have added their own devices then. Uncheck the ones you hold.",
+                     comment: "Removal sheet footer; the value is a device name")
+            }
+        }
         Section {
             Toggle("Lost or Stolen", isOn: $lost)
-                .onChange(of: lost) { _, on in if on { alsoApproved = true } }
-            if lost, !r.approved.isEmpty {
-                Toggle(isOn: $alsoApproved) {
-                    let names = r.approved.map { DeviceName.display($0.name) }.formatted(.list(type: .and))
-                    Text("Also remove the devices “\(device.name)” added: \(names)", comment: "Removal sheet; the values are device names")
-                }
-            }
             if lost, r.replacedKit {
-                Label("“\(device.name)” replaced the recovery kit while it managed devices. Replace the kit again after this.",
+                Label("“\(device.name)” made the current recovery kit while it managed devices. Replace the kit after this.",
                       systemImage: "key.viewfinder")
                     .foregroundStyle(.orange)
-            }
-        } footer: {
-            if !r.approved.isEmpty || r.replacedKit {
-                Text("“\(device.name)” managed devices for a while. If someone else has it, they could have added their own devices then.",
-                     comment: "Removal sheet footer; the value is a device name")
             }
         }
     }
 
-    /// "It can still reach your storage. Change the password of <WebDAV target>, or sign it out of iCloud…"
-    private var storageAdvice: String {
-        let servers = model.openVaultTargets.filter { $0.kind == .webdav }.map(\.name)
-        if servers.isEmpty {
-            return String(localized: "It can still reach your storage. Sign it out of iCloud (or of the service that holds your sync folder) if you no longer control it.",
-                          comment: "Removal sheet: storage advice without a WebDAV target")
+    /// "<name> last synced 3 days ago…", "…hasn't synced since the last device change…", "…has no recorded sync…".
+    static func staleText(_ name: String, _ r: RemovalReviewItem) -> String {
+        if let last = r.lastSynced {
+            return String(localized: "“\(name)” last synced \(last.formatted(.relative(presentation: .named))). Changes it made since then will not reach this vault. It will be told it was removed, and can export them.",
+                          comment: "Removal warning; the values are a device name and a relative date")
         }
+        if let change = r.notSyncedSinceChange {
+            return String(localized: "“\(name)” hasn't synced since the last device change, \(change.formatted(.relative(presentation: .named))). Changes it made since then will not reach this vault. It will be told it was removed, and can export them.",
+                          comment: "Removal warning; the values are a device name and a relative date")
+        }
+        return String(localized: "“\(name)” has no recorded sync. Changes it made will not reach this vault. It will be told it was removed, and can export them.",
+                      comment: "Removal warning; the value is a device name")
+    }
+
+    /// What the removal cannot take away: the vault's storage, named by the targets it has (review of #87).
+    private var storageAdvice: String {
+        let targets = model.openVaultTargets
+        return Self.storageAdvice(servers: targets.filter { $0.kind == .webdav }.map(\.name), hasFolder: targets.contains { $0.kind == .folder })
+    }
+
+    static func storageAdvice(servers: [String], hasFolder: Bool) -> String {
         let list = servers.formatted(.list(type: .and))
-        return String(localized: "It can still reach your storage. Change the password of \(list), or sign it out of iCloud, if you no longer control it.",
-                      comment: "Removal sheet: storage advice; the value names WebDAV servers")
+        switch (servers.isEmpty, hasFolder) {
+        case (false, true):
+            return String(localized: "It can still reach your storage. If you no longer control it, change the password of \(list) and sign it out of iCloud or the service that holds your sync folder.",
+                          comment: "Removal sheet: storage advice; the value names WebDAV servers")
+        case (false, false):
+            return String(localized: "It can still reach \(list). If you no longer control it, change that password.",
+                          comment: "Removal sheet: storage advice; the value names WebDAV servers")
+        case (true, true):
+            return String(localized: "It can still reach your sync folder. If you no longer control it, sign it out of iCloud or the service that holds the folder.",
+                          comment: "Removal sheet: storage advice for a folder target")
+        case (true, false):
+            return String(localized: "This vault has no sync targets, so the removed device keeps only what it had.",
+                          comment: "Removal sheet: storage advice without targets")
+        }
+    }
+
+    /// The ids a removal removes: the device, and the approved devices still checked (never the device itself).
+    static func ids(removing device: String, approved: Set<String>) -> [String] {
+        [device] + approved.filter { $0 != device }.sorted()
     }
 
     private func remove() {
         guard let review else { return }
-        var ids = [device.id]
-        if lost, alsoApproved { ids += review.approved.compactMap(\.id).filter { $0 != device.id } }
-        let suggestKit = lost && review.replacedKit
+        let ids = Self.ids(removing: device.id, approved: alsoRemove.intersection(Set(review.approved.compactMap(\.id))))
+        let suggestKit = review.replacedKit
         working = true
         failure = nil
         Task {
@@ -129,7 +159,7 @@ struct RemoveDeviceSheet: View {
                 dismiss()
             } catch is CancellationError {
             } catch {
-                failure = "\(error)"
+                failure = DeviceChangeText.message(error)
             }
         }
     }

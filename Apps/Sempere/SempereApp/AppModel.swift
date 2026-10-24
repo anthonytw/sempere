@@ -598,6 +598,15 @@ final class AppModel {
     /// Asks for the device owner before a list change that needs them at the device (Replace Recovery Kit, design
     /// §6.5); tests inject a fake.
     @ObservationIgnored var ownerAuthenticator: any OwnerAuthenticator = SystemOwnerAuthenticator()
+    /// The targets run before a device change (the sheets' "Syncing…" with its Cancel).
+    var isSyncingBeforeChange = false
+    /// Set while they run: Cancel skips the rest (`cancelDeviceChangeSync`).
+    @ObservationIgnored var deviceChangeCancel: SyncRunCancel?
+    @ObservationIgnored var deviceChangeWaitCancel: (() -> Void)?
+    /// This device's state as last read off the main actor (`refreshDeviceState`): since when a change it cannot
+    /// verify holds its sync back, and the sightings Repair lists.
+    var heldSinceAtOpen: Date?
+    var sightingRowsState: [SightingRow] = []
     /// The clock the device banners judge "more than a day" by; tests set it.
     @ObservationIgnored var deviceNoticeNow: () -> Date = { Date() }
     /// The keys the vault was unlocked with, for opening it again (a WebDAV
@@ -859,7 +868,10 @@ final class AppModel {
         listAlert = ListAlert(vault: next)
         refreshQuickCaptureProfile()
         keyEpoch += 1
-        checkTakeovers()
+        Task {
+            await checkTakeovers()
+            await refreshDeviceState()
+        }
         scheduleSettingsSync()
     }
 
@@ -876,7 +888,8 @@ final class AppModel {
         if awaitNotes { try await notesLoaded() }
         refreshQuickCaptureProfile()
         startInboxAdoption()
-        checkTakeovers()
+        await checkTakeovers()
+        await refreshDeviceState()
         Task { await rescheduleBackupReminder() }
         startSettingsSync()
     }
@@ -1162,6 +1175,8 @@ final class AppModel {
         vault = nil
         unlockKeys = UnlockKeys()
         takeoverAlert = nil
+        heldSinceAtOpen = nil
+        sightingRowsState = []
         vaultURL = nil
         vaultOpenedExternally = false
         notes = []

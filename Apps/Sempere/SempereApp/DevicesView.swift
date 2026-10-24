@@ -48,15 +48,17 @@ struct DevicesView: View {
         .navigationTitle("Devices")
         .accessibilityIdentifier("devicesView")
         .disabled(working)
+        .overlay { if working { DeviceChangeSyncOverlay() } }
         .task(id: model.keyEpoch) { await reload() }
         .alert("Rename Device", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
             Button("Rename") {
-                guard let device = renaming else { return }
+                guard let device = renaming, !DeviceName.clean(newName).isEmpty else { return }
                 let name = newName
                 renaming = nil
                 run { try await model.renameDevice(device.id, to: name) }
             }
+            .disabled(DeviceName.clean(newName).isEmpty)
             Button("Cancel", role: .cancel) { renaming = nil }
         } message: {
             Text("Names are stored unencrypted in the vault, so the storage can read them (it cannot change them).")
@@ -119,7 +121,7 @@ struct DevicesView: View {
                     Text("This device manages devices: it adds, renames and removes them. Touch and hold a device for its actions.")
                 }
             } else if let home = s.homeName {
-                Text("“\(home)” manages devices: add, rename and remove devices there. If it is lost, take over with the recovery kit.",
+                Text("“\(home)” manages devices: add, rename and remove devices there. If it is lost, take over with the recovery kit (on a computer: sempere devices takeover).",
                      comment: "Devices footer; the value is the home device's name")
             }
         }
@@ -192,7 +194,7 @@ struct DevicesView: View {
                 await reload()
             } catch is CancellationError {
             } catch {
-                failure = "\(error)"
+                failure = DeviceChangeText.message(error)
             }
         }
     }
@@ -300,11 +302,42 @@ enum DeviceChangeText {
             let home = e.newHome.map(name) ?? "?"
             return String(localized: "\(by) made \(home) manage devices", comment: "History: a handoff; the values are device names")
         case .takeover:
-            return String(localized: "\(by) took over with the recovery kit", comment: "History; the value is a device name")
+            return withRemoved(String(localized: "\(by) took over with the recovery kit", comment: "History; the value is a device name"), e)
         case .recovery:
-            return String(localized: "Recovery kit replaced by \(by)", comment: "History; the value is a device name")
+            return withRemoved(String(localized: "Recovery kit replaced by \(by)", comment: "History; the value is a device name"), e)
         case .reencrypt:
             return String(localized: "Everything re-encrypted by \(by)", comment: "History; the value is a device name")
+        }
+    }
+
+    /// `line`, then the devices `e` removed (a takeover or a kit replacement can remove some too).
+    static func withRemoved(_ line: String, _ e: DeviceHistoryEvent) -> String {
+        guard !e.removed.isEmpty else { return line }
+        let gone = e.removed.map(name).formatted(.list(type: .and))
+        return line + " " + String(localized: "(removed: \(gone))", comment: "History: after a takeover or kit replacement; the value lists devices")
+    }
+
+    /// An error of a device change or Repair, in the app's words: the package's reasons are English, so they come
+    /// after a localized sentence for the cases a user can act on.
+    static func message(_ error: any Error) -> String {
+        switch error {
+        case VaultError.notHome:
+            return String(localized: "Only the device that manages devices can do this.")
+        case VaultError.partialCopy:
+            return String(localized: "This vault is still downloading to this device. Try again once it is complete.")
+        case VaultError.removedFromVault:
+            return String(localized: "This device is not on the vault's device list any more.")
+        case VaultError.untrustedList:
+            return String(localized: "This vault's device list does not check on this device, so nothing is changed.")
+        case VaultError.epochChangeRefused(let why):
+            return String(localized: "The change was refused: \(why)", comment: "The value is the reason (English)")
+        case let e as VaultFileLock.LockError:
+            return String(localized: "Another sync is writing to this vault. Try again in a moment. (\(String(describing: e)))",
+                          comment: "The value is the error (English)")
+        case is CancellationError:
+            return String(localized: "Canceled.")
+        default:
+            return String(localized: "That did not work: \(String(describing: error))", comment: "The value is the error (English)")
         }
     }
 
@@ -318,5 +351,28 @@ enum DeviceChangeText {
                                 comment: "After a device change; the values are a sync target and a date"))
         }
         return lines.joined(separator: "\n\n")
+    }
+}
+
+/// Over a device-change sheet while the change runs: "Syncing with the vault's targets…" with Cancel (design §5.2
+/// step 2: the bounded run before the change, cancellable; the targets skipped count as not reached), then
+/// "Changing the vault's key…".
+struct DeviceChangeSyncOverlay: View {
+    @AppModelEnvironment private var model
+
+    var body: some View {
+        if model.isSyncingBeforeChange || model.isChangingKeys {
+            VStack(spacing: 12) {
+                ProgressView(model.isSyncingBeforeChange ? String(localized: "Syncing with the vault's targets…")
+                                                         : String(localized: "Changing the vault's key…"))
+                if model.isSyncingBeforeChange {
+                    Button("Skip the Rest") { model.cancelDeviceChangeSync() }
+                        .help("Stop syncing and make the change now; the targets not reached are named afterwards")
+                        .accessibilityIdentifier("deviceChange.skipSync")
+                }
+            }
+            .padding()
+            .background(.regularMaterial, in: .rect(cornerRadius: 12))
+        }
     }
 }
