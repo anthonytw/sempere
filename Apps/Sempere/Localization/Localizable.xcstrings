@@ -21856,6 +21856,30 @@
         }
       }
     },
+    "This device's key for the vault stays: %@ on this device could not be checked and may be a copy of it." : {
+      "comment" : "Removing a vault from this device; the value is a list of vault folder names",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de este dispositivo para la bóveda se queda: no se pudo comprobar %@ en este dispositivo, y puede ser una copia de ella."
+          }
+        }
+      }
+    },
+    "This device's key for the vault stays: it also opens %@ on this device, and %@ could not be checked." : {
+      "comment" : "Removing a vault from this device; the values are lists of vault folder names",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de este dispositivo para la bóveda se queda: también abre %1$@ en este dispositivo, y no se pudo comprobar %2$@."
+          }
+        }
+      }
+    },
     "This device's key for the vault stays: it also opens %@ on this device." : {
       "comment" : "Removing a vault from this device; the value is a list of vault folder names",
       "extractionState" : "manual",

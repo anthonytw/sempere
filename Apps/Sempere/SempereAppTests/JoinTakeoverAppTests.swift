@@ -249,6 +249,41 @@ struct JoinTakeoverAppTests {
         #expect(kept.removalWarning()?.contains("“Mine”") == true)
     }
 
+    /// Second re-check of #88: a recent folder vault that does not answer in time, or whose bookmark does not
+    /// resolve, may be a copy: the keys stay and the dialog names it. A reader that hangs (and ignores
+    /// cancellation) does not hold the check past its bound.
+    @Test func anUncheckableFolderKeepsTheKeysAndAHungReaderDoesNotHoldTheCheck() async throws {
+        let id = UUID()
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let start = ContinuousClock.now
+        let hung = await KeyRemoval.folderCopies(of: id, in: [(name: "Slow", bookmark: Data([1])), (name: "Other", bookmark: Data([2])),
+                                                              (name: "Mine", bookmark: Data([3]))],
+                                                 except: nil, bound: .milliseconds(200)) { bookmark in
+            switch bookmark.first {
+            case 1: gate.wait(); return .folder(path: "/slow", vaultId: id)
+            case 2: return .folder(path: "/other", vaultId: UUID())
+            default: return .folder(path: "/mine", vaultId: id)
+            }
+        }
+        #expect(ContinuousClock.now - start < .seconds(2), "the hung reader is not waited for")
+        #expect(hung.copies == ["Mine"])
+        #expect(hung.unchecked == ["Slow"])
+
+        let unresolvable = await KeyRemoval.folderCopies(of: id, in: [(name: "Gone", bookmark: Data("not a bookmark".utf8))],
+                                                         except: nil)
+        #expect(unresolvable.unchecked == ["Gone"])
+        let kept = KeyRemoval(home: .withOthers, otherCopies: [], uncheckedCopies: unresolvable.unchecked)
+        #expect(!kept.deletesKeys)
+        #expect(!kept.offersMakeHome)
+        #expect(kept.removalWarning()?.contains("“Gone”") == true)
+        // The copy being removed is not counted.
+        let removing = await KeyRemoval.folderCopies(of: id, in: [(name: "This", bookmark: Data([3]))], except: "/mine") { _ in
+            .folder(path: "/mine", vaultId: id)
+        }
+        #expect(removing.copies.isEmpty && removing.unchecked.isEmpty)
+    }
+
     /// Re-check of #88 (stray): a joiner whose request the copy no longer holds (home took it with an approval that
     /// has not arrived) is still waiting while its join is open here, never told to forget its keys; given up, the
     /// marker goes.
