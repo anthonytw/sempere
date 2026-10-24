@@ -207,9 +207,12 @@ extension Vault {
                Self.recordPendingCheck(incoming, key: key, trusted: trusted) != nil {
                 return .laterRecordPending
             }
-            // Its signed fields already lose to this device's own chain (a sibling takeover with a larger id, whose
-            // record a finished re-encryption deleted): this device's list replaces it, nothing waits for its record.
-            if let node = manifestNode(incoming),
+            // Its parent is an epoch this device knows (its own chain, or one it pinned) and its signed fields already lose
+            // to this device's own chain (a sibling takeover with a larger id, whose record a finished re-encryption
+            // deleted): this device's list replaces it, nothing waits for its record. One whose parent is unknown here is
+            // never judged so: it may be a real later change (a rollback of it is what review #86 M1 found).
+            let known = Set(ours.ids + (trustedRecord()?.chain.map(\.epochId) ?? []))
+            if let parent = incoming.parent, known.contains(parent), let node = manifestNode(incoming),
                Self.keptChain(extra: [node], ours: ours, pinned: trustedRecord()?.chain ?? []) == ours.ids {
                 return .behind
             }

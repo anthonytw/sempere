@@ -203,6 +203,7 @@ final class EpochInterleavingTests: SyncTestCase {
         Self.clearMutations()
         defer { Self.clearMutations() }
         var rng = SeededRNG(seed)
+        var blobRng = SeededRNG(seed &+ 0xB10B)
         // Keys, epoch ids and note ids from the seed too, and one transfer at a time: a failing seed replays.
         let ids = Locked(SeededRNG(seed &+ 0x5EED))
         let idLock = NSLock()
@@ -401,9 +402,12 @@ final class EpochInterleavingTests: SyncTestCase {
                 let before = hashes(n)
                 defer { checkAside(n, before: before, step: step); checkBodies(n, before: before, step: step) }
                 guard let note = try? w[n].write(title, id: noteId()) else { trace.append("\(step) write \(n) failed"); break }
-                // Some with an attachment (old blob names are J7's).
-                if Int.random(in: 0..<3, using: &rng) == 0, let v = try? w[n].open() {
-                    _ = try? v.writeBlob(note: note, bytes(48), type: "image/png")
+                // Some with an attachment (old blob names are J7's), from generators of their own, so the runs KH4's
+                // mutations were checked on keep their course.
+                if Int.random(in: 0..<3, using: &blobRng) == 0, let v = try? w[n].open() {
+                    var content = Data(count: 48)
+                    for i in content.indices { content[i] = UInt8.random(in: 0...255, using: &blobRng) }
+                    _ = try? v.writeBlob(note: note, content, type: "image/png")
                 }
                 trace.append("\(step) write \(n) \(title) \(note.uuidString.prefix(8)) epoch \((try? w[n].open().manifest.epoch) ?? -1)")
                 writes.append(Write(writer: n, note: note, title: title, listed: true))

@@ -130,7 +130,7 @@ final class ReencryptTests: VaultTestCase {
         var fired = 0
         var kinds = Set<String>()
         for make in points {
-            for n in [1, 2, 3, 4, 5, 6] {
+            for n in 1...8 {
                 let (w, notes, blob, old) = try world("\(make(n))-\(n)")
                 var (a, _) = try start(w)
                 var bodies: [String: Data] = [:]
