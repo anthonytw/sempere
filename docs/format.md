@@ -4059,7 +4059,7 @@ plant one without any key. A detached sighting holds back only runs on the targe
 that reads a target's `vault.json` drops that target from the sightings it no longer shows, and one no target
 shows any more is forgotten. So storage alone can hold a device back on that storage, never everywhere and never
 for good. When more than 8 would be kept, detached ones go first (oldest first). `sempere devices status` lists
-them (`--forget-sightings` forgets them all).
+them (`--forget-sightings` forgets the detached ones, `--all` the anchored ones too).
 A device also keeps, in its write ledger, the key of every epoch it pinned (not only
 those it wrote under), so that files under an epoch a takeover later dropped read as set aside, not unreadable.
 

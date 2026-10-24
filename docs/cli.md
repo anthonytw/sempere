@@ -213,7 +213,7 @@ sempere devices approve WORD WORD WORD WORD WORD WORD
 sempere devices rename ID NAME
 sempere devices remove ID... [--no-pull] [--password-env VAR]
 sempere devices handoff ID [--no-pull] [--password-env VAR]
-sempere devices status [--export DIR] [--forget-sightings]
+sempere devices status [--export DIR] [--forget-sightings [--all]]
 sempere devices takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--yes]
 sempere recovery replace --recovery-out FILE [--keep ID]... [--remove ID]... [--old-recovery-key FILE] [--recovery-passphrase] [--yes]
 sempere set-aside list | export [SHA...] --to DIR | keep SHA... --yes | clear (SHA... | --superseded) --yes
@@ -305,7 +305,7 @@ its device id in the vault.
   `--json`: `epoch`, `epochId`, `reason` (`remove`), `removed` (ids), `home`,
   `sealed` (files), `pulled` (`[{target, reached, downloaded, error}]`, store
   vaults) and `removedDevices` (`[{id, name, lastSynced, stale}]`).
-- `devices status [--export DIR] [--forget-sightings]`: this machine's state in the vault: `listed`;
+- `devices status [--export DIR] [--forget-sightings [--all]]`: this machine's state in the vault: `listed`;
   `waiting` (a sync met a later device list it cannot verify yet: it writes
   here, uploads nothing new until it can, `format.md` §15.15); `record-pending`
   (it took a change whose record has not arrived: files from before it are not
@@ -318,7 +318,9 @@ its device id in the vault.
   every sync back; a detached one (nothing verifies it, so anyone with write
   access to a target can plant one) holds back only syncs with the targets
   that still show it and lapses once none does. `--forget-sightings` forgets
-  them all. A sync held back for more than a day says since when. `--json`:
+  the detached ones; `--all` also the anchored ones (with a warning: a removal
+  marker among them, after which the machine writes and uploads again until a
+  sync meets the change again). A sync held back for more than a day says since when. `--json`:
   `state`, `notice`, `heldSince`, `sightings` (`[{epoch, epochId, anchored,
   sources, seen}]`), `forgotten`, `unsynced`, `exported`.
 - `devices handoff ID` (home only) makes another listed device home: an epoch

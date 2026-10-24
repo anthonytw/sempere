@@ -528,10 +528,16 @@ extension Vault {
             + "two-way run with the vault's key checks it", first.seen)
     }
 
-    /// Forgets every sighting (`sempere devices status --forget-sightings`): a real device change is met again on
-    /// the next sync and remembered again.
-    public func forgetSightings() throws {
-        try trustStore?.saveSightings([], for: vaultId)
+    /// Forgets the detached sightings (`sempere devices status --forget-sightings`), or every one with
+    /// `anchoredToo` (`--all`: including one that makes this device unlisted, which then writes again until it
+    /// meets the change again). Returns how many it forgot.
+    @discardableResult
+    public func forgetSightings(anchoredToo: Bool = false) throws -> Int {
+        guard let trustStore else { return 0 }
+        let all = sightings()
+        let kept = anchoredToo ? [] : all.filter { isAnchoredSighting($0) }
+        try trustStore.saveSightings(kept, for: vaultId)
+        return all.count - kept.count
     }
 
     /// What this device's sightings say now (design §4.3, §5.5), each judged again against this vault: the

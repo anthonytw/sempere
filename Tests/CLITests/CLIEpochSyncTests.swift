@@ -94,6 +94,7 @@ final class CLIEpochSyncTests: CLITestCase {
         let forgot = try XCTUnwrap(try cli(["devices", "status", "--forget-sightings", "--json", "--vault", laptop],
                                            env: machine("laptop")).json as? [String: Any])
         XCTAssertEqual(forgot["forgotten"] as? Int, 1)
+        XCTAssertEqual(try cli(["devices", "status", "--all", "--vault", laptop], env: machine("laptop")).status, 2)
         XCTAssertEqual((forgot["sightings"] as? [[String: Any]])?.count, 0)
     }
 

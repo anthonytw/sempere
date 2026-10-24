@@ -161,8 +161,9 @@ struct DevicesStatus: ParsableCommand {
             Sightings are the device lists this machine met and did not take (its trust store). An anchored one \
             (its parent is an epoch this machine verified) holds every sync back; a detached one (nothing verifies \
             it: anyone with write access to a target can plant one) holds back only syncs with the targets that \
-            still show it, and is forgotten once none does. --forget-sightings forgets them all (a real change is \
-            met again at the next sync).
+            still show it, and is forgotten once none does. --forget-sightings forgets the detached ones; with \
+            --all, the anchored ones too, among them the one that marks this machine removed (it would write and \
+            upload again until a sync meets the change again).
 
             --json: state (listed, waiting, unlisted, record-pending), notice, heldSince, sightings (epoch, epochId, \
             anchored, sources, seen), unsynced, exported.
@@ -174,8 +175,12 @@ struct DevicesStatus: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("Copy this machine's unsynced files into this folder.", valueName: "dir"))
     var export: String?
 
-    @Flag(name: .customLong("forget-sightings"), help: "Forget every device list this machine met and did not take.")
+    @Flag(name: .customLong("forget-sightings"),
+          help: "Forget the detached device lists this machine met (nothing verifies them).")
     var forgetSightings = false
+
+    @Flag(name: .long, help: "With --forget-sightings: also the anchored ones, removal markers among them.")
+    var all = false
 
     @OptionGroup var output: OutputOptions
 
@@ -198,11 +203,16 @@ struct DevicesStatus: ParsableCommand {
     }
 
     func run() throws {
-        let vault = try access.openVault(.required)
+        if all && !forgetSightings { throw CLIError.usage("--all needs --forget-sightings") }
+        var vault = try access.openVault(.required)
         var forgotten: Int?
         if forgetSightings {
-            forgotten = vault.sightings().count
-            try vault.forgetSightings()
+            if all, vault.sightings().contains(where: { vault.isAnchoredSighting($0) }) {
+                printStderr("sempere: forgetting anchored sightings too: a device change this machine verified (a removal "
+                    + "among them) is no longer remembered; it writes and uploads again until a sync meets the change again")
+            }
+            forgotten = try vault.forgetSightings(anchoredToo: all)
+            if all { vault = try access.openVault(.required) }
         }
         let sightings = vault.sightings().map {
             SightingOut(epoch: $0.epoch, epochId: Hex.encode($0.epochId), anchored: vault.isAnchoredSighting($0),
