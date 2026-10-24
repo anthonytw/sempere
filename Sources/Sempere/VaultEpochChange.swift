@@ -27,6 +27,21 @@ struct EpochFaults: Hashable, Sendable {
         case catchUpRecorded(Int)
         /// Catch-up of file n: in place; the ledger not updated.
         case catchUpPlaced(Int)
+        /// Re-encryption (KH6, design §7.1 step 5) of file n (1-based): the copy under the current key is written,
+        /// not verified.
+        case reencryptWritten(Int)
+        /// Re-encryption of file n: the copy verified, its ledger entry not recorded.
+        case reencryptVerified(Int)
+        /// Re-encryption of file n: its ledger entry is durable, the copy not put in place.
+        case reencryptRecorded(Int)
+        /// Re-encryption of file n: in place (a blob: under its new name), nothing after.
+        case reencryptPlaced(Int)
+        /// Re-encryption of blob file n: the new name is in place and verified, the old name not deleted yet.
+        case beforeOldBlobDeleted(Int)
+        /// A re-encryption's start: the journal is written locally (unbound), no record or vault.json yet.
+        case afterJournal
+        /// A re-encryption's finish: vault.json without `reencryptPending` is written, the journal not removed.
+        case beforeJournalRemoved
     }
     var stop: Point?
 
@@ -174,6 +189,11 @@ extension Vault {
         var created: Date
         var label: String?
         var features: [String]
+        /// The new epoch's key; nil: a fresh one (a re-encryption makes it first, for its journal).
+        var key: VaultEpochKey? = nil
+        /// The re-encryption journal the new `vault.json` binds (KH6, design §7.4): a re-encryption's own, or the
+        /// one still pending, carried to every later epoch until the finish.
+        var journalFile: Data? = nil
     }
 
     /// Writes the new epoch of `plan` (design §5.2 steps 4–5): the record under its final name, then
@@ -182,7 +202,7 @@ extension Vault {
         guard let parentEntry = plan.parentChain.last, let authorKey = plan.author.sign, let authorId = plan.author.id else {
             throw VaultError.epochChangeRefused("the parent epoch's chain is not known")
         }
-        let key = VaultEpochKey.random()
+        let key = plan.key ?? VaultEpochKey.random()
         let epoch = parentEntry.epoch + 1
         var chain = plan.parentChain
         chain[chain.count - 1].additions = plan.parentAdditions
@@ -202,9 +222,11 @@ extension Vault {
         let stamp = RFC3339.string(plan.created)
         let removed = Set(plan.parentList).subtracting(firstList)
         let record = EpochRecord(vaultId: vaultId, root: manifest.root, epoch: epoch, epochId: key.epochId,
+                                 // A re-encryption's record carries no parent key: the journal holds the earlier
+                                 // keys until the finish, and nothing after it (design §7.1 step 4).
                                  parent: EpochRecordParent(epoch: parentEntry.epoch, epochId: parentEntry.epochId,
-                                                           key: plan.parentKey, sealed: plan.sealed,
-                                                           recordHash: plan.parentRecordHash),
+                                                           key: plan.reason == .reencrypt ? nil : plan.parentKey,
+                                                           sealed: plan.sealed, recordHash: plan.parentRecordHash),
                                  chain: chain, created: stamp, by: authorId, reason: plan.reason.rawValue,
                                  removed: removed.sorted { $0.lexicographicallyPrecedes($1) })
         let recordFile = try record.seal(key: key)
@@ -224,7 +246,8 @@ extension Vault {
             epochId: key.epochId, parent: parentEntry.epochId, epochRecord: Self.epochsName + "/" + record.fileName,
             epochRecordHash: Data(SHA256.hash(data: recordFile)), keys: keys, listTag: "", epochLink: entry.link,
             epochAuthor: authorId, epochSig: entry.epochSig, markersTag: "", author: authorId,
-            authorSig: Self.placeholderSignature, features: plan.features, label: plan.label, reencryptPending: nil,
+            authorSig: Self.placeholderSignature, features: plan.features, label: plan.label,
+            reencryptPending: plan.journalFile.map { ReencryptJournal.binding(journalFile: $0, vaultId: vaultId, currentKey: key) },
             parentList: entry.parentList, epochReason: plan.reason.rawValue, home: plan.home, recoverySig: entry.recoverySig)
         try Self.seal(&m, key: key, signing: plan.signing, author: authorId)
         // The record is durable under its final name before vault.json names it (design §5.2 step 4): a crash
@@ -332,11 +355,13 @@ extension Vault {
 
     /// The steps every home epoch change shares (design §5.2): this device's catch-up, then under the
     /// write lock the sealed set, the record and `vault.json`, then the pin.
-    mutating func changeEpoch(reason: EpochReason, now: Date,
+    mutating func changeEpoch(reason: EpochReason, now: Date, key: VaultEpochKey? = nil, journalFile: Data? = nil,
                               _ decide: (EpochManifest) throws -> (devices: [EpochKeyEntry], recovery: EpochKeyEntry?,
                                                                      author: EpochKeyEntry, signing: DeviceSigningKeys,
                                                                      home: Data, recoverySigner: (DeviceSigningKeys, ChainAuthor)?))
         throws -> EpochChangeReport {
+        // A re-encryption still pending stays bound in every later epoch until its finish (design §7.2, §7.4).
+        let journalFile = try journalFile ?? pendingJournalToCarry()
         // This device's own files of earlier epochs first (design §5.2 step 2), so it seals them too.
         _ = try catchUp()
         let held = unlockIdentities.first { Self.recipientString(of: $0) == deviceEntry?.key }
@@ -352,7 +377,8 @@ extension Vault {
                                  parentList: m.keys.map(\.fingerprint), parentAdditions: currentAdditions(),
                                  devices: d.devices, recovery: recovery, home: d.home, author: d.author, signing: d.signing,
                                  recoverySigner: d.recoverySigner.map { (keys: $0.0, author: $0.1) }, sealed: sealed,
-                                 parentRecordHash: m.epochRecordHash, created: now, label: m.label, features: m.features)
+                                 parentRecordHash: m.epochRecordHash, created: now, label: m.label, features: m.features,
+                                 key: key, journalFile: journalFile)
             let (written, key) = try writeEpoch(plan)
             result = (written, key, sealed.count)
         }
@@ -591,6 +617,10 @@ extension Vault {
         if let dup = DeviceIds.duplicate(in: devices) {
             throw VaultError.epochChangeRefused("two kept devices share the id \(dup): keep only one of them")
         }
+        // A re-encryption at or below the takeover's parent is kept, and stays bound while pending; one above it is
+        // dropped with its journal (design §7.2).
+        let keepsReencryption = vault.reencryptEpoch.map { $0.epoch <= ctx.parentEpoch } ?? false
+        let journalFile = keepsReencryption ? try vault.pendingJournalToCarry() : nil
         var result: (EpochManifest, Int)?
         try vault.epochWriteLock.withLock(timeout: 30) {
             _ = try vault.requireUnchangedOnDisk()
@@ -600,7 +630,7 @@ extension Vault {
                                  recovery: ctx.recoveryEntry, home: device.fingerprint, author: homeEntry, signing: device.signing,
                                  recoverySigner: (keys: recoverySigning, author: recoveryAuthor), sealed: sealed,
                                  parentRecordHash: ctx.parentRecordHash, created: now,
-                                 label: vault.manifest.label, features: vault.manifest.features)
+                                 label: vault.manifest.label, features: vault.manifest.features, journalFile: journalFile)
             let (written, _) = try vault.writeEpoch(plan)
             result = (written, sealed.count)
         }

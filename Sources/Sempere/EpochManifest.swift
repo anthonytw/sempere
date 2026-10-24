@@ -101,7 +101,8 @@ public struct EpochManifest: Hashable, Sendable {
     /// The message `authorSig` signs.
     public var manifestMessage: Data {
         AuthorMessage.manifest(vaultId: vaultId, root: root, epoch: epoch, epochId: epochId, epochRecordHash: epochRecordHash,
-                               listMessage: listMessage, format: format, features: features)
+                               listMessage: listMessage, format: format, features: features,
+                               reencryptPending: reencryptPending)
     }
 
     /// The listed device entries whose id is `id`.

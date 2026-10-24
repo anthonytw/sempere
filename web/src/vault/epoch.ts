@@ -258,12 +258,16 @@ export function epochMessage(vaultId: string, root: string, epoch: number, epoch
   return concat(parts);
 }
 
-/** `authorSig`'s message; the list digest raw, the features distinct and sorted. */
+/**
+ * `authorSig`'s message; the list digest raw, the features distinct and sorted, then `reencryptPending` (the empty
+ * string when absent: KH6, only home binds and finishes a re-encryption).
+ */
 export function manifestMessage(vaultId: string, root: string, epoch: number, epochId: string, epochRecordHash: string,
-  listMessage: Uint8Array, format: string, features: string[]): Uint8Array {
+  listMessage: Uint8Array, format: string, features: string[], reencryptPending = ""): Uint8Array {
   const distinct = [...new Set(features)].sort(byBytes);
   return concat([encoder.encode("sempere/1 author manifest"), lp(vaultId.toLowerCase()), lp(root), lp(epoch), lp(epochId),
-    lp(epochRecordHash), lp(sha256(listMessage)), lp(format), lp(distinct.length), ...distinct.map((f) => lp(f))]);
+    lp(epochRecordHash), lp(sha256(listMessage)), lp(format), lp(distinct.length), ...distinct.map((f) => lp(f)),
+    lp(reencryptPending)]);
 }
 
 /**

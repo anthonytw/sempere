@@ -94,6 +94,9 @@ public struct ListProblem: Hashable, Sendable, CustomStringConvertible {
         /// No trust record and no root to check the vault against: a device that joined confirms the
         /// home's reply code first (design §6.2 step 4), a recovery reader passes the root.
         case rootUnconfirmed
+        /// `vault.json` binds a re-encryption journal to a re-encryption this device saw finished: an older
+        /// version put back (KH6).
+        case reencryptRolledBack
     }
 
     public var reason: Reason

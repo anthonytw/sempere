@@ -507,6 +507,8 @@ public struct Vault: Sendable {
                 vault.keyring?.addOffChain(off.map { ($0.epoch, $0.key) })
             }
         }
+        // The earlier keys a re-encryption record does not carry (KH6, design §7.2).
+        if chainTrusted { vault.attachReencryptKeys() }
         // Later epochs this device saw on a sync target and did not take (KH4, design §4.3, §5.5).
         if case .device = opener, trust != nil {
             let notices = vault.sightingNotices()

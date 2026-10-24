@@ -49,6 +49,7 @@ final class EpochKeysTests: VaultTestCase {
         }
         struct ManifestFields: Codable {
             var root: String; var epoch: Int; var epochId, epochRecordHash, format: String; var features: [String]
+            var reencryptPending: String
         }
         struct EntrySigned: Codable { var claim: Claim; var message: String; var signatures: [AuthorSig] }
         struct EpochSigned: Codable { var fields: EpochFields; var message: String; var signatures: [AuthorSig] }
@@ -374,7 +375,7 @@ final class EpochKeysTests: VaultTestCase {
             vaultId: vaultId, root: root, chain: chain,
             list: [.init(role: "device", key: "age1pq1d", sign: sign, name: "Ñandú / ☕️"),
                    .init(role: "recovery", key: "age1pq1r", sign: sign, name: "Recovery kit")],
-            markers: VaultMarkers(format: "sempere/1", features: []), reencryptFinished: true, home: fpA)
+            markers: VaultMarkers(format: "sempere/1", features: []), reencryptFinished: k2.epochId, home: fpA)
         XCTAssertEqual(record.pinned?.epochId, k2.epochId)
         XCTAssertEqual(record.pinned?.linkPublicKeys, try LinkPublicKeys(epochKey: k2))
         let data = try JSONEncoder().encode(record)

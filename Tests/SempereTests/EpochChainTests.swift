@@ -157,8 +157,10 @@ final class EpochChainTests: VaultTestCase {
         let manifestMessage = AuthorMessage.manifest(vaultId: vaultId, root: Self.unhex(m.root), epoch: m.epoch,
                                                      epochId: Self.unhex(m.epochId),
                                                      epochRecordHash: Self.unhex(m.epochRecordHash),
-                                                     listMessage: listMessage, format: m.format, features: m.features)
+                                                     listMessage: listMessage, format: m.format, features: m.features,
+                                                     reencryptPending: m.reencryptPending)
         XCTAssertEqual(Hex.encode(manifestMessage), sigs.manifest.message)
+        XCTAssertFalse(m.reencryptPending.isEmpty, "the vector signs a binding")
         XCTAssertTrue(m.features.contains { $0.contains("/") && $0.unicodeScalars.contains { !$0.isASCII } })
 
         let all: [(String, Data, [V.AuthorSig])] = [("entry", entryMessage, sigs.entry.signatures),

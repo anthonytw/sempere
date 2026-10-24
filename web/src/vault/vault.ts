@@ -473,7 +473,8 @@ export async function checkManifest(m: VaultManifest, key: Uint8Array, keys: Epo
   // authorSig: by home, or by the epoch author when it is `author` (the old home writing its handoff).
   const writer = m.author === homeEntry.id ? homeEntry : m.author === epochSigner.id ? epochSigner : undefined;
   const manifest = manifestMessage(m.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash,
-    listTagMessage(m.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash, listEntries(m)), m.format, m.features);
+    listTagMessage(m.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash, listEntries(m)), m.format, m.features,
+    m.reencryptPending ?? "");
   if (!writer?.sign || !verifyAuthorSignature(manifest, sigBytes(m.authorSig), sigBytes(writer.sign))) return tampered("authorSig");
   return { status: "verified" };
 }

@@ -238,6 +238,12 @@ extension Vault {
             return ListCheck(status: .refused(ListProblem(.markersRolledBack, "format or features are older than this "
                 + "device verified")), chain: chain)
         }
+        // A journal bound again to a re-encryption this device saw finished: an older vault.json put back (KH6).
+        if let finished = record.reencryptFinished, manifest.reencryptPending != nil,
+           chain?.entries.last(where: { $0.reason == EpochReason.reencrypt.rawValue })?.epochId == finished {
+            return ListCheck(status: .refused(ListProblem(.reencryptRolledBack, "vault.json binds a re-encryption journal "
+                + "this device saw finished: an older version put back")), chain: chain)
+        }
         guard samePinned else { return ListCheck(status: .verified(.newEpoch), chain: chain, dropped: dropped) }
         // Under one epoch the list only grows (design §5.1): an entry this device verified is still
         // there, with the same key and signing keys (its name may change).
@@ -298,7 +304,10 @@ extension Vault {
             chain = [try .init(epoch: 1, key: secret, parent: nil, list: manifest.firstList.sorted { $0.lexicographicallyPrecedes($1) },
                                recovery: recovery, home: manifest.home, reason: manifest.epochReason)]
         }
-        try saveTrust(chain: chain, list: manifest.keys, home: manifest.home)
+        // A re-encryption on the chain without a journal bound is finished (design §7.1 step 7, KH6).
+        let finished = manifest.reencryptPending == nil
+            ? chain.last(where: { $0.reason == EpochReason.reencrypt.rawValue })?.epochId : nil
+        try saveTrust(chain: chain, list: manifest.keys, home: manifest.home, reencryptFinished: finished)
         // The key of every epoch this device pinned (not only those it wrote under): a takeover may drop the
         // epoch later, and its files here then read as set aside (dropped) rather than unreadable, so an
         // accepted copy replaces them (design §5.4 step 4; KH4).
@@ -317,15 +326,27 @@ extension Vault {
                       list: manifest.keys.filter { listed.contains($0.fingerprint) }, home: last.home)
     }
 
-    private func saveTrust(chain: [EpochTrustRecord.ChainEpoch], list: [EpochKeyEntry], home: Data) throws {
+    private func saveTrust(chain: [EpochTrustRecord.ChainEpoch], list: [EpochKeyEntry], home: Data,
+                           reencryptFinished: Data? = nil) throws {
         guard let trustStore else { return }
         var record = try EpochTrustRecord(
             vaultId: vaultId, root: manifest.root, chain: chain,
             list: list.map { EpochTrustRecord.Entry(role: $0.role.rawValue, key: $0.key, sign: $0.sign, name: $0.name) },
             markers: VaultMarkers(manifest), home: home)
-        if let memo = trustMemo.last, memo.vaultId == vaultId { record.markers = record.markers.merged(with: memo.markers) }
+        if let memo = trustMemo.last, memo.vaultId == vaultId {
+            record.markers = record.markers.merged(with: memo.markers)
+            record.reencryptFinished = reencryptFinished ?? memo.reencryptFinished
+        } else {
+            record.reencryptFinished = reencryptFinished
+        }
         guard trustMemo.last != record else { return }
-        if let stored = try trustStore.record(for: vaultId) { record.markers = record.markers.merged(with: stored.markers) }
+        if let stored = try trustStore.record(for: vaultId) {
+            record.markers = record.markers.merged(with: stored.markers)
+            // Kept while the chain still holds it (a takeover that drops it drops the mark too).
+            if reencryptFinished == nil, let f = stored.reencryptFinished, chain.contains(where: { $0.epochId == f }) {
+                record.reencryptFinished = f
+            }
+        }
         try trustStore.save(record)
         trustMemo.last = record
     }
@@ -384,9 +405,12 @@ extension Vault {
         let base = Set(older.keys.map(\.fingerprint))
         guard base.isSubset(of: Set(newer.keys.map(\.fingerprint))), (try? newer.check(key: secret, verifiedList: base)) != nil,
               VaultMarkers(older).isCovered(by: newer) else { return false }
+        // A re-encryption's binding only goes (its finish, design §7.1 step 7): never added or changed in one epoch.
+        if let p = newer.reencryptPending, p != older.reencryptPending { return false }
+        let finished = older.reencryptPending != nil && newer.reencryptPending == nil
         // Only the list may grow and names change; nothing else of the epoch moves.
         let names = Dictionary(newer.keys.map { ($0.fingerprint, $0.name) }, uniquingKeysWith: { a, _ in a })
-        return newer.keys.count > older.keys.count || older.keys.contains { names[$0.fingerprint] != $0.name }
+        return finished || newer.keys.count > older.keys.count || older.keys.contains { names[$0.fingerprint] != $0.name }
     }
 
     /// Whether a `vault.json` received from elsewhere (a sync server, a provider's other version) may

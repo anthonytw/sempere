@@ -182,10 +182,13 @@ const epochMessage = Buffer.concat([enc.encode("sempere/1 author epoch"), lp(vau
   lp(epochFields.recovery), lp(epochFields.home), lpList(epochFields.list), lpList(epochFields.parentList)]);
 const features = ["zeta", "ñ/emoji ☕️", "zeta"];
 const distinct = [...new Set(features)].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
-const manifestFields = { root: hex(root), epoch: 2, epochId: e2.epochId, epochRecordHash, format: "sempere/1", features };
+// A re-encryption in progress (KH6): its binding is signed too.
+const reencryptPending = hex(sha256("reencrypt pending vector"));
+const manifestFields = { root: hex(root), epoch: 2, epochId: e2.epochId, epochRecordHash, format: "sempere/1", features,
+  reencryptPending };
 const manifestMessage = Buffer.concat([enc.encode("sempere/1 author manifest"), lp(vaultId), lp(manifestFields.root),
   lp("2"), lp(manifestFields.epochId), lp(epochRecordHash), lp(sha256(listMessage)), lp("sempere/1"),
-  lp(String(distinct.length)), ...distinct.map((f) => lp(f))]);
+  lp(String(distinct.length)), ...distinct.map((f) => lp(f)), lp(reencryptPending)]);
 const nobleSig = (m: Uint8Array): AuthorSig => ({
   by: "noble",
   p256: hex(p256.sign(m, signerScalar, { prehash: true })),
