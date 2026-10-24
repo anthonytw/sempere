@@ -227,6 +227,8 @@ extension AppModel {
                         ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil)
                     // A complete two-way run records this device's last sync, for home's stale-removal warning (KH4).
                     options.recordSynced = true
+                    // An upload-only run honors this device's sightings by epoch number (KH4, J5b).
+                    options.epochTrust = AppModel.defaultTrust
                     request.apply(to: &options)
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }

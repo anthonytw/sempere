@@ -62,6 +62,10 @@ public struct SyncOptions: Sendable {
     /// two-way run (key-hierarchy design §5.5: the removal sheet's stale-sync warning), at most once per
     /// `SyncEngine.syncedInterval`. The CLI's sync commands and the app set it.
     public var recordSynced = false
+    /// This device's trust store, for a run without the vault's key (upload-only, or a locked vault): it honors the
+    /// device's sightings by epoch number alone (key-hierarchy design §4.3 J5b; review of #86, S3). A run with the
+    /// key uses the vault's own.
+    public var epochTrust: (any EpochTrustStore)?
     /// Where notes are summarized for that file through the summary cache
     /// (format.md §10); nil reads every changed note.
     public var summaryCacheDirectory: URL?
@@ -426,6 +430,13 @@ public final class SyncEngine {
         budget = RunBudget(options.limits)
         // A device this device's sightings say is unlisted uploads nothing (design §5.5).
         if let notice = vault?.unlistedNotice { holdForEpoch(unlisted: notice) }
+        // A run that cannot judge (upload-only, or without the key) honors the sightings by epoch number (S3).
+        if options.pushOnly || epochJudge == nil, !options.dryRun, let local = try? localMutable(Vault.manifestName),
+           let hold = Vault.sightingHoldByNumber(local, store: vault?.publicTrustStore ?? options.epochTrust,
+                                                 location: transport.location) {
+            holdForEpoch(waiting: hold.why)
+            epochStatus.heldSince = hold.seen
+        }
         let rootEntries = try transport.list([]) ?? []
         try budget.list(rootEntries.count)
         let remoteRoot = Dictionary(rootEntries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })

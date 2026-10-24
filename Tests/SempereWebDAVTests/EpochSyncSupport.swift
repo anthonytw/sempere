@@ -16,9 +16,10 @@ final class EpochTarget: @unchecked Sendable {
     /// When false, every request fails (the target cannot be reached).
     var reachable = true
 
-    init(_ name: String, store: MemoryStore = MemoryStore()) {
+    init(_ name: String, store: MemoryStore? = nil) {
         self.name = name
-        self.store = store
+        // Named after the target, so each has its own location (sightings are scoped by it).
+        self.store = store ?? MemoryStore(name: name)
     }
 
     /// Reads the target for checks (never faulted); nil: the memory store.
@@ -162,6 +163,7 @@ final class EpochSyncDevice: @unchecked Sendable {
     @discardableResult
     func syncLocked(_ target: EpochTarget, _ edit: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
         var o = SyncOptions(deviceLabel: name)
+        o.epochTrust = trust
         tune(&o)
         edit(&o)
         return try SyncEngine(directory: folder, vault: nil, remote: target.remote(for: name), stateURL: stateURL(target),
@@ -174,6 +176,7 @@ final class EpochSyncDevice: @unchecked Sendable {
         var o = SyncOptions(deviceLabel: name)
         o.pushOnly = true
         o.keepServerChanges = true
+        o.epochTrust = trust
         tune(&o)
         return try SyncEngine(directory: folder, vault: nil, remote: target.remote(for: name), stateURL: stateURL(target),
                               options: o).run()

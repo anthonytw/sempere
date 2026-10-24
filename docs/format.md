@@ -4313,7 +4313,8 @@ changed since the last run:
     (`If-Match`);
   - a home conflict, or versions that are not one writer's: both kept, never merged, reported.
   A run without the key (a locked vault's upload-only run) compares only epoch numbers: a target holding a later
-  or another epoch makes it upload nothing new.
+  or another epoch makes it upload nothing new. It also honors the device's sightings (§15.10) by number: one above
+  the local epoch holds it back (an anchored one on every target, a detached one on the targets that showed it).
 - **Received files** under an earlier key are judged by the acceptance rule (§15.14) before they are placed: one
   that is set aside is kept in the set-aside store and never placed (not quarantined); one whose key's record
   has not arrived is **pending**: not placed, not quarantined, fetched again once a record or `vault.json`

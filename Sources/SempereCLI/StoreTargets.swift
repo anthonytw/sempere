@@ -241,6 +241,7 @@ struct StoreSync: ParsableCommand {
         base.arrivalWait = TimeInterval(wait ?? 30)
         base.localWriteLock = store.writeLock(for: entry.vaultId)
         base.recordSynced = true
+        base.epochTrust = trustStore()
         // A joining machine takes its approval with its key (KH4).
         if !vault.canRead { base.firstPullIdentities = try access.readingIdentities(vaultId: vault.vaultId) }
 

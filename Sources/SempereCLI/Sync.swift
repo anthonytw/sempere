@@ -173,6 +173,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         var options = SyncOptions(dryRun: dryRun)
         options.deviceID = SyncCLI.deviceID()
         options.recordSynced = true
+        options.epochTrust = trustStore()
         if deleteExtraneous && !pushOnly { throw CLIError.usage("--delete-extraneous needs --push-only") }
         if keepServerChanges && !pushOnly { throw CLIError.usage("--keep-server-changes needs --push-only") }
         options.pushOnly = pushOnly

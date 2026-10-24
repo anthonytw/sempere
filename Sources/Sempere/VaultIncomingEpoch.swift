@@ -459,6 +459,26 @@ extension Vault {
         if all != before { try? trustStore.saveSightings(all, for: vaultId) }
     }
 
+    /// The trust store this vault was opened with, if any.
+    public var publicTrustStore: (any EpochTrustStore)? { trustStore }
+
+    /// For a run that cannot judge (upload-only, or without the key; review of #86, S3): a sighting of an epoch
+    /// above the local `vault.json`'s holds it back by number alone. An anchored one (its parent on the trust
+    /// record's chain) holds every target, a detached one the targets that showed it. Nil: no hold.
+    public static func sightingHoldByNumber(_ local: Data, store: (any EpochTrustStore)?, location: String)
+        -> (why: String, seen: Date)? {
+        guard let store, let m = try? readManifest(local),
+              let all = try? store.sightings(for: m.vaultId), !all.isEmpty else { return nil }
+        let pinned = Set(((try? store.record(for: m.vaultId)) ?? nil)?.chain.map(\.epochId) ?? [])
+        let holding = all.filter { s in
+            guard s.epoch > m.epoch, let parent = (try? readManifest(s.manifest))?.parent else { return false }
+            return pinned.contains(parent) || s.shown(at: location)
+        }
+        guard let first = holding.min(by: { $0.seen < $1.seen }) else { return nil }
+        return ("this device met a later device list (epoch \(first.epoch), at \(first.source)) it has not verified; a "
+            + "two-way run with the vault's key checks it", first.seen)
+    }
+
     /// Forgets every sighting (`sempere devices status --forget-sightings`): a real device change is met again on
     /// the next sync and remembered again.
     public func forgetSightings() throws {

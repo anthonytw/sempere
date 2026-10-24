@@ -185,4 +185,26 @@ final class EpochStorageAttackTests: SyncTestCase {
         XCTAssertEqual(r.epoch?.taken, 3)
         XCTAssertTrue(try w["B"].open().sightings().isEmpty)
     }
+
+    /// S3: an upload-only run (no key) honors the sightings by epoch number: held on the target that showed a
+    /// later list, not on one that never did (a detached sighting).
+    func testAnUploadOnlyRunHonorsSightingsByNumber() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "X", "Y"], targets: ["T1", "T2"])
+        let t1 = w.target("T1"), t2 = w.target("T2")
+        try w["B"].sync(t2)
+        var a = try w["A"].open()
+        try a.removeDevices([w["X"].id])
+        try a.removeDevices([w["Y"].id])
+        try w["A"].sync(t1)
+        for r in records(t1) where !r.hasPrefix("1-") { t1.store.removeDirect([Vault.epochsName, r]) }
+        XCTAssertNotNil(try w["B"].sync(t1).epoch?.waiting)
+        _ = try w["B"].write("written while a change waits")
+        let held = try w["B"].push(t1)
+        XCTAssertNotNil(held.epoch?.waiting)
+        XCTAssertNotNil(held.epoch?.heldSince)
+        XCTAssertTrue(held.uploaded.allSatisfy { $0.hasPrefix("epochs/") }, "\(held.uploaded)")
+        let other = try w["B"].push(t2)
+        XCTAssertNil(other.epoch?.waiting)
+        XCTAssertFalse(other.uploaded.isEmpty)
+    }
 }
