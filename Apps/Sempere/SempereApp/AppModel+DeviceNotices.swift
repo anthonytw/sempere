@@ -154,13 +154,22 @@ extension AppModel {
         }
     }
 
-    /// An unlisted device takes no more voice notes for this vault (review of #87, M3): it could never deliver
-    /// them. Its quick-capture profile is deleted, so the widget, the Lock Screen and Shortcuts say "Set Up"; what
-    /// is in the inbox already stays (the unlisted screen saves it).
-    func suspendQuickCaptureIfUnlisted() {
-        guard let vault, vault.unlistedNotice != nil || unlistedNotice != nil,
-              let stored = try? storedQuickCaptureProfile(), stored.profile.vaultId == vault.vaultId else { return }
-        try? disableQuickCapture()
+    /// An unlisted device takes no new voice notes for this vault (review of #87, M3 and R1): they could never
+    /// reach it. Its quick-capture profile is marked suspended, not deleted: a start says why it is refused, while
+    /// a recording in progress, leftovers and the queue still seal into `inbox/` with ledger entries (the unlisted
+    /// screen's Save Files covers them). Listed again, the suspension is lifted with the notebook choice kept.
+    func syncQuickCaptureSuspension() {
+        guard let vault, phase == .unlocked, !vault.isRecoveryOpen,
+              var stored = try? storedQuickCaptureProfile(), stored.profile.vaultId == vault.vaultId else { return }
+        let unlisted = vault.unlistedNotice != nil || unlistedNotice != nil
+        guard unlisted != (stored.suspended == true) else { return }
+        stored.suspended = unlisted ? true : nil
+        do {
+            try quickCapture.store.save(stored)
+            quickCapture.publishStatus()
+        } catch {
+            inboxLog.error("quick capture suspension not saved: \(String(describing: error), privacy: .public)")
+        }
     }
 
     // MARK: - Repair: set-aside files (design §5.8)

@@ -16515,13 +16515,14 @@
         }
       }
     },
-    "Save Files copies them as they are, encrypted: the recovery kit opens them (with sempere or stock age). Export makes PDFs or images of the notes. The notes stay readable here." : {
+    "Save Files copies them as they are, encrypted. Opening them takes the recovery kit and the vault.json file and epochs folder from another copy of the vault (with sempere or stock age). Export makes PDFs or images of the notes. The notes stay readable here." : {
+      "comment" : "Unlisted screen footer: what Save Files and Export do; vault.json and epochs are file names, not translated",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guardar archivos los copia tal cual, cifrados: el kit de recuperación los abre (con sempere o con age). Exportar hace PDF o imágenes de las notas. Las notas siguen legibles aquí."
+            "value" : "Guardar archivos los copia tal cual, cifrados. Para abrirlos hacen falta el kit de recuperación y el archivo vault.json y la carpeta epochs de otra copia de la bóveda (con sempere o con age). Exportar hace PDF o imágenes de las notas. Las notas siguen legibles aquí."
           }
         }
       }
@@ -21656,6 +21657,18 @@
         }
       }
     },
+    "This device was removed from the vault's device list: it takes no new voice notes until it is added again." : {
+      "comment" : "Shown by the app, Siri and Shortcuts when a voice note is refused on a device removed from the vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo se quitó de la lista de dispositivos de la bóveda: no toma notas de voz nuevas hasta que se vuelva a añadir."
+          }
+        }
+      }
+    },
     "This device wrote them, under a device change a takeover undid. They are added again under the vault's current key." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -24649,14 +24662,14 @@
         }
       }
     },
-    "“%@” hasn't synced since the last device change, %@. Changes it made since then will not reach this vault. It will be told it was removed, and can export them." : {
-      "comment" : "Removal warning; the values are a device name and a relative date",
+    "“%@” hasn't synced since a device change %@. Changes it made since then will not reach this vault. It will be told it was removed, and can export them." : {
+      "comment" : "Removal warning; the values are a device name and a relative date (such as “3 days ago”)",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%1$@” no se ha sincronizado desde el último cambio de dispositivos, %2$@. Los cambios que hizo desde entonces no llegarán a esta bóveda. Se le dirá que lo quitaron de la bóveda y podrá exportarlos."
+            "value" : "“%1$@” no se ha sincronizado desde un cambio de dispositivos %2$@. Los cambios que hizo desde entonces no llegarán a esta bóveda. Se le dirá que lo quitaron de la bóveda y podrá exportarlos."
           }
         }
       }

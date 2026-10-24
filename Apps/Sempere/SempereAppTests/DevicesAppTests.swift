@@ -195,6 +195,38 @@ struct DevicesAppTests {
         #expect(again.takeoverAlert == nil)
     }
 
+    /// Re-check of #87, M1: a device that first runs the alerts with no stored set (an upgrade) is told of a
+    /// takeover made after it was added; one added after the takeover is not.
+    @Test func firstSightReportsTakeoversAfterTheDeviceWasAdded() async throws {
+        let w = try World(others: ["Phone"])
+        let phone = try #require(w.others["Phone"])
+        let newcomer = try DeviceKeys.generate()
+        let newcomerTrust = MemoryEpochTrustStore()
+        let root = try Vault.open(at: w.url).root
+        _ = try Vault.takeover(at: w.url, device: newcomer, recovery: w.recovery, keep: [phone.keys.fingerprint],
+                               name: "New iPad", kind: "ipad", trust: newcomerTrust, root: root)
+        let upgraded = try await w.model("Phone", defaults: Self.defaults())
+        let alert = try #require(upgraded.takeoverAlert, "added at epoch 1, before the takeover: reported")
+        #expect(alert.by == "New iPad")
+        upgraded.close()
+
+        // A device the new home adds afterwards: the takeover is history from before it.
+        let late = try DeviceKeys.generate()
+        let lateTrust = MemoryEpochTrustStore()
+        var home = try Vault.open(at: w.url, identities: [newcomer.nativeIdentity], signing: newcomer.signing, trust: newcomerTrust)
+        let words = try home.approveDevice(late.joinRequest(vaultId: home.vaultId, name: "Late", kind: "iphone"))
+        var joined = try Vault.open(at: w.url, identities: [late.nativeIdentity], signing: late.signing, trust: lateTrust)
+        try joined.confirmJoin(words: words)
+        #expect(joined.deviceAddedEpoch == joined.manifest.epoch)
+        let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: lateTrust)
+        model.takeoverDefaults = Self.defaults()
+        try await model.openVault(at: w.url)
+        try await model.unlock(device: late)
+        defer { model.close() }
+        await model.checkTakeovers()
+        #expect(model.takeoverAlert == nil, "added after the takeover: not reported")
+    }
+
     /// Review of #87, M2: the line typed back is never the fixed prefix line.
     @Test func theKitCheckNeverAsksForThePrefixLine() throws {
         let kit = try MLKEM768X25519Identity()
@@ -429,40 +461,49 @@ struct UnlistedOverSyncAppTests {
         #expect(facts.unsynced.isEmpty, "everything it wrote reached the server")
     }
 
-    /// Review of #87, M3: once unlisted, the device takes no more voice notes (its profile is gone), and the ones it
-    /// holds that never reached a target are counted apart and saved by Save Files.
-    @Test func anUnlistedDeviceStopsTakingVoiceNotesAndSavesTheOnesItHolds() async throws {
+    /// Review of #87, M3, and its re-check, R1: once unlisted, the device takes no new voice notes (its profile is
+    /// suspended, not deleted), while the recording in progress and a leftover are still sealed into `inbox/` with
+    /// ledger entries, counted apart and saved by Save Files. Listed again, the suspension is lifted with the
+    /// notebook kept.
+    @Test func anUnlistedDeviceSuspendsVoiceNotesSealsWhatItHoldsAndResumesWhenListed() async throws {
         let root = try TestTemp.directory("unlisted-capture")
         var s = try await Self.setUp(trust: MemoryEpochTrustStore(), writeStores: root)
         let model = s.model
         defer { model.close() }
-        let qc = QuickCapture()
-        qc.store = MemoryCaptureProfileStore()
-        model.quickCapture = qc
-        try model.enableQuickCapture()
-        let profile = try #require(try model.storedQuickCaptureProfile()).profile
-        // A voice note recorded here that has not reached the server yet.
-        let writer = try CaptureWriter(profile: profile)
-        let sealed = try writer.seal(audio: Data("audio".utf8), started: Date())
-        let vaultID = try #require(model.vault?.vaultId)
-        try writer.record(sealed, in: try #require(model.writeStores).ledger(for: vaultID))
-        let folder = try #require(model.vaultURL)
-        try CaptureWriter.store(sealed, in: folder.appendingPathComponent("inbox"))
+        let qc = Self.quickCapture(for: model)
+        try model.enableQuickCapture(notebook: "Field", transcribe: false)
+        // A voice note in progress when the removal arrives.
+        try await qc.start()
+        #expect(qc.state == .recording)
 
         try s.home.removeDevices([s.phone.id])
         try s.sync()
         _ = await model.webdav?.syncNow()
         #expect(await TS.waitUntil(timeout: .seconds(10)) { model.vault?.unlistedNotice != nil })
-        #expect(try model.storedQuickCaptureProfile() == nil, "quick capture is suspended")
+        #expect(await TS.waitUntil { (try? model.storedQuickCaptureProfile())??.suspended == true }, "suspended, not deleted")
+        #expect(try model.storedQuickCaptureProfile()?.profile.notebook == "Field")
+
+        let outcome = try await qc.stop()
+        #expect(outcome.delivery == .vault, "the recording in progress is still sealed")
+        await #expect(throws: QuickCaptureError.notOnDeviceList) { try await qc.start() }
+        #expect(qc.state == .idle)
+        // A recording a crash left: the sweep still seals it.
+        let leftover = try QuickCaptureTests.crashLeftRecording(in: qc.root)
+        await qc.sweep()
+        #expect(!FileManager.default.fileExists(atPath: leftover.path))
+        let leftoverID = try #require(UUID(uuidString: leftover.lastPathComponent))
+
         let facts = await model.unlistedFacts()
-        #expect(facts.captures == 1, "\(facts.unsynced)")
-        #expect(facts.unsynced.contains("inbox/\(sealed.name)"))
-        #expect(facts.notes.isEmpty, "Export of notes would not cover it")
+        #expect(facts.captures == 2, "\(facts.unsynced)")
+        #expect(facts.unsynced.contains("inbox/\(CaptureFile.name(outcome.id, .capture))"))
+        #expect(facts.unsynced.contains("inbox/\(CaptureFile.name(leftoverID, .capture))"))
+        #expect(facts.notes.isEmpty, "Export of notes would not cover them")
         let out = try TestTemp.directory("unlisted-out")
         #expect(try await model.exportUnsyncedFiles(facts.unsynced, to: out) == facts.unsynced.count)
         let saved = try FileManager.default.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)
-        let inbox = try #require(saved.first).appendingPathComponent("inbox/\(sealed.name)")
-        #expect(try Data(contentsOf: inbox) == sealed.data)
+        let copy = try #require(saved.first).appendingPathComponent("inbox/\(CaptureFile.name(outcome.id, .capture))")
+        let folder = try #require(model.vaultURL)
+        #expect(try Data(contentsOf: copy) == Data(contentsOf: folder.appendingPathComponent("inbox/\(CaptureFile.name(outcome.id, .capture))")))
 
         // Forget All (the warning's choice) forgets the removal marker: the vault reopens listed until a sync meets
         // the change again.
@@ -470,6 +511,43 @@ struct UnlistedOverSyncAppTests {
         try await model.forgetSightings(anchoredToo: true)
         #expect(model.vault?.unlistedNotice == nil)
         #expect(model.sightingRows.isEmpty)
+    }
+
+    /// Re-check of #87, R1: a device listed again (its open vault and its targets say so) gets voice notes back,
+    /// with the notebook it had.
+    @Test func aListedDeviceLiftsTheSuspensionKeepingTheNotebook() async throws {
+        let w = try DevicesAppTests.World(others: ["Phone"])
+        let model = try await w.model("Phone")
+        defer { model.close() }
+        let qc = Self.quickCapture(for: model)
+        try model.enableQuickCapture(notebook: "Field", transcribe: false)
+        var stored = try #require(try model.storedQuickCaptureProfile())
+        stored.suspended = true   // as an earlier unlisting left it
+        try qc.store.save(stored)
+        await #expect(throws: QuickCaptureError.notOnDeviceList) { try await qc.start() }
+        model.refreshQuickCaptureProfile()
+        let lifted = try #require(try model.storedQuickCaptureProfile())
+        #expect(lifted.suspended == nil)
+        #expect(lifted.profile.notebook == "Field")
+        try await qc.start()
+        #expect(qc.state == .recording)
+        _ = try await qc.stop()
+    }
+
+    /// A quick-capture instance for `model` that records with the fake backend and keeps its files in temp folders.
+    static func quickCapture(for model: AppModel) -> QuickCapture {
+        let qc = QuickCapture()
+        qc.store = MemoryCaptureProfileStore()
+        qc.backend = { FakeCapture() }
+        qc.microphoneAllowed = { true }
+        qc.transcriber = nil
+        qc.root = QuickCaptureTests.temp("devices-qc-root")
+        qc.queueRoot = QuickCaptureTests.temp("devices-qc-queue")
+        qc.center = NotificationCenter()
+        qc.showsActivity = false
+        qc.writeStores = model.writeStores
+        model.quickCapture = qc
+        return qc
     }
 
     /// Design §5.2 step 2: a target the run before a change cannot reach is named; the change goes ahead.

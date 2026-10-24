@@ -340,16 +340,24 @@ extension AppModel {
     func applyTakeovers(_ takeovers: [DeviceHistoryEvent], vault: Vault) {
         let key = Self.takeoverAckKey(vault.vaultId)
         let defaults = takeoverDefaults
-        guard var acknowledged = defaults.stringArray(forKey: key) else {
-            defaults.set(Array(takeovers.map { Self.idText($0.epochId) }.suffix(Self.acknowledgedTakeoversLimit)), forKey: key)
-            return
+        let acknowledged: [String]
+        if let stored = defaults.stringArray(forKey: key) {
+            acknowledged = stored
+        } else {
+            // First sight (a new install, or one from before the alerts): only the takeovers up to the epoch this
+            // device was added at are known history; later ones happened while it was listed and are reported
+            // (review of #87 re-check, M1). Stored oldest first, so the limit keeps the newest.
+            let added = vault.deviceAddedEpoch ?? Int.max   // unknown: all of them, as before
+            acknowledged = takeovers.filter { $0.epoch <= added }.reversed().map { Self.idText($0.epochId) }
+            defaults.set(Array(acknowledged.suffix(Self.acknowledgedTakeoversLimit)), forKey: key)
         }
+        var updated = acknowledged
         let mine = vault.deviceFingerprint
         let fresh = takeovers.filter { !acknowledged.contains(Self.idText($0.epochId)) }
         let own = fresh.filter { $0.author.fingerprint == mine }
         if !own.isEmpty {
-            acknowledged += own.map { Self.idText($0.epochId) }
-            defaults.set(Array(acknowledged.suffix(Self.acknowledgedTakeoversLimit)), forKey: key)
+            updated += own.reversed().map { Self.idText($0.epochId) }
+            defaults.set(Array(updated.suffix(Self.acknowledgedTakeoversLimit)), forKey: key)
         }
         let others = fresh.filter { $0.author.fingerprint != mine }
         guard let newest = others.first else { return }
@@ -376,7 +384,8 @@ extension AppModel {
     func dismissTakeoverAlert() {
         guard let alert = takeoverAlert else { return }
         let key = Self.takeoverAckKey(alert.vaultID)
-        let acknowledged = (takeoverDefaults.stringArray(forKey: key) ?? []) + alert.epochIds.map(Self.idText)
+        // `epochIds` is newest first; the set is stored oldest first, so the limit keeps the newest.
+        let acknowledged = (takeoverDefaults.stringArray(forKey: key) ?? []) + alert.epochIds.reversed().map(Self.idText)
         takeoverDefaults.set(Array(acknowledged.suffix(Self.acknowledgedTakeoversLimit)), forKey: key)
         takeoverAlert = nil
     }

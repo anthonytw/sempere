@@ -56,6 +56,9 @@ struct QuickCaptureSettingsSection: View {
                 // Not "off" and not "set up": the settings are there, or may be, and cannot be read now.
                 Text(QuickCaptureError.profileUnreadable.description).font(.footnote).foregroundStyle(.orange)
             }
+            if stored?.suspended == true {
+                Text(QuickCaptureError.notOnDeviceList.description).font(.footnote).foregroundStyle(.orange)
+            }
             if let problem { Text(problem).font(.footnote).foregroundStyle(.orange) }
             // Why the Lock Screen / Control Center / Action button / widget shortcuts cannot record,
             // whether or not Quick Voice Notes is set up yet, with the way to the system Settings.
