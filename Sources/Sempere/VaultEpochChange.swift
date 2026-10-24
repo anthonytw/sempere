@@ -178,7 +178,7 @@ extension Vault {
         var home: Data
         /// The author: its device entry (key and signing keys) and signing keys.
         var author: EpochKeyEntry
-        var signing: DeviceSigningKeys
+        var signing: any AuthorSigner
         /// A takeover's recovery key (its signing pair and public keys), or the old kit's optional
         /// signature on a kit replacement.
         var recoverySigner: (keys: DeviceSigningKeys, author: ChainAuthor)?
@@ -293,7 +293,7 @@ extension Vault {
     }
 
     /// Re-opens this vault after an epoch it wrote, as `identity` (the new epoch's device), and pins it.
-    mutating func adopt(after written: EpochManifest, identity: NativeIdentity, signing: DeviceSigningKeys) throws {
+    mutating func adopt(after written: EpochManifest, identity: NativeIdentity, signing: any AuthorSigner) throws {
         var again = try Vault.open(at: url, identities: [identity], signing: signing, trust: trustStore, root: givenRoot ?? written.root,
                                    ledger: ledger, setAside: setAsideStore)
         again.faults = faults
@@ -306,7 +306,7 @@ extension Vault {
     }
 
     /// The common preconditions of an epoch change by home (design §5.2 step 1, §5.6).
-    func requireHomeForEpoch(_ what: String) throws -> (signing: DeviceSigningKeys, home: EpochKeyEntry) {
+    func requireHomeForEpoch(_ what: String) throws -> (signing: any AuthorSigner, home: EpochKeyEntry) {
         try requireWritable()
         try requireCompleteCopy()
         guard isHome, let signing, let home = deviceEntry else {
@@ -357,7 +357,7 @@ extension Vault {
     /// write lock the sealed set, the record and `vault.json`, then the pin.
     mutating func changeEpoch(reason: EpochReason, now: Date, key: VaultEpochKey? = nil, journalFile: Data? = nil,
                               _ decide: (EpochManifest) throws -> (devices: [EpochKeyEntry], recovery: EpochKeyEntry?,
-                                                                     author: EpochKeyEntry, signing: DeviceSigningKeys,
+                                                                     author: EpochKeyEntry, signing: any AuthorSigner,
                                                                      home: Data, recoverySigner: (DeviceSigningKeys, ChainAuthor)?))
         throws -> EpochChangeReport {
         // A re-encryption still pending stays bound in every later epoch until its finish (design §7.2, §7.4).
@@ -648,7 +648,7 @@ extension Vault {
     /// §5.5): its trust record pins the vault, the `vault.json` at hand is a verified next epoch after the
     /// pinned one (`EpochFrontier.verifiedChild`), and its first list omits this device. Nil otherwise (a key
     /// never listed, an epoch it cannot verify).
-    static func removalNotice(_ m: EpochManifest, held: Set<String>, signing: DeviceSigningKeys?,
+    static func removalNotice(_ m: EpochManifest, held: Set<String>, signing: (any AuthorSigner)?,
                               trust: (any EpochTrustStore)?) -> String? {
         guard let trust, let record = try? trust.record(for: m.vaultId), let pinned = record.pinned,
               let frontier = EpochFrontier(record: record), let child = frontier.verifiedChild(m),

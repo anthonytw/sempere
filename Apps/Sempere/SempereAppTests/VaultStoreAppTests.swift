@@ -141,27 +141,6 @@ struct VaultStoreAppTests {
         #expect(relaunched.storedVaultsByUse.map(\.name) == ["Alpha", "Beta"])
     }
 
-    /// A remembered key is bound to a store vault by its place in the store, not the container's path
-    /// (which iOS changes), and unbinding it on removal leaves a later vault there unoffered.
-    @Test func rememberedKeyLocationsOfStoreVaultsAreStable() throws {
-        let root = try BrowserTests.tempDir()
-        let storeA = root.appendingPathComponent("A/Vaults"), storeB = root.appendingPathComponent("B/Vaults")
-        let id = UUID()
-        let vaultA = storeA.appendingPathComponent("\(id.uuidString.lowercased())/Notes.sempere")
-        let vaultB = storeB.appendingPathComponent("\(id.uuidString.lowercased())/Notes.sempere")
-        let docs = root.appendingPathComponent("Documents")
-        #expect(RememberedKeyLocations.location(of: vaultA, onDeviceFolder: docs, storeFolder: storeA)
-                == RememberedKeyLocations.location(of: vaultB, onDeviceFolder: docs, storeFolder: storeB))
-        #expect(RememberedKeyLocations.location(of: vaultA, onDeviceFolder: docs, storeFolder: storeA)
-                != RememberedKeyLocations.location(of: vaultA, onDeviceFolder: docs))
-        let locations = RememberedKeyLocations(onDeviceFolder: docs, storeFolder: storeA)
-        locations.bind(id, to: vaultA)
-        locations.bind(id, to: root.appendingPathComponent("elsewhere.sempere"))
-        locations.unbind(id, from: vaultA)
-        #expect(locations.locations(for: id).count == 1)
-        #expect(!locations.locations(for: id).contains(locations.location(of: vaultA)))
-    }
-
     @Test func copyProgressReads() {
         var progress = VaultCopyProgress(name: "Notes", stage: .copying(done: 3, total: 12))
         #expect(progress.fraction == 0.25)

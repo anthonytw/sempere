@@ -27,7 +27,8 @@ struct SempereApp: App {
         #endif
         let library = VaultLibrary()
         // Remembered keys are offered only where they opened their vault (S16).
-        let keys = RememberedKeys(locations: .onDisk())
+        let keys = RememberedKeys()
+        RememberedKeys.removeOldLocationsFile()
         // A view updated outside its window's environment falls back to these (`AppModelEnvironment`).
         VaultLibrary.current = library
         RememberedKeys.current = keys

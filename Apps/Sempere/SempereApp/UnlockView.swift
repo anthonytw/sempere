@@ -1,43 +1,61 @@
+import Sempere
 import SwiftUI
 
-/// Asks for a key to the open vault: the remembered device key (Face ID
-/// first), a pasted device key file, or the recovery key (pasted, or its
-/// passphrase copy in the vault), which opens the vault read-only. After a
-/// manual unlock with a device key it offers to remember the key
-/// (`RememberedKeys`).
+/// Opens the open vault on this device (key-hierarchy design §6; KH5): with this device's own key (Face ID first
+/// when the vault asks for it), which happens by itself; for a device without one, Join This Device (approved on
+/// the device that manages devices, `JoinDeviceView`), Take Over with the Recovery Kit (`TakeoverView`), or a
+/// read-only look with the recovery key (pasted, or its passphrase copy in the vault).
 struct UnlockView: View {
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var keys: RememberedKeys
     @State private var passphrase = ""
     @State private var identityText = ""
     @State private var failure: String?
+    @State private var joining = false
+    @State private var takingOver = false
+    @State private var confirmForget = false
+    /// What forgetting the key costs (`KeyRemoval`): warned of when this device is home.
+    @State private var forgetRemoval = KeyRemoval()
 
     var body: some View {
         NavigationStack {
-            if let offer = keys.offer, offer.vaultID == model.vault?.vaultId {
-                RememberKeyView(offer: offer)
-            } else {
-                unlockForm
+            Group {
+                if joining || keys.joinStage != nil {
+                    JoinDeviceView { joining = false }
+                } else if takingOver {
+                    TakeoverView(onDone: { takingOver = false })
+                } else {
+                    unlockForm
+                }
             }
         }
     }
 
     private var unlockForm: some View {
         Form {
-            if keys.storage(for: model) != nil {
-                if keys.offersSavedKey(for: model) {
-                    Section {
-                        Button("Unlock with Saved Key", systemImage: "faceid") { Task { await tryRememberedKey() } }
-                            .disabled(keys.isUnlocking)
-                    } footer: {
-                        Text("The key is saved in the Keychain on \(RememberedKeys.deviceName).")
-                    }
-                } else {
-                    Section {
-                        Text("A key for a vault with this id is saved on \(RememberedKeys.deviceName), but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with this device's key file; Sempere then offers to remember the key here too.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+            if let problem = keys.keyProblem {
+                Section {
+                    Label(problem, systemImage: "key.slash").foregroundStyle(.orange)
+                    Button("Forget This Device's Key…", systemImage: "trash", role: .destructive) { Task { await askToForget() } }
+                        .accessibilityIdentifier("unlock.forgetKey")
+                }
+            }
+            if keys.hasKeys(for: model), keys.keyProblem == nil {
+                Section {
+                    Button("Unlock", systemImage: "faceid") { Task { await tryDeviceKey() } }
+                        .disabled(keys.isUnlocking)
+                        .accessibilityIdentifier("unlock.deviceKey")
+                } footer: {
+                    Text("This device's key for the vault is in its Keychain.")
+                }
+            } else {
+                Section {
+                    Button("Join This Device…", systemImage: "person.badge.plus") { joining = true }
+                        .accessibilityIdentifier("unlock.join")
+                    Button("Take Over with Recovery Kit…", systemImage: "key.viewfinder") { takingOver = true }
+                        .accessibilityIdentifier("unlock.takeover")
+                } footer: {
+                    Text("To write from this device, it joins the vault: the device that manages devices approves it with six words. If that device is lost, take over with the recovery kit.")
                 }
             }
             Section {
@@ -45,14 +63,15 @@ struct UnlockView: View {
                     .font(.body.monospaced())
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .privacySensitive()
                     .accessibilityIdentifier("unlock.keyText")
                 Button("Unlock with Key") { unlock { try await keys.unlock(model, identityText: identityText) } }
                     .disabled(identityText.isEmpty)
                     .accessibilityIdentifier("unlock.withKey")
             } header: {
-                Text("Paste a key")
+                Text("Or read with the recovery key")
             } footer: {
-                Text("This device's key file opens the vault to read and write. The recovery key opens it read-only.")
+                Text("The recovery key opens the vault read-only. A device key file made with sempere opens it to write.")
             }
             Section {
                 SecureField("Passphrase", text: $passphrase)
@@ -62,8 +81,7 @@ struct UnlockView: View {
             } header: {
                 Text("Or the recovery key's passphrase")
             } footer: {
-                // TODO(KH5): join this device to the vault from here (a join request approved by home).
-                Text("The vault keeps a copy of its recovery key under a passphrase when one was chosen at its creation. It opens the vault read-only. To write from this device, it must join the vault; that is not available in the app yet.")
+                Text("The vault keeps a copy of its recovery key under a passphrase when one was chosen. It opens the vault read-only.")
             }
             if let failure {
                 Text(failure).foregroundStyle(.red)
@@ -77,23 +95,43 @@ struct UnlockView: View {
             }
         }
         .disabled(model.isBusy || keys.isUnlocking)
+        .confirmationDialog("Forget this device's key for the vault?", isPresented: $confirmForget, titleVisibility: .visible) {
+            Button("Forget Key", role: .destructive) {
+                Task {
+                    do { try await keys.forgetKeys(model) } catch { failure = DeviceChangeText.message(error) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let warning = forgetRemoval.forgetWarning {
+                Text("\(warning) Its notes stay in the vault.", comment: "Forget Key: the warning when this device is home, then this")
+            } else {
+                Text("This device then joins the vault again (approved by the device that manages devices), or takes over with the recovery kit. Its notes stay in the vault.")
+            }
+        }
         .task(id: model.vault?.vaultId) {
-            // A remembered key unlocks at once, after Face ID.
-            await tryRememberedKey()
+            await keys.refresh(model)
+            await tryDeviceKey()
         }
     }
 
-    /// The open vault's name, or a generic word when it has none.
     private var vaultTitle: String {
         model.vaultName ?? String(localized: "Vault", comment: "Fallback name of a vault in “Unlock Vault”")
     }
 
-    private func tryRememberedKey() async {
+    /// Forget Key asks after the home check (re-check of #88, R1): forgetting home's key leaves only the kit.
+    private func askToForget() async {
+        if let id = model.vault?.vaultId {
+            forgetRemoval = await KeyRemoval.check(vaultID: id, at: model.vaultURL, store: keys.store, library: nil)
+        }
+        confirmForget = true
+    }
+
+    private func tryDeviceKey() async {
         failure = nil
-        switch await keys.unlockWithRememberedKey(model) {
-        case .failed(let message): failure = String(localized: "\(message)\nPaste this device's key file instead, or read the vault with its recovery key.",
-                                                    comment: "%@ is why the saved key could not be used")
-        case .unlocked, .noKey, .notHere, .cancelled: break
+        switch await keys.unlockWithDeviceKey(model) {
+        case .failed(let message): failure = message
+        case .unlocked, .noKey, .cancelled, .joining, .keyProblem: break
         }
     }
 
@@ -101,64 +139,6 @@ struct UnlockView: View {
         failure = nil
         Task {
             do { try await action() } catch { failure = "\(error)" }
-        }
-    }
-}
-
-/// After a manual unlock: remember the key on this device (default on). A
-/// device key never goes to iCloud Keychain (design §6.1), so there is no
-/// sync choice. TODO(KH5): shown again once devices join in the app.
-private struct RememberKeyView: View {
-    @AppModelEnvironment private var model
-    @AppEnvironmentObject private var keys: RememberedKeys
-    let offer: RememberedKeys.Offer
-    @State private var remember = true
-    @State private var saving = false
-    @State private var failure: String?
-
-    var body: some View {
-        Form {
-            if offer.replacing != nil {
-                Section {
-                    Text("A key for a vault with this id is saved on \(RememberedKeys.deviceName), but for another folder (another copy of this vault, or a WebDAV vault added again). Remembering this key replaces it, and it is then offered here too.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Section {
-                Toggle("Remember on \(RememberedKeys.deviceName)", isOn: $remember)
-            } footer: {
-                Text(RememberedKeys.deviceOnlyFooter(vaultName: offer.vaultName, biometry: RememberedKeys.biometryName))
-            }
-            if let failure {
-                Text(failure).foregroundStyle(.red)
-            }
-        }
-        .navigationTitle("Remember Key?")
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Not Now") { answer(nil) }
-                    .help("Do not save the key on this device")
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { answer(remember ? .thisDevice : nil) }
-            }
-        }
-        .disabled(saving)
-    }
-
-    private func answer(_ storage: KeyStorage?) {
-        failure = nil
-        saving = true
-        Task {
-            defer { saving = false }
-            do {
-                try await keys.answer(offer, storage: storage)
-            } catch {
-                // Keep the vault unlocked; say why the key was not saved.
-                keys.offer = nil
-                model.errorMessage = String(localized: "The vault is unlocked, but its key could not be saved: \(String(describing: error))")
-            }
         }
     }
 }

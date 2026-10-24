@@ -1,3 +1,4 @@
+import Age
 import Foundation
 import Sempere
 import SempereSync
@@ -313,11 +314,13 @@ extension AppModel {
         let session = SyncSession(
             locationID: targetID, vaultID: vaultID, name: ref.vaultName, lastSuccess: ref.target.lastSuccess,
             run: { [weak self] request in
-                let (target, vault) = await MainActor.run { () -> (SyncTarget?, Vault?) in
+                let (target, vault, join) = await MainActor.run { () -> (SyncTarget?, Vault?, NativeIdentity?) in
                     // Two-way only with the open vault as the disk says it is (review of #70, F1).
-                    let open = self?.syncSessions.contains { $0.locationID == targetID } == true && self?.phase == .unlocked
-                        && self?.syncVaultStale == false
-                    return (store.targets.targets(of: vaultID).first { $0.id == targetID }, open ? self?.vault : nil)
+                    let mine = self?.syncSessions.contains { $0.locationID == targetID } == true
+                    let open = mine && self?.phase == .unlocked && self?.syncVaultStale == false
+                    // A device joining the open, locked vault takes home's approval (key-hierarchy KH5).
+                    let joining = mine && self?.phase == .locked ? self?.joinIdentity : nil
+                    return (store.targets.targets(of: vaultID).first { $0.id == targetID }, open ? self?.vault : nil, joining)
                 }
                 guard let target else { throw SyncTargetError.notFound(targetID.uuidString) }
                 return try await Task.detached(priority: .utility) { () throws -> SyncReport in
@@ -349,6 +352,13 @@ extension AppModel {
                     // the notes before they arrive; never a partial copy (its list is not whole).
                     options.publishSummaries = twoWay && !PartialCopy.isPartial(entry.url)
                     let folderProvider = provider?(access.folder)
+                    if let join {
+                        // A join run (design §6.2): the request goes out, home's approval comes in, keyless.
+                        var joinOptions = options
+                        joinOptions.firstPullIdentities = [join]
+                        return try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: folderProvider,
+                                                       vault: nil, stateURL: stateURL, twoWay: true, options: joinOptions)
+                    }
                     let staging = LockedStaging(targetState: stateURL)
                     // The unlock places what locked runs staged (checked under the key), then the run goes on.
                     let placed = twoWay ? try vault.flatMap { try staging.place(vaultFolder: entry.url, vault: $0, options: options) } : nil

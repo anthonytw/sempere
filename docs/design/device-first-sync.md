@@ -736,7 +736,7 @@ Sizes: S < 300 changed lines, M 300 to 1,000, L > 1,000 (moved lines count once)
 | P8 | BGAppRefresh and BGProcessing for every vault and target with the shared budget (§4.2), reachability, locked staging per vault | M | P5 | iOS timing. Mitigation: owner check 3 | — |
 | P9 | UI: details, Storage, Repair (including late files), the devices-per-target view | M | P5, P6 | — | — |
 | — | **Replaced (2026-10-20):** P4a and P10 are replaced by KH1 to KH6 of `docs/design/key-hierarchy.md` §12; P4 keeps `keys/`, `inbox/` and `summaries/<device>` sync, and its rewrap-replace moves to KH6 | | | | |
-| P10 | Key changes for synced vaults in the app (mode and window in the sheet, Adopt or Export for late files); delete `requireLocalKeyChanges`; outgoing-identity guard | S to M | P4a, P4, P5 | covered by the gate | — |
+| P10 | **Done by KH5** (key-hierarchy design §16.11, §16.12): key changes for synced vaults are the device list's epochs (no modes, no late-file window; set-aside files in Repair). `requireLocalKeyChanges` and the outgoing-identity guard were already gone with KH2 (device keys are never replaced), so nothing was left to delete | S to M | P4a, P4, P5 | covered by the gate | — |
 
 Critical path: P1 → P2 → P4a → P4 → P5 → P6 → P7. P3 runs alongside P4a. P8, P9 and P10 can run in
 parallel after P5. Removing migration made P5 and P6 smaller (about 1 session less); the gate adds about

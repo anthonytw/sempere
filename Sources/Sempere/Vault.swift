@@ -149,7 +149,7 @@ public struct Vault: Sendable {
     public internal(set) var openedWith: Opener = .locked
     /// This device's signing keys, when given and they are its entry's: needed by list changes, which
     /// only home makes (design §5.6).
-    let signing: DeviceSigningKeys?
+    let signing: (any AuthorSigner)?
     /// The notes whose newer revisions this vault (or a copy) has read (format.md §7.3); shared by
     /// every copy.
     let readOnlyLatch = ReadOnlyLatch()
@@ -419,7 +419,7 @@ public struct Vault: Sendable {
     /// - Throws: `notAVault`, `manifestCorrupt` (also for a wrap of this device that does not open to a
     ///   key of this vault), `unsupportedFormat`, `keyNotListed`; `classicIdentity` when only X25519
     ///   identities are given.
-    public static func open(at url: URL, identities: [any AgeIdentity] = [], signing: DeviceSigningKeys? = nil,
+    public static func open(at url: URL, identities: [any AgeIdentity] = [], signing: (any AuthorSigner)? = nil,
                             trust: (any EpochTrustStore)? = nil, root expectedRoot: Data? = nil,
                             ledger: (any WriteLedgerStore)? = nil, setAside: SetAsideStore? = nil) throws -> Vault {
         let manifestURL = url.appendingPathComponent(manifestName)
@@ -555,7 +555,7 @@ public struct Vault: Sendable {
     }
 
     /// Fills `m`'s `listTag` and `markersTag` under `key` and signs it as `author` (home, design §5.6).
-    static func seal(_ m: inout EpochManifest, key: VaultEpochKey, signing: DeviceSigningKeys, author: String) throws {
+    static func seal(_ m: inout EpochManifest, key: VaultEpochKey, signing: any AuthorSigner, author: String) throws {
         m.listTag = EpochListTag.tag(key: key, vaultId: m.vaultId, root: Hex.encode(m.root), epoch: m.epoch,
                                      epochId: Hex.encode(m.epochId), epochRecordHash: Hex.encode(m.epochRecordHash),
                                      entries: m.keys.map(\.listEntry))

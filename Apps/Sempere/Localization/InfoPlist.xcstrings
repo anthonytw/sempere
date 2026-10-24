@@ -8,13 +8,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sempere uses the camera to add photos to your notes."
+            "value" : "Sempere uses the camera to add photos to your notes and to scan the codes of another device or of a recovery kit."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sempere usa la cámara para añadir fotos a tus notas."
+            "value" : "Sempere usa la cámara para añadir fotos a tus notas y para escanear los códigos de otro dispositivo o de un kit de recuperación."
           }
         }
       }
@@ -25,13 +25,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sempere uses Face ID to unlock vaults with keys saved in the Keychain."
+            "value" : "Sempere uses Face ID to unlock a vault that asks for it, and to confirm it is you before it lets a device into a vault or replaces its recovery kit."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sempere usa Face ID para desbloquear bóvedas con claves guardadas en el Llavero."
+            "value" : "Sempere usa Face ID para desbloquear una bóveda que lo pide y para confirmar que eres tú antes de dejar entrar un dispositivo en una bóveda o reemplazar su kit de recuperación."
           }
         }
       }

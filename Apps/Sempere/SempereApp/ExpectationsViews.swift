@@ -163,8 +163,7 @@ struct KeyNoticeView: View {
                 }
                 Section {
                     point(Text("Keep the recovery kit"), symbol: "printer")
-                    // TODO(KH5): saving this device's key for another device (a device joins instead).
-                    Text("The vault's recovery key was shown once, when the vault was created: keep its printed kit, or the key in a password manager, somewhere apart from this device. No device keeps it; it opens the vault read-only.")
+                    Text("The vault's recovery key was shown once, when the vault was created: keep its printed kit, or the key in a password manager, somewhere apart from this device. No device keeps it. It opens the vault read-only, and if the device that manages devices is lost, it takes over.")
                 }
                 Section {
                     point(Text("Keep backups"), symbol: "externaldrive")

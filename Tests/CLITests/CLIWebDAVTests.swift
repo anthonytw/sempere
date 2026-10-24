@@ -421,14 +421,16 @@ final class CLIWebDAVTests: CLITestCase {
         XCTAssertEqual(try cli(["sync", "webdav", url, "--vault", a] + common, env: e).status, 0)
         XCTAssertEqual(try cli(["sync", "webdav", url, "--vault", b] + common, env: e).status, 0)
         // Each copy renames the home device (the fixture's) differently: vault.json changed on both sides.
-        // The runs below are locked (no key), so neither side can tell which version is later.
+        // The first copy's run has the key and uploads its version; the second's is locked (no key), so it cannot
+        // tell which version is later. (A locked run never uploads vault.json itself: review of #88, M1.)
         func rename(_ vault: String, _ name: String) throws {
             let r = try cli(["devices", "rename", "e6f8004e", name, "--vault", vault, "--identity", Self.fixtureKey], env: e)
             XCTAssertEqual(r.status, 0, r.err)
         }
         try rename(a, "one")
         try rename(b, "two")
-        XCTAssertEqual(try cli(["sync", "webdav", url, "--vault", a] + common, env: e).status, 0)
+        let up = try cli(["sync", "webdav", url, "--vault", a, "--identity", Self.fixtureKey] + common, env: e)
+        XCTAssertEqual(up.status, 0, up.err)
         let r = try cli(["sync", "webdav", url, "--vault", b, "--device", "laptop-b"] + common, env: e)
         XCTAssertEqual(r.status, 3, "a conflict exits 3: \(r.err)")
         let names = try FileManager.default.contentsOfDirectory(atPath: b)

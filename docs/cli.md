@@ -200,9 +200,10 @@ sempere keys derive --epoch-key-file FILE [--epoch N] [--vault-id UUID] [--captu
 **Removed.** `keys export` is gone: device keys never leave their device, and
 the vault holds no key file to export (`keys/` holds only the recovery key's
 passphrase copy). The app's key management (adding, removing and replacing
-keys, joining devices) arrives in phase KH5 of the key hierarchy: the device list, removal, Make Home,
-Replace Recovery Kit, the history and Repair are in the app; joining and takeovers follow. Until then the CLI's
-`device` and `devices` commands are the way to join a device.
+keys, joining devices) is in the app since phase KH5 of the key hierarchy (the device list, Add Device, Join This
+Device, Take Over with Recovery Kit); the CLI's `device` and `devices` commands do the same from a terminal. The
+app keeps its signing keys in the Secure Enclave, so an app device has no key file. `--root` takes the kit's 16
+groups with or without their checksums (each given checksum must match, `KitRecovery.parseRootText`, as the app).
 
 ### Devices
 

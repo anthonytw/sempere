@@ -15,14 +15,14 @@ struct UnlockLoadingTests {
         return (model, gate, try String(contentsOf: keyURL, encoding: .utf8))
     }
 
-    @Test func faceIDUnlockReleasesTheSheetBeforeTheNotesAreRead() async throws {
+    @Test func deviceKeyUnlockReleasesTheSheetBeforeTheNotesAreRead() async throws {
         let (model, gate, key) = try await Self.gatedModel()
-        let store = FakeKeyStore()
-        await store.put(key, for: try #require(model.vault?.vaultId))
+        let store = MemoryDeviceKeyStore()
+        try await store.save(try DeviceKeys.parse(key), for: try #require(model.vault?.vaultId), vaultName: "sample")
         let keys = RememberedKeys(store: store)
         await gate.close()
         let start = await gate.arrivals
-        let attempt = Task { await keys.unlockWithRememberedKey(model) }
+        let attempt = Task { await keys.unlockWithDeviceKey(model) }
         await gate.waitForArrivals(start + 1)   // the key check
         await gate.releaseOne()
         #expect(await attempt.value == .unlocked)
@@ -41,7 +41,7 @@ struct UnlockLoadingTests {
 
     @Test func manualUnlockReleasesTheSheetBeforeTheNotesAreRead() async throws {
         let (model, gate, key) = try await Self.gatedModel()
-        let keys = RememberedKeys(store: FakeKeyStore())
+        let keys = RememberedKeys(store: MemoryDeviceKeyStore())
         await gate.close()
         let start = await gate.arrivals
         let unlocking = Task { try await keys.unlock(model, identityText: key) }
@@ -49,7 +49,6 @@ struct UnlockLoadingTests {
         await gate.releaseOne()
         try await unlocking.value
         #expect(model.phase == .unlocked)
-        #expect(keys.offer == nil)          // a pasted device key is not offered to remember (TODO(KH5))
         #expect(!keys.holdsUnlockSheet(model))
         #expect(!model.listLoaded)
         await gate.open()

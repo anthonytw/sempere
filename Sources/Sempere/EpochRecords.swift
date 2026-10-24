@@ -427,6 +427,23 @@ public enum KitRecovery {
         }
     }
 
+    /// The root as typed from the kit: 64 hex digits, in any case, with spaces, line breaks and the kit's line
+    /// checksums in parentheses ignored; nil for anything else. Each group's checksum, when given, must match.
+    public static func parseRootText(_ text: String) -> Data? {
+        let lowered = text.lowercased()
+        // A checksum after a group must be that group's.
+        let pattern = try? NSRegularExpression(pattern: #"([0-9a-f]{4})\s*\(([0-9a-f]{4})\)"#)
+        let ns = lowered as NSString
+        for m in pattern?.matches(in: lowered, range: NSRange(location: 0, length: ns.length)) ?? [] {
+            let group = ns.substring(with: m.range(at: 1)), sum = ns.substring(with: m.range(at: 2))
+            guard String(FileDigest.sha256(Data(group.utf8)).prefix(4)) == sum else { return nil }
+        }
+        let hex = lowered.replacingOccurrences(of: #"\([0-9a-f]{4}\)"#, with: "", options: .regularExpression)
+            .filter { !$0.isWhitespace }
+        guard let data = Hex.decode(hex), data.count == 32 else { return nil }
+        return data
+    }
+
     /// The kit's second QR code: `sempere-root:<vaultId>:<hex>`; also the reverse QR of an approval join.
     public static func rootQR(vaultId: UUID, root: Data) -> String {
         "sempere-root:\(vaultId.uuidString.lowercased()):\(Hex.encode(root))"

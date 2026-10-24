@@ -15,7 +15,7 @@ enum DemoDeviceKey {
         """
 
     /// Unlocks the locked demo through the unlock sheet with `text` and waits for the sheet to close (a
-    /// pasted device key is not offered to remember, TODO(KH5); a "Not Now" is answered if one comes).
+    /// pasted device key unlocks for the session only; a "Not Now" is answered if one comes).
     @MainActor
     static func unlock(_ app: XCUIApplication, timeout: TimeInterval = 90, file: StaticString = #filePath,
                        line: UInt = #line) {

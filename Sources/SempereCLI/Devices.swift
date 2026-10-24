@@ -47,7 +47,7 @@ enum DeviceKeyStore {
         } catch {
             throw CLIError.failure("cannot create \(dir.path): \(error.localizedDescription)")
         }
-        let text = device.fileText(created: Date())
+        let text = try device.fileText(created: Date())
         if let passphrase {
             guard !passphrase.isEmpty else { throw CLIError.usage("the passphrase is empty") }
             let path = dir.appendingPathComponent("device.key.age").path

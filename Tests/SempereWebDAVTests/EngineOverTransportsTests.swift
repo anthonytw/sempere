@@ -237,7 +237,8 @@ class EngineScenarioCase: SyncTestCase {
         }
         try edit("A", "A's idea")
         try edit("B", "B's idea")
-        try run("A", vault: .some(nil))
+        // Another writer puts A's version on the server (a keyless run never uploads vault.json, review of #88 M1).
+        try t.inspector.write(["vault.json"], .data(try vaultJSON("A")), condition: .unconditional)
         let before = try vaultJSON("B")
         let report = try run("B", vault: .some(nil))
         XCTAssertEqual(report.conflicts.map(\.path), ["vault.json"], "\(label): \(report)")
@@ -248,28 +249,29 @@ class EngineScenarioCase: SyncTestCase {
         XCTAssertEqual(remote, try vaultJSON("A"), "\(label): the remote was not touched")
     }
 
-    /// The server's version token of `vault.json` moves between the listing and the upload over the
-    /// same bytes (a server that stamps again, another writer putting the same file back): the local
-    /// change is uploaded, and no conflict copy (identical to the server's copy) is made.
+    /// The server's version token of a mutable file moves between the listing and the upload over the same bytes
+    /// (a server that stamps again, another writer putting the same file back): the local change is uploaded, and
+    /// no conflict copy (identical to the server's copy) is made. (`settings.age`: a keyless run never uploads
+    /// `vault.json`, review of #88 M1.)
     func scenarioManifestStampChangeIsNoConflict() throws {
         _ = try makeVault("A")
         try run("A"); try run("B")
-        let url = dir("B").appendingPathComponent("vault.json")
-        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
-        json["x-test"] = "B's change"
-        try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]).write(to: url)
+        let url = dir("B").appendingPathComponent("settings.age")
+        try Data("age-encryption.org/v1\nsettings one".utf8).write(to: url)
+        try run("B", vault: .some(nil))
+        try Data("age-encryption.org/v1\nsettings two".utf8).write(to: url)
         let inspector = t.inspector
         let done = Locked(false)
         let restamping = BeforeWriteRemote(t.remote) { path in
-            guard path == ["vault.json"], !done.value else { return }
+            guard path == ["settings.age"], !done.value else { return }
             done.value = true
             let same = try inspector.read(path, maxBytes: 1 << 20).data
             try inspector.write(path, .data(same), condition: .unconditional)
         }
         let report = try run("B", via: restamping, vault: .some(nil))
         XCTAssertTrue(report.conflicts.isEmpty, "\(label): \(report)")
-        XCTAssertEqual(report.uploaded, ["vault.json"], "\(label): \(report)")
-        XCTAssertEqual(try t.inspector.read(["vault.json"], maxBytes: 1 << 20).data, try vaultJSON("B"), label)
+        XCTAssertEqual(report.uploaded, ["settings.age"], "\(label): \(report)")
+        XCTAssertEqual(try t.inspector.read(["settings.age"], maxBytes: 1 << 20).data, try Data(contentsOf: url), label)
         let copies = try FileManager.default.contentsOfDirectory(atPath: dir("B").path).filter { $0.contains(".conflict-") }
         XCTAssertEqual(copies, [], label)
         XCTAssertTrue(try run("B", vault: .some(nil)).isEmpty, label)

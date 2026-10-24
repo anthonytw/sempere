@@ -20,9 +20,9 @@ import UIKit
 /// - `SEMPERE_DEBUG_ONBOARDING`: show the key notice and the quick tour by themselves, which
 ///   every other scripted launch skips (`OnboardingPolicy.automatic`).
 /// - `SEMPERE_DEBUG_OWNER_CHECK`: `pass`, `fail` or `cancel` instead of Face ID, Touch ID or the
-///   password whenever the app asks for the owner (`SystemOwnerAuthenticator`: Save Key…, the
-///   recovery kit, key changes), so a UI test can reach what is behind it (`KeyShareMacUITests`).
-///   The remembered-key unlock (`RememberedKeys`, the Keychain) is not affected.
+///   password whenever the app asks for the owner (`SystemOwnerAuthenticator`: Add Device, Replace
+///   Recovery Kit), so a UI test can reach what is behind it. This device's key unlock (`DeviceKeyStore`,
+///   the Keychain) is not affected.
 /// - `SEMPERE_DEBUG_LEFTOVERS`: at launch, before anything is purged, look for plaintext a
 ///   previous run left in the container (decrypted attachments, staged exports and imports,
 ///   a staged key file) and for the given text (a demo note title) in the saved window state,

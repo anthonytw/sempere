@@ -64,7 +64,7 @@ struct PseudoLanguageLayoutTests {
         if model.selectedNoteID != nil { await model.showSelectedNote() }
         let library = VaultLibrary(storeURL: TestTemp.root
             .appendingPathComponent(UUID().uuidString).appendingPathComponent("recents.json"))
-        let keys = RememberedKeys(store: FakeKeyStore())
+        let keys = RememberedKeys(store: MemoryDeviceKeyStore())
         let suite = "SemperePseudoLayout-\(UUID().uuidString)"
         let storage = try #require(UserDefaults(suiteName: suite))
         defer { storage.removePersistentDomain(forName: suite) }

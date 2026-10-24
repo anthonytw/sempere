@@ -24,12 +24,15 @@ public enum TestVaults {
     /// signing seeds are committed).
     public static func register(_ keys: DeviceKeys) {
         lock.lock()
-        signings[keys.key] = keys.signing
+        if let software = keys.signing as? DeviceSigningKeys { signings[keys.key] = software }
         lock.unlock()
     }
 
     /// The signing keys of `identity` (`device`'s).
-    public static func signing(_ identity: NativeIdentity) -> DeviceSigningKeys { device(identity).signing }
+    public static func signing(_ identity: NativeIdentity) -> DeviceSigningKeys {
+        // swiftlint:disable:next force_cast
+        device(identity).signing as! DeviceSigningKeys   // `device` makes software pairs only
+    }
 
     /// A vault listing `identities` as devices (the first is home and creates it; each other is approved
     /// by it), with `recovery` (a fresh key when nil) as the recovery key, opened as the first device.
@@ -65,6 +68,7 @@ public enum TestVaults {
 
     /// The device key file of `identity` (`DeviceKeys.fileText`): what the CLI reads from `--identity`.
     public static func deviceKeyFile(_ identity: NativeIdentity, created: Date = Date()) -> String {
-        device(identity).fileText(created: created)
+        // swiftlint:disable:next force_try
+        try! device(identity).fileText(created: created)
     }
 }

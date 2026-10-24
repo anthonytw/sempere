@@ -704,6 +704,8 @@ private struct HistorySettingsSection: View {
 
 private struct DeviceKeySettingsSection: View {
     @AppModelEnvironment private var model
+    @AppEnvironmentObject private var keys: RememberedKeys
+    @State private var failure: String?
 
     var body: some View {
         Section {
@@ -719,6 +721,17 @@ private struct DeviceKeySettingsSection: View {
             } else {
                 Text("Unlock a vault to see this device's key.").foregroundStyle(.secondary)
             }
+            if model.phase == .unlocked, !model.isRecoveryOpen, keys.hasKeys(for: model) {
+                Toggle(String(localized: "Require \(RememberedKeys.biometryName ?? String(localized: "the Passcode", comment: "Require …: without biometrics")) to Open",
+                              comment: "Settings toggle; the value is Face ID, Touch ID or “the Passcode”"),
+                       isOn: Binding(get: { keys.requiresBiometry }, set: { on in
+                           Task {
+                               do { try await keys.setRequiresBiometry(on, model: model); failure = nil } catch { failure = "\(error)" }
+                           }
+                       }))
+                    .accessibilityIdentifier("settings.requireBiometry")
+                if let failure { Text(failure).font(.footnote).foregroundStyle(.red) }
+            }
             if model.phase == .unlocked, !model.isRecoveryOpen {
                 NavigationLink {
                     DevicesView()
@@ -730,7 +743,7 @@ private struct DeviceKeySettingsSection: View {
         } header: {
             Text("Device Keys")
         } footer: {
-            Text("Each device has its own key, kept in its Keychain. One device manages the others: it adds and removes them.")
+            Text("Each device has its own key, kept in its Keychain and never copied; its signing key is in the Secure Enclave. One device manages the others: it adds and removes them.")
         }
     }
 }
