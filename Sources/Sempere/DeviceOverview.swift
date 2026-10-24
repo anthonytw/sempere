@@ -45,11 +45,12 @@ public struct RemovalReviewItem: Hashable, Sendable {
     public var device: EpochKeyEntry
     /// When it last completed a two-way sync (its own summaries file), nil when unknown.
     public var lastSynced: Date?
-    /// When `lastSynced` is unknown because its summaries file is still sealed under an earlier epoch: it has not
-    /// completed a sync since the current device change, made at this date. Nil otherwise.
+    /// When `lastSynced` is unknown because its summaries file is still sealed under an earlier epoch E: it has not
+    /// completed a sync since the device change that made epoch E + 1, made at this date. Nil otherwise, or when
+    /// that record cannot be read.
     public var notSyncedSinceChange: Date?
-    /// True when its last sync was longer ago than the bound, or is unknown (and, when it is only known not to be
-    /// since the current change, that change is older than the bound): its later changes will not reach the vault.
+    /// True when its last sync was longer ago than the bound, or is unknown (`notSyncedSinceChange` only dates
+    /// the warning): its later changes will not reach the vault.
     public var stale: Bool
     /// Listed devices it approved (`addedBy` its id): while it was home, before a handoff. The sheet offers
     /// to remove them too, checked when the device is marked lost or stolen. Never the current home.
@@ -192,14 +193,14 @@ extension Vault {
                 $0.reason == EpochReason.recovery.rawValue || $0.reason == EpochReason.reencrypt.rawValue
             }
             let kit = currentKit?.author.fingerprint == d.fingerprint && currentKit?.recovery == manifest.recoveryFingerprint
+            // Sealed under epoch E, its summaries say it last completed a sync before epoch E + 1 was made: it has
+            // not synced since that change (review of #87, R2). The header's epoch is not authenticated, so it only
+            // dates the warning and never makes the device look fresher than an unknown last sync: still stale.
             var sinceChange: Date?
             if last == nil, let id = d.id, let summaryEpoch = summariesEpoch(device: id), summaryEpoch < manifest.epoch {
-                sinceChange = recordDates()[manifest.epoch] ?? Date.distantPast
+                sinceChange = recordDates()[summaryEpoch + 1]
             }
-            let stale: Bool
-            if let last { stale = now.timeIntervalSince(last) > staleAfter } else if let sinceChange {
-                stale = now.timeIntervalSince(sinceChange) > staleAfter
-            } else { stale = true }
+            let stale = last.map { now.timeIntervalSince($0) > staleAfter } ?? true
             return RemovalReviewItem(device: d, lastSynced: last, notSyncedSinceChange: sinceChange, stale: stale,
                                      approved: approved, replacedKit: kit)
         }
@@ -212,6 +213,15 @@ extension Vault {
         guard FileIO.exists(url), let data = try? FileIO.read(url, maxBytes: PublishedSummaries.maxFileBytes),
               let (sealed, _) = PublishedSummaries.split(data) else { return nil }
         return PublishedSummaries.sealedEpoch(sealed)
+    }
+
+    /// The epoch this device was added at: its entry's `addedEpoch`, else the first epoch of its trust record whose
+    /// list holds it; nil when neither says (opened with the recovery key, or never recorded). The takeover alerts
+    /// seed their acknowledged set with the takeovers up to here on first sight (review of #87 re-check, M1).
+    public var deviceAddedEpoch: Int? {
+        guard let fp = deviceFingerprint else { return nil }
+        if let added = deviceEntry?.addedEpoch { return added }
+        return trustedRecord()?.chain.first { $0.list.contains(fp) }?.epoch
     }
 
     /// The `epochId`s of the takeovers on the chain this device follows (the alerts of design §6.3 acknowledge

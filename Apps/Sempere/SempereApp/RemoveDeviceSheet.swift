@@ -98,14 +98,14 @@ struct RemoveDeviceSheet: View {
         }
     }
 
-    /// "<name> last synced 3 days ago…", "…hasn't synced since the last device change…", "…has no recorded sync…".
+    /// "<name> last synced 3 days ago…", "…hasn't synced since a device change…", "…has no recorded sync…".
     static func staleText(_ name: String, _ r: RemovalReviewItem) -> String {
         if let last = r.lastSynced {
             return String(localized: "“\(name)” last synced \(last.formatted(.relative(presentation: .named))). Changes it made since then will not reach this vault. It will be told it was removed, and can export them.",
                           comment: "Removal warning; the values are a device name and a relative date")
         }
         if let change = r.notSyncedSinceChange {
-            return String(localized: "“\(name)” hasn't synced since the last device change, \(change.formatted(.relative(presentation: .named))). Changes it made since then will not reach this vault. It will be told it was removed, and can export them.",
+            return String(localized: "“\(name)” hasn't synced since a device change \(change.formatted(.relative(presentation: .named))). Changes it made since then will not reach this vault. It will be told it was removed, and can export them.",
                           comment: "Removal warning; the values are a device name and a relative date")
         }
         return String(localized: "“\(name)” has no recorded sync. Changes it made will not reach this vault. It will be told it was removed, and can export them.",

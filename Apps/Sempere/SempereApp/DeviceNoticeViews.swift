@@ -115,7 +115,7 @@ struct UnlistedDeviceView: View {
                     } header: {
                         Text("Changes on this device")
                     } footer: {
-                        Text("Save Files copies them as they are, encrypted: the recovery kit opens them (with sempere or stock age). Export makes PDFs or images of the notes. The notes stay readable here.")
+                        Text("Save Files copies them as they are, encrypted. Opening them takes the recovery kit and the vault.json file and epochs folder from another copy of the vault (with sempere or stock age). Export makes PDFs or images of the notes. The notes stay readable here.")
                     }
                     Section {
                         Button("Remove from This Device…", systemImage: "trash", role: .destructive) { confirmRemove = true }

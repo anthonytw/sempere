@@ -82,19 +82,34 @@ final class DeviceOverviewTests: VaultTestCase {
         XCTAssertFalse(try XCTUnwrap(try w.open("C").removalReview([w["B"].id]).first).replacedKit)
     }
 
-    /// Review S4: right after a device change, a device whose summaries file is still sealed under the earlier epoch
-    /// has "not synced since the change", and is stale only once that change is older than the bound.
-    func testAfterAChangeADeviceIsNotStaleUntilTheChangeIsOld() throws {
-        let w = try EpochWorld(in: tmp, names: ["A", "B", "X"])
+    /// Review S4 and the re-check of #87 (R2): a device whose summaries file is still sealed under an earlier epoch E
+    /// "has not synced since" the change that made epoch E + 1 (not the newest change), and is stale all the same:
+    /// the header's epoch is not authenticated, so it never makes a device look fresher than an unknown last sync.
+    func testADeviceBehindAChangeIsDatedByTheFirstChangeItMissedAndStaysStale() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B", "X", "Y"])
         try w.open("B").recordSynced(device: try XCTUnwrap(DeviceID(w["B"].id)), now: Date(), granularity: 0)
         var a = try w.open("A")
-        let t = Date()
-        try a.removeDevices([w["X"].id], now: t)
-        let item = try XCTUnwrap(try w.open("A").removalReview([w["B"].id], now: t.addingTimeInterval(60)).first)
+        let first = Date().addingTimeInterval(-3 * 86_400)
+        try a.removeDevices([w["X"].id], now: first)
+        a = try w.open("A")
+        let second = Date().addingTimeInterval(-60)
+        try a.removeDevices([w["Y"].id], now: second)
+        let item = try XCTUnwrap(try w.open("A").removalReview([w["B"].id]).first)
         XCTAssertNil(item.lastSynced)
-        XCTAssertEqual(try XCTUnwrap(item.notSyncedSinceChange).timeIntervalSince1970, t.timeIntervalSince1970, accuracy: 1)
-        XCTAssertFalse(item.stale)
-        XCTAssertTrue(try XCTUnwrap(try w.open("A").removalReview([w["B"].id], now: t.addingTimeInterval(2 * 86_400)).first).stale)
+        XCTAssertEqual(try XCTUnwrap(item.notSyncedSinceChange).timeIntervalSince1970, first.timeIntervalSince1970, accuracy: 1,
+                       "the first change it missed, not the newest")
+        XCTAssertTrue(item.stale)
+        // Right after one change: still stale, dated by that change.
+        let dir2 = tmp.appendingPathComponent("w2", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir2, withIntermediateDirectories: true)
+        let w2 = try EpochWorld(in: dir2, names: ["A", "B", "X"])
+        try w2.open("B").recordSynced(device: try XCTUnwrap(DeviceID(w2["B"].id)), now: Date(), granularity: 0)
+        var a2 = try w2.open("A")
+        let t = Date()
+        try a2.removeDevices([w2["X"].id], now: t)
+        let fresh = try XCTUnwrap(try w2.open("A").removalReview([w2["B"].id], now: t.addingTimeInterval(60)).first)
+        XCTAssertEqual(try XCTUnwrap(fresh.notSyncedSinceChange).timeIntervalSince1970, t.timeIntervalSince1970, accuracy: 1)
+        XCTAssertTrue(fresh.stale, "never fresher than no recorded sync")
     }
 
     func testRemovalReviewReadsTheLastSyncFromTheDevicesOwnSummaries() throws {

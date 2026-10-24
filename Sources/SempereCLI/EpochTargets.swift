@@ -126,7 +126,7 @@ enum EpochTargets {
     static func warn(_ removed: [RemovedDeviceOutput], output: OutputOptions, now: Date = Date()) {
         for r in removed where r.stale {
             let when = r.lastSynced.flatMap { RFC3339.parse($0) }.map { "last synced \(ago($0, now: now))" }
-                ?? r.notSyncedSinceChange.flatMap { RFC3339.parse($0) }.map { "has not synced since the last device change, \(ago($0, now: now))" }
+                ?? r.notSyncedSinceChange.flatMap { RFC3339.parse($0) }.map { "has not synced since a device change \(ago($0, now: now))" }
                 ?? "has no recorded sync"
             output.info("\(r.name) (\(r.id)) \(when). Changes it made since then will not reach this vault. It will be told "
                 + "it was removed, and can export them.")
