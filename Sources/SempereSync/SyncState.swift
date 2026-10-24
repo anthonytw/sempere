@@ -131,6 +131,9 @@ struct SyncState: Codable, Equatable {
     /// Epoch records on the target whose bytes this device checked against the hash a `vault.json` or a record
     /// above names, with the version tag they had then: read again only when it moves (review of #86, M1).
     var verifiedRecords: [String: String]?
+    /// SHA-256 of local epoch records by name, with their size and modification time ("size:mtime|hex"): hashed
+    /// again only when those move (re-check N4).
+    var recordHashes: [String: String]?
 
     struct EpochsStamp: Codable, Equatable {
         var etag: String

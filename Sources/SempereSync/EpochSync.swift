@@ -69,7 +69,7 @@ extension SyncEngine {
     // MARK: epochs/
 
     func syncEpochRecords(remoteRoot: [String: RemoteEntry]) throws {
-        defer { epochsDigest = Self.localEpochsDigest(root) }
+        defer { epochsDigest = localEpochsDigest() }
         // Until the target's records are known, no vault.json goes there (`push`).
         remoteEpochRecords = []
         let folder = Vault.epochsName
@@ -79,16 +79,14 @@ extension SyncEngine {
         let expected = expectedRecordHashes()
         if !options.dryRun, !options.pushOnly {
             for name in try LocalFS.entries(localDir).filter(Vault.isEpochRecordFileName) {
-                guard let hashes = expected[name],
-                      let data = try? BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes),
-                      !hashes.contains(Data(SHA256.hash(data: data))) else { continue }
+                guard let hashes = expected[name], let mine = localRecordHash(name), !hashes.allows(mine) else { continue }
                 try setAsideWrongRecord(name)
             }
         }
         let local = Set(try LocalFS.entries(localDir).filter(Vault.isEpochRecordFileName))
         if let dir = remoteRoot[folder], dir.isCollection, folderArriving([folder], entry: dir) { return }
         // Unchanged on both sides since the last run left them in step: not listed (as unchanged notes).
-        let digest = Self.localEpochsDigest(root)
+        let digest = localEpochsDigest()
         let folderTag = remoteRoot[folder].flatMap { $0.isCollection ? $0.etag : nil }.flatMap { Self.isStrong($0) ? $0 : nil }
         if options.skipUnchangedNotes, hadState, state.folderETagsChange == true, let folderTag,
            state.epochsStamp == SyncState.EpochsStamp(etag: folderTag, local: digest) {
@@ -142,11 +140,10 @@ extension SyncEngine {
         if !options.dryRun, epochStatus.unlisted == nil {
             var checked = state.verifiedRecords ?? [:]
             for name in local.intersection(listed.keys).sorted() where !verified.contains(name) {
-                guard let hashes = expected[name] else { continue }
-                let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes)
-                let mine = Data(SHA256.hash(data: data))
-                guard hashes.contains(mine) else { continue }
+                // Only a verified hash makes this device replace the target's copy.
+                guard let hashes = expected[name], let mine = localRecordHash(name), hashes.verified.contains(mine) else { continue }
                 if let tag = listed[name]?.etag, checked[name] == tag { continue }
+                let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes)
                 try checkCancelled()
                 let got = try transport.read([folder, name], maxBytes: EpochRecord.maxBytes)
                 try budget.downloaded(got.data.count)
@@ -193,7 +190,7 @@ extension SyncEngine {
                 quarantine(path, path: path, entry: listed[name], reason: Self.describe(error), data: got.data)
                 continue
             }
-            if let hashes = expected[name], !hashes.contains(Data(SHA256.hash(data: got.data))) {
+            if let hashes = expected[name], !hashes.allows(Data(SHA256.hash(data: got.data))) {
                 // Not the record a vault.json names under this name: not kept (another target may hold it).
                 report.rejected.append(.init(path: path, message: "not the record vault.json names; not kept"))
                 continue
@@ -208,19 +205,35 @@ extension SyncEngine {
 
     /// Record names with the SHA-256 values the `vault.json` versions this device knows name for them: its own,
     /// the target's (once read), and its sightings. A forged one can only add a value, never remove the right one.
-    func expectedRecordHashes() -> [String: Set<Data>] {
-        var out: [String: Set<Data>] = [:]
+    func expectedRecordHashes() -> [String: RecordHashes] {
+        var out: [String: RecordHashes] = [:]
         if Self.epochMutations.contains(.recordByNameOnly) { return out }
-        func add(_ data: Data?) {
+        func add(_ data: Data?, verified: Bool) {
             guard let data, let m = try? EpochManifest.parse(data), m.epoch > 1 else { return }
-            out[String(m.epochRecord.dropFirst(Vault.epochsName.count + 1)), default: []].insert(m.epochRecordHash)
+            let name = String(m.epochRecord.dropFirst(Vault.epochsName.count + 1))
+            if verified { out[name, default: RecordHashes()].verified.insert(m.epochRecordHash) } else {
+                out[name, default: RecordHashes()].seen.insert(m.epochRecordHash)
+            }
         }
-        add(try? localMutable(Vault.manifestName))
-        add(remoteManifestData)
-        // Earlier records, as the records above them bind them (hash links down the chain).
-        for (name, hash) in epochJudge?.boundRecordHashes() ?? [:] { out[name, default: []].insert(hash) }
-        for s in vault?.sightings() ?? [] { add(s.manifest) }
+        // Verified: this device's own list (checked at open) and the hash links down its chain. Seen only: the
+        // target's list and the sightings, which nothing verified (re-check N3: they may reject, never accept).
+        let ownVerified = epochJudge?.listStatus.allowsWriting == true
+        add(try? localMutable(Vault.manifestName), verified: ownVerified)
+        for (name, hash) in epochJudge?.boundRecordHashes() ?? [:] { out[name, default: RecordHashes()].verified.insert(hash) }
+        add(remoteManifestData, verified: false)
+        for s in vault?.sightings() ?? [] { add(s.manifest, verified: false) }
         return out
+    }
+
+    /// What a record's bytes must hash to under one name: a verified hash decides alone; without one, hashes only
+    /// seen (unverified lists) can reject other bytes, and bytes matching one of them are kept for the judge to check.
+    struct RecordHashes {
+        var verified: Set<Data> = []
+        var seen: Set<Data> = []
+        /// False when `hash` is not the record's.
+        func allows(_ hash: Data) -> Bool {
+            verified.isEmpty ? (seen.isEmpty || seen.contains(hash)) : verified.contains(hash)
+        }
     }
 
     /// Moves `epochs/<name>` aside (to `epochs/.unnamed-<name>`, which nothing reads): it is not the record a
@@ -232,20 +245,39 @@ extension SyncEngine {
         let aside = dir.appendingPathComponent(".unnamed-" + name)
         try? FileManager.default.removeItem(at: aside)
         try FileManager.default.moveItem(at: dir.appendingPathComponent(name), to: aside)
+        state.recordHashes?[name] = nil
         report.skipped.append(.init(path: "\(Vault.epochsName)/\(name)", message: "not the record vault.json names: "
             + "set aside here, fetched again"))
     }
 
     /// A digest of the names in the local `epochs/` (a new record makes pending files worth fetching again).
-    static func localEpochsDigest(_ root: URL) -> String {
+    func localEpochsDigest() -> String {
         // Names and bytes: junk set aside and the right record fetched under the same name is a change too.
         let dir = root.appendingPathComponent(Vault.epochsName)
         let names = ((try? LocalFS.entries(dir)) ?? []).filter(Vault.isEpochRecordFileName).sorted()
-        let lines = names.map { n in
-            n + " " + ((try? BoundedRead.contents(of: dir.appendingPathComponent(n), maxBytes: EpochRecord.maxBytes))
-                .map(FileDigest.sha256) ?? "?")
-        }
+        let lines = names.map { n in n + " " + (localRecordHash(n).map { Hex.encode($0) } ?? "?") }
         return String(FileDigest.sha256(Data(lines.joined(separator: "\n").utf8)).prefix(16))
+    }
+
+    /// SHA-256 of the local `epochs/<name>`, read again only when its size or modification time moved
+    /// (`SyncState.recordHashes`; re-check N4: records carry the whole chain, so hashing them all every run grows
+    /// with the square of the epochs).
+    func localRecordHash(_ name: String) -> Data? {
+        let url = root.appendingPathComponent(Vault.epochsName).appendingPathComponent(name)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int, let mtime = attrs[.modificationDate] as? Date else { return nil }
+        let key = "\(size):\(mtime.timeIntervalSince1970)"
+        if let cached = state.recordHashes?[name], cached.hasPrefix(key + "|"),
+           let hash = Hex.decode(String(cached.dropFirst(key.count + 1))) {
+            return hash
+        }
+        guard let data = try? BoundedRead.contents(of: url, maxBytes: EpochRecord.maxBytes) else { return nil }
+        let hash = Data(SHA256.hash(data: data))
+        if !options.dryRun {
+            state.recordHashes = state.recordHashes ?? [:]
+            state.recordHashes?[name] = key + "|" + Hex.encode(hash)
+        }
+        return hash
     }
 
     // MARK: vault.json of another epoch
@@ -542,15 +574,14 @@ extension SyncEngine {
     }
 
     /// The remote version and the local root a pending file was judged against.
-    /// `Vault.heldKeysDigest` of this run's vault, set before the notes are judged (`cachedHeldKeys`).
+    /// `Vault.heldKeysDigest` of this run's vault with what it pinned and whether its record is pending, set once
+    /// before the notes are judged (`cachedHeldKeys`; the trust record is read once per run, re-check N4).
     var heldKeys: String { cachedHeldKeys ?? "" }
 
     func pendingStamp(_ entry: RemoteEntry?) -> String {
         // Also what this device pinned: a record that arrived is pinned a run later, and only then are the files
         // that waited for it readable.
-        let pinned = (try? vault?.publicTrustStore?.record(for: vault?.vaultId ?? UUID()))??.pinned?.epochId
-        return "\(Self.quarantineStamp(entry) ?? "")|\(manifestHash() ?? "")|\(epochsDigest)|"
-            + "\(pinned.map { Hex.encode($0).prefix(16) } ?? "")|\(vault?.isRecordPending == true)|\(heldKeys)"
+        "\(Self.quarantineStamp(entry) ?? "")|\(manifestHash() ?? "")|\(epochsDigest)|\(heldKeys)"
     }
 
     /// True when `key` waited for a record in an earlier run and neither its remote version nor the local

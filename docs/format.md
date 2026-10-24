@@ -4280,8 +4280,9 @@ changed since the last run:
 - **`epochs/`** is synced first in every run, before `vault.json`: write-once, the union of both sides, never
   deleted. Every device pushes the records it holds to every target it syncs, so a withheld or lost record
   comes back (a device the newest list does not hold uploads nothing). A received record is checked for its
-  shape (its name, at most 64 MiB, one `mlkem768x25519` stanza) and, when a `vault.json` this device knows or a
-  record above it on the chain (the hash links of §15.6) names it, for that hash: a name proves nothing, since anyone with write access can put a file under it. A local file
+  shape (its name, at most 64 MiB, one `mlkem768x25519` stanza) and, when this device's own verified `vault.json`
+  or a record above it on the chain (the hash links of §15.6) names it, for that hash; a hash only an unverified
+  list names (the target's, a sighting) can reject other bytes but never overrules a verified one: a name proves nothing, since anyone with write access can put a file under it. A local file
   under a named record's name with other bytes is set aside (`epochs/.unnamed-<name>`) and fetched again; until
   the right one is here the record has not arrived (never a reason to refuse `vault.json`). A device reads back
   every record it holds whose hash is so named when the target has a file under that name (again only when that

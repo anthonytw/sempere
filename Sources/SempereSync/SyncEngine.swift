@@ -487,7 +487,10 @@ public final class SyncEngine {
             }
         }
         // What keys the notes are judged with (a file that waited for one is fetched again once this moves).
-        cachedHeldKeys = epochJudge?.heldKeysDigest
+        cachedHeldKeys = epochJudge.map { v in
+            let pinned = ((try? v.publicTrustStore?.record(for: v.vaultId)) ?? nil)?.pinned?.epochId
+            return "\(v.heldKeysDigest)|\(pinned.map { Hex.encode($0).prefix(16) } ?? "")|\(v.isRecordPending)"
+        }
         if let hold = epochHold, !Self.epochMutations.contains(.uploadWhileWaiting) {
             // Unverified-pending or unlisted (design §4.3, §5.5): nothing new is uploaded (J5b), nothing else
             // is synced until the change is verified (or a takeover lists this device again).
