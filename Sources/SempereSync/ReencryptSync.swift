@@ -46,7 +46,7 @@ extension SyncEngine {
     /// Deletes the note's superseded old blob names on each side that holds the current name (here always; on the
     /// target only in a two-way run whose list stands there and that is not held), and forgets them in `set`.
     func dropSupersededBlobs(_ id: String, _ set: inout BlobSet) {
-        guard !options.dryRun, let v = epochJudge else { return }
+        guard !options.dryRun, let v = epochJudge, !Vault.keepsOldBlobNames else { return }
         let all = Set(set.local.keys).union(set.remote.keys)
         let old = supersededNames(id, all, present: all)
         guard !old.isEmpty else { return }
@@ -155,6 +155,13 @@ extension SyncEngine {
     /// stands; a journal of a re-encryption this device's chain shows finished is deleted on both sides.
     func settleReencryptJournal(_ remoteRoot: [String: RemoteEntry]) {
         guard !options.dryRun, epochHold == nil, let v = epochJudge else { return }
+        if let tag = obsoleteSettingsETag, listStandsHere(v), epochStatus.conflict == nil {
+            obsoleteSettingsETag = nil
+            if (try? transport.delete([SharedSettings.fileName], ifETag: tag.isEmpty ? nil : tag)) == true {
+                report.deleted.append(.init(side: "remote", path: SharedSettings.fileName))
+                state.mutable[SharedSettings.fileName] = nil
+            }
+        }
         let url = root.appendingPathComponent(Vault.journalName)
         let local = try? BoundedRead.contents(of: url, maxBytes: EpochRecord.maxBytes)
         let entry = remoteRoot[Vault.journalName].flatMap { $0.isCollection ? nil : $0 }

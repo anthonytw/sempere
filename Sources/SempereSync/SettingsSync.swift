@@ -84,6 +84,14 @@ extension SyncEngine {
 
         switch (mine, theirs) {
         case (nil, nil):
+            // A server copy this device cannot use that opens under a key from before a finished re-encryption (KH6, J7):
+            // kept aside here now, deleted there after the write lock (`settleReencryptJournal`), where this device's list
+            // stands and the run is not held.
+            if local == nil, let remoteData, let m = vault.recordsObsoleteBelow, vault.opensUnderEpoch(below: m, remoteData),
+               !options.pushOnly, !options.dryRun, let store = vault.setAsideStore {
+                try store.keep(remoteData, path: name, vaultId: vault.vaultId, reason: .beforeReencryption)
+                obsoleteSettingsETag = etag.flatMap { Self.isStrong($0) ? $0 : nil } ?? ""
+            }
             return
         case (_?, nil):
             try upload(name, local: local ?? Data(), over: remote, etag: etag)

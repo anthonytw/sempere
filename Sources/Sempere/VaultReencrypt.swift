@@ -230,7 +230,12 @@ extension Vault {
 
     /// One file of the working copy under a key from before the re-encryption.
     struct OldFile {
-        enum Kind { case framed, blob(note: UUID, name: String), inbox(name: String, kind: CaptureFile.Kind) }
+        enum Kind {
+            case framed, blob(note: UUID, name: String), inbox(name: String, kind: CaptureFile.Kind)
+            /// A blob under an earlier key whose content is here under the current key's name already (a pass stopped
+            /// between the two): only the old name is left to delete.
+            case supersededBlob(note: UUID, name: String)
+        }
         var path: String
         var kind: Kind
         /// Accepted (re-encrypted by the pass) or not (left, set aside), with why.
@@ -273,6 +278,13 @@ extension Vault {
                 }
                 guard o.epoch < m else { continue }
                 let path = Self.blobPath(id, file)
+                if let peek = try? Self.peekBlobFile(u, identities: [o.identity]),
+                   let kind = BlobName.parse(file)?.kind,
+                   FileIO.exists(att.appendingPathComponent(BlobName.fileName(name: BlobName.name(digest: peek.header.digest, secret: current),
+                                                                               kind: kind))) {
+                    out.append(OldFile(path: path, kind: .supersededBlob(note: id, name: file), unaccepted: nil))
+                    continue
+                }
                 var reason: SetAsideReason?
                 do { _ = try readAcceptedBlob(u, note: id, older: o, expected: nil, maxContent: BlobRef.maxSize) } catch BlobError.setAside(let r) {
                     reason = r
@@ -316,7 +328,10 @@ extension Vault {
         }
         let (old, total, _) = try oldFiles(below: m.epoch)
         return ReencryptStatus(pending: isReencryptPending, epoch: m.epoch, journalHere: localBoundJournal() != nil,
-                               remaining: old.filter { $0.unaccepted == nil }.count, total: total,
+                               remaining: old.filter { f in
+                                   if case .supersededBlob = f.kind { return !Self.epochMutations.contains(.keepOldBlobNames) }
+                                   return f.unaccepted == nil
+                               }.count, total: total,
                                unaccepted: old.filter { $0.unaccepted != nil }.count)
     }
 
@@ -367,6 +382,11 @@ extension Vault {
                     if made != f.path { report.oldBlobsDeleted.append(f.path) }
                 case .inbox(let name, let kind):
                     report.reencrypted.append(try reencryptAcceptedCapture(name: name, kind: kind, n: n))
+                case .supersededBlob(let note, let name):
+                    if !Self.epochMutations.contains(.keepOldBlobNames) {
+                        try FileIO.remove(attURL(note).appendingPathComponent(name))
+                        report.oldBlobsDeleted.append(f.path)
+                    }
                 }
             } catch VaultError.interrupted {
                 throw VaultError.interrupted
@@ -497,12 +517,16 @@ extension Vault {
         if let p = undecided.first {
             throw VaultError.epochChangeRefused("\(undecided.count) file(s) cannot be judged while an earlier record is missing (\(p)): sync first")
         }
-        if let todo = old.first(where: { $0.unaccepted == nil }) {
-            throw VaultError.epochChangeRefused("\(old.filter { $0.unaccepted == nil }.count) file(s) are not re-encrypted yet "
-                + "(\(todo.path)): run the pass first")
+        let todo = old.filter { f in
+            guard f.unaccepted == nil else { return false }
+            if case .supersededBlob = f.kind { return !Self.epochMutations.contains(.keepOldBlobNames) }
+            return true
+        }
+        if let first = todo.first {
+            throw VaultError.epochChangeRefused("\(todo.count) file(s) are not re-encrypted yet (\(first.path)): run the pass first")
         }
         // What the rule does not take leaves the vault (design §7.3), kept aside first (J6).
-        for f in old {
+        for f in old where f.unaccepted != nil {
             guard let store = setAsideStore, let reason = f.unaccepted else {
                 throw VaultError.setAsideFailed("\(f.path): this device keeps no set-aside store")
             }
@@ -592,7 +616,7 @@ extension Vault {
     /// For the content of each blob file the note holds here (its header's digest, read from the first chunk): each
     /// name under an earlier key this value holds, mapped to the name under the current key (base names, without kind).
     public func supersededBlobBases(note: UUID) -> [String: String] {
-        guard let secret, !Self.epochMutations.contains(.keepOldBlobNames) else { return [:] }
+        guard let secret else { return [:] }
         let older = blobOlderEpochs.map(\.key)
         guard !older.isEmpty else { return [:] }
         let att = attURL(note)

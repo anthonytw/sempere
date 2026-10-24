@@ -328,6 +328,9 @@ public final class SyncEngine {
     var remoteJournalPresent = false
     /// The journal went up this run (ahead of its `vault.json`).
     var journalUploaded = false
+    /// A target's `settings.age` from before a finished re-encryption, kept aside here, to delete after the write lock
+    /// (its version tag; empty: none strong).
+    var obsoleteSettingsETag: String?
 
     /// Guards what concurrent listings and downloads share (`TransferPool`):
     /// `state`, `report`, `budget`, `progress`, the checker cache and the

@@ -80,7 +80,10 @@ final class EpochInterleavingTests: SyncTestCase {
         for seed in mode.seeds {
             let start = Date()
             let lean = forced ?? ProcessInfo.processInfo.environment["SEMPERE_EPOCH_EMPHASIS"].flatMap { e in Op.allCases.first { "\($0)" == e } }
-            let found = try run(seed: seed, steps: lean == nil ? mode.steps : 26, devices: mode.devices, kind: kind, emphasis: lean)
+            // SEMPERE_EPOCH_ACTIVATE=<mutation> runs the seeds with that mutation (to look at how it breaks).
+            let active = ProcessInfo.processInfo.environment["SEMPERE_EPOCH_ACTIVATE"].flatMap { a in Mutation.allCases.first { "\($0)" == a } }
+            let found = try run(seed: seed, steps: lean == nil && active == nil ? mode.steps : 26, devices: active == nil ? mode.devices : 4,
+                                kind: kind, mutation: active, emphasis: lean)
             print("EPOCH-INTERLEAVING \(kind.rawValue) seed \(seed): \(found.isEmpty ? "clean" : "\(found.count) violations"), "
                   + String(format: "%.1f s", Date().timeIntervalSince(start)))
             all += found.map { "seed \(seed): \($0)" }
@@ -373,9 +376,11 @@ final class EpochInterleavingTests: SyncTestCase {
             var memo: [String: [String: String]] = [:]
             let targets = reach[h] ?? []
             let byName = Dictionary(targets.map { ($0.name, $0) }, uniquingKeysWith: { x, _ in x })
-            let progress = try? ReencryptCoordinator.advance(&a, targets: targets.map { .init(name: $0.name, remote: $0.remote(for: h)) },
-                                                             sync: { t in if let tg = byName[t.name] { sync(h, tg, step: step) } },
-                                                             memo: &memo, scratch: w[h].root.appendingPathComponent("confirm"))
+            let outcome = Result { try ReencryptCoordinator.advance(&a, targets: targets.map { .init(name: $0.name, remote: $0.remote(for: h)) },
+                                                                    sync: { t in if let tg = byName[t.name] { sync(h, tg, step: step) } },
+                                                                    memo: &memo, scratch: w[h].root.appendingPathComponent("confirm")) }
+            if case .failure(let e) = outcome { trace.append("\(step) reencrypt step \(h) threw: \(e)") }
+            let progress = try? outcome.get()
             if progress == nil, let v = try? w[h].open() {
                 var why = "?"
                 do { _ = try v.reencryptPass(limit: 0) } catch { why = "\(error)" }
@@ -404,7 +409,7 @@ final class EpochInterleavingTests: SyncTestCase {
                 guard let note = try? w[n].write(title, id: noteId()) else { trace.append("\(step) write \(n) failed"); break }
                 // Some with an attachment (old blob names are J7's), from generators of their own, so the runs KH4's
                 // mutations were checked on keep their course.
-                if Int.random(in: 0..<3, using: &blobRng) == 0, let v = try? w[n].open() {
+                if Int.random(in: 0..<(lean == .reencrypt ? 2 : 3), using: &blobRng) == 0, let v = try? w[n].open() {
                     var content = Data(count: 48)
                     for i in content.indices { content[i] = UInt8.random(in: 0...255, using: &blobRng) }
                     _ = try? v.writeBlob(note: note, content, type: "image/png")
