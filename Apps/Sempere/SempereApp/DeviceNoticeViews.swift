@@ -76,6 +76,9 @@ struct UnlistedDeviceView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var facts: UnlistedFacts?
     @State private var confirmRemove = false
+    @State private var savingFiles = false
+    /// Files Save Files copied this time (the Remove warning names what it did not cover).
+    @State private var saved: Int?
     @State private var failure: String?
 
     var body: some View {
@@ -91,6 +94,15 @@ struct UnlistedDeviceView: View {
                         } else {
                             Text("\(facts.unsynced.count) files written on this device are on no sync target.",
                                  comment: "Unlisted screen: own changes no target holds")
+                            if facts.captures > 0 {
+                                Text("\(facts.captures) of them are voice notes not in a note yet: only Save Files keeps them.",
+                                     comment: "Unlisted screen: inbox captures among the unsynced files")
+                            }
+                            Button("Save Files…", systemImage: "folder") { savingFiles = true }
+                                .accessibilityIdentifier("unlisted.saveFiles")
+                            if let saved {
+                                Text("Saved \(saved) files.", comment: "Unlisted screen: after Save Files").foregroundStyle(.secondary)
+                            }
                             Button("Export Those Notes…", systemImage: "square.and.arrow.up") {
                                 dismiss()
                                 model.requestBulkExport(.notes(facts.notes))
@@ -104,7 +116,7 @@ struct UnlistedDeviceView: View {
                     } header: {
                         Text("Changes on this device")
                     } footer: {
-                        Text("The notes stay readable here. Exported notes can go into another vault.")
+                        Text("Save Files copies them as they are, encrypted: the recovery kit opens them (with sempere or stock age). Export makes PDFs or images of the notes. The notes stay readable here.")
                     }
                     Section {
                         Button("Remove from This Device…", systemImage: "trash", role: .destructive) { confirmRemove = true }
@@ -129,13 +141,26 @@ struct UnlistedDeviceView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 if let n = facts?.unsynced.count, n > 0 {
-                    Text("\(n) files on this device are on no sync target and will be lost. Export them first to keep them.",
-                         comment: "Unlisted screen: removing the copy")
+                    if saved == n {
+                        Text("You saved the \(n) files that are on no sync target. The copy here is deleted.",
+                             comment: "Unlisted screen: removing after Save Files")
+                    } else {
+                        Text("\(n) files on this device are on no sync target and will be lost. Save Files keeps them all; Export keeps only the notes as PDFs or images.",
+                             comment: "Unlisted screen: removing the copy")
+                    }
                 } else {
                     Text("Nothing is lost: every change here reached another device or a sync target.")
                 }
             }
             .task { facts = await model.unlistedFacts() }
+            .fileImporter(isPresented: $savingFiles, allowedContentTypes: [.folder]) { result in
+                guard case .success(let folder) = result, let paths = facts?.unsynced else { return }
+                Task {
+                    do { saved = try await model.exportUnsyncedFiles(paths, to: folder) } catch {
+                        failure = DeviceChangeText.message(error)
+                    }
+                }
+            }
         }
         .accessibilityIdentifier("unlistedDeviceView")
     }
@@ -161,7 +186,7 @@ struct UnlistedDeviceView: View {
                 try? await keys.store.delete(for: entry.vaultId)
                 dismiss()
             } catch {
-                failure = "\(error)"
+                failure = DeviceChangeText.message(error)
             }
         }
     }
@@ -177,6 +202,10 @@ struct SetAsideRepairView: View {
     @State private var ownDropped: [SetAsideItem] = []
     @State private var exporting: [SetAsideItem]?
     @State private var keeping: [SetAsideItem]?
+    /// Keeping this device's own files from dropped changes (their own message, review of #87 S7).
+    @State private var keepingOwn: [SetAsideItem]?
+    /// A file that is not superseded, about to be deleted: asked first (review of #87 S6).
+    @State private var deleting: SetAsideItem?
     @State private var forgetAll = false
     @State private var working = false
     @State private var message: String?
@@ -211,6 +240,26 @@ struct SetAsideRepairView: View {
         } message: { _ in
             Text("They may come from a removed device. Keep only what you recognize. They are added under the vault's current key.")
         }
+        .confirmationDialog("Keep these files in the vault?", isPresented: Binding(get: { keepingOwn != nil }, set: { if !$0 { keepingOwn = nil } }),
+                            titleVisibility: .visible, presenting: keepingOwn) { picked in
+            Button("Keep") {
+                keepingOwn = nil
+                run { try await model.keepSetAside(picked) }
+            }
+            Button("Cancel", role: .cancel) { keepingOwn = nil }
+        } message: { _ in
+            Text("This device wrote them, under a device change a takeover undid. They are added again under the vault's current key.")
+        }
+        .confirmationDialog("Delete this file from this device?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { item in
+            Button("Delete", role: .destructive) {
+                deleting = nil
+                run { try await model.clearSetAside([item]) }
+            }
+            Button("Cancel", role: .cancel) { deleting = nil }
+        } message: { _ in
+            Text("The vault has no copy of it: it may be the only copy of someone's change. Export it first to keep it.")
+        }
         .confirmationDialog("Forget every device list?", isPresented: $forgetAll, titleVisibility: .visible) {
             Button("Forget All", role: .destructive) {
                 run { try await model.forgetSightings(anchoredToo: true) }
@@ -231,7 +280,7 @@ struct SetAsideRepairView: View {
             if items.isEmpty {
                 Text("No files were set aside.").foregroundStyle(.secondary)
             }
-            ForEach(items, id: \.item.sha256) { status in
+            ForEach(items, id: \.item.file) { status in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(verbatim: status.item.path).font(.caption.monospaced()).lineLimit(1).truncationMode(.middle)
                     Text(Self.reason(status.item)).font(.caption).foregroundStyle(.secondary)
@@ -243,12 +292,12 @@ struct SetAsideRepairView: View {
                     Button("Export…", systemImage: "square.and.arrow.up") { exporting = [status.item] }
                     Button("Keep in Vault…", systemImage: "tray.and.arrow.down") { keeping = [status.item] }
                     Button("Delete from This Device", systemImage: "trash", role: .destructive) {
-                        run { try await model.clearSetAside([status.item]) }
+                        if status.superseded { run { try await model.clearSetAside([status.item]) } } else { deleting = status.item }
                     }
                 }
             }
             if !ownDropped.isEmpty {
-                Button("Keep \(ownDropped.count) Files This Device Wrote", systemImage: "tray.and.arrow.down") { keeping = ownDropped }
+                Button("Keep \(ownDropped.count) Files This Device Wrote", systemImage: "tray.and.arrow.down") { keepingOwn = ownDropped }
                     .accessibilityIdentifier("repair.keepOwn")
             }
             if !items.isEmpty {
@@ -318,7 +367,7 @@ struct SetAsideRepairView: View {
         working = true
         Task {
             defer { working = false }
-            do { try await action() } catch is CancellationError {} catch { message = "\(error)" }
+            do { try await action() } catch is CancellationError {} catch { message = DeviceChangeText.message(error) }
             await reload()
         }
     }

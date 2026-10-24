@@ -26,9 +26,12 @@ struct RemovedDeviceOutput: Encodable {
     var lastSynced: String?
     /// True when it last synced more than a day ago, or it is not known.
     var stale: Bool
+    /// RFC 3339: it has not synced since the current device change, made then (its summaries file is sealed under
+    /// an earlier epoch); nil otherwise.
+    var notSyncedSinceChange: String?
     /// Listed devices it approved while it was home (`addedBy` its id): lost or stolen, remove them too.
     var approved: [String] = []
-    /// It replaced the recovery kit while it was home: replace it again.
+    /// It made the current recovery kit while it was home: replace it again.
     var replacedKit = false
 }
 
@@ -113,14 +116,18 @@ enum EpochTargets {
         ((try? vault.removalReview(ids, now: now, staleAfter: staleAfter)) ?? []).compactMap { r in
             guard let id = r.device.id else { return nil }
             return RemovedDeviceOutput(id: id, name: DeviceName.display(r.device.name), lastSynced: r.lastSynced.map { RFC3339.string($0) },
-                                       stale: r.stale, approved: r.approved.compactMap(\.id), replacedKit: r.replacedKit)
+                                       stale: r.stale,
+                                       notSyncedSinceChange: r.notSyncedSinceChange.map { RFC3339.string($0) },
+                                       approved: r.approved.compactMap(\.id), replacedKit: r.replacedKit)
         }
     }
 
     /// The removal sheet's warning (design §5.5), one line per device.
     static func warn(_ removed: [RemovedDeviceOutput], output: OutputOptions, now: Date = Date()) {
         for r in removed where r.stale {
-            let when = r.lastSynced.flatMap { RFC3339.parse($0) }.map { "last synced \(ago($0, now: now))" } ?? "has no recorded sync"
+            let when = r.lastSynced.flatMap { RFC3339.parse($0) }.map { "last synced \(ago($0, now: now))" }
+                ?? r.notSyncedSinceChange.flatMap { RFC3339.parse($0) }.map { "has not synced since the last device change, \(ago($0, now: now))" }
+                ?? "has no recorded sync"
             output.info("\(r.name) (\(r.id)) \(when). Changes it made since then will not reach this vault. It will be told "
                 + "it was removed, and can export them.")
         }
@@ -129,7 +136,7 @@ enum EpochTargets {
                 + "lost or stolen, remove those too.")
         }
         for r in removed where r.replacedKit {
-            output.info("\(r.name) (\(r.id)) replaced the recovery kit while it managed devices: replace the kit again "
+            output.info("\(r.name) (\(r.id)) made the current recovery kit while it managed devices: replace the kit again "
                 + "(sempere recovery replace) if it was lost or stolen.")
         }
     }
@@ -240,14 +247,10 @@ struct DevicesStatus: ParsableCommand {
         var exported: [String]?
         if let export {
             let dir = URL(fileURLWithPath: export, isDirectory: true)
-            exported = try unsynced.map { path in
-                let target = dir.appendingPathComponent(path)
-                try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                guard !FileManager.default.fileExists(atPath: target.path) else {
-                    throw CLIError.failure("\(target.path) exists: not overwritten")
-                }
-                try FileManager.default.copyItem(at: vault.url.appendingPathComponent(path), to: target)
-                return target.path
+            do {
+                exported = try UnsyncedChanges.export(unsynced, from: vault.url, to: dir).map(\.path)
+            } catch {
+                throw CLIError.failure("cannot export: \(error)")
             }
         }
         if output.json {

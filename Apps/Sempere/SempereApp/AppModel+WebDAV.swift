@@ -382,6 +382,7 @@ extension AppModel {
     /// (whatever the run reported), runs go upload-only and the vault is opened again (review of #70, F6).
     func checkOpenVaultAgainstDisk() async {
         await reopenIfUnlisted()
+        await refreshDeviceState()
         guard let start = vault, phase == .unlocked, !syncVaultStale else { return }
         let changed = (try? await offMain { Self.manifestChangedOnDisk(start) }) ?? true
         guard changed else { return }

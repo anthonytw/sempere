@@ -36,7 +36,7 @@ public enum PaperKey {
 
     /// Prefixes of the two age identity types, longest first: the post-quantum
     /// hybrid (`age-keygen -pq`, 77 characters) and X25519 (74 characters).
-    static let identityPrefixes = ["AGE-SECRET-KEY-PQ-1", "AGE-SECRET-KEY-1"]
+    public static let identityPrefixes = ["AGE-SECRET-KEY-PQ-1", "AGE-SECRET-KEY-1"]
 
     /// First `digits` lowercase hex digits of SHA-256 of the UTF-8 bytes of
     /// `text`. A post-quantum public key is 1959 characters, too long to print

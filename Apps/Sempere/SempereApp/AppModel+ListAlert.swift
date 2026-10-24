@@ -70,7 +70,7 @@ struct ListAlert: Identifiable, Equatable, Sendable {
             lines.append(String(localized: "This device has no record of the vault's devices yet, and nothing to check the list against."))
         }
         lines.append(String(localized: "Your notes can still be read. Nothing is written to this vault until the list is fixed."))
-        lines.append(String(localized: "If a sync service or another device is at fault, the next sync from a device that manages devices puts the list back. Otherwise take over with the recovery kit in Settings ▸ Sync & Devices ▸ Devices."))
+        lines.append(String(localized: "If a sync service or another device is at fault, the next sync from a device that manages devices puts the list back. Otherwise take over with the recovery kit: in Settings ▸ Sync & Devices ▸ Devices, or with sempere devices takeover on a computer."))
         return lines.joined(separator: "\n\n")
     }
 }

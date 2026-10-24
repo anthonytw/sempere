@@ -24,6 +24,7 @@ struct ReplaceKitSheet: View {
     @State private var oldKitText = ""
     @State private var passphrase = ""
     @State private var passphraseAgain = ""
+    @State private var revealed = false
     @State private var working = false
     @State private var failure: String?
 
@@ -56,8 +57,10 @@ struct ReplaceKitSheet: View {
                 }
             }
             .disabled(working)
+            .interactiveDismissDisabled(working)
+            .overlay { DeviceChangeSyncOverlay() }
             .task {
-                do { review = try await model.kitReview() } catch { failure = "\(error)" }
+                do { review = try await model.kitReview() } catch { failure = DeviceChangeText.message(error) }
             }
         }
         .accessibilityIdentifier("replaceKitSheet")
@@ -118,13 +121,12 @@ struct ReplaceKitSheet: View {
                 // The one list change that needs the owner at the device (design §6.5 step 0).
                 try await model.ownerAuthenticator.authenticate(reason: String(localized: "Replace the recovery kit"))
                 let kit = try MLKEM768X25519Identity()
-                let lines = PaperKey.identityLines(kit.string)
                 newKit = kit
-                lineNumber = Int.random(in: 1...max(lines.count, 1))
+                lineNumber = Self.checkLine(of: kit.string)
                 stage = .kit
             } catch is CancellationError {
             } catch {
-                failure = "\(error)"
+                failure = DeviceChangeText.message(error)
             }
         }
     }
@@ -141,6 +143,7 @@ struct ReplaceKitSheet: View {
                     .font(.body.monospaced())
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.characters)
+                    .privacySensitive()
                     .accessibilityIdentifier("replaceKit.line")
                 if !typedLine.isEmpty, !lineMatches {
                     Text("That is not line \(lineNumber) of the new key.").font(.footnote).foregroundStyle(.red)
@@ -151,8 +154,9 @@ struct ReplaceKitSheet: View {
                 Text("This checks that the new kit was printed or saved before the old one stops working.")
             }
             Section {
-                SecureField("New passphrase", text: $passphrase)
-                SecureField("Again", text: $passphraseAgain)
+                PassphrasePairField(placeholder: String(localized: "New passphrase"), confirmationPlaceholder: String(localized: "Again"),
+                                    passphrase: $passphrase, confirmation: $passphraseAgain, revealed: $revealed,
+                                    identifier: "replaceKit.passphrase", confirmationIdentifier: "replaceKit.passphraseAgain")
                 if let problem = passphraseProblem {
                     Text(problem).font(.footnote).foregroundStyle(.red)
                 }
@@ -175,6 +179,18 @@ struct ReplaceKitSheet: View {
     private var lineMatches: Bool {
         guard let newKit else { return false }
         return Self.lineMatches(typedLine, line: lineNumber, of: newKit.string)
+    }
+
+    /// The line (1-based) of the printed key `identity` the user types back: one of the lines after the fixed
+    /// `AGE-SECRET-KEY-PQ-1` prefix, at random (review of #87, M2: the prefix line proves nothing was printed).
+    nonisolated static func checkLine(of identity: String, random: (ClosedRange<Int>) -> Int = { Int.random(in: $0) }) -> Int {
+        let lines = PaperKey.identityLines(identity)
+        let candidates = lines.indices.filter { i in
+            !PaperKey.identityPrefixes.contains(lines[i].text) && !PaperKey.identityPrefixes.contains { lines[i].text.hasPrefix($0) }
+        }
+        guard let first = candidates.first, let last = candidates.last else { return lines.count }
+        // The candidates are the lines after the prefix: contiguous.
+        return random(first...last) + 1
     }
 
     /// True when `typed` is line `line` (1-based) of the printed key `identity`, ignoring case and spaces (the
@@ -215,11 +231,12 @@ struct ReplaceKitSheet: View {
             defer { working = false }
             do {
                 let outcome = try await model.replaceRecoveryKit(newKit, keep: keep, remove: remove, oldKit: old, passphrase: phrase)
+                passphrase = ""; passphraseAgain = ""; oldKitText = ""; typedLine = ""
                 done(DeviceChangeText.done(outcome, action: String(localized: "The recovery kit was replaced. Keep the new kit somewhere safe and destroy the old one.")))
                 dismiss()
             } catch is CancellationError {
             } catch {
-                failure = "\(error)"
+                failure = DeviceChangeText.message(error)
             }
         }
     }

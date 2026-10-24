@@ -34,7 +34,7 @@ enum DeviceNotice: Hashable, Identifiable, Sendable {
             return String(localized: "This device is not on the vault's newest device list. Nothing is written or synced.",
                           comment: "Banner: this device was removed from the vault")
         case .heldBack(let since):
-            return String(localized: "This device can't sync since \(since.formatted(date: .abbreviated, time: .omitted)): it waits for a device change from the device that manages devices.",
+            return String(localized: "This device hasn't synced since \(since.formatted(date: .abbreviated, time: .omitted)): it waits for a device change from the device that manages devices.",
                           comment: "Banner: sync held back; the value is a date")
         case .homeConflict:
             return String(localized: "The vault has two conflicting device lists. This device keeps its own until a takeover settles it.",
@@ -59,6 +59,9 @@ struct UnlistedFacts: Equatable, Sendable {
     var seen: Date?
     /// This device's own files that no target holds (its write ledger's).
     var unsynced: [String]
+
+    /// Voice notes recorded here that are not in a note yet (`inbox/` captures): only the files keep them.
+    var captures: Int { unsynced.filter { $0.hasPrefix("inbox/") }.count }
 
     /// The notes those files belong to.
     var notes: [UUID] {
@@ -97,7 +100,7 @@ extension AppModel {
             out.append(.unlisted)
             return out
         }
-        let since = ([vault.deviceSyncStatus.heldSince] + reports.map(\.heldSince)).compactMap { $0 }.min()
+        let since = ([heldSinceAtOpen] + reports.map(\.heldSince)).compactMap { $0 }.min()
         if let since, DeviceSyncStatus(state: .waiting, heldSince: since).heldLong(now: deviceNoticeNow()) {
             out.append(.heldBack(since: since))
         }
@@ -118,7 +121,7 @@ extension AppModel {
     /// After a two-way run: when a target reported this device unlisted and the open vault does not know it yet,
     /// the vault is opened again, so its own refusal of writes and the unlisted screen's facts follow.
     func reopenIfUnlisted() async {
-        guard phase == .unlocked, let vault, vault.unlistedNotice == nil,
+        guard phase == .unlocked, !isChangingKeys, let vault, vault.unlistedNotice == nil,
               syncSessions.contains(where: { $0.lastReport?.epoch?.unlisted != nil }) else { return }
         await reopenUnderSameKeys()
     }
@@ -135,6 +138,29 @@ extension AppModel {
             let unsynced = (try? UnsyncedChanges.paths(vault: vault, stateURLs: states)) ?? []
             return UnlistedFacts(by: sighting?.author?.name.map(DeviceName.display), seen: sighting?.seen, unsynced: unsynced)
         }.value
+    }
+
+    /// Copies this device's own files that no target holds, as they are (encrypted, under their vault paths), into
+    /// `folder` the user picked: the unlisted screen's Save Files (everything, voice notes not yet in a note
+    /// included; review of #87, M3). They open with this vault's keys (`sempere`, or the kit and stock `age`).
+    func exportUnsyncedFiles(_ paths: [String], to folder: URL) async throws -> Int {
+        guard let vault else { throw ModelError.noVaultOpen }
+        let source = vault.url
+        return try await offMain {
+            let scoped = folder.startAccessingSecurityScopedResource()
+            defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+            let dir = folder.appendingPathComponent("Sempere unsynced \(RFC3339.string(Date()).prefix(10))", isDirectory: true)
+            return try UnsyncedChanges.export(paths, from: source, to: dir).count
+        }
+    }
+
+    /// An unlisted device takes no more voice notes for this vault (review of #87, M3): it could never deliver
+    /// them. Its quick-capture profile is deleted, so the widget, the Lock Screen and Shortcuts say "Set Up"; what
+    /// is in the inbox already stays (the unlisted screen saves it).
+    func suspendQuickCaptureIfUnlisted() {
+        guard let vault, vault.unlistedNotice != nil || unlistedNotice != nil,
+              let stored = try? storedQuickCaptureProfile(), stored.profile.vaultId == vault.vaultId else { return }
+        try? disableQuickCapture()
     }
 
     // MARK: - Repair: set-aside files (design §5.8)
@@ -185,12 +211,24 @@ extension AppModel {
 
     // MARK: - Repair: sightings (KH4 §16.10)
 
-    /// The device lists a sync met and this device did not take.
-    var sightingRows: [SightingRow] {
-        guard let vault else { return [] }
-        return vault.sightings().map {
-            SightingRow(epoch: $0.epoch, epochId: $0.epochId, anchored: vault.isAnchoredSighting($0), sources: $0.sources, seen: $0.seen)
-        }.sorted { $0.epoch > $1.epoch }
+    /// The device lists a sync met and this device did not take (as last read, `refreshDeviceState`).
+    var sightingRows: [SightingRow] { sightingRowsState }
+
+    /// Reads, off the main actor, since when this device's sync is held back and its sightings (each judged
+    /// anchored or detached, which can verify signatures): after an unlock, a reopen, a run and a Forget.
+    func refreshDeviceState() async {
+        guard let vault, phase == .unlocked else { return }
+        let gen = generation
+        let (since, rows) = await Task.detached(priority: .utility) { () -> (Date?, [SightingRow]) in
+            let rows = vault.sightings().map {
+                SightingRow(epoch: $0.epoch, epochId: $0.epochId, anchored: vault.isAnchoredSighting($0), sources: $0.sources,
+                            seen: $0.seen)
+            }.sorted { $0.epoch > $1.epoch }
+            return (vault.deviceSyncStatus.heldSince, rows)
+        }.value
+        guard generation == gen, self.vault?.vaultId == vault.vaultId else { return }
+        heldSinceAtOpen = since
+        sightingRowsState = rows
     }
 
     /// Forgets the detached sightings, or with `anchoredToo` every one (the user chose it after the warning): a
@@ -203,6 +241,7 @@ extension AppModel {
         let n = try await offMain { try vault.forgetSightings(anchoredToo: anchoredToo) }
         try ensureCurrent(gen)
         if anchoredToo, n > 0 { await reopenUnderSameKeys() }
+        await refreshDeviceState()
         syncSessions.forEach { $0.demand() }
         return n
     }
