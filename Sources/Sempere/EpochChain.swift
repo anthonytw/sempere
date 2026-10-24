@@ -391,7 +391,11 @@ public enum EpochChain {
                         throw ChainError.badTakeover(epoch: e.epoch)
                     }
                     let parentPath = chain[..<i].map(\.epochId)
-                    guard TakeoverRule.recoveryKey(parentRecovery: prev.recovery, parentPath: parentPath, pinned: pinned)
+                    // A takeover this device pinned already (on its pinned chain, at its place) was judged under the
+                    // frontier of its time: a kit replacement pinned above it since (a re-encryption is one) does not
+                    // make it invalid (found by KH6's interleaving runs).
+                    let pinnedHere = i < pinned.count && pinned[..<(i + 1)].map(\.epochId) == chain[...i].map(\.epochId)
+                    guard pinnedHere || TakeoverRule.recoveryKey(parentRecovery: prev.recovery, parentPath: parentPath, pinned: pinned)
                             == prev.recovery else {
                         if TakeoverRule.kitNotYetPinned(parentRecovery: prev.recovery, parentPath: parentPath, pinned: pinned) {
                             throw ChainError.kitNotPinned(epoch: e.epoch)

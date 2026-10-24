@@ -16,6 +16,10 @@ struct DevicesView: View {
     @State private var replacingKit = false
     @State private var addingDevice = false
     @State private var takingOver = false
+    @State private var reencrypting = false
+    @State private var reencryptProgress = false
+    @State private var reencryptStarted = false
+    @State private var reencryptStatus: ReencryptStatus?
     @State private var working = false
     @State private var outcome: String?
 
@@ -101,6 +105,16 @@ struct DevicesView: View {
                 Task { await reload() }
             }
         }
+        .sheet(isPresented: $reencrypting, onDismiss: {
+            // Straight on to the progress once the start's sheet is gone: the start is only steps 1–4 (design §7.1).
+            if reencryptStarted { reencryptStarted = false; reencryptProgress = true }
+            Task { await reload() }
+        }) {
+            ReplaceKitSheet(mode: .reencrypt) { _ in reencryptStarted = true }
+        }
+        .sheet(isPresented: $reencryptProgress, onDismiss: { Task { await reload() } }) {
+            ReencryptProgressSheet()
+        }
         .alert("Devices", isPresented: Binding(get: { outcome != nil }, set: { if !$0 { outcome = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -161,9 +175,27 @@ struct DevicesView: View {
             }
             LabeledContent("Passphrase Copy", value: s.passphraseCopy ? String(localized: "In the vault", comment: "Passphrase copy state")
                                                                       : String(localized: "None", comment: "Passphrase copy state"))
+            if let status = reencryptStatus, status.pending {
+                Button {
+                    reencryptProgress = true
+                } label: {
+                    LabeledContent {
+                        Text("\(status.total - status.remaining) of \(status.total)", comment: "Re-encryption row: files done of all")
+                    } label: {
+                        Label("Re-encryption in progress", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(!s.thisIsHome)
+                .accessibilityIdentifier("devices.reencryptPending")
+            }
             if s.thisIsHome {
                 Button("Replace Recovery Kit…", systemImage: "key.viewfinder") { replacingKit = true }
                     .accessibilityIdentifier("devices.replaceKit")
+                    .disabled(reencryptStatus?.pending == true)
+                if reencryptStatus?.pending != true {
+                    Button("Re-encrypt Everything…", systemImage: "lock.rotation") { reencrypting = true }
+                        .accessibilityIdentifier("devices.reencrypt")
+                }
             } else {
                 Button("Take Over with Recovery Kit…", systemImage: "key.viewfinder") { takingOver = true }
                     .accessibilityIdentifier("devices.takeover")
@@ -171,7 +203,7 @@ struct DevicesView: View {
         } header: {
             Text("Recovery Kit")
         } footer: {
-            Text("The kit was printed once; no device keeps the recovery key, so it cannot be printed again. Replacing it makes the old kit useless for every later change.")
+            Text("The kit was printed once; no device keeps the recovery key, so it cannot be printed again. Replacing it makes the old kit useless for every later change. Re-encrypting everything also makes it, and removed devices' keys, open nothing written before.")
         }
     }
 
@@ -196,6 +228,7 @@ struct DevicesView: View {
         guard model.phase == .unlocked, !model.isRecoveryOpen else { return }
         do {
             snapshot = try await model.loadDeviceList()
+            reencryptStatus = try? await model.reencryptStatus()
             failure = nil
         } catch {
             failure = "\(error)"

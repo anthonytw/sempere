@@ -214,7 +214,9 @@ final class EpochSyncDevice: @unchecked Sendable {
 final class EpochSyncWorld {
     let devices: [EpochSyncDevice]
     let targets: [EpochTarget]
-    let recovery: MLKEM768X25519Identity
+    var recovery: MLKEM768X25519Identity
+    /// Every recovery kit the vault has had (a re-encryption or a kit replacement adds one), newest last.
+    var kits: [MLKEM768X25519Identity] = []
     let root: Data
     let vaultId: UUID
 
@@ -232,6 +234,7 @@ final class EpochSyncWorld {
         devices = try names.map { EpochSyncDevice($0, root: dir, identity: .mlkem768x25519(try key())) }
         targets = made
         recovery = try key()
+        kits = [recovery]
         let home = devices[0]
         var vault = try Vault.create(at: home.folder, device: home.keys, deviceName: home.name, recovery: recovery,
                                      recoveryPassphrase: "correct horse battery staple vault", workFactor: 10,
@@ -261,6 +264,18 @@ final class EpochSyncWorld {
 
     /// The vault as the recovery kit reads it from `device`'s working copy (an observer that holds every key).
     func observer(_ device: EpochSyncDevice) throws -> Vault {
-        try Vault.open(at: device.folder, identities: [NativeIdentity.mlkem768x25519(recovery)], root: root)
+        var last: Error = VaultError.locked
+        for kit in [recovery] + kits.reversed() {
+            do { return try Vault.open(at: device.folder, identities: [NativeIdentity.mlkem768x25519(kit)], root: root) } catch {
+                last = error
+            }
+        }
+        throw last
+    }
+
+    /// The kit of the epoch `device` pinned (a takeover is valid only under it, design §5.6 rule 3).
+    func kit(pinnedBy device: EpochSyncDevice) -> MLKEM768X25519Identity {
+        guard let record = try? device.trust.record(for: vaultId), let fp = record.pinned?.recovery else { return recovery }
+        return kits.first { (try? KeyFingerprint.recovery(identity: $0)) == fp } ?? recovery
     }
 }

@@ -150,7 +150,7 @@ interface Signatures {
     epoch: { fields: { root: string; epoch: number; epochId: string; parent: string; reason: string; recovery: string;
       home: string; list: string[]; parentList: string[] }; message: string; signatures: AuthorSig[] };
     manifest: { fields: { root: string; epoch: number; epochId: string; epochRecordHash: string; format: string;
-      features: string[] }; message: string; signatures: AuthorSig[] };
+      features: string[]; reencryptPending: string }; message: string; signatures: AuthorSig[] };
   };
   join: { request: { vaultId: string; key: string; sign: { p256: string; mldsa65: string }; kind: string };
     commitment: string; words: string[]; root: string; frontier: string; reply: string; replyWords: string[] };
@@ -174,7 +174,7 @@ describe("author signatures and join codes (design §4.1, §6.2)", () => {
       [...f.list].reverse(), [...f.parentList].reverse()))).toBe(s.signatures.epoch.message);
     const m = s.signatures.manifest.fields;
     const manifest = manifestMessage(v.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash, bytes(v.listTag.message),
-      m.format, m.features);
+      m.format, m.features, m.reencryptPending);
     expect(hex(manifest)).toBe(s.signatures.manifest.message);
     const all: [Uint8Array, AuthorSig[]][] = [[entry, s.signatures.entry.signatures], [epoch, s.signatures.epoch.signatures],
       [manifest, s.signatures.manifest.signatures]];

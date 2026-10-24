@@ -102,7 +102,8 @@ final class LaunchSmokeUITests: XCTestCase {
         XCTAssertTrue(settings.waitForNonExistence(timeout: 10), "the Settings window closed")
         requireRunning(app, "settings")
 
-        // Vault Keys (⌥⌘K): the device list (key-hierarchy KH5), its Replace Recovery Kit sheet and Repair.
+        // Vault Keys (⌥⌘K): the device list (key-hierarchy KH5), its Replace Recovery Kit and Re-encrypt Everything
+        // (KH6) sheets and Repair.
         openWithShortcut(app, "k", [.command, .option], "keysWindow", "Vault Keys window")
         let replaceKit = app.buttons["devices.replaceKit"].firstMatch
         require(replaceKit, "Replace Recovery Kit…", in: app)
@@ -110,6 +111,12 @@ final class LaunchSmokeUITests: XCTestCase {
         requireSheet("replaceKitSheet", titled: "Replace Recovery Kit", "Replace Recovery Kit sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "replace kit sheet")
+        let reencrypt = app.buttons["devices.reencrypt"].firstMatch
+        require(reencrypt, "Re-encrypt Everything…", in: app)
+        reencrypt.click()
+        requireSheet("replaceKitSheet", titled: "Re-encrypt Everything", "Re-encrypt Everything sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "re-encrypt sheet")
         let add = app.buttons["devices.add"].firstMatch
         require(add, "Add Device…", in: app)
         add.click()

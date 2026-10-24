@@ -62,7 +62,7 @@ struct ListAlert: Identifiable, Equatable, Sendable {
             lines.append(String(localized: "Someone who can change the vault's folder changed which version of Sempere may write to it, without the vault's key. This version would otherwise write to a vault it must only read."))
         case .rootMismatch:
             lines.append(String(localized: "The vault's list of devices does not belong to the vault this device knows by that name, or to its recovery kit."))
-        case .otherEpoch:
+        case .otherEpoch, .reencryptRolledBack:
             lines.append(String(localized: "The vault's keys were changed in a way this version of Sempere cannot check yet, or an older list of devices was put back."))
         case .recordUnreadable:
             lines.append(String(localized: "This device's record of the vault's devices cannot be read, so the list cannot be checked against it."))

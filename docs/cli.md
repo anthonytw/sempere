@@ -406,7 +406,28 @@ sempere vault index [--out PATH|-]
 sempere vault summaries [--out PATH|- | --device-file] [--plaintext] [--no-cache]
 sempere vault merge-copy FROM [--dry-run] [--json]
 sempere vault catch-up [--json]
+sempere vault reencrypt --recovery-out FILE (--keep ID | --remove ID)... [--recovery-passphrase]
+                        [--allow-unreachable TARGET]... [--no-pull] [--password-env VAR] [--yes] [--json]
+sempere vault reencrypt --resume [--password-env VAR] [--json]
+sempere vault reencrypt --status [--json]
 ```
+
+- `reencrypt` (key-hierarchy design §7, `format.md` §15.16; on the home device) re-encrypts every file under a
+  new vault key and a **new recovery key**: for a lost kit, when nothing on the storage should open with it any
+  more. The device review comes first, as for `recovery replace` (every listed device but this one named with
+  `--keep` or `--remove`; without `--yes` the review is printed, exit 2). Then a pull from the store vault's
+  targets (unless `--no-pull`); every target must be reachable (`--allow-unreachable` lets one wait: the finish
+  waits for it too); the journal claims every target (a target holding another re-encryption's journal refuses:
+  nothing written, exit 1); the new recovery key goes to `--recovery-out` (mode 0600; print the kit with `keys
+  paper`, then delete the file), and the `reencrypt` epoch starts. Then one step, which `--resume` repeats: the
+  pass over this machine's files (each copy verified before the old one goes; files the acceptance rule does not
+  take are set aside), a sync with every target, each target confirmed (files under earlier keys replaced or set
+  aside and deleted there, old blob names and earlier epoch records deleted), and once all are, the finish and a
+  sync with every target again. Exit 0 once finished, 1 while it is not (run `--resume` again; it also continues on
+  a new home after a handoff, and cleans up a start that stopped before its epoch). `--status` reports and changes
+  nothing. `--json`: `{epoch, pending, finished, remaining, total, reencrypted, left, problems, targets: [{name,
+  reached, confirmed, files, current, replaced, deleted, waiting, error}], started, recoveryOut}`. A vault that is
+  not a store vault has no targets here and finishes at once (its `sync folder` runs carry the new copies).
 
 - `init` creates the vault (`PATH` must end in `.sempere`), with this machine
   as its home device: epoch 1 with a new vault key, its epoch record in

@@ -322,6 +322,18 @@ public final class SyncEngine {
     /// known to hold (the accepted copy replaced them here, from another target), the target's is compared, so
     /// a device that bridges two targets carries the replacement across.
     var asidePaths: Set<String> = []
+    /// Per note: blob base names under an earlier key mapped to the current key's (KH6, `supersededTable`).
+    var supersededTables: [String: [String: String]] = [:]
+    /// The target holds the journal the local `vault.json` binds (`pushReencryptJournal`): only then does a
+    /// `vault.json` with `reencryptPending` go there.
+    var remoteJournalHere = false
+    var remoteJournalETag: String?
+    var remoteJournalPresent = false
+    /// The journal went up this run (ahead of its `vault.json`).
+    var journalUploaded = false
+    /// A target's `settings.age` from before a finished re-encryption, kept aside here, to delete after the write lock
+    /// (its version tag; empty: none strong).
+    var obsoleteSettingsETag: String?
 
     /// Guards what concurrent listings and downloads share (`TransferPool`):
     /// `state`, `report`, `budget`, `progress`, the checker cache and the
@@ -466,6 +478,8 @@ public final class SyncEngine {
         }
         // The local mutable files are judged and replaced under the vault's write lock (`localWriteLock`), which
         // is never held across a request (lock scope): the server's copies are read first, the uploads made after.
+        // A pending re-encryption's journal goes before the vault.json that binds it (KH6, `push`).
+        readReencryptJournal(remoteRoot)
         syncMutableFiles(remoteRoot)
 
         // A later epoch taken: the vault reopened under it, pinned, and this device's own files caught up
@@ -483,6 +497,8 @@ public final class SyncEngine {
            v.manifest.epoch > 1, !v.isRecordPending, state.scannedEpoch != Hex.encode(v.manifest.epochId) + ":" + epochsDigest {
             do {
                 try v.setAsideScan()
+                // After a finished re-encryption the set-aside copies leave the working copy (KH6, J7).
+                for p in v.removeSetAsideCopiesBelowReencryption() { report.deleted.append(.init(side: "local", path: p)) }
                 // Keyed on the local records too: a record that arrives later turns pending files into set-aside ones.
                 state.scannedEpoch = Hex.encode(v.manifest.epochId) + ":" + epochsDigest
             } catch {
@@ -501,6 +517,14 @@ public final class SyncEngine {
             report.skipped.append(.init(path: Vault.notesName, message: SyncReport.printable(hold)))
             if epochStatus.unlisted != nil { epochStatus.unsyncedChanges = unsyncedChangeCount() }
             return finishRun()
+        }
+        // The re-encryption journal (KH6): taken when bound, replaced, or deleted once finished.
+        settleReencryptJournal(remoteRoot)
+        if cachedHeldKeys == nil {
+            cachedHeldKeys = epochJudge.map { v in
+                let pinned = ((try? v.publicTrustStore?.record(for: v.vaultId)) ?? nil)?.pinned?.epochId
+                return "\(v.heldKeysDigest)|\(pinned.map { Hex.encode($0).prefix(16) } ?? "")|\(v.isRecordPending)"
+            }
         }
         // Join requests and passphrase copies (format.md §15.11, §15.12; KH4).
         if stoppedBefore == nil {
@@ -881,6 +905,12 @@ public final class SyncEngine {
             return
         }
         if options.dryRun { report.uploaded.append(name); return }
+        if name == Vault.manifestName, (try? EpochManifest.parse(data))?.reencryptPending != nil, !queueJournal(for: data) {
+            // Its re-encryption journal is not on the target and cannot be put there (design §7.1 step 6(a)): it waits.
+            report.skipped.append(.init(path: name, message: "not uploaded: the re-encryption journal it binds is not on the "
+                + "target yet"))
+            return
+        }
         guard deferringUploads else { throw SyncError.io("internal: \(name) uploaded outside the write-lock rounds") }
         var condition = condition
         var verifyHash: String?

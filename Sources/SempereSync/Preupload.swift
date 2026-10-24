@@ -117,7 +117,9 @@ extension SyncEngine {
             if let size = LocalFS.regularFileSize(att.appendingPathComponent(name)) { local[name] = size }
         }
         let recorded = options.pushOnly ? [] : recordedBlobs(id)
-        let new = Set(local.keys).subtracting(remote).subtracting(recorded)
+        var new = Set(local.keys).subtracting(remote).subtracting(recorded)
+        // A superseded old name is never uploaded (KH6).
+        new.subtract(supersededNames(id, new, present: Set(local.keys).union(remote)).keys)
         guard !new.isEmpty else { return nil }
         return new.sorted {
             (Self.priority($0), local[$0] ?? 0, $0) < (Self.priority($1), local[$1] ?? 0, $1)

@@ -15,6 +15,9 @@ public enum SetAsideReason: String, Hashable, Sendable, Codable {
     case bytesDiffer = "bytes-differ"
     /// Under the key of an epoch that is not on this device's chain (one a takeover dropped).
     case dropped
+    /// Under an epoch key from before a finished re-encryption whose seal this device can no longer read (its
+    /// record is gone, design §7.2): every accepted file was re-encrypted, so this copy is superseded or stale.
+    case beforeReencryption = "before-reencryption"
 
     /// One line for people.
     public var text: String {
@@ -22,6 +25,7 @@ public enum SetAsideReason: String, Hashable, Sendable, Codable {
         case .notSealed: return "written under an earlier key after the device change that closed it (not sealed)"
         case .bytesDiffer: return "sealed by a device change with other bytes"
         case .dropped: return "written under the key of a device change that a takeover dropped"
+        case .beforeReencryption: return "from before a finished re-encryption (every accepted file was re-encrypted)"
         }
     }
 }
@@ -39,9 +43,14 @@ struct OlderEpoch: Sendable {
     /// SHA-256 of this epoch's own record file, as the record above it binds it (format.md §15.6); nil off
     /// the chain.
     var recordHash: Data?
+    /// Why a file under this key is set aside when `sealed` is nil: `.dropped` (off the chain), or
+    /// `.beforeReencryption` (on the chain below a finished re-encryption whose record is gone, KH6).
+    var unsealedReason: SetAsideReason = .dropped
 
-    init(epoch: Int, epochId: Data, key: VaultEpochKey, sealed: [String: String]?, recordHash: Data? = nil) throws {
+    init(epoch: Int, epochId: Data, key: VaultEpochKey, sealed: [String: String]?, recordHash: Data? = nil,
+         unsealedReason: SetAsideReason = .dropped) throws {
         self.epoch = epoch; self.epochId = epochId; self.key = key; self.sealed = sealed; self.recordHash = recordHash
+        self.unsealedReason = unsealedReason
         identity = .mlkem768x25519(try key.vaultIdentity())
     }
 }
@@ -66,6 +75,17 @@ final class EpochKeyring: @unchecked Sendable {
     private var stoppedEarly = false
     /// Keys of epochs off the chain (this device's ledger), tried last.
     private var offChain: [OlderEpoch] = []
+    /// Keys of epochs on the chain that no record gives (KH6, design §7.2): a re-encryption record carries no
+    /// parent key, so the keys below it come from its bound journal while it is pending, and from this device's
+    /// own ledger (every epoch it pinned) after. By `epochId`.
+    private var fallback: [Data: (epoch: Int, key: VaultEpochKey)] = [:]
+    /// A parent the walk could not open for want of its key (below a re-encryption record): resumed when a
+    /// fallback key for it is added.
+    private var waiting: EpochRecordParent?
+    /// The latest re-encryption epoch on the chain when it is finished (no journal pending, design §7.1 step 7):
+    /// the records below it are deleted everywhere, so a walk that stops below it is not "incomplete" (files under
+    /// the keys this device still holds read as set aside `beforeReencryption`, never pending).
+    private var finishedReencryption: Int?
 
     /// - Parameters:
     ///   - chainIds: the verified chain's ids, epoch 1 first.
@@ -73,15 +93,65 @@ final class EpochKeyring: @unchecked Sendable {
     init(url: URL, vaultId: UUID, chainIds: [Data], parent: EpochRecordParent?, withoutLinks: Bool) {
         self.url = url; self.vaultId = vaultId; self.chainIds = chainIds; self.withoutLinks = withoutLinks
         guard let parent else { return }
-        guard let key = parent.key, chainIds.count >= 2, key.epochId == chainIds[chainIds.count - 2],
+        guard let key = parent.key else {
+            // A re-encryption record carries no parent key (KH6): its keys come from the journal or the ledger.
+            if chainIds.count >= 2, parent.epochId == chainIds[chainIds.count - 2] { waiting = parent }
+            stoppedEarly = parent.epoch >= 1
+            return
+        }
+        guard chainIds.count >= 2, key.epochId == chainIds[chainIds.count - 2],
               let older = try? OlderEpoch(epoch: parent.epoch, epochId: key.epochId, key: key, sealed: parent.sealed,
                                           recordHash: parent.recordHash) else {
-            // A re-encryption record carries no parent key (KH6): what is below it is not read here.
             stoppedEarly = parent.epoch >= 1
             return
         }
         loaded = [older]
         next = parent.epoch >= 2 ? (parent.epoch, key, parent.recordHash) : nil
+    }
+
+    /// Keys of epochs on the chain that no record gives (a bound journal's, this device's own pinned ones): used
+    /// where a re-encryption record carries no parent key. Keys whose id is not the chain's at their epoch are
+    /// ignored.
+    func addFallback(_ keys: [(epoch: Int, key: VaultEpochKey)]) {
+        lock.lock(); defer { lock.unlock() }
+        for (e, k) in keys where e >= 1 && e <= chainIds.count && chainIds[e - 1] == k.epochId { fallback[k.epochId] = (e, k) }
+        resumeWaiting()
+    }
+
+    /// Marks the latest re-encryption epoch `m` of the chain finished (see `finishedReencryption`).
+    func setFinishedReencryption(_ m: Int) {
+        lock.lock(); defer { lock.unlock() }
+        finishedReencryption = m
+        resumeWaiting()
+        settleBelowFinished()
+    }
+
+    /// The fallback key of the parent the walk waits for, when it is there now: the walk goes on (lock held).
+    private func resumeWaiting() {
+        guard let parent = waiting, let f = fallback[parent.epochId],
+              let older = try? OlderEpoch(epoch: parent.epoch, epochId: parent.epochId, key: f.key, sealed: parent.sealed,
+                                          recordHash: parent.recordHash) else { return }
+        waiting = nil
+        loaded.append(older)
+        next = parent.epoch >= 2 ? (parent.epoch, f.key, parent.recordHash) : nil
+        stoppedEarly = false
+    }
+
+    /// Below a finished re-encryption (lock held): when the walk has stopped, the keys this device still holds for
+    /// epochs below the last one loaded are added without a seal (their files are set aside `beforeReencryption`),
+    /// and the walk is not incomplete.
+    private func settleBelowFinished() {
+        guard let m = finishedReencryption, stoppedEarly, next == nil else { return }
+        let lowest = loaded.last?.epoch ?? chainIds.count
+        guard lowest <= m else { return }
+        let have = Set(loaded.map(\.epochId))
+        for (id, f) in fallback.sorted(by: { $0.value.epoch > $1.value.epoch }) where f.epoch < lowest && !have.contains(id) {
+            if let o = try? OlderEpoch(epoch: f.epoch, epochId: id, key: f.key, sealed: nil, unsealedReason: .beforeReencryption) {
+                loaded.append(o)
+            }
+        }
+        stoppedEarly = false
+        waiting = nil
     }
 
     /// Adds keys of epochs that are not on the chain (set aside whatever they hold).
@@ -123,6 +193,17 @@ final class EpochKeyring: @unchecked Sendable {
         return out
     }
 
+    /// Every earlier key this keyring knows, whatever its seal: the walk's, the fallback ones (a journal's, this device's
+    /// pinned ones) and the off-chain ones.
+    func knownKeys() -> [(epoch: Int, key: VaultEpochKey)] {
+        _ = all()
+        lock.lock(); defer { lock.unlock() }
+        var seen = Set<Data>(), out: [(Int, VaultEpochKey)] = []
+        for o in loaded + offChain where seen.insert(o.epochId).inserted { out.append((o.epoch, o.key)) }
+        for (id, f) in fallback where seen.insert(id).inserted { out.append((f.epoch, f.key)) }
+        return out
+    }
+
     /// The off-chain keys.
     func offChainEpochs() -> [OlderEpoch] {
         lock.lock(); defer { lock.unlock() }
@@ -145,10 +226,20 @@ final class EpochKeyring: @unchecked Sendable {
                     || Data(SHA256.hash(data: data)) == expected,
                   let record = try? EpochRecord.open(data, key: key, vaultId: vaultId, epoch: j),
                   j - 1 >= 1, chainIds.count >= j, record.epochId == chainIds[j - 1],
-                  let parent = record.parent, let pk = parent.key, pk.epochId == chainIds[j - 2],
+                  let parent = record.parent, parent.epochId == chainIds[j - 2] else {
+                stoppedEarly = true
+                settleBelowFinished()
+                if loaded.count > i { break }
+                return nil
+            }
+            // A re-encryption record carries no parent key (KH6): the journal's, or this device's own.
+            guard let pk = parent.key ?? fallback[parent.epochId]?.key, pk.epochId == chainIds[j - 2],
                   let older = try? OlderEpoch(epoch: j - 1, epochId: pk.epochId, key: pk, sealed: parent.sealed,
                                               recordHash: parent.recordHash) else {
+                waiting = parent.key == nil ? parent : nil
                 stoppedEarly = true
+                settleBelowFinished()
+                if loaded.count > i { break }
                 return nil
             }
             loaded.append(older)
@@ -186,6 +277,13 @@ enum EpochMutation: Hashable, Sendable, CaseIterable {
     case recordByNameOnly
     /// J4 (KH4): two takeovers are settled by which a device met first, not by `epochId`.
     case takeoverByArrival
+    /// J9 (KH6, "the skip-complete-files check inverted"): the re-encryption pass skips what it must do, so it
+    /// never finishes.
+    case reencryptSkipInverted
+    /// J7 (KH6): old blob names are never deleted (by the pass or by sync).
+    case keepOldBlobNames
+    /// J7 (KH6): epoch records below a finished re-encryption are kept (here, and on targets).
+    case keepOldRecords
 }
 
 extension Vault {
@@ -229,7 +327,9 @@ extension Vault {
     /// (the current epoch, rule 1).
     func setAsideReason(_ older: OlderEpoch?, path: String, sha256 hex: @autoclosure () -> String) -> SetAsideReason? {
         guard let older, !Self.epochMutations.contains(.acceptUnsealed) else { return nil }
-        guard let sealed = older.sealed else { return Self.epochMutations.contains(.droppedEpochAccepted) ? nil : .dropped }
+        guard let sealed = older.sealed else {
+            return Self.epochMutations.contains(.droppedEpochAccepted) && older.unsealedReason == .dropped ? nil : older.unsealedReason
+        }
         guard let digest = sealed[path] else { return .notSealed }
         return digest == hex() ? nil : .bytesDiffer
     }

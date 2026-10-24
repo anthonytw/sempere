@@ -301,9 +301,15 @@ final class EpochPrecedenceTests: XCTestCase {
         }
         for pinned in pins {
             let at = "seed \(seed), pinned \(pinned.count)"
+            // A takeover on the pinned path itself was judged when it was pinned: a kit replacement pinned above it
+            // since does not undo it (KH6). The kit rules apply to takeovers off the pinned path.
+            func onPin(_ c: Data) -> Bool {
+                let p = path(c)
+                return p.count <= pinned.count && zip(p, pinned).allSatisfy { $0 == $1 }
+            }
             func validStep(_ c: Data, _ parent: Data) -> Bool {
                 guard let cn = byId[c], let pn = byId[parent] else { return false }
-                if cn.reason == .takeover && retired(under: parent, pinned: pinned) { return false }
+                if cn.reason == .takeover && !onPin(c) && retired(under: parent, pinned: pinned) { return false }
                 return valid(cn, under: pn, ancestry: ancestry(parent), ancestryKits: ancestryKits(parent))
             }
             let validNodes = Set(nodes.filter { n in
@@ -351,14 +357,14 @@ final class EpochPrecedenceTests: XCTestCase {
                 }
             }
             // (f) No takeover on the chain was signed by a kit this device's pinned chain retired.
-            for c in chain where byId[c]?.reason == .takeover {
+            for c in chain where byId[c]?.reason == .takeover && !onPin(c) {
                 if let p = byId[c]?.parent, retired(under: p, pinned: pinned) {
                     throw Violation(description: "(f) \(at): a retired kit's takeover was followed")
                 }
             }
             // (g) A pinned device follows only takeovers signed by its pinned frontier's own kit (round 8 C1-b).
             if let frontier = pinned.last.flatMap({ byId[$0] }) {
-                for c in chain where byId[c]?.reason == .takeover && byId[c]?.recoverySigner != frontier.recovery {
+                for c in chain where byId[c]?.reason == .takeover && !onPin(c) && byId[c]?.recoverySigner != frontier.recovery {
                     throw Violation(description: "(g) \(at): a takeover not signed by the frontier's kit was followed")
                 }
             }

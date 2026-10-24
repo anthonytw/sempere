@@ -273,7 +273,7 @@ extension AppModel {
     }
 
     /// The note and note windows a device change closed, open again.
-    private func reopenEditors(shown: UUID?, windows: [UUID]) async {
+    func reopenEditors(shown: UUID?, windows: [UUID]) async {
         if let shown { try? await openEditor(for: shown) }
         for id in windows { _ = try? await openWindowNote(id) }
     }

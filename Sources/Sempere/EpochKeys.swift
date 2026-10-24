@@ -527,8 +527,10 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     public var list: [Entry]
     /// The version markers last verified.
     public var markers: VaultMarkers
-    /// True once this device saw the pinned epoch with no re-encryption into it pending (design §7.1).
-    public var reencryptFinished: Bool
+    /// The `epochId` of the latest epoch whose `vault.json` this device saw without `reencryptPending` while a
+    /// re-encryption was on its chain (design §7.1 step 7, KH6: the finish). A `vault.json` of that epoch or an earlier
+    /// one that binds a journal again is a rollback (a replayed journal), refused. Nil: none seen finished.
+    public var reencryptFinished: Data?
     /// The home device of the pinned epoch (design §5.6): the only device whose epochs this device
     /// follows, until a handoff or a takeover.
     public var home: Data
@@ -539,7 +541,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     /// - Throws: `EpochKeyError.invalidKey` for a root that is not 32 bytes,
     ///   `.invalidEpoch` for a chain that is not well formed (`wellFormed`).
     public init(vaultId: UUID, root: Data, chain: [ChainEpoch], list: [Entry], markers: VaultMarkers,
-                reencryptFinished: Bool = false, home: Data) throws {
+                reencryptFinished: Data? = nil, home: Data) throws {
         guard root.count == 32, home.count == 32 else { throw EpochKeyError.invalidKey }
         guard Self.wellFormed(chain) else { throw EpochKeyError.invalidEpoch }
         self.vaultId = vaultId; self.root = root; self.chain = chain; self.list = list; self.markers = markers
@@ -631,7 +633,14 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
         list = entries
         let m = try c.decode(VaultMarkers.self, forKey: .markers)
         markers = VaultMarkers(format: m.format, features: m.features)
-        reencryptFinished = try c.decodeIfPresent(Bool.self, forKey: .reencryptFinished) ?? false
+        if let text = try c.decodeIfPresent(String.self, forKey: .reencryptFinished) {
+            guard let id = Hex.decode(text), id.count == 32 else {
+                throw DecodingError.dataCorruptedError(forKey: .reencryptFinished, in: c, debugDescription: "not an epoch id")
+            }
+            reencryptFinished = id
+        } else {
+            reencryptFinished = nil
+        }
         home = try Self.hex32(c, .home)
     }
 
@@ -668,6 +677,6 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
             try e.encode(entry.name, forKey: .name)
         }
         try c.encode(markers, forKey: .markers)
-        if reencryptFinished { try c.encode(true, forKey: .reencryptFinished) }
+        if let reencryptFinished { try c.encode(Hex.encode(reencryptFinished), forKey: .reencryptFinished) }
     }
 }

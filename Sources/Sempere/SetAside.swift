@@ -204,7 +204,7 @@ extension Vault {
     }
 
     /// The tagged body (gzip) of a framed vault file under any key this vault holds; nil otherwise.
-    func plainBody(of data: Data, path: String) -> Data? {
+    public func plainBody(of data: Data, path: String) -> Data? {
         guard case .opened(let plain, let key, _) = openUnderEpochs(data), let (scope, name) = Self.framing(path) else { return nil }
         return try? BodyFraming.unframe(plain, noteId: scope, filename: name, secret: key).gzip
     }

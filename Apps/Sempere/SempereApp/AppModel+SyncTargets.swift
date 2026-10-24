@@ -377,6 +377,14 @@ extension AppModel {
             },
             countUnconfirmed: { await Task.detached(priority: .utility) { counting.unconfirmedChanges() }.value })
         session.onSuccess = { date in try? store.targets.update(targetID, of: vaultID) { $0.lastSuccess = date } }
+        session.openRemote = {
+            guard let target = store.targets.targets(of: vaultID).first(where: { $0.id == targetID }) else {
+                throw SyncTargetError.notFound(targetID.uuidString)
+            }
+            let access = try FolderTargetAccess.open(target)
+            let remote: any SyncRemote = FolderRemote(root: access.folder, provider: provider?(access.folder))
+            return (remote, { access.close() })
+        }
         let staging = LockedStaging(targetState: stateURL), vaultFolder = entry.url
         session.countStaged = { await Task.detached(priority: .utility) { staging.pending(vaultFolder: vaultFolder).count }.value }
         return session

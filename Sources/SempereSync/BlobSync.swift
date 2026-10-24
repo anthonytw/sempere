@@ -119,10 +119,15 @@ extension SyncEngine {
 
         // Push-only: nothing is downloaded, and a blob the server lacks is
         // uploaded whether or not the last sync had it.
-        let newRemote = options.pushOnly ? [] : Set(set.remote.keys).subtracting(set.local.keys).subtracting(set.recorded)
-        let newLocal = options.pushOnly
+        var newRemote = options.pushOnly ? [] : Set(set.remote.keys).subtracting(set.local.keys).subtracting(set.recorded)
+        var newLocal = options.pushOnly
             ? Set(set.local.keys).subtracting(set.remote.keys)
             : Set(set.local.keys).subtracting(set.remote.keys).subtracting(set.recorded)
+        // Old names whose content is named under the current key too travel no more (KH6): the current name does.
+        let names = Set(set.local.keys).union(set.remote.keys)
+        let superseded = Set(supersededNames(id, names, present: names).keys)
+        newRemote.subtract(superseded)
+        newLocal.subtract(superseded)
 
         // A partial file whose blob is not downloaded in this run is stale.
         if !options.dryRun && !options.pushOnly {
@@ -169,6 +174,7 @@ extension SyncEngine {
     /// what both sides share. Runs after the note's revisions were synced, so
     /// that the references both sides hold now are the ones checked.
     func syncBlobDeletions(_ id: String, _ set: inout BlobSet, remoteRevisions: Set<RevisionName>) throws {
+        dropSupersededBlobs(id, &set)
         let local = Set(set.local.keys), remote = Set(set.remote.keys)
         let remoteDeleted = options.pushOnly ? [] : local.intersection(set.recorded).subtracting(remote)
         // A partial copy: blobs it has not fetched (stand-ins), and every blob of a note
@@ -267,7 +273,7 @@ extension SyncEngine {
     /// 1. every local revision of the note was listed, read and verified, and
     ///    every revision the server holds is one of them (byte-identical,
     ///    since revisions are write-once), so both sides' sets were read;
-    /// 2. no re-encryption is unfinished (format.md §8.1.6 rule 2; re-encryption comes with KH6);
+    /// 2. no re-encryption is unfinished (format.md §8.1.6 rule 2, `Vault.isReencryptPending`);
     /// 3. no revision read references the blob's content hash: a blob is
     ///    collectable when its name is not the keyed name of any referenced
     ///    hash (in any kind).
@@ -278,6 +284,9 @@ extension SyncEngine {
         guard let vault, let note = UUID(uuidString: id) else {
             return .unknown("cannot check it against the collection rules (vault not unlocked)")
         }
+        // Rule 2: nothing is collected while a re-encryption is unfinished (superseded old names are handled apart,
+        // `dropSupersededBlobs`).
+        if vault.isReencryptPending { return .judged { _ in false } }
         let inventory: BlobInventory
         do { inventory = try vault.blobInventory(note: note) } catch { return .judged { _ in false } }
         let readable = Set(inventory.references.keys)

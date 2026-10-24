@@ -27,8 +27,16 @@ extension SyncEngine {
         for name in local.intersection(remote).sorted() where !options.dryRun {
             let path = "\(folder)/\(name)"
             do {
+                // A copy under a key from before a re-encryption is compared every run until rewritten (KH6): notebook
+                // records keep no version tag in the sync state.
+                let stale = epochJudge.flatMap { v -> Bool? in
+                    guard let m = v.reencryptEpoch?.epoch,
+                          let data = try? BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: NotebookRecords.maxFileBytes),
+                          let e = v.acceptedKeyEpoch(of: data, path: path) else { return nil }
+                    return e < m
+                } ?? false
                 try replaceUnaccepted(path, remotePath: [folder, name], recordKey: path, entry: listed[name],
-                                      recorded: state.notebookShas?[path]) { data in
+                                      recorded: state.notebookShas?[path], unknown: stale, remoteMoved: stale) { data in
                     guard let vault, vault.canRead else { return }
                     _ = try vault.openNotebookRecord(data, fileName: name)
                 }

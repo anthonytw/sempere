@@ -265,6 +265,10 @@ extension AppModel {
             },
             countUnconfirmed: { await Task.detached(priority: .utility) { copy.unconfirmedChanges() }.value })
         session.onSuccess = { [weak store] date in store?.update(id) { $0.lastPush = date } }
+        session.openRemote = { [weak store] in
+            guard let current = await MainActor.run(body: { store?.location(id) }) else { throw WebDAVVaultError.noSuchLocation }
+            return (try remote.syncRemote(try Self.endpoint(current, passwords: passwords)), {})
+        }
         let staging = LockedStaging(targetState: copy.stateURL), vaultFolder = copy.folder
         session.countStaged = { await Task.detached(priority: .utility) { staging.pending(vaultFolder: vaultFolder).count }.value }
         return session

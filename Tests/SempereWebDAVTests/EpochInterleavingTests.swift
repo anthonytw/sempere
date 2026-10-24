@@ -48,7 +48,9 @@ final class EpochInterleavingTests: SyncTestCase {
         let long = env["SEMPERE_SYNC_STRESS_LONG"] == "1"
         var seeds: [UInt64] = long ? Array(1...max(env["SEMPERE_SYNC_STRESS_SEEDS"].flatMap(UInt64.init) ?? 60, 1)) : [1, 2, 3]
         if let one = env["SEMPERE_EPOCH_SEED"].flatMap(UInt64.init) { seeds = [one] }
-        return long ? Mode(seeds: seeds, steps: 120, devices: 5) : Mode(seeds: seeds, steps: 36, devices: 4)
+        var mode = long ? Mode(seeds: seeds, steps: 120, devices: 5) : Mode(seeds: seeds, steps: 36, devices: 4)
+        if let steps = env["SEMPERE_EPOCH_STEPS"].flatMap(Int.init) { mode.steps = steps }
+        return mode
     }
 
     enum Transport: String { case memory, mock, wsgidav }
@@ -68,13 +70,20 @@ final class EpochInterleavingTests: SyncTestCase {
         try runSeeds(.wsgidav)
     }
 
-    private func runSeeds(_ kind: Transport) throws {
+    /// KH6 (design §11.2 J7, J9): runs that lean on re-encryptions (started, advanced, met by removals, takeovers and
+    /// storage attacks), over the memory transport; in the long mode every seed also runs once leaning on them.
+    func testInvariantsHoldWithReencryptions() throws { try runSeeds(.memory, lean: .reencrypt) }
+
+    private func runSeeds(_ kind: Transport, lean forced: Op? = nil) throws {
         let mode = Self.mode
         var all: [String] = []
         for seed in mode.seeds {
             let start = Date()
-            let lean = ProcessInfo.processInfo.environment["SEMPERE_EPOCH_EMPHASIS"].flatMap { e in Op.allCases.first { "\($0)" == e } }
-            let found = try run(seed: seed, steps: lean == nil ? mode.steps : 26, devices: mode.devices, kind: kind, emphasis: lean)
+            let lean = forced ?? ProcessInfo.processInfo.environment["SEMPERE_EPOCH_EMPHASIS"].flatMap { e in Op.allCases.first { "\($0)" == e } }
+            // SEMPERE_EPOCH_ACTIVATE=<mutation> runs the seeds with that mutation (to look at how it breaks).
+            let active = ProcessInfo.processInfo.environment["SEMPERE_EPOCH_ACTIVATE"].flatMap { a in Mutation.allCases.first { "\($0)" == a } }
+            let found = try run(seed: seed, steps: lean == nil && active == nil ? mode.steps : 26, devices: active == nil ? mode.devices : 4,
+                                kind: kind, mutation: active, emphasis: lean)
             print("EPOCH-INTERLEAVING \(kind.rawValue) seed \(seed): \(found.isEmpty ? "clean" : "\(found.count) violations"), "
                   + String(format: "%.1f s", Date().timeIntervalSince(start)))
             all += found.map { "seed \(seed): \($0)" }
@@ -89,6 +98,8 @@ final class EpochInterleavingTests: SyncTestCase {
         case uploadWhileWaiting, pruneLedgerOnUpload
         case takeoverByArrival, takeoverIgnored, nonHomeSignerAccepted
         case syncSettingsWhileHeld, recordByNameOnly, sightingsNeverLapse
+        /// KH6: the pass skips what it must do (J9); old blob names, or old epoch records, are kept (J7).
+        case reencryptSkipInverted, keepOldBlobNames, keepOldRecords
 
         /// The invariants design §11.2 names for it.
         var breaks: [String] {
@@ -105,6 +116,8 @@ final class EpochInterleavingTests: SyncTestCase {
             case .syncSettingsWhileHeld: return ["J5b"]
             case .recordByNameOnly: return ["J4"]
             case .sightingsNeverLapse: return ["J1"]
+            case .reencryptSkipInverted: return ["J9"]
+            case .keepOldBlobNames, .keepOldRecords: return ["J7"]
             }
         }
 
@@ -125,6 +138,9 @@ final class EpochInterleavingTests: SyncTestCase {
                 Vault.epochMutations = [.recordByNameOnly]
                 SyncEngine.epochMutations = [.recordByNameOnly]
             case .sightingsNeverLapse: SyncEngine.epochMutations = [.sightingsNeverLapse]
+            case .reencryptSkipInverted: Vault.epochMutations = [.reencryptSkipInverted]
+            case .keepOldBlobNames: Vault.epochMutations = [.keepOldBlobNames]
+            case .keepOldRecords: Vault.epochMutations = [.keepOldRecords]
             }
         }
 
@@ -139,6 +155,7 @@ final class EpochInterleavingTests: SyncTestCase {
             case .syncSettingsWhileHeld: return .settings
             case .recordByNameOnly: return .junkRecord
             case .sightingsNeverLapse: return .forgeList
+            case .reencryptSkipInverted, .keepOldBlobNames, .keepOldRecords: return .reencrypt
             default: return .remove
             }
         }
@@ -170,6 +187,9 @@ final class EpochInterleavingTests: SyncTestCase {
         /// Review of #86 (S6): a listed device changes a shared setting (`settings.age`); storage alone (no key)
         /// puts junk under an epoch record's name, or plants a detached forged device list on a target.
         case settings, junkRecord, forgeList
+        /// KH6: home starts a re-encryption on its targets (claims, the epoch), or advances one (the pass, runs with its
+        /// targets, the confirmations, the finish).
+        case reencrypt, reencryptStep
     }
 
     private struct Write {
@@ -186,6 +206,7 @@ final class EpochInterleavingTests: SyncTestCase {
         Self.clearMutations()
         defer { Self.clearMutations() }
         var rng = SeededRNG(seed)
+        var blobRng = SeededRNG(seed &+ 0xB10B)
         // Keys, epoch ids and note ids from the seed too, and one transfer at a time: a failing seed replays.
         let ids = Locked(SeededRNG(seed &+ 0x5EED))
         let idLock = NSLock()
@@ -231,6 +252,9 @@ final class EpochInterleavingTests: SyncTestCase {
         var home = "A"
         var removedEpoch: [String: Int] = [:]
         var planted: [(EpochTarget, Data)] = []
+        /// Path and SHA-256 of bytes storage or a removed device put on a target (J7 cannot hold against storage replanting old
+        /// ciphertext, design §7.3 and §10: it is out of the guarantee).
+        var plantedShas = Set<String>()
         var changed = false
         var writes: [Write] = []
         var held: [String: [any AgeIdentity]] = [:]
@@ -239,25 +263,50 @@ final class EpochInterleavingTests: SyncTestCase {
         for n in names { hold(n) }
         faultRate.value = 0.02
 
+        /// The bytes of every revision seen, by SHA-256 (a replaced copy is judged by its old bytes).
+        var seenBytes: [String: Data] = [:]
         /// Hashes of the files under `notes/` of `n`'s working copy.
         func hashes(_ n: String) -> [String: String] {
             var h: [String: String] = [:]
-            for p in SyncDevice.noteFiles(in: w[n].folder) {
-                if let d = try? Data(contentsOf: w[n].folder.appendingPathComponent(p)) { h[p] = FileDigest.sha256(d) }
+            // A resumable blob download in progress (`att/.sempere-tmp-part-…`) is not a vault file: it grows between runs.
+            for p in SyncDevice.noteFiles(in: w[n].folder) where !(p as NSString).lastPathComponent.hasPrefix(".") {
+                if let d = try? Data(contentsOf: w[n].folder.appendingPathComponent(p)) {
+                    let sha = FileDigest.sha256(d)
+                    h[p] = sha
+                    if !p.contains("/att/") { seenBytes[sha] = d }
+                }
             }
             return h
         }
+        var bodies: [String: Data] = [:]
         /// J6: the set-aside store only grows, and a file replaced in place was set aside first.
-        func checkAside(_ n: String, before: [String: String], step: Int) {
+        func checkAside(_ n: String, before: [String: String], step: Int, pre: Vault? = nil) {
             let now = Set(w[n].setAside.items(vaultId: w.vaultId).map { "\($0.path):\($0.sha256)" })
             if !(aside[n] ?? []).isSubset(of: now) { out.append("J6: step \(step): \(n)'s set-aside store lost an item") }
             aside[n] = now
             let after = hashes(n)
             for (p, old) in before where after[p] != nil && after[p] != old && !now.contains("\(p):\(old)") {
+                // Rewrap-replace (KH6): an accepted copy replaced by an accepted one with the same body (under a later key) is
+                // not J6's: J6 is about unaccepted copies, and J8 checks the body.
+                // The old copy is judged as the device holds the vault after the step, or, when that cannot judge it any
+                // more (a finish took the keys it was read with), as it held it before.
+                if let v = try? w[n].open(), let oldData = seenBytes[old],
+                   let data = try? Data(contentsOf: w[n].folder.appendingPathComponent(p)),
+                   v.acceptance(of: data, path: p).isAccepted, let body = v.plainBody(of: data, path: p) {
+                    let now = v.acceptance(of: oldData, path: p)
+                    let judged: Vault? = now.isAccepted ? v
+                        : (now == .pending || now == .unreadable || now == .setAside(.beforeReencryption)) ? pre : nil
+                    if let judged, judged.acceptance(of: oldData, path: p).isAccepted, body == judged.plainBody(of: oldData, path: p) {
+                        continue
+                    }
+                }
+                if tracing, let v = try? w[n].open(), let oldData = seenBytes[old],
+                   let data = try? Data(contentsOf: w[n].folder.appendingPathComponent(p)) {
+                    trace.append("J6DIAG \(n) \(p.suffix(30)) pre-old \((pre ?? v).acceptance(of: oldData, path: p)) post-new \(v.acceptance(of: data, path: p)) post-old \(v.acceptance(of: oldData, path: p)) epochs pre \(pre?.manifest.epoch ?? -1) post \(v.manifest.epoch)")
+                }
                 out.append("J6: step \(step): \(n) replaced \(p) without setting it aside first")
             }
         }
-        var bodies: [String: Data] = [:]
         /// J8: no path ever holds two different bodies (as the kit reads them), on any device.
         func checkBodies(_ n: String, before: [String: String], step: Int) {
             guard let observer = try? w.observer(w[n]) else { return }
@@ -271,10 +320,12 @@ final class EpochInterleavingTests: SyncTestCase {
         }
         func sync(_ n: String, _ tg: EpochTarget, step: Int) {
             let before = hashes(n)
+            let pre = try? w[n].open()
+            _ = pre?.olderEpochs   // its earlier keys read now (a run may delete the records they come from)
             guard let r = try? w[n].sync(tg) else { trace.append("\(step) sync \(n)/\(tg.name) threw"); return }
             if tracing {
                 let e = r.epoch.map { "taken \($0.taken.map(String.init) ?? "-") wait \($0.waiting != nil) unl \($0.unlisted != nil) cu \($0.caughtUp ?? -1)" } ?? ""
-                trace.append("\(step) sync \(n)/\(tg.name): up \(r.uploaded.count) down \(r.downloaded.count) aside \(r.setAside.map(\.path)) "
+                trace.append("\(step) sync \(n)/\(tg.name): up \(r.uploaded.map { $0.suffix(28) }) down \(r.downloaded.count) aside \(r.setAside.map(\.path)) "
                     + "pend \(r.pending.count) repl \(r.replaced.map { "\($0.side):\($0.path.suffix(30))" }) err \(r.errors.map(\.message).prefix(2)) "
                     + "q \(r.quarantined.map(\.message).prefix(2)) rej \(r.rejected.map(\.message).prefix(1)) \(e) "
                     + "sk \(r.skipped.filter { $0.path.hasPrefix("notes/") && $0.path.count > 10 }.map { "\($0.path.suffix(30)): \($0.message.prefix(60))" }.prefix(3))")
@@ -287,12 +338,66 @@ final class EpochInterleavingTests: SyncTestCase {
                 let up = r.uploaded.filter { !$0.hasPrefix(Vault.epochsName + "/") }
                 if !up.isEmpty { out.append("J5b: step \(step): \(n) uploaded \(up.prefix(2)) while a device change waits") }
             }
-            checkAside(n, before: before, step: step)
+            checkAside(n, before: before, step: step, pre: pre)
             checkBodies(n, before: before, step: step)
+        }
+        // KH6: the keys from before the latest re-encryption (J7 once it finished), and how many were started.
+        var reencryptOld: [any AgeIdentity]?
+        var reencryptions = 0
+        /// Home starts a re-encryption on its targets: false when it cannot (pending already, a claim refused).
+        func startReencryption(_ h: String) -> Bool {
+            guard var a = try? w[h].open(), a.isHome, !a.isReencryptPending, reencryptions < 2 else { return false }
+            let kit = (try? MLKEM768X25519Identity(seed: bytes(32))) ?? w.recovery
+            let keep = Set(a.manifest.devices.filter { $0.fingerprint != a.manifest.home }.compactMap(\.id))
+            let before: [any AgeIdentity] = a.identities + a.olderEpochs.map { $0.identity as any AgeIdentity }
+                + w.kits.map { NativeIdentity.mlkem768x25519($0) as any AgeIdentity }
+            guard let prep = try? a.prepareReencryption(kit, keep: keep, remove: []) else { return false }
+            let targets = (reach[h] ?? []).map { ReencryptCoordinator.Target(name: $0.name, remote: $0.remote(for: h)) }
+            var seen: ReencryptCoordinator.ClaimSightings = [:]
+            let claims = ReencryptCoordinator.claim(prep.journalFile, vault: a, on: targets, seen: &seen)
+            guard claims.values.allSatisfy(\.isClaimed), (try? a.beginReencryption(prep)) != nil else {
+                ReencryptCoordinator.release(prep.journalFile, on: targets)
+                _ = try? a.abandonReencryptionStart()
+                trace.append("reencrypt start by \(h) refused: \(claims)")
+                return false
+            }
+            w.kits.append(kit)
+            w.recovery = kit
+            if let v = try? w[h].open() {
+                trace.append("reencrypt started by \(h): epoch \(v.manifest.epoch) pending \(v.isReencryptPending) bound \(v.localBoundJournal() != nil) status \(v.listStatus) incomplete \(v.keyring?.isIncomplete ?? false)")
+            }
+            reencryptOld = (reencryptOld ?? []) + before
+            reencryptions += 1
+            return true
+        }
+        /// Home advances a pending re-encryption once; true once it is finished.
+        @discardableResult
+        func advanceReencryption(_ h: String, step: Int) -> Bool {
+            guard var a = try? w[h].open(), a.isHome, a.isReencryptPending else { return false }
+            var memo: [String: [String: String]] = [:]
+            let targets = reach[h] ?? []
+            let byName = Dictionary(targets.map { ($0.name, $0) }, uniquingKeysWith: { x, _ in x })
+            let outcome = Result { try ReencryptCoordinator.advance(&a, targets: targets.map { .init(name: $0.name, remote: $0.remote(for: h)) },
+                                                                    sync: { t in if let tg = byName[t.name] { sync(h, tg, step: step) } },
+                                                                    memo: &memo, scratch: w[h].root.appendingPathComponent("confirm")) }
+            if case .failure(let e) = outcome { trace.append("\(step) reencrypt step \(h) threw: \(e)") }
+            let progress = try? outcome.get()
+            if progress == nil, let v = try? w[h].open() {
+                var why = "?"
+                do { _ = try v.reencryptPass(limit: 0) } catch { why = "\(error)" }
+                trace.append("\(step) reencrypt step \(h) failed: \(why) bound \(v.localBoundJournal() != nil) status \(v.listStatus)")
+            }
+            trace.append("\(step) reencrypt step \(h): remaining \(progress?.pass?.remaining ?? -1) left \(progress?.pass?.left.count ?? -1) "
+                + "targets \(progress?.targets.map { "\($0.target):\($0.waiting.keys.sorted().prefix(2))" } ?? []) finished \(progress?.finished ?? false)")
+            return progress?.finished ?? false
         }
 
         for step in 0..<steps {
-            var op = Op.allCases.randomElement(using: &rng) ?? .write
+            // Runs leaning on a KH4 op keep KH4's mix (re-encryptions change every trajectory, and a mutation must still
+            // meet its invariant on the seeds KH4 chose); the others meet re-encryptions too.
+            let mix = lean.map { $0 == .reencrypt ? Op.allCases : Op.allCases.filter { $0 != .reencrypt && $0 != .reencryptStep } }
+                ?? Op.allCases
+            var op = mix.randomElement(using: &rng) ?? .write
             let roll = Int.random(in: 0..<100, using: &rng)
             if roll < 30 { op = .write } else if roll < 62 { op = .sync } else if roll < 72, let lean { op = lean }
             if tracing { trace.append("\(step) op \(op) home \(home) listed \(listed.sorted())") }
@@ -303,6 +408,13 @@ final class EpochInterleavingTests: SyncTestCase {
                 let before = hashes(n)
                 defer { checkAside(n, before: before, step: step); checkBodies(n, before: before, step: step) }
                 guard let note = try? w[n].write(title, id: noteId()) else { trace.append("\(step) write \(n) failed"); break }
+                // Some with an attachment (old blob names are J7's), from generators of their own, so the runs KH4's
+                // mutations were checked on keep their course.
+                if Int.random(in: 0..<(lean == .reencrypt ? 2 : 3), using: &blobRng) == 0, let v = try? w[n].open() {
+                    var content = Data(count: 48)
+                    for i in content.indices { content[i] = UInt8.random(in: 0...255, using: &blobRng) }
+                    _ = try? v.writeBlob(note: note, content, type: "image/png")
+                }
                 trace.append("\(step) write \(n) \(title) \(note.uuidString.prefix(8)) epoch \((try? w[n].open().manifest.epoch) ?? -1)")
                 writes.append(Write(writer: n, note: note, title: title, listed: true))
                 // J5a: written under the key of the epoch it verified, none earlier.
@@ -339,6 +451,7 @@ final class EpochInterleavingTests: SyncTestCase {
                 if lean == .forge, let forged = try? forge(w[victim]) {
                     // The removed device strikes at once, on the target home is not about to update.
                     for tg in targets where tg !== tgHome { tg.put(forged.1.path, forged.1.data); tg.put(Vault.manifestName, forged.0) }
+                    plantedShas.insert(forged.1.path + "|" + FileDigest.sha256(forged.1.data))
                     // A listed device that has not seen the removal meets the forgery first.
                     for tg in targets where tg !== tgHome {
                         let stale = listed.subtracting([home]).sorted().filter {
@@ -356,9 +469,11 @@ final class EpochInterleavingTests: SyncTestCase {
                 var made: [(String, Data)] = []
                 for taker in takers {
                     let keep = Set(listed.subtracting([taker]).map { w[$0].fingerprint })
-                    guard let r = try? Vault.takeover(at: w[taker].folder, device: w[taker].keys, recovery: w.recovery, keep: keep,
+                    let attempt = Result { try Vault.takeover(at: w[taker].folder, device: w[taker].keys, recovery: w.kit(pinnedBy: w[taker]), keep: keep,
                                                       trust: w[taker].trust, root: w.root, ledger: w[taker].ledger,
-                                                      setAside: w[taker].setAside) else { continue }
+                                                      setAside: w[taker].setAside) }
+                    if case .failure(let e) = attempt { trace.append("\(step) takeover by \(taker) failed: \(e)") }
+                    guard case .success(let r) = attempt else { continue }
                     made.append((taker, r.report.epochId))
                     hold(taker)
                 }
@@ -382,7 +497,10 @@ final class EpochInterleavingTests: SyncTestCase {
                 writes.append(Write(writer: x, note: note, title: title, listed: false))
                 let dir = w[x].folder.appendingPathComponent("notes/\(note.uuidString.lowercased())")
                 for f in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] {
-                    if let d = try? Data(contentsOf: dir.appendingPathComponent(f)) { tg.put("notes/\(note.uuidString.lowercased())/\(f)", d) }
+                    if let d = try? Data(contentsOf: dir.appendingPathComponent(f)) {
+                        tg.put("notes/\(note.uuidString.lowercased())/\(f)", d)
+                        plantedShas.insert("notes/\(note.uuidString.lowercased())/\(f)|" + FileDigest.sha256(d))
+                    }
                 }
             case .forge:
                 // A removed device forges an epoch under one where it was listed, names itself home, plants it.
@@ -390,6 +508,7 @@ final class EpochInterleavingTests: SyncTestCase {
                 guard let (manifest, record) = try? forge(w[x]) else { break }
                 tg.put(record.path, record.data)
                 tg.put(Vault.manifestName, manifest)
+                plantedShas.insert(record.path + "|" + FileDigest.sha256(record.data))
             case .settings:
                 let n = listed.sorted().randomElement(using: &rng) ?? "A"
                 guard let v = try? w[n].open(), v.canRead else { break }
@@ -405,7 +524,15 @@ final class EpochInterleavingTests: SyncTestCase {
                 guard let victim = recs.filter({ !$0.contains("/1-") }).randomElement(using: &rng),
                       let donor = recs.filter({ $0 != victim }).randomElement(using: &rng), let bytes = tg.file(donor) else { break }
                 tg.put(victim, bytes)
+                plantedShas.insert(victim + "|" + FileDigest.sha256(bytes))
                 trace.append("\(step) junk \(tg.name) \(victim.suffix(30))")
+            case .reencrypt:
+                if startReencryption(home) {
+                    trace.append("\(step) reencrypt start by \(home)")
+                    if let tg = reach[home]?.randomElement(using: &rng) { sync(home, tg, step: step) }
+                }
+            case .reencryptStep:
+                advanceReencryption(home, step: step)
             case .forgeList:
                 // Storage plants a device list nobody signed (no key needed): a later epoch on no chain, without a
                 // listed device. Whoever runs the storage puts the real one back before quiescence.
@@ -427,16 +554,30 @@ final class EpochInterleavingTests: SyncTestCase {
         // device that met only the planted one on it puts its own back, as any target lacking vault.json gets).
         for (tg, fake) in planted where tg.file(Vault.manifestName) == fake { tg.remove(Vault.manifestName) }
 
-        // Quiescence: no faults; every device (removed ones too: they keep pulling) syncs its targets.
+        // Quiescence: no faults; every device (removed ones too: they keep pulling) syncs its targets. Unreferenced blobs
+        // a collector deleted are followed at once (format.md §8.1.6 rule 4's wait is days; J7 looks at the end of it).
         faultRate.value = 0
+        for n in names { w[n].tune = { $0.concurrency = 1; $0.blobRetention = 0 } }
         // Until a whole round changes nothing (a repair may cross a bridge, then a comparison, a round each).
         var quiet = false
         for _ in 0..<14 where !quiet {
             changed = false
             for n in names { for tg in reach[n] ?? [] { sync(n, tg, step: steps) } }
+            // A pending re-encryption is advanced by its home (J9: it finishes within bounded runs).
+            if (try? w[home].open().isReencryptPending) == true { advanceReencryption(home, step: steps); changed = true }
             quiet = !changed
         }
         if !quiet { out.append("J1: still changing after 14 quiet rounds") }
+        if tracing {
+            for n in names {
+                guard let v = try? w[n].open() else { continue }
+                trace.append("STATE \(n): epoch \(v.manifest.epoch)/\(Hex.encode(v.manifest.epochId).prefix(6)) status \(v.listStatus) pending \(v.isReencryptPending) "
+                    + "unlisted \(v.unlistedNotice != nil) waiting \(v.waitingNotice ?? "-") pinned \(((try? w[n].trust.record(for: w.vaultId)) ?? nil)?.chain.map { Hex.encode($0.epochId).prefix(4) } ?? [])"
+                    + " settings here \((try? Data(contentsOf: w[n].folder.appendingPathComponent("settings.age"))).map { "\(v.acceptance(of: $0, path: "settings.age")) \(FileDigest.sha256($0).prefix(6))" } ?? "-")"
+                    + (reach[n] ?? []).map { tg in " \(tg.name): \(tg.file("settings.age").map { "\(v.acceptance(of: $0, path: "settings.age")) \(FileDigest.sha256($0).prefix(6))" } ?? "-")" }.joined()
+                    + (reach[n] ?? []).map { tg in " judge@\(tg.name): \(tg.file(Vault.manifestName).map { "\(v.judgeIncoming($0))" } ?? "-")" }.joined())
+            }
+        }
         let readers = listed.sorted()
         var titles: [String: [UUID: String]] = [:]
         for n in readers { titles[n] = (try? w[n].titles()) ?? [:] }
@@ -487,6 +628,20 @@ final class EpochInterleavingTests: SyncTestCase {
             return lines
         }
 
+        // J9 (KH6): a started re-encryption is finished at quiescence; J7: then nothing on a listed device or a target
+        // opens with a key from before it (an epoch key or a retired kit).
+        if reencryptions > 0 {
+            if (try? w[home].open().isReencryptPending) != false { out.append("J9: the re-encryption did not finish (home \(home))") }
+            for n in listed.sorted() where (try? w[n].open().isReencryptPending) == true { out.append("J9: \(n) still sees it pending") }
+        }
+        if let old = reencryptOld, (try? w[home].open().isReencryptPending) == false {
+            var sources: [(String, [String: Data])] = listed.sorted().map { ($0, ReencryptSyncTests.files(w[$0].folder)) }
+            sources += targets.map { ($0.name, ReencryptSyncTests.files($0)) }
+            for (src, files) in sources {
+                let kept = files.filter { !plantedShas.contains($0.key + "|" + FileDigest.sha256($0.value)) }
+                for p in ReencryptSyncTests.openWithOld(files: kept, old).prefix(3) { out.append("J7: \(src):\(p) opens with a key from before the re-encryption") }
+            }
+        }
         // J4, J9: one kept chain, list and note set on every listed device and target.
         let epochs = Dictionary(readers.map { ($0, (try? w[$0].open().manifest.epochId).map { Hex.encode($0) } ?? "?") },
                                 uniquingKeysWith: { a, _ in a })

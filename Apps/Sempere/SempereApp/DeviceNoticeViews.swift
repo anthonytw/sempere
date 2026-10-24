@@ -355,6 +355,7 @@ struct SetAsideRepairView: View {
         case .notSealed: return epoch + String(localized: "written under an earlier key after that change")
         case .bytesDiffer: return epoch + String(localized: "kept by that change with other content")
         case .dropped: return epoch + String(localized: "written under a change a takeover undid")
+        case .beforeReencryption: return epoch + String(localized: "from before a re-encryption that finished")
         }
     }
 

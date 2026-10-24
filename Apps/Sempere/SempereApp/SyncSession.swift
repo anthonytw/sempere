@@ -103,6 +103,9 @@ final class SyncSession {
     @ObservationIgnored let countUnconfirmed: @Sendable () async -> Int
     /// Told when a run ends without problems (the coordinator stores the date).
     @ObservationIgnored var onSuccess: (Date) -> Void = { _ in }
+    /// The target as the sync engine's remote, with what to call when done with it (a folder's security scope): for
+    /// a re-encryption's claim and confirmation (key-hierarchy KH6). Nil: none (a kind of a later version).
+    @ObservationIgnored var openRemote: (@Sendable () async throws -> (remote: any SyncRemote, close: @Sendable () -> Void))?
     /// Told what a two-way run changed in the local copy (the open vault's model applies it).
     @ObservationIgnored var onChanges: (LocalChanges) -> Void = { _ in }
     /// Called after every two-way run, whether it returned or threw (the model compares its open vault

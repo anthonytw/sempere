@@ -86,6 +86,15 @@ extension SyncEngine {
                 try setAsideWrongRecord(name)
             }
         }
+        // Records below a finished re-encryption open with keys from before it (KH6, J7): they go here, are never
+        // pushed or fetched, and are deleted on the target below.
+        if !options.dryRun, !options.pushOnly, recordsObsoleteBelow != nil {
+            for name in try LocalFS.entries(localDir).filter(Vault.isEpochRecordFileName) where isObsoleteRecord(name) {
+                try requireLocalWrite("delete \(folder)/\(name)")
+                try LocalFS.remove(localDir.appendingPathComponent(name))
+                report.deleted.append(.init(side: "local", path: "\(folder)/\(name)"))
+            }
+        }
         let local = Set(try LocalFS.entries(localDir).filter(Vault.isEpochRecordFileName))
         if let dir = remoteRoot[folder], dir.isCollection, folderArriving([folder], entry: dir) { return }
         // Unchanged on both sides since the last run left them in step: not listed (as unchanged notes).
@@ -107,7 +116,12 @@ extension SyncEngine {
         if remoteRoot[folder]?.isCollection == true, let entries = try transport.list([folder]) {
             try budget.list(entries.count)
             for e in entries where !e.isCollection {
-                if Vault.isEpochRecordFileName(e.name) {
+                if Vault.isEpochRecordFileName(e.name), isObsoleteRecord(e.name) {
+                    if !options.dryRun, !options.pushOnly, epochStatus.unlisted == nil,
+                       (try? transport.delete([folder, e.name], ifETag: e.etag.flatMap { Self.isStrong($0) ? $0 : nil })) == true {
+                        report.deleted.append(.init(side: "remote", path: "\(folder)/\(e.name)"))
+                    }
+                } else if Vault.isEpochRecordFileName(e.name) {
                     listed[e.name] = e
                 } else if !e.name.hasPrefix(".") {
                     report.ignored.append("\(folder)/\(SyncReport.printable(e.name))")
@@ -117,9 +131,16 @@ extension SyncEngine {
         }
         // In step only when both sides held the same records before any transfer.
         if local != Set(listed.keys) { transferred = true }
-        // Pushed by every device that holds one, unlisted ones excepted (they upload nothing).
+        // Pushed by every device that holds one, unlisted ones excepted (they upload nothing). A device waiting for a
+        // change it cannot verify pushes only the record the target's vault.json names (KH6): another may be a record a
+        // finished re-encryption deleted there, which it cannot know.
+        let waiting = vault?.waitingNotice != nil || epochHold != nil
+            || (vault?.sightings().contains { $0.epoch > (vault?.manifest.epoch ?? 0) } ?? false)
+        let targetRecord = fetchedManifest.flatMap { try? EpochManifest.parse($0.data) }
+            .map { String($0.epochRecord.dropFirst(Vault.epochsName.count + 1)) }
         if epochStatus.unlisted == nil {
             for name in local.subtracting(listed.keys).sorted() {
+                if waiting, name != targetRecord { continue }
                 try checkCancelled()
                 let path = "\(folder)/\(name)"
                 let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes)
@@ -269,7 +290,11 @@ extension SyncEngine {
         let url = root.appendingPathComponent(Vault.epochsName).appendingPathComponent(name)
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attrs[.size] as? Int, let mtime = attrs[.modificationDate] as? Date else { return nil }
-        let key = "\(size):\(mtime.timeIntervalSince1970)"
+        // The file's number too (review of #86 follow-up): junk set aside and the right record fetched under its name is
+        // a new file, even when its size and modification time match (a coarse clock), and another target's state that
+        // cached the junk's hash sees it so.
+        let inode = (attrs[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        let key = "\(size):\(mtime.timeIntervalSince1970):\(inode)"
         if let cached = state.recordHashes?[name], cached.hasPrefix(key + "|"),
            let hash = Hex.decode(String(cached.dropFirst(key.count + 1))) {
             return hash
@@ -561,6 +586,7 @@ extension SyncEngine {
                 } else if let file {
                     try store.keep(file: file, path: path, vaultId: checker.vaultId, reason: reason)
                 }
+                deleteObsoleteUnaccepted(path, entry: entry, data: data, file: file)
                 locked {
                     report.setAside.append(.init(path: path, message: SyncReport.printable(problem.reason)))
                     state.quarantined = state.quarantined ?? [:]
@@ -740,8 +766,47 @@ extension SyncEngine {
                 state.comparedAside?[path] = nil
             }
         } else if mine.isAccepted, theirs.isAccepted {
-            // Both accepted (a sealed copy and its re-encryption: the same body): neither is replaced.
-            locked { placedShas[recordKey] = localSha }
+            // Both accepted with one body (a sealed copy and its re-encryption): rewrap-replace (KH6, device-first-sync
+            // §5.2): the copy under the later epoch's key wins, else the smaller SHA-256; only where this device's list
+            // stands, and under a strong version tag on the target.
+            guard let winner = rewrapWinner(v, local: local, remote: got.data, path: path), standing,
+                  epochStatus.conflict == nil, epochHold == nil else {
+                locked { placedShas[recordKey] = localSha }
+                return
+            }
+            switch winner {
+            case .local:
+                guard let etag, Self.isStrong(etag) else {
+                    report.skipped.append(.init(path: path, message: "the target's copy is under an earlier key, and the "
+                        + "target gives no strong version tag to replace it under; not replaced"))
+                    return
+                }
+                guard try transport.write(remotePath, .data(local), condition: .replace(etag: etag)) else {
+                    report.skipped.append(.init(path: path, message: "changed on the target meanwhile; compared again next run"))
+                    return
+                }
+                locked {
+                    report.uploaded.append(path)
+                    report.replaced.append(.init(side: "remote", path: path))
+                    placedShas[recordKey] = localSha
+                    remoteRewritten.insert(recordKey)
+                }
+            case .remote:
+                guard !options.pushOnly else { return }
+                do { try check(got.data) } catch {
+                    report.skipped.append(.init(path: path, message: SyncReport.printable("the target's copy does not check: \(error)")))
+                    return
+                }
+                try requireLocalWrite("replace \(path)")
+                // In the ledger first (intent first), so this device's runs with its other targets carry it there too.
+                try v.recordReplacedCopy(path: path, bytes: got.data)
+                try LocalFS.write(got.data, to: file, replacing: true)
+                locked {
+                    report.downloaded.append(path)
+                    report.replaced.append(.init(side: "local", path: path))
+                    placedShas[recordKey] = remoteSha
+                }
+            }
         }
     }
 

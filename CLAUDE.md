@@ -34,7 +34,8 @@ Do not use features newer than Swift 6.0 in `Sources/`.
   against PencilKit) are allowed behind `#if canImport(PencilKit)`.
 - Files under a vault's `notes/` (revisions and each note's `att/` blobs), `notebooks/` and `epochs/`
   are write-once. Never add code that modifies them in place; re-encrypting everything (key hierarchy
-  KH6, `docs/design/key-hierarchy.md` §7) will be the one exception.
+  KH6, `docs/design/key-hierarchy.md` §7, `VaultReencrypt.swift`, rewrap-replace in `ReencryptSync.swift`) is the
+  one exception.
 - Crypto: use swift-crypto primitives; never hand-roll a cipher or MAC.
   scrypt and PBKDF2 are the only primitives implemented locally
   (swift-crypto lacks them); they must have RFC test vectors.
@@ -485,8 +486,14 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   are set aside or pending (never quarantined or placed), and an accepted copy replaces an unaccepted one after
   it is set aside (`replaceUnaccepted`, strong version tags only). `EpochInterleavingTests` (J1–J6, J8–J10)
   requires each mutation (`EpochMutation`, `SyncEpochMutation`, `PrecedenceMutation`) to break ITS invariant;
-  `SEMPERE_EPOCH_TRACE=1` prints a failing run's ops. There is no rewrap, no recipients list, no vault
-  secret, no rewrap journal, no migration from the old format. The app creates vaults (this device home, a recovery kit,
+  `SEMPERE_EPOCH_TRACE=1` prints a failing run's ops. Re-encrypt everything (KH6, `format.md` §15.8, §15.16; design
+  §16.13) is home's: `prepareReencryption` (journal written unbound) → `ReencryptCoordinator.claim` on every target →
+  `beginReencryption` (a `reencrypt` epoch whose record carries no parent key; `vault.json` binds the journal in
+  `reencryptPending`, which `authorSig` covers) → `ReencryptCoordinator.advance` (the pass, runs, `confirm` per
+  target, `finishReencryption`); CLI `vault reencrypt [--resume|--status]`. While pending every epoch change carries
+  the binding, and the keyring takes the keys below the record from the bound journal (after: the device's own
+  pinned keys). Runs never upload, take or delete an unbound journal. J7 and J9 are in `EpochInterleavingTests`.
+  There is no recipients list, no vault secret, no migration from the old format. The app creates vaults (this device home, a recovery kit,
   an optional passphrase copy) and unlocks with this device's keys (`DeviceKeyStore`); the recovery key and its
   passphrase copy open read-only, or sign a takeover. The device list (KH5,
   `DevicesView`, `AppModel+Devices`, design §16.11) renames, removes, hands home over and replaces the kit

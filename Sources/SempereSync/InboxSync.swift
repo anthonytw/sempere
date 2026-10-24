@@ -89,8 +89,30 @@ extension SyncEngine {
             if remoteHash == localHash {
                 return .init(hash: localHash, stamp: remote.stamp, size: mark.size, modified: mark.modified)
             }
-            // A key change re-sealed one copy (format.md §3.3.1 step 3): replacing it is rewrap-replace
-            // (key-hierarchy KH6). Until then neither copy is touched.
+            // A re-encryption (or a catch-up) re-sealed one copy: rewrap-replace (KH6, device-first-sync §5.2) when both
+            // verify with one content, the later epoch's key wins (else the smaller SHA-256); only where this device's
+            // list stands, and under a strong version tag on the target. Anything else: neither copy is touched.
+            if let winner = inboxRewrapWinner(local: file, remote: staged, name: name, localHash: localHash, remoteHash: remoteHash) {
+                switch winner {
+                case .local:
+                    if let etag = remote.etag, Self.isStrong(etag),
+                       try transport.write([folder, name], .file(file), condition: .replace(etag: etag)) {
+                        report.uploaded.append(path)
+                        report.replaced.append(.init(side: "remote", path: path))
+                        return nil
+                    }
+                case .remote:
+                    if !options.pushOnly {
+                        try requireLocalWrite("replace \(path)")
+                        try LocalFS.write(try BoundedRead.contents(of: staged, maxBytes: CaptureFile.maxSealedBytes(Self.parsedKind(name) ?? .capture)),
+                                          to: file, replacing: true)
+                        report.downloaded.append(path)
+                        report.replaced.append(.init(side: "local", path: path))
+                        let m = Self.localMark(file)
+                        return .init(hash: remoteHash, stamp: remote.stamp, size: m.size, modified: m.modified)
+                    }
+                }
+            }
             report.skipped.append(.init(path: path, message: "differs on the two sides; neither copy is replaced"))
             return nil
 
