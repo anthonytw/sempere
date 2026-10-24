@@ -2,7 +2,7 @@ import Foundation
 import os
 import Sempere
 
-private let inboxLog = Logger(subsystem: "io.github.anthonytw.sempere", category: "capture")
+let inboxLog = Logger(subsystem: "io.github.anthonytw.sempere", category: "capture")
 
 /// Quick voice notes on the model's side (docs/quick-capture.md): turning
 /// them on for the open vault (the capture profile into the Keychain), keeping
@@ -100,6 +100,7 @@ extension AppModel {
     /// rotates both), attributed to the key this device unlocked with
     /// (format.md §11.1, security review 2026-10, C2).
     func refreshQuickCaptureProfile() {
+        syncQuickCaptureSuspension()
         // Never a list that does not check (format.md §2.1, §11.1): captures are sealed to it.
         let current: StoredCaptureProfile?
         do { current = try storedQuickCaptureProfile() } catch {

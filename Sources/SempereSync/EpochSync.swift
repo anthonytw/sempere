@@ -1038,6 +1038,21 @@ public enum UnsyncedChanges {
         try paths(vault: vault, states: stateURLs.compactMap { (try? SyncState.load($0)) ?? nil })
     }
 
+    /// Copies `paths` of the vault folder `vault`, as they are (age files), under their vault paths in `directory`
+    /// (the unlisted device's Export, design §5.5; `sempere devices status --export`). Never over an existing file.
+    /// Returns the files written.
+    public static func export(_ paths: [String], from vault: URL, to directory: URL) throws -> [URL] {
+        try paths.map { path in
+            let target = directory.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            guard !FileManager.default.fileExists(atPath: target.path) else {
+                throw SyncError.io("\(target.path) exists: not overwritten")
+            }
+            try FileManager.default.copyItem(at: vault.appendingPathComponent(path), to: target)
+            return target
+        }
+    }
+
     static func paths(vault: Vault, states: [SyncState]) throws -> [String] {
         guard let ledger = vault.ledger else { return [] }
         let all = Set(try ledger.entries().map(\.path))

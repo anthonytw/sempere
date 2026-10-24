@@ -275,7 +275,7 @@ unforgeable while either holds.
 | `addSig` (per entry) | `entry` ‖ lp(vaultId) ‖ lp(addedEpoch) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind) ‖ lp(added) ‖ lp(addedBy) | the home of `addedEpoch` (§5.6); for the new home a takeover introduces, the recovery key's pair (`addedBy: "recovery"`) |
 | `epochSig` | `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery fingerprint) ‖ lp(home fingerprint after this epoch) ‖ lp(n) ‖ the epoch's **first list**: n fingerprints, sorted ‖ lp(m) ‖ the parent list as the author saw it: m fingerprints, sorted | the parent epoch's home; at epoch 1, the creating device (its own home, in epoch 1's first list; the root anchors it); in a takeover, the new home |
 | `recoverySig` (takeover only) | the same message as `epochSig` | the recovery key's derived pair (§5.6), under the `sign` keys whose recovery fingerprint is the parent's `recovery` |
-| `authorSig` | `manifest` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ lp(k) ‖ the k distinct features, sorted ‖ lp(reencryptPending) only while one is pending (KH6, §16.11) | home (or the old home, for the `vault.json` of its own handoff) |
+| `authorSig` | `manifest` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ lp(k) ‖ the k distinct features, sorted ‖ lp(reencryptPending) only while one is pending (KH6, §16.12) | home (or the old home, for the `vault.json` of its own handoff) |
 | per-device summaries (format.md §12.5) | `summaries` ‖ lp(vaultId) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(device) ‖ lp(version) ‖ lp(SHA-256(sealed bytes)) | the device the file names, verified under the `sign` keys of the entry with that id in the reader's checked list |
 
 ECDSA signs the message with SHA-256 and stores `r ‖ s` (64 bytes); ML-DSA-65 signs the message
@@ -1615,7 +1615,29 @@ alone: junk records, a held run's settings, forged detached lists, upload-only r
 and a storage-only attacker that plants junk records and forged lists, each mutation breaking its own invariant; a run
 replays from its seed, and quiescence runs until a whole round changes nothing), `CLIEpochSyncTests`.
 
-### 16.11 KH6 as built
+
+### 16.11 KH5 as built, part 1: the device list, removal, banners and Repair
+
+KH5 lands in two PRs (each about half of the row in §12): this one has the device list and history, home's changes
+(rename, removal, Make Home, Replace Recovery Kit), the banners and Repair; the second has device keys in the
+Keychain and signing pairs in the Secure Enclave, joining by approval and the takeover screen. Shared logic is in
+the package (`Sources/Sempere/DeviceOverview.swift`) and the CLI uses it too (`sempere devices history`,
+`devices remove`'s warnings, `devices status`, `set-aside keep --own-dropped`).
+
+| Point | Decision |
+| --- | --- |
+| Where the list lives | Settings ▸ Sync & Devices ▸ Devices and the Mac's Vault Keys window show one view (`DevicesView`). Home's actions are a device's context menu (Rename…, Make Home…, Remove…) and Replace Recovery Kit…; elsewhere the footer names the device that manages devices |
+| The run before a change (§5.2 step 2) | one two-way run of every target of the open vault, bounded at 10 s each (`syncBeforeDeviceChange`; a run already going is waited for as long, no longer), rather than a separate pull-only pass: the app's sessions already place what verifies, and what they upload first is sealed like the rest. "Skip the Rest" cancels it. Targets it did not reach are named after the change ("changes there since … will be caught up by them"). A change that fails reopens the editors, and the vault follows the disk (a change can fail after writing its `vault.json`) |
+| History names | from the current list, else the trust record, else the names this device remembered from earlier lists (`rememberDeviceNames`, per vault, plaintext names as `vault.json` has them); otherwise "a removed device (id)". Dates come from the epoch records, read down the chain under the keys each gives |
+| Removal sheet | the stale warning (last sync older than a day, or none; a device whose summaries are still under an earlier key "hasn't synced since a device change", dated by the first change it missed and stale all the same, since the summaries header's epoch is not authenticated), the storage advice naming the vault's targets, the devices it approved while it managed devices (never the current home), listed and checked so they go too (the owner's default, uncheckable), and "Lost or Stolen", which points out the current kit when it made it (`Vault.removalReview`) |
+| Replace Recovery Kit | the owner check first (`OwnerAuthenticator`: Face ID or Touch ID when enrolled, else the passcode), then every device kept or removed (takeovers since the current kit marked), then the new kit (Save, Share, Print, as at creation) and one of its key lines typed back, an optional passphrase copy and the optional old key (evidence) |
+| Takeover alerts (§6.3) | per vault, the takeovers acknowledged on this device, by `epochId` (the newest 64): a takeover beats every home epoch that is not its ancestor, so its number can be at or below one the device saw (review of #87, M1). The first time a vault is seen the takeovers on its chain are acknowledged silently; this device's own are acknowledged at once. Another device's takeover raises a banner until dismissed and a notification (if the user allows notifications) |
+| Unlisted (§5.5) | the vault's own `unlistedNotice` at open, or a run's report; a run that reports it reopens the vault, which then refuses writes itself. The screen names who made the change (the sighting's author, from this device's own list) and when this device saw it, counts its own files no target holds, and offers Save Files (the files as they are, encrypted, voice notes not in a note yet included: `UnsyncedChanges.export`, shared with `devices status --export`), Export of those notes or of all notes (the bulk export) and Remove from This Device, whose warning says what Export does not keep. Quick capture is suspended once the device is unlisted (review of #87, M3; re-check R1): the profile stays, marked `suspended`, so no new voice note starts, while a recording in progress, leftovers and the queue still seal into `inbox/` with ledger entries that Save Files covers; listed again, the suspension is lifted with the notebook kept. "Keep as a separate vault" (a re-keyed copy) is not offered: no import of a vault into new keys exists yet |
+| Held-back banner (review of #86) | after a day held back (the vault's oldest anchored sighting, or a run's `heldSince`). Sightings are listed in Repair; Forget forgets the detached ones, Forget All the anchored ones too after a warning. Both are read off the main actor after an unlock, a reopen and a run (they can verify signatures) |
+| Home conflicts | a run that reports a conflict shows a banner; the device stays on its list until a takeover settles it. Picking a branch in the app (§5.6 rule 4's user pick) is not offered: the engine does not take a pick yet |
+| Locked runs keep no sighting (§16.10) | left as built: the app's locked and upload-only runs honor sightings by epoch number, and the open vault's two-way runs record them, which is all the banners need |
+
+### 16.12 KH6 as built
 
 KH6 implements §7 (`format.md` §8.1.6, §15.5, §15.8, §15.10, §15.16; `Sources/Sempere/VaultReencrypt.swift`,
 `Sources/SempereSync/ReencryptSync.swift`, `ReencryptCoordinator.swift`; CLI `sempere vault reencrypt [--resume |
@@ -1624,7 +1646,7 @@ KH6 implements §7 (`format.md` §8.1.6, §15.5, §15.8, §15.10, §15.16; `Sour
 | Point | Decision |
 | --- | --- |
 | Who may add or strip `reencryptPending` | `authorSig` covers it (§4.1; a vector change, Swift and TypeScript). Without that, storage alone could strip the binding and make every device take the re-encryption as finished (and drop the earlier keys and records while files under them were not re-encrypted yet), or a listed device could bind a journal. The finish is home's later version of the same epoch: the version without the binding is the later one, never the other way round (`isLaterVersion`) |
-| A replayed journal | the trust record's `reencryptFinished` is now the finished re-encryption's `epochId` (it was a Bool): a `vault.json` that binds a journal to it again is refused (`reencryptRolledBack`), and a device's own later version replaces it on the target |
+| A replayed journal | the trust record's `reencryptFinished` is now the `epochId` of the epoch whose `vault.json` showed the finish (it was a Bool): a `vault.json` of that epoch or an earlier one that binds a journal again is refused (`reencryptRolledBack`), and a device's own later version replaces it on the target. A later epoch made by a home that had not seen the finish carries the binding on (signed): that home finishes again, opening files whose records are gone with every earlier key it knows |
 | The claim (§7.1 step 3) | the journal's own bytes, made before the epoch (its key is made first) and written into the working copy unbound, then created on every target. A target holding another journal refuses, except one the claimer's chain shows finished, or an unbound one first seen there over a day ago (remembered by the claimer: no transport reports a reliable time). A refused claim deletes the claims made and the local journal (`abandonReencryptionStart`, `ReencryptCoordinator.release`); so does `--resume` after a start that crashed before its epoch. Runs never upload, take or delete an unbound journal |
 | Keys below the `reencrypt` record | its record carries no parent key: the keyring's walk continues under the bound journal's keys while pending, and under this device's own pinned keys (its ledger) after. Below a finished re-encryption, a walk that stops at a deleted record is not "incomplete": files under keys the device still holds whose seal it cannot read are set aside as `before-reencryption` (a new `SetAsideReason`), never pending, so the current copies replace them |
 | Changes during the pass | every epoch (removal, handoff, a takeover at or above the re-encryption) carries the binding under its own key, and refuses to start when the journal is not in the working copy (a `vault.json` without it would read as finished) |
@@ -1640,7 +1662,7 @@ KH6 implements §7 (`format.md` §8.1.6, §15.5, §15.8, §15.10, §15.16; `Sour
 | Set-aside copies after a finish | removed from the working copy (they stay in the set-aside store), so nothing left in place opens with an earlier key |
 | Records pushed by a waiting device | only the record its target's `vault.json` names (it cannot know which records a finished re-encryption deleted there) |
 | The record-hash cache (#86 follow-up) | keyed by size, mtime and the file's number (inode), so a junk record set aside and the right one fetched under its name is a new key in every target's sync state |
-| The app sheet | waits for KH5 (not merged when KH6 was written): the CLI drives everything; the sheet calls the same `prepareReencryption`, `ReencryptCoordinator.claim`, `beginReencryption` and `ReencryptCoordinator.advance` |
+| The app sheet | waits for KH5's joins and takeovers (part 2, not merged when KH6 was written; part 1, §16.11, was): the CLI drives everything; the sheet calls the same `prepareReencryption`, `ReencryptCoordinator.claim`, `beginReencryption` and `ReencryptCoordinator.advance` |
 
 Tests: `ReencryptTests` (core: start, pass, finish, every `EpochFaults` point of the pass and the finish, a removal during
 the pass, an unaccepted file never laundered, a stripped or replayed binding), `TakeoverThenKitReplacementTests`,
@@ -1649,4 +1671,3 @@ new home finishing it), `EpochInterleavingTests` (J7 and J9 at quiescence; re-en
 removals, takeovers and storage attacks; mutations `reencryptSkipInverted` (J9), `keepOldBlobNames` and
 `keepOldRecords` (J7)), the F11 cut-upload over wsgidav behind the fault proxy (`ReencryptOverFaultProxyTests`), and
 `CLIReencryptTests`.
-

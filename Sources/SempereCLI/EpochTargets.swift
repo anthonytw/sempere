@@ -26,6 +26,13 @@ struct RemovedDeviceOutput: Encodable {
     var lastSynced: String?
     /// True when it last synced more than a day ago, or it is not known.
     var stale: Bool
+    /// RFC 3339: it has not synced since the current device change, made then (its summaries file is sealed under
+    /// an earlier epoch); nil otherwise.
+    var notSyncedSinceChange: String?
+    /// Listed devices it approved while it was home (`addedBy` its id): lost or stolen, remove them too.
+    var approved: [String] = []
+    /// It made the current recovery kit while it was home: replace it again.
+    var replacedKit = false
 }
 
 enum EpochTargets {
@@ -104,22 +111,33 @@ enum EpochTargets {
         }
     }
 
-    /// The devices `ids` with their last syncs, before a change removes them.
+    /// The devices `ids` with their last syncs, before a change removes them (`Vault.removalReview`).
     static func removed(_ vault: Vault, ids: [String], now: Date = Date()) -> [RemovedDeviceOutput] {
-        ids.compactMap { q in
-            guard let d = try? vault.resolveDevice(q), let id = d.id else { return nil }
-            let last = vault.lastSynced(device: id)
-            return RemovedDeviceOutput(id: id, name: DeviceName.display(d.name), lastSynced: last.map { RFC3339.string($0) },
-                                       stale: last.map { now.timeIntervalSince($0) > staleAfter } ?? true)
+        ((try? vault.removalReview(ids, now: now, staleAfter: staleAfter)) ?? []).compactMap { r in
+            guard let id = r.device.id else { return nil }
+            return RemovedDeviceOutput(id: id, name: DeviceName.display(r.device.name), lastSynced: r.lastSynced.map { RFC3339.string($0) },
+                                       stale: r.stale,
+                                       notSyncedSinceChange: r.notSyncedSinceChange.map { RFC3339.string($0) },
+                                       approved: r.approved.compactMap(\.id), replacedKit: r.replacedKit)
         }
     }
 
     /// The removal sheet's warning (design §5.5), one line per device.
     static func warn(_ removed: [RemovedDeviceOutput], output: OutputOptions, now: Date = Date()) {
         for r in removed where r.stale {
-            let when = r.lastSynced.flatMap { RFC3339.parse($0) }.map { "last synced \(ago($0, now: now))" } ?? "has no recorded sync"
+            let when = r.lastSynced.flatMap { RFC3339.parse($0) }.map { "last synced \(ago($0, now: now))" }
+                ?? r.notSyncedSinceChange.flatMap { RFC3339.parse($0) }.map { "has not synced since a device change \(ago($0, now: now))" }
+                ?? "has no recorded sync"
             output.info("\(r.name) (\(r.id)) \(when). Changes it made since then will not reach this vault. It will be told "
                 + "it was removed, and can export them.")
+        }
+        for r in removed where !r.approved.isEmpty {
+            output.info("\(r.name) (\(r.id)) approved \(r.approved.joined(separator: ", ")) while it managed devices. If it was "
+                + "lost or stolen, remove those too.")
+        }
+        for r in removed where r.replacedKit {
+            output.info("\(r.name) (\(r.id)) made the current recovery kit while it managed devices: replace the kit again "
+                + "(sempere recovery replace) if it was lost or stolen.")
         }
     }
 
@@ -218,19 +236,9 @@ struct DevicesStatus: ParsableCommand {
             SightingOut(epoch: $0.epoch, epochId: Hex.encode($0.epochId), anchored: vault.isAnchoredSighting($0),
                         sources: $0.sources, seen: RFC3339.string($0.seen))
         }
-        let heldSince = vault.waitingNotice == nil ? nil
-            : vault.sightings().filter { vault.isAnchoredSighting($0) }.map(\.seen).min()
-        let state: String, notice: String?
-        if let n = vault.unlistedNotice {
-            (state, notice) = ("unlisted", n)
-        } else if let n = vault.waitingNotice {
-            (state, notice) = ("waiting", n)
-        } else if vault.isRecordPending {
-            (state, notice) = ("record-pending", "waiting for the device-change record \(vault.manifest.epochRecord); "
-                + "files from before it are not read yet")
-        } else {
-            (state, notice) = ("listed", nil)
-        }
+        let status = vault.deviceSyncStatus
+        let heldSince = status.heldSince
+        let (state, notice) = (status.state.rawValue, status.notice)
         var states: [URL] = []
         if let store = EpochTargets.store(of: vault.url, vaultId: vault.vaultId) {
             states = store.targets.targets(of: vault.vaultId).map { store.targets.stateURL($0.id, of: vault.vaultId) }
@@ -239,14 +247,10 @@ struct DevicesStatus: ParsableCommand {
         var exported: [String]?
         if let export {
             let dir = URL(fileURLWithPath: export, isDirectory: true)
-            exported = try unsynced.map { path in
-                let target = dir.appendingPathComponent(path)
-                try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                guard !FileManager.default.fileExists(atPath: target.path) else {
-                    throw CLIError.failure("\(target.path) exists: not overwritten")
-                }
-                try FileManager.default.copyItem(at: vault.url.appendingPathComponent(path), to: target)
-                return target.path
+            do {
+                exported = try UnsyncedChanges.export(unsynced, from: vault.url, to: dir).map(\.path)
+            } catch {
+                throw CLIError.failure("cannot export: \(error)")
             }
         }
         if output.json {
@@ -254,7 +258,10 @@ struct DevicesStatus: ParsableCommand {
                                            sightings: sightings, forgotten: forgotten, unsynced: unsynced, exported: exported))
         }
         print("State: \(state)" + (notice.map { ": \($0)" } ?? ""))
-        if let heldSince { print("Held back since \(RFC3339.string(heldSince)) (\(EpochTargets.ago(heldSince)))") }
+        if let heldSince {
+            print("Held back since \(RFC3339.string(heldSince)) (\(EpochTargets.ago(heldSince)))"
+                + (status.heldLong() ? ": this machine cannot sync until the home device's change reaches it" : ""))
+        }
         for s in sightings {
             print("Sighting: epoch \(s.epoch) \(s.epochId.prefix(16)) \(s.anchored ? "anchored" : "detached"), seen \(s.seen) at "
                 + s.sources.joined(separator: ", "))
@@ -262,5 +269,66 @@ struct DevicesStatus: ParsableCommand {
         if let forgotten { output.info("Forgot \(forgotten) sighting(s).") }
         print("Own changes no target holds: \(unsynced.count)" + (states.isEmpty ? " (not a store vault with targets)" : ""))
         if let exported { output.info("Exported \(exported.count) file(s) to \(export ?? "")") }
+    }
+}
+
+// MARK: - devices history
+
+struct DevicesHistory: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "history",
+        abstract: "The vault's device changes, newest first: created, removals, handoffs, takeovers, kit replacements.",
+        discussion: """
+            Design §6.4. Each change of the chain this machine follows, with its author, its date (from its \
+            record), the new home of a handoff or takeover, and the devices it removed. Takeovers are marked: \
+            one this machine's owner did not make means someone holds the recovery kit (replace it on a device \
+            that still manages devices). Needs the key. --json: `events` ([{epoch, epochId, reason, date, \
+            author: {id, name}, newHome, removed}]) and `dropped` (epoch ids a takeover dropped, when this \
+            machine had followed them).
+            """
+    )
+
+    @OptionGroup var access: AccessOptions
+    @OptionGroup var output: OutputOptions
+
+    struct Ref: Encodable {
+        var id: String
+        var name: String?
+        init(_ r: DeviceRef) { id = r.id; name = r.name }
+    }
+
+    struct Event: Encodable {
+        var epoch: Int
+        var epochId: String
+        var reason: String
+        var date: String?
+        var author: Ref
+        var newHome: Ref?
+        var removed: [Ref]
+    }
+
+    struct Out: Encodable {
+        var events: [Event]
+        var dropped: [String]
+    }
+
+    func run() throws {
+        let vault = try access.openVault(.required)
+        let events = vault.deviceHistory().map {
+            Event(epoch: $0.epoch, epochId: Hex.encode($0.epochId), reason: $0.reason.rawValue, date: $0.date.map { RFC3339.string($0) },
+                  author: Ref($0.author), newHome: $0.newHome.map(Ref.init), removed: $0.removed.map(Ref.init))
+        }
+        let dropped = vault.droppedEpochs.map { Hex.encode($0) }
+        if output.json { return try output.emitJSON(Out(events: events, dropped: dropped)) }
+        var rows: [[String]] = [["EPOCH", "DATE", "CHANGE", "BY", "DETAILS"]]
+        for (e, h) in zip(events, vault.deviceHistory()) {
+            var details: [String] = []
+            if let home = h.newHome { details.append("home: \(home.display)") }
+            if !h.removed.isEmpty { details.append("removed: " + h.removed.map(\.display).joined(separator: ", ")) }
+            rows.append([String(e.epoch), e.date ?? "?", e.reason.uppercased() == "TAKEOVER" ? "TAKEOVER" : e.reason,
+                         h.author.display, details.joined(separator: "; ")])
+        }
+        print(Format.table(rows))
+        if !dropped.isEmpty { print("Dropped by a takeover: \(dropped.count) change(s) this machine had followed.") }
     }
 }

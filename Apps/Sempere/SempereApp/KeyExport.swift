@@ -30,8 +30,8 @@ struct KeyFile: Sendable, Equatable {
 }
 
 /// Asks the device owner to prove they are there before a secret key leaves
-/// the app, or another device is let into a vault. Tests inject a fake.
-/// TODO(KH5): asked before home approves a device (security review 2026-10, P1); unused until then.
+/// the app, or a list change that needs the owner at the device (Replace Recovery Kit, key-hierarchy design
+/// §6.5; `AppModel.ownerAuthenticator`). Tests inject a fake.
 protocol OwnerAuthenticator: Sendable {
     func authenticate(reason: String) async throws
 }
@@ -143,9 +143,8 @@ extension AppModel {
     /// recovery key.
     var heldDeviceKey: String? { vault?.deviceEntry?.key }
 
-    /// The recovery kit PDF (format.md §15.13) of a new vault's recovery key.
-    /// TODO(KH5): there is no kit for a vault opened later: no device keeps
-    /// the recovery key (a new one comes with a key rotation).
+    /// The recovery kit PDF (format.md §15.13) of a new recovery key: a new vault's, or a replacement's
+    /// (Replace Recovery Kit). No device keeps the recovery key, so a kit is printed only then.
     nonisolated static func recoveryKitPDF(for key: KeyFile, vault: RecoveryKit.VaultInfo, a4: Bool = false) throws -> Data {
         var kit = RecoveryKit(secret: .identity(key.secret), recipient: key.recipient, vault: vault, printed: Date())
         if a4 { kit.useA4() }

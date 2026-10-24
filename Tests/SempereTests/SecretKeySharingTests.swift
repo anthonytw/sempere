@@ -29,18 +29,18 @@ final class SecretKeySharingTests: XCTestCase {
                 XCTAssertFalse(text.contains(".textSelection(.enabled)"), "\(name): a key's text must not be selectable")
             }
         }
-        // The key window shows no secret key since KH2 (device keys never leave the device; TODO(KH5)).
+        // The key window shows no secret key since KH2 (device keys never leave the device; the device list, KH5).
         XCTAssertFalse(try source("KeysWindowView.swift").contains("secret"), "the key window shows no secret key")
-        // The general pasteboard is written in one place (SecretPasteboard) plus the public key's Copy.
+        // The general pasteboard is written in one place (SecretPasteboard); the key window no longer copies
+        // public keys (KH5's device list shows ids, not keys).
         var writes: [String] = []
         for name in try FileManager.default.contentsOfDirectory(atPath: Self.appSources.path) where name.hasSuffix(".swift") {
             for line in try source(name).split(separator: "\n") where line.contains("UIPasteboard.general") {
                 writes.append(name + ": " + line.trimmingCharacters(in: .whitespaces))
             }
         }
-        XCTAssertEqual(writes.count, 2, "\(writes)")
-        XCTAssertTrue(writes.allSatisfy { $0.hasPrefix("KeyExportViews.swift: UIPasteboard.general.setItems")
-                                          || $0.contains("key.recipient") }, "\(writes)")
+        XCTAssertEqual(writes.count, 1, "\(writes)")
+        XCTAssertTrue(writes.allSatisfy { $0.hasPrefix("KeyExportViews.swift: UIPasteboard.general.setItems") }, "\(writes)")
         // Every share sheet of a key leaves Copy out.
         let exports = try source("KeyExportViews.swift")
         XCTAssertTrue(exports.contains("ShareSheet(items: [shared], secret: true)"))

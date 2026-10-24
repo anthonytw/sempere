@@ -1443,8 +1443,12 @@ syncs with both ways.
 - **Voice notes** go to the one vault their capture profile names: straight into its in-app inbox,
   found in the store by vault id whatever the profile's bookmark says, open or not; its targets upload
   them at once (`QuickCapture.deliveredNotification` → `SyncCoordinator.captureDelivered`).
-- **Key changes**: the app makes none yet (KH5); approvals and renames made elsewhere arrive as a later
-  `vault.json` and reopen the vault. `epochs/`, `joins/` and `keys/` reach every target (KH4); a later epoch
+- **Key changes**: the home device renames, removes, hands home over and replaces the kit from the device list
+  (`AppModel+Devices`, KH5): every target is synced first (at most 10 s each, design §5.2 step 2), the editors
+  close, the new epoch is written and the vault reopens under it; the next runs carry it to every target.
+  Approvals and renames made elsewhere arrive as a later `vault.json` and reopen the vault. A run that finds
+  this device unlisted reopens the vault (it then refuses writes) and the note list shows a banner; a run held
+  back for more than a day by a change it cannot verify says so too (`AppModel+DeviceNotices`). `epochs/`, `joins/` and `keys/` reach every target (KH4); a later epoch
   arrives the same way, and the vault reopens under it (`format.md` §15.15).
 - **`SyncCoordinator`** (one per app, started at launch) owns one `SyncSession` per (vault, target). The
   open vault's sessions run two-way while the vault is unlocked here; every other session runs
@@ -1695,15 +1699,14 @@ The copy is a store vault like any other; while it is partial (`partialCopyRoot`
   (`partialBlobFetcher`, through the attachment cache, `ensureBlobLocal`, `blobWritePreparer`).
 - *Waiting while partial:* a backup first runs the server once and refuses if the copy is still partial
   (`completePartialCopy`); thinning waits (automatic thinning skips, a manual run says the vault is not
-  downloaded yet); the app makes no key changes yet (KH5). Export and history fetch the note
+  downloaded yet); key changes wait for the copy to be complete. Export and history fetch the note
   first (`downloadNote`).
 
 **When it syncs, the status, other writers**: "Sync targets in the app" below.
 
-**Key changes for a WebDAV vault**: the app's key management is stubbed
-until key hierarchy KH5. The sync carries `joins/`, `epochs/` and `keys/` (KH4),
-so the CLI can join a device or take a device change over a WebDAV target; the
-app's screens for it come with KH5.
+**Key changes for a WebDAV vault**: the sync carries `joins/`, `epochs/` and `keys/` (KH4), so a device change
+made on home (the device list, KH5) or with the CLI reaches every device over a WebDAV target. Joining a device and
+takeovers in the app come with KH5's second part.
 
 **Removing** ("Remove from This Device", on the welcome screen) deletes the
 local copy, its sync state, the Keychain password and the recent entry. When

@@ -487,7 +487,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   it is set aside (`replaceUnaccepted`, strong version tags only). `EpochInterleavingTests` (J1–J6, J8–J10)
   requires each mutation (`EpochMutation`, `SyncEpochMutation`, `PrecedenceMutation`) to break ITS invariant;
   `SEMPERE_EPOCH_TRACE=1` prints a failing run's ops. Re-encrypt everything (KH6, `format.md` §15.8, §15.16; design
-  §16.11) is home's: `prepareReencryption` (journal written unbound) → `ReencryptCoordinator.claim` on every target →
+  §16.12) is home's: `prepareReencryption` (journal written unbound) → `ReencryptCoordinator.claim` on every target →
   `beginReencryption` (a `reencrypt` epoch whose record carries no parent key; `vault.json` binds the journal in
   `reencryptPending`, which `authorSig` covers) → `ReencryptCoordinator.advance` (the pass, runs, `confirm` per
   target, `finishReencryption`); CLI `vault reencrypt [--resume|--status]`. While pending every epoch change carries
@@ -495,8 +495,12 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   pinned keys). Runs never upload, take or delete an unbound journal. J7 and J9 are in `EpochInterleavingTests`.
   There is no recipients list, no vault secret, no migration from the old format. The app creates vaults (this device home, a recovery kit,
   an optional passphrase copy) and unlocks with the remembered device key (`DeviceKeys.fileText` in the
-  Keychain); the recovery key and its passphrase copy open read-only. Its key management (adding,
-  removing, replacing keys, joining devices, list repair) is stubbed with `TODO(KH5)`.
+  Keychain); the recovery key and its passphrase copy open read-only. The device list (KH5,
+  `DevicesView`, `AppModel+Devices`, design §16.11) renames, removes, hands home over and replaces the kit
+  through the package's calls (`Vault.removeDevices` …, history and review in `DeviceOverview.swift`, shared
+  with `sempere devices`), each after `performDeviceChange`'s bounded run of every target, with the editors
+  closed and the vault reopened under the new epoch; banners and the unlisted screen are
+  `AppModel+DeviceNotices`. Joining devices and takeovers in the app are stubbed with `TODO(KH5)`.
 - `vault.json` is authenticated (`format.md` §2.1, `VaultCheck.swift`, `VaultTrust.swift`): `listTag`
   and `markersTag` (HMACs under keys derived from `K_e`), `epochSig`, `authorSig`, `addSig` (home's
   signatures). `Vault.open(…, trust:, root:)` classifies it (`listStatus`) against the device's trust
@@ -856,7 +860,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   WebDAV password is only in the Keychain (`KeychainWebDAVPasswordStore`, keyed by target id); certificate pins
   are checked by `PinnedServerTrust` (Security, app only) behind the library's `WebDAVServerTrust` hook, never by
   disabling evaluation. `epochs/`, `joins/` and `keys/` are synced (KH4, `format.md` §15.15); key
-  management in the app waits for KH5. Two-way runs record `synced` (`SyncOptions.recordSynced`, the app and the CLI). A folder target synced before that is gone is never recreated (`FolderTargetRun.check`).
+  management in the app is KH5 (the device list; joins and takeovers next). Two-way runs record `synced` (`SyncOptions.recordSynced`, the app and the CLI). A folder target synced before that is gone is never recreated (`FolderTargetRun.check`).
   App tests use `FakeWebDAVRemote` (scripted), `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`:
   `TwoDeviceSyncAppTests`), folders under `EvictingFolderProvider` (`AppModel.folderProvider`:
   `FolderTargetAppTests`) and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav
