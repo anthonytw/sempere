@@ -159,9 +159,39 @@ final class ReencryptTests: VaultTestCase {
                 XCTAssertTrue(b.verify().isHealthy, "\(make(n))")
             }
         }
-        // Every kind of point, for most files.
-        XCTAssertEqual(kinds.count, points.count, "\(kinds)")
+        // Every point of a framed file, for most files (the blob's own point: `testACrashBeforeTheOldBlobNameGoes`).
+        XCTAssertTrue(kinds.isSuperset(of: ["reencryptWritten", "reencryptVerified", "reencryptRecorded", "reencryptPlaced"]), "\(kinds)")
         XCTAssertGreaterThanOrEqual(fired, 20)
+    }
+
+    /// The blob's own point: the new name is in place and verified, the old name not deleted yet. The pass resumes and
+    /// deletes it; the attachment reads throughout.
+    func testACrashBeforeTheOldBlobNameGoes() throws {
+        // A fresh vault per try (a pass that does not stop does everything), until the blob's turn.
+        var found: (EpochWorld, UUID, BlobRef, Vault)?
+        for n in 1...4 where found == nil {
+            let dir = tmp.appendingPathComponent("blob-\(n)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let w = try EpochWorld(in: dir, names: ["A", "B"])
+            let b = try w.open("B")
+            let note = try w["B"].newNote(b, "with a blob")
+            let ref = try b.writeBlob(note: note, Data("blob only".utf8), type: "image/png")
+            var a = try w.open("A")
+            let prep = try a.prepareReencryption(try MLKEM768X25519Identity(), keep: [w["B"].id], remove: [])
+            try a.beginReencryption(prep)
+            a.faults = EpochFaults(stop: .beforeOldBlobDeleted(n))
+            do { _ = try a.reencryptPass() } catch VaultError.interrupted { found = (w, note, ref, try w.open("A")) }
+        }
+        guard let (w, note, ref, a) = found else { return XCTFail("the blob's point was never reached") }
+        let att = w.url.appendingPathComponent("notes/\(note.uuidString.lowercased())/att")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: att.path).filter { !$0.hasPrefix(".") }.count, 2, "both names")
+        XCTAssertEqual(try w.open("B").readBlob(note: note, ref), Data("blob only".utf8))
+        let again = try a.reencryptPass()
+        XCTAssertEqual(again.oldBlobsDeleted.count, 1, "\(again)")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: att.path).filter { !$0.hasPrefix(".") }.count, 1)
+        var done = a
+        try done.finishReencryption()
+        XCTAssertEqual(try w.open("B").readBlob(note: note, ref), Data("blob only".utf8))
     }
 
     /// A start that stops after its journal (a refused claim, a crash): nothing binds it, no reader takes a key from
