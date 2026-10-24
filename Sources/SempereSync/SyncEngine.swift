@@ -268,7 +268,18 @@ public final class SyncEngine {
     var arrivals = ArrivalTracker()
     /// Device changes (KH4, `EpochSync.swift`): why this run uploads nothing new and syncs only `epochs/` and
     /// `vault.json` (a later epoch this device cannot verify yet, J5b; or it is unlisted, design §5.5).
-    var epochHold: String?
+    var epochHold: String? {
+        didSet {
+            // Every upload path goes through `holdGate` (`HoldGate.swift`).
+            if epochHold == nil || Self.epochMutations.contains(.uploadWhileWaiting) && epochStatus.unlisted == nil {
+                holdGate.mode = .open
+            } else {
+                holdGate.mode = epochStatus.unlisted != nil ? .nothing : .epochsOnly
+            }
+        }
+    }
+    /// What a held run may still write (`HoldGate.swift`).
+    let holdGate = HoldGate()
     /// True once this run took a later epoch's `vault.json`: the vault is reopened, pinned and caught up.
     var epochTaken = false
     /// What the run met about device changes (`SyncReport.epoch`).
@@ -328,7 +339,7 @@ public final class SyncEngine {
                 options: SyncOptions = SyncOptions()) {
         self.root = directory
         self.vault = (vault?.canRead == true) ? vault : nil
-        self.transport = options.pullOnly ? PullOnlyRemote(base: remote) : remote
+        self.transport = HoldGatedRemote(base: options.pullOnly ? PullOnlyRemote(base: remote) : remote, gate: holdGate)
         self.stateURL = stateURL
         self.options = options
         self.report = SyncReport(dryRun: options.dryRun)
