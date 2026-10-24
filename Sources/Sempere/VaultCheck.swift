@@ -44,6 +44,15 @@ extension Vault {
 
     /// Reads and opens the current epoch's record (design §5.2.1): bounded, its SHA-256 the one
     /// `vault.json` names, opened under `key`.
+    /// True when `epochs/` here holds a file under the record name `manifest` gives whose bytes are not the ones it
+    /// names (junk planted under the name): sync sets it aside and fetches the record again (review of #86, M1).
+    public static func holdsWrongRecord(_ url: URL, manifest: EpochManifest) -> Bool {
+        guard manifest.epoch > 1,
+              let data = try? BoundedRead.contents(of: url.appendingPathComponent(manifest.epochRecord), maxBytes: EpochRecord.maxBytes)
+        else { return false }
+        return Data(SHA256.hash(data: data)) != manifest.epochRecordHash
+    }
+
     static func readCurrentRecord(_ url: URL, manifest: EpochManifest, key: VaultEpochKey) -> RecordRead {
         guard manifest.epoch > 1 else { return .notRead }
         let data: Data
@@ -56,7 +65,13 @@ extension Vault {
                 + "(epoch \(manifest.epoch)): it has not arrived"))
         }
         guard Data(SHA256.hash(data: data)) == manifest.epochRecordHash else {
-            return .problem(ListProblem(.epochSig, "\(manifest.epochRecord) is not the record vault.json names"))
+            // Junk under the record's name (anyone with storage write access can plant it): the record has not
+            // arrived. Never a reason to refuse `vault.json` (review of #86, M1); sync fetches the right one.
+            if Self.epochMutations.contains(.recordByNameOnly) {
+                return .problem(ListProblem(.epochSig, "\(manifest.epochRecord) is not the record vault.json names"))
+            }
+            return .problem(ListProblem(.otherEpoch, "the file at \(manifest.epochRecord) is not the record vault.json "
+                + "names: waiting for the right one (epoch \(manifest.epoch))"))
         }
         do { return .read(try EpochRecord.open(data, key: key, vaultId: manifest.vaultId, epoch: manifest.epoch)) } catch {
             return .problem(ListProblem(.epochSig, "\(manifest.epochRecord) does not open under the epoch's key: \(error)"))
@@ -134,7 +149,14 @@ extension Vault {
             let epochRecord: EpochRecord
             switch recordRead {
             case .read(let r): epochRecord = r
-            case .problem(let p): return ListCheck(status: .refused(p))
+            case .problem(let p):
+                // Not arrived: a direct child of the pinned epoch, linked and signed from it, is taken; files
+                // under the older key stay pending until the record arrives (design §4.3 step 2, KH4).
+                if p.reason == .otherEpoch, let record, expected.map({ $0 == record.root }) ?? true,
+                   recordPendingCheck(manifest, key: key, trusted: record) != nil {
+                    return ListCheck(status: .verified(.newEpochRecordPending))
+                }
+                return ListCheck(status: .refused(p))
             case .notRead: return refused(.otherEpoch, "the record of epoch \(manifest.epoch) was not read")
             }
             let pinned = record?.chain.map { TakeoverRule.PinnedEpoch(epochId: $0.epochId, recovery: $0.recovery) } ?? []
@@ -262,7 +284,10 @@ extension Vault {
     /// keep one, so a record that cannot be saved is an error, tried again by the next write.
     func rememberList() throws {
         guard trustStore != nil, let secret else { return }
-        guard case .verified = listStatus else { return }
+        guard case .verified(let how) = listStatus else { return }
+        // A direct child whose record has not arrived is followed but not pinned: its link keys are in the
+        // record (design §4.3 step 2). The record's arrival pins it.
+        if how == .newEpochRecordPending { return }
         let chain: [EpochTrustRecord.ChainEpoch]
         if let verifiedChain {
             chain = verifiedChain.entries.map(EpochTrustRecord.ChainEpoch.init)
@@ -274,6 +299,13 @@ extension Vault {
                                recovery: recovery, home: manifest.home, reason: manifest.epochReason)]
         }
         try saveTrust(chain: chain, list: manifest.keys, home: manifest.home)
+        // The key of every epoch this device pinned (not only those it wrote under): a takeover may drop the
+        // epoch later, and its files here then read as set aside (dropped) rather than unreadable, so an
+        // accepted copy replaces them (design §5.4 step 4; KH4).
+        if let ledger, ledgerMemo.needsKey(secret.epochId) {
+            try? ledger.rememberKey(epoch: manifest.epoch, key: secret)
+            ledgerMemo.keyRemembered(secret.epochId)
+        }
     }
 
     /// Pins `pinnable` (design §5.6 rule 3): the verified chain up to the parent of a takeover signed by a

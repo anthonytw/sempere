@@ -55,8 +55,13 @@ public struct VaultEpochKey: Hashable, Sendable {
 
     /// A fresh key from the system CSPRNG.
     public static func random() -> VaultEpochKey {
-        SymmetricKey(size: .bits256).withUnsafeBytes { VaultEpochKey(unchecked: Data($0)) }
+        if let source = testRandomSource { return VaultEpochKey(unchecked: source()) }
+        return SymmetricKey(size: .bits256).withUnsafeBytes { VaultEpochKey(unchecked: Data($0)) }
     }
+
+    /// Test-only: 32 bytes per new epoch key (and so its epoch id), from a seeded generator, so a randomized run
+    /// replays (`EpochInterleavingTests`). Nil everywhere else.
+    nonisolated(unsafe) package static var testRandomSource: (() -> Data)?
 
     private init(unchecked bytes: Data) { self.bytes = bytes }
 

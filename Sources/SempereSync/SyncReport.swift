@@ -83,6 +83,43 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// still lacks after the run, and what a push-only run left on the server
     /// because the copy has not fetched it yet.
     public var partial: PartialStatus?
+    /// Remote files under an earlier epoch's key that the acceptance rule does not take (key-hierarchy design
+    /// §5.3 rule 4): kept in this device's set-aside store, never placed (KH4).
+    public var setAside: [Issue] = []
+    /// Remote files that no key this device holds opens while a device-change record has not arrived (§5.3
+    /// rule 3): neither placed nor quarantined, tried again once the record (or a new `vault.json`) arrives.
+    public var pending: [Issue] = []
+    /// Paths whose unaccepted copy (an old-key copy that is not sealed, or under a dropped epoch's key) was
+    /// replaced by the accepted copy, on the remote or here, after it was set aside (design §5.4 step 4).
+    public var replaced: [Deletion] = []
+    /// What the run found about device changes (KH4), when anything.
+    public var epoch: EpochStatus?
+
+    /// Device changes as one run met them (key-hierarchy design §4.3, §5.5).
+    public struct EpochStatus: Codable, Hashable, Sendable {
+        /// The epoch this run took (a removal, a handoff, a takeover, a kit replacement), when it took one.
+        public var taken: Int?
+        /// The taken epoch's record has not arrived yet: files under the older key are pending.
+        public var recordPending = false
+        /// Files of this device re-encrypted under the taken key (catch-up, design §5.4).
+        public var caughtUp: Int?
+        /// A later epoch this device cannot verify yet (unverified-pending): why and where. Nothing new is
+        /// uploaded (J5b) until it is verified.
+        public var waiting: String?
+        /// This device is not on the newest device list it verified (design §5.5): who removed it. It
+        /// uploads nothing and keeps pulling.
+        public var unlisted: String?
+        /// While unlisted: this device's own changes that the target does not hold (its write ledger's files
+        /// whose path the target lacks).
+        public var unsyncedChanges: Int?
+        /// A home conflict or another `vault.json` this device does not follow.
+        public var conflict: String?
+        /// While held (waiting): when this device first met the change it waits for (its sighting). Past about a
+        /// day, the CLI and app say so (the owner's decision on the review of #86).
+        public var heldSince: Date?
+
+        public init() {}
+    }
 
     /// What a partial copy lacks (docs/io.md "Partial copies").
     public struct PartialStatus: Codable, Hashable, Sendable {
@@ -122,5 +159,6 @@ public struct SyncReport: Codable, Hashable, Sendable {
     public var isEmpty: Bool {
         uploaded.isEmpty && downloaded.isEmpty && deleted.isEmpty && conflicts.isEmpty && errors.isEmpty && rejected.isEmpty
             && extraneous.isEmpty && overwritten.isEmpty && quarantined.isEmpty && merged.isEmpty && arriving.isEmpty
+            && setAside.isEmpty && replaced.isEmpty && epoch?.taken == nil && epoch?.waiting == nil
     }
 }

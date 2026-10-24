@@ -179,6 +179,15 @@ public struct Vault: Sendable {
     public internal(set) var droppedEpochs: [Data] = []
     /// A verified prefix of the chain to pin before a takeover by a newer kit counts (`ListCheck.pinnable`).
     var pinnable: EpochChain.Verified?
+    /// Set at open when this device's sightings (design §5.5, KH4) hold a later epoch it verified whose kept
+    /// chain does not list it: why. Every write throws `removedFromVault` with it.
+    public internal(set) var unlistedNotice: String?
+    /// Set at open when this device's sightings hold a later epoch it cannot verify yet (design §4.3
+    /// "unverified-pending"): why, and where it was seen. It writes locally; its sync runs upload nothing new.
+    public internal(set) var waitingNotice: String?
+    /// True when `vault.json` is a direct child of the pinned epoch whose record has not arrived (design §4.3
+    /// step 2): followed, not pinned, older files pending, catch-up and device changes wait for the record.
+    public var isRecordPending: Bool { listStatus == .verified(.newEpochRecordPending) }
     /// This device's write ledger (design §5.4); nil keeps none (tests, readers).
     public internal(set) var ledger: (any WriteLedgerStore)?
     /// Where this device sets files aside (design §5.8); nil keeps none (tests, readers).
@@ -270,6 +279,8 @@ public struct Vault: Sendable {
         case .recovery: throw VaultError.recoveryKeyReadOnly
         case .device: break
         }
+        // A later epoch this device verified does not list it (design §5.5): it writes nothing.
+        if let unlistedNotice { throw VaultError.removedFromVault(unlistedNotice) }
         // A takeover that waits for its kit to be pinned: pin the chain up to it now, so the next open
         // takes it (design §5.6 rule 3); this write is still refused.
         if listStatus.problem != nil, pinnable != nil { try? pinDeferredPrefix() }
@@ -483,7 +494,10 @@ public struct Vault: Sendable {
         // Keys of epochs off the chain that this device wrote under (its ledger's keyring): their files are
         // set aside, and its own are caught up (design §5.4).
         if let ledger, case .device = opener, let held = try? ledger.epochKeys() {
-            let onChain = Set(vault.verifiedChain?.entries.map(\.epochId) ?? [manifest.epochId])
+            var onChain = Set(vault.verifiedChain?.entries.map(\.epochId) ?? [manifest.epochId])
+            // A direct child whose record has not arrived: the pinned chain's epochs are on its chain too (their
+            // files are pending, never set aside as off the chain).
+            if vault.isRecordPending { onChain.formUnion(vault.trustedRecord()?.chain.map(\.epochId) ?? []) }
             let off = held.filter { !onChain.contains($0.key.epochId) && $0.key.epochId != key.epochId }
             if !off.isEmpty {
                 if vault.keyring == nil {
@@ -492,6 +506,12 @@ public struct Vault: Sendable {
                 }
                 vault.keyring?.addOffChain(off.map { ($0.epoch, $0.key) })
             }
+        }
+        // Later epochs this device saw on a sync target and did not take (KH4, design §4.3, §5.5).
+        if case .device = opener, trust != nil {
+            let notices = vault.sightingNotices()
+            vault.unlistedNotice = notices.unlisted
+            vault.waitingNotice = notices.waiting
         }
         return vault
     }

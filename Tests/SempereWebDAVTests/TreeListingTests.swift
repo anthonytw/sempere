@@ -64,14 +64,14 @@ final class TreeListingTests: BlobSyncTestCase {
         XCTAssertTrue(try run("A", server).isEmpty)
         let checking = propfinds(server, since: mark)
         XCTAssertEqual(checking.infinity, 1)
-        XCTAssertEqual(checking.all, 2 + 1 + notes.count + 3, "root, notes/, the tree, each folder and each att/")
+        XCTAssertEqual(checking.all, 3 + 1 + notes.count + 3, "root, epochs/, notes/, the tree, each folder and each att/")
         XCTAssertEqual(try state("A").treeListing?.supported, true)
         XCTAssertNotNil(try state("A").treeListing?.verifiedAt)
 
-        // Used: three PROPFINDs whatever the vault's size.
+        // Used: four PROPFINDs whatever the vault's size (root, epochs/, notes/, the tree).
         mark = server.headers.count
         XCTAssertTrue(try run("A", server).isEmpty)
-        XCTAssertEqual(propfinds(server, since: mark).all, 3)
+        XCTAssertEqual(propfinds(server, since: mark).all, 4)
         XCTAssertEqual(propfinds(server, since: mark).infinity, 1)
         XCTAssertTrue(try run("A", server, pushOnly: true).isEmpty, "push-only too")
 
@@ -85,7 +85,7 @@ final class TreeListingTests: BlobSyncTestCase {
         mark = server.headers.count
         let pulled = try run("A", server)
         XCTAssertTrue(pulled.errors.isEmpty, "\(pulled)")
-        XCTAssertEqual(propfinds(server, since: mark).all, 3)
+        XCTAssertEqual(propfinds(server, since: mark).all, 4)
         XCTAssertEqual(pulled.downloaded.filter { $0.hasPrefix("notes/") }.count, 3, "\(pulled.downloaded)")
         XCTAssertEqual(try title(try openVault("A"), notes[3]), "from B")
         XCTAssertEqual(Set(try fileNames(try openVault("A"), notes[5])), Set(try fileNames(vb, notes[5])))
@@ -99,7 +99,7 @@ final class TreeListingTests: BlobSyncTestCase {
         _ = try run("A", server, now: now)
         var mark = server.headers.count
         _ = try run("A", server, now: now.addingTimeInterval(3600))
-        XCTAssertEqual(propfinds(server, since: mark).all, 3)
+        XCTAssertEqual(propfinds(server, since: mark).all, 4)
         mark = server.headers.count
         _ = try run("A", server, now: now.addingTimeInterval(25 * 3600))
         XCTAssertGreaterThan(propfinds(server, since: mark).all, notes.count, "checked again: listed one by one")
@@ -119,7 +119,7 @@ final class TreeListingTests: BlobSyncTestCase {
             XCTAssertTrue(try run("A", server).isEmpty)
             let p = propfinds(server, since: mark)
             XCTAssertEqual(p.infinity, 0, "not asked again (\(mode))")
-            XCTAssertEqual(p.all, 2 + notes.count + 3, "\(mode)")
+            XCTAssertEqual(p.all, 3 + notes.count + 3, "\(mode)")
         }
     }
 
@@ -150,7 +150,7 @@ final class TreeListingTests: BlobSyncTestCase {
         let mark = server.headers.count
         let r = try run("A", server)
         XCTAssertTrue(r.isEmpty, "\(r)")
-        XCTAssertEqual(propfinds(server, since: mark).all, 2 + notes.count + 3)
+        XCTAssertEqual(propfinds(server, since: mark).all, 3 + notes.count + 3)
         XCTAssertEqual(try state("A").treeListing, verified)
     }
 

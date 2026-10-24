@@ -273,6 +273,7 @@ final class PushOnlyTests: BlobSyncTestCase {
         let data = try JSONEncoder().encode(SyncReport())
         let keys = Set(try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys)
         XCTAssertEqual(keys, ["dryRun", "uploaded", "downloaded", "deleted", "conflicts", "errors", "skipped",
-                              "ignored", "rejected", "extraneous", "overwritten", "quarantined", "merged", "arriving"])
+                              "ignored", "rejected", "extraneous", "overwritten", "quarantined", "merged", "arriving",
+                              "setAside", "pending", "replaced"])
     }
 }

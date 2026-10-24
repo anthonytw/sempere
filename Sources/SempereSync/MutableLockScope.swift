@@ -68,6 +68,8 @@ extension SyncEngine {
                         let remote = entries[name].flatMap { $0.isCollection ? nil : $0 }
                         do {
                             if name == SharedSettings.fileName {
+                                // A held run leaves settings alone (J5b, §5.5): its key may be the old one.
+                                guard epochHold == nil || Self.epochMutations.contains(.syncSettingsWhileHeld) else { continue }
                                 // Shared settings (format.md §13): merged per key when both sides changed.
                                 try syncSharedSettings(remote: remote)
                             } else {
@@ -178,6 +180,7 @@ extension SyncEngine {
                     continue
                 }
                 report.uploaded.append(upload.name)
+                if upload.name == Vault.manifestName { targetEpochId = Self.epochOf(upload.data)?.epochId }
                 upload.afterUpload?()
                 if let hash = upload.recordHash { try recordMutable(upload.name, hash: hash) }
             } catch {

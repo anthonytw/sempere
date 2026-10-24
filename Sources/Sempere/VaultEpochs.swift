@@ -181,6 +181,11 @@ enum EpochMutation: Hashable, Sendable, CaseIterable {
     /// J3 (§11.2, "a dropped epoch's sealed set honored"): a file under the key of an epoch a takeover dropped is
     /// accepted.
     case droppedEpochAccepted
+    /// J4 (review of #86, M1): a record whose bytes are not the ones vault.json names refuses the vault.json (as
+    /// before the fix), so the device rolls the target back and stays behind.
+    case recordByNameOnly
+    /// J4 (KH4): two takeovers are settled by which a device met first, not by `epochId`.
+    case takeoverByArrival
 }
 
 extension Vault {

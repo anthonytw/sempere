@@ -61,8 +61,11 @@ final class EpochInvariantTests: VaultTestCase {
         .catchUpByDeviceId: ["J3"], .ledgerPrunedOnWrite: ["J1"], .droppedEpochAccepted: ["J3"],
     ]
 
+    /// Mutations of rules only a sync applies, checked by `EpochInterleavingTests` (SempereWebDAVTests, KH4).
+    static let overSync: Set<EpochMutation> = [.takeoverByArrival, .recordByNameOnly]
+
     func testEachMutationBreaksItsInvariant() throws {
-        for m in EpochMutation.allCases {
+        for m in EpochMutation.allCases where !Self.overSync.contains(m) {
             let labels = try XCTUnwrap(Self.expected[m], "no invariant named for \(m)")
             var caught: [String] = []
             for seed in 0..<UInt64(12) where caught.isEmpty {

@@ -232,6 +232,8 @@ public enum PublishedSummaries {
         var device: String?
         var version: Int64?
         var notes: [String: WireEntry]
+        /// Per-device files only (format.md §12.5): the end of the device's last complete two-way sync.
+        var synced: String?
     }
 
     /// Decodes an entry, or nil when it is malformed (only that entry is dropped).
@@ -256,6 +258,7 @@ public enum PublishedSummaries {
         var device: LenientField<String>?
         var version: LenientField<Int64>?
         var notes: [String: Lenient]
+        var synced: LenientField<String>?
     }
 
     /// The greatest `version` (format.md §12.5): 2^53 − 1, exact in every JSON reader (the web viewer's too).
@@ -268,9 +271,12 @@ public enum PublishedSummaries {
         public var device: DeviceID?
         /// The writer's version of its file (`version`, 1 … `maxVersion`), nil when absent or out of range.
         public var version: Int64?
+        /// Per-device files: when the writer last completed a two-way sync (`synced`, key-hierarchy design §5.5),
+        /// nil when absent or malformed.
+        public var synced: Date?
 
-        public init(entries: [UUID: Entry], device: DeviceID? = nil, version: Int64? = nil) {
-            self.entries = entries; self.device = device; self.version = version
+        public init(entries: [UUID: Entry], device: DeviceID? = nil, version: Int64? = nil, synced: Date? = nil) {
+            self.entries = entries; self.device = device; self.version = version; self.synced = synced
         }
     }
 
@@ -304,7 +310,7 @@ public enum PublishedSummaries {
 
     /// The JSON content: sorted keys, no escaped slashes, so equal entries give equal bytes.
     public static func encode(_ entries: [UUID: Entry], vaultId: UUID, device: DeviceID? = nil,
-                              version: Int64? = nil) throws -> Data {
+                              version: Int64? = nil, synced: Date? = nil) throws -> Data {
         var notes: [String: WireEntry] = [:]
         for (id, e) in entries {
             guard let created = RFC3339.string(from: e.created), let modified = RFC3339.string(from: e.modified) else {
@@ -318,7 +324,8 @@ public enum PublishedSummaries {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var data = try encoder.encode(WireFile(format: format, vaultId: vaultId.uuidString.lowercased(),
-                                               device: device?.rawValue, version: version, notes: notes))
+                                               device: device?.rawValue, version: version, notes: notes,
+                                               synced: synced.flatMap { RFC3339.string(from: $0) }))
         data.append(0x0A)
         return data
     }
@@ -349,7 +356,8 @@ public enum PublishedSummaries {
             out[id] = e
         }
         let version = file.version?.value.flatMap { (1...maxVersion).contains($0) ? $0 : nil }
-        return Contents(entries: out, device: file.device?.value.flatMap { DeviceID($0) }, version: version)
+        return Contents(entries: out, device: file.device?.value.flatMap { DeviceID($0) }, version: version,
+                        synced: file.synced?.value.flatMap { RFC3339.parse($0) })
     }
 
     private static func validate(_ w: WireEntry) -> Entry? {
@@ -423,18 +431,19 @@ extension Vault {
     ///
     /// - Throws: `PublishedSummariesError.cannotSign` when the vault was not opened as a listed device with
     ///   its signing keys; `VaultError.locked` without the key.
-    package func sealDevicePublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], version: Int64) throws -> Data {
+    package func sealDevicePublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], version: Int64,
+                                              synced: Date? = nil) throws -> Data {
         guard let device = writerDevice, let signing else {
             throw PublishedSummariesError.cannotSign("needs this device's own entry and signing keys")
         }
-        return try sealDeviceFile(entries, device: device, version: version, signer: signing)
+        return try sealDeviceFile(entries, device: device, version: version, signer: signing, synced: synced)
     }
 
     /// `entries` as `device`'s file at `version`, signed by `signer` over the message for `device` and
     /// `version` (tests forge with it; `sealDevicePublishedSummaries` is the writer).
     func sealDeviceFile(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID, version: Int64,
-                        signer: DeviceSigningKeys, nonce: Data? = nil) throws -> Data {
-        let sealed = try sealDeviceBody(entries, device: device, version: version, nonce: nonce)
+                        signer: DeviceSigningKeys, nonce: Data? = nil, synced: Date? = nil) throws -> Data {
+        let sealed = try sealDeviceBody(entries, device: device, version: version, nonce: nonce, synced: synced)
         let message = AuthorMessage.summaries(vaultId: vaultId, epoch: manifest.epoch, epochId: manifest.epochId,
                                               device: device, version: version, sealed: sealed)
         return PublishedSummaries.attach(try signer.sign(message), to: sealed)
@@ -442,10 +451,59 @@ extension Vault {
 
     /// The sealed part of a per-device file (header, nonce, ciphertext, tag), without its signature.
     func sealDeviceBody(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID, version: Int64,
-                        nonce: Data? = nil) throws -> Data {
-        let json = try PublishedSummaries.encode(entries, vaultId: vaultId, device: device, version: version)
+                        nonce: Data? = nil, synced: Date? = nil) throws -> Data {
+        let json = try PublishedSummaries.encode(entries, vaultId: vaultId, device: device, version: version,
+                                                 synced: synced)
         return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId,
                                            device: (manifest.epoch, version), nonce: nonce)
+    }
+
+    /// When the device `id` (its 8 hex digits) last completed a two-way sync, from its own
+    /// `summaries/<id>.sealed` (format.md §12.5, key-hierarchy design §5.5): nil when it has none, or its
+    /// file does not open as that device's under the current key (an older epoch's, or not written yet).
+    public func lastSynced(device id: String, now: Date = Date()) -> Date? {
+        guard let device = DeviceID(id) else { return nil }
+        let url = devicePublishedSummariesURL(device)
+        guard FileIO.exists(url), let data = try? FileIO.read(url, maxBytes: PublishedSummaries.maxFileBytes) else { return nil }
+        return (try? openDevicePublishedSummaries(data, device: device, now: now))?.synced
+    }
+
+    /// Records in this device's own `summaries/<device>.sealed` that it completed a two-way sync at `now`
+    /// (design §5.5): its entries are kept, `synced` set, at the next version (§12.5). Nothing is written while
+    /// the recorded time is less than `granularity` old (each write is uploaded to every target). A file that
+    /// does not open as this device's under the current key is rewritten with no entries. Returns true when
+    /// it wrote.
+    @discardableResult
+    public func recordSynced(device: DeviceID, now: Date, granularity: TimeInterval) throws -> Bool {
+        try requireWritable()
+        let url = devicePublishedSummariesURL(device)
+        var contents = PublishedSummaries.Contents(entries: [:], device: device)
+        if FileIO.exists(url), let data = try? FileIO.read(url, maxBytes: PublishedSummaries.maxFileBytes),
+           let file = try? openDevicePublishedSummaries(data, device: device, now: now) {
+            if let synced = file.synced, now.timeIntervalSince(synced) < granularity, synced <= now { return false }
+            contents = file
+        }
+        guard let version = PublishedSummaries.nextVersion(after: contents.version, now: now) else {
+            throw PublishedSummariesError.damaged("the previous version is the greatest there is")
+        }
+        contents.version = version
+        contents.synced = now
+        try FileIO.createDirectory(url.deletingLastPathComponent())
+        try FileIO.writeAtomically(try sealDevicePublishedSummaries(contents.entries, version: version, synced: now), to: url,
+                                   replacing: true)
+        return true
+    }
+
+    /// This device's own `summaries/<device>.sealed` sealed again under this vault's (current) key, from
+    /// `previous` (its contents as the key it was sealed under opened them), at the next version: what a device
+    /// does when it takes a new epoch (KH4), so other devices read it at once.
+    public func resealOwnSummaries(_ previous: PublishedSummaries.Contents, device: DeviceID, now: Date = Date()) throws {
+        try requireWritable()
+        guard let version = PublishedSummaries.nextVersion(after: previous.version, now: now) else { return }
+        let url = devicePublishedSummariesURL(device)
+        try FileIO.createDirectory(url.deletingLastPathComponent())
+        try FileIO.writeAtomically(try sealDevicePublishedSummaries(previous.entries, version: version, synced: previous.synced),
+                                   to: url, replacing: true)
     }
 
     /// The valid entries of the root file (§12.1, `SMPU` `0x01`). A per-device file is read only through
@@ -551,8 +609,7 @@ extension Vault {
     ///
     /// - Throws: `PublishedSummariesError.cannotSign` without this device's entry and signing keys.
     ///
-    /// TODO(KH4): when a device moves to a new epoch, rewrite its file under the new key at once (today it
-    /// is rewritten at its next write, and until then other devices cannot read it).
+    /// A device that takes a new epoch reseals its file under the new key at once (`resealOwnSummaries`, KH4).
     @discardableResult
     public func writeDevicePublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], now: Date = Date()) throws -> Data {
         try requireWritable()
@@ -562,11 +619,12 @@ extension Vault {
         let url = devicePublishedSummariesURL(device)
         let previous = FileIO.exists(url)
             ? (try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes))
-                .flatMap { try? openDevicePublishedSummaries($0, device: device, now: now).version } : nil
-        guard let version = PublishedSummaries.nextVersion(after: previous, now: now) else {
+                .flatMap { try? openDevicePublishedSummaries($0, device: device, now: now) } : nil
+        guard let version = PublishedSummaries.nextVersion(after: previous?.version, now: now) else {
             throw PublishedSummariesError.damaged("the previous version is the greatest there is")
         }
-        let data = try sealDevicePublishedSummaries(entries, version: version)
+        // The device's last sync (`synced`, KH4) stays as it was.
+        let data = try sealDevicePublishedSummaries(entries, version: version, synced: previous?.synced)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileIO.writeAtomically(data, to: url, replacing: true)
         return data

@@ -240,6 +240,10 @@ struct StoreSync: ParsableCommand {
         base.summaryCacheDirectory = SummaryCache.cliDirectory(environment: Env.vars)
         base.arrivalWait = TimeInterval(wait ?? 30)
         base.localWriteLock = store.writeLock(for: entry.vaultId)
+        base.recordSynced = true
+        base.epochTrust = trustStore()
+        // A joining machine takes its approval with its key (KH4).
+        if !vault.canRead { base.firstPullIdentities = try access.readingIdentities(vaultId: vault.vaultId) }
 
         var outcomes: [Outcome] = []
         for t in chosen {

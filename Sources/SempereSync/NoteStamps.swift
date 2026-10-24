@@ -57,6 +57,7 @@ extension SyncEngine {
             options.now >= last && options.now.timeIntervalSince(last) < options.fullListingInterval
         } ?? false
         skipsUnchangedNotes = options.skipUnchangedNotes && hadState && state.folderETagsChange == true && fresh
+            && state.compareShared != true
     }
 
     /// The remote entries of an unchanged note folder (its recorded
@@ -107,6 +108,10 @@ extension SyncEngine {
         guard !options.dryRun else { return }
         state.notes = state.notes.filter { notes.contains($0.key) }
         if !skipsUnchangedNotes && report.stoppedEarly == nil && notesNotReadable.isEmpty { state.lastFullListing = options.now }
+        if state.compareShared == true, !skipsUnchangedNotes, report.stoppedEarly == nil, notesNotReadable.isEmpty,
+           report.errors.isEmpty {
+            state.compareShared = nil
+        }
     }
 
     /// The local revision file names of a note; nil when the folder cannot be listed.

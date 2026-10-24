@@ -58,6 +58,11 @@ extension SyncEngine {
             state.mutable[name] = .init(hash: localHash, stamp: remote.stamp)
             return
         }
+        // Another epoch on the server (KH4): a later or unverifiable one is never overwritten (J5b holds the run).
+        if name == Vault.manifestName, let current, Self.otherEpochs(local, current),
+           keepServerManifestOfOtherEpoch(local: local, server: current) {
+            return
+        }
         if options.keepServerChanges, name == Vault.manifestName {
             // Replace only what this device put there: a copy changed since its last
             // sync was written by someone else (another device's key change, say).

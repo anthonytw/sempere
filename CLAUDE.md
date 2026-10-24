@@ -478,7 +478,14 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   a ledger that cannot record fails the write closed. The app's ledger and set-aside store are
   `DeviceWriteStores` (App Group, Keychain key `AfterFirstUnlockThisDeviceOnly`); tests pass none.
   `EpochInvariantTests` (J1–J8) and `EpochVaultPropertyTests` require each test-only mutation to break ITS
-  invariant. Syncing `epochs/` between targets is KH4; there is no rewrap, no recipients list, no vault
+  invariant. Over sync (KH4, `format.md` §15.15, `Sources/SempereSync/EpochSync.swift`, `VaultIncomingEpoch.swift`)
+  `epochs/` goes first (never a `vault.json` to a target without its record), a `vault.json` of another epoch
+  is judged by `Vault.judgeIncoming` (taken, record-pending, waiting = a sighting in the trust store that holds
+  every run's uploads back (J5b), unlisted, behind, conflict), received files the acceptance rule does not take
+  are set aside or pending (never quarantined or placed), and an accepted copy replaces an unaccepted one after
+  it is set aside (`replaceUnaccepted`, strong version tags only). `EpochInterleavingTests` (J1–J6, J8–J10)
+  requires each mutation (`EpochMutation`, `SyncEpochMutation`, `PrecedenceMutation`) to break ITS invariant;
+  `SEMPERE_EPOCH_TRACE=1` prints a failing run's ops. There is no rewrap, no recipients list, no vault
   secret, no rewrap journal, no migration from the old format. The app creates vaults (this device home, a recovery kit,
   an optional passphrase copy) and unlocks with the remembered device key (`DeviceKeys.fileText` in the
   Keychain); the recovery key and its passphrase copy open read-only. Its key management (adding,
@@ -841,8 +848,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   its `VaultStore.writeLock` (`vaultWriteLock`; the engine holds it through `SyncOptions.localWriteLock`). The
   WebDAV password is only in the Keychain (`KeychainWebDAVPasswordStore`, keyed by target id); certificate pins
   are checked by `PinnedServerTrust` (Security, app only) behind the library's `WebDAVServerTrust` hook, never by
-  disabling evaluation. `epochs/`, `joins/` and `keys/` are not synced until KH4; key
-  management in the app waits for KH5. A folder target synced before that is gone is never recreated (`FolderTargetRun.check`).
+  disabling evaluation. `epochs/`, `joins/` and `keys/` are synced (KH4, `format.md` §15.15); key
+  management in the app waits for KH5. Two-way runs record `synced` (`SyncOptions.recordSynced`, the app and the CLI). A folder target synced before that is gone is never recreated (`FolderTargetRun.check`).
   App tests use `FakeWebDAVRemote` (scripted), `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`:
   `TwoDeviceSyncAppTests`), folders under `EvictingFolderProvider` (`AppModel.folderProvider`:
   `FolderTargetAppTests`) and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav

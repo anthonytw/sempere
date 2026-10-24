@@ -160,8 +160,9 @@ extension SyncEngine {
             state.quarantined?[key] = nil
             return false
         }
-        report.skipped.append(.init(path: path, message: "quarantined by an earlier run and unchanged on the server; "
-                                    + "not downloaded again (--retry-quarantined)"))
+        report.skipped.append(.init(path: path, message: record.setAside == true
+            ? "set aside by an earlier run (from before a device change) and unchanged on the server; not downloaded again"
+            : "quarantined by an earlier run and unchanged on the server; not downloaded again (--retry-quarantined)"))
         return true
     }
 

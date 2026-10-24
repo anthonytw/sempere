@@ -3521,6 +3521,12 @@ install). A received file is placed only when it starts with `SMPU` `0x04` and,
 with the vault unlocked, is that device's file; otherwise it is skipped (a hint,
 never quarantined). Nothing is ever deleted.
 
+A per-device file may carry, at the top level next to `notes`, `synced`: the time (RFC 3339) its device last
+completed a two-way sync (key-hierarchy design §5.5; §15.15). Its device rewrites the file to update it (at the
+next `version`), at most once an hour, keeping its entries; its other writes keep the value. A device that takes a
+new epoch reseals its file under the new key at once, keeping entries and `synced`. Readers that do not know the
+field ignore it. The root file has none.
+
 ## 13. Shared settings
 
 A vault may hold, at its root, `settings.age`: settings
@@ -3729,8 +3735,9 @@ Status: **normative. KH3: this version writes and reads vaults of any epoch** (�
 of §4, §13.1 and §14.1, the blob names of §8.1.2 and the capture keys of §11.1 use it; vaults of the
 earlier format, with a recipients list and a vault secret, are not read, with no migration before v1):
 removals, handoffs, takeovers and recovery-kit replacements start new epochs, with the acceptance rule,
-the write ledger and the set-aside store of §15.14. Syncing epoch records and join requests between
-targets is KH4, and the re-encryption journal (§15.8, KH6) is specified here but not written yet. This section freezes the bytes of the key
+the write ledger and the set-aside store of §15.14. Since KH4 a sync carries epoch records, join requests and
+the passphrase copy between targets and judges a `vault.json` of another epoch by the chain (§15.15). The
+re-encryption journal (§15.8, KH6) is specified here but not written yet. This section freezes the bytes of the key
 hierarchy designed in `docs/design/key-hierarchy.md`, so that the printed recovery kit and
 a second implementation can rely on them. Where the design leaves an encoding open, this section decides it, and the
 shared vectors pin it: `Tests/SempereTests/Fixtures/epoch-vectors.json` (key schedule, wraps, lists,
@@ -4038,6 +4045,24 @@ record without them does not read, and fails closed), `list` (the current list: 
 fingerprint of the pinned epoch's home). Readers refuse a chain that does not start at epoch 1 or
 whose `parent`s do not follow, and a missing or malformed `home`.
 
+**Sightings** (KH4, design §4.3, §5.5): next to the record, `<vaultId>.seen.json` (`sempere-sightings/2`:
+`vaultId`, and `sightings`, at most 8, each `sources` (the targets that showed it when last looked at), `seen`
+(RFC 3339, first seen) and `manifest` (the `vault.json` bytes, base64)) keeps the `vault.json` versions of other
+epochs this device met on a sync target and did not take: one it cannot verify yet (unverified-pending), or one
+it verified that does not list it (unlisted). A sighting that cannot be read fails closed (the device would
+upload again). Every open judges them again (§15.15): one now verified and followed is taken by the next two-way
+run, one dropped or no longer of interest is forgotten. A sighting is **anchored** when its `parent` is an epoch
+the device pinned or holds on its own chain: a real change (its link and signatures check against that epoch, or
+it is refused), which holds every run back. Otherwise it is **detached**: nothing verifies it, and anyone with
+write access to a target (not only a removed device: a provider, any holder of the target's credentials) can
+plant one without any key. A detached sighting holds back only runs on the targets in its `sources`; each run
+that reads a target's `vault.json` drops that target from the sightings it no longer shows, and one no target
+shows any more is forgotten. So storage alone can hold a device back on that storage, never everywhere and never
+for good. When more than 8 would be kept, detached ones go first (oldest first). `sempere devices status` lists
+them (`--forget-sightings` forgets the detached ones, `--all` the anchored ones too).
+A device also keeps, in its write ledger, the key of every epoch it pinned (not only
+those it wrote under), so that files under an epoch a takeover later dropped read as set aside, not unreadable.
+
 ### 15.11 The passphrase copy
 
 `keys/recovery-<recovery fingerprint hex>.key.age`: one scrypt stanza (writers: work factor 20), whose
@@ -4079,7 +4104,13 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
   device generates another key). A device may be approved again under its own key. A takeover refuses
   to keep two devices with one id. So no list ever holds two devices with one id, and no device takes
   the id of one a takeover may re-admit: the id names that device's summaries file (§12.5).
-- A join with the recovery key is a `takeover` (§15.7 rule 3, design §6.3); not in this version (KH4).
+- A join with the recovery key is a `takeover` (§15.7 rule 3, design §6.3, §15.14).
+- Over a sync (§15.15) a request travels in `joins/`; once home approved it (and deleted it), the joining
+  device, which the local `vault.json` does not list yet, takes a later `vault.json` of the same vault and root
+  that lists its key and whose wrap opens to a key of its epoch, and then confirms it with the reply words.
+  Until it has confirmed (it keeps no trust record of the vault), it takes such a `vault.json` also over a local
+  one that already lists its key: storage can plant a fake approval (a wrap needs only the public key the request
+  publishes), which the reply words never confirm, and the real one must still replace it.
 
 ### 15.13 The recovery kit
 
@@ -4222,8 +4253,10 @@ ledger with a new key, as a new device does (design §5.4 "Restores"; reviews S1
 cannot be kept stops that replacement. Nothing leaves it but by the user: export (as it is), keep
 (re-encrypted under the current key; refused when the path holds an accepted file with another body,
 which is never replaced), clear. Earlier keys come only from a chain that verified: a `vault.json` that
-does not check is still read, but files under earlier keys are then not taken through its record. In this version the original of a set-aside file stays in
-the working copy, unread; a sync engine that never places one comes with KH4.
+does not check is still read, but files under earlier keys are then not taken through its record. A file set
+aside in the working copy (it was accepted when it arrived, before the change) stays there, unread and never
+uploaded, until an accepted copy of the same path replaces it (§15.15); a received file that would be set aside
+is never placed.
 
 **Unlisted devices** (design §5.5). A device whose key the current `vault.json` does not list, whose
 trust record pins the parent epoch, and which verifies the change from that record alone (the link
@@ -4236,3 +4269,88 @@ the next epoch a server's `vault.json` names when it orders per-device summaries
 hierarchy; ids decide nothing. Its `summaries/<device>.sealed` (§12.5) and sync state use its id in the
 vault (the first 8 hex digits of its fingerprint, §15.4). The join-time id check (§15.12) therefore
 covers summaries files, not revision names.
+
+### 15.15 Device changes over sync
+
+(Design §4.3, §5.2–§5.5, §6.2, §8.2; KH4. Code: `Sources/SempereSync/EpochSync.swift`,
+`EpochChangePull.swift`; `Sources/Sempere/VaultIncomingEpoch.swift`.) A sync (§1.3) of a vault above
+`sempere/1`'s single epoch carries what a device change needs, and judges it by the chain, never by which side
+changed since the last run:
+
+- **`epochs/`** is synced first in every run, before `vault.json`: write-once, the union of both sides, never
+  deleted. Every device pushes the records it holds to every target it syncs, so a withheld or lost record
+  comes back (a device the newest list does not hold uploads nothing). A received record is checked for its
+  shape (its name, at most 64 MiB, one `mlkem768x25519` stanza) and, when this device's own verified `vault.json`
+  or a record above it on the chain (the hash links of §15.6) names it, for that hash; a hash only an unverified
+  list names (the target's, a sighting) can reject other bytes but never overrules a verified one: a name proves nothing, since anyone with write access can put a file under it. A local file
+  under a named record's name with other bytes is set aside (`epochs/.unnamed-<name>`) and fetched again; until
+  the right one is here the record has not arrived (never a reason to refuse `vault.json`). A device reads back
+  every record it holds whose hash is so named when the target has a file under that name (again only when that
+  file's version tag moved), replaces other bytes there under their version tag, and never uploads `vault.json`
+  beside a record that is not the right one (record first, then `vault.json`, also when an upload of the record
+  fails).
+- **`vault.json` of another epoch** (another `epochId`) is judged against this device's own (design §4.3,
+  §5.6), from local files only:
+  - a later epoch whose chain (its record, here by now) verifies from the root and the trust record, and which
+    the precedence rule keeps over this device's pinned and own chains (a removal, a handoff, a kit replacement,
+    a takeover, also one whose number is lower than this device's): **taken**. The vault is reopened under it,
+    pinned, and this device's own files are caught up (§15.14), before any note is judged or uploaded;
+  - a direct child of the pinned epoch whose record has not arrived, linked under the pinned epoch's link keys
+    and signed by the pinned home (a takeover: by its new home, and `recoverySig` by the pinned kit), passing
+    every check of §2.1 against the pinned list: **taken, record pending**. It is followed (writes are under
+    its key) but not pinned, files under older keys are pending, catch-up and device changes wait; when the
+    record arrives, the next run pins it and catches up;
+  - a later epoch this device cannot verify yet, or one of its own number that does not list it and whose parent
+    it never pinned (a fork further back) unless that one's signed fields already lose to its own chain:
+    **unverified-pending**. It keeps its own `vault.json`, keeps
+    writing locally, and the run uploads nothing new (J5b): only `epochs/` is synced, both ways, and
+    `vault.json` is judged. It is remembered as a sighting (§15.10): an anchored one holds runs with every target
+    back until it is verified, a detached one only runs with the targets that still show it. A run held back
+    reports since when (the first sighting); the CLI says so past a day;
+  - a later epoch this device verified (from the pinned chain: a direct child, or a takeover under any pinned
+    epoch) whose kept chain does not list it: **unlisted** (design §5.5). It never pins it and keeps its own
+    `vault.json`; it writes nothing (`VaultError.removedFromVault`, CLI exit 8), uploads nothing, keeps pulling
+    `epochs/` and `vault.json`, and takes a later takeover that lists it again;
+  - this device's chain is the later one (an older version of its epoch, an ancestor epoch, a branch the
+    precedence rule drops) or the target's does not check (tampered, forged by a device that is not home; a
+    child of a pinned epoch is checked against it first, whether or not its record is here, so a forged one
+    whose record is missing is refused, not waited for): its own replaces the target's, under the version read
+    (`If-Match`);
+  - a home conflict, or versions that are not one writer's: both kept, never merged, reported.
+  A run without the key (a locked vault's upload-only run) compares only epoch numbers: a target holding a later
+  or another epoch makes it upload nothing new. It also honors the device's sightings (§15.10) by number: one above
+  the local epoch holds it back (an anchored one on every target, a detached one on the targets that showed it).
+- **Received files** under an earlier key are judged by the acceptance rule (§15.14) before they are placed: one
+  that is set aside is kept in the set-aside store and never placed (not quarantined); one whose key's record
+  has not arrived is **pending**: not placed, not quarantined, fetched again once a record or `vault.json`
+  arrives.
+- **An accepted copy replaces an unaccepted one** (design §5.4 step 4), for revisions and notebook records:
+  when both sides hold a path with other bytes, and this device set its copy aside, or rewrote it since both
+  sides last held the same bytes (a catch-up), or holds set-aside copies of the path (a bridge carrying a
+  replacement from one target to another), or both sides came to hold it on their own (neither copied it to
+  the other), the target's copy is read. An accepted copy (current preferred, else sealed) replaces an
+  unaccepted one (not sealed, other bytes, under a dropped epoch's key, or opened by no key this device holds
+  while no record it waits for is missing: a dropped epoch it never held), on the
+  target under its strong version tag (a target without one keeps its copy, reported) or here; the unaccepted
+  copy is set aside on this device first, and a copy that cannot be kept stops the replacement. An accepted
+  copy is never replaced. A file this device set aside is never uploaded. A target's copy is replaced only by a
+  run whose `vault.json` stands there (not one that met a conflict or is held back). A copy set aside here is
+  compared again when the target's version, or the epoch this device judges under, changes. After a device
+  replaced a target's `vault.json` of another branch (or a refused one), every file both sides hold is compared
+  once, in the next complete run, as that branch's devices may have replaced accepted copies there.
+- **`joins/`**: the union, and a request one side deleted since both held it (home approved it, or it expired)
+  is deleted on the other. A received request must parse, name this vault and be named after its own key.
+  Home deletes requests older than 7 days and those of keys already listed.
+- **`keys/`**: the union of passphrase copies (one `scrypt` stanza, at most their bound), except a superseded
+  copy (§15.11): its fingerprint (in its name) is a recovery key of the chain this device pinned and matches no
+  key of the local or the target's `vault.json` (a later kept epoch replaced it). A fingerprint the device never
+  verified as a recovery key (a new kit whose `vault.json` has not arrived) is never superseded. A device whose
+  own verified epoch is at least the target's, in a run that is not held, deletes a superseded copy there (under
+  the version listed) and here, and never uploads it again.
+- **`synced`**: at the end of a complete two-way run (no error, every note listed) a device records the time in
+  its own `summaries/<device>.sealed` (§12.5), at most once an hour; home reads it to warn that a device it
+  removes last synced long ago.
+
+The remover's **best-effort pull** (design §5.2 step 2) is a pull-only pass with a throwaway sync state (a union
+that deletes nothing and records nothing) on every target the device can reach, at most 10 seconds each,
+before a removal, handoff, kit replacement or takeover; an unreachable target is reported, never waited for.

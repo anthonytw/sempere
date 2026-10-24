@@ -172,6 +172,8 @@ struct SyncWebDAVCommand: ParsableCommand {
         if !fetchNotes.isEmpty { throw CLIError.usage("--note needs --fetch") }
         var options = SyncOptions(dryRun: dryRun)
         options.deviceID = SyncCLI.deviceID()
+        options.recordSynced = true
+        options.epochTrust = trustStore()
         if deleteExtraneous && !pushOnly { throw CLIError.usage("--delete-extraneous needs --push-only") }
         if keepServerChanges && !pushOnly { throw CLIError.usage("--keep-server-changes needs --push-only") }
         options.pushOnly = pushOnly
@@ -200,7 +202,12 @@ struct SyncWebDAVCommand: ParsableCommand {
             throw CLIError.usage("--web-viewer needs the vault unlocked (--identity or a stored key's passphrase)")
         }
         // A first pull checks what it downloads under the vault.json it pulls (format.md §9.1).
-        if vault == nil { options.firstPullIdentities = try access.explicitIdentities() }
+        // A first pull, or a joining machine taking its approval (KH4), checks the vault.json it pulls with its key.
+        if let vault, !vault.canRead {
+            options.firstPullIdentities = try access.readingIdentities(vaultId: vault.vaultId)
+        } else if vault == nil {
+            options.firstPullIdentities = try access.explicitIdentities()
+        }
         options.deviceLabel = device ?? ProcessInfo.processInfo.hostName
         let sync = SyncEngine(
             directory: dir, vault: vault, client: client,
@@ -349,9 +356,12 @@ enum SyncCLI {
         options.concurrency = jobs
     }
 
-    /// Exit 1 for errors, quarantined files or files still arriving; 6 for a rejected vault.json; 3 for conflicts.
+    /// Exit 1 for errors, quarantined files or files still arriving; 8 when this machine is not on the newest device
+    /// list; 6 for a rejected vault.json; 3 for conflicts and a device change waiting to be verified.
     static func exit(for report: SyncReport) throws {
         if !report.errors.isEmpty || !report.quarantined.isEmpty || !report.arriving.isEmpty { throw ExitCode(ExitStatus.failure) }
+        if report.epoch?.unlisted != nil { throw ExitCode(ExitStatus.removed) }
+        if report.epoch?.waiting != nil { throw ExitCode(ExitStatus.unhealthy) }
         if !report.rejected.isEmpty { throw ExitCode(ExitStatus.untrustedList) }
         if !report.conflicts.isEmpty { throw ExitCode(ExitStatus.unhealthy) }
     }
@@ -375,6 +385,24 @@ enum SyncCLI {
         for q in r.quarantined { printStderr("quarantined: \(q.path): \(q.message); not placed in the vault") }
         for e in r.rejected { printStderr("rejected: \(e.path): \(e.message); the local copy is kept") }
         for a in r.arriving { printStderr("arriving: \(a.path): \(a.message)") }
+        for a in r.setAside { printStderr("set aside: \(a.path): \(a.message); kept on this machine, not placed (sempere set-aside)") }
+        for p in r.pending where output.verbose { print("pending    \(p.path): \(p.message)") }
+        if !output.quiet { for d in r.replaced { print("replace   \(d.path) (\(d.side): an accepted copy over an unaccepted one)") } }
+        if let e = r.epoch {
+            if let t = e.taken {
+                output.info("took the device change of epoch \(t)" + (e.recordPending ? " (its record has not arrived: files from before wait for it)" : "")
+                    + (e.caughtUp.map { "; \($0) of this machine's files re-encrypted under it" } ?? ""))
+            }
+            if let w = e.waiting { printStderr("waiting: \(w)") }
+            if e.waiting != nil, let since = e.heldSince, Date().timeIntervalSince(since) > EpochTargets.staleAfter {
+                printStderr("held back since \(RFC3339.string(since)) (\(EpochTargets.ago(since))): no change of the device list "
+                    + "this machine met has been verified since; see `sempere devices status`")
+            }
+            if let u = e.unlisted {
+                printStderr("removed: \(u)" + (e.unsyncedChanges.map { " (\($0) of this machine's changes are on no target: sempere devices status --export DIR)" } ?? ""))
+            }
+            if let c = e.conflict { printStderr("conflict: vault.json: \(c)") }
+        }
         output.info("\(r.dryRun ? "dry run: " : "")\(r.uploaded.count) uploaded, \(r.downloaded.count) downloaded, "
                     + "\(r.deleted.count) deleted, \(r.conflicts.count) conflicts, \(r.errors.count) errors"
                     + (r.extraneous.isEmpty ? "" : ", \(r.extraneous.count) extraneous")

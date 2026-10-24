@@ -23,12 +23,40 @@ extension SyncEngine {
             for e in entries where !e.isCollection && NotebookRecords.id(ofFileName: e.name) != nil { listed[e.name] = e }
             remote = Set(listed.keys)
         }
+        // Both sides hold it: the accepted copy replaces an unaccepted one (key-hierarchy design §5.4 step 4).
+        for name in local.intersection(remote).sorted() where !options.dryRun {
+            let path = "\(folder)/\(name)"
+            do {
+                try replaceUnaccepted(path, remotePath: [folder, name], recordKey: path, entry: listed[name],
+                                      recorded: state.notebookShas?[path]) { data in
+                    guard let vault, vault.canRead else { return }
+                    _ = try vault.openNotebookRecord(data, fileName: name)
+                }
+            } catch {
+                try rethrowRunLimit(error)
+                report.errors.append(.init(path: path, message: Self.describe(error)))
+            }
+        }
+        var uploadedNames = Set<String>()
+        for (k, sha) in locked({ placedShas }) where k.hasPrefix(folder + "/") {
+            state.notebookShas = state.notebookShas ?? [:]
+            state.notebookShas?[k] = sha
+        }
         for name in local.subtracting(remote).sorted() {
             let path = "\(folder)/\(name)"
             let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: NotebookRecords.maxFileBytes)
             if options.dryRun { report.uploaded.append(path); continue }
             try ensureCollection([folder])
-            if try transport.write([folder, name], .data(data), condition: .create) { report.uploaded.append(path) }
+            if try transport.write([folder, name], .data(data), condition: .create) {
+                report.uploaded.append(path)
+                uploadedNames.insert(name)
+            }
+        }
+        defer {
+            if !options.dryRun {
+                let held = Set((try? LocalFS.entries(localDir)) ?? []).intersection(remote.union(uploadedNames))
+                state.notebookNames = held.isEmpty ? nil : held.sorted()
+            }
         }
         guard !options.pushOnly else { return }
         for name in remote.subtracting(local).sorted() {
@@ -41,7 +69,12 @@ extension SyncEngine {
             }
             try budget.downloaded(got.data.count)
             if let vault, vault.canRead {
-                do { _ = try vault.openNotebookRecord(got.data, fileName: name) } catch {
+                do { _ = try vault.openNotebookRecord(got.data, fileName: name) } catch NotebookRecordError.setAside(let r) {
+                    // Under an earlier key, not sealed (key-hierarchy design §5.3): set aside, never placed.
+                    refuseIncoming(path, path: path, entry: listed[name],
+                                   problem: IncomingFileProblem("set aside: \(r.text)", setAside: r), data: got.data)
+                    continue
+                } catch {
                     report.skipped.append(.init(path: path, message: SyncReport.printable("not placed: \(Self.describe(error))")))
                     continue
                 }

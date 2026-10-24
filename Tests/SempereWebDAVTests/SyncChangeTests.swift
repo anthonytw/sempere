@@ -129,7 +129,7 @@ final class SyncChangeTests: BlobSyncTestCase {
             // Without the option every folder is listed.
             let n = server.requestLog.count
             XCTAssertTrue(try syncer("A", server, pushOnly: pushOnly).run().isEmpty)
-            XCTAssertEqual(server.requestLog.dropFirst(n).filter { $0.method == "PROPFIND" }.count, 4)
+            XCTAssertEqual(server.requestLog.dropFirst(n).filter { $0.method == "PROPFIND" }.count, 5, "with epochs/ (KH4)")
         }
     }
 

@@ -201,9 +201,9 @@ final class CLIEpochTests: CLITestCase {
         XCTAssertTrue(try titles("home").contains("X after removal"), "kept on the user's word")
     }
 
-    /// Before KH4 syncs `epochs/`, a device change on a store vault with sync targets is refused unless asked
-    /// for (review S4): no other device could read what is written after it.
-    func testAnEpochChangeOnASyncedStoreVaultNeedsTheFlag() throws {
+    /// KH4 syncs `epochs/`, so a device change on a store vault with sync targets needs no flag (review S4's
+    /// guard is gone): the machine pulls from the targets first and the change reaches them with the next sync.
+    func testAnEpochChangeOnASyncedStoreVaultGoesAheadAndReachesTheTarget() throws {
         let (vault, _, laptop) = try twoMachines()
         let store = path("store")
         XCTAssertEqual(try cli(["store", "import", vault, "--name", "Synced", "--store", store], env: machine("home")).status, 0)
@@ -213,11 +213,12 @@ final class CLIEpochTests: CLITestCase {
         let added = try cli(["store", "target", "add", "Synced", "--folder", path("target"), "--no-check", "--store", store],
                             env: machine("home"))
         XCTAssertEqual(added.status, 0, added.err)
-        let refused = try cli(["devices", "remove", laptop, "--vault", copy], env: machine("home"))
-        XCTAssertEqual(refused.status, 1, refused.err)
-        XCTAssertTrue(refused.err.contains("--unsynced-epoch"), refused.err)
-        let forced = try cli(["devices", "remove", laptop, "--unsynced-epoch", "--vault", copy], env: machine("home"))
-        XCTAssertEqual(forced.status, 0, forced.err)
+        let removed = try cli(["devices", "remove", laptop, "--json", "--vault", copy], env: machine("home"))
+        XCTAssertEqual(removed.status, 0, removed.err)
+        XCTAssertNotNil((removed.json as? [String: Any])?["pulled"], "it pulled from the target first")
+        XCTAssertEqual(try cli(["store", "sync", "Synced", "--store", store], env: machine("home")).status, 0)
+        let records = try FileManager.default.contentsOfDirectory(atPath: path("target/epochs"))
+        XCTAssertTrue(records.contains { $0.hasPrefix("2-") }, "\(records)")
     }
 
     /// The takeover screen from a stale machine (review S3): it names the epochs the takeover drops and the

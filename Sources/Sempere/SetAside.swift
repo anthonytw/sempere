@@ -36,6 +36,10 @@ public struct SetAsideStore: Sendable {
 
     public init(directory: URL) { self.directory = directory }
 
+    /// Test-only: stores (by directory) that refuse every copy, as a full disk would. File permissions cannot
+    /// stand in for it where tests run as root (the Linux CI container).
+    nonisolated(unsafe) package static var testUnwritable: Set<String> = []
+
     /// `$XDG_STATE_HOME/sempere/setaside`, else `~/.local/state/sempere/setaside`.
     public static func cliDirectory(environment: [String: String] = ProcessInfo.processInfo.environment,
                                     home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) -> URL {
@@ -92,6 +96,9 @@ public struct SetAsideStore: Sendable {
     private func keep(sha256: String, path: String, vaultId: UUID, reason: SetAsideReason, epoch: Int?, epochId: Data?,
                       now: Date, write: (URL) throws -> Void) throws -> SetAsideItem {
         guard let dir = folder(vaultId: vaultId, path: path) else { throw VaultError.setAsideFailed("\(path) is no vault file") }
+        if Self.testUnwritable.contains(directory.standardizedFileURL.path) {
+            throw VaultError.setAsideFailed("\(path): the store cannot be written (test)")
+        }
         let file = dir.appendingPathComponent(sha256 + ".age")
         let metaURL = dir.appendingPathComponent(sha256 + ".json")
         let meta = Meta(path: path, reason: reason, epoch: epoch, epochId: epochId.map { Hex.encode($0) },
@@ -299,5 +306,61 @@ extension Vault {
                                       maxContent: BlobRef.maxSize, name: fileName, sink: emit)
         }
         return ref
+    }
+}
+
+/// How the acceptance rule takes one framed vault file (key-hierarchy design §5.3), for the sync engine's
+/// "an accepted copy replaces an unaccepted one" (§5.4 step 4, KH4).
+public enum FileAcceptance: Hashable, Sendable {
+    /// Under the current key.
+    case current
+    /// Under an earlier key of the chain, sealed with these bytes.
+    case sealed
+    /// Under an earlier key, and not taken.
+    case setAside(SetAsideReason)
+    /// No key this device holds opens it while a record of its chain has not arrived.
+    case pending
+    /// Not a vault file this device can read.
+    case unreadable
+
+    /// True for `current` and `sealed`.
+    public var isAccepted: Bool { self == .current || self == .sealed }
+}
+
+extension Vault {
+    /// How the acceptance rule takes `data` as the framed vault file at `path` (a revision, a notebook record,
+    /// `settings.age`); `unreadable` for any other path.
+    public func acceptance(of data: Data, path: String) -> FileAcceptance {
+        guard let (scope, name) = Self.framing(path) else { return .unreadable }
+        switch openUnderEpochs(data) {
+        case .pending: return .pending
+        case .undecryptable: return .unreadable
+        case .opened(let plain, let key, let older):
+            guard (try? BodyFraming.unframe(plain, noteId: scope, filename: name, secret: key)) != nil else { return .unreadable }
+            guard older != nil else { return .current }
+            if let r = setAsideReason(older, path: path, sha256: FileDigest.sha256(data)) { return .setAside(r) }
+            return .sealed
+        }
+    }
+
+    /// The working copy's files that this device set aside and that are still in place with those bytes
+    /// (design §5.8): path → SHA-256 (hex). An accepted copy from a sync target replaces each (§5.4 step 4).
+    public func unacceptedInPlace() -> [String: String] {
+        guard let setAsideStore else { return [:] }
+        var out: [String: String] = [:]
+        var bySha: [String: Set<String>] = [:]
+        for item in setAsideStore.items(vaultId: vaultId) { bySha[item.path, default: []].insert(item.sha256) }
+        for (path, shas) in bySha {
+            let file = url.appendingPathComponent(path)
+            guard FileIO.exists(file), let sha = try? FileDigest.sha256(of: file).hex, shas.contains(sha) else { continue }
+            // Judged again now: a later chain (a takeover's) may seal what an earlier one did not.
+            if Self.framing(path) != nil, let data = try? readFile(file, maxBytes: BoundedRead.maxRevisionBytes),
+               acceptance(of: data, path: path).isAccepted { continue }
+            let parts = path.split(separator: "/").map(String.init)
+            if parts.count == 4, parts[2] == Self.attachmentsName, let note = UUID(uuidString: parts[1]),
+               (try? readAnyAcceptedBlob(file, note: note, maxContent: BlobRef.maxSize)) != nil { continue }
+            out[path] = sha
+        }
+        return out
     }
 }

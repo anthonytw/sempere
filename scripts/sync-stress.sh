@@ -14,6 +14,8 @@
 #                         transport and hostile-server faults, several bridges (SEMPERE_SYNC_STRESS_BRIDGES=one:
 #                         one remote each), SEMPERE_SYNC_STRESS_SEEDS seeds (long mode)
 #   WsgidavConformanceTests, EngineOverWsgidavTests   the transport suites over wsgidav
+#   EpochInterleavingTests  device changes over sync (key hierarchy J1-J6, J8-J10): SEMPERE_SYNC_STRESS_SEEDS seeds
+#                         over memory targets, the WebDAV mock and wsgidav, and every mutation breaking its invariant
 # Environment: SEMPERE_STRESS_SEED (1), SEMPERE_STRESS_NOTES (640), SEMPERE_STRESS_SEEDS (60),
 # SEMPERE_SYNC_STRESS_SEEDS (60).
 # Needs wsgidav (scripts/webdav-server-requirements.txt) and python3. About five minutes on a laptop.
@@ -28,5 +30,5 @@ export SEMPERE_STRESS_VAULT="$PWD/$out"
 export SEMPERE_STRESS_SEEDS="${SEMPERE_STRESS_SEEDS:-60}"
 export SEMPERE_SYNC_STRESS_LONG=1
 export SEMPERE_SYNC_STRESS_SEEDS="${SEMPERE_SYNC_STRESS_SEEDS:-60}"
-export SEMPERE_WEBDAV_TESTS='SyncStressTests|SyncTimingTests|SyncFaultProxyTests|TwoDeviceStressTests|NDeviceStressTests|WsgidavConformanceTests|EngineOverWsgidavTests'
+export SEMPERE_WEBDAV_TESTS='SyncStressTests|SyncTimingTests|SyncFaultProxyTests|TwoDeviceStressTests|NDeviceStressTests|WsgidavConformanceTests|EngineOverWsgidavTests|EpochInterleavingTests'
 exec scripts/test-webdav.sh --skip-build "$@"

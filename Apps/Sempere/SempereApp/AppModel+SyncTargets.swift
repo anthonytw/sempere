@@ -340,6 +340,10 @@ extension AppModel {
                     // state file's only when the vault is not open here.
                     options.deviceID = vault?.writerDevice ?? (FileManager.default.fileExists(atPath: deviceState.path)
                         ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil)
+                    // A complete two-way run records this device's last sync, for home's stale-removal warning (KH4).
+                    options.recordSynced = true
+                    // An upload-only run honors this device's sightings by epoch number (KH4, J5b).
+                    options.epochTrust = AppModel.defaultTrust
                     let twoWay = request.mode == .twoWay && vault?.canRead == true
                     // A complete copy keeps the target's sealed summaries current, so a device joining lists
                     // the notes before they arrive; never a partial copy (its list is not whole).

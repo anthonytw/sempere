@@ -213,7 +213,7 @@ struct DevicesCommand: ParsableCommand {
         commandName: "devices",
         abstract: "List the vault's devices; approve, rename, remove them and hand the home role over (on the home device); take over with the recovery kit.",
         subcommands: [DevicesList.self, DevicesApprove.self, DevicesRename.self, DevicesRemove.self, DevicesHandoff.self,
-                      RecoveryTakeover.self]
+                      RecoveryTakeover.self, DevicesStatus.self]
     )
 }
 
@@ -232,7 +232,8 @@ struct DevicesList: ParsableCommand {
         let m = vault.manifest
         let this = vault.deviceFingerprint
         let devices = m.devices.map { e -> Row in
-            Row(device: DeviceOutput(e, in: m), thisDevice: e.fingerprint == this)
+            Row(device: DeviceOutput(e, in: m), thisDevice: e.fingerprint == this,
+                lastSynced: e.id.flatMap { vault.lastSynced(device: $0) }.map { RFC3339.string($0) })
         }
         let requests = vault.joinRequests().map { f in
             Request(file: "\(Vault.joinsName)/\(f.name)", id: f.request.map { String(Hex.encode($0.fingerprint).prefix(8)) },
@@ -242,15 +243,20 @@ struct DevicesList: ParsableCommand {
         let recovery = m.recoveryEntry.map { Recovery(added: $0.added, passphraseCopy: !vault.passphraseCopyNames().isEmpty) }
         if output.json {
             try output.emitJSON(Out(devices: devices, recovery: recovery, joinRequests: requests, list: ListStatusOutput(vault),
-                                    thisDeviceIsHome: vault.deviceFingerprint == m.home))
+                                    thisDeviceIsHome: vault.deviceFingerprint == m.home, unlisted: vault.unlistedNotice,
+                                    waiting: vault.waitingNotice))
             return
         }
-        var rows: [[String]] = [["ID", "KIND", "NAME", "ADDED", "BY", ""]]
+        if let n = vault.unlistedNotice { print("Not on the newest device list: \(n)") }
+        if let n = vault.waitingNotice { print("Waiting for a device change to be verified: \(n)") }
+        var rows: [[String]] = [["ID", "KIND", "NAME", "ADDED", "BY", "SYNCED", ""]]
         for d in devices {
             var notes: [String] = []
             if d.device.home { notes.append("manages devices") }
             if d.thisDevice { notes.append("this device") }
-            rows.append([d.device.id, d.device.kind, d.device.name, d.device.added, d.device.addedBy, notes.joined(separator: ", ")])
+            let synced = d.lastSynced.flatMap { RFC3339.parse($0) }.map { EpochTargets.ago($0) } ?? (vault.canRead ? "unknown" : "")
+            rows.append([d.device.id, d.device.kind, d.device.name, d.device.added, d.device.addedBy, synced,
+                         notes.joined(separator: ", ")])
         }
         print(Format.table(rows))
         if let recovery {
@@ -266,6 +272,8 @@ struct DevicesList: ParsableCommand {
     struct Row: Encodable {
         var device: DeviceOutput
         var thisDevice: Bool
+        /// When the device last completed a two-way sync (its own summaries file, design §5.5); needs the key.
+        var lastSynced: String?
     }
 
     struct Request: Encodable {
@@ -288,6 +296,10 @@ struct DevicesList: ParsableCommand {
         var joinRequests: [Request]
         var list: ListStatusOutput
         var thisDeviceIsHome: Bool
+        /// Set when this machine is not on the newest device list it verified (design §5.5): why.
+        var unlisted: String?
+        /// Set when a later device list waits to be verified here (design §4.3): why, and where it was seen.
+        var waiting: String?
     }
 }
 

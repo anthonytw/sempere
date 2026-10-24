@@ -692,7 +692,9 @@ final class InboxSummariesOverMemoryTests: InboxSummariesScenarioCase {
         // An unsigned claim of a later epoch on the server is not believed: a forged vault.json makes X repair.
         let forgedFolder = tmp.appendingPathComponent("F.sempere")
         try FileManager.default.copyItem(at: xFolder, to: forgedFolder)
-        let f = try open(2, forgedFolder)
+        // A copy of X that never met the real epoch 2 (X's own trust store remembers it: a sighting holds X back).
+        let f = try Vault.open(at: forgedFolder, identities: [ids[2]], signing: TestVaults.signing(ids[2]),
+                               trust: MemoryEpochTrustStore(), root: root)
         let forgedRemote = MemoryRemote(store: MemoryStore(name: "kh3-forged"), base: ["vault"])
         for path in remote.store.filePaths(under: remote.base) {
             forgedRemote.store.putDirect(path, try XCTUnwrap(remote.store.file(path)))   // same base, ["vault"]
