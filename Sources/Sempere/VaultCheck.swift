@@ -44,6 +44,15 @@ extension Vault {
 
     /// Reads and opens the current epoch's record (design §5.2.1): bounded, its SHA-256 the one
     /// `vault.json` names, opened under `key`.
+    /// True when `epochs/` here holds a file under the record name `manifest` gives whose bytes are not the ones it
+    /// names (junk planted under the name): sync sets it aside and fetches the record again (review of #86, M1).
+    public static func holdsWrongRecord(_ url: URL, manifest: EpochManifest) -> Bool {
+        guard manifest.epoch > 1,
+              let data = try? BoundedRead.contents(of: url.appendingPathComponent(manifest.epochRecord), maxBytes: EpochRecord.maxBytes)
+        else { return false }
+        return Data(SHA256.hash(data: data)) != manifest.epochRecordHash
+    }
+
     static func readCurrentRecord(_ url: URL, manifest: EpochManifest, key: VaultEpochKey) -> RecordRead {
         guard manifest.epoch > 1 else { return .notRead }
         let data: Data
@@ -56,7 +65,10 @@ extension Vault {
                 + "(epoch \(manifest.epoch)): it has not arrived"))
         }
         guard Data(SHA256.hash(data: data)) == manifest.epochRecordHash else {
-            return .problem(ListProblem(.epochSig, "\(manifest.epochRecord) is not the record vault.json names"))
+            // Junk under the record's name (anyone with storage write access can plant it): the record has not
+            // arrived. Never a reason to refuse `vault.json` (review of #86, M1); sync fetches the right one.
+            return .problem(ListProblem(.otherEpoch, "the file at \(manifest.epochRecord) is not the record vault.json "
+                + "names: waiting for the right one (epoch \(manifest.epoch))"))
         }
         do { return .read(try EpochRecord.open(data, key: key, vaultId: manifest.vaultId, epoch: manifest.epoch)) } catch {
             return .problem(ListProblem(.epochSig, "\(manifest.epochRecord) does not open under the epoch's key: \(error)"))

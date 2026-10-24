@@ -68,6 +68,17 @@ extension SyncEngine {
         remoteEpochRecords = []
         let folder = Vault.epochsName
         let localDir = root.appendingPathComponent(folder, isDirectory: true)
+        // A record a known vault.json names, held here with other bytes (junk planted under its name): set aside,
+        // and fetched again (review of #86, M1).
+        let expected = expectedRecordHashes()
+        if !options.dryRun, !options.pushOnly {
+            for name in try LocalFS.entries(localDir).filter(Vault.isEpochRecordFileName) {
+                guard let hashes = expected[name],
+                      let data = try? BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes),
+                      !hashes.contains(Data(SHA256.hash(data: data))) else { continue }
+                try setAsideWrongRecord(name)
+            }
+        }
         let local = Set(try LocalFS.entries(localDir).filter(Vault.isEpochRecordFileName))
         if let dir = remoteRoot[folder], dir.isCollection, folderArriving([folder], entry: dir) { return }
         // Unchanged on both sides since the last run left them in step: not listed (as unchanged notes).
@@ -85,6 +96,7 @@ extension SyncEngine {
             }
         }
         var listed: [String: RemoteEntry] = [:]
+        var verified: Set<String> = []
         if remoteRoot[folder]?.isCollection == true, let entries = try transport.list([folder]) {
             try budget.list(entries.count)
             for e in entries where !e.isCollection {
@@ -106,13 +118,41 @@ extension SyncEngine {
                 let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes)
                 if options.dryRun { report.uploaded.append(path); continue }
                 try ensureCollection([folder])
-                // A create-only write that finds the name taken: the record is there already (write-once).
-                _ = try transport.write([folder, name], .data(data), condition: .create)
-                report.uploaded.append(path)
-                listed[name] = listed[name] ?? RemoteEntry(name: name, isCollection: false)
+                if try transport.write([folder, name], .data(data), condition: .create) {
+                    report.uploaded.append(path)
+                    listed[name] = RemoteEntry(name: name, isCollection: false)
+                    verified.insert(name)
+                } else {
+                    // The name was taken meanwhile: what is there is checked below like any copy.
+                    listed[name] = listed[name] ?? RemoteEntry(name: name, isCollection: false)
+                }
             }
         }
-        remoteEpochRecords = Set(listed.keys).union(options.dryRun ? local : [])
+        // The record this device's vault.json names, when the target has a file under its name: its bytes are
+        // checked (a name alone proves nothing, M1); other bytes are replaced under their version tag, or the
+        // record does not count as there (so vault.json is not uploaded beside it).
+        var wrong: Set<String> = []
+        if !options.dryRun, epochStatus.unlisted == nil, let own = try? localMutable(Vault.manifestName),
+           let m = try? EpochManifest.parse(own), m.epoch > 1 {
+            let name = String(m.epochRecord.dropFirst(folder.count + 1))
+            if listed[name] != nil, local.contains(name), !verified.contains(name) {
+                let got = try transport.read([folder, name], maxBytes: EpochRecord.maxBytes)
+                try budget.downloaded(got.data.count)
+                if Data(SHA256.hash(data: got.data)) != m.epochRecordHash {
+                    let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes)
+                    if let etag = got.etag ?? listed[name]?.etag, Self.isStrong(etag), Data(SHA256.hash(data: data)) == m.epochRecordHash,
+                       try transport.write([folder, name], .data(data), condition: .replace(etag: etag)) {
+                        report.uploaded.append("\(folder)/\(name)")
+                        report.replaced.append(.init(side: "remote", path: "\(folder)/\(name)"))
+                    } else {
+                        wrong.insert(name)
+                        report.rejected.append(.init(path: "\(folder)/\(name)", message: "not the record vault.json names, "
+                            + "and not replaced here; vault.json is not uploaded beside it"))
+                    }
+                }
+            }
+        }
+        remoteEpochRecords = Set(listed.keys).subtracting(wrong).union(options.dryRun ? local : [])
         guard !options.pushOnly else { return }
         for name in Set(listed.keys).subtracting(local).sorted() {
             try checkCancelled()
@@ -132,12 +172,44 @@ extension SyncEngine {
                 quarantine(path, path: path, entry: listed[name], reason: Self.describe(error), data: got.data)
                 continue
             }
+            if let hashes = expected[name], !hashes.contains(Data(SHA256.hash(data: got.data))) {
+                // Not the record a vault.json names under this name: not kept (another target may hold it).
+                report.rejected.append(.init(path: path, message: "not the record vault.json names; not kept"))
+                continue
+            }
             try requireLocalWrite("write \(path)")
             report.downloaded.append(path)
             guard !options.dryRun else { continue }
             try FileManager.default.createDirectory(at: localDir, withIntermediateDirectories: true)
             try LocalFS.write(got.data, to: localDir.appendingPathComponent(name), replacing: false)
         }
+    }
+
+    /// Record names with the SHA-256 values the `vault.json` versions this device knows name for them: its own,
+    /// the target's (once read), and its sightings. A forged one can only add a value, never remove the right one.
+    func expectedRecordHashes() -> [String: Set<Data>] {
+        var out: [String: Set<Data>] = [:]
+        func add(_ data: Data?) {
+            guard let data, let m = try? EpochManifest.parse(data), m.epoch > 1 else { return }
+            out[String(m.epochRecord.dropFirst(Vault.epochsName.count + 1)), default: []].insert(m.epochRecordHash)
+        }
+        add(try? localMutable(Vault.manifestName))
+        add(remoteManifestData)
+        for s in vault?.sightings() ?? [] { add(s.manifest) }
+        return out
+    }
+
+    /// Moves `epochs/<name>` aside (to `epochs/.unnamed-<name>`, which nothing reads): it is not the record a
+    /// vault.json names, so the next pass fetches the right one.
+    func setAsideWrongRecord(_ name: String) throws {
+        guard !options.dryRun, !options.pushOnly else { return }
+        try requireLocalWrite("set aside \(Vault.epochsName)/\(name)")
+        let dir = root.appendingPathComponent(Vault.epochsName, isDirectory: true)
+        let aside = dir.appendingPathComponent(".unnamed-" + name)
+        try? FileManager.default.removeItem(at: aside)
+        try FileManager.default.moveItem(at: dir.appendingPathComponent(name), to: aside)
+        report.skipped.append(.init(path: "\(Vault.epochsName)/\(name)", message: "not the record vault.json names: "
+            + "set aside here, fetched again"))
     }
 
     /// A digest of the names in the local `epochs/` (a new record makes pending files worth fetching again).
@@ -181,6 +253,12 @@ extension SyncEngine {
             }
             return
         }
+        // Junk under the name of the record this vault.json names: set aside here, so the right one is fetched
+        // (M1). Judged as not arrived meanwhile.
+        if let m = try? EpochManifest.parse(remoteData), m.vaultId == v.vaultId, m.root == v.manifest.root,
+           Vault.holdsWrongRecord(root, manifest: m) {
+            try setAsideWrongRecord(String(m.epochRecord.dropFirst(Vault.epochsName.count + 1)))
+        }
         let judgment = v.judgeIncoming(remoteData, local: local)
         switch judgment {
         case .same:
@@ -207,7 +285,10 @@ extension SyncEngine {
         case .refused(let why):
             // Tampered or forged: never taken. This device's own verified copy replaces it on the target.
             report.rejected.append(.init(path: name, message: SyncReport.printable(why)))
-            if v.listStatus.allowsWriting, v.unlistedNotice == nil {
+            // Replaced only when it is a bad list of this vault (its own fields do not verify), never because of
+            // anything else about it (M1 (d)).
+            if v.listStatus.allowsWriting, v.unlistedNotice == nil, let m = try? EpochManifest.parse(remoteData),
+               m.vaultId == v.vaultId, m.root == v.manifest.root {
                 try push(name, local, condition: Self.replaceCondition(etag: etag))
                 try recordMutable(name, hash: FileDigest.sha256(local))
                 compareSharedAfterBranch()
@@ -569,6 +650,7 @@ extension SyncEngine {
         }
         if let dir = remoteRoot[folder], dir.isCollection, folderArriving([folder], entry: dir) { return }
         var listed: [String: RemoteEntry] = [:]
+        var verified: Set<String> = []
         if remoteRoot[folder]?.isCollection == true, let entries = try transport.list([folder]) {
             try budget.list(entries.count)
             for e in entries where !e.isCollection {
@@ -651,6 +733,7 @@ extension SyncEngine {
         let local = Set(try LocalFS.entries(localDir).filter { Vault.passphraseCopyFingerprint($0) != nil })
         if let dir = remoteRoot[folder], dir.isCollection, folderArriving([folder], entry: dir) { return }
         var listed: [String: RemoteEntry] = [:]
+        var verified: Set<String> = []
         if remoteRoot[folder]?.isCollection == true, let entries = try transport.list([folder]) {
             try budget.list(entries.count)
             for e in entries where !e.isCollection {
