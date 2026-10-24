@@ -193,6 +193,17 @@ final class EpochKeyring: @unchecked Sendable {
         return out
     }
 
+    /// Every earlier key this keyring knows, whatever its seal: the walk's, the fallback ones (a journal's, this device's
+    /// pinned ones) and the off-chain ones.
+    func knownKeys() -> [(epoch: Int, key: VaultEpochKey)] {
+        _ = all()
+        lock.lock(); defer { lock.unlock() }
+        var seen = Set<Data>(), out: [(Int, VaultEpochKey)] = []
+        for o in loaded + offChain where seen.insert(o.epochId).inserted { out.append((o.epoch, o.key)) }
+        for (id, f) in fallback where seen.insert(id).inserted { out.append((f.epoch, f.key)) }
+        return out
+    }
+
     /// The off-chain keys.
     func offChainEpochs() -> [OlderEpoch] {
         lock.lock(); defer { lock.unlock() }

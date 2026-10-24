@@ -163,17 +163,34 @@ public enum ReencryptCoordinator {
                     if let tag = got.etag ?? entry.etag, SyncEngine.isStrong(tag) { memo[p] = tag }
                     return
                 }
-                if epoch == nil, unaccepted == nil, !isInbox { return }   // pending or unreadable: no earlier key opens it here
+                var sameBodyAsCurrent = false
+                if epoch == nil, unaccepted == nil {
+                    // Not judged by the acceptance rule here (an earlier record missing: withheld, or deleted by a finish
+                    // this device has not seen). Opened with every earlier key it knows: home's working copy holds every
+                    // accepted file under the new keys (its pass is done), so a copy with the same body is replaced by it,
+                    // and any other is kept aside here and deleted there. One no earlier key opens is left (nothing from
+                    // before opens it).
+                    guard v.opensUnderEpoch(below: m, got.data) else { return }
+                    if !isInbox, let (_, body) = v.earlierKeyBody(of: got.data, path: p),
+                       let local = try? BoundedRead.contents(of: v.url.appendingPathComponent(p), maxBytes: limit),
+                       (v.acceptedKeyEpoch(of: local, path: p).map { $0 >= m } ?? false), v.plainBody(of: local, path: p) == body {
+                        sameBodyAsCurrent = true
+                    } else if isInbox, FileManager.default.fileExists(atPath: v.url.appendingPathComponent(p).path) {
+                        sameBodyAsCurrent = true   // the same capture, re-sealed here by the pass
+                    } else {
+                        unaccepted = .notSealed
+                    }
+                }
                 if epoch == nil, isInbox, !opensUnderOldKey(v, got.data, below: m) { return }
                 guard let etag = got.etag ?? entry.etag, SyncEngine.isStrong(etag) else {
                     c.waiting[p] = "under an earlier key, and the target gives no strong version tag to replace it under"
                     return
                 }
                 let localURL = v.url.appendingPathComponent(p)
-                if epoch != nil, let local = try? BoundedRead.contents(of: localURL, maxBytes: limit),
-                   isInbox ? sameInbox(v, local, got.data, name: path[1], scratch: scratch)
+                if let local = try? BoundedRead.contents(of: localURL, maxBytes: limit), sameBodyAsCurrent || (epoch != nil &&
+                   (isInbox ? sameInbox(v, local, got.data, name: path[1], scratch: scratch)
                            : (v.acceptedKeyEpoch(of: local, path: p).map { $0 >= m } ?? false)
-                             && v.plainBody(of: local, path: p) == v.plainBody(of: got.data, path: p) {
+                             && v.plainBody(of: local, path: p) == v.plainBody(of: got.data, path: p))) {
                     if try r.write(path, .data(local), condition: .replace(etag: etag)) { c.replaced.append(p) } else {
                         c.waiting[p] = "changed on the target meanwhile"
                     }
@@ -216,8 +233,7 @@ public enum ReencryptCoordinator {
         // The earlier records go last, once nothing else needs them.
         guard c.waiting.isEmpty else { return c }
         do {
-            for e in try r.list([Vault.epochsName]) ?? [] where !e.isCollection && Vault.isEpochRecordFileName(e.name) {
-                guard let n = Int(e.name.split(separator: "-").first ?? ""), n < m else { continue }
+            for e in try r.list([Vault.epochsName]) ?? [] where !e.isCollection && v.isRecordBelowReencryption(e.name, m: m) {
                 if Vault.keepsOldRecords {
                     c.waiting["\(Vault.epochsName)/\(e.name)"] = "kept (test mutation)"
                     continue

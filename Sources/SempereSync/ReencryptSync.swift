@@ -238,7 +238,7 @@ extension SyncEngine {
 
     /// True when `name` is an epoch record below a finished re-encryption.
     func isObsoleteRecord(_ name: String) -> Bool {
-        guard let m = recordsObsoleteBelow, let e = Int(name.split(separator: "-").first ?? "") else { return false }
-        return e < m
+        guard let m = recordsObsoleteBelow, let v = vault else { return false }
+        return v.isRecordBelowReencryption(name, m: m)
     }
 }

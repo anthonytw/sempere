@@ -239,8 +239,12 @@ extension Vault {
                 + "device verified")), chain: chain)
         }
         // A journal bound again to a re-encryption this device saw finished: an older vault.json put back (KH6).
+        // `reencryptFinished` is the epoch whose vault.json this device saw without the binding: a binding at or below it
+        // is a replay. (A later epoch whose home had not seen the finish carries the binding on, signed; its home then
+        // finishes the re-encryption again.)
         if let finished = record.reencryptFinished, manifest.reencryptPending != nil,
-           chain?.entries.last(where: { $0.reason == EpochReason.reencrypt.rawValue })?.epochId == finished {
+           let f = chain?.entries.first(where: { $0.epochId == finished }), manifest.epoch <= f.epoch,
+           let m = chain?.entries.last(where: { $0.reason == EpochReason.reencrypt.rawValue }), m.epoch <= f.epoch {
             return ListCheck(status: .refused(ListProblem(.reencryptRolledBack, "vault.json binds a re-encryption journal "
                 + "this device saw finished: an older version put back")), chain: chain)
         }
@@ -304,9 +308,10 @@ extension Vault {
             chain = [try .init(epoch: 1, key: secret, parent: nil, list: manifest.firstList.sorted { $0.lexicographicallyPrecedes($1) },
                                recovery: recovery, home: manifest.home, reason: manifest.epochReason)]
         }
-        // A re-encryption on the chain without a journal bound is finished (design §7.1 step 7, KH6).
-        let finished = manifest.reencryptPending == nil
-            ? chain.last(where: { $0.reason == EpochReason.reencrypt.rawValue })?.epochId : nil
+        // A re-encryption on the chain without a journal bound is finished (design §7.1 step 7, KH6): the epoch whose
+        // vault.json shows it so is remembered.
+        let finished = manifest.reencryptPending == nil && chain.contains(where: { $0.reason == EpochReason.reencrypt.rawValue })
+            ? manifest.epochId : nil
         try saveTrust(chain: chain, list: manifest.keys, home: manifest.home, reencryptFinished: finished)
         // The key of every epoch this device pinned (not only those it wrote under): a takeover may drop the
         // epoch later, and its files here then read as set aside (dropped) rather than unreadable, so an

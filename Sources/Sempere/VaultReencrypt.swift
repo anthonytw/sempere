@@ -237,15 +237,19 @@ extension Vault {
         var unaccepted: SetAsideReason?
     }
 
-    /// The working copy's files under a key of an epoch below the re-encryption epoch `m`, and how many files it
-    /// holds in all.
-    func oldFiles(below m: Int) throws -> (old: [OldFile], total: Int) {
+    /// The working copy's files under a key of an epoch below the re-encryption epoch `m`, how many files it holds in
+    /// all, and the files no key here opens while an earlier record is missing (they may be under an earlier key: until
+    /// they can be judged, the pass does not count as done).
+    func oldFiles(below m: Int) throws -> (old: [OldFile], total: Int, undecided: [String]) {
         var out: [OldFile] = []
         var total = 0
+        var undecided: [String] = []
         func framed(_ path: String, _ file: URL, maxBytes: Int) {
             total += 1
-            guard let data = try? readFile(file, maxBytes: maxBytes),
-                  case .opened(_, _, let older?) = openUnderEpochs(data), older.epoch < m else { return }
+            guard let data = try? readFile(file, maxBytes: maxBytes) else { return }
+            let opened = openUnderEpochs(data)
+            if case .pending = opened { undecided.append(path); return }
+            guard case .opened(_, _, let older?) = opened, older.epoch < m else { return }
             out.append(OldFile(path: path, kind: .framed, unaccepted: setAsideReason(older, path: path, sha256: FileDigest.sha256(data))))
         }
         let current = try requireSecret()
@@ -263,8 +267,11 @@ extension Vault {
                 total += 1
                 // Under the current key: nothing to do (its name is checked when it is read).
                 if (try? Self.peekBlobFile(u, identities: currentIdentity)) != nil { continue }
-                guard let o = blobOlderEpochs.first(where: { (try? Self.peekBlobFile(u, identities: [$0.identity])) != nil }),
-                      o.epoch < m else { continue }
+                guard let o = blobOlderEpochs.first(where: { (try? Self.peekBlobFile(u, identities: [$0.identity])) != nil }) else {
+                    if keyring?.isIncomplete == true { undecided.append(Self.blobPath(id, file)) }
+                    continue
+                }
+                guard o.epoch < m else { continue }
                 let path = Self.blobPath(id, file)
                 var reason: SetAsideReason?
                 do { _ = try readAcceptedBlob(u, note: id, older: o, expected: nil, maxContent: BlobRef.maxSize) } catch BlobError.setAside(let r) {
@@ -292,12 +299,14 @@ extension Vault {
                 if o.epoch < m { out.append(OldFile(path: path, kind: .inbox(name: name, kind: parsed.kind), unaccepted: nil)) }
                 continue
             }
-            guard let data = try? FileIO.read(file, maxBytes: CaptureFile.maxSealedBytes(parsed.kind)),
-                  case .opened(_, _, let older?) = openUnderEpochs(data), older.epoch < m else { continue }
+            guard let data = try? FileIO.read(file, maxBytes: CaptureFile.maxSealedBytes(parsed.kind)) else { continue }
+            let opened = openUnderEpochs(data)
+            if case .pending = opened { undecided.append(path); continue }
+            guard case .opened(_, _, let older?) = opened, older.epoch < m else { continue }
             out.append(OldFile(path: path, kind: .inbox(name: name, kind: parsed.kind),
                                unaccepted: older.sealed == nil ? older.unsealedReason : .notSealed))
         }
-        return (out.sorted { $0.path < $1.path }, total)
+        return (out.sorted { $0.path < $1.path }, total, undecided.sorted())
     }
 
     /// Where the re-encryption stands on this device (design §7.2 "Progress").
@@ -305,7 +314,7 @@ extension Vault {
         guard let m = reencryptEpoch else {
             return ReencryptStatus(pending: false, epoch: nil, journalHere: false, remaining: 0, total: 0, unaccepted: 0)
         }
-        let (old, total) = try oldFiles(below: m.epoch)
+        let (old, total, _) = try oldFiles(below: m.epoch)
         return ReencryptStatus(pending: isReencryptPending, epoch: m.epoch, journalHere: localBoundJournal() != nil,
                                remaining: old.filter { $0.unaccepted == nil }.count, total: total,
                                unaccepted: old.filter { $0.unaccepted != nil }.count)
@@ -326,11 +335,15 @@ extension Vault {
         guard isReencryptPending, let m = reencryptEpoch else {
             throw VaultError.epochChangeRefused("no re-encryption is pending")
         }
-        guard localBoundJournal() != nil, keyring?.isIncomplete != true else {
-            throw VaultError.epochChangeRefused("the re-encryption journal or an earlier record is not here: sync first")
+        guard localBoundJournal() != nil else {
+            throw VaultError.epochChangeRefused("the re-encryption journal is not here: sync first")
         }
         var report = ReencryptPassReport()
-        let (old, _) = try oldFiles(below: m.epoch)
+        // An earlier record missing (withheld, or deleted by a finish this device has not seen) leaves only files that
+        // no key here opens undecided: the pass waits for them, the rest goes on.
+        let (old, _, undecided) = try oldFiles(below: m.epoch)
+        for p in undecided { report.problems[p] = "no key here opens it while an earlier record is missing: sync first" }
+        report.remaining += undecided.count
         var n = 0
         // The broken pass (J9's mutation): what is done is redone, what is left is skipped, so it never ends.
         let inverted = Self.epochMutations.contains(.reencryptSkipInverted)
@@ -480,7 +493,10 @@ extension Vault {
         let key = try requireSecret()
         guard isHome, let signing, let home = deviceEntry else { throw VaultError.notHome("only the home device finishes it") }
         guard isReencryptPending, let m = reencryptEpoch else { throw VaultError.epochChangeRefused("no re-encryption is pending") }
-        let (old, _) = try oldFiles(below: m.epoch)
+        let (old, _, undecided) = try oldFiles(below: m.epoch)
+        if let p = undecided.first {
+            throw VaultError.epochChangeRefused("\(undecided.count) file(s) cannot be judged while an earlier record is missing (\(p)): sync first")
+        }
         if let todo = old.first(where: { $0.unaccepted == nil }) {
             throw VaultError.epochChangeRefused("\(old.filter { $0.unaccepted == nil }.count) file(s) are not re-encrypted yet "
                 + "(\(todo.path)): run the pass first")
@@ -513,11 +529,18 @@ extension Vault {
     public func removeRecordsBelowReencryption() -> [String] {
         guard !isReencryptPending, let m = reencryptEpoch, !Self.epochMutations.contains(.keepOldRecords) else { return [] }
         var out: [String] = []
-        for name in (try? FileIO.entries(epochsURL)) ?? [] where Self.isEpochRecordFileName(name) {
-            guard let e = Int(name.split(separator: "-").first ?? ""), e < m.epoch else { continue }
+        for name in (try? FileIO.entries(epochsURL)) ?? [] where isRecordBelowReencryption(name, m: m.epoch) {
             if (try? FileIO.remove(epochsURL.appendingPathComponent(name))) != nil { out.append(name) }
         }
         return out.sorted()
+    }
+
+    /// True when `name` is the record of an epoch of this value's verified chain below `m` (records of other branches,
+    /// a losing takeover's, stay: devices on that branch judge their way back with them).
+    public func isRecordBelowReencryption(_ name: String, m: Int) -> Bool {
+        guard Self.isEpochRecordFileName(name), let e = Int(name.split(separator: "-").first ?? ""), e < m,
+              let chain = verifiedChain?.entries, e >= 1, e <= chain.count else { return false }
+        return name == EpochRecord.fileName(epoch: e, epochId: chain[e - 1].epochId)
     }
 
     // MARK: - For the sync engine (rewrap-replace, design §7.1 step 6; device-first-sync §5.2)
@@ -605,9 +628,24 @@ extension Vault {
     /// KH6): the device's runs with its other targets then compare that path there too (a bridge carries it).
     public func recordReplacedCopy(path: String, bytes: Data) throws { try recordWrite(path: path, bytes: bytes) }
 
+    /// The epoch of the earlier key `data` (a framed file at `path`) opens and verifies under, and its body, trying every
+    /// earlier key this value knows whatever its seal (the acceptance rule is not applied): for a file the rule cannot
+    /// judge here (an earlier record missing). Nil when none opens it.
+    public func earlierKeyBody(of data: Data, path: String) -> (epoch: Int, body: Data)? {
+        guard let (scope, name) = Self.framing(path), let keyring else { return nil }
+        for (e, k) in keyring.knownKeys() {
+            guard let identity = try? k.vaultIdentity(), let plain = try? AgeFile.decrypt(data, with: [identity]),
+                  let gzip = try? BodyFraming.unframe(plain, noteId: scope, filename: name, secret: k).gzip else { continue }
+            return (e, gzip)
+        }
+        return nil
+    }
+
     /// True when `data` (an age file) opens under the key of an epoch below `m` this value holds.
     public func opensUnderEpoch(below m: Int, _ data: Data) -> Bool {
-        (olderEpochs + (keyring?.offChainEpochs() ?? [])).contains { $0.epoch < m && (try? AgeFile.decrypt(data, with: [$0.identity])) != nil }
+        (keyring?.knownKeys() ?? []).contains { e, k in
+            e < m && (try? k.vaultIdentity()).map { (try? AgeFile.decrypt(data, with: [$0])) != nil } == true
+        }
     }
 
     /// Where a blob file stands (for a target's copy, `ReencryptCoordinator.confirm`).

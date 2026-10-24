@@ -3956,9 +3956,12 @@ From epoch 1 (`EpochChain.verify`):
      (`TakeoverRule.recoveryKey`): for an unpinned verifier, `e−1`'s `recovery`; for a pinned one, the
      `recovery` of its pinned frontier (the last epoch it pinned), and only when `e−1`'s `recovery` is
      that key; otherwise no key is valid and the takeover is refused. A kit replaced on the pinned chain
-     never signs again, and a kit introduced below the frontier signs only once the epoch that
+     never signs again, and a kit the pinned chain never listed (introduced below the frontier, or on a
+     branch the precedence rule follows instead of the pinned one) signs only once the epoch that
      introduced it is pinned (the verifier then reports `kitNotPinned`, not tampering, and verifies
-     again after pinning the epoch before the takeover). The verifier checks `recoverySig` under
+     again after pinning the epoch before the takeover). A takeover on the verifier's pinned chain itself
+     was judged when it was pinned: the rule is not applied to it again (a kit replacement pinned above it
+     since does not undo it; KH6). The verifier checks `recoverySig` under
      `e−1`'s `recovery` first: a takeover whose signature fails there is `badTakeover` whatever the
      pin, and only a valid one refused by the rule alone is `kitNotPinned`. A takeover's parent is the
      taking-over device's pinned frontier; the first list holds the home and otherwise only fingerprints of the
@@ -4008,9 +4011,13 @@ used where the `reencrypt` record carries none: the walk down the records contin
 
 **Finishing.** Home rewrites `vault.json` of the same epoch without `reencryptPending` (a later version, §2.1,
 re-signed: `authorSig` covers the binding, so nobody else adds or strips one), deletes the journal and the records
-of epochs below `m`. A device that pins a chain with `m` on it and a `vault.json` without the binding records
-`m`'s `epochId` as `reencryptFinished` (§15.10); a `vault.json` that binds a journal to that re-encryption again
-is then refused (`reencryptRolledBack`), and the later version is the one without the binding. Below a finished
+of the chain's epochs below `m`. A device that pins a chain with `m` on it and a `vault.json` without the binding records
+that epoch's `epochId` as `reencryptFinished` (§15.10); a `vault.json` of that epoch or an earlier one that binds a
+journal again is then refused (`reencryptRolledBack`), and the later version is the one without the binding. A later
+epoch made by a home that had not seen the finish carries the binding on (signed); that home finishes the
+re-encryption again: its pass and its confirmations open, with every earlier key it knows, files whose seal it can
+no longer read (their records are gone), and its working copy is complete, so a copy with the body of one of its
+current files is replaced by it and any other is set aside and deleted. Below a finished
 re-encryption, a file under a key this device still holds (its own pinned keys) whose seal it can no longer read
 (the record is gone) is set aside as `before-reencryption`, never pending.
 
@@ -4056,8 +4063,8 @@ round-7 seal rule) must each fail it; `Fixtures/epoch-precedence-vectors.json` h
 `parent`, `linkPublicKeys`, `list` of the first list's fingerprints, and, since KH3, `recovery`, `home` and
 `reason`, so the precedence rule can weigh the pinned chain against a takeover that drops part of it; a
 record without them does not read, and fails closed), `list` (the current list: `role`,
-`key`, `sign`, `name`), `markers`, `reencryptFinished` (the `epochId` of the latest re-encryption this device saw
-finished, §15.8; absent before one) and `home` (the
+`key`, `sign`, `name`), `markers`, `reencryptFinished` (the `epochId` of the latest epoch whose `vault.json` this device
+saw without the re-encryption binding, §15.8; absent before one) and `home` (the
 fingerprint of the pinned epoch's home). Readers refuse a chain that does not start at epoch 1 or
 whose `parent`s do not follow, and a missing or malformed `home`.
 
@@ -4403,20 +4410,27 @@ replacement:
 
 Over sync (§15.15, in addition):
 
-- **The journal** is uploaded before a `vault.json` that binds it (create only), and such a `vault.json` never goes
-  to a target that lacks it. A device whose `vault.json` binds a journal it lacks takes the target's when it is the
+- **The journal** goes up just before a `vault.json` that binds it, in the same run (created, or another journal
+  there replaced under its version tag), so a run held back uploads neither; such a `vault.json` never goes to a
+  target without it, and a target that holds the device's `vault.json` but lost the journal gets it back. A device whose `vault.json` binds a journal it lacks takes the target's when it is the
   bound one, and reopens the vault with its keys; until then files under the earlier keys are pending. A target's
   other journal is replaced by the bound one where the device's list stands; a journal the device's chain shows
   finished is deleted on both sides where its list stands. An unbound journal is left alone.
 - **Rewrap-replace**: when both sides hold accepted copies of a path with the same body (a revision, a notebook
   record, an inbox file), the copy under the later epoch's key replaces the other on either side (the smaller
   SHA-256 when both are under one epoch), only in a run whose `vault.json` stands on the target, under a strong
-  version tag there. A notebook record under an earlier key is compared in every run until it is current.
-  `settings.age` is a mutable file and merges as before.
+  version tag there. A notebook record under an earlier key is compared in every run until it is current. A copy a
+  run placed here this way is recorded in the write ledger, so the device carries it to its other targets.
+  `settings.age` merges as before; the same settings under two epochs' keys: the later key's copy wins.
 - **Old blob names**: a blob file under an earlier key whose content (from its header) this device holds under the
   current key's name is never uploaded or downloaded, and is deleted on each side that holds the current name (on a
   target only where the device's list stands and the run is not held).
-- **Records below a finished re-encryption** are deleted locally and on the target, and never pushed or fetched. A
-  device waiting for a change it cannot verify pushes only the record its target's `vault.json` names and records
-  above its own pinned epoch.
+- **Records below a finished re-encryption** (those of the device's own chain below it; another branch's, a losing
+  takeover's, stay, so devices still on it judge their way back) are deleted locally and on the target, and never
+  pushed or fetched. A device waiting for a change it cannot verify pushes only the record its target's `vault.json`
+  names. A `vault.json` whose record is missing and whose signed fields already lose to the device's own chain (a
+  sibling takeover with a larger id) is replaced by the device's own, never waited for.
+- **After a finish**, a device removes from its working copy the files it set aside that are still in place (they
+  stay in the set-aside store), and a received file it sets aside that opens under a key from before the finish is
+  deleted on the target where its list stands.
 - **Blob collection** (§8.1.6 rule 2) deletes nothing while a re-encryption is pending.

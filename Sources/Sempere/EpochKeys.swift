@@ -527,9 +527,9 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     public var list: [Entry]
     /// The version markers last verified.
     public var markers: VaultMarkers
-    /// The `epochId` of the latest re-encryption epoch this device saw finished (design §7.1 step 7, KH6): a
-    /// `vault.json` on its chain at or above it without `reencryptPending`. A `vault.json` that binds a journal
-    /// to it again is a rollback (a replayed journal), refused. Nil: none seen finished.
+    /// The `epochId` of the latest epoch whose `vault.json` this device saw without `reencryptPending` while a
+    /// re-encryption was on its chain (design §7.1 step 7, KH6: the finish). A `vault.json` of that epoch or an earlier
+    /// one that binds a journal again is a rollback (a replayed journal), refused. Nil: none seen finished.
     public var reencryptFinished: Data?
     /// The home device of the pinned epoch (design §5.6): the only device whose epochs this device
     /// follows, until a handoff or a takeover.

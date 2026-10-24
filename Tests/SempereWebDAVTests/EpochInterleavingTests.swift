@@ -547,7 +547,10 @@ final class EpochInterleavingTests: SyncTestCase {
             for n in names {
                 guard let v = try? w[n].open() else { continue }
                 trace.append("STATE \(n): epoch \(v.manifest.epoch)/\(Hex.encode(v.manifest.epochId).prefix(6)) status \(v.listStatus) pending \(v.isReencryptPending) "
-                    + "unlisted \(v.unlistedNotice != nil) waiting \(v.waitingNotice ?? "-") pinned \(((try? w[n].trust.record(for: w.vaultId)) ?? nil)?.chain.map { Hex.encode($0.epochId).prefix(4) } ?? [])")
+                    + "unlisted \(v.unlistedNotice != nil) waiting \(v.waitingNotice ?? "-") pinned \(((try? w[n].trust.record(for: w.vaultId)) ?? nil)?.chain.map { Hex.encode($0.epochId).prefix(4) } ?? [])"
+                    + " settings here \((try? Data(contentsOf: w[n].folder.appendingPathComponent("settings.age"))).map { "\(v.acceptance(of: $0, path: "settings.age")) \(FileDigest.sha256($0).prefix(6))" } ?? "-")"
+                    + (reach[n] ?? []).map { tg in " \(tg.name): \(tg.file("settings.age").map { "\(v.acceptance(of: $0, path: "settings.age")) \(FileDigest.sha256($0).prefix(6))" } ?? "-")" }.joined()
+                    + (reach[n] ?? []).map { tg in " judge@\(tg.name): \(tg.file(Vault.manifestName).map { "\(v.judgeIncoming($0))" } ?? "-")" }.joined())
             }
         }
         let readers = listed.sorted()

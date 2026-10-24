@@ -103,7 +103,7 @@ final class ReencryptTests: VaultTestCase {
         XCTAssertFalse(a.isReencryptPending)
         XCTAssertFalse(FileManager.default.fileExists(atPath: w.url.appendingPathComponent(Vault.journalName).path))
         XCTAssertEqual(try openWithOld(w.url, old), [], "J7")
-        XCTAssertEqual(try w["A"].trust.record(for: a.vaultId)?.reencryptFinished, a.reencryptEpoch?.epochId)
+        XCTAssertEqual(try w["A"].trust.record(for: a.vaultId)?.reencryptFinished, a.manifest.epochId)
         for n in ["A", "B"] {
             let v = try w.open(n)
             XCTAssertEqual(try w.titles(v), notes, n)
