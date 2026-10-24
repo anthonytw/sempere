@@ -389,11 +389,17 @@ extension Vault {
     /// the same vault and root as the local `vault.json` (`local`), which lists none of the keys, while `data`
     /// lists one and its wrap opens to a key of its epoch. Taking it pins nothing: the device confirms the vault
     /// with the reply words (`confirmJoin`), and writes nothing until then.
-    public static func isJoinApproval(_ data: Data, local: Data, identities: [any AgeIdentity]) -> Bool {
-        guard !identities.isEmpty, let incoming = try? readManifest(data), let mine = try? readManifest(local),
+    ///
+    /// - Parameter unconfirmed: the device keeps no trust record of this vault yet (it has not confirmed a join).
+    ///   Then a local copy that already lists one of the keys is replaced too: a fake approval storage planted
+    ///   (its wrap needs only the public key a join request publishes) never confirms, and must not keep the real
+    ///   one out (review of #86, S5).
+    public static func isJoinApproval(_ data: Data, local: Data, identities: [any AgeIdentity], unconfirmed: Bool = false)
+        -> Bool {
+        guard !identities.isEmpty, data != local, let incoming = try? readManifest(data), let mine = try? readManifest(local),
               incoming.vaultId == mine.vaultId, incoming.root == mine.root else { return false }
         let held = Set(identities.compactMap(recipientString))
-        guard !mine.keys.contains(where: { held.contains($0.key) }),
+        guard unconfirmed || !mine.keys.contains(where: { held.contains($0.key) }),
               let entry = incoming.devices.first(where: { held.contains($0.key) }) else { return false }
         return (try? EpochKeyWrap.open(entry.wrap, with: identities, vaultId: incoming.vaultId, epoch: incoming.epoch)) != nil
     }

@@ -673,6 +673,12 @@ public final class SyncEngine {
 
     /// The local file `name` under the vault root, nil when absent. Present
     /// but unreadable or oversized is an error, not "absent".
+    /// True when this device's trust store keeps no record of the vault `local` names: a join not confirmed yet.
+    func joinUnconfirmed(_ local: Data) -> Bool {
+        guard let store = options.epochTrust, let m = try? EpochManifest.parse(local) else { return false }
+        return ((try? store.record(for: m.vaultId)) ?? nil) == nil
+    }
+
     func localMutable(_ name: String) throws -> Data? {
         let url = root.appendingPathComponent(name)
         return FileManager.default.fileExists(atPath: url.path)
@@ -716,7 +722,8 @@ public final class SyncEngine {
             return
         }
         // A joining device's approval (design §6.2 step 3): taken, whatever moved since the last run.
-        if name == Vault.manifestName, vault == nil, Vault.isJoinApproval(remoteData, local: local, identities: options.firstPullIdentities) {
+        if name == Vault.manifestName, vault == nil,
+           Vault.isJoinApproval(remoteData, local: local, identities: options.firstPullIdentities, unconfirmed: joinUnconfirmed(local)) {
             return try accept(name, remoteData, stamp: stamp)
         }
         // Another epoch on the remote (KH4): judged by the device-change rules, never by which side moved.
@@ -798,7 +805,9 @@ public final class SyncEngine {
             // Never let a list nobody with the key wrote replace ours (design §4.3, §5.1). A joining device takes the
             // approval that lists it (design §6.2 step 3; it confirms it with the reply words before any write).
             let local = try localMutable(name)
-            let joining = vault == nil && local.map { Vault.isJoinApproval(data, local: $0, identities: options.firstPullIdentities) } == true
+            let joining = vault == nil && local.map {
+                Vault.isJoinApproval(data, local: $0, identities: options.firstPullIdentities, unconfirmed: joinUnconfirmed($0))
+            } == true
             if !joining, let why = Vault.incomingManifestProblem(data, local: local, vault: vault) {
                 report.rejected.append(.init(path: name, message: SyncReport.printable(why)))
                 return

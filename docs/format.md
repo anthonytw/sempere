@@ -4108,6 +4108,9 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
 - Over a sync (§15.15) a request travels in `joins/`; once home approved it (and deleted it), the joining
   device, which the local `vault.json` does not list yet, takes a later `vault.json` of the same vault and root
   that lists its key and whose wrap opens to a key of its epoch, and then confirms it with the reply words.
+  Until it has confirmed (it keeps no trust record of the vault), it takes such a `vault.json` also over a local
+  one that already lists its key: storage can plant a fake approval (a wrap needs only the public key the request
+  publishes), which the reply words never confirm, and the real one must still replace it.
 
 ### 15.13 The recovery kit
 

@@ -418,6 +418,38 @@ final class EpochSyncScenarioTests: SyncTestCase {
         XCTAssertTrue(try n.sync(t1).uploaded.contains { $0.hasPrefix("notes/") })
     }
 
+    /// S5: storage plants a fake approval (home's real one with the joiner's wrap replaced by a random key's, which
+    /// needs only the joiner's public key from its request). The joiner may take it, but its reply words never
+    /// confirm it, and the real approval still replaces it while the joiner has not confirmed: it joins.
+    func testAFakeApprovalNeverBlocksTheRealOne() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B"])
+        let t1 = w.target("T1")
+        let n = EpochSyncDevice("N", root: tmp)
+        try n.syncLocked(t1)
+        let request = try Vault.writeJoinRequest(at: n.folder, device: n.keys, name: "N", kind: "cli")
+        try n.syncLocked(t1)
+        try w["A"].sync(t1)
+        var a = try w["A"].open()
+        let found = try XCTUnwrap(a.joinRequests().first { $0.name == request.fileName }?.request)
+        let words = try a.approveDevice(found)
+        try w["A"].sync(t1)
+        let real = try XCTUnwrap(t1.file(Vault.manifestName))
+        var m = try EpochManifest.parse(real)
+        let i = try XCTUnwrap(m.keys.firstIndex { $0.key == request.key })
+        m.keys[i].wrap = try EpochKeyWrap.seal(VaultEpochKey.random(), vaultId: m.vaultId, epoch: m.epoch,
+                                              to: try NativeRecipient(string: request.key))
+        let fake = try JSONEncoder().encode(m)
+        t1.put(Vault.manifestName, fake)
+        try n.syncLocked(t1) { $0.firstPullIdentities = [n.identity] }
+        if var nv = try? n.open() { XCTAssertThrowsError(try nv.confirmJoin(words: words)) }
+        // The real approval is back on the target: the joiner takes it and confirms.
+        t1.put(Vault.manifestName, real)
+        try n.syncLocked(t1) { $0.firstPullIdentities = [n.identity] }
+        XCTAssertEqual(try Data(contentsOf: n.folder.appendingPathComponent(Vault.manifestName)), real)
+        var nv = try n.open()
+        XCTAssertNoThrow(try nv.confirmJoin(words: words))
+    }
+
     func testHomeDeletesStaleRequestsAndThoseOfListedKeys() throws {
         let w = try EpochSyncWorld(in: tmp, names: ["A", "B"])
         let t1 = w.target("T1")
