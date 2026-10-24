@@ -103,8 +103,19 @@ final class LaunchSmokeUITests: XCTestCase {
         XCTAssertTrue(settings.waitForNonExistence(timeout: 10), "the Settings window closed")
         requireRunning(app, "settings")
 
-        // Vault Keys (⌥⌘K).
+        // Vault Keys (⌥⌘K): the device list (key-hierarchy KH5), its Replace Recovery Kit sheet and Repair.
         openWithShortcut(app, "k", [.command, .option], "keysWindow", "Vault Keys window")
+        let replaceKit = app.buttons["devices.replaceKit"].firstMatch
+        require(replaceKit, "Replace Recovery Kit…", in: app)
+        replaceKit.click()
+        requireSheet("replaceKitSheet", titled: "Replace Recovery Kit", "Replace Recovery Kit sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "replace kit sheet")
+        let repair = app.descendants(matching: .any)["devices.repair"].firstMatch
+        require(repair, "Repair", in: app)
+        repair.click()
+        require(app.descendants(matching: .any)["setAsideRepairView"].firstMatch, "device-change Repair", in: app)
+        requireRunning(app, "device-change repair")
         app.typeKey("w", modifierFlags: .command)
         requireRunning(app, "vault keys")
 

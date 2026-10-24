@@ -30,12 +30,8 @@ struct VaultDevice: Identifiable, Equatable, Sendable {
     }
 }
 
-/// The open vault's devices (the Mac key window lists them).
-///
-/// TODO(KH5): adding, approving, renaming, removing and replacing devices in
-/// the app (join requests, `Vault.approveDevice`, `renameDevice`, new
-/// epochs). Until then the app only lists them; the CLI's `sempere device`
-/// commands make the changes.
+/// The open vault's devices, as Settings names this device. The device list and its changes are
+/// `AppModel+Devices` (`DevicesView`).
 extension AppModel {
     enum KeyError: Error, Equatable, CustomStringConvertible {
         case notUnlocked

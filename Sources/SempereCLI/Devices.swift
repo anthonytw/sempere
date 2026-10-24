@@ -213,7 +213,7 @@ struct DevicesCommand: ParsableCommand {
         commandName: "devices",
         abstract: "List the vault's devices; approve, rename, remove them and hand the home role over (on the home device); take over with the recovery kit.",
         subcommands: [DevicesList.self, DevicesApprove.self, DevicesRename.self, DevicesRemove.self, DevicesHandoff.self,
-                      RecoveryTakeover.self, DevicesStatus.self]
+                      RecoveryTakeover.self, DevicesStatus.self, DevicesHistory.self]
     )
 }
 

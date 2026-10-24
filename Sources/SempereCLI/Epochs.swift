@@ -506,7 +506,11 @@ struct SetAsideKeep: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "keep",
         abstract: "Put set-aside files back in the vault, re-encrypted under the current key.",
-        discussion: "They may come from a removed device: keep only what you recognize. Needs --yes."
+        discussion: """
+            They may come from a removed device: keep only what you recognize. Needs --yes. --own-dropped keeps \
+            every file this machine wrote itself (its write ledger holds the exact bytes) under a change that a \
+            takeover dropped (design §5.4, the bulk Keep).
+            """
     )
 
     @OptionGroup var access: AccessOptions
@@ -514,23 +518,31 @@ struct SetAsideKeep: ParsableCommand {
     @Argument(help: ArgumentHelp("Items: SHA-256 (or 8+ leading hex digits).", valueName: "sha"))
     var items: [String] = []
 
+    @Flag(name: .customLong("own-dropped"),
+          help: "Every set-aside file this machine wrote under a change a takeover dropped.")
+    var ownDropped = false
+
     @Flag(name: .long, help: "Confirm.")
     var yes = false
 
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
-        guard !items.isEmpty else { throw ValidationError("name the items to keep") }
+        guard !items.isEmpty || ownDropped else { throw ValidationError("name the items to keep, or pass --own-dropped") }
     }
 
     func run() throws {
         let vault = try openForSetAside(access)
-        let picked = try setAsideItems(vault, items)
+        var picked = try setAsideItems(vault, items).map(\.item)
+        if ownDropped {
+            let known = Set(picked)
+            picked += vault.ownDroppedSetAside().filter { !known.contains($0) }
+        }
         guard yes else {
             throw CLIError.usage("these files may come from a removed device; pass --yes to put them back in the vault")
         }
-        for s in picked { try vault.keepSetAside(s.item) }
-        if output.json { return try output.emitJSON(picked.map(\.item.path)) }
+        for item in picked { try vault.keepSetAside(item) }
+        if output.json { return try output.emitJSON(picked.map(\.path)) }
         output.info("Kept \(picked.count) file(s) in the vault.")
     }
 }

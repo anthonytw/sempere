@@ -31,6 +31,18 @@ struct VaultDetailsView: View {
                         Text("No sync targets: this device holds the only copy.").foregroundStyle(.secondary)
                     }
                 }
+                if model.vault?.vaultId == vaultID, model.phase == .unlocked, !model.isRecoveryOpen {
+                    Section {
+                        NavigationLink {
+                            SetAsideRepairView()
+                        } label: {
+                            Text("From Before a Device Change")
+                        }
+                        .accessibilityIdentifier("vaultDetailsSetAside")
+                    } header: {
+                        Text("Repair")
+                    }
+                }
                 ForEach(details.targets) { target in
                     TargetDetailsSection(details: target, vaultID: vaultID) { generation += 1 }
                 }

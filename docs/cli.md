@@ -200,8 +200,9 @@ sempere keys derive --epoch-key-file FILE [--epoch N] [--vault-id UUID] [--captu
 **Removed.** `keys export` is gone: device keys never leave their device, and
 the vault holds no key file to export (`keys/` holds only the recovery key's
 passphrase copy). The app's key management (adding, removing and replacing
-keys, joining devices) is stubbed until phase KH5 of the key hierarchy; the
-CLI's `device` and `devices` commands are the way to join a device for now.
+keys, joining devices) arrives in phase KH5 of the key hierarchy: the device list, removal, Make Home,
+Replace Recovery Kit, the history and Repair are in the app; joining and takeovers follow. Until then the CLI's
+`device` and `devices` commands are the way to join a device.
 
 ### Devices
 
@@ -214,9 +215,10 @@ sempere devices rename ID NAME
 sempere devices remove ID... [--no-pull] [--password-env VAR]
 sempere devices handoff ID [--no-pull] [--password-env VAR]
 sempere devices status [--export DIR] [--forget-sightings [--all]]
+sempere devices history
 sempere devices takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--yes]
 sempere recovery replace --recovery-out FILE [--keep ID]... [--remove ID]... [--old-recovery-key FILE] [--recovery-passphrase] [--yes]
-sempere set-aside list | export [SHA...] --to DIR | keep SHA... --yes | clear (SHA... | --superseded) --yes
+sempere set-aside list | export [SHA...] --to DIR | keep (SHA... | --own-dropped) --yes | clear (SHA... | --superseded) --yes
 ```
 
 A vault has one **home** device, the one that changes its device list: the
@@ -304,7 +306,12 @@ its device id in the vault.
   password of a WebDAV target the device used, or sign it out of iCloud.
   `--json`: `epoch`, `epochId`, `reason` (`remove`), `removed` (ids), `home`,
   `sealed` (files), `pulled` (`[{target, reached, downloaded, error}]`, store
-  vaults) and `removedDevices` (`[{id, name, lastSynced, stale}]`).
+  vaults) and `removedDevices` (`[{id, name, lastSynced, notSyncedSinceChange, stale, approved, replacedKit}]`). A
+  device whose summaries file is still under an earlier key has `notSyncedSinceChange` (the date of the first change
+  it missed) and is stale: the summaries header's epoch is not authenticated, so it never counts as a recorded sync. A removed device that
+  managed devices for a while is named with the listed devices it approved then (`approved`: remove those too if it
+  was lost or stolen) and whether it made the current recovery kit (`replacedKit`: replace the kit again). The app's
+  removal sheet shows the same (`Vault.removalReview`).
 - `devices status [--export DIR] [--forget-sightings [--all]]`: this machine's state in the vault: `listed`;
   `waiting` (a sync met a later device list it cannot verify yet: it writes
   here, uploads nothing new until it can, `format.md` §15.15); `record-pending`
@@ -323,6 +330,13 @@ its device id in the vault.
   sync meets the change again). A sync held back for more than a day says since when. `--json`:
   `state`, `notice`, `heldSince`, `sightings` (`[{epoch, epochId, anchored,
   sources, seen}]`), `forgotten`, `unsynced`, `exported`.
+- `devices history` lists the vault's device changes, newest first (design §6.4): each epoch of the chain this
+  machine follows with its reason (`create`, `remove`, `handoff`, `takeover`, `recovery`, `reencrypt`), its date
+  (from its record), its author, the new home of a handoff or takeover, and the devices it removed (named when a list
+  this machine has names them). A takeover by someone else means someone holds the recovery kit: replace it on a
+  device that still manages devices. Needs the key. `--json`: `events` (`[{epoch, epochId, reason, date, author:
+  {id, name}, newHome, removed}]`) and `dropped` (the epochs a takeover dropped that this machine had followed). The
+  app's device list shows the same history (`Vault.deviceHistory`).
 - `devices handoff ID` (home only) makes another listed device home: an epoch
   with the same devices, signed by the old home. From then on only the new home
   approves, renames, removes or replaces the kit. It pulls from a store vault's
@@ -372,7 +386,9 @@ its device id in the vault.
   as they are (age files) under their vault paths; `keep SHA... --yes` puts
   them back in the vault re-encrypted under the current key (they may come
   from a removed device: keep only what you recognize; refused when the path
-  holds an accepted file with another body); `clear (SHA... |
+  holds an accepted file with another body); `keep --own-dropped --yes` keeps every set-aside file this
+  machine wrote itself (its write ledger holds the bytes) under a change a takeover dropped (design §5.4, the
+  app's "Keep N Files This Device Wrote" in Repair); `clear (SHA... |
   --superseded) --yes` deletes them from this machine. Items are named by their
   SHA-256 or 8 or more leading hex digits. The store is
   `$XDG_STATE_HOME/sempere/setaside/<vault id>/`.

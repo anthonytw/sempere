@@ -18,7 +18,7 @@ import UIKit
 @Suite(.serialized)
 struct PseudoLanguageLayoutTests {
     enum Screen: String, CaseIterable, Sendable {
-        case library, locked, note, tags, paper, settings
+        case library, locked, note, tags, paper, settings, devices
     }
 
     /// The Mac window sizes `scripts/app.sh pseudo-mac` checks: 700 × 800 (narrower than an iPad mini
@@ -87,12 +87,17 @@ struct PseudoLanguageLayoutTests {
                                 onPreview: { _ in }, onChoose: { _, _ in })
                     .appEnvironment(model: model, library: library, keys: keys)
             })
+        case .devices:
+            // The device list (key-hierarchy KH5): rows, the recovery kit and the history.
+            view = AnyView(root.sheet(isPresented: .constant(true)) {
+                NavigationStack { DevicesView() }.appEnvironment(model: model, library: library, keys: keys)
+            })
         default:
             view = AnyView(root)
         }
         for size in Self.sizes {
             let name = "\(language.rawValue)/\(screen.rawValue)@\(Int(size.width))x\(Int(size.height))"
-            try await Self.check(view, size: size, language: language, sheet: [.locked, .paper, .settings].contains(screen),
+            try await Self.check(view, size: size, language: language, sheet: [.locked, .paper, .settings, .devices].contains(screen),
                                  name: name, expectMoreThan: 8)
         }
     }

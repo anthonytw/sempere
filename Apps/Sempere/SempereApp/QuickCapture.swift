@@ -20,6 +20,11 @@ struct StoredCaptureProfile: Codable, Equatable, Sendable {
     var bookmark: Data
     /// Transcribe voice notes on this device when they stop.
     var transcribe: Bool
+    /// This device is not on the vault's newest device list (key-hierarchy design §5.5; review of #87, R1): no
+    /// new voice note starts, while a recording in progress, leftovers and the queue are still sealed into
+    /// `inbox/` with ledger entries, so the unlisted screen's Save Files covers them. Lifted, keeping the
+    /// notebook, once the device is listed again. Absent means not suspended.
+    var suspended: Bool? = nil
 }
 
 /// Where the profile lives: the Keychain in the app, memory in tests.
@@ -110,6 +115,9 @@ enum QuickCaptureError: Error, Equatable, CustomStringConvertible, CustomLocaliz
     /// the permission prompt): checked again with the app in front instead of refusing. TestFlight
     /// 1.0.0 (6), iPhone: after a restart Siri said Sempere was not allowed to use the microphone.
     case microphoneUnconfirmed
+    /// The profile is suspended (`StoredCaptureProfile.suspended`): this device was removed from the vault's
+    /// device list, so a new voice note could never reach the vault.
+    case notOnDeviceList
 
     var description: String {
         switch self {
@@ -127,6 +135,8 @@ enum QuickCaptureError: Error, Equatable, CustomStringConvertible, CustomLocaliz
             return String(localized: "Unlock this device once after it restarts: until then Sempere cannot record voice notes.")
         case .microphoneUnconfirmed:
             return String(localized: "Sempere could not confirm it may use the microphone without opening. Open Sempere to record.")
+        case .notOnDeviceList:
+            return String(localized: "This device was removed from the vault's device list: it takes no new voice notes until it is added again.")
         }
     }
 
@@ -568,9 +578,12 @@ final class QuickCapture {
         defer { if !started { state = .idle } }
         let unlocked = protectedDataAvailable()
         trace.protectedData = unlocked
-        do { _ = try storedProfile() } catch QuickCaptureError.profileUnreadable where !unlocked {
+        let stored: StoredCaptureProfile
+        do { stored = try storedProfile() } catch QuickCaptureError.profileUnreadable where !unlocked {
             throw QuickCaptureError.beforeFirstUnlock
         }
+        // New captures only: a stop, the sweep and the queue still seal under a suspended profile.
+        if stored.suspended == true { throw QuickCaptureError.notOnDeviceList }
         #if os(iOS) && !targetEnvironment(macCatalyst)
         if showsActivity, !activitiesEnabled() { throw QuickCaptureError.liveActivitiesOff }
         #endif

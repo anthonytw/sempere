@@ -201,6 +201,8 @@ struct NoteListView: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
+                // This device's place in the vault: takeovers, removal, held-back sync (key-hierarchy KH5).
+                DeviceNoticeBanners()
                 if let banner = model.readOnlyBanner {
                     // A vault of a newer format version (format.md §7.3): shown, never changed.
                     Label(banner, systemImage: "lock")

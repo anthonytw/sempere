@@ -67,6 +67,40 @@ final class CLIEpochTests: CLITestCase {
         XCTAssertEqual((aside.json as? [Any])?.count, 0)
     }
 
+    /// `devices history` (design §6.4): every change, newest first, with its author, the new home and what it
+    /// removed; the removal's warnings name what a former home approved and that it replaced the kit.
+    func testHistoryListsTheChangesAndTheRemovalWarnsAboutAFormerHome() throws {
+        let (vault, _, laptop) = try twoMachines()
+        let x = try join("x", vault)
+        let y = try join("y", vault)
+        let v = ["--vault", vault]
+        let home = try homeId(vault)
+        XCTAssertEqual(try cli(["devices", "handoff", laptop] + v, env: machine("home")).status, 0)
+        XCTAssertEqual(try cli(["devices", "remove", x, "--no-pull"] + v, env: machine("laptop")).status, 0)
+        let history = try cli(["devices", "history", "--json"] + v, env: machine("laptop"))
+        XCTAssertEqual(history.status, 0, history.err)
+        let events = try XCTUnwrap((history.json as? [String: Any])?["events"] as? [[String: Any]])
+        XCTAssertEqual(events.compactMap { $0["reason"] as? String }, ["remove", "handoff", "create"])
+        XCTAssertEqual((events[0]["removed"] as? [[String: Any]])?.compactMap { $0["id"] as? String }, [x])
+        XCTAssertEqual((events[1]["newHome"] as? [String: Any])?["id"] as? String, laptop)
+        XCTAssertEqual((events[1]["author"] as? [String: Any])?["id"] as? String, home)
+        XCTAssertNotNil(events[2]["date"] as? String)
+        let text = try cli(["devices", "history"] + v, env: machine("laptop"))
+        XCTAssertEqual(text.status, 0, text.err)
+        XCTAssertTrue(text.out.contains("handoff"), text.out)
+        // Removing the former home: the CLI names the devices it approved while it was home.
+        let removed = try cli(["devices", "remove", home, "--no-pull", "--json"] + v, env: machine("laptop"))
+        XCTAssertEqual(removed.status, 0, removed.err)
+        let gone = try XCTUnwrap((removed.json as? [String: Any])?["removedDevices"] as? [[String: Any]])
+        XCTAssertEqual(gone.first?["approved"] as? [String], [y],
+                       "the old home approved the laptop, x and y: x is gone, the laptop manages devices")
+        XCTAssertEqual(gone.first?["replacedKit"] as? Bool, false)
+        XCTAssertEqual(try cli(["set-aside", "keep", "--yes"] + v, env: machine("laptop")).status, 2, "nothing named")
+        let own = try cli(["set-aside", "keep", "--own-dropped", "--yes", "--json"] + v, env: machine("laptop"))
+        XCTAssertEqual(own.status, 0, own.err)
+        XCTAssertEqual((own.json as? [Any])?.count, 0, "nothing of a dropped epoch here")
+    }
+
     /// Revision names keep the machine's own id (its state file's), not the vault device's: two installs that
     /// share a copied device key never number revisions alike.
     func testRevisionNamesCarryTheMachinesStateId() throws {
