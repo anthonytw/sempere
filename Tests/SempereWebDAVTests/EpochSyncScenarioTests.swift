@@ -127,12 +127,14 @@ final class EpochSyncScenarioTests: SyncTestCase {
         XCTAssertTrue(r.epoch?.waiting?.contains("memory") == true || r.epoch?.waiting?.isEmpty == false)
         XCTAssertTrue(r.uploaded.isEmpty, "\(r.uploaded)")
         XCTAssertEqual(try w["B"].open().manifest.epoch, 1)
-        XCTAssertNotNil(try w["B"].open().waitingNotice, "remembered: the next open knows it waits")
+        // Remembered as a detached sighting (epoch 3's parent was never pinned here): it holds runs on T1, which
+        // shows it, run after run; not the open, and not a target that never showed it (review of #86, M3).
+        XCTAssertEqual(try w["B"].open().sightings().map(\.epoch), [3])
+        XCTAssertNil(try w["B"].open().waitingNotice)
         XCTAssertNoThrow(try w["B"].write("still writes locally"))
-        // Another target (T2, still at epoch 1) gets nothing new from B either: the sighting holds there too.
-        let t2 = EpochTarget("T2")
-        let other = try w["B"].sync(t2)
-        XCTAssertTrue(other.uploaded.allSatisfy { $0.hasPrefix("epochs/") }, "\(other.uploaded)")
+        let still = try w["B"].sync(t1)
+        XCTAssertNotNil(still.epoch?.waiting)
+        XCTAssertTrue(still.uploaded.allSatisfy { $0.hasPrefix("epochs/") }, "\(still.uploaded)")
 
         // The records come back: B verifies epoch 3, catches up its own file and uploads it.
         try w["A"].sync(t1)

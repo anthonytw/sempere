@@ -342,6 +342,10 @@ extension SyncEngine {
     /// Remembers a `vault.json` this device did not take (`Vault.rememberSighting`).
     private func remember(_ data: Data, _ v: Vault) {
         guard !options.dryRun else { return }
+        if let id = Self.epochOf(data)?.epochId {
+            let seen = v.sightings().first { $0.epochId == id }?.seen ?? options.now
+            epochStatus.heldSince = min(epochStatus.heldSince ?? seen, seen)
+        }
         do { try v.rememberSighting(data, source: transport.location, now: options.now) } catch {
             report.errors.append(.init(path: Vault.manifestName, message: "cannot remember the later device change: "
                 + Self.describe(error)))
@@ -365,6 +369,15 @@ extension SyncEngine {
         let settled = v.settleSightings()
         var holds: [IncomingEpoch] = []
         for (s, judgment) in settled.sorted(by: { $0.sighting.epoch > $1.sighting.epoch }) {
+            // A detached sighting (nothing verifies it) holds back only runs on the targets that showed it (M3).
+            let anchored = v.isAnchoredSighting(s)
+            if !anchored, !judgment.isTaken {
+                // Held only if this target still shows it (`refreshDetachedSightings`, `applyDetachedHolds`).
+                if s.shown(at: transport.location), case .waiting(let why) = judgment {
+                    detachedPending[s.epochId] = (why, s.seen)
+                }
+                continue
+            }
             if judgment.isTaken, !epochTaken {
                 try requireLocalWrite("write \(Vault.manifestName)")
                 let local = try localMutable(Vault.manifestName)
@@ -381,6 +394,7 @@ extension SyncEngine {
                 return try takeSettledSightings()
             }
             holds.append(judgment)
+            if case .waiting = judgment { epochStatus.heldSince = min(epochStatus.heldSince ?? s.seen, s.seen) }
         }
         for j in holds {
             switch j {
@@ -389,6 +403,24 @@ extension SyncEngine {
             default: break
             }
         }
+    }
+
+    /// The target's `vault.json` was read (nil: it has none): detached sightings it no longer shows stop counting
+    /// it (and are forgotten once no target shows them), and do not hold this run (M3).
+    func refreshDetachedSightings(_ data: Data?) {
+        guard !options.dryRun, !options.pushOnly, let v = epochJudge else { return }
+        v.noteTargetShows(data, at: transport.location)
+        let shown = data.flatMap { Self.epochOf($0)?.epochId }
+        detachedPending = detachedPending.filter { $0.key == shown }
+    }
+
+    /// The detached sightings this target still shows (or whose absence could not be seen) hold this run.
+    func applyDetachedHolds() {
+        for (_, held) in detachedPending.sorted(by: { $0.value.seen < $1.value.seen }) {
+            holdForEpoch(waiting: "\(held.why) (at \(SyncReport.printable(transport.location)))")
+            epochStatus.heldSince = min(epochStatus.heldSince ?? held.seen, held.seen)
+        }
+        detachedPending = [:]
     }
 
     /// After the mutable files: a taken epoch reopens the vault under it, pins it (the trust record) and catches

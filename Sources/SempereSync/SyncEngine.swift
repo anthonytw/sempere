@@ -280,6 +280,8 @@ public final class SyncEngine {
     }
     /// What a held run may still write (`HoldGate.swift`).
     let holdGate = HoldGate()
+    /// Detached sightings this target showed when last looked at (M3), until its `vault.json` is read.
+    var detachedPending: [Data: (why: String, seen: Date)] = [:]
     /// True once this run took a later epoch's `vault.json`: the vault is reopened, pinned and caught up.
     var epochTaken = false
     /// What the run met about device changes (`SyncReport.epoch`).
@@ -661,6 +663,7 @@ public final class SyncEngine {
     func syncMutable(_ name: String, remote: RemoteEntry?) throws {
         // A later epoch seen on another target whose record has arrived since is taken first (KH4).
         if name == Vault.manifestName { try takeSettledSightings() }
+        defer { if name == Vault.manifestName { applyDetachedHolds() } }
         let local = try localMutable(name)
         let record = state.mutable[name]
 
@@ -672,6 +675,7 @@ public final class SyncEngine {
         let localHash = FileDigest.sha256(local)
 
         guard let remote else {
+            if name == Vault.manifestName { refreshDetachedSightings(nil); applyDetachedHolds() }
             // Never on the server, or wiped there: (re)create it, never overwriting.
             try push(name, local, condition: .create)
             try recordMutable(name, hash: localHash)
@@ -682,7 +686,11 @@ public final class SyncEngine {
         try budget.downloaded(remoteData.count)
         let remoteHash = FileDigest.sha256(remoteData)
         let stamp = remote.etag ?? getETag ?? remote.lastModified
-        if name == Vault.manifestName { remoteManifestData = remoteData }
+        if name == Vault.manifestName {
+            remoteManifestData = remoteData
+            refreshDetachedSightings(remoteData)
+            applyDetachedHolds()
+        }
         if remoteHash == localHash {
             state.mutable[name] = .init(hash: localHash, stamp: stamp)
             return

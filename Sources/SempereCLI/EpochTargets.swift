@@ -158,7 +158,14 @@ struct DevicesStatus: ParsableCommand {
             write ledger) that no sync target of the store vault holds; --export DIR copies them, as they are, \
             under their vault paths (keep them, or import them into another vault).
 
-            --json: state (listed, waiting, unlisted, record-pending), notice, unsynced, exported.
+            Sightings are the device lists this machine met and did not take (its trust store). An anchored one \
+            (its parent is an epoch this machine verified) holds every sync back; a detached one (nothing verifies \
+            it: anyone with write access to a target can plant one) holds back only syncs with the targets that \
+            still show it, and is forgotten once none does. --forget-sightings forgets them all (a real change is \
+            met again at the next sync).
+
+            --json: state (listed, waiting, unlisted, record-pending), notice, heldSince, sightings (epoch, epochId, \
+            anchored, sources, seen), unsynced, exported.
             """
     )
 
@@ -167,17 +174,42 @@ struct DevicesStatus: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("Copy this machine's unsynced files into this folder.", valueName: "dir"))
     var export: String?
 
+    @Flag(name: .customLong("forget-sightings"), help: "Forget every device list this machine met and did not take.")
+    var forgetSightings = false
+
     @OptionGroup var output: OutputOptions
+
+    struct SightingOut: Encodable {
+        var epoch: Int
+        var epochId: String
+        var anchored: Bool
+        var sources: [String]
+        var seen: String
+    }
 
     struct Out: Encodable {
         var state: String
         var notice: String?
+        var heldSince: String?
+        var sightings: [SightingOut]
+        var forgotten: Int?
         var unsynced: [String]
         var exported: [String]?
     }
 
     func run() throws {
         let vault = try access.openVault(.required)
+        var forgotten: Int?
+        if forgetSightings {
+            forgotten = vault.sightings().count
+            try vault.forgetSightings()
+        }
+        let sightings = vault.sightings().map {
+            SightingOut(epoch: $0.epoch, epochId: Hex.encode($0.epochId), anchored: vault.isAnchoredSighting($0),
+                        sources: $0.sources, seen: RFC3339.string($0.seen))
+        }
+        let heldSince = vault.waitingNotice == nil ? nil
+            : vault.sightings().filter { vault.isAnchoredSighting($0) }.map(\.seen).min()
         let state: String, notice: String?
         if let n = vault.unlistedNotice {
             (state, notice) = ("unlisted", n)
@@ -207,8 +239,17 @@ struct DevicesStatus: ParsableCommand {
                 return target.path
             }
         }
-        if output.json { return try output.emitJSON(Out(state: state, notice: notice, unsynced: unsynced, exported: exported)) }
+        if output.json {
+            return try output.emitJSON(Out(state: state, notice: notice, heldSince: heldSince.map { RFC3339.string($0) },
+                                           sightings: sightings, forgotten: forgotten, unsynced: unsynced, exported: exported))
+        }
         print("State: \(state)" + (notice.map { ": \($0)" } ?? ""))
+        if let heldSince { print("Held back since \(RFC3339.string(heldSince)) (\(EpochTargets.ago(heldSince)))") }
+        for s in sightings {
+            print("Sighting: epoch \(s.epoch) \(s.epochId.prefix(16)) \(s.anchored ? "anchored" : "detached"), seen \(s.seen) at "
+                + s.sources.joined(separator: ", "))
+        }
+        if let forgotten { output.info("Forgot \(forgotten) sighting(s).") }
         print("Own changes no target holds: \(unsynced.count)" + (states.isEmpty ? " (not a store vault with targets)" : ""))
         if let exported { output.info("Exported \(exported.count) file(s) to \(export ?? "")") }
     }

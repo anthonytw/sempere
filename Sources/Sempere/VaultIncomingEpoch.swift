@@ -24,8 +24,14 @@ import Foundation
 public struct EpochSighting: Hashable, Sendable {
     /// The `vault.json` bytes as seen.
     public var manifest: Data
-    /// Where it was seen (a target's location, for the status line).
-    public var source: String
+    /// The targets (their locations) that showed it when last looked at. A **detached** sighting (its parent is
+    /// on no chain this device holds: nothing verifies it, anyone with storage write access can plant one) holds
+    /// back only runs on these targets, and is forgotten once none of them shows it (review of #86, M3).
+    public var sources: [String]
+    /// The first of `sources`, for status lines.
+    public var source: String { sources.first ?? "?" }
+    /// True when the target at `location` showed it when last looked at.
+    public func shown(at location: String) -> Bool { sources.contains(SyncTextClean.line(location, max: 200)) }
     /// When it was first seen.
     public var seen: Date
     /// Its epoch and id, from the file (plaintext).
@@ -34,7 +40,7 @@ public struct EpochSighting: Hashable, Sendable {
 
     public init(manifest: Data, source: String, seen: Date = Date()) throws {
         let m = try Vault.readManifest(manifest)
-        self.manifest = manifest; self.source = SyncTextClean.line(source, max: 200); self.seen = seen
+        self.manifest = manifest; self.sources = [SyncTextClean.line(source, max: 200)]; self.seen = seen
         epoch = m.epoch; epochId = m.epochId
     }
 
@@ -44,7 +50,7 @@ public struct EpochSighting: Hashable, Sendable {
     public static let maxCount = 8
 
     private struct Wire: Codable {
-        var source: String
+        var sources: [String]
         var seen: String
         var manifest: String
     }
@@ -55,13 +61,13 @@ public struct EpochSighting: Hashable, Sendable {
         var sightings: [Wire]
     }
 
-    static let format = "sempere-sightings/1"
+    static let format = "sempere-sightings/2"
 
     static func encodeFile(_ sightings: [EpochSighting], vaultId: UUID) throws -> Data {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return try enc.encode(File(format: format, vaultId: vaultId.uuidString.lowercased(), sightings: sightings.map {
-            Wire(source: $0.source, seen: RFC3339.string($0.seen), manifest: $0.manifest.base64EncodedString())
+            Wire(sources: $0.sources, seen: RFC3339.string($0.seen), manifest: $0.manifest.base64EncodedString())
         }))
     }
 
@@ -74,7 +80,9 @@ public struct EpochSighting: Hashable, Sendable {
             guard let bytes = Data(base64Encoded: w.manifest), bytes.count <= BoundedRead.maxManifestBytes else {
                 throw VaultError.io("a sighting's vault.json does not decode")
             }
-            return try EpochSighting(manifest: bytes, source: w.source, seen: RFC3339.parse(w.seen) ?? Date())
+            var s = try EpochSighting(manifest: bytes, source: w.sources.first ?? "?", seen: RFC3339.parse(w.seen) ?? Date())
+            s.sources = Array(w.sources.prefix(16)).map { SyncTextClean.line($0, max: 200) }
+            return s
         }
     }
 }
@@ -398,21 +406,63 @@ extension Vault {
     }
 
     /// Remembers `data` (a `vault.json` this device did not take, `waiting` or `unlisted`) as seen at
-    /// `source`, so every later run and target holds back too. The same epoch is remembered once; at most
-    /// `EpochSighting.maxCount` are kept (the newest epochs).
+    /// `source`. The same epoch is remembered once, with every target that showed it. At most
+    /// `EpochSighting.maxCount` are kept: detached ones go first (oldest first), then the lowest epochs, so planted
+    /// ones never push out a sighting a pinned epoch anchors.
     public func rememberSighting(_ data: Data, source: String, now: Date = Date()) throws {
         guard let trustStore else { return }
         let s = try EpochSighting(manifest: data, source: source, seen: now)
         var all = try trustStore.sightings(for: vaultId)
         if let i = all.firstIndex(where: { $0.epochId == s.epochId }) {
-            if all[i].manifest == data { return }
+            let place = s.sources[0]
+            if all[i].manifest == data, all[i].sources.contains(place) { return }
             all[i].manifest = data
+            if !all[i].sources.contains(place) { all[i].sources = Array((all[i].sources + [place]).suffix(16)) }
         } else {
             all.append(s)
         }
+        while all.count > EpochSighting.maxCount {
+            if let i = all.indices.filter({ !isAnchoredSighting(all[$0]) }).min(by: { all[$0].seen < all[$1].seen }) {
+                all.remove(at: i)
+            } else {
+                all.sort { ($0.epoch, $0.seen) < ($1.epoch, $1.seen) }
+                all.removeFirst()
+            }
+        }
         all.sort { ($0.epoch, $0.seen) < ($1.epoch, $1.seen) }
-        if all.count > EpochSighting.maxCount { all.removeFirst(all.count - EpochSighting.maxCount) }
         try trustStore.saveSightings(all, for: vaultId)
+    }
+
+    /// True when `s`'s parent is an epoch this device pinned or holds on its own chain: a real device change (its
+    /// signatures check against that epoch, or it would be refused) whose record may be withheld. It holds every
+    /// run back (J5b). Otherwise it is detached: see `EpochSighting.sources`.
+    public func isAnchoredSighting(_ s: EpochSighting) -> Bool {
+        guard let m = try? Self.readManifest(s.manifest), let parent = m.parent else { return false }
+        if trustedRecord()?.chain.contains(where: { $0.epochId == parent }) == true { return true }
+        if canRead, case .device = openedWith { return ownChain().ids.contains(parent) }
+        return false
+    }
+
+    /// A target (`source`) showed `data` as its `vault.json` (nil: none): each detached sighting it no longer shows
+    /// stops counting it, and one no target shows any more is forgotten (M3).
+    public func noteTargetShows(_ data: Data?, at source: String) {
+        guard let trustStore, var all = try? trustStore.sightings(for: vaultId), !all.isEmpty else { return }
+        let place = SyncTextClean.line(source, max: 200)
+        let shown = data.flatMap { try? Self.readManifest($0) }?.epochId
+        let before = all
+        all = all.compactMap { s in
+            guard s.epochId != shown, s.sources.contains(place), !isAnchoredSighting(s) else { return s }
+            var t = s
+            t.sources.removeAll { $0 == place }
+            return t.sources.isEmpty ? nil : t
+        }
+        if all != before { try? trustStore.saveSightings(all, for: vaultId) }
+    }
+
+    /// Forgets every sighting (`sempere devices status --forget-sightings`): a real device change is met again on
+    /// the next sync and remembered again.
+    public func forgetSightings() throws {
+        try trustStore?.saveSightings([], for: vaultId)
     }
 
     /// What this device's sightings say now (design §4.3, §5.5), each judged again against this vault: the
@@ -449,7 +499,8 @@ extension Vault {
     /// Why this device is unlisted, or waits for a later epoch, from its sightings (judged at open).
     func sightingNotices() -> (unlisted: String?, waiting: String?) {
         var unlisted: String?, waiting: String?
-        for s in sightings() where s.epochId != manifest.epochId {
+        // Only anchored sightings hold every run (and show at open); a detached one holds runs on its targets only.
+        for s in sightings() where s.epochId != manifest.epochId && isAnchoredSighting(s) {
             switch judgeIncoming(s.manifest) {
             case .unlisted(let n): unlisted = unlisted ?? n
             case .waiting(let why): waiting = waiting ?? "\(why) (seen at \(s.source))"

@@ -393,6 +393,10 @@ enum SyncCLI {
                     + (e.caughtUp.map { "; \($0) of this machine's files re-encrypted under it" } ?? ""))
             }
             if let w = e.waiting { printStderr("waiting: \(w)") }
+            if e.waiting != nil, let since = e.heldSince, Date().timeIntervalSince(since) > EpochTargets.staleAfter {
+                printStderr("held back since \(RFC3339.string(since)) (\(EpochTargets.ago(since))): no change of the device list "
+                    + "this machine met has been verified since; see `sempere devices status`")
+            }
             if let u = e.unlisted {
                 printStderr("removed: \(u)" + (e.unsyncedChanges.map { " (\($0) of this machine's changes are on no target: sempere devices status --export DIR)" } ?? ""))
             }

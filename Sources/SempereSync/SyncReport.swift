@@ -114,6 +114,9 @@ public struct SyncReport: Codable, Hashable, Sendable {
         public var unsyncedChanges: Int?
         /// A home conflict or another `vault.json` this device does not follow.
         public var conflict: String?
+        /// While held (waiting): when this device first met the change it waits for (its sighting). Past about a
+        /// day, the CLI and app say so (the owner's decision on the review of #86).
+        public var heldSince: Date?
 
         public init() {}
     }

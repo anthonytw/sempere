@@ -68,6 +68,35 @@ final class CLIEpochSyncTests: CLITestCase {
         XCTAssertEqual((list["devices"] as? [[String: Any]])?.count, 1)
     }
 
+    /// A forged device list (no key needed: anyone with write access to the folder) holds the laptop's syncs with
+    /// that folder back; `devices status` names it as a detached sighting and `--forget-sightings` forgets it
+    /// (review of #86, M3).
+    func testAForgedListIsADetachedSightingStatusShowsAndForgets() throws {
+        let (home, laptop, drive, id) = try homeAndLaptop()
+        XCTAssertEqual(try cli(["devices", "remove", id, "--no-pull", "--vault", home], env: machine("home")).status, 0)
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: home + "/vault.json")))
+            as? [String: Any])
+        let fakeId = String(repeating: "ab", count: 32)
+        json["epoch"] = 9
+        json["epochId"] = fakeId
+        json["parent"] = String(repeating: "cd", count: 32)
+        json["epochRecord"] = "epochs/9-\(fakeId.prefix(16)).epoch.age"
+        try JSONSerialization.data(withJSONObject: json).write(to: URL(fileURLWithPath: drive + "/vault.json"))
+        let held = try cli(["sync", "folder", drive, "--vault", laptop, "--json"], env: machine("laptop"))
+        XCTAssertEqual(held.status, 3, held.err)
+        let status = try XCTUnwrap(try cli(["devices", "status", "--json", "--vault", laptop], env: machine("laptop")).json
+            as? [String: Any])
+        let sightings = try XCTUnwrap(status["sightings"] as? [[String: Any]])
+        XCTAssertEqual(sightings.count, 1)
+        XCTAssertEqual(sightings.first?["anchored"] as? Bool, false)
+        XCTAssertEqual(sightings.first?["epoch"] as? Int, 9)
+        XCTAssertEqual(status["state"] as? String, "listed", "a detached sighting holds no run at open")
+        let forgot = try XCTUnwrap(try cli(["devices", "status", "--forget-sightings", "--json", "--vault", laptop],
+                                           env: machine("laptop")).json as? [String: Any])
+        XCTAssertEqual(forgot["forgotten"] as? Int, 1)
+        XCTAssertEqual((forgot["sightings"] as? [[String: Any]])?.count, 0)
+    }
+
     func testRemovingFromAStoreVaultPullsItsTargetsFirstAndNamesTheLastSync() throws {
         let (home, _, drive, id) = try homeAndLaptop()
         // The home machine's vault becomes a store vault synced with the drive folder.

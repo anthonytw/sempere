@@ -4045,13 +4045,22 @@ record without them does not read, and fails closed), `list` (the current list: 
 fingerprint of the pinned epoch's home). Readers refuse a chain that does not start at epoch 1 or
 whose `parent`s do not follow, and a missing or malformed `home`.
 
-**Sightings** (KH4, design §4.3, §5.5): next to the record, `<vaultId>.seen.json` (`sempere-sightings/1`:
-`vaultId`, and `sightings`, at most 8, each `source` (where it was seen), `seen` (RFC 3339) and `manifest`
-(the `vault.json` bytes, base64)) keeps the `vault.json` versions of other epochs this device met on a sync
-target and did not take: one it cannot verify yet (unverified-pending), or one it verified that does not list
-it (unlisted). A sighting that cannot be read fails closed (the device would upload again). Every open judges
-them again (§15.15): one now verified and followed is taken by the next two-way run, one dropped or no longer
-of interest is forgotten. A device also keeps, in its write ledger, the key of every epoch it pinned (not only
+**Sightings** (KH4, design §4.3, §5.5): next to the record, `<vaultId>.seen.json` (`sempere-sightings/2`:
+`vaultId`, and `sightings`, at most 8, each `sources` (the targets that showed it when last looked at), `seen`
+(RFC 3339, first seen) and `manifest` (the `vault.json` bytes, base64)) keeps the `vault.json` versions of other
+epochs this device met on a sync target and did not take: one it cannot verify yet (unverified-pending), or one
+it verified that does not list it (unlisted). A sighting that cannot be read fails closed (the device would
+upload again). Every open judges them again (§15.15): one now verified and followed is taken by the next two-way
+run, one dropped or no longer of interest is forgotten. A sighting is **anchored** when its `parent` is an epoch
+the device pinned or holds on its own chain: a real change (its link and signatures check against that epoch, or
+it is refused), which holds every run back. Otherwise it is **detached**: nothing verifies it, and anyone with
+write access to a target (not only a removed device: a provider, any holder of the target's credentials) can
+plant one without any key. A detached sighting holds back only runs on the targets in its `sources`; each run
+that reads a target's `vault.json` drops that target from the sightings it no longer shows, and one no target
+shows any more is forgotten. So storage alone can hold a device back on that storage, never everywhere and never
+for good. When more than 8 would be kept, detached ones go first (oldest first). `sempere devices status` lists
+them (`--forget-sightings` forgets them all).
+A device also keeps, in its write ledger, the key of every epoch it pinned (not only
 those it wrote under), so that files under an epoch a takeover later dropped read as set aside, not unreadable.
 
 ### 15.11 The passphrase copy
@@ -4268,9 +4277,13 @@ changed since the last run:
 - **`epochs/`** is synced first in every run, before `vault.json`: write-once, the union of both sides, never
   deleted. Every device pushes the records it holds to every target it syncs, so a withheld or lost record
   comes back (a device the newest list does not hold uploads nothing). A received record is checked for its
-  shape only (its name, at most 64 MiB, one `mlkem768x25519` stanza): it counts once a `vault.json` names it
-  with its hash. A `vault.json` is never uploaded to a target that does not hold its record (record first,
-  then `vault.json`, also when an upload of the record fails).
+  shape (its name, at most 64 MiB, one `mlkem768x25519` stanza) and, when a `vault.json` this device knows names
+  it, for that hash: a name proves nothing, since anyone with write access can put a file under it. A local file
+  under a named record's name with other bytes is set aside (`epochs/.unnamed-<name>`) and fetched again; until
+  the right one is here the record has not arrived (never a reason to refuse `vault.json`). A device reads back
+  the record its own `vault.json` names when the target has a file under that name, replaces other bytes there
+  under their version tag, and never uploads `vault.json` beside a record that is not the right one (record
+  first, then `vault.json`, also when an upload of the record fails).
 - **`vault.json` of another epoch** (another `epochId`) is judged against this device's own (design §4.3,
   §5.6), from local files only:
   - a later epoch whose chain (its record, here by now) verifies from the root and the trust record, and which
@@ -4286,8 +4299,9 @@ changed since the last run:
     it never pinned (a fork further back) unless that one's signed fields already lose to its own chain:
     **unverified-pending**. It keeps its own `vault.json`, keeps
     writing locally, and the run uploads nothing new (J5b): only `epochs/` is synced, both ways, and
-    `vault.json` is judged. It is remembered as a sighting (§15.10), so runs with every target hold back too,
-    until it is verified;
+    `vault.json` is judged. It is remembered as a sighting (§15.10): an anchored one holds runs with every target
+    back until it is verified, a detached one only runs with the targets that still show it. A run held back
+    reports since when (the first sighting); the CLI says so past a day;
   - a later epoch this device verified (from the pinned chain: a direct child, or a takeover under any pinned
     epoch) whose kept chain does not list it: **unlisted** (design §5.5). It never pins it and keeps its own
     `vault.json`; it writes nothing (`VaultError.removedFromVault`, CLI exit 8), uploads nothing, keeps pulling

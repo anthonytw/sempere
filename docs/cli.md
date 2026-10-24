@@ -213,7 +213,7 @@ sempere devices approve WORD WORD WORD WORD WORD WORD
 sempere devices rename ID NAME
 sempere devices remove ID... [--no-pull] [--password-env VAR]
 sempere devices handoff ID [--no-pull] [--password-env VAR]
-sempere devices status [--export DIR]
+sempere devices status [--export DIR] [--forget-sightings]
 sempere devices takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--yes]
 sempere recovery replace --recovery-out FILE [--keep ID]... [--remove ID]... [--old-recovery-key FILE] [--recovery-passphrase] [--yes]
 sempere set-aside list | export [SHA...] --to DIR | keep SHA... --yes | clear (SHA... | --superseded) --yes
@@ -304,7 +304,7 @@ its device id in the vault.
   `--json`: `epoch`, `epochId`, `reason` (`remove`), `removed` (ids), `home`,
   `sealed` (files), `pulled` (`[{target, reached, downloaded, error}]`, store
   vaults) and `removedDevices` (`[{id, name, lastSynced, stale}]`).
-- `devices status [--export DIR]`: this machine's state in the vault: `listed`;
+- `devices status [--export DIR] [--forget-sightings]`: this machine's state in the vault: `listed`;
   `waiting` (a sync met a later device list it cannot verify yet: it writes
   here, uploads nothing new until it can, `format.md` §15.15); `record-pending`
   (it took a change whose record has not arrived: files from before it are not
@@ -312,8 +312,14 @@ its device id in the vault.
   writes nothing, exit 8, and keeps pulling; a takeover that lists it again
   undoes that). It also lists this machine's own files (its write ledger) that
   no sync target of the store vault holds; `--export DIR` copies them as they
-  are under their vault paths. `--json`: `state`, `notice`, `unsynced`,
-  `exported`.
+  are under their vault paths. It lists the sightings (device lists a sync met
+  and this machine did not take, `format.md` §15.10): an anchored one holds
+  every sync back; a detached one (nothing verifies it, so anyone with write
+  access to a target can plant one) holds back only syncs with the targets
+  that still show it and lapses once none does. `--forget-sightings` forgets
+  them all. A sync held back for more than a day says since when. `--json`:
+  `state`, `notice`, `heldSince`, `sightings` (`[{epoch, epochId, anchored,
+  sources, seen}]`), `forgotten`, `unsynced`, `exported`.
 - `devices handoff ID` (home only) makes another listed device home: an epoch
   with the same devices, signed by the old home. From then on only the new home
   approves, renames, removes or replaces the kit. It pulls from a store vault's
