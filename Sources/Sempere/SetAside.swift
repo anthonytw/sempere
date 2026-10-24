@@ -36,6 +36,10 @@ public struct SetAsideStore: Sendable {
 
     public init(directory: URL) { self.directory = directory }
 
+    /// Test-only: stores (by directory) that refuse every copy, as a full disk would. File permissions cannot
+    /// stand in for it where tests run as root (the Linux CI container).
+    nonisolated(unsafe) package static var testUnwritable: Set<String> = []
+
     /// `$XDG_STATE_HOME/sempere/setaside`, else `~/.local/state/sempere/setaside`.
     public static func cliDirectory(environment: [String: String] = ProcessInfo.processInfo.environment,
                                     home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) -> URL {
@@ -92,6 +96,9 @@ public struct SetAsideStore: Sendable {
     private func keep(sha256: String, path: String, vaultId: UUID, reason: SetAsideReason, epoch: Int?, epochId: Data?,
                       now: Date, write: (URL) throws -> Void) throws -> SetAsideItem {
         guard let dir = folder(vaultId: vaultId, path: path) else { throw VaultError.setAsideFailed("\(path) is no vault file") }
+        if Self.testUnwritable.contains(directory.standardizedFileURL.path) {
+            throw VaultError.setAsideFailed("\(path): the store cannot be written (test)")
+        }
         let file = dir.appendingPathComponent(sha256 + ".age")
         let metaURL = dir.appendingPathComponent(sha256 + ".json")
         let meta = Meta(path: path, reason: reason, epoch: epoch, epochId: epochId.map { Hex.encode($0) },

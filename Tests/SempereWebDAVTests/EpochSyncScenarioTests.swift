@@ -328,11 +328,10 @@ final class EpochSyncScenarioTests: SyncTestCase {
         let file = try XCTUnwrap(t2.paths.first { $0.hasPrefix(path) })
         let local = w["B"].folder.appendingPathComponent(file)
         let old = try Data(contentsOf: local)
-        // B's set-aside store cannot be written (a full disk, a permission).
-        let store = w["B"].setAside.directory
-        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: store.path)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: store.path) }
+        // B's set-aside store cannot be written (a full disk). A seam, not a permission: CI may run as root.
+        let store = w["B"].setAside.directory.standardizedFileURL.path
+        SetAsideStore.testUnwritable.insert(store)
+        defer { SetAsideStore.testUnwritable.remove(store) }
         let b1 = try w["B"].sync(t1)
         XCTAssertEqual(b1.epoch?.taken, 2)
         try w["B"].sync(t2)
@@ -341,7 +340,7 @@ final class EpochSyncScenarioTests: SyncTestCase {
         XCTAssertEqual(try Data(contentsOf: local), old, "never replaced without its copy kept aside first")
         XCTAssertNil(try w["B"].titles()[nd])
         // Writable again: the next write catches up (sets it aside), and the next run replaces it.
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: store.path)
+        SetAsideStore.testUnwritable.remove(store)
         try w["B"].write("B again")
         let b3 = try w["B"].sync(t2)
         XCTAssertTrue(b3.replaced.contains(.init(side: "local", path: file)), "\(b3)")
