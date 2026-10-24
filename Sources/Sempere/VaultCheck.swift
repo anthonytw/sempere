@@ -403,7 +403,17 @@ extension Vault {
               newer.epochSig == older.epochSig, newer.recoverySig == older.recoverySig,
               newer.homeEntry?.fingerprint == older.homeEntry?.fingerprint else { return false }
         let base = Set(older.keys.map(\.fingerprint))
-        guard base.isSubset(of: Set(newer.keys.map(\.fingerprint))), (try? newer.check(key: secret, verifiedList: base)) != nil,
+        // Above epoch 1 the epoch's signer is its parent's home (a handoff's is not the new home): the parent as the
+        // verified chain gives it, as the check at open does.
+        var parent: EpochManifest.VerifiedParent?
+        if newer.epoch > 1, let chain = verifiedChain, chain.entries.count >= newer.epoch, newer.epoch >= 2 {
+            let i = newer.epoch - 2
+            parent = EpochManifest.VerifiedParent(
+                list: chain.lists[i].list, home: chain.entries[i].home, recovery: chain.entries[i].recovery,
+                ancestry: chain.lists[...i].reduce(into: Set<Data>()) { $0.formUnion($1.list) })
+        }
+        guard base.isSubset(of: Set(newer.keys.map(\.fingerprint))),
+              (try? newer.check(key: secret, verifiedList: base, parent: parent)) != nil,
               VaultMarkers(older).isCovered(by: newer) else { return false }
         // A re-encryption's binding only goes (its finish, design §7.1 step 7): never added or changed in one epoch.
         if let p = newer.reencryptPending, p != older.reencryptPending { return false }

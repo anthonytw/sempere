@@ -520,6 +520,110 @@ extension Vault {
         return out.sorted()
     }
 
+    // MARK: - For the sync engine (rewrap-replace, design §7.1 step 6; device-first-sync §5.2)
+
+    /// The epoch of the key `data` (a framed vault file at `path`) is under, when the acceptance rule takes it there;
+    /// nil when it is not accepted, pending or unreadable.
+    public func acceptedKeyEpoch(of data: Data, path: String) -> Int? {
+        guard let (scope, name) = Self.framing(path), case .opened(let plain, let key, let older) = openUnderEpochs(data),
+              (try? BodyFraming.unframe(plain, noteId: scope, filename: name, secret: key)) != nil,
+              setAsideReason(older, path: path, sha256: FileDigest.sha256(data)) == nil else { return nil }
+        return older?.epoch ?? manifest.epoch
+    }
+
+    /// The content of the inbox file `name` (its JSON line and payload, or its transcript) and the epoch of the key it
+    /// is under, when it verifies under the current capture keys or is sealed by the record closing its epoch (format.md
+    /// §15.14); nil otherwise. Read whole (bounded by its kind's limit).
+    public func acceptedInboxContent(_ url: URL, name: String) -> (epoch: Int, content: Data)? {
+        guard let kind = CaptureFile.parse(name: name)?.kind,
+              let data = try? FileIO.read(url, maxBytes: CaptureFile.maxSealedBytes(kind)) else { return nil }
+        func content(_ identity: any AgeIdentity, _ key: CaptureKey) -> Data? {
+            guard let plain = try? AgeFile.decrypt(data, with: [identity]),
+                  let c = try? CaptureFile.unframe(plain, filename: name, key: key) else { return nil }
+            return c.line + [0x0A] + c.payload
+        }
+        if let ring = try? captureKeyRing(), let entry = try? verifyInboxFile(url, name: name, kind: kind, ring: ring),
+           let c = identities.lazy.compactMap({ content($0, entry.key) }).first {
+            return (manifest.epoch, c)
+        }
+        if let (o, entry) = sealedEarlierInboxFile(url, name: name, kind: kind), let c = content(o.identity, entry.key) {
+            return (o.epoch, c)
+        }
+        return nil
+    }
+
+    /// The note's blob file names (among `names`) that are under an earlier key while the same content is named under
+    /// the current key, mapped to that current name's base (`BlobName.parse(_).name`): duplicates a re-encryption or a
+    /// catch-up left (design §7.1 step 5). Found from the content hashes the note's revisions reference; empty when the
+    /// note cannot be read in full.
+    public func supersededBlobNames(note: UUID, names: Set<String>) -> [String: String] {
+        let table = supersededBlobBases(note: note)
+        var out: [String: String] = [:]
+        for f in names {
+            guard let base = BlobName.parse(f)?.name, let now = table[base], now != base else { continue }
+            out[f] = now
+        }
+        return out
+    }
+
+    /// For the content of each blob file the note holds here (its header's digest, read from the first chunk): each
+    /// name under an earlier key this value holds, mapped to the name under the current key (base names, without kind).
+    public func supersededBlobBases(note: UUID) -> [String: String] {
+        guard let secret, !Self.epochMutations.contains(.keepOldBlobNames) else { return [:] }
+        let older = blobOlderEpochs.map(\.key)
+        guard !older.isEmpty else { return [:] }
+        let att = attURL(note)
+        let ids = blobIdentities
+        var table: [String: String] = [:]
+        for file in (try? FileIO.entries(att)) ?? [] where BlobName.parse(file) != nil {
+            guard let peek = try? Self.peekBlobFile(att.appendingPathComponent(file), identities: ids) else { continue }
+            let digest = peek.header.digest
+            let now = BlobName.name(digest: digest, secret: secret)
+            for k in older { table[BlobName.name(digest: digest, secret: k)] = now }
+        }
+        return table
+    }
+
+    /// True when `data` is the journal of a re-encryption on this value's chain that is finished here (no binding in
+    /// `vault.json` for it): it may be deleted wherever it is (design §7.1 step 7).
+    public func isFinishedJournal(_ data: Data) -> Bool {
+        guard let secret, let chain = verifiedChain?.entries, data.count <= EpochRecord.maxBytes else { return false }
+        let older = olderEpochs
+        for e in chain where e.reason == EpochReason.reencrypt.rawValue {
+            if isReencryptPending, e.epochId == reencryptEpoch?.epochId { continue }
+            let k = e.epochId == secret.epochId ? secret : older.first { $0.epochId == e.epochId }?.key
+            if let k, (try? ReencryptJournal.open(data, key: k, vaultId: vaultId)) != nil { return true }
+        }
+        return false
+    }
+
+    /// Test mutations the sync side honors (J7's): old records, old blob names kept.
+    package static var keepsOldRecords: Bool { epochMutations.contains(.keepOldRecords) }
+    package static var keepsOldBlobNames: Bool { epochMutations.contains(.keepOldBlobNames) }
+
+    /// True when `data` (an age file) opens under the key of an epoch below `m` this value holds.
+    public func opensUnderEpoch(below m: Int, _ data: Data) -> Bool {
+        (olderEpochs + (keyring?.offChainEpochs() ?? [])).contains { $0.epoch < m && (try? AgeFile.decrypt(data, with: [$0.identity])) != nil }
+    }
+
+    /// Where a blob file stands (for a target's copy, `ReencryptCoordinator.confirm`).
+    public enum BlobStanding: Hashable, Sendable {
+        /// Under the current key, and its name the current key's.
+        case current
+        /// Under the key of an earlier epoch; accepted when the record closing it seals its bytes.
+        case old(epoch: Int, accepted: Bool)
+    }
+
+    /// Where the blob file `url` of `note` stands; nil when no key this value holds opens it.
+    public func blobStanding(_ url: URL, note: UUID) -> BlobStanding? {
+        if (try? readAcceptedBlob(url, note: note, older: nil, expected: nil, maxContent: BlobRef.maxSize)) != nil { return .current }
+        for o in blobOlderEpochs where (try? Self.peekBlobFile(url, identities: [o.identity])) != nil {
+            let ok = (try? readAcceptedBlob(url, note: note, older: o, expected: nil, maxContent: BlobRef.maxSize)) != nil
+            return .old(epoch: o.epoch, accepted: ok)
+        }
+        return nil
+    }
+
     /// The epoch below which records are obsolete (a finished re-encryption on this device's verified chain), for the
     /// sync engine: nil while one is pending, or without one.
     public var recordsObsoleteBelow: Int? {

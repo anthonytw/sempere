@@ -62,7 +62,8 @@ final class EpochInvariantTests: VaultTestCase {
     ]
 
     /// Mutations of rules only a sync applies, checked by `EpochInterleavingTests` (SempereWebDAVTests, KH4).
-    static let overSync: Set<EpochMutation> = [.takeoverByArrival, .recordByNameOnly]
+    static let overSync: Set<EpochMutation> = [.takeoverByArrival, .recordByNameOnly, .reencryptSkipInverted, .keepOldBlobNames,
+                                               .keepOldRecords]
 
     func testEachMutationBreaksItsInvariant() throws {
         for m in EpochMutation.allCases where !Self.overSync.contains(m) {

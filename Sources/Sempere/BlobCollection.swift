@@ -322,7 +322,7 @@ extension Vault {
     /// deleted only when
     ///
     /// 1. every revision of the note was listed, read and verified,
-    /// 2. no re-encryption is unfinished (format.md §8.1.6 rule 2; re-encryption comes with KH6),
+    /// 2. no re-encryption is unfinished (format.md §8.1.6 rule 2, `isReencryptPending`),
     /// 3. no revision of the note references its content hash (structurally,
     ///    in any kind or field, deleted notes included), and
     /// 4. this device found 1–3 true for it at least `retention` ago and
@@ -361,6 +361,13 @@ extension Vault {
         // Rule 1 needs every revision: a partial copy's missing ones may reference any blob (format.md §1.2).
         guard !isNoteIncomplete(note) else {
             report.blocked = "rule 1: the note's revisions are not all downloaded yet (partial copy)"
+            records = [:]
+            return report
+        }
+        // Rule 2 (format.md §8.1.6): no blob is collected while a re-encryption is unfinished (KH6): an old name may be
+        // the only copy a target or another device holds yet.
+        guard !isReencryptPending else {
+            report.blocked = "rule 2: a re-encryption is not finished yet"
             records = [:]
             return report
         }

@@ -319,6 +319,12 @@ public final class SyncEngine {
     /// known to hold (the accepted copy replaced them here, from another target), the target's is compared, so
     /// a device that bridges two targets carries the replacement across.
     var asidePaths: Set<String> = []
+    /// Per note: blob base names under an earlier key mapped to the current key's (KH6, `supersededTable`).
+    var supersededTables: [String: [String: String]] = [:]
+    /// The target holds the journal the local `vault.json` binds (`pushReencryptJournal`): only then does a
+    /// `vault.json` with `reencryptPending` go there.
+    var remoteJournalHere = false
+    var remoteJournalETag: String?
 
     /// Guards what concurrent listings and downloads share (`TransferPool`):
     /// `state`, `report`, `budget`, `progress`, the checker cache and the
@@ -462,6 +468,8 @@ public final class SyncEngine {
         }
         // The local mutable files are judged and replaced under the vault's write lock (`localWriteLock`), which
         // is never held across a request (lock scope): the server's copies are read first, the uploads made after.
+        // A pending re-encryption's journal goes before the vault.json that binds it (KH6).
+        pushReencryptJournal(remoteRoot)
         syncMutableFiles(remoteRoot)
 
         // A later epoch taken: the vault reopened under it, pinned, and this device's own files caught up
@@ -497,6 +505,14 @@ public final class SyncEngine {
             report.skipped.append(.init(path: Vault.notesName, message: SyncReport.printable(hold)))
             if epochStatus.unlisted != nil { epochStatus.unsyncedChanges = unsyncedChangeCount() }
             return finishRun()
+        }
+        // The re-encryption journal (KH6): taken when bound, replaced, or deleted once finished.
+        settleReencryptJournal(remoteRoot)
+        if cachedHeldKeys == nil {
+            cachedHeldKeys = epochJudge.map { v in
+                let pinned = ((try? v.publicTrustStore?.record(for: v.vaultId)) ?? nil)?.pinned?.epochId
+                return "\(v.heldKeysDigest)|\(pinned.map { Hex.encode($0).prefix(16) } ?? "")|\(v.isRecordPending)"
+            }
         }
         // Join requests and passphrase copies (format.md §15.11, §15.12; KH4).
         if stoppedBefore == nil {
@@ -846,6 +862,12 @@ public final class SyncEngine {
             // Its record did not reach the target (the epoch step reported why): vault.json waits for it.
             report.skipped.append(.init(path: name, message: "not uploaded: its device-change record \(m.epochRecord) is not "
                 + "on the target yet"))
+            return
+        }
+        if name == Vault.manifestName, !remoteJournalHere, (try? EpochManifest.parse(data))?.reencryptPending != nil {
+            // Its re-encryption journal did not reach the target (design §7.1 step 6(a)): vault.json waits for it.
+            report.skipped.append(.init(path: name, message: "not uploaded: the re-encryption journal it binds is not on the "
+                + "target yet"))
             return
         }
         if name == Vault.manifestName, epochHold != nil {
