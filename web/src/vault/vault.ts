@@ -474,7 +474,7 @@ export async function checkManifest(m: VaultManifest, key: Uint8Array, keys: Epo
   const writer = m.author === homeEntry.id ? homeEntry : m.author === epochSigner.id ? epochSigner : undefined;
   const manifest = manifestMessage(m.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash,
     listTagMessage(m.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash, listEntries(m)), m.format, m.features,
-    m.reencryptPending ?? "");
+    m.reencryptPending);
   if (!writer?.sign || !verifyAuthorSignature(manifest, sigBytes(m.authorSig), sigBytes(writer.sign))) return tampered("authorSig");
   return { status: "verified" };
 }

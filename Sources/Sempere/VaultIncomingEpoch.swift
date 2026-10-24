@@ -207,6 +207,12 @@ extension Vault {
                Self.recordPendingCheck(incoming, key: key, trusted: trusted) != nil {
                 return .laterRecordPending
             }
+            // Its signed fields already lose to this device's own chain (a sibling takeover with a larger id, whose
+            // record a finished re-encryption deleted): this device's list replaces it, nothing waits for its record.
+            if let node = manifestNode(incoming),
+               Self.keptChain(extra: [node], ours: ours, pinned: trustedRecord()?.chain ?? []) == ours.ids {
+                return .behind
+            }
             return .waiting("waiting for the device-change record \(incoming.epochRecord) of epoch \(incoming.epoch)")
         }
         let check = Self.listCheck(incoming, key: key, trust: trustStore, root: givenRoot, record: record)

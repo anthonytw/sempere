@@ -154,8 +154,14 @@ extension SyncEngine {
         let uploads = deferredUploads
         deferredUploads = []
         var refused: Set<String> = []
-        var manifestMissed = false, manifestRefused = false
+        var manifestMissed = false, manifestRefused = false, journalMissed = false
         for upload in uploads where !refused.contains(upload.name) {
+            if upload.name == Vault.manifestName, journalMissed {
+                // Its journal did not go up (KH6): never a vault.json binding one to a target without it.
+                manifestMissed = true
+                report.skipped.append(.init(path: upload.name, message: "held back: the re-encryption journal did not reach the server"))
+                continue
+            }
             if upload.name == SharedSettings.fileName, manifestMissed {
                 // Refused (its copy moved on): judged again with it in the next round. Failed: a later run.
                 if manifestRefused { refused.insert(upload.name) } else {
@@ -175,15 +181,18 @@ extension SyncEngine {
                     }
                 }
                 guard try transport.write([upload.name], .data(upload.data), condition: upload.condition) else {
+                    if upload.name == Vault.journalName { journalMissed = true; continue }
                     refused.insert(upload.name)
                     if upload.name == Vault.manifestName { manifestMissed = true; manifestRefused = true }
                     continue
                 }
                 report.uploaded.append(upload.name)
+                if upload.name == Vault.journalName { journalUploaded = true; remoteJournalHere = true }
                 if upload.name == Vault.manifestName { targetEpochId = Self.epochOf(upload.data)?.epochId }
                 upload.afterUpload?()
                 if let hash = upload.recordHash { try recordMutable(upload.name, hash: hash) }
             } catch {
+                if upload.name == Vault.journalName { journalMissed = true }
                 if upload.name == Vault.manifestName { manifestMissed = true }
                 report.errors.append(.init(path: upload.name, message: Self.describe(error)))
             }

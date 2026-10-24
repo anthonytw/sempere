@@ -286,10 +286,11 @@ public enum AuthorMessage {
     }
 
     /// `authorSig`: `manifest` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash)
-    /// ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ lp(k) ‖ the k distinct features, sorted ‖ lp(reencryptPending).
-    /// The list digest is raw (32 bytes); `root`, `epochId` and `epochRecordHash` hex; `reencryptPending` as
-    /// `vault.json` holds it (64 hex), the empty string when absent (KH6: only home starts and finishes a
-    /// re-encryption, so a binding added or stripped by anyone else, storage included, is tampering).
+    /// ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ lp(k) ‖ the k distinct features, sorted, then, only while a
+    /// re-encryption is pending, ‖ lp(reencryptPending). The list digest is raw (32 bytes); `root`, `epochId` and
+    /// `epochRecordHash` hex; `reencryptPending` as `vault.json` holds it (64 hex). KH6: only home starts and finishes a
+    /// re-encryption, so a binding added or stripped by anyone else, storage included, is tampering; without one the
+    /// message is the one KH1 froze.
     public static func manifest(vaultId: UUID, root: Data, epoch: Int, epochId: Data, epochRecordHash: Data,
                                 listMessage: Data, format: String, features: [String], reencryptPending: String? = nil) -> Data {
         var m = LPMessage("sempere/1 author manifest")
@@ -299,7 +300,7 @@ public enum AuthorMessage {
         let distinct = Array(Set(features)).sorted { Array($0.utf8).lexicographicallyPrecedes(Array($1.utf8)) }
         m.field(distinct.count)
         for f in distinct { m.field(f) }
-        m.field(reencryptPending ?? "")
+        if let reencryptPending { m.field(reencryptPending) }
         return m.bytes
     }
 

@@ -325,6 +325,9 @@ public final class SyncEngine {
     /// `vault.json` with `reencryptPending` go there.
     var remoteJournalHere = false
     var remoteJournalETag: String?
+    var remoteJournalPresent = false
+    /// The journal went up this run (ahead of its `vault.json`).
+    var journalUploaded = false
 
     /// Guards what concurrent listings and downloads share (`TransferPool`):
     /// `state`, `report`, `budget`, `progress`, the checker cache and the
@@ -468,8 +471,8 @@ public final class SyncEngine {
         }
         // The local mutable files are judged and replaced under the vault's write lock (`localWriteLock`), which
         // is never held across a request (lock scope): the server's copies are read first, the uploads made after.
-        // A pending re-encryption's journal goes before the vault.json that binds it (KH6).
-        pushReencryptJournal(remoteRoot)
+        // A pending re-encryption's journal goes before the vault.json that binds it (KH6, `push`).
+        readReencryptJournal(remoteRoot)
         syncMutableFiles(remoteRoot)
 
         // A later epoch taken: the vault reopened under it, pinned, and this device's own files caught up
@@ -866,18 +869,18 @@ public final class SyncEngine {
                 + "on the target yet"))
             return
         }
-        if name == Vault.manifestName, !remoteJournalHere, (try? EpochManifest.parse(data))?.reencryptPending != nil {
-            // Its re-encryption journal did not reach the target (design §7.1 step 6(a)): vault.json waits for it.
-            report.skipped.append(.init(path: name, message: "not uploaded: the re-encryption journal it binds is not on the "
-                + "target yet"))
-            return
-        }
         if name == Vault.manifestName, epochHold != nil {
             // Waiting for a device change, or unlisted (design §4.3, §5.5): this device's vault.json is not spread.
             report.skipped.append(.init(path: name, message: "not uploaded while a device change is not verified here"))
             return
         }
         if options.dryRun { report.uploaded.append(name); return }
+        if name == Vault.manifestName, (try? EpochManifest.parse(data))?.reencryptPending != nil, !queueJournal(for: data) {
+            // Its re-encryption journal is not on the target and cannot be put there (design §7.1 step 6(a)): it waits.
+            report.skipped.append(.init(path: name, message: "not uploaded: the re-encryption journal it binds is not on the "
+                + "target yet"))
+            return
+        }
         guard deferringUploads else { throw SyncError.io("internal: \(name) uploaded outside the write-lock rounds") }
         var condition = condition
         var verifyHash: String?

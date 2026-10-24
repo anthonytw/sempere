@@ -91,7 +91,13 @@ extension SyncEngine {
             try take(remoteData ?? Data())
         case (let m?, let t?):
             let merged = m.merging(t)
-            if m == t {
+            let le = local.flatMap { vault.acceptedKeyEpoch(of: $0, path: name) } ?? 0
+            let re = remoteData.flatMap { vault.acceptedKeyEpoch(of: $0, path: name) } ?? 0
+            if m == t, le != re {
+                // The same settings under two epochs' keys (a re-encryption, a catch-up): the later key's copy wins on
+                // both sides (KH6, rewrap-replace), so no copy under an earlier key stays.
+                if re > le { try take(remoteData ?? Data()) } else { try upload(name, local: local ?? Data(), over: remote, etag: etag) }
+            } else if m == t {
                 // The same settings sealed twice (two devices merged the same change): different
                 // bytes, nothing to take or give. Taking the server's bytes here made a device
                 // that syncs with two remotes holding such copies download one, then the

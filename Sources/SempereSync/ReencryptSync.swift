@@ -105,32 +105,49 @@ extension SyncEngine {
 
     // MARK: The journal
 
-    /// Before the mutable files: a journal the local `vault.json` binds is put on the target first (create only), so
-    /// the `vault.json` that binds it can follow (`push` checks `remoteJournalHere`). Without the key (locked or
-    /// upload-only runs) the local journal is uploaded only when the local `vault.json` names a re-encryption pending.
-    func pushReencryptJournal(_ remoteRoot: [String: RemoteEntry]) {
+    /// Before the mutable files: whether the target holds the journal the local `vault.json` binds (`remoteJournalHere`),
+    /// and the version of the one it holds otherwise. Nothing is written here: `push` queues the journal ahead of a
+    /// `vault.json` that binds it (so a held run, which uploads no `vault.json`, uploads no journal either, J5b).
+    func readReencryptJournal(_ remoteRoot: [String: RemoteEntry]) {
         remoteJournalHere = false
+        remoteJournalETag = nil
+        remoteJournalPresent = remoteRoot[Vault.journalName].map { !$0.isCollection } ?? false
         guard !options.dryRun, epochHold == nil, epochStatus.unlisted == nil,
               let manifest = (try? localMutable(Vault.manifestName)).flatMap({ $0 }).flatMap({ try? EpochManifest.parse($0) }),
               manifest.reencryptPending != nil else { return }
         let url = root.appendingPathComponent(Vault.journalName)
         guard let local = try? BoundedRead.contents(of: url, maxBytes: EpochRecord.maxBytes) else { return }
         if let v = epochJudge, v.boundJournal(local) == nil { return }
+        guard let e = remoteRoot[Vault.journalName], !e.isCollection else { return }
         do {
-            if let e = remoteRoot[Vault.journalName], !e.isCollection {
-                let got = try transport.read([Vault.journalName], maxBytes: EpochRecord.maxBytes)
-                try budget.downloaded(got.data.count)
-                remoteJournalHere = got.data == local
-                remoteJournalETag = got.etag ?? e.etag
-                return
-            }
-            if try transport.write([Vault.journalName], .data(local), condition: .create) {
-                report.uploaded.append(Vault.journalName)
-                remoteJournalHere = true
-            }
+            let got = try transport.read([Vault.journalName], maxBytes: EpochRecord.maxBytes)
+            try budget.downloaded(got.data.count)
+            remoteJournalHere = got.data == local
+            remoteJournalETag = got.etag ?? e.etag
         } catch {
             report.errors.append(.init(path: Vault.journalName, message: Self.describe(error)))
         }
+    }
+
+    /// For a `vault.json` with `reencryptPending` about to be uploaded where the target lacks its journal: the journal
+    /// queued ahead of it (created; another one there replaced under its version tag: the list being uploaded wins).
+    /// False when it cannot be: the `vault.json` then waits.
+    func queueJournal(for manifest: Data) -> Bool {
+        if remoteJournalHere { return true }
+        let url = root.appendingPathComponent(Vault.journalName)
+        guard let local = try? BoundedRead.contents(of: url, maxBytes: EpochRecord.maxBytes) else { return false }
+        if let v = epochJudge, (try? EpochManifest.parse(manifest))?.epochId == v.manifest.epochId, v.boundJournal(local) == nil {
+            return false
+        }
+        let condition: PutCondition
+        if remoteJournalPresent {
+            guard let etag = remoteJournalETag, Self.isStrong(etag) else { return false }
+            condition = .replace(etag: etag)
+        } else {
+            condition = .create
+        }
+        deferredUploads.append(DeferredUpload(name: Vault.journalName, data: local, condition: condition, verifyHash: nil))
+        return true
     }
 
     /// After the mutable files (and a later epoch taken): a bound journal this copy lacks is taken from the target and
@@ -144,7 +161,15 @@ extension SyncEngine {
         do {
             if v.isReencryptPending {
                 if let local, v.boundJournal(local) != nil {
-                    guard let entry, !remoteJournalHere, !options.pushOnly, listStandsHere(v), epochStatus.conflict == nil else { return }
+                    guard !remoteJournalHere, !journalUploaded, listStandsHere(v), epochStatus.conflict == nil else { return }
+                    guard let entry else {
+                        // The target holds this device's vault.json but not its journal (withheld, lost): put back.
+                        if try transport.write([Vault.journalName], .data(local), condition: .create) {
+                            report.uploaded.append(Vault.journalName)
+                        }
+                        return
+                    }
+                    guard !options.pushOnly else { return }
                     let got = try transport.read([Vault.journalName], maxBytes: EpochRecord.maxBytes)
                     try budget.downloaded(got.data.count)
                     guard got.data != local, v.boundJournal(got.data) == nil,

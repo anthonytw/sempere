@@ -47,12 +47,22 @@ public enum TakeoverRule {
         return frontier.recovery
     }
 
-    /// Whether `recoveryKey` refused a takeover only because its kit was introduced below the frontier
-    /// (the parent's ancestry runs through the whole pinned chain): not tampering, the device follows and
-    /// pins the replacement first and takes the takeover on its next run (`ChainError.kitNotPinned`).
+    /// Whether `recoveryKey` refused a takeover only because its kit was introduced on the takeover's own ancestry
+    /// after the point it shares with the pinned chain: not tampering, the device follows and pins the epoch that
+    /// introduced it first (when the precedence rule follows that ancestry: the parent's ancestry runs through the whole
+    /// pinned chain, or leaves it at a branch it beats, such as a smaller takeover) and takes the takeover on its next
+    /// run (`ChainError.kitNotPinned`). A kit the pinned chain itself listed and retired is never deferred: that is the
+    /// retired-kit refusal (round 7 C1). Found by KH6: a device whose own takeover lost to a smaller one, on a chain
+    /// whose winner then replaced the kit (a re-encryption) and took over again, refused that chain for good.
     public static func kitNotYetPinned(parentRecovery: Data, parentPath: [Data], pinned: [PinnedEpoch]) -> Bool {
-        guard let frontier = pinned.last, parentPath.count > pinned.count, parentRecovery != frontier.recovery else { return false }
-        return zip(parentPath, pinned).allSatisfy { $0 == $1.epochId }
+        guard let frontier = pinned.last, parentRecovery != frontier.recovery, parentPath.first == pinned.first?.epochId,
+              !pinned.contains(where: { $0.recovery == parentRecovery }) else { return false }
+        if parentPath.count > pinned.count, zip(parentPath, pinned).allSatisfy({ $0 == $1.epochId }) { return true }
+        // Off the pinned chain: deferred only when the kit is new to it (checked above), never on a path shorter than the
+        // shared prefix plus the replacement that introduced it.
+        var common = 0
+        while common < min(parentPath.count, pinned.count), parentPath[common] == pinned[common].epochId { common += 1 }
+        return parentPath.count > common
     }
 
     /// The round-7 rule (the parent's kit whenever the parent is at or below the frontier), kept only for

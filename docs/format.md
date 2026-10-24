@@ -3888,7 +3888,7 @@ that is not an addition of the current epoch (review M3).
 | --- | --- |
 | `addSig` | `"sempere/1 author entry"` ‖ lp(vaultId) ‖ lp(addedEpoch) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind) ‖ lp(added) ‖ lp(addedBy) |
 | `epochSig`, `recoverySig` | `"sempere/1 author epoch"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery) ‖ lp(home) ‖ the first list ‖ the parent list as the author saw it (lists as §15.1; `parent` empty at epoch 1; `recovery` the epoch's recovery fingerprint, review M1; `home` the home's fingerprint after the epoch). `recoverySig`, in a `takeover` only, is by the recovery key's pair over the same message |
-| `authorSig` | `"sempere/1 author manifest"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ the distinct `features` (a list, §15.1) ‖ lp(reencryptPending) (its 64 hex digits; the empty string when absent: only home binds a journal and finishes it, KH6) |
+| `authorSig` | `"sempere/1 author manifest"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ the distinct `features` (a list, §15.1), then, only while a re-encryption is pending, ‖ lp(reencryptPending) (its 64 hex digits; KH6: only home binds a journal and finishes it) |
 | per-device summaries (§12.5) | `"sempere/1 author summaries"` ‖ lp(vaultId) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(device) ‖ lp(version) ‖ lp(SHA-256(sealed)), by the device the file names (any listed device, for its own file only) |
 
 ### 15.6 Epoch records

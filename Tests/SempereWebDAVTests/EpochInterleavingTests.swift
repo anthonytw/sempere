@@ -280,13 +280,21 @@ final class EpochInterleavingTests: SyncTestCase {
             for (p, old) in before where after[p] != nil && after[p] != old && !now.contains("\(p):\(old)") {
                 // Rewrap-replace (KH6): an accepted copy replaced by an accepted one with the same body (under a later key) is
                 // not J6's: J6 is about unaccepted copies, and J8 checks the body.
-                // The old copy is judged as the device held the vault before the step (a finish in the step may have
-                // taken the keys it was read with).
+                // The old copy is judged as the device holds the vault after the step, or, when that cannot judge it any
+                // more (a finish took the keys it was read with), as it held it before.
                 if let v = try? w[n].open(), let oldData = seenBytes[old],
                    let data = try? Data(contentsOf: w[n].folder.appendingPathComponent(p)),
-                   (pre ?? v).acceptance(of: oldData, path: p).isAccepted, v.acceptance(of: data, path: p).isAccepted,
-                   let body = v.plainBody(of: data, path: p), body == (pre ?? v).plainBody(of: oldData, path: p) {
-                    continue
+                   v.acceptance(of: data, path: p).isAccepted, let body = v.plainBody(of: data, path: p) {
+                    let now = v.acceptance(of: oldData, path: p)
+                    let judged: Vault? = now.isAccepted ? v
+                        : (now == .pending || now == .unreadable || now == .setAside(.beforeReencryption)) ? pre : nil
+                    if let judged, judged.acceptance(of: oldData, path: p).isAccepted, body == judged.plainBody(of: oldData, path: p) {
+                        continue
+                    }
+                }
+                if tracing, let v = try? w[n].open(), let oldData = seenBytes[old],
+                   let data = try? Data(contentsOf: w[n].folder.appendingPathComponent(p)) {
+                    trace.append("J6DIAG \(n) \(p.suffix(30)) pre-old \((pre ?? v).acceptance(of: oldData, path: p)) post-new \(v.acceptance(of: data, path: p)) post-old \(v.acceptance(of: oldData, path: p)) epochs pre \(pre?.manifest.epoch ?? -1) post \(v.manifest.epoch)")
                 }
                 out.append("J6: step \(step): \(n) replaced \(p) without setting it aside first")
             }
@@ -535,6 +543,13 @@ final class EpochInterleavingTests: SyncTestCase {
             quiet = !changed
         }
         if !quiet { out.append("J1: still changing after 14 quiet rounds") }
+        if tracing {
+            for n in names {
+                guard let v = try? w[n].open() else { continue }
+                trace.append("STATE \(n): epoch \(v.manifest.epoch)/\(Hex.encode(v.manifest.epochId).prefix(6)) status \(v.listStatus) pending \(v.isReencryptPending) "
+                    + "unlisted \(v.unlistedNotice != nil) waiting \(v.waitingNotice ?? "-") pinned \(((try? w[n].trust.record(for: w.vaultId)) ?? nil)?.chain.map { Hex.encode($0.epochId).prefix(4) } ?? [])")
+            }
+        }
         let readers = listed.sorted()
         var titles: [String: [UUID: String]] = [:]
         for n in readers { titles[n] = (try? w[n].titles()) ?? [:] }
