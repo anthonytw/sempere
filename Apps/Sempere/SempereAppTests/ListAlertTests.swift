@@ -41,7 +41,6 @@ struct ListAlertTests {
         try await model.unlock(identityText: keyText)
         #expect(model.listAlert == nil)
         #expect(model.vault?.listStatus == .verified(.unchanged))
-        #expect(RememberedKeys.listIsConfirmed(model.vault?.listStatus))
         _ = try await model.createNote(title: "Fine", paper: Paper(kind: .ruled), notebook: nil)
     }
 

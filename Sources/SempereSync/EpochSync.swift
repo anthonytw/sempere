@@ -37,6 +37,9 @@ enum SyncEpochMutation: Hashable, Sendable, CaseIterable {
     case recordByNameOnly
     /// J1 (M3): a detached sighting never lapses, so storage holds a device back for good.
     case sightingsNeverLapse
+    /// Review of #88, M1: a keyless run (a joining device) uploads its `vault.json`, so a forged approval taken from
+    /// one target spreads to another.
+    case keylessUploadsManifest
 }
 
 extension SyncEngine {

@@ -209,12 +209,14 @@ extension AppModel {
             locationID: id, vaultID: UUID(uuidString: location.vaultId), name: location.name,
             lastSuccess: location.lastPush,
             run: { [weak self] request in
-                let (current, vault) = await MainActor.run { () -> (WebDAVLocation?, Vault?) in
+                let (current, vault, join) = await MainActor.run { () -> (WebDAVLocation?, Vault?, NativeIdentity?) in
                     // Two-way only with the open vault as the disk says it is: while a reopen after another
                     // device's key change is pending (or failed), runs only upload (review of #70, F1).
-                    let open = self?.syncSessions.contains { $0.locationID == id } == true && self?.phase == .unlocked
-                        && self?.syncVaultStale == false
-                    return (store.location(id), open ? self?.vault : nil)
+                    let mine = self?.syncSessions.contains { $0.locationID == id } == true
+                    let open = mine && self?.phase == .unlocked && self?.syncVaultStale == false
+                    // A device joining the open, locked vault takes home's approval (key-hierarchy KH5).
+                    let joining = mine && self?.phase == .locked ? self?.joinIdentity : nil
+                    return (store.location(id), open ? self?.vault : nil, joining)
                 }
                 guard let current else { throw WebDAVVaultError.noSuchLocation }
                 return try await Task.detached(priority: .utility) { () throws -> SyncReport in
@@ -233,6 +235,12 @@ extension AppModel {
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }
                     let staging = LockedStaging(targetState: copy.stateURL)
+                    if let join {
+                        // A join run (design §6.2): the request goes out, home's approval comes in, keyless.
+                        var joinOptions = options
+                        joinOptions.firstPullIdentities = [join]
+                        return try remote.sync(endpoint, copy: copy, vault: nil, options: joinOptions)
+                    }
                     if request.mode == .twoWay, let vault, vault.canRead {
                         // The unlock places what locked runs staged (checked under the key), then the run goes on.
                         let placed = try staging.place(vaultFolder: copy.folder, vault: vault, options: options)

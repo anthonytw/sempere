@@ -8,7 +8,9 @@ import Sempere
 struct UnlockKeys: Sendable {
     var identities: [any AgeIdentity] = []
     /// This device's signing keys (`DeviceKeys.signing`): only home needs them, for list changes.
-    var signing: DeviceSigningKeys?
+    var signing: (any AuthorSigner)?
+    /// This device's keys when it unlocked as a device (a takeover signs with them).
+    var device: DeviceKeys?
     /// The vault's root fingerprint the list is checked against (format.md §15.2); nil checks it
     /// against this device's trust record.
     var root: Data?

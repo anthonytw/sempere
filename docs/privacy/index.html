@@ -24,7 +24,7 @@
 </head>
 <body>
 <h1>Sempere Privacy Policy</h1>
-<p class="date">Effective: 2026-10-06. Last updated: <span id="updated">2026-10-09</span>.</p>
+<p class="date">Effective: 2026-10-06. Last updated: <span id="updated">2026-10-24</span>.</p>
 
 <p class="short">Short version: Sempere does not collect, transmit or share any data about you. It has no
 servers, no accounts, no analytics and no advertising. The only network connections it makes are to a WebDAV
@@ -55,8 +55,11 @@ own terms and privacy policies; we have no access to them. Notes are encrypted b
 storage provider sees file names, sizes and modification times, but not what you wrote, drew or recorded.</p>
 
 <h2>Your keys</h2>
-<p>Your encryption key (an “age” identity) is generated on your device. You can keep it in the iOS/macOS
-Keychain (optionally synced through iCloud Keychain, if you choose that), print a recovery kit or export it.
+<p>Each of your devices generates its own keys, which never leave it: its decryption key is kept in that
+device's Keychain (not synced) and its signing key in the device's Secure Enclave where the device has one
+(otherwise in its Keychain, not synced). The vault's recovery key is shown once, for you to print as a recovery kit
+or keep in a password manager; the app keeps no copy of it. Test builds before 1.0 could save keys in the Keychain,
+optionally synced through iCloud Keychain; such a saved key stays there until it is deleted.
 <strong>We cannot recover your key or your notes. If you lose every copy of your key, nobody can decrypt your
 notes.</strong></p>
 
@@ -90,10 +93,10 @@ it. This policy will be updated before such a version is released.</p>
 <h2>Device permissions</h2>
 <p>Sempere asks for a permission only when you use the feature that needs it:</p>
 <ul>
-  <li>the camera, to add photos and video (iPad and iPhone);</li>
+  <li>the camera, to add photos and video, and to scan the codes of another device or of a recovery kit (iPad and iPhone);</li>
   <li>the microphone, to record audio;</li>
   <li>speech recognition, to transcribe recordings on the device;</li>
-  <li>Face ID or Touch ID, to unlock a key saved in the Keychain;</li>
+  <li>Face ID or Touch ID, to unlock a vault that you set to ask for it, and to confirm it is you before letting a device into a vault or replacing its recovery kit;</li>
   <li>Live Activities, to show a voice note in progress.</li>
 </ul>
 <p>Photos and files are chosen with the system pickers, which give the app only what you pick. Face ID and

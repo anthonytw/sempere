@@ -134,8 +134,7 @@ final class AppModel {
     /// The open vault's folder.
     private(set) var vaultURL: URL?
     /// The open vault was handed to the app from outside (AirDrop, Files, another
-    /// app: `handleOpened`), not opened in it: a remembered key without a
-    /// location is not offered for it (`RememberedKeys.offersSavedKey`, S16).
+    /// app: `handleOpened`), not opened in it.
     private(set) var vaultOpenedExternally = false
     /// Every note in the vault, deleted ones included, sorted by title
     /// (`byTitle`). Passes change it in batches (`queueListUpdate`).
@@ -591,6 +590,9 @@ final class AppModel {
     /// A takeover by another device that this device has not acknowledged (key-hierarchy design §6.3): a
     /// banner until dismissed (`AppModel+Devices`).
     var takeoverAlert: TakeoverAlert?
+    /// While this device is joining the open, locked vault (key-hierarchy design §6.2): its key, so the vault's
+    /// runs are keyless two-way runs that take home's approval (`SyncOptions.firstPullIdentities`).
+    var joinIdentity: NativeIdentity?
     /// Where acknowledged takeovers are remembered (per vault, the epoch); tests pass their own.
     @ObservationIgnored var takeoverDefaults: UserDefaults = .standard
     /// Each target's run before a device change is bounded by this (design §5.2 step 2); tests shorten it.
@@ -817,7 +819,8 @@ final class AppModel {
     /// Unlocks the open vault as the device `device` (its decryption key and
     /// its signing keys, which home needs for list changes).
     func unlock(device: DeviceKeys, awaitNotes: Bool = true) async throws {
-        try await unlock(with: UnlockKeys(identities: [device.nativeIdentity], signing: device.signing), awaitNotes: awaitNotes)
+        try await unlock(with: UnlockKeys(identities: [device.nativeIdentity], signing: device.signing, device: device),
+                         awaitNotes: awaitNotes)
     }
 
     /// Unlocks the open vault and starts listing its notes
@@ -898,7 +901,7 @@ final class AppModel {
     /// its signing keys), or plain identity text (`AGE-SECRET-KEY-PQ-1…`,
     /// for instance the recovery key, which opens the vault read-only).
     /// Returns the device keys when it was a device key file
-    /// (`RememberedKeys` remembers only those).
+    /// (a device key file made with `sempere`; the app's own keys are in `DeviceKeyStore`).
     @discardableResult
     func unlock(identityText: String, awaitNotes: Bool = true) async throws -> DeviceKeys? {
         if DeviceKeys.isDeviceKeyFile(identityText) {
@@ -1175,6 +1178,7 @@ final class AppModel {
         vault = nil
         unlockKeys = UnlockKeys()
         takeoverAlert = nil
+        joinIdentity = nil
         heldSinceAtOpen = nil
         sightingRowsState = []
         vaultURL = nil
@@ -1221,5 +1225,13 @@ final class AppModel {
         let value = try await Task.detached(priority: priority) { try work() }.value
         await afterIO?()
         return value
+    }
+}
+
+extension AppModel {
+    /// The open, locked vault as read again (a joining device's run may have taken home's approval).
+    func replaceLockedVault(_ fresh: Vault) {
+        guard phase == .locked, fresh.url == vault?.url else { return }
+        vault = fresh
     }
 }

@@ -13,7 +13,6 @@ struct SidebarView: View {
     @AppEnvironmentObject private var keys: RememberedKeys
     /// The window's UI state: "Export to Folder or Zip…" opens its sheet in this window.
     @Environment(WindowUI.self) private var ui: WindowUI?
-    @State private var forgettingKey = false
     @State private var showingSettings = false
     /// Sync Targets… (`SyncTargetsSheet`): where the iPad and iPhone reach it (the Mac also has File > Sync Targets…).
     @State private var showingSyncTargets = false
@@ -222,23 +221,6 @@ struct SidebarView: View {
                 .help("New notebook, settings, sync targets and closing the vault")
                 .accessibilityIdentifier("sidebar-more")
             }
-            ToolbarItem {
-                Menu("Vault Key", systemImage: "key") {
-                    if let storage = keys.storage(for: model) {
-                        if storage == .iCloudKeychain {
-                            Text("Saved in iCloud Keychain")
-                        } else {
-                            Text("Saved on \(RememberedKeys.deviceName)")
-                        }
-                        Button("Forget Key for This Vault…", systemImage: "key.slash", role: .destructive) {
-                            forgettingKey = true
-                        }
-                    } else {
-                        Text("The key is not saved. Unlock with a passphrase or pasted key to save it.")
-                    }
-                }
-                .help("This vault's key on this device: forget it or keep it in iCloud Keychain")
-            }
         }
         .sheet(item: $movingNotebook) { MoveNotebookView(path: $0.path) }
         .sheet(item: $newNotebook) { NewNotebookView(request: $0) }
@@ -265,17 +247,6 @@ struct SidebarView: View {
             }
         }
         #endif
-        .confirmationDialog("Forget this vault's key?", isPresented: $forgettingKey, titleVisibility: .visible) {
-            Button("Forget Key", role: .destructive) {
-                Task { await model.report { try await keys.forget(model) } }
-            }
-        } message: {
-            if keys.storage(for: model) == .iCloudKeychain {
-                Text("The key is removed from iCloud Keychain on all your devices. Keep another copy (key file or passphrase) to open the vault again.")
-            } else {
-                Text("The key is removed from \(RememberedKeys.deviceName). Keep another copy (key file or passphrase) to open the vault again.")
-            }
-        }
         .alert("Rename or Move Notebook", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Path", text: $newName.replacingEmojiShortcodes())
                 .autocorrectionDisabled()

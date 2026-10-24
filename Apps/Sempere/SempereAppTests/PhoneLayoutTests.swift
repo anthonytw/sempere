@@ -308,7 +308,7 @@ struct PhoneRootTests {
     static func host(_ model: AppModel) -> (UIWindow, UIViewController) {
         let controller = UIHostingController(rootView: RootView()
             .environment(model).environment(VaultLibrary(storeURL: TestTemp.root
-                .appendingPathComponent(UUID().uuidString).appendingPathComponent("recents.json"))).environment(RememberedKeys(store: FakeKeyStore())))
+                .appendingPathComponent(UUID().uuidString).appendingPathComponent("recents.json"))).environment(RememberedKeys(store: MemoryDeviceKeyStore())))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         window.rootViewController = controller
         window.isHidden = false

@@ -442,7 +442,7 @@ extension Vault {
     /// `entries` as `device`'s file at `version`, signed by `signer` over the message for `device` and
     /// `version` (tests forge with it; `sealDevicePublishedSummaries` is the writer).
     func sealDeviceFile(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID, version: Int64,
-                        signer: DeviceSigningKeys, nonce: Data? = nil, synced: Date? = nil) throws -> Data {
+                        signer: any AuthorSigner, nonce: Data? = nil, synced: Date? = nil) throws -> Data {
         let sealed = try sealDeviceBody(entries, device: device, version: version, nonce: nonce, synced: synced)
         let message = AuthorMessage.summaries(vaultId: vaultId, epoch: manifest.epoch, epochId: manifest.epochId,
                                               device: device, version: version, sealed: sealed)

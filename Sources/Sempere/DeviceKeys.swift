@@ -8,6 +8,8 @@ public enum DeviceKeysError: Error, Hashable, Sendable {
     case malformed(String)
     /// The `# public key:` line names another key than the secret key.
     case publicKeyMismatch
+    /// The signing pair is not in software (the Secure Enclave): there is no key file of it.
+    case notInSoftware
 }
 
 /// A device's own keys (docs/design/key-hierarchy.md §4.1, §6.1; format.md §15.4): the MLKEM768-X25519
@@ -23,13 +25,13 @@ public struct DeviceKeys: Sendable {
 
     /// The decryption key: its recipient is the entry's `key`.
     public let identity: MLKEM768X25519Identity
-    /// The signing pair.
-    public let signing: DeviceSigningKeys
+    /// The signing pair: software (the CLI's) or in the Secure Enclave (the app's).
+    public let signing: any AuthorSigner
     /// The signing public keys (the entry's `sign`).
     public let sign: DeviceSigningPublicKeys
 
     /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
-    public init(identity: MLKEM768X25519Identity, signing: DeviceSigningKeys) throws {
+    public init(identity: MLKEM768X25519Identity, signing: any AuthorSigner) throws {
         self.identity = identity
         self.signing = signing
         sign = try signing.publicKeys()
@@ -39,7 +41,7 @@ public struct DeviceKeys: Sendable {
     ///
     /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no X-Wing or ML-DSA.
     public static func generate() throws -> DeviceKeys {
-        try DeviceKeys(identity: MLKEM768X25519Identity(), signing: .generate())
+        try DeviceKeys(identity: MLKEM768X25519Identity(), signing: DeviceSigningKeys.generate())
     }
 
     /// The decryption key as the age module's identity type.
@@ -76,8 +78,11 @@ public struct DeviceKeys: Sendable {
     /// # public key: age1pq1…
     /// AGE-SECRET-KEY-PQ-1…
     /// ```
-    public func fileText(created: Date) -> String {
-        Self.header + "\n" + Self.createdPrefix + RFC3339.string(created) + "\n"
+    ///
+    /// - Throws: `DeviceKeysError.notInSoftware` for a signing pair in the Secure Enclave (it never leaves it).
+    public func fileText(created: Date) throws -> String {
+        guard let signing = signing as? DeviceSigningKeys else { throw DeviceKeysError.notInSoftware }
+        return Self.header + "\n" + Self.createdPrefix + RFC3339.string(created) + "\n"
             + Self.p256Prefix + Hex.encode(signing.p256Scalar) + "\n"
             + Self.mldsaPrefix + Hex.encode(signing.mldsa65Seed) + "\n"
             + Self.publicKeyPrefix + key + "\n" + identity.string + "\n"

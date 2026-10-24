@@ -196,6 +196,12 @@ struct NewVaultRequest: Sendable {
     var deviceKind = "ipad"
     /// The passphrase copy's scrypt work factor: writers use 20; tests less.
     var workFactor = RecoveryPassphraseCopy.workFactor
+    /// This device's keys for the vault (`DeviceKeyStore.generate`, the signing pair in the Secure Enclave);
+    /// nil makes software keys (tests).
+    var device: DeviceKeys?
+    /// The new vault's id, chosen first so this device's keys are stored under it before the vault exists
+    /// (review of #88, S4).
+    var vaultId = UUID()
 }
 
 /// The outcome of creating a vault.
@@ -210,8 +216,8 @@ struct CreatedVault: Sendable {
     var recoveryKey: KeyFile?
     /// The vault as the kit prints it (id, creation date, root).
     var kitVault: RecoveryKit.VaultInfo
-    /// This device's key file (`DeviceKeys.fileText`): it opens the vault to
-    /// read and write, and nothing else holds it once the app remembers it.
+    /// This device's key file (`DeviceKeys.fileText`) when its signing pair is in software (tests); nil for an
+    /// enclave pair, which never leaves the device.
     var unlockKey: String?
     /// This device's keys (the vault's home).
     var device: DeviceKeys
@@ -493,6 +499,16 @@ final class VaultLibrary {
         return created
     }
 
+    /// The device key file of a software pair, for tests (DEBUG builds); nil in a release, where the keys are only in
+    /// the Keychain and the Secure Enclave (review of #88).
+    nonisolated static func testKeyFile(_ device: DeviceKeys) -> String? {
+        #if DEBUG
+        return try? device.fileText(created: Date())
+        #else
+        return nil
+        #endif
+    }
+
     /// Synchronous core of `create` (testable without the main actor): a new
     /// device key for this device, the vault's home, and the recovery key
     /// (generated or given), with its passphrase copy when a passphrase is given.
@@ -513,16 +529,16 @@ final class VaultLibrary {
         if let passphrase, let problem = PassphraseStrength.storedKeyProblem(passphrase) {
             throw LibraryError.weakPassphrase(problem)
         }
-        let device = try DeviceKeys.generate()
+        let device = try request.device ?? DeviceKeys.generate()
         let vault = try Vault.create(at: url, device: device, deviceName: request.deviceName, kind: request.deviceKind,
                                      recovery: recovery, recoveryPassphrase: passphrase, workFactor: request.workFactor,
-                                     trust: trust)
+                                     vaultId: request.vaultId, trust: trust)
         let identity = NativeIdentity.mlkem768x25519(recovery)
         let name = Self.displayName(of: url)
         return CreatedVault(url: url, vaultID: vault.vaultId, secretKey: generated ? identity.string : nil,
                             recoveryKey: generated ? KeyFile(identity: identity, label: String(localized: "Recovery key of \(name)",
                                                                                                  comment: "Label of a vault's recovery key; the value is the vault's name")) : nil,
                             kitVault: RecoveryKit.VaultInfo(vault: vault, name: name),
-                            unlockKey: device.fileText(created: Date()), device: device)
+                            unlockKey: Self.testKeyFile(device), device: device)
     }
 }

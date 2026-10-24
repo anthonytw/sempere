@@ -289,7 +289,7 @@ func readIdentityFile(_ path: String) throws -> NativeIdentity {
 
 /// An identity file given to `--identity`: a device key file (`DeviceKeys`, with its signing keys) or a
 /// plain age identity file.
-func readAccessKeyFile(_ path: String) throws -> (identity: NativeIdentity, signing: DeviceSigningKeys?) {
+func readAccessKeyFile(_ path: String) throws -> (identity: NativeIdentity, signing: (any AuthorSigner)?) {
     let text: String
     do { text = try String(contentsOfFile: path, encoding: .utf8) } catch {
         throw CLIError.failure("cannot read \(path): \(error.localizedDescription)")
@@ -400,7 +400,7 @@ extension AccessOptions {
     }
 
     /// `--identity` files plus `$SEMPERE_IDENTITY`, with the signing keys of device key files.
-    func explicitKeys() throws -> [(identity: NativeIdentity, signing: DeviceSigningKeys?)] {
+    func explicitKeys() throws -> [(identity: NativeIdentity, signing: (any AuthorSigner)?)] {
         var paths = identity
         if paths.isEmpty, let env = Env.vars["SEMPERE_IDENTITY"], !env.isEmpty { paths = [env] }
         return try paths.map(readAccessKeyFile)
@@ -430,10 +430,8 @@ extension AccessOptions {
     /// ignored.
     func givenRoot() throws -> Data? {
         guard let root else { return nil }
-        let hex = root.replacingOccurrences(of: #"\([0-9a-fA-F]{4}\)"#, with: "", options: .regularExpression)
-            .filter { !$0.isWhitespace }.lowercased()
-        guard let data = Hex.decode(hex), data.count == 32 else {
-            throw CLIError.usage("--root is not 64 hex digits (the kit's 16 groups)")
+        guard let data = KitRecovery.parseRootText(root) else {
+            throw CLIError.usage("--root is not 64 hex digits (the kit's 16 groups, each checksum matching)")
         }
         return data
     }

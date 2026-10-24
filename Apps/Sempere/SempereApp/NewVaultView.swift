@@ -269,20 +269,6 @@ struct NewVaultView: View {
 
     // MARK: - Create
 
-    /// Keeps this device's key of the new vault in the Keychain: it is the
-    /// only copy, and without it this device could only read the vault with
-    /// the recovery key. A failure says so (the vault stays open until it closes).
-    private func rememberDeviceKey(_ created: CreatedVault) async {
-        do {
-            try await keys.rememberThisDeviceKey(created.device, vaultID: created.vaultID,
-                                                   vaultName: VaultLibrary.displayName(of: created.url),
-                                                   folder: model.vault?.vaultId == created.vaultID ? model.vaultURL : nil)
-        } catch {
-            model.errorMessage = String(localized: "The vault was created, but this device's key could not be saved in the Keychain: \(String(describing: error)). Once the vault is closed, this device can only read it with the recovery key.",
-                                        comment: "The error text follows (English)")
-        }
-    }
-
     private var canCreate: Bool {
         guard !working, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         let passphraseOK = !wrap || (!passphrase.isEmpty && passphrase == confirmation && StoredKeyPassphrase.accepts(passphrase))
@@ -306,7 +292,7 @@ struct NewVaultView: View {
         // a layout loop that hung the main thread (iPad simulator, iOS 27).
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         working = true
-        let request = NewVaultRequest(
+        var request = NewVaultRequest(
             name: name,
             keySource: keySource,
             passphrase: wrap ? passphrase : nil,
@@ -315,8 +301,17 @@ struct NewVaultView: View {
         Task {
             defer { working = false }
             do {
-                let result = try await model.createVault(request, library: library)
-                await rememberDeviceKey(result)
+                // This device's keys: the signing pair in the Secure Enclave where there is one (design §4.1).
+                let device = try keys.store.generate()
+                request.device = device
+                // Stored before the vault exists, so a failed save never leaves a vault without its home's keys
+                // (review of #88, S4); a failed creation deletes them again.
+                try await keys.saveCreatedVaultKeys(device, vaultID: request.vaultId, vaultName: name)
+                let result: CreatedVault
+                do { result = try await model.createVault(request, library: library) } catch {
+                    try? await keys.store.delete(for: request.vaultId)
+                    throw error
+                }
                 if let copyFolder, let vault = model.vault?.vaultId {
                     do { try model.addPickedFolderTarget(copyFolder, to: vault) } catch {
                         model.errorMessage = String(describing: error)

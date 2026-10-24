@@ -14,6 +14,8 @@ struct DevicesView: View {
     @State private var removing: DeviceRow?
     @State private var makingHome: DeviceRow?
     @State private var replacingKit = false
+    @State private var addingDevice = false
+    @State private var takingOver = false
     @State private var working = false
     @State private var outcome: String?
 
@@ -84,6 +86,15 @@ struct DevicesView: View {
                 Task { await reload() }
             }
         }
+        .sheet(isPresented: $addingDevice) {
+            AddDeviceSheet { message in
+                outcome = message
+                Task { await reload() }
+            }
+        }
+        .sheet(isPresented: $takingOver) {
+            NavigationStack { TakeoverView { takingOver = false; Task { await reload() } } }
+        }
         .sheet(isPresented: $replacingKit) {
             ReplaceKitSheet { message in
                 outcome = message
@@ -109,6 +120,10 @@ struct DevicesView: View {
                             Button("Remove", systemImage: "minus.circle", role: .destructive) { removing = device }
                         }
                     }
+            }
+            if s.thisIsHome {
+                Button("Add Device…", systemImage: "plus.circle") { addingDevice = true }
+                    .accessibilityIdentifier("devices.add")
             }
         } header: {
             Text("Devices")
@@ -149,6 +164,9 @@ struct DevicesView: View {
             if s.thisIsHome {
                 Button("Replace Recovery Kit…", systemImage: "key.viewfinder") { replacingKit = true }
                     .accessibilityIdentifier("devices.replaceKit")
+            } else {
+                Button("Take Over with Recovery Kit…", systemImage: "key.viewfinder") { takingOver = true }
+                    .accessibilityIdentifier("devices.takeover")
             }
         } header: {
             Text("Recovery Kit")

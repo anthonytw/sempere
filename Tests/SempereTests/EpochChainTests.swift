@@ -1084,6 +1084,15 @@ final class EpochChainTests: VaultTestCase {
         XCTAssertEqual(KitRecovery.parseRootQR(qr)?.root, root)
         XCTAssertNil(KitRecovery.parseRootQR(qr.uppercased()))
         XCTAssertNil(KitRecovery.parseRootQR("sempere-root:\(id.uuidString.lowercased())"))
+        // Typed from the kit (KH5): groups with their checksums, any case and spacing; a wrong checksum fails.
+        let typed = groups.map { "\($0.group.uppercased()) (\($0.checksum))" }.joined(separator: "  \n")
+        XCTAssertEqual(KitRecovery.parseRootText(typed), root)
+        XCTAssertEqual(KitRecovery.parseRootText(Hex.encode(root)), root)
+        var wrong = groups.map { "\($0.group) (\($0.checksum))" }
+        wrong[3] = "\(groups[3].group) (\(groups[3].checksum == "0000" ? "0001" : "0000"))"
+        XCTAssertNil(KitRecovery.parseRootText(wrong.joined(separator: " ")))
+        XCTAssertNil(KitRecovery.parseRootText(String(Hex.encode(root).dropLast(4))))
+        XCTAssertNil(KitRecovery.parseRootText("not a root"))
     }
 
     /// The script in the code is the one format.md §15.13 and the design (§8.1) print, byte for byte.
