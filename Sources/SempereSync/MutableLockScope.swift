@@ -69,7 +69,7 @@ extension SyncEngine {
                         do {
                             if name == SharedSettings.fileName {
                                 // A held run leaves settings alone (J5b, §5.5): its key may be the old one.
-                                guard epochHold == nil else { continue }
+                                guard epochHold == nil || Self.epochMutations.contains(.syncSettingsWhileHeld) else { continue }
                                 // Shared settings (format.md §13): merged per key when both sides changed.
                                 try syncSharedSettings(remote: remote)
                             } else {

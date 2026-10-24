@@ -1609,6 +1609,9 @@ the implementation found a gap, it decided:
 | `synced` | in the per-device summaries file (named by the vault device id), rewritten at most hourly by a complete two-way run (`SyncOptions.recordSynced`, set by the app and the CLI's sync commands) |
 | Restores | a same-device restore (keys, ledger and trust at the backup's state) catches up like an offline device; a restore onto another device joins anew and takes the backup as a pull-only source (`EpochChangePull`): what verifies is placed, the rest is set aside and exportable |
 
-Tests: `EpochSyncScenarioTests` (the §11.1 scenarios that need sync), `EpochInterleavingTests` (J1–J6, J8–J10 over
-the memory transport, the WebDAV mock and wsgidav, each mutation breaking its own invariant), `CLIEpochSyncTests`.
+Tests: `EpochSyncScenarioTests` (the §11.1 scenarios that need sync), `EpochStorageAttackTests` (storage write access
+alone: junk records, a held run's settings, forged detached lists, upload-only runs; review of #86),
+`EpochInterleavingTests` (J1–J6, J8–J10 over the memory transport, the WebDAV mock and wsgidav, with settings writes
+and a storage-only attacker that plants junk records and forged lists, each mutation breaking its own invariant; a run
+replays from its seed, and quiescence runs until a whole round changes nothing), `CLIEpochSyncTests`.
 

@@ -88,6 +88,7 @@ final class EpochInterleavingTests: SyncTestCase {
         case acceptUnsealed, skipCatchUp, replaceWithoutSettingAside, corruptReencryption, writeUnderOldKey
         case uploadWhileWaiting, pruneLedgerOnUpload
         case takeoverByArrival, takeoverIgnored, nonHomeSignerAccepted
+        case syncSettingsWhileHeld, recordByNameOnly, sightingsNeverLapse
 
         /// The invariants design §11.2 names for it.
         var breaks: [String] {
@@ -101,6 +102,9 @@ final class EpochInterleavingTests: SyncTestCase {
             case .takeoverByArrival: return ["J4"]
             case .takeoverIgnored: return ["J9", "J4"]
             case .nonHomeSignerAccepted: return ["J10"]
+            case .syncSettingsWhileHeld: return ["J5b"]
+            case .recordByNameOnly: return ["J4"]
+            case .sightingsNeverLapse: return ["J1"]
             }
         }
 
@@ -116,6 +120,11 @@ final class EpochInterleavingTests: SyncTestCase {
             case .pruneLedgerOnUpload: SyncEngine.epochMutations = [.pruneLedgerOnUpload]
             case .takeoverIgnored: Vault.precedenceMutations = [.takeoverIgnored]
             case .nonHomeSignerAccepted: Vault.precedenceMutations = [.nonHomeSignerAccepted]
+            case .syncSettingsWhileHeld: SyncEngine.epochMutations = [.syncSettingsWhileHeld]
+            case .recordByNameOnly:
+                Vault.epochMutations = [.recordByNameOnly]
+                SyncEngine.epochMutations = [.recordByNameOnly]
+            case .sightingsNeverLapse: SyncEngine.epochMutations = [.sightingsNeverLapse]
             }
         }
 
@@ -127,6 +136,9 @@ final class EpochInterleavingTests: SyncTestCase {
             case .takeoverByArrival: return .twoTakeovers
             case .takeoverIgnored: return .takeover
             case .uploadWhileWaiting: return .withhold
+            case .syncSettingsWhileHeld: return .settings
+            case .recordByNameOnly: return .junkRecord
+            case .sightingsNeverLapse: return .forgeList
             default: return .remove
             }
         }
@@ -153,7 +165,12 @@ final class EpochInterleavingTests: SyncTestCase {
 
     // MARK: - One run
 
-    enum Op: CaseIterable { case write, sync, remove, takeover, twoTakeovers, withhold, rogueWrite, forge }
+    enum Op: CaseIterable {
+        case write, sync, remove, takeover, twoTakeovers, withhold, rogueWrite, forge
+        /// Review of #86 (S6): a listed device changes a shared setting (`settings.age`); storage alone (no key)
+        /// puts junk under an epoch record's name, or plants a detached forged device list on a target.
+        case settings, junkRecord, forgeList
+    }
 
     private struct Write {
         var writer: String
@@ -213,6 +230,8 @@ final class EpochInterleavingTests: SyncTestCase {
         var listed = Set(names)
         var home = "A"
         var removedEpoch: [String: Int] = [:]
+        var planted: [(EpochTarget, Data)] = []
+        var changed = false
         var writes: [Write] = []
         var held: [String: [any AgeIdentity]] = [:]
         var aside: [String: Set<String>] = [:]
@@ -261,6 +280,8 @@ final class EpochInterleavingTests: SyncTestCase {
                     + "sk \(r.skipped.filter { $0.path.hasPrefix("notes/") && $0.path.count > 10 }.map { "\($0.path.suffix(30)): \($0.message.prefix(60))" }.prefix(3))")
             }
             hold(n)
+            if !(r.uploaded.isEmpty && r.downloaded.isEmpty && r.deleted.isEmpty && r.replaced.isEmpty && r.setAside.isEmpty
+                 && r.epoch?.taken == nil) { changed = true }
             // J5b: a run that met a change it cannot verify (or found this device removed) uploads nothing new.
             if r.epoch?.waiting != nil || r.epoch?.unlisted != nil {
                 let up = r.uploaded.filter { !$0.hasPrefix(Vault.epochsName + "/") }
@@ -369,14 +390,53 @@ final class EpochInterleavingTests: SyncTestCase {
                 guard let (manifest, record) = try? forge(w[x]) else { break }
                 tg.put(record.path, record.data)
                 tg.put(Vault.manifestName, manifest)
+            case .settings:
+                let n = listed.sorted().randomElement(using: &rng) ?? "A"
+                guard let v = try? w[n].open(), v.canRead else { break }
+                var s = (try? v.readSharedSettings()) ?? SharedSettings()
+                let at = w[n].wall?() ?? Date()
+                guard (try? s.set(SettingSlotKey("eraser.mode"), to: .string("\(n)-\(step)"), type: .mac, now: at)) != nil,
+                      (try? v.writeSharedSettings(s)) != nil else { break }
+                trace.append("\(step) settings \(n)")
+            case .junkRecord:
+                // Storage puts another record's bytes (valid-shaped junk) under a record's name.
+                guard let tg = targets.randomElement(using: &rng) else { break }
+                let recs = tg.paths.filter { $0.hasPrefix(Vault.epochsName + "/") }.sorted()
+                guard let victim = recs.filter({ !$0.contains("/1-") }).randomElement(using: &rng),
+                      let donor = recs.filter({ $0 != victim }).randomElement(using: &rng), let bytes = tg.file(donor) else { break }
+                tg.put(victim, bytes)
+                trace.append("\(step) junk \(tg.name) \(victim.suffix(30))")
+            case .forgeList:
+                // Storage plants a device list nobody signed (no key needed): a later epoch on no chain, without a
+                // listed device. Whoever runs the storage puts the real one back before quiescence.
+                guard let tg = targets.randomElement(using: &rng), let real = tg.file(Vault.manifestName),
+                      var m = try? EpochManifest.parse(real),
+                      let drop = listed.sorted().randomElement(using: &rng) else { break }
+                m.epoch += 3
+                m.epochId = bytes(32)
+                m.parent = bytes(32)
+                m.epochRecord = "epochs/" + EpochRecord.fileName(epoch: m.epoch, epochId: m.epochId)
+                m.keys.removeAll { $0.fingerprint == w[drop].fingerprint }
+                guard let fake = try? JSONEncoder().encode(m) else { break }
+                tg.put(Vault.manifestName, fake)
+                planted.append((tg, fake))
+                trace.append("\(step) forgeList \(tg.name) without \(drop)")
             }
         }
+        // The storage's owner removes the planted lists: each target shows a list some device verified again (a
+        // device that met only the planted one on it puts its own back, as any target lacking vault.json gets).
+        for (tg, fake) in planted where tg.file(Vault.manifestName) == fake { tg.remove(Vault.manifestName) }
 
         // Quiescence: no faults; every device (removed ones too: they keep pulling) syncs its targets.
         faultRate.value = 0
-        for _ in 0..<5 {
+        // Until a whole round changes nothing (a repair may cross a bridge, then a comparison, a round each).
+        var quiet = false
+        for _ in 0..<14 where !quiet {
+            changed = false
             for n in names { for tg in reach[n] ?? [] { sync(n, tg, step: steps) } }
+            quiet = !changed
         }
+        if !quiet { out.append("J1: still changing after 14 quiet rounds") }
         let readers = listed.sorted()
         var titles: [String: [UUID: String]] = [:]
         for n in readers { titles[n] = (try? w[n].titles()) ?? [:] }

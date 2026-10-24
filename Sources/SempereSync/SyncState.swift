@@ -128,6 +128,9 @@ struct SyncState: Codable, Equatable {
     /// refused one): until a complete run over every note, each revision both sides hold is read and compared, as
     /// the losing branch's devices may have replaced accepted copies there (design §5.4 step 4; KH4).
     var compareShared: Bool?
+    /// Epoch records on the target whose bytes this device checked against the hash a `vault.json` or a record
+    /// above names, with the version tag they had then: read again only when it moves (review of #86, M1).
+    var verifiedRecords: [String: String]?
 
     struct EpochsStamp: Codable, Equatable {
         var etag: String

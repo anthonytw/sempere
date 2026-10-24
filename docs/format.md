@@ -4280,13 +4280,14 @@ changed since the last run:
 - **`epochs/`** is synced first in every run, before `vault.json`: write-once, the union of both sides, never
   deleted. Every device pushes the records it holds to every target it syncs, so a withheld or lost record
   comes back (a device the newest list does not hold uploads nothing). A received record is checked for its
-  shape (its name, at most 64 MiB, one `mlkem768x25519` stanza) and, when a `vault.json` this device knows names
-  it, for that hash: a name proves nothing, since anyone with write access can put a file under it. A local file
+  shape (its name, at most 64 MiB, one `mlkem768x25519` stanza) and, when a `vault.json` this device knows or a
+  record above it on the chain (the hash links of §15.6) names it, for that hash: a name proves nothing, since anyone with write access can put a file under it. A local file
   under a named record's name with other bytes is set aside (`epochs/.unnamed-<name>`) and fetched again; until
   the right one is here the record has not arrived (never a reason to refuse `vault.json`). A device reads back
-  the record its own `vault.json` names when the target has a file under that name, replaces other bytes there
-  under their version tag, and never uploads `vault.json` beside a record that is not the right one (record
-  first, then `vault.json`, also when an upload of the record fails).
+  every record it holds whose hash is so named when the target has a file under that name (again only when that
+  file's version tag moved), replaces other bytes there under their version tag, and never uploads `vault.json`
+  beside a record that is not the right one (record first, then `vault.json`, also when an upload of the record
+  fails).
 - **`vault.json` of another epoch** (another `epochId`) is judged against this device's own (design §4.3,
   §5.6), from local files only:
   - a later epoch whose chain (its record, here by now) verifies from the root and the trust record, and which

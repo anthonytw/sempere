@@ -67,6 +67,9 @@ extension Vault {
         guard Data(SHA256.hash(data: data)) == manifest.epochRecordHash else {
             // Junk under the record's name (anyone with storage write access can plant it): the record has not
             // arrived. Never a reason to refuse `vault.json` (review of #86, M1); sync fetches the right one.
+            if Self.epochMutations.contains(.recordByNameOnly) {
+                return .problem(ListProblem(.epochSig, "\(manifest.epochRecord) is not the record vault.json names"))
+            }
             return .problem(ListProblem(.otherEpoch, "the file at \(manifest.epochRecord) is not the record vault.json "
                 + "names: waiting for the right one (epoch \(manifest.epoch))"))
         }

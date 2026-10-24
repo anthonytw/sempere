@@ -275,7 +275,8 @@ public final class SyncEngine {
     var epochHold: String? {
         didSet {
             // Every upload path goes through `holdGate` (`HoldGate.swift`).
-            if epochHold == nil || Self.epochMutations.contains(.uploadWhileWaiting) && epochStatus.unlisted == nil {
+            if epochHold == nil || Self.epochMutations.contains(.uploadWhileWaiting) && epochStatus.unlisted == nil
+                || Self.epochMutations.contains(.syncSettingsWhileHeld) {
                 holdGate.mode = .open
             } else {
                 holdGate.mode = epochStatus.unlisted != nil ? .nothing : .epochsOnly

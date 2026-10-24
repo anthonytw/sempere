@@ -467,6 +467,17 @@ extension Vault {
         if all != before { try? trustStore.saveSightings(all, for: vaultId) }
     }
 
+    /// The SHA-256 of each earlier record of this vault's chain, by file name under `epochs/`, as the records
+    /// above it bind them (format.md §15.6), as far as they can be read: a file under one of these names with other
+    /// bytes is junk (review of #86, M1), so sync sets it aside and fetches the record again.
+    public func boundRecordHashes() -> [String: Data] {
+        var out: [String: Data] = [:]
+        for o in keyring?.all() ?? [] {
+            if let h = o.recordHash, o.epoch >= 2 { out[EpochRecord.fileName(epoch: o.epoch, epochId: o.epochId)] = h }
+        }
+        return out
+    }
+
     /// The trust store this vault was opened with, if any.
     public var publicTrustStore: (any EpochTrustStore)? { trustStore }
 

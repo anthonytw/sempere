@@ -31,6 +31,12 @@ enum SyncEpochMutation: Hashable, Sendable, CaseIterable {
     case uploadWhileWaiting
     /// J1: an uploaded file's ledger entry is dropped (as if the target kept it for good).
     case pruneLedgerOnUpload
+    /// J5b (review of #86, M2): a held run still syncs `settings.age`.
+    case syncSettingsWhileHeld
+    /// J4 (review of #86, M1): records are taken by name (no hash checks on receipt, on the target or here).
+    case recordByNameOnly
+    /// J1 (M3): a detached sighting never lapses, so storage holds a device back for good.
+    case sightingsNeverLapse
 }
 
 extension SyncEngine {
@@ -128,29 +134,39 @@ extension SyncEngine {
                 }
             }
         }
-        // The record this device's vault.json names, when the target has a file under its name: its bytes are
-        // checked (a name alone proves nothing, M1); other bytes are replaced under their version tag, or the
-        // record does not count as there (so vault.json is not uploaded beside it).
+        // Every record this device holds whose hash a vault.json or a record above names, when the target has a
+        // file under its name: its bytes are checked (a name alone proves nothing, M1), again only when its version
+        // tag moved; other bytes are replaced under their version tag, or the record does not count as there (so
+        // no vault.json is uploaded beside it).
         var wrong: Set<String> = []
-        if !options.dryRun, epochStatus.unlisted == nil, let own = try? localMutable(Vault.manifestName),
-           let m = try? EpochManifest.parse(own), m.epoch > 1 {
-            let name = String(m.epochRecord.dropFirst(folder.count + 1))
-            if listed[name] != nil, local.contains(name), !verified.contains(name) {
+        if !options.dryRun, epochStatus.unlisted == nil {
+            var checked = state.verifiedRecords ?? [:]
+            for name in local.intersection(listed.keys).sorted() where !verified.contains(name) {
+                guard let hashes = expected[name] else { continue }
+                let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes)
+                let mine = Data(SHA256.hash(data: data))
+                guard hashes.contains(mine) else { continue }
+                if let tag = listed[name]?.etag, checked[name] == tag { continue }
+                try checkCancelled()
                 let got = try transport.read([folder, name], maxBytes: EpochRecord.maxBytes)
                 try budget.downloaded(got.data.count)
-                if Data(SHA256.hash(data: got.data)) != m.epochRecordHash {
-                    let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: EpochRecord.maxBytes)
-                    if let etag = got.etag ?? listed[name]?.etag, Self.isStrong(etag), Data(SHA256.hash(data: data)) == m.epochRecordHash,
-                       try transport.write([folder, name], .data(data), condition: .replace(etag: etag)) {
-                        report.uploaded.append("\(folder)/\(name)")
-                        report.replaced.append(.init(side: "remote", path: "\(folder)/\(name)"))
-                    } else {
-                        wrong.insert(name)
-                        report.rejected.append(.init(path: "\(folder)/\(name)", message: "not the record vault.json names, "
-                            + "and not replaced here; vault.json is not uploaded beside it"))
-                    }
+                let theirs = Data(SHA256.hash(data: got.data))
+                if theirs == mine {
+                    checked[name] = got.etag ?? listed[name]?.etag
+                    continue
+                }
+                if let etag = got.etag ?? listed[name]?.etag, Self.isStrong(etag),
+                   try transport.write([folder, name], .data(data), condition: .replace(etag: etag)) {
+                    report.uploaded.append("\(folder)/\(name)")
+                    report.replaced.append(.init(side: "remote", path: "\(folder)/\(name)"))
+                    checked[name] = nil
+                } else {
+                    wrong.insert(name)
+                    report.rejected.append(.init(path: "\(folder)/\(name)", message: "not the record vault.json names, "
+                        + "and not replaced here; vault.json is not uploaded beside it"))
                 }
             }
+            state.verifiedRecords = checked.filter { listed[$0.key] != nil }
         }
         remoteEpochRecords = Set(listed.keys).subtracting(wrong).union(options.dryRun ? local : [])
         targetHasUnknownRecords = !Set(listed.keys).subtracting(local).isEmpty
@@ -194,12 +210,15 @@ extension SyncEngine {
     /// the target's (once read), and its sightings. A forged one can only add a value, never remove the right one.
     func expectedRecordHashes() -> [String: Set<Data>] {
         var out: [String: Set<Data>] = [:]
+        if Self.epochMutations.contains(.recordByNameOnly) { return out }
         func add(_ data: Data?) {
             guard let data, let m = try? EpochManifest.parse(data), m.epoch > 1 else { return }
             out[String(m.epochRecord.dropFirst(Vault.epochsName.count + 1)), default: []].insert(m.epochRecordHash)
         }
         add(try? localMutable(Vault.manifestName))
         add(remoteManifestData)
+        // Earlier records, as the records above them bind them (hash links down the chain).
+        for (name, hash) in epochJudge?.boundRecordHashes() ?? [:] { out[name, default: []].insert(hash) }
         for s in vault?.sightings() ?? [] { add(s.manifest) }
         return out
     }
@@ -260,8 +279,8 @@ extension SyncEngine {
         }
         // Junk under the name of the record this vault.json names: set aside here, so the right one is fetched
         // (M1). Judged as not arrived meanwhile.
-        if let m = try? EpochManifest.parse(remoteData), m.vaultId == v.vaultId, m.root == v.manifest.root,
-           Vault.holdsWrongRecord(root, manifest: m) {
+        if !Self.epochMutations.contains(.recordByNameOnly), let m = try? EpochManifest.parse(remoteData),
+           m.vaultId == v.vaultId, m.root == v.manifest.root, Vault.holdsWrongRecord(root, manifest: m) {
             try setAsideWrongRecord(String(m.epochRecord.dropFirst(Vault.epochsName.count + 1)))
         }
         let judgment = v.judgeIncoming(remoteData, local: local)
@@ -413,7 +432,7 @@ extension SyncEngine {
     /// The target's `vault.json` was read (nil: it has none): detached sightings it no longer shows stop counting
     /// it (and are forgotten once no target shows them), and do not hold this run (M3).
     func refreshDetachedSightings(_ data: Data?) {
-        guard !options.dryRun, !options.pushOnly, let v = epochJudge else { return }
+        guard !options.dryRun, !options.pushOnly, let v = epochJudge, !Self.epochMutations.contains(.sightingsNeverLapse) else { return }
         v.noteTargetShows(data, at: transport.location)
         let shown = data.flatMap { Self.epochOf($0)?.epochId }
         detachedPending = detachedPending.filter { $0.key == shown }
