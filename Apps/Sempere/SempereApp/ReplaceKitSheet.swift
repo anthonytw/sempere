@@ -7,9 +7,15 @@ import SwiftUI
 /// kept or removed (takeovers since the current kit marked), then the new kit is printed and one of its lines
 /// typed back, and an optional passphrase copy. The old kit is useless for every later change; it still opens
 /// what was written before, unless everything is re-encrypted.
+///
+/// In `.reencrypt` mode it is the start of Re-encrypt Everything (design §7.1 steps 1–4): the same review, a new
+/// kit and line check, then the claims and the `reencrypt` epoch (`AppModel.startReencryption`); the progress sheet
+/// (`ReencryptProgressSheet`) takes it from there.
 struct ReplaceKitSheet: View {
     @AppModelEnvironment private var model
     @Environment(\.dismiss) private var dismiss
+    enum Mode { case replace, reencrypt }
+    var mode = Mode.replace
     /// Told what the change did (the list's alert).
     let done: (String) -> Void
 
@@ -39,7 +45,7 @@ struct ReplaceKitSheet: View {
                     Text(failure).foregroundStyle(.red)
                 }
             }
-            .navigationTitle("Replace Recovery Kit")
+            .navigationTitle(mode == .reencrypt ? String(localized: "Re-encrypt Everything") : String(localized: "Replace Recovery Kit"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -49,6 +55,10 @@ struct ReplaceKitSheet: View {
                     case .review:
                         Button("Continue") { continueToKit() }.disabled(!reviewAnswered)
                             .help("Make the new kit")
+                    case .kit where mode == .reencrypt:
+                        Button("Re-encrypt") { reencrypt() }.disabled(!lineMatches || !passphraseOK)
+                            .help("Start re-encrypting every file under a new key")
+                            .accessibilityIdentifier("reencrypt.confirm")
                     case .kit:
                         Button("Replace") { replace() }.disabled(!lineMatches || !passphraseOK)
                             .help("Replace the recovery kit")
@@ -70,7 +80,11 @@ struct ReplaceKitSheet: View {
 
     @ViewBuilder private var reviewForm: some View {
         Section {
-            Text("A new kit makes the current one useless for every later change: from then on, no device that sees the change accepts a takeover with the old kit.")
+            if mode == .reencrypt {
+                Text("Every file in the vault is encrypted again under a new key, with a new recovery kit. Once it finishes, the old kit and the keys of removed devices open nothing, not even what was written before. Every sync target must be reachable to start; this device carries it through, and the other devices follow when they sync.")
+            } else {
+                Text("A new kit makes the current one useless for every later change: from then on, no device that sees the change accepts a takeover with the old kit.")
+            }
         }
         if let review {
             Section {
@@ -119,7 +133,8 @@ struct ReplaceKitSheet: View {
             defer { working = false }
             do {
                 // The one list change that needs the owner at the device (design §6.5 step 0).
-                try await model.ownerAuthenticator.authenticate(reason: String(localized: "Replace the recovery kit"))
+                try await model.ownerAuthenticator.authenticate(reason: mode == .reencrypt ? String(localized: "Re-encrypt the vault")
+                                                                                           : String(localized: "Replace the recovery kit"))
                 let kit = try MLKEM768X25519Identity()
                 newKit = kit
                 lineNumber = Self.checkLine(of: kit.string)
@@ -165,6 +180,11 @@ struct ReplaceKitSheet: View {
             } footer: {
                 Text("A copy of the new recovery key in the vault under a passphrase, so the passphrase alone can take over. Leave it empty for none; any old copy is deleted.")
             }
+            if mode == .replace { oldKitSection }
+        }
+    }
+
+    @ViewBuilder private var oldKitSection: some View {
             Section {
                 SecureField("AGE-SECRET-KEY-PQ-1…", text: $oldKitText)
                     .font(.body.monospaced())
@@ -173,7 +193,6 @@ struct ReplaceKitSheet: View {
             } footer: {
                 Text("If you still have the current kit, its key adds a record that its holder agreed. It changes nothing else.")
             }
-        }
     }
 
     private var lineMatches: Bool {
@@ -209,6 +228,27 @@ struct ReplaceKitSheet: View {
     }
 
     private var passphraseOK: Bool { passphrase.isEmpty || passphraseProblem == nil }
+
+    /// Re-encrypt Everything's start: the claims and the `reencrypt` epoch; the progress sheet carries it on.
+    private func reencrypt() {
+        guard let newKit else { return }
+        failure = nil
+        let keep = Set(answers.filter(\.value).map(\.key)), remove = Set(answers.filter { !$0.value }.map(\.key))
+        let phrase = passphrase.isEmpty ? nil : passphrase
+        working = true
+        Task {
+            defer { working = false }
+            do {
+                let outcome = try await model.startReencryption(newKit, keep: keep, remove: remove, passphrase: phrase)
+                passphrase = ""; passphraseAgain = ""; typedLine = ""
+                done(DeviceChangeText.done(outcome, action: String(localized: "Re-encryption started under a new key and recovery kit. Keep the new kit somewhere safe; the old one stops working once it finishes.")))
+                dismiss()
+            } catch is CancellationError {
+            } catch {
+                failure = DeviceChangeText.message(error)
+            }
+        }
+    }
 
     private func replace() {
         guard let newKit else { return }

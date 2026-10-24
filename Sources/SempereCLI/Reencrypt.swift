@@ -324,23 +324,12 @@ struct VaultReencrypt: ParsableCommand {
         }
     }
 
-    /// The unbound journals first seen on targets (the in-flight day of a claim), kept beside the store's sync states.
-    func claimsURL(_ store: VaultStore?, _ vaultId: UUID) -> URL? {
-        store.map { $0.targets.stateDirectory(UUID(), of: vaultId).deletingLastPathComponent().appendingPathComponent("reencrypt-claims.json") }
-    }
-
     func loadClaims(_ store: VaultStore?, _ vaultId: UUID) -> ReencryptCoordinator.ClaimSightings {
-        guard let url = claimsURL(store, vaultId), let data = try? BoundedRead.contents(of: url, maxBytes: 1 << 20) else { return [:] }
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .secondsSince1970
-        return (try? d.decode(ReencryptCoordinator.ClaimSightings.self, from: data)) ?? [:]
+        store.map { ReencryptCoordinator.loadClaimSightings(ReencryptCoordinator.claimSightingsURL(store: $0, vaultId: vaultId)) } ?? [:]
     }
 
     func saveClaims(_ store: VaultStore?, _ vaultId: UUID, _ seen: ReencryptCoordinator.ClaimSightings) {
-        guard let url = claimsURL(store, vaultId) else { return }
-        let e = JSONEncoder()
-        e.dateEncodingStrategy = .secondsSince1970
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? e.encode(seen).write(to: url, options: .atomic)
+        guard let store else { return }
+        ReencryptCoordinator.saveClaimSightings(seen, to: ReencryptCoordinator.claimSightingsURL(store: store, vaultId: vaultId))
     }
 }

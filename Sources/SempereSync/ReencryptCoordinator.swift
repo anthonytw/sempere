@@ -46,6 +46,27 @@ public enum ReencryptCoordinator {
     /// between attempts (the CLI: next to the store's sync states).
     public typealias ClaimSightings = [String: [String: Date]]
 
+    /// Where a store keeps the claim sightings of a vault (beside its targets' sync states), shared by the CLI and the app.
+    public static func claimSightingsURL(store: VaultStore, vaultId: UUID) -> URL {
+        store.targets.stateDirectory(UUID(), of: vaultId).deletingLastPathComponent().appendingPathComponent("reencrypt-claims.json")
+    }
+
+    /// The claim sightings saved at `url` (none when it is missing or unreadable: the day starts again).
+    public static func loadClaimSightings(_ url: URL) -> ClaimSightings {
+        guard let data = try? BoundedRead.contents(of: url, maxBytes: 1 << 20) else { return [:] }
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .secondsSince1970
+        return (try? d.decode(ClaimSightings.self, from: data)) ?? [:]
+    }
+
+    /// Saves claim sightings at `url` (best effort).
+    public static func saveClaimSightings(_ seen: ClaimSightings, to url: URL) {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .secondsSince1970
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? e.encode(seen).write(to: url, options: .atomic)
+    }
+
     /// Claims every target for `journal` (design §7.1 step 3). `vault` judges what a target holds (finished journals
     /// are replaced); `seen` remembers unbound ones, which are replaced once older than `claimLifetime`.
     public static func claim(_ journal: Data, vault: Vault, on targets: [Target], seen: inout ClaimSightings,

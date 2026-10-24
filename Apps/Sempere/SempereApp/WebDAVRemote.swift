@@ -66,10 +66,16 @@ protocol WebDAVRemote: Sendable {
                     partial: Bool, options: SyncOptions) throws -> (report: SyncReport, replaced: Bool)
     /// The open vault closed: drop any connections kept for it.
     func releaseConnections()
+    /// The server as the sync engine's remote, for what a re-encryption does on a target itself (its claim, its
+    /// confirmation: key-hierarchy KH6, `ReencryptCoordinator`).
+    func syncRemote(_ endpoint: WebDAVEndpoint) throws -> any SyncRemote
 }
 
 extension WebDAVRemote {
     func releaseConnections() {}
+    func syncRemote(_ endpoint: WebDAVEndpoint) throws -> any SyncRemote {
+        throw WebDAVVaultError.noSuchLocation
+    }
 }
 
 /// `WebDAVRemote` over `URLSession` (`SempereWebDAV`): https only (http to
@@ -86,6 +92,8 @@ struct LiveWebDAVRemote: WebDAVRemote {
     }
 
     func releaseConnections() { pool.release() }
+
+    func syncRemote(_ endpoint: WebDAVEndpoint) throws -> any SyncRemote { WebDAVSyncRemote(try client(endpoint)) }
 
     /// A client on the pooled transport; `check` (Test Connection, which needs the recorder and runs once) is
     /// the only caller that builds a transport of its own.

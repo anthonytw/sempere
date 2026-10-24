@@ -1112,6 +1112,54 @@
         }
       }
     },
+    "%lld files under an earlier key do not check and are kept aside (Repair)." : {
+      "comment" : "Re-encryption: files set aside",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file under an earlier key does not check and is kept aside (Repair)."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files under an earlier key do not check and are kept aside (Repair)."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de archivos con una clave anterior no se comprueban y se guardan aparte (Reparar)."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld archivo con una clave anterior no se comprueba y se guarda aparte (Reparar)."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld archivos con una clave anterior no se comprueban y se guardan aparte (Reparar)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld files written on this device are on no sync target." : {
       "comment" : "Unlisted screen: own changes no target holds",
       "extractionState" : "manual",
@@ -1792,6 +1840,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld de %@"
+          }
+        }
+      }
+    },
+    "%lld of %lld" : {
+      "comment" : "Re-encryption row: files done of all [not-plural]",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld"
+          }
+        }
+      }
+    },
+    "%lld of %lld files on this device under the new key" : {
+      "comment" : "Re-encryption progress [not-plural]",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con la clave nueva en este dispositivo: %1$lld de %2$lld archivos"
+          }
+        }
+      }
+    },
+    "%lld of %lld files under the new key" : {
+      "comment" : "A target's files [not-plural]",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con la clave nueva: %1$lld de %2$lld archivos"
           }
         }
       }
@@ -5397,6 +5481,18 @@
         }
       }
     },
+    "Close; the re-encryption goes on with the next Continue" : {
+      "comment" : "Tooltip",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar; el recifrado sigue con el próximo Continuar"
+          }
+        }
+      }
+    },
     "Code" : {
       "comment" : "Markdown bar: mark the selection as `code`",
       "extractionState" : "manual",
@@ -5475,6 +5571,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirma cada dispositivo"
+          }
+        }
+      }
+    },
+    "Confirmed" : {
+      "comment" : "A sync target holding only files under the new key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmado"
           }
         }
       }
@@ -7572,6 +7680,17 @@
         }
       }
     },
+    "Every file in the vault is encrypted again under a new key, with a new recovery kit. Once it finishes, the old kit and the keys of removed devices open nothing, not even what was written before. Every sync target must be reachable to start; this device carries it through, and the other devices follow when they sync." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada archivo de la bóveda se cifra de nuevo con una clave nueva y un kit de recuperación nuevo. Cuando termine, el kit antiguo y las claves de los dispositivos quitados no abren nada, ni siquiera lo escrito antes. Para empezar, todos los destinos de sincronización deben estar accesibles; este dispositivo lo lleva a cabo y los demás lo siguen al sincronizar."
+          }
+        }
+      }
+    },
     "Every note was decrypted and checked with this vault's key." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7606,6 +7725,17 @@
         }
       }
     },
+    "Every target the vault syncs with is checked; once each holds only files under the new key, the re-encryption finishes and the old keys open nothing there. Other devices follow when they sync." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se comprueba cada destino con el que se sincroniza la bóveda; cuando cada uno tenga solo archivos con la clave nueva, el recifrado termina y las claves antiguas ya no abren nada allí. Los demás dispositivos lo siguen al sincronizar."
+          }
+        }
+      }
+    },
     "Every vault is a folder of encrypted files kept on this device, so it opens offline. A vault from a WebDAV server stays in sync with the server, both ways." : {
       "comment" : "Quick tour page 5",
       "extractionState" : "manual",
@@ -7625,6 +7755,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todo va en un solo archivo zip."
+          }
+        }
+      }
+    },
+    "Everything is re-encrypted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo está recifrado."
           }
         }
       }
@@ -12063,6 +12204,18 @@
         }
       }
     },
+    "Not done yet" : {
+      "comment" : "Section header: files the pass could not do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pendiente"
+          }
+        }
+      }
+    },
     "Not downloaded" : {
       "comment" : "Transcription language model status",
       "extractionState" : "manual",
@@ -12118,6 +12271,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fuera de la lista"
+          }
+        }
+      }
+    },
+    "Not reached" : {
+      "comment" : "A sync target the step could not reach",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin acceso"
           }
         }
       }
@@ -14698,6 +14863,112 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cita"
+          }
+        }
+      }
+    },
+    "Re-encrypt" : {
+      "comment" : "Button: start the re-encryption",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recifrar"
+          }
+        }
+      }
+    },
+    "Re-encrypt Everything" : {
+      "comment" : "Sheet title: re-encrypt every file of the vault under a new key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recifrar todo"
+          }
+        }
+      }
+    },
+    "Re-encrypt Everything…" : {
+      "comment" : "Devices: button opening the re-encryption sheet",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recifrar todo…"
+          }
+        }
+      }
+    },
+    "Re-encrypt the vault" : {
+      "comment" : "Face ID / Touch ID reason",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recifrar la bóveda"
+          }
+        }
+      }
+    },
+    "Re-encrypt this device's files, sync and check every target" : {
+      "comment" : "Tooltip",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recifra los archivos de este dispositivo, sincroniza y comprueba cada destino"
+          }
+        }
+      }
+    },
+    "Re-encrypting…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recifrando…"
+          }
+        }
+      }
+    },
+    "Re-encryption" : {
+      "comment" : "Progress sheet title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recifrado"
+          }
+        }
+      }
+    },
+    "Re-encryption in progress" : {
+      "comment" : "Devices: row while a re-encryption is pending",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recifrado en curso"
+          }
+        }
+      }
+    },
+    "Re-encryption started under a new key and recovery kit. Keep the new kit somewhere safe; the old one stops working once it finishes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El recifrado empezó con una clave y un kit de recuperación nuevos. Guarda el kit nuevo en un lugar seguro; el antiguo deja de funcionar cuando termine."
           }
         }
       }
@@ -18211,6 +18482,18 @@
         }
       }
     },
+    "Start re-encrypting every file under a new key" : {
+      "comment" : "Tooltip",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empieza a recifrar cada archivo con una clave nueva"
+          }
+        }
+      }
+    },
     "Start recording" : {
       "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do",
       "extractionState" : "manual",
@@ -20310,13 +20593,13 @@
         }
       }
     },
-    "The kit was printed once; no device keeps the recovery key, so it cannot be printed again. Replacing it makes the old kit useless for every later change." : {
+    "The kit was printed once; no device keeps the recovery key, so it cannot be printed again. Replacing it makes the old kit useless for every later change. Re-encrypting everything also makes it, and removed devices' keys, open nothing written before." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El kit se imprimió una vez; ningún dispositivo guarda la clave de recuperación, así que no se puede volver a imprimir. Reemplazarlo deja el kit antiguo sin uso para todos los cambios posteriores."
+            "value" : "El kit se imprimió una vez; ningún dispositivo guarda la clave de recuperación, así que no se puede volver a imprimir. Reemplazarlo deja el kit antiguo sin uso para todo cambio posterior. Recifrar todo hace además que ni él ni las claves de los dispositivos quitados abran nada de lo escrito antes."
           }
         }
       }
@@ -20478,6 +20761,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las frases no coinciden."
+          }
+        }
+      }
+    },
+    "The re-encryption's journal has not arrived on this device yet." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El diario del recifrado aún no llegó a este dispositivo."
           }
         }
       }
@@ -21133,6 +21427,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estos adjuntos llevan al menos 30 días sin usarse. No se puede deshacer."
+          }
+        }
+      }
+    },
+    "These files are retried at the next Continue." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estos archivos se reintentan en el próximo Continuar."
           }
         }
       }
@@ -22162,6 +22467,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este sistema no puede usar claves poscuánticas."
+          }
+        }
+      }
+    },
+    "This target cannot be opened for re-encryption." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este destino no se puede abrir para el recifrado."
           }
         }
       }
@@ -23831,6 +24147,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las vulnerabilidades se comunican de forma privada en GitHub, como describe la política de seguridad (SECURITY.md)."
+          }
+        }
+      }
+    },
+    "Waiting" : {
+      "comment" : "A sync target still holding older files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En espera"
           }
         }
       }

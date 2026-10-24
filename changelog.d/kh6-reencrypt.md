@@ -5,8 +5,8 @@
   settings under it (each copy checked before the old one goes), carries the new copies to every sync target,
   confirms each target and finishes: nothing in the vault, on a target or on a device, opens with the old kit or an
   earlier key afterwards. It survives crashes, locks and lost networks (`--resume`), removals and a handoff during
-  it, and a device that was offline the whole time. `--status` shows where it stands. (The app's sheet comes with
-  the device screens.)
+  it, and a device that was offline the whole time. `--status` shows where it stands. In the app: Devices ▸ Re-encrypt Everything…
+  on the device that manages devices, with a progress sheet.
 
 ### Fixed
 
