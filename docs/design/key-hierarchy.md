@@ -1615,3 +1615,24 @@ alone: junk records, a held run's settings, forged detached lists, upload-only r
 and a storage-only attacker that plants junk records and forged lists, each mutation breaking its own invariant; a run
 replays from its seed, and quiescence runs until a whole round changes nothing), `CLIEpochSyncTests`.
 
+
+### 16.11 KH5 as built, part 1: the device list, removal, banners and Repair
+
+KH5 lands in two PRs (each about half of the row in §12): this one has the device list and history, home's changes
+(rename, removal, Make Home, Replace Recovery Kit), the banners and Repair; the second has device keys in the
+Keychain and signing pairs in the Secure Enclave, joining by approval and the takeover screen. Shared logic is in
+the package (`Sources/Sempere/DeviceOverview.swift`) and the CLI uses it too (`sempere devices history`,
+`devices remove`'s warnings, `devices status`, `set-aside keep --own-dropped`).
+
+| Point | Decision |
+| --- | --- |
+| Where the list lives | Settings ▸ Sync & Devices ▸ Devices and the Mac's Vault Keys window show one view (`DevicesView`). Home's actions are a device's context menu (Rename…, Make Home…, Remove…) and Replace Recovery Kit…; elsewhere the footer names the device that manages devices |
+| The run before a change (§5.2 step 2) | one two-way run of every target of the open vault, bounded at 10 s each (`syncBeforeDeviceChange`), rather than a separate pull-only pass: the app's sessions already place what verifies, and what they upload first is sealed like the rest. Targets it did not reach are named after the change ("changes there since … will be caught up by them") |
+| History names | from the current list, else the trust record, else the names this device remembered from earlier lists (`rememberDeviceNames`, per vault, plaintext names as `vault.json` has them); otherwise "a removed device (id)". Dates come from the epoch records, read down the chain under the keys each gives |
+| Removal sheet | the stale warning (last sync older than a day, or none), the storage-password advice naming the vault's WebDAV targets, and "Lost or Stolen": then the devices it approved while it managed devices (never the current home) are removed too, checked, and a kit it replaced is pointed out (`Vault.removalReview`) |
+| Replace Recovery Kit | the owner check first (`OwnerAuthenticator`: Face ID or Touch ID when enrolled, else the passcode), then every device kept or removed (takeovers since the current kit marked), then the new kit (Save, Share, Print, as at creation) and one of its key lines typed back, an optional passphrase copy and the optional old key (evidence) |
+| Takeover alerts (§6.3) | per vault, the highest takeover epoch acknowledged is remembered on the device; the first time a vault is seen nothing earlier is reported, and a takeover this device made is acknowledged at once. Another device's takeover raises a banner until dismissed and a notification (if the user allows notifications) |
+| Unlisted (§5.5) | the vault's own `unlistedNotice` at open, or a run's report; a run that reports it reopens the vault, which then refuses writes itself. The screen names who made the change (the sighting's author, from this device's own list) and when this device saw it, counts its own files no target holds, and offers Export of those notes or of all notes (the bulk export) and Remove from This Device. "Keep as a separate vault" (a re-keyed copy) is not offered: no import of a vault into new keys exists yet |
+| Held-back banner (review of #86) | after a day held back (the vault's oldest anchored sighting, or a run's `heldSince`). Sightings are listed in Repair; Forget forgets the detached ones, Forget All the anchored ones too after a warning |
+| Home conflicts | a run that reports a conflict shows a banner; the device stays on its list until a takeover settles it. Picking a branch in the app (§5.6 rule 4's user pick) is not offered: the engine does not take a pick yet |
+| Locked runs keep no sighting (§16.10) | left as built: the app's locked and upload-only runs honor sightings by epoch number, and the open vault's two-way runs record them, which is all the banners need |

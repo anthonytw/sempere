@@ -18,8 +18,8 @@ struct UnlockKeys: Sendable {
 /// §4.3, `ListStatus.refused`): "This vault's device list was changed without
 /// its key". The vault stays readable and nothing is written to it.
 ///
-/// TODO(KH5): offer the repair here (a new epoch from home, a takeover with
-/// the recovery key); until then the alert only explains and closes.
+/// The way out is a takeover with the recovery kit (design §5.6), from the
+/// device list; the alert explains and closes.
 struct ListAlert: Identifiable, Equatable, Sendable {
     let id = UUID()
     var problem: ListProblem
@@ -68,7 +68,7 @@ struct ListAlert: Identifiable, Equatable, Sendable {
             lines.append(String(localized: "This device has no record of the vault's devices yet, and nothing to check the list against."))
         }
         lines.append(String(localized: "Your notes can still be read. Nothing is written to this vault until the list is fixed."))
-        lines.append(String(localized: "Restore vault.json from a backup, or check the vault with sempere on a computer that has opened it before. Repairing the list in the app is not available yet."))
+        lines.append(String(localized: "If a sync service or another device is at fault, the next sync from a device that manages devices puts the list back. Otherwise take over with the recovery kit in Settings ▸ Sync & Devices ▸ Devices."))
         return lines.joined(separator: "\n\n")
     }
 }

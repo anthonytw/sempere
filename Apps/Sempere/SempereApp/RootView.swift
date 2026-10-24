@@ -231,7 +231,7 @@ struct RootView: View {
         // Design §4.3: never write to a list nobody with the key wrote.
         .alert(model.listAlert?.displayTitle ?? ListAlert.title, isPresented: Binding(get: { model.listAlert != nil },
                                                                                      set: { if !$0 { model.dismissListAlert() } })) {
-            // TODO(KH5): repair (a new epoch from home, or a takeover with the recovery key).
+            // The way out (a takeover with the recovery kit) is on the device list (`DevicesView`).
             Button("OK", role: .cancel) { model.dismissListAlert() }
         } message: {
             Text(model.listAlert?.message ?? "")

@@ -710,7 +710,7 @@ private struct DeviceKeySettingsSection: View {
             if let this = model.vaultDevices.first(where: \.isThisDevice) {
                 LabeledContent("This Device", value: "\(this.name) (\(this.deviceID))")
                 if this.isHome {
-                    Text("This device is the vault's home: it manages the vault's devices.")
+                    Text("This device manages the vault's devices.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             } else if model.isRecoveryOpen {
@@ -719,11 +719,18 @@ private struct DeviceKeySettingsSection: View {
             } else {
                 Text("Unlock a vault to see this device's key.").foregroundStyle(.secondary)
             }
+            if model.phase == .unlocked, !model.isRecoveryOpen {
+                NavigationLink {
+                    DevicesView()
+                } label: {
+                    Label("Devices", systemImage: "laptopcomputer.and.ipad")
+                }
+                .accessibilityIdentifier("settings.devices")
+            }
         } header: {
             Text("Device Keys")
         } footer: {
-            // TODO(KH5): join another device, save or replace this device's key, manage the devices.
-            Text("Each device has its own key, kept in its Keychain. Adding and removing devices is not available in the app yet; from a terminal: sempere device.")
+            Text("Each device has its own key, kept in its Keychain. One device manages the others: it adds and removes them.")
         }
     }
 }

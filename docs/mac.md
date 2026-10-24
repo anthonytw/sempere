@@ -487,15 +487,16 @@ Catalyst.
 
 ## Key window
 
-View > Vault Keys (⌥⌘K) lists the unlocked vault's devices and its recovery
-key (`format.md` §2), read-only (`KeysWindowView`). Under the key hierarchy
-(`docs/design/key-hierarchy.md`) only the vault's home device changes the
-list. The app's key management (adding, approving, renaming, removing and
-replacing devices, joining this device) is stubbed with `TODO(KH5)`; until
-then the window says to use the CLI from a terminal (`sempere device init`,
-`sempere devices approve|rename|remove|handoff|takeover`, `docs/cli.md` "Devices"). Removing and
-replacing keys are new epochs (KH3); the sync carries them between devices (KH4); the app's screens come
-with KH5.
+View > Vault Keys (⌥⌘K) shows the unlocked vault's device list (`KeysWindowView` hosting `DevicesView`, the
+same view as Settings ▸ Sync & Devices ▸ Devices; `docs/design/key-hierarchy.md` §6.4): every device with its
+kind, "This Device", "Manages devices", who added it and when, and its last sync; the recovery kit; Repair (files
+set aside before a device change, and device lists a sync did not take); and the history of device changes. Only
+the vault's home changes the list: there, a device's context menu has Rename…, Make Home… and Remove… (the removal
+sheet: stale-sync and storage-password warnings, "Lost or Stolen" with the devices it approved, `RemoveDeviceSheet`),
+and the window has Replace Recovery Kit… (Touch ID or the password first, then every device kept or removed, the new
+kit printed and one of its lines typed back, `ReplaceKitSheet`). Joining a device and taking over with the recovery
+kit come with KH5's second part; until then the CLI does them (`sempere device init`, `sempere devices
+approve|takeover`, `docs/cli.md` "Devices").
 
 ## Mouse and trackpad
 

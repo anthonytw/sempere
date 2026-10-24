@@ -24,7 +24,7 @@ extension AppModel {
     var isRecoveryOpen: Bool { vault?.isRecoveryOpen ?? false }
 
     /// True when nothing may be written to the open vault.
-    var isVaultReadOnly: Bool { isRecoveryOpen || !readOnlyReasons.isEmpty }
+    var isVaultReadOnly: Bool { isRecoveryOpen || !readOnlyReasons.isEmpty || unlistedNotice != nil }
 
     /// The banner over the note list of a read-only vault; nil when writable.
     var readOnlyBanner: String? {
@@ -67,6 +67,8 @@ extension AppModel {
     /// Throws `VaultError.readOnly` for a read-only vault (format.md §7.3).
     func requireWritableVault() throws {
         if isRecoveryOpen { throw VaultError.recoveryKeyReadOnly }
+        // Not on the newest device list (key-hierarchy design §5.5): the library refuses every write too.
+        if let notice = unlistedNotice { throw VaultError.removedFromVault(notice) }
         let reasons = readOnlyReasons
         if !reasons.isEmpty { throw VaultError.readOnly(reasons) }
     }

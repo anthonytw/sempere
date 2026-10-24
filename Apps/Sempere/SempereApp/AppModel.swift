@@ -588,6 +588,18 @@ final class AppModel {
     /// The open vault's `vault.json` did not check at unlock (design §4.3): the
     /// blocking alert (`ListAlert`). Nothing is written to the vault meanwhile.
     var listAlert: ListAlert?
+    /// A takeover by another device that this device has not acknowledged (key-hierarchy design §6.3): a
+    /// banner until dismissed (`AppModel+Devices`).
+    var takeoverAlert: TakeoverAlert?
+    /// Where acknowledged takeovers are remembered (per vault, the epoch); tests pass their own.
+    @ObservationIgnored var takeoverDefaults: UserDefaults = .standard
+    /// Each target's run before a device change is bounded by this (design §5.2 step 2); tests shorten it.
+    @ObservationIgnored var deviceChangeRunBound: TimeInterval = AppModel.defaultDeviceChangeRunBound
+    /// Asks for the device owner before a list change that needs them at the device (Replace Recovery Kit, design
+    /// §6.5); tests inject a fake.
+    @ObservationIgnored var ownerAuthenticator: any OwnerAuthenticator = SystemOwnerAuthenticator()
+    /// The clock the device banners judge "more than a day" by; tests set it.
+    @ObservationIgnored var deviceNoticeNow: () -> Date = { Date() }
     /// The keys the vault was unlocked with, for opening it again (a WebDAV
     /// copy downloaded again, a backup check).
     var unlockKeys = UnlockKeys()
@@ -847,6 +859,7 @@ final class AppModel {
         listAlert = ListAlert(vault: next)
         refreshQuickCaptureProfile()
         keyEpoch += 1
+        checkTakeovers()
         scheduleSettingsSync()
     }
 
@@ -863,6 +876,7 @@ final class AppModel {
         if awaitNotes { try await notesLoaded() }
         refreshQuickCaptureProfile()
         startInboxAdoption()
+        checkTakeovers()
         Task { await rescheduleBackupReminder() }
         startSettingsSync()
     }
@@ -1147,6 +1161,7 @@ final class AppModel {
         // Nor do decrypted attachments and their pictures (`dropAttachments`, when `vault` goes).
         vault = nil
         unlockKeys = UnlockKeys()
+        takeoverAlert = nil
         vaultURL = nil
         vaultOpenedExternally = false
         notes = []
