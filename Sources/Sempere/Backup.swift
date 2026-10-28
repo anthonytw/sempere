@@ -1,0 +1,1305 @@
+import Age
+import Crypto
+import Foundation
+
+/// Errors from backup, restore and archive.
+public enum BackupError: Error, Hashable, Sendable, CustomStringConvertible {
+    /// The destination exists, is not empty and is not a backup.
+    case notABackupDirectory(String)
+    /// The destination is a backup of another vault.
+    case otherVault(path: String, vaultId: String)
+    /// `backup.json` cannot be read or names an unknown format.
+    case manifestUnreadable(String)
+    /// Source and destination overlap (one inside the other).
+    case overlapping(String)
+    /// The restore target exists, is not empty and is not an unfinished restore.
+    case targetNotEmpty(String)
+    /// The folder holds neither `backup.json` nor `vault.json`.
+    case nothingToRestore(String)
+    /// The restore target is, holds or lies inside a folder that must not be
+    /// written to (the vault the caller has open).
+    case protectedTarget(String)
+    /// The backup folder (its `backup.json`) disappeared during the run: a drive
+    /// unplugged or a share disconnected. The run stops instead of recreating
+    /// the folder and reporting a backup that holds only the files written since.
+    case destinationGone(String)
+    /// The backup folder is on a removable volume that is not mounted (a drive not connected, a share not mounted:
+    /// `FolderReachability`): nothing is created there; a later run may find it (offline audit A-P2).
+    case destinationUnavailable(String)
+
+    public var description: String {
+        switch self {
+        case .notABackupDirectory(let p): return "\(p) is not empty and not an sempere backup (no backup.json)"
+        case .otherVault(let p, let id): return "\(p) is a backup of another vault (\(id))"
+        case .manifestUnreadable(let why): return "backup.json cannot be read: \(why)"
+        case .overlapping(let why): return why
+        case .targetNotEmpty(let p): return "\(p) exists and is not empty (and is not an unfinished restore)"
+        case .nothingToRestore(let p): return "\(p) holds no backup.json or vault.json"
+        case .protectedTarget(let p):
+            return "\(p) is, holds or is inside the open vault; restore into a new folder elsewhere"
+        case .destinationGone(let p):
+            return "the backup folder \(p) disappeared during the backup (a drive unplugged or a share disconnected); "
+                + "connect it again and back up again"
+        case .destinationUnavailable(let p):
+            return "the backup folder \(p) cannot be reached now (the drive or share it is on is not connected); "
+                + "nothing was backed up"
+        }
+    }
+}
+
+/// `backup.json` at the root of a backup folder: which vault it holds and
+/// the SHA-256 and size of every file the backup wrote, so a backup can be
+/// checked without a key.
+public struct BackupManifest: Codable, Hashable, Sendable {
+    public struct Entry: Codable, Hashable, Sendable {
+        public var sha256: String
+        public var size: Int
+    }
+
+    public static let formatIdentifier = "sempere-backup/1"
+    public static let fileName = "backup.json"
+
+    public var format: String
+    public var vaultId: String
+    public var created: Date
+    public var updated: Date
+    /// The start of the last run that finished without a file error (absent
+    /// until a run completes):
+    /// what an overdue check counts from (`BackupStatus.dueDate`). `updated`
+    /// moves with every run, failed or interrupted ones included.
+    public var completed: Date?
+    /// Path relative to the backup root (`/`-separated) → hash and size.
+    public var files: [String: Entry]
+
+    static func read(_ url: URL) throws -> BackupManifest {
+        let data: Data
+        do { data = try FileIO.read(url, maxBytes: BoundedRead.maxBackupManifestBytes) } catch {
+            throw BackupError.manifestUnreadable("\(error)")
+        }
+        let m: BackupManifest
+        do { m = try InkJSON.decoder().decode(BackupManifest.self, from: data) } catch {
+            throw BackupError.manifestUnreadable("\(error)")
+        }
+        guard m.format == formatIdentifier else { throw BackupError.manifestUnreadable("unknown format \(m.format)") }
+        return m
+    }
+
+    func write(to url: URL) throws {
+        let enc = InkJSON.encoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try FileIO.writeAtomically(try enc.encode(self), to: url, replacing: true)
+    }
+}
+
+/// Options for `Backup.run`.
+public struct BackupOptions: Sendable {
+    /// Delete revision files the source no longer has, but only those the
+    /// compaction rules (format.md §5.3) allow given snapshots present in
+    /// both the source and the backup. Needs a readable source vault.
+    public var prune = false
+    /// Re-hash files the backup already holds instead of trusting a
+    /// matching size and index entry.
+    public var checksum = false
+    /// Time used for `versions/<time>/` and `backup.json`.
+    public var now = Date()
+    /// Called after each file written; throwing stops the run there (as an
+    /// interruption would). The argument is the path written.
+    public var afterEachFile: (@Sendable (String) throws -> Void)?
+
+    public init(prune: Bool = false, checksum: Bool = false, now: Date = Date(),
+                afterEachFile: (@Sendable (String) throws -> Void)? = nil) {
+        self.prune = prune; self.checksum = checksum; self.now = now; self.afterEachFile = afterEachFile
+    }
+}
+
+/// What `Backup.run` did.
+public struct BackupReport: Encodable, Hashable, Sendable {
+    public struct FileError: Encodable, Hashable, Sendable {
+        public var path: String
+        public var message: String
+    }
+
+    public var vaultId: String
+    public var destination: String
+    /// Files that were new to the backup.
+    public var copied: [String] = []
+    /// Files whose content changed in the source (a recipient change, a new
+    /// `vault.json`); the previous copy went to `versions/`.
+    public var replaced: [String] = []
+    /// Previous copies kept under `versions/<time>/`.
+    public var versioned: [String] = []
+    /// Files already backed up and unchanged.
+    public var unchanged = 0
+    /// Revision files deleted from the backup by `--prune`.
+    public var pruned: [String] = []
+    /// Revision files the source no longer has, kept in the backup.
+    public var kept: [String] = []
+    public var errors: [FileError] = []
+}
+
+/// One file's outcome in `BackupVerifyReport`.
+public struct BackupFileResult: Encodable, Hashable, Sendable {
+    public enum Status: String, Encodable, Hashable, Sendable {
+        case ok
+        /// Listed in `backup.json` but not on disk.
+        case missing
+        /// On disk, but its SHA-256 or size differs from `backup.json`.
+        case modified
+        /// On disk under the backup but not in `backup.json` (a run was
+        /// interrupted before saving it); checked only with a key.
+        case unindexed
+    }
+
+    public var path: String
+    public var status: Status
+    public var detail: String?
+}
+
+/// The result of `Backup.verify`.
+public struct BackupVerifyReport: Hashable, Sendable {
+    /// Problems with `backup.json` itself.
+    public var backupProblems: [String] = []
+    /// Per-file index check, every file in the index plus unindexed ones.
+    public var files: [BackupFileResult] = []
+    /// The mirrored vault's own check (`Vault.verify()`): decrypts and
+    /// tag-checks every revision when a key was given, else structure only.
+    public var vault: VerifyReport?
+    /// Why the mirrored vault could not be opened, if it could not.
+    public var vaultProblem: String?
+    /// True when the vault check decrypted the files.
+    public var decrypted = false
+
+    public var isHealthy: Bool {
+        backupProblems.isEmpty && vaultProblem == nil
+            && files.allSatisfy { $0.status == .ok || $0.status == .unindexed }
+            && (vault?.isHealthy ?? false)
+    }
+    /// Every problem `isHealthy` counts, one line each ("modified  notes/…
+    /// (detail)"): `backup.json`, the mirrored vault, its `vault.json` and
+    /// re-encryption journal, then files. Unindexed files are not problems. Empty
+    /// for a healthy backup; for display (the app's Verify Backup).
+    public var problemLines: [String] {
+        func line(_ status: String, _ path: String, _ detail: String?) -> String {
+            "\(status)  \(path)" + (detail.map { "  (\($0))" } ?? "")
+        }
+        var out = backupProblems.map { "backup.json: \($0)" }
+        if let vaultProblem { out.append("vault: \(vaultProblem)") }
+        if let vault {
+            out += vault.manifestProblems.map { "vault.json: \($0)" }
+        }
+        out += files.filter { $0.status != .ok && $0.status != .unindexed }
+            .map { line($0.status.rawValue, $0.path, $0.detail) }
+        out += (vault?.files ?? []).filter { $0.status.isProblem }
+            .map { line($0.status.rawValue, $0.path, $0.detail) }
+        return out
+    }
+}
+
+/// What `Backup.restore` did.
+public struct RestoreReport: Hashable, Sendable {
+    public var restored: [String] = []
+    public var alreadyPresent = 0
+    public var errors: [BackupReport.FileError] = []
+    /// The restored vault's check.
+    public var verify: VerifyReport?
+}
+
+/// A backup folder's state, read from its `backup.json` alone (no key, and
+/// no other file is read): when it was last brought up to date and how much
+/// it holds. `Backup.verify` is what checks the files themselves.
+public struct BackupStatus: Encodable, Hashable, Sendable {
+    public var vaultId: String
+    /// The first run into this folder.
+    public var created: Date
+    /// The last run that wrote `backup.json` (every run does, changed or not,
+    /// and one with file errors or cut short too).
+    public var updated: Date
+    /// The last run that finished without a file error; nil when none did.
+    /// See `dueDate(maxAgeDays:)`.
+    public var completed: Date?
+    /// Note folders with at least one file in the backup.
+    public var notes: Int
+    /// Files of the vault itself (outside `versions/`) and their bytes.
+    public var files: Int
+    public var bytes: Int
+    /// Previous copies kept under `versions/` and their bytes.
+    public var versionFiles: Int
+    public var versionBytes: Int
+    /// Everything the index records, in bytes.
+    public var totalBytes: Int
+}
+
+extension BackupStatus {
+    /// What an overdue check counts from: the last complete run, else the
+    /// folder's first run (a folder whose runs all failed is due `maxAgeDays`
+    /// after it was made).
+    public var lastBackupBase: Date { completed ?? created }
+
+    /// When the backup is due again: `maxAgeDays` after `lastBackupBase`.
+    public func dueDate(maxAgeDays: Int) -> Date {
+        BackupSchedule.dueDate(since: lastBackupBase, days: maxAgeDays)
+    }
+
+    /// Whether no backup completed in the last `maxAgeDays` days
+    /// (`sempere backup status --max-age`). See `BackupSchedule.isOverdue`.
+    public func isOverdue(maxAgeDays: Int, now: Date = Date()) -> Bool {
+        BackupSchedule.isOverdue(since: lastBackupBase, days: maxAgeDays, now: now)
+    }
+}
+
+/// "No backup in N days" (the app's Remind Me, `sempere backup status
+/// --max-age`): one rule for both.
+public enum BackupSchedule {
+    /// The largest number of days honored (ten years); larger values are
+    /// clamped, so the date arithmetic cannot overflow.
+    public static let maxDays = 3650
+    /// A last backup dated further than this ahead of `now` cannot be
+    /// trusted (a clock that ran ahead, or an edited `backup.json`): it
+    /// counts as overdue rather than postponing the check for years.
+    public static let futureTolerance: TimeInterval = 86_400
+
+    /// `days` (clamped to `0...maxDays`) after `base`.
+    public static func dueDate(since base: Date, days: Int) -> Date {
+        base.addingTimeInterval(TimeInterval(min(max(days, 0), maxDays)) * 86_400)
+    }
+
+    /// True when `now` is at or past the due date, or `base` lies more than
+    /// `futureTolerance` in the future.
+    public static func isOverdue(since base: Date, days: Int, now: Date) -> Bool {
+        if base.timeIntervalSince(now) > futureTolerance { return true }
+        return dueDate(since: base, days: days) <= now
+    }
+}
+
+/// What restoring from a folder would bring back, read from the files on
+/// disk without a key: shown before anything is written.
+public struct RestorePreview: Encodable, Hashable, Sendable {
+    /// The folder read.
+    public var source: String
+    public var vaultId: String
+    /// True when the folder is a backup (`backup.json`), false for a plain vault folder.
+    public var isBackup: Bool
+    /// The backup's last run (`backup.json`), when it is one.
+    public var backupUpdated: Date?
+    /// Note folders with at least one revision.
+    public var notes: Int
+    public var revisions: Int
+    public var attachments: Int
+    public var keyFiles: Int
+    /// Bytes of every file a restore copies.
+    public var bytes: Int
+    /// The newest revision's time, from its file name's clock (format.md §4):
+    /// the device's clock when it was written, so a device whose clock ran
+    /// ahead can make it lie in the future.
+    public var newestRevision: Date?
+}
+
+/// What `Backup.writeArchive` wrote.
+public struct ArchiveReport: Encodable, Hashable, Sendable {
+    public var archive: String
+    public var vaultId: String
+    public var files: Int
+    public var bytes: Int
+    public var sha256: String
+}
+
+/// Copies of a vault: an incremental backup folder, restore from it, and a
+/// single tar archive. All of it handles only the encrypted files; nothing
+/// is ever decrypted to disk. See docs/cli.md "Backup and restore".
+///
+/// A backup folder is itself a vault (open it with `--vault DIR`) plus:
+///
+/// ```
+/// DIR/backup.json                 vault id, SHA-256 and size of every file
+/// DIR/versions/<UTC time>/...     previous copies of files a run replaced
+/// ```
+public enum Backup {
+    static let versionsName = "versions"
+    static let restoreMarker = ".sempere-restore.json"
+
+    /// A restored file that does not match `backup.json`.
+    private struct Damaged: Error {}
+    /// A file in a backup folder that `backup.json` does not list.
+    private struct Unlisted: Error {}
+
+    // MARK: - Listing
+
+    /// Relative paths of the vault's format files: `vault.json`,
+    /// `reencrypt-journal.age` (format.md §15.8), `settings.age` (§13), the
+    /// passphrase copy `keys/recovery-*.key.age` (§15.11), the epoch records
+    /// `epochs/*.epoch.age` (§15.6), `notebooks/*.notebook.age` (§14),
+    /// `notes/<id>/<revision>`.
+    /// Temporary and unknown files are skipped.
+    static func formatFiles(in root: URL) throws -> [String] {
+        var out: [String] = []
+        for name in [Vault.manifestName, Vault.journalName, SharedSettings.fileName] {
+            let u = root.appendingPathComponent(name)
+            if FileIO.exists(u) && !FileIO.isDirectory(u) { out.append(name) }
+        }
+        let keys = root.appendingPathComponent(Vault.keysName)
+        for e in try FileIO.entries(keys)
+        where isKeyFileName(e) && !FileIO.isDirectory(keys.appendingPathComponent(e)) {
+            out.append("\(Vault.keysName)/\(e)")
+        }
+        let epochs = root.appendingPathComponent(Vault.epochsName)
+        for e in try FileIO.entries(epochs)
+        where Vault.isEpochRecordFileName(e) && !FileIO.isDirectory(epochs.appendingPathComponent(e)) {
+            out.append("\(Vault.epochsName)/\(e)")
+        }
+        let notebooks = root.appendingPathComponent(NotebookRecords.folderName)
+        for e in try FileIO.entries(notebooks)
+        where NotebookRecords.id(ofFileName: e) != nil && !FileIO.isDirectory(notebooks.appendingPathComponent(e)) {
+            out.append("\(NotebookRecords.folderName)/\(e)")
+        }
+        let notes = root.appendingPathComponent(Vault.notesName)
+        for d in try FileIO.entries(notes) where Vault.isNoteDirectoryName(d) {
+            let dir = notes.appendingPathComponent(d)
+            guard FileIO.isDirectory(dir) else { continue }
+            for f in try FileIO.entries(dir) {
+                guard let n = RevisionName(f), n.filename == f, !FileIO.isDirectory(dir.appendingPathComponent(f))
+                else { continue }
+                out.append("\(Vault.notesName)/\(d)/\(f)")
+            }
+            // Attachment blobs (format.md §8.1.2): write-once like revisions.
+            let att = dir.appendingPathComponent(Vault.attachmentsName)
+            for f in try FileIO.entries(att) where isBlobFileName(f) && !FileIO.isDirectory(att.appendingPathComponent(f)) {
+                out.append("\(Vault.notesName)/\(d)/\(Vault.attachmentsName)/\(f)")
+            }
+        }
+        return out
+    }
+
+    /// The most a reader takes of the format file at `path` (relative to a
+    /// vault or backup root, possibly under `versions/<time>/`), by kind:
+    /// backup and vault folders may come from anywhere (format.md §9).
+    static func maxBytes(forPath path: String) -> Int {
+        let parts = path.split(separator: "/").map(String.init)
+        guard let last = parts.last else { return BoundedRead.maxRevisionBytes }
+        if last == Vault.manifestName || last == Vault.journalName { return BoundedRead.maxManifestBytes }
+        if parts.count == 1, last == SharedSettings.fileName { return SharedSettings.maxFileBytes }
+        if parts.count >= 2, parts[parts.count - 2] == Vault.keysName { return BoundedRead.maxSmallFileBytes }
+        if parts.count >= 2, parts[parts.count - 2] == Vault.epochsName { return EpochRecord.maxBytes }
+        if parts.count >= 2, parts[parts.count - 2] == NotebookRecords.folderName { return NotebookRecords.maxFileBytes }
+        if parts.count >= 2, parts[parts.count - 2] == Vault.attachmentsName { return BoundedRead.maxBlobFileBytes }
+        return BoundedRead.maxRevisionBytes
+    }
+
+    /// Reads the format file at `path` under `root` within its kind's limit.
+    static func readFormatFile(_ root: URL, _ path: String) throws -> Data {
+        try FileIO.read(url(root, path), maxBytes: maxBytes(forPath: path))
+    }
+
+    /// `<64 lowercase hex>.<kind>.age`, kind 1–16 lowercase ASCII letters or
+    /// digits (format.md §8.1.2); anything else in `att/` is an unknown file.
+    static func isBlobFileName(_ name: String) -> Bool { BlobName.parse(name) != nil }
+
+    /// Whether `path` is an attachment blob, which a backup never prunes:
+    /// blob collection is per device and per note (format.md §8.1.6), not
+    /// something a backup can prove from the files it sees.
+    static func isBlobPath(_ path: String) -> Bool {
+        let parts = path.split(separator: "/")
+        return parts.count == 4 && parts[0] == Vault.notesName[...] && parts[2] == Vault.attachmentsName[...]
+    }
+
+    /// A `keys/` entry is any `<stem>.key.age`: whatever the stem (an `age1…`
+    /// recipient, or the hash name post-quantum recipients use, since their
+    /// public key is too long for a file name), so key files of a newer
+    /// recipient type are never skipped. Temporary files are hidden.
+    static func isKeyFileName(_ name: String) -> Bool {
+        let suffix = ".key.age"
+        return name.hasSuffix(suffix) && name.count > suffix.count && !name.hasPrefix(".")
+    }
+
+    /// Whether `path` from a (possibly hostile) `backup.json` stays inside the
+    /// backup: relative, `/`-separated, no empty, `.` or `..` component.
+    static func isSafeRelativePath(_ path: String) -> Bool {
+        guard !path.isEmpty, !path.hasPrefix("/"), !path.contains("\\"), !path.contains("\0") else { return false }
+        return path.split(separator: "/", omittingEmptySubsequences: false)
+            .allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+    }
+
+    static func url(_ root: URL, _ path: String) -> URL {
+        path.split(separator: "/").reduce(root) { $0.appendingPathComponent(String($1)) }
+    }
+
+
+    static func fileSize(_ url: URL) -> Int? {
+        FileIO.size(url).map { Int($0) }
+    }
+
+    /// SHA-256 (lowercase hex) and size of the format file at `path` under
+    /// `root`, streamed within its kind's limit (`maxBytes(forPath:)`).
+    /// Symbolic links below `root` are not followed (a backup or restore
+    /// folder may sit on storage others write to, security review S3)
+    /// unless `followLinks`, which only the source vault uses (format.md §9:
+    /// links are followed in a vault).
+    static func digest(_ root: URL, _ path: String, followLinks: Bool = false) throws -> (sha256: String, size: Int) {
+        let limit = Int64(maxBytes(forPath: path))
+        let d = followLinks ? try FileDigest.sha256(of: url(root, path), maxBytes: limit)
+            : try FileDigest.sha256(under: root, path, maxBytes: limit)
+        return (d.hex, Int(d.size))
+    }
+
+    /// The format file at `path` under `root`, opened for reading: no
+    /// symbolic link below `root` is followed unless `followLinks` (see `digest`).
+    static func openFormatFile(_ root: URL, _ path: String, followLinks: Bool) throws -> FileHandle {
+        followLinks ? try BoundedRead.openRegularFile(url(root, path)) : try BoundedRead.openRegularFile(under: root, path)
+    }
+
+    /// Copies the regular file `path` under `root` to `dst` without holding it in memory
+    /// (attachment blobs reach 1 GiB): 1 MiB pieces go to a temporary file in
+    /// `dst`'s folder while being hashed, the file is flushed to disk
+    /// (`fsync`), `check` sees its SHA-256 and size, and only then is it put
+    /// in place (`FileIO.placeNew`, or `place` when `replacing`). The copy is
+    /// then read back from disk and must hash the same, or it is removed.
+    ///
+    /// - Parameter check: throws to refuse the copy; nothing is placed.
+    /// - Returns: the SHA-256 and size of what was copied.
+    /// - Throws: `VaultError.fileTooLarge` past `maxBytes`, `.alreadyExists`
+    ///   when not `replacing` and `dst` exists, `.io`, or what `check` throws.
+    @discardableResult
+    /// - Parameter followLinks: whether a symbolic link below `root` is
+    ///   followed (only for the source vault; see `digest`).
+    static func copyVerified(from root: URL, _ path: String, followLinks: Bool, to dst: URL, replacing: Bool,
+                             maxBytes: Int,
+                             check: (_ sha256: String, _ size: Int) throws -> Void = { _, _ in }) throws
+        -> (sha256: String, size: Int)
+    {
+        let src = url(root, path)
+        let dir = dst.deletingLastPathComponent()
+        // Folders this call creates, deepest first: removed again (when
+        // still empty) if `check` refuses the copy, so a refused file leaves
+        // nothing behind.
+        var created: [URL] = []
+        var d = dir
+        while !FileIO.exists(d), d.path != "/", !d.path.isEmpty {
+            created.append(d)
+            d = d.deletingLastPathComponent()
+        }
+        try FileIO.createDirectory(dir)
+        let input = try openFormatFile(root, path, followLinks: followLinks)
+        defer { try? input.close() }
+        let tmp = FileIO.tempURL(in: dir)
+        var hasher = SHA256()
+        var size = 0
+        try FileIO.writeNewFile(tmp) { write in
+            while true {
+                let piece: Data
+                do { piece = try autoreleasing { try input.read(upToCount: 1 << 20) ?? Data() } } catch {
+                    throw VaultError.io("read \(src.path): \(error)")
+                }
+                if piece.isEmpty { break }
+                size += piece.count
+                guard size <= maxBytes else { throw VaultError.fileTooLarge(src.path, limit: maxBytes) }
+                hasher.update(data: piece)
+                try write(piece)
+            }
+        }
+        let hash = Hex.encode(hasher.finalize())
+        do { try check(hash, size) } catch {
+            try? FileIO.remove(tmp)
+            for c in created where (try? FileManager.default.contentsOfDirectory(atPath: c.path))?.isEmpty == true {
+                try? FileManager.default.removeItem(at: c)
+            }
+            throw error
+        }
+        if replacing { try FileIO.place(tmp, at: dst) } else { try FileIO.placeNew(tmp, at: dst) }
+        let back = try? FileDigest.sha256(of: dst, maxBytes: Int64(size))
+        guard back?.hex == hash, back?.size == Int64(size) else {
+            try? FileIO.remove(dst)
+            throw VaultError.io("\(dst.path): the copy does not read back identical (SHA-256 differs)")
+        }
+        return (hash, size)
+    }
+
+    /// Removes `.sempere-tmp-*` files an interrupted run left in `dir` and
+    /// its subdirectories. They are never complete files.
+    static func removeLeftoverTemps(under dir: URL) {
+        guard let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil) else { return }
+        for case let u as URL in walker where u.lastPathComponent.hasPrefix(FileIO.tempPrefix) {
+            try? FileIO.remove(u)
+        }
+    }
+
+    /// Whether a run that wrote `sinceSave` files since `backup.json` was
+    /// last saved should save it again, the index holding `indexed` entries.
+    /// Each save rewrites the whole index, so the interval grows with it (a
+    /// twentieth of the index, at least 100 files): a first run over F files
+    /// costs O(F) in saves, not O(F²). An interruption loses at most that
+    /// many index entries; the next run hashes those files against the
+    /// source before trusting them (the size shortcut needs an entry).
+    static func isSaveDue(sinceSave: Int, indexed: Int) -> Bool {
+        sinceSave >= max(100, indexed / 20)
+    }
+
+    static func stamp(_ d: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withYear, .withMonth, .withDay, .withTime, .withTimeZone]
+        return f.string(from: d)
+    }
+
+    // MARK: - Backup
+
+    /// Brings the backup folder `dest` up to date with `source`.
+    ///
+    /// Copies files the backup lacks, each written atomically and read back
+    /// to compare its SHA-256. Revision files already present are skipped
+    /// when size and index entry match (they are write-once); a file whose
+    /// content changed (`vault.json`, the rewrap journal, `keys/`, or every
+    /// revision after a recipient change) is replaced and its previous copy
+    /// kept under `versions/<time>/`. Nothing is deleted except by
+    /// `options.prune` (see `BackupOptions`). Safe to interrupt and rerun.
+    ///
+    /// - Throws: `BackupError` for an unusable destination, `VaultError.locked`
+    ///   for `prune` without a readable source. Per-file failures are in the
+    ///   report, not thrown.
+    public static func run(source: Vault, to dest: URL, options: BackupOptions = BackupOptions()) throws -> BackupReport {
+        do { return try runCopying(source: source, to: dest, options: options) } catch let stop as HookStop {
+            throw stop.error
+        }
+    }
+
+    /// What `options.afterEachFile` threw, carried past the per-file catch of
+    /// `VaultError` so that it stops the run whatever its type.
+    private struct HookStop: Error {
+        var error: any Error
+    }
+
+    private static func runCopying(source: Vault, to dest: URL, options: BackupOptions) throws -> BackupReport {
+        guard !source.url.overlaps(dest) else {
+            throw BackupError.overlapping("the backup folder and the vault overlap: \(dest.path), \(source.url.path)")
+        }
+        if options.prune { _ = try source.requireReadable() }
+        let vaultId = source.vaultId.uuidString.lowercased()
+        let manifestURL = dest.appendingPathComponent(BackupManifest.fileName)
+        var manifest: BackupManifest
+        if FileIO.exists(manifestURL) {
+            manifest = try BackupManifest.read(manifestURL)
+            guard manifest.vaultId == vaultId else { throw BackupError.otherVault(path: dest.path, vaultId: manifest.vaultId) }
+        } else {
+            // An unplugged drive's folder is never created on the disk the mount point is on.
+            if FolderReachability.isOnAbsentVolume(dest.path) { throw BackupError.destinationUnavailable(dest.path) }
+            // Hidden entries count: in iCloud Drive `.<name>.icloud` stands for an evicted file, so a folder
+            // holding only those is another backup or vault, not an empty one.
+            let present = try FileIO.entries(dest).filter(BackupDestination.countsAsContent)
+            guard present.isEmpty else { throw BackupError.notABackupDirectory(dest.path) }
+            try FileIO.createDirectory(dest)
+            manifest = BackupManifest(format: BackupManifest.formatIdentifier, vaultId: vaultId, created: options.now,
+                                      updated: options.now, files: [:])
+            try manifest.write(to: manifestURL)
+        }
+        removeLeftoverTemps(under: dest)
+
+        var report = BackupReport(vaultId: vaultId, destination: dest.path)
+        var versionDir: String?
+        var sinceSave = 0
+        /// The folder is still the one this run started in: its `backup.json` is there. Checked before every
+        /// file, so an unplugged drive stops the run rather than being recreated by the next file's folders.
+        func requireDestination() throws {
+            guard FileIO.exists(manifestURL) else { throw BackupError.destinationGone(dest.path) }
+        }
+        func save() throws {
+            try requireDestination()
+            manifest.updated = options.now
+            try manifest.write(to: manifestURL)
+            sinceSave = 0
+        }
+        func wrote(_ path: String, _ copy: (sha256: String, size: Int)) throws {
+            manifest.files[path] = .init(sha256: copy.sha256, size: copy.size)
+            sinceSave += 1
+            if isSaveDue(sinceSave: sinceSave, indexed: manifest.files.count) { try save() }
+            do { try options.afterEachFile?(path) } catch { throw HookStop(error: error) }
+        }
+        /// Keeps the backup's current copy of `path` under versions/<time>/.
+        func keepPrevious(_ path: String) throws {
+            let folder: String
+            if let versionDir {
+                folder = versionDir
+            } else {
+                var name = stamp(options.now)
+                var n = 1
+                while FileIO.exists(url(dest, "\(versionsName)/\(name)")) { n += 1; name = "\(stamp(options.now))-\(n)" }
+                folder = "\(versionsName)/\(name)"
+                versionDir = folder
+            }
+            let vpath = "\(folder)/\(path)"
+            try refuseLinks(vpath)
+            let copy = try copyVerified(from: dest, path, followLinks: false, to: url(dest, vpath), replacing: false,
+                                        maxBytes: maxBytes(forPath: path))
+            report.versioned.append(vpath)
+            try wrote(vpath, copy)
+        }
+
+        /// Throws when a folder on the way to `path` in the backup is a
+        /// symbolic link: nothing is read or written through it.
+        func refuseLinks(_ path: String) throws {
+            if let link = BoundedRead.firstLink(under: dest, path), link != path {
+                throw VaultError.io("\(url(dest, link).path) is a symbolic link; not followed")
+            }
+        }
+
+        // Interrupted mid-run, the index may be stale: whatever is on disk
+        // is checked against the source by hash before it is trusted.
+        defer { try? save() }
+        let sourceFiles = try formatFiles(in: source.url)
+        // A recipient change rewrites revision files in place, and replacing one
+        // key with another leaves their size unchanged (format.md §3.3). It writes
+        // the journal and vault.json before any revision, and vault.json is the
+        // last file a backup run copies: if either differs from what the backup
+        // holds, sizes prove nothing and every file is compared by hash.
+        var trustSizes = !options.checksum
+        if trustSizes {
+            let sourceManifest = try? readFormatFile(source.url, Vault.manifestName)
+            if sourceManifest.map(FileDigest.sha256) != manifest.files[Vault.manifestName]?.sha256
+                || sourceFiles.contains(Vault.journalName) || FileIO.exists(url(dest, Vault.journalName)) {
+                trustSizes = false
+            }
+        }
+        // Revisions first, the small mutable files last, so a backup whose
+        // run was cut short never holds a vault.json newer than its notes.
+        // The epoch record goes before the vault.json that names it (format.md §15.6); notebook records
+        // (§14) are write-once like revisions.
+        let ordered = sourceFiles.filter { $0.hasPrefix(Vault.notesName + "/") }
+            + sourceFiles.filter { $0.hasPrefix(NotebookRecords.folderName + "/") }
+            + sourceFiles.filter { $0.hasPrefix(Vault.epochsName + "/") }
+            + sourceFiles.filter { $0.hasPrefix(Vault.keysName + "/") }
+            + [SharedSettings.fileName, Vault.journalName, Vault.manifestName].filter(sourceFiles.contains)
+        for path in ordered {
+            try requireDestination()
+            do {
+                let src = url(source.url, path)
+                let dst = url(dest, path)
+                let isRevision = path.hasPrefix(Vault.notesName + "/")
+                try refuseLinks(path)
+                if BoundedRead.firstLink(under: dest, path) == path {
+                    // A symbolic link where the backup's copy should be: never
+                    // read, hashed or versioned (it may point at any local
+                    // file), but replaced by the vault's copy (the rename
+                    // replaces the link itself) and reported.
+                    let copy = try copyVerified(from: source.url, path, followLinks: true, to: dst, replacing: true,
+                                                maxBytes: maxBytes(forPath: path))
+                    report.replaced.append(path)
+                    report.errors.append(.init(path: path, message: "was a symbolic link in the backup folder (not "
+                                                   + "followed); replaced with the vault's copy"))
+                    try wrote(path, copy)
+                } else if FileIO.exists(dst) {
+                    if isRevision, trustSizes, let entry = manifest.files[path],
+                       let size = fileSize(src), entry.size == size, fileSize(dst) == size {
+                        report.unchanged += 1
+                        continue
+                    }
+                    let theirs = try digest(source.url, path, followLinks: true)
+                    if try digest(dest, path) == theirs {
+                        manifest.files[path] = .init(sha256: theirs.sha256, size: theirs.size)
+                        report.unchanged += 1
+                        continue
+                    }
+                    try keepPrevious(path)
+                    let copy = try copyVerified(from: source.url, path, followLinks: true, to: dst, replacing: true,
+                                                maxBytes: maxBytes(forPath: path))
+                    report.replaced.append(path)
+                    try wrote(path, copy)
+                } else {
+                    let copy = try copyVerified(from: source.url, path, followLinks: true, to: dst, replacing: false,
+                                                maxBytes: maxBytes(forPath: path))
+                    report.copied.append(path)
+                    try wrote(path, copy)
+                }
+            } catch let e as VaultError {
+                report.errors.append(.init(path: path, message: "\(e)"))
+            }
+        }
+
+        // A finished re-encryption removes its journal (format.md §15.8): so
+        // does the backup, keeping its last copy under versions/.
+        if !sourceFiles.contains(Vault.journalName), FileIO.exists(url(dest, Vault.journalName))
+            || BoundedRead.firstLink(under: dest, Vault.journalName) != nil {
+            do {
+                if BoundedRead.firstLink(under: dest, Vault.journalName) == nil { try keepPrevious(Vault.journalName) }
+                try FileIO.remove(url(dest, Vault.journalName))
+                manifest.files[Vault.journalName] = nil
+            } catch let e as VaultError {
+                report.errors.append(.init(path: Vault.journalName, message: "\(e)"))
+            }
+        }
+
+        // Revision files the source no longer has: compaction, or loss.
+        let present = Set(sourceFiles)
+        let goneAll = try formatFiles(in: dest).filter { $0.hasPrefix(Vault.notesName + "/") && !present.contains($0) }
+        let gone = goneAll.filter { !isBlobPath($0) }
+        report.kept += goneAll.filter(isBlobPath).sorted()
+        if options.prune && !gone.isEmpty {
+            let backupVault = try? Vault.open(at: dest, identities: source.unlockIdentities)
+            let byNote = Dictionary(grouping: gone) { $0.split(separator: "/")[1] }
+            for (note, paths) in byNote.sorted(by: { $0.key < $1.key }) {
+                let allowed = prunable(note: String(note), paths: paths, source: source, backup: backupVault,
+                                       backupHolds: { backupHolds($0, source: source, dest: dest) })
+                for path in paths.sorted() {
+                    if allowed.contains(path) {
+                        do {
+                            try refuseLinks(path)
+                            try FileIO.remove(url(dest, path))
+                            manifest.files[path] = nil
+                            report.pruned.append(path)
+                        } catch let e as VaultError {
+                            report.errors.append(.init(path: path, message: "\(e)"))
+                        }
+                    } else {
+                        report.kept.append(path)
+                    }
+                }
+            }
+        } else {
+            report.kept += gone.sorted()
+        }
+        // Only a run without file errors counts as a backup (an interrupted
+        // one throws before this line and leaves `completed` as it was).
+        if report.errors.isEmpty { manifest.completed = options.now }
+        // Drop index entries for files that are gone from the mirror and
+        // that this run did not delete (removed by hand): verify reports them.
+        try save()
+        return report
+    }
+
+    /// Whether the backup holds `path` byte for byte as the source does. The
+    /// index is not enough: a copy damaged or removed since it was written
+    /// must not count as the snapshot that justifies deleting other files.
+    static func backupHolds(_ path: String, source: Vault, dest: URL) -> Bool {
+        guard BoundedRead.firstLink(under: dest, path) == nil, let mine = try? digest(dest, path),
+              let theirs = try? digest(source.url, path, followLinks: true) else { return false }
+        return mine == theirs
+    }
+
+    /// The paths (all under `notes/<note>/`, absent from the source) that
+    /// compaction allows deleting: covered by a snapshot that both the source
+    /// and the backup hold, identically (format.md §5.3, retention already
+    /// applied by the source's compaction). Anything unreadable is kept.
+    static func prunable(note: String, paths: [String], source: Vault, backup: Vault?,
+                         backupHolds: (String) -> Bool) -> Set<String> {
+        guard let id = UUID(uuidString: note), let names = try? source.revisionNames(of: id) else { return [] }
+        let epoch = Date(timeIntervalSince1970: 0)
+        // Only snapshots the backup holds identically count, and coverage needs
+        // only their `included` and `wall`: deltas are not read, and stroke
+        // geometry is not decoded (`.withoutStrokePoints`).
+        let cover = names
+            .filter { $0.kind == .snapshot && backupHolds("\(Vault.notesName)/\(note)/\($0.filename)") }
+            .compactMap { try? source.readRevision(noteId: id, name: $0, detail: .withoutStrokePoints) }
+            .compactMap(SnapshotCoverage.init)
+        guard !cover.isEmpty else { return [] }
+        var out = Set<String>()
+        for path in paths {
+            guard let name = RevisionName(String(path.split(separator: "/").last ?? "")) else { continue }
+            var snaps = cover
+            if name.kind == .snapshot {
+                // Its coverage comes from the backup's own copy.
+                guard let backup, let rev = try? backup.readRevision(noteId: id, name: name, detail: .withoutStrokePoints),
+                      var own = SnapshotCoverage(rev) else { continue }
+                own.wall = epoch
+                snaps.append(own)
+            }
+            if CompactionPlanner.deletable(names: [name], wall: [name: epoch], snapshots: snaps, retention: 0,
+                                           now: Date()).contains(name) {
+                out.insert(path)
+            }
+        }
+        return out
+    }
+
+    // MARK: - Verify
+
+    /// Checks a backup folder: every file in `backup.json` is present with
+    /// its recorded SHA-256 and size, and the mirrored vault passes
+    /// `Vault.verify()`, which with `identities` decrypts and tag-checks
+    /// every revision. Never throws for problems; they are in the report.
+    public static func verify(at dir: URL, identities: [any AgeIdentity] = []) -> BackupVerifyReport {
+        var report = BackupVerifyReport()
+        let manifestURL = dir.appendingPathComponent(BackupManifest.fileName)
+        var manifest: BackupManifest?
+        if FileIO.exists(manifestURL) {
+            do { manifest = try BackupManifest.read(manifestURL) } catch { report.backupProblems.append("\(error)") }
+        } else {
+            report.backupProblems.append("no \(BackupManifest.fileName): not a backup folder")
+        }
+        if let manifest {
+            for (path, entry) in manifest.files.sorted(by: { $0.key < $1.key }) {
+                guard isSafeRelativePath(path) else {
+                    report.files.append(.init(path: path, status: .modified,
+                                              detail: "backup.json lists a path outside the backup; not read"))
+                    continue
+                }
+                let u = url(dir, path)
+                guard FileIO.exists(u) else {
+                    report.files.append(.init(path: path, status: .missing, detail: nil))
+                    continue
+                }
+                do {
+                    let d = try digest(dir, path)
+                    if d.size != entry.size || d.sha256 != entry.sha256 {
+                        report.files.append(.init(path: path, status: .modified,
+                                                  detail: "\(d.size) bytes, expected \(entry.size); SHA-256 differs"))
+                    } else {
+                        report.files.append(.init(path: path, status: .ok, detail: nil))
+                    }
+                } catch {
+                    report.files.append(.init(path: path, status: .missing, detail: "\(error)"))
+                }
+            }
+            var onDisk = (try? formatFiles(in: dir)) ?? []
+            if let walker = FileManager.default.enumerator(at: dir.appendingPathComponent(versionsName),
+                                                          includingPropertiesForKeys: [.isRegularFileKey]) {
+                let base = dir.canonicalPath
+                for case let u as URL in walker where !FileIO.isDirectory(u) {
+                    let p = u.canonicalPath
+                    if p.hasPrefix(base + "/") { onDisk.append(String(p.dropFirst(base.count + 1))) }
+                }
+            }
+            for path in onDisk.sorted() where manifest.files[path] == nil {
+                report.files.append(.init(path: path, status: .unindexed, detail: nil))
+            }
+            if let vid = UUID(uuidString: manifest.vaultId), let v = try? Vault.open(at: dir), v.vaultId != vid {
+                report.backupProblems.append("backup.json names vault \(manifest.vaultId) but vault.json is \(v.vaultId)")
+            }
+        }
+        do {
+            let vault = try Vault.open(at: dir, identities: identities)
+            report.decrypted = vault.canRead
+            report.vault = vault.verify()
+        } catch {
+            report.vaultProblem = "\(error)"
+        }
+        return report
+    }
+
+    // MARK: - Restore
+
+    /// Copies the vault held in `backup` (a backup folder, or any vault
+    /// folder) to `target`, a new `*.sempere` folder, then verifies it.
+    ///
+    /// Every file is checked against `backup.json` when there is one; a file
+    /// that does not match, or that it does not list, is not restored and is
+    /// reported. No symbolic link in `backup` is followed: a file reached
+    /// through one is reported and not restored (security review S3). `vault.json` is
+    /// written last, so an interrupted restore is not mistaken for a vault;
+    /// rerunning the same restore resumes it.
+    ///
+    /// - Parameter protecting: folders the restore must not touch (the vault
+    ///   the caller has open): a target that is one of them, lies inside one
+    ///   or holds one throws `BackupError.protectedTarget` before anything is
+    ///   written.
+    public static func restore(from backup: URL, to target: URL, identities: [any AgeIdentity] = [],
+                               protecting: [URL] = []) throws -> RestoreReport
+    {
+        let vaultId = try checkRestoreTarget(target, from: backup, protecting: protecting)
+        let manifestURL = backup.appendingPathComponent(BackupManifest.fileName)
+        let manifest = FileIO.exists(manifestURL) ? try BackupManifest.read(manifestURL) : nil
+
+        let marker = target.appendingPathComponent(restoreMarker)
+        if !FileIO.exists(marker) {
+            try FileIO.createDirectory(target)
+            try FileIO.writeAtomically(Data("{\"vaultId\": \"\(vaultId)\"}\n".utf8), to: marker, replacing: true)
+        }
+        removeLeftoverTemps(under: target)
+
+        var report = RestoreReport()
+        let files = try formatFiles(in: backup).filter { $0 != Vault.manifestName } + [Vault.manifestName]
+        for path in files {
+            let entry = manifest?.files[path]
+            func matchesIndex(_ sha256: String, _ size: Int) throws {
+                if manifest != nil, entry == nil { throw Unlisted() }
+                if let entry, entry.sha256 != sha256 || entry.size != size { throw Damaged() }
+            }
+            do {
+                let src = url(backup, path), dst = url(target, path)
+                var source: (sha256: String, size: Int)?
+                if FileIO.exists(dst) {
+                    let d = try digest(backup, path)
+                    try matchesIndex(d.sha256, d.size)
+                    if let have = try? digest(target, path), have.sha256 == d.sha256 {
+                        report.alreadyPresent += 1
+                        continue
+                    }
+                    source = d
+                }
+                // Hashed while copied: a file that does not match the index
+                // (or changed since it was hashed above) is never placed.
+                try copyVerified(from: backup, path, followLinks: false, to: dst, replacing: true,
+                                 maxBytes: maxBytes(forPath: path)) { sha256, size in
+                    try matchesIndex(sha256, size)
+                    if let source, source.sha256 != sha256 || source.size != size {
+                        throw VaultError.io("\(src.path) changed while it was restored")
+                    }
+                }
+                report.restored.append(path)
+            } catch is Damaged {
+                report.errors.append(.init(path: path, message: "does not match backup.json (damaged); not restored"))
+            } catch is Unlisted {
+                report.errors.append(.init(path: path, message: "not listed in backup.json; not restored"))
+            } catch let e as VaultError {
+                report.errors.append(.init(path: path, message: "\(e)"))
+            }
+        }
+        // Files the backup recorded but no longer holds cannot be restored: say so.
+        let listed = Set(files)
+        for path in (manifest?.files.keys).map(Array.init) ?? []
+        where !path.hasPrefix(versionsName + "/") && !listed.contains(path) {
+            report.errors.append(.init(path: path, message: "listed in backup.json but missing from the backup"))
+        }
+        report.errors.sort { $0.path < $1.path }
+        if FileIO.exists(target.appendingPathComponent(Vault.manifestName)) {
+            for d in [Vault.keysName, Vault.notesName] { try FileIO.createDirectory(target.appendingPathComponent(d)) }
+            // With files missing the restore is unfinished: keep the marker so the
+            // same command can be run again against another copy of the backup.
+            if report.errors.isEmpty { try FileIO.remove(marker) }
+            let restored = try Vault.open(at: target, identities: identities)
+            report.verify = restored.verify()
+        }
+        return report
+    }
+
+    /// Checks that `backup` can be restored into `target` without writing
+    /// anything: `target` ends in `.sempere`, overlaps neither `backup` nor
+    /// any of `protecting`, and is new, empty or an unfinished restore of the
+    /// same vault; `backup` holds a backup or a vault. Returns the vault id.
+    ///
+    /// - Throws: `VaultError.invalidVaultName`, `BackupError.overlapping`,
+    ///   `.protectedTarget`, `.nothingToRestore`, `.targetNotEmpty`, or what
+    ///   opening `backup`'s `vault.json` throws.
+    @discardableResult
+    public static func checkRestoreTarget(_ target: URL, from backup: URL, protecting: [URL] = []) throws -> String {
+        guard target.lastPathComponent.hasSuffix(".sempere"), target.lastPathComponent.count > ".sempere".count else {
+            throw VaultError.invalidVaultName(target.lastPathComponent)
+        }
+        if protecting.contains(where: { $0.overlaps(target) }) {
+            throw BackupError.protectedTarget(target.path)
+        }
+        guard !backup.overlaps(target) else {
+            throw BackupError.overlapping("the restore target and the backup overlap: \(target.path), \(backup.path)")
+        }
+        guard FileIO.exists(backup.appendingPathComponent(BackupManifest.fileName))
+                || FileIO.exists(backup.appendingPathComponent(Vault.manifestName)) else {
+            throw BackupError.nothingToRestore(backup.path)
+        }
+        let vaultId = try Vault.open(at: backup).vaultId.uuidString.lowercased()   // validates vault.json
+        let marker = target.appendingPathComponent(restoreMarker)
+        if FileIO.exists(marker) {
+            let data = try FileIO.read(marker, maxBytes: BoundedRead.maxSmallFileBytes)
+            let recorded = (try? JSONSerialization.jsonObject(with: data) as? [String: String])?["vaultId"]
+            guard recorded == vaultId else { throw BackupError.targetNotEmpty(target.path) }
+        } else if try !FileIO.entries(target).filter({ !$0.hasPrefix(".") }).isEmpty {
+            throw BackupError.targetNotEmpty(target.path)
+        }
+        return vaultId
+    }
+
+    // MARK: - Status and preview
+
+    /// `a + b`, clamped at `Int.max` (sizes come from files that may be hostile).
+    static func saturatingAdd(_ a: Int, _ b: Int) -> Int {
+        let (sum, overflow) = max(a, 0).addingReportingOverflow(max(b, 0))
+        return overflow ? Int.max : sum
+    }
+
+    /// The state of the backup folder `dir` from its `backup.json`: last
+    /// run, notes, files and bytes. Reads nothing else and needs no key.
+    ///
+    /// - Throws: `BackupError.notABackupDirectory` without a `backup.json`,
+    ///   `.manifestUnreadable` for one that cannot be read.
+    public static func status(at dir: URL) throws -> BackupStatus {
+        let manifestURL = dir.appendingPathComponent(BackupManifest.fileName)
+        guard FileIO.exists(manifestURL) else { throw BackupError.notABackupDirectory(dir.path) }
+        let m = try BackupManifest.read(manifestURL)
+        var s = BackupStatus(vaultId: m.vaultId, created: m.created, updated: m.updated, completed: m.completed,
+                             notes: 0, files: 0, bytes: 0,
+                             versionFiles: 0, versionBytes: 0, totalBytes: 0)
+        var notes = Set<Substring>()
+        for (path, entry) in m.files {
+            if path.hasPrefix(versionsName + "/") {
+                s.versionFiles += 1
+                s.versionBytes = saturatingAdd(s.versionBytes, entry.size)
+                continue
+            }
+            s.files += 1
+            s.bytes = saturatingAdd(s.bytes, entry.size)
+            let parts = path.split(separator: "/")
+            if parts.count >= 3, parts[0] == Vault.notesName[...] { notes.insert(parts[1]) }
+        }
+        s.notes = notes.count
+        s.totalBytes = saturatingAdd(s.bytes, s.versionBytes)
+        return s
+    }
+
+    /// What `restore(from: dir, …)` would bring back, from the files in
+    /// `dir` (a backup folder, or any vault folder) without a key: notes,
+    /// revisions, attachments, bytes and the newest revision's time. Reads
+    /// `vault.json` and `backup.json`, and only lists the rest.
+    ///
+    /// - Throws: `BackupError.nothingToRestore` for a folder that holds
+    ///   neither file, `.manifestUnreadable`, or what opening `vault.json` throws.
+    public static func preview(of dir: URL) throws -> RestorePreview {
+        let manifestURL = dir.appendingPathComponent(BackupManifest.fileName)
+        guard FileIO.exists(manifestURL) || FileIO.exists(dir.appendingPathComponent(Vault.manifestName)) else {
+            throw BackupError.nothingToRestore(dir.path)
+        }
+        let manifest = FileIO.exists(manifestURL) ? try BackupManifest.read(manifestURL) : nil
+        let vault = try Vault.open(at: dir)
+        var p = RestorePreview(source: dir.path, vaultId: vault.vaultId.uuidString.lowercased(),
+                               isBackup: manifest != nil, backupUpdated: manifest?.updated, notes: 0, revisions: 0,
+                               attachments: 0, keyFiles: 0, bytes: 0, newestRevision: nil)
+        var notes = Set<Substring>()
+        var newest: Int64?
+        for path in try formatFiles(in: dir) {
+            p.bytes = saturatingAdd(p.bytes, fileSize(url(dir, path)) ?? 0)
+            let parts = path.split(separator: "/")
+            if parts.first == Vault.keysName[...] { p.keyFiles += 1; continue }
+            guard parts.count >= 3, parts[0] == Vault.notesName[...] else { continue }
+            if isBlobPath(path) { p.attachments += 1; continue }
+            guard let name = RevisionName(String(parts[2])) else { continue }
+            p.revisions += 1
+            notes.insert(parts[1])
+            newest = max(newest ?? name.hlc.millis, name.hlc.millis)
+        }
+        p.notes = notes.count
+        p.newestRevision = newest.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000) }
+        return p
+    }
+
+    // MARK: - Archive
+
+    /// Writes one uncompressed tar (POSIX ustar) of the vault's encrypted
+    /// files under `<vault name>.sempere/`, so `tar xf` gives back a vault
+    /// folder. The archive is written to a temporary file, read back and
+    /// checked member by member against the source hashes, then renamed into
+    /// place. Refuses an existing `file`.
+    public static func writeArchive(source: Vault, to file: URL, now: Date = Date()) throws -> ArchiveReport {
+        guard !FileIO.exists(file) else { throw VaultError.alreadyExists(file.path) }
+        guard !source.url.overlaps(file) else {
+            throw BackupError.overlapping("the archive would be inside the vault: \(file.path)")
+        }
+        let root = source.url.lastPathComponent
+        let paths = try formatFiles(in: source.url)
+        var expected: [String: String] = [:]
+        let dir = file.deletingLastPathComponent()
+        try FileIO.createDirectory(dir)
+        let tmp = dir.appendingPathComponent(FileIO.tempPrefix + UUID().uuidString.lowercased())
+        guard FileManager.default.createFile(atPath: tmp.path, contents: nil) else {
+            throw VaultError.io("cannot create \(tmp.path)")
+        }
+        do {
+            let out = try FileHandle(forWritingTo: tmp)
+            var writer = TarWriter(handle: out, mtime: now)
+            var dirs = Set<String>()
+            func ensureDirs(_ path: String) throws {
+                let parts = path.split(separator: "/").dropLast().map(String.init)
+                for i in parts.indices {
+                    let d = parts[...i].joined(separator: "/")
+                    if dirs.insert(d).inserted { try writer.directory(d) }
+                }
+            }
+            try writer.directory(root)
+            dirs.insert(root)
+            for d in [Vault.keysName, Vault.notesName] where dirs.insert("\(root)/\(d)").inserted {
+                try writer.directory("\(root)/\(d)")
+            }
+            for path in paths {
+                let member = "\(root)/\(path)"
+                try ensureDirs(member)
+                expected[member] = try writer.file(member, contentsOf: url(source.url, path),
+                                                   maxBytes: maxBytes(forPath: path))
+            }
+            try writer.finish()
+            try out.synchronize()
+            try out.close()
+
+            // Read back and compare before the archive takes its name.
+            let written = try TarReader.digests(of: tmp)
+            guard written.members.count == expected.count,
+                  written.members.allSatisfy({ expected[$0.path] == $0.sha256 }) else {
+                throw VaultError.io("\(file.path): the archive does not read back identical")
+            }
+            guard !FileIO.exists(file) else { throw VaultError.alreadyExists(file.path) }
+            try FileManager.default.moveItem(at: tmp, to: file)
+            try FileIO.syncDirectory(dir)
+            return ArchiveReport(archive: file.path, vaultId: source.vaultId.uuidString.lowercased(),
+                                 files: written.members.count, bytes: written.bytes, sha256: written.sha256)
+        } catch {
+            try? FileManager.default.removeItem(at: tmp)
+            if error is VaultError || error is BackupError { throw error }
+            throw VaultError.io("\(file.path): \(error)")
+        }
+    }
+}
+
+// MARK: - tar
+
+/// Writes POSIX ustar members: regular files (mode 0600) and directories
+/// (0700), owner 0, the given mtime. Names up to 255 bytes via the ustar
+/// prefix field.
+struct TarWriter {
+    let handle: FileHandle
+    let mtime: Date
+
+    mutating func directory(_ path: String) throws {
+        try handle.write(contentsOf: try Self.header(path + "/", size: 0, mode: 0o700, type: UInt8(ascii: "5"),
+                                                     mtime: mtime))
+    }
+
+    /// Writes the regular file at `url` as the member `path`, streamed in
+    /// 1 MiB pieces, and returns its SHA-256 (lowercase hex). A file larger
+    /// than `maxBytes`, or one that changes size while it is read, throws.
+    mutating func file(_ path: String, contentsOf url: URL, maxBytes: Int) throws -> String {
+        let input = try BoundedRead.openRegularFile(url)
+        defer { try? input.close() }
+        let end: UInt64
+        do {
+            end = try input.seekToEnd()
+            try input.seek(toOffset: 0)
+        } catch {
+            throw VaultError.io("read \(url.path): \(error)")
+        }
+        guard end <= UInt64(max(maxBytes, 0)) else { throw VaultError.fileTooLarge(url.path, limit: maxBytes) }
+        let size = Int(end)
+        try handle.write(contentsOf: try Self.header(path, size: size, mode: 0o600, type: UInt8(ascii: "0"),
+                                                     mtime: mtime))
+        var hasher = SHA256()
+        var left = size
+        while left > 0 {
+            let piece: Data
+            do { piece = try autoreleasing { try input.read(upToCount: min(left, 1 << 20)) ?? Data() } } catch {
+                throw VaultError.io("read \(url.path): \(error)")
+            }
+            guard !piece.isEmpty else { throw VaultError.io("\(url.path) changed while it was archived") }
+            hasher.update(data: piece)
+            try autoreleasing { try handle.write(contentsOf: piece) }
+            left -= piece.count
+        }
+        let more: Data?
+        do { more = try input.read(upToCount: 1) } catch { throw VaultError.io("read \(url.path): \(error)") }
+        guard more?.isEmpty ?? true else { throw VaultError.io("\(url.path) changed while it was archived") }
+        let pad = (512 - size % 512) % 512
+        if pad > 0 { try handle.write(contentsOf: Data(count: pad)) }
+        return Hex.encode(hasher.finalize())
+    }
+
+    mutating func finish() throws { try handle.write(contentsOf: Data(count: 1024)) }
+
+    static func octal(_ v: Int, width: Int) -> [UInt8] {
+        let s = String(v, radix: 8)
+        return Array((String(repeating: "0", count: max(width - 1 - s.count, 0)) + s).utf8) + [0]
+    }
+
+    static func header(_ path: String, size: Int, mode: Int, type: UInt8, mtime: Date) throws -> Data {
+        var name = Array(path.utf8)
+        var prefix: [UInt8] = []
+        if name.count > 100 {
+            // Split at a "/" so that the prefix ≤ 155 and the name ≤ 100 bytes.
+            guard let cut = name.indices.reversed().first(where: { name[$0] == UInt8(ascii: "/") && $0 <= 155
+                                                                  && name.count - $0 - 1 <= 100 }) else {
+                throw VaultError.io("path too long for a tar archive: \(path)")
+            }
+            prefix = Array(name[..<cut])
+            name = Array(name[(cut + 1)...])
+        }
+        var h = [UInt8](repeating: 0, count: 512)
+        func put(_ bytes: [UInt8], at offset: Int) { for (i, b) in bytes.enumerated() { h[offset + i] = b } }
+        put(name, at: 0)
+        put(octal(mode, width: 8), at: 100)
+        put(octal(0, width: 8), at: 108)
+        put(octal(0, width: 8), at: 116)
+        put(octal(size, width: 12), at: 124)
+        put(octal(max(Int(mtime.timeIntervalSince1970), 0), width: 12), at: 136)
+        put(Array(repeating: UInt8(ascii: " "), count: 8), at: 148)
+        h[156] = type
+        put(Array("ustar".utf8) + [0], at: 257)
+        put(Array("00".utf8), at: 263)
+        put(prefix, at: 345)
+        let sum = h.reduce(0) { $0 + Int($1) }
+        put(octal(sum, width: 7) + [UInt8(ascii: " ")], at: 148)
+        return Data(h)
+    }
+}
+
+/// Reads the regular files of a ustar archive (what `TarWriter` writes).
+enum TarReader {
+    struct Member { var path: String; var data: Data }
+
+    /// One parsed 512-byte header block; nil for an all-zero block (the end
+    /// of the archive). `off` is the block's offset, for error messages.
+    static func header(_ block: ArraySlice<UInt8>, at off: Int) throws -> (path: String, size: Int, type: UInt8)? {
+        let base = block.startIndex
+        if block.allSatisfy({ $0 == 0 }) { return nil }
+        func field(_ o: Int, _ n: Int) -> String {
+            let slice = block[(base + o)..<(base + o + n)]
+            return String(decoding: slice.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        let stored = Int(field(148, 8).trimmingCharacters(in: .whitespaces), radix: 8)
+        var check = 0
+        for i in 0..<512 { check += (148..<156).contains(i) ? 32 : Int(block[base + i]) }
+        guard stored == check else { throw VaultError.io("tar header checksum mismatch at \(off)") }
+        guard let size = Int(field(124, 12).trimmingCharacters(in: .whitespaces), radix: 8), size >= 0 else {
+            throw VaultError.io("bad tar size at \(off)")
+        }
+        let name = field(0, 100), prefix = field(345, 155)
+        return (prefix.isEmpty ? name : prefix + "/" + name, size, block[base + 156])
+    }
+
+    static func isRegularFile(_ type: UInt8) -> Bool { type == UInt8(ascii: "0") || type == 0 }
+
+    static func files(_ tar: Data) throws -> [Member] {
+        let bytes = [UInt8](tar)
+        var out: [Member] = []
+        var off = 0
+        while off + 512 <= bytes.count {
+            guard let h = try header(bytes[off..<(off + 512)], at: off) else { break }
+            let start = off + 512
+            guard h.size <= bytes.count - start else { throw VaultError.io("truncated tar member \(h.path)") }
+            if isRegularFile(h.type) {
+                out.append(Member(path: h.path, data: Data(bytes[start..<(start + h.size)])))
+            }
+            off = start + (h.size + 511) / 512 * 512
+        }
+        return out
+    }
+
+    /// What `files` reads, without holding the archive in memory: the path
+    /// and SHA-256 of each regular-file member, read from `url` in pieces of
+    /// at most 1 MiB, plus the SHA-256 and size of the whole file.
+    static func digests(of url: URL) throws -> (members: [(path: String, sha256: String)], sha256: String, bytes: Int) {
+        let input = try BoundedRead.openRegularFile(url)
+        defer { try? input.close() }
+        var whole = SHA256()
+        var off = 0
+        /// Up to `n` bytes (fewer only at the end of the file), fed to `whole`.
+        func read(_ n: Int) throws -> Data {
+            var out = Data()
+            while out.count < n {
+                let piece: Data
+                do { piece = try autoreleasing { try input.read(upToCount: n - out.count) ?? Data() } } catch {
+                    throw VaultError.io("read \(url.path): \(error)")
+                }
+                if piece.isEmpty { break }
+                out.append(piece)
+            }
+            whole.update(data: out)
+            off += out.count
+            return out
+        }
+        var members: [(path: String, sha256: String)] = []
+        while true {
+            let at = off
+            let block = try read(512)
+            guard block.count == 512, let h = try header([UInt8](block)[...], at: at) else { break }
+            var hasher = SHA256()
+            var left = h.size
+            while left > 0 {
+                let piece = try read(min(left, 1 << 20))
+                guard !piece.isEmpty else { throw VaultError.io("truncated tar member \(h.path)") }
+                hasher.update(data: piece)
+                left -= piece.count
+            }
+            if isRegularFile(h.type) { members.append((h.path, Hex.encode(hasher.finalize()))) }
+            _ = try read((512 - h.size % 512) % 512)
+        }
+        while try !read(1 << 20).isEmpty {}
+        return (members, Hex.encode(whole.finalize()), off)
+    }
+}

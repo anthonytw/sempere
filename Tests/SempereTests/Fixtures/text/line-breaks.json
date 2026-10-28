@@ -1,0 +1,276 @@
+{
+ "comment": "Shared line-break fixtures (format.md §8.5.3, task E2): each text box with stored breaks, and the lines (scalar ranges, trimmed text, baselines) every renderer must produce. Synthetic text. Read by SempereRenderTests (CLI shaper), CLITests and the app's tests (CoreText).",
+ "cases": [
+  {
+   "name": "latin-styled",
+   "frame": [
+    72,
+    90,
+    240,
+    60
+   ],
+   "text": {
+    "font": "sans",
+    "size": 14,
+    "color": "#1A1A1AFF",
+    "runs": [
+     {
+      "t": "Lecture 3",
+      "b": true,
+      "size": 18
+     },
+     {
+      "t": "\nLinear maps and their kernels: a map is injective exactly when its kernel is trivial."
+     }
+    ],
+    "breaks": [
+     26,
+     47,
+     68,
+     84
+    ],
+    "lang": "en"
+   },
+   "lines": [
+    {
+     "range": [
+      0,
+      9
+     ],
+     "text": "Lecture 3",
+     "baseline": 107.1
+    },
+    {
+     "range": [
+      10,
+      26
+     ],
+     "text": "Linear maps and",
+     "baseline": 124.9
+    },
+    {
+     "range": [
+      26,
+      47
+     ],
+     "text": "their kernels: a map",
+     "baseline": 141.7
+    },
+    {
+     "range": [
+      47,
+      68
+     ],
+     "text": "is injective exactly",
+     "baseline": 158.5
+    },
+    {
+     "range": [
+      68,
+      84
+     ],
+     "text": "when its kernel",
+     "baseline": 175.3
+    },
+    {
+     "range": [
+      84,
+      95
+     ],
+     "text": "is trivial.",
+     "baseline": 192.1
+    }
+   ],
+   "height": 105.6
+  },
+  {
+   "name": "japanese",
+   "frame": [
+    40,
+    40,
+    180,
+    40
+   ],
+   "text": {
+    "font": "sans",
+    "size": 14,
+    "color": "#1A1A1AFF",
+    "runs": [
+     {
+      "t": "日本語のテキストは単語の間に空白がありません。行は文字の間で折り返されます。"
+     }
+    ],
+    "breaks": [
+     12,
+     24,
+     33
+    ],
+    "lang": "ja"
+   },
+   "lines": [
+    {
+     "range": [
+      0,
+      12
+     ],
+     "text": "日本語のテキストは単語の",
+     "baseline": 53.3
+    },
+    {
+     "range": [
+      12,
+      24
+     ],
+     "text": "間に空白がありません。行",
+     "baseline": 70.1
+    },
+    {
+     "range": [
+      24,
+      33
+     ],
+     "text": "は文字の間で折り返",
+     "baseline": 86.9
+    },
+    {
+     "range": [
+      33,
+      38
+     ],
+     "text": "されます。",
+     "baseline": 103.7
+    }
+   ],
+   "height": 67.2
+  },
+  {
+   "name": "arabic",
+   "frame": [
+    300,
+    200,
+    160,
+    40
+   ],
+   "text": {
+    "font": "sans",
+    "size": 14,
+    "color": "#1A1A1AFF",
+    "runs": [
+     {
+      "t": "مرحبا بالعالم، هذا نص عربي طويل يكتب من اليمين إلى اليسار."
+     }
+    ],
+    "breaks": [
+     15,
+     27,
+     47
+    ],
+    "lang": "ar",
+    "dir": "auto",
+    "align": "start"
+   },
+   "lines": [
+    {
+     "range": [
+      0,
+      15
+     ],
+     "text": "مرحبا بالعالم،",
+     "baseline": 213.3
+    },
+    {
+     "range": [
+      15,
+      27
+     ],
+     "text": "هذا نص عربي",
+     "baseline": 230.1
+    },
+    {
+     "range": [
+      27,
+      47
+     ],
+     "text": "طويل يكتب من اليمين",
+     "baseline": 246.9
+    },
+    {
+     "range": [
+      47,
+      58
+     ],
+     "text": "إلى اليسار.",
+     "baseline": 263.7
+    }
+   ],
+   "height": 67.2
+  },
+  {
+   "name": "tabs-empty-sizes",
+   "frame": [
+    10,
+    10,
+    200,
+    50
+   ],
+   "text": {
+    "font": "sans",
+    "size": 12,
+    "color": "#1A1A1AFF",
+    "runs": [
+     {
+      "t": "Tab\tthen words that wrap here\n\nEmpty paragraph above, "
+     },
+     {
+      "t": "mixed sizes",
+      "size": 20,
+      "i": true
+     },
+     {
+      "t": " end."
+     }
+    ],
+    "breaks": [
+     20,
+     54
+    ],
+    "align": "center"
+   },
+   "lines": [
+    {
+     "range": [
+      0,
+      20
+     ],
+     "text": "Tab\tthen words that",
+     "baseline": 21.4
+    },
+    {
+     "range": [
+      20,
+      29
+     ],
+     "text": "wrap here",
+     "baseline": 35.8
+    },
+    {
+     "range": [
+      31,
+      54
+     ],
+     "text": "Empty paragraph above,",
+     "baseline": 64.6
+    },
+    {
+     "range": [
+      54,
+      70
+     ],
+     "text": "mixed sizes end.",
+     "baseline": 86.6
+    }
+   ],
+   "height": 81.6
+  }
+ ]
+}

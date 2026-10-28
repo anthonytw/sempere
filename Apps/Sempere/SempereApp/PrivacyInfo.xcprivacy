@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sempere collects nothing and tracks nothing. Every API use behind the entries
+	     below is listed with file:line in 
+	     scripts/release-check.sh fails if the sources use a category not declared here. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!-- UserDefaults (CA92.1): the app's own per-device settings (eraser, paper, palette,
+		     layout, cache sizes), read and written only by the app; no app group suite. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array><string>CA92.1</string></array>
+		</dict>
+		<!-- File timestamps: modification dates of the app's own cache and export files
+		     in its container, to evict the oldest (C617.1); fstat of vault files in folders
+		     the user picked, to refuse anything but a regular file (3B52.1). -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array><string>3B52.1</string><string>C617.1</string></array>
+		</dict>
+		<!-- System boot time: ProcessInfo.systemUptime in the sync engine (Sources/SempereSync/Quarantine.swift,
+		     SyncEngine.stampUptime) measures the time between two reads of a file on a sync target, so a wall clock
+		     stepped forward cannot pass for elapsed time (35F9.1). It stays on the device, never sent anywhere. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array><string>35F9.1</string></array>
+		</dict>
+	</array>
+</dict>
+</plist>

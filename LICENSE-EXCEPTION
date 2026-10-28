@@ -1,0 +1,27 @@
+Additional permission under GNU GPL version 3 section 7 (the "App Store exception")
+
+This permission applies to the Sempere source code in this repository, which is licensed
+under the GNU General Public License, version 3 or (at your option) any later version.
+
+If you convey a covered work, in object code form only, through Apple's App Store,
+TestFlight, or another application distribution service operated by the maker of the
+platform the work runs on (a "Distribution Service"), the licensors of this Program grant
+you additional permission to convey that work under the terms and usage rules that the
+Distribution Service applies to applications, to the extent that those terms and rules would
+otherwise conflict with the conditions of the GNU GPL, provided that:
+
+  1. the Corresponding Source of the work is, at the same time, made available under the
+     GNU GPL version 3 or later, with this additional permission, from a public location that
+     you identify in the work's listing or description; and
+
+  2. you do not use this permission to restrict anyone's rights under the GNU GPL in
+     respect of the Corresponding Source.
+
+This additional permission applies only to conveying object code under a Distribution
+Service's terms. It does not relicense the source code, and it does not apply to third-party
+code that is part of a work but not part of this Program, which stays under its own license.
+
+As GPL version 3 section 7 allows, you may remove this additional permission from your copy
+of a covered work, or from any part of it; it then no longer applies to that copy or part.
+
+SPDX: GPL-3.0-or-later WITH LicenseRef-Sempere-App-Store-Exception

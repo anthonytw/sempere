@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- iPhone and iPad builds only (CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*] and [sdk=iphonesimulator*]); the Mac build uses Sempere.entitlements. The App Group holds only the quick voice note status the widgets show (VoiceNoteStatusStore, docs/quick-capture.md): no key, no note. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.io.github.anthonytw.sempere</string>
+	</array>
+</dict>
+</plist>

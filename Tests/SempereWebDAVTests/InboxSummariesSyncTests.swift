@@ -1,0 +1,879 @@
+import Age
+import Foundation
+import XCTest
+import VaultTestSupport
+@testable import Sempere
+@testable import SempereSync
+@testable import SempereWebDAV
+
+/// The capture inbox (format.md §11.4) and per-device published summaries
+/// (format.md §12.5) through the engine (docs/design/device-first-sync.md §5.1,
+/// §5.3), over every transport: the scenarios run in the subclasses below over
+/// `MemoryRemote`, `WebDAVSyncRemote` on `MockDAV`, `FolderRemote` (plain and
+/// in a simulated provider), `MemoryRemote` with every file evicted, and wsgidav.
+class InboxSummariesScenarioCase: SyncTestCase {
+    func transport() throws -> TransportUnderTest { throw XCTSkip("abstract") }
+    func tune(_ options: inout SyncOptions) {}
+
+    private(set) var t: TransportUnderTest!
+    private var label: String { t.kind }
+    let audio = Data((0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 7) })
+    let started = Date(timeIntervalSince1970: 1_790_000_000)
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        t = try transport()
+    }
+
+    /// B's key: A and B are two listed devices, each signing its own summaries file (format.md §12.5).
+    let identityB = pqIdentity()
+    func identity(of name: String) -> NativeIdentity { name == "B" ? identityB : identity }
+
+    /// The vault of `name`, opened as its device with its signing keys.
+    override func openVault(_ name: String) throws -> Vault {
+        try Vault.open(at: dir(name), identities: [identity(of: name)], signing: TestVaults.signing(identity(of: name)))
+    }
+
+    /// The vault device id of each folder name (what names its summaries file; revision names keep
+    /// `devA` / `devB`, the device states').
+    func device(_ name: String) -> DeviceID {
+        name == "A" || name == "B" ? DeviceID(TestVaults.device(identity(of: name)).id)! : DeviceID("cccccccc")!
+    }
+    var fileA: String { PublishedSummaries.deviceFileName(device("A")) }
+    var fileB: String { PublishedSummaries.deviceFileName(device("B")) }
+    func deviceState(_ name: String) -> URL { tmp.appendingPathComponent("device-\(name).json") }
+
+    @discardableResult
+    func run(_ name: String, via remote: (any SyncRemote)? = nil, locked: Bool = false, state: String? = nil,
+             _ edit: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
+        let exists = FileManager.default.fileExists(atPath: dir(name).appendingPathComponent("vault.json").path)
+        let v: Vault? = !exists ? nil : locked ? try Vault.open(at: dir(name)) : try openVault(name)
+        var o = SyncOptions(deviceLabel: name)
+        o.deviceID = device(name)
+        if !locked { o.firstPullIdentities = [identity(of: name)] }
+        tune(&o)
+        edit(&o)
+        return try SyncEngine(directory: dir(name), vault: v, remote: remote ?? t.remote,
+                              stateURL: tmp.appendingPathComponent("state-\(state ?? name).json"), options: o).run()
+    }
+
+    /// Runs until quiet (at most `rounds`); returns the last report.
+    @discardableResult
+    func settle(_ name: String, rounds: Int = 6, file: StaticString = #filePath, line: UInt = #line) throws -> SyncReport {
+        var last = SyncReport()
+        for _ in 0..<rounds {
+            last = try run(name)
+            if last.isEmpty { return last }
+        }
+        XCTFail("\(label) \(name): never quiet: \(StressWorld.brief(last))", file: file, line: line)
+        return last
+    }
+
+    /// A vault on A, uploaded, pulled by B.
+    func twoDevices() throws {
+        let a = try TestVaults.create(at: dir("A"), identities: [identity, identityB], names: ["A", "B"])
+        try DeviceState(device: devA).save(to: deviceState("A"))
+        try DeviceState(device: devB).save(to: deviceState("B"))
+        _ = try a.apply([.setMeta(.title("first"))], to: noteID, deviceState: deviceState("A"), app: "test/0")
+        try settle("A")
+        try settle("B")
+    }
+
+    /// Seals a capture (and its transcript) into `name`'s inbox with that device's capture profile.
+    @discardableResult
+    func capture(on name: String, id: UUID = UUID(), audio: Data? = nil, transcript: Bool = false) throws -> UUID {
+        let v = try openVault(name)
+        let w = try CaptureWriter(profile: try v.captureProfile(device: device(name)))
+        let bytes = audio ?? self.audio
+        try CaptureWriter.store(try w.seal(audio: bytes, started: started, id: id), in: v.inboxURL)
+        if transcript {
+            let t = TranscriptBuilder.transcript(recording: CaptureAdoption.ids(for: id).recording, engine: "e", language: "en-US",
+                                                 created: started, segments: [.init(start: 0, end: 1, text: "Hello.")])
+            try CaptureWriter.store(try w.seal(transcript: t, capture: id, audio: BlobRef(content: bytes, type: "audio/mp4")),
+                                    in: v.inboxURL)
+        }
+        return id
+    }
+
+    func inbox(_ name: String) -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: dir(name).appendingPathComponent("inbox").path)) ?? []).sorted()
+    }
+
+    /// Another writer puts `data` at `path` on the remote.
+    func plant(_ path: [String], _ data: Data) throws {
+        _ = try t.inspector.makeCollection(Array(path.dropLast()))
+        try t.inspector.write(path, .data(data), condition: .unconditional)
+    }
+
+    func remoteInbox() throws -> [String] { (try t.inspector.list(["inbox"]) ?? []).map(\.name).sorted() }
+
+    func adopt(_ name: String, _ id: UUID) throws -> Vault.CaptureAdoptionResult {
+        let r = try openVault(name).adoptCapture(id, deviceState: deviceState(name), app: "test/0")
+        XCTAssertNil(r.error, "\(label): \(r)")
+        return r
+    }
+
+    // MARK: Inbox
+
+    /// A capture made on A reaches B (checked first); B adopts it; the adopted note
+    /// travels and the inbox file goes from every side, and nothing is left behind.
+    func scenarioCaptureTravelsAndAdoptionClearsIt() throws {
+        try twoDevices()
+        let id = try capture(on: "A", transcript: true)
+        let up = try run("A")
+        XCTAssertEqual(up.uploaded.filter { $0.hasPrefix("inbox/") }.count, 2, "\(label): \(StressWorld.brief(up))")
+        let down = try run("B")
+        XCTAssertEqual(down.downloaded.filter { $0.hasPrefix("inbox/") }.count, 2, "\(label): \(StressWorld.brief(down))")
+        XCTAssertEqual(inbox("B"), inbox("A"))
+        let adopted = try adopt("B", id)
+        XCTAssertTrue(adopted.created && adopted.transcript, "\(label): \(adopted)")
+        XCTAssertEqual(inbox("B"), [])
+        let push = try run("B")
+        XCTAssertEqual(push.deleted.filter { $0.side == "remote" }.count, 2, "\(label): \(StressWorld.brief(push))")
+        XCTAssertEqual(try remoteInbox().filter { !$0.hasPrefix(".") }, [])
+        let pull = try run("A")
+        XCTAssertEqual(pull.deleted.filter { $0.side == "local" }.count, 2, "\(label): \(StressWorld.brief(pull))")
+        XCTAssertEqual(inbox("A"), [])
+        let note = CaptureAdoption.ids(for: id).note
+        XCTAssertEqual(try openVault("A").reconstruct(noteId: note).recordings.first?.transcript != nil, true, label)
+        try settle("A"); try settle("B")
+        XCTAssertEqual(SyncDevices.hiddenFiles(in: dir("A")), [], label)
+        XCTAssertTrue(try run("A").isEmpty && run("B").isEmpty, label)
+    }
+
+    /// An inbox file gone from one side with no adoption to explain it is copied back,
+    /// in both directions: nothing but adoption ever deletes one.
+    func scenarioUnexplainedInboxDeletionIsRestored() throws {
+        try twoDevices()
+        _ = try capture(on: "A")
+        try run("A"); try run("B")
+        let name = try XCTUnwrap(inbox("B").first)
+        try FileManager.default.removeItem(at: dir("B").appendingPathComponent("inbox/\(name)"))
+        let back = try run("B")
+        XCTAssertTrue(back.downloaded.contains("inbox/\(name)"), "\(label): \(StressWorld.brief(back))")
+        XCTAssertTrue(back.deleted.isEmpty, label)
+        try t.inspector.delete(["inbox", name])
+        let again = try run("A")
+        XCTAssertTrue(again.uploaded.contains("inbox/\(name)"), "\(label): \(StressWorld.brief(again))")
+        XCTAssertEqual(try remoteInbox(), [name])
+        XCTAssertEqual(inbox("A"), [name]); XCTAssertEqual(inbox("B"), [name])
+    }
+
+    /// A locked device uploads its captures (quick capture into a closed vault), but judges
+    /// no deletion: it waits for an unlocked run, which follows the adoption.
+    func scenarioLockedRunsUploadButNeverJudge() throws {
+        try twoDevices()
+        let id = try capture(on: "A")
+        let up = try run("A", locked: true)
+        XCTAssertEqual(up.uploaded.filter { $0.hasPrefix("inbox/") }.count, 1, "\(label): \(StressWorld.brief(up))")
+        try run("B")
+        _ = try adopt("B", id)
+        try run("B")
+        let locked = try run("A", locked: true)
+        XCTAssertTrue(locked.deleted.isEmpty && locked.uploaded.filter { $0.hasPrefix("inbox/") }.isEmpty,
+                      "\(label): \(StressWorld.brief(locked))")
+        XCTAssertTrue(locked.skipped.contains { $0.path.hasPrefix("inbox/") }, "\(label): \(locked.skipped)")
+        XCTAssertEqual(inbox("A").count, 1)
+        let unlocked = try run("A")
+        XCTAssertEqual(unlocked.deleted.map(\.side), ["local"], "\(label): \(StressWorld.brief(unlocked))")
+        XCTAssertEqual(inbox("A"), [])
+        XCTAssertEqual(try remoteInbox().filter { !$0.hasPrefix(".") }, [])
+    }
+
+    /// A file under an inbox name that is not a capture of this vault is quarantined, never placed,
+    /// and not fetched again while unchanged.
+    func scenarioForgedInboxFileIsQuarantined() throws {
+        try twoDevices()
+        let name = CaptureFile.name(UUID(), .capture)
+        let forged = try Vault.encrypt(Data("SMPC junk".utf8), to: [identity.recipient])
+        try plant(["inbox", name], forged)
+        let r = try run("B")
+        XCTAssertEqual(r.quarantined.map(\.path), ["inbox/\(name)"], "\(label): \(StressWorld.brief(r))")
+        XCTAssertEqual(inbox("B"), [])
+        let again = try run("B")
+        XCTAssertTrue(again.quarantined.isEmpty && again.downloaded.isEmpty, "\(label): \(StressWorld.brief(again))")
+        XCTAssertEqual(try remoteInbox(), [name], "\(label): a forged file is never deleted from the remote")
+    }
+
+    /// A large capture over a transport that cuts bodies: no half file ever appears in an inbox
+    /// (here or there), the run is retried, and the capture arrives whole.
+    func scenarioLargeCaptureThroughCutTransfers() throws {
+        try twoDevices()
+        var big = Data(count: 6 << 20)
+        for i in stride(from: 0, to: big.count, by: 4096) { big[i] = UInt8(truncatingIfNeeded: i >> 12) }
+        let id = try capture(on: "A", audio: big)
+        let flaky = t.faulty(7, TransportFaults(dropBefore: 0.3, loseAnswer: 0.2, cutBody: 0.5, only: { $0.first == "inbox" }))
+        for _ in 0..<12 {
+            _ = try? run("A", via: flaky)
+            _ = try? run("B", via: flaky)
+            for f in inbox("B") { XCTAssertFalse(f.hasSuffix(".age") && !inbox("A").contains(f), "\(label): \(f)") }
+            if inbox("B").contains(CaptureFile.name(id, .capture)) { break }
+        }
+        try settle("A"); try settle("B")
+        XCTAssertEqual(inbox("B").filter { !$0.hasPrefix(".") }, [CaptureFile.name(id, .capture)], label)
+        XCTAssertEqual(try openVault("B").readCapture(id).audio, big, label)
+        XCTAssertEqual(try remoteInbox(), [CaptureFile.name(id, .capture)], "\(label): no temporary name left")
+    }
+
+    /// Two devices adopt the same capture while offline: the derived ids make them write the
+    /// same note, and once both sync every inbox is empty and both read one recording.
+    func scenarioTwoDevicesAdoptTheSameCaptureOffline() throws {
+        try twoDevices()
+        let id = try capture(on: "A", transcript: true)
+        try run("A"); try run("B")
+        _ = try adopt("A", id)
+        _ = try adopt("B", id)
+        for _ in 0..<3 { try run("A"); try run("B") }
+        try settle("A"); try settle("B")
+        XCTAssertEqual(inbox("A"), []); XCTAssertEqual(inbox("B"), [])
+        XCTAssertEqual(try remoteInbox().filter { !$0.hasPrefix(".") }, [])
+        let note = CaptureAdoption.ids(for: id).note
+        let a = try openVault("A").reconstruct(noteId: note), b = try openVault("B").reconstruct(noteId: note)
+        XCTAssertEqual(a, b, label)
+        XCTAssertEqual(a.recordings.count, 1, label)
+    }
+
+    /// A push-only run (the web viewer's mirror) uploads inbox files and never downloads one.
+    func scenarioPushOnlyNeverDownloads() throws {
+        try twoDevices()
+        _ = try capture(on: "A")
+        let mirror = try run("A") { $0.pushOnly = true }
+        XCTAssertEqual(mirror.uploaded.filter { $0.hasPrefix("inbox/") }.count, 1, label)
+        let other = try run("B") { $0.pushOnly = true }
+        XCTAssertTrue(other.downloaded.isEmpty, "\(label): \(StressWorld.brief(other))")
+        XCTAssertEqual(inbox("B"), [])
+    }
+
+    // MARK: Per-device summaries
+
+    func publish(_ name: String) throws -> Data {
+        let v = try openVault(name)
+        return try v.writeDevicePublishedSummaries(try v.publishedSummaryEntries().entries)
+    }
+
+    func summaries(_ name: String) -> [String: Data] {
+        let d = dir(name).appendingPathComponent("summaries")
+        var out: [String: Data] = [:]
+        for n in (try? FileManager.default.contentsOfDirectory(atPath: d.path)) ?? [] where !n.hasPrefix(".") {
+            out[n] = try? Data(contentsOf: d.appendingPathComponent(n))
+        }
+        return out
+    }
+
+    /// Each device's file reaches the other, a newer one replaces the older, and a device's
+    /// own file is never taken from the remote: one changed there is put back.
+    func scenarioDeviceSummariesTravelAndOwnFileIsNeverTaken() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A")
+        try run("B")
+        XCTAssertEqual(summaries("B")[fileA], a1, label)
+        let b1 = try publish("B")
+        try run("B"); try run("A")
+        XCTAssertEqual(summaries("A")[fileB], b1, label)
+        let a2 = try publish("A")
+        try run("A"); try run("B")
+        XCTAssertEqual(summaries("B")[fileA], a2, "\(label): the newer copy replaces the older")
+        // Another writer replaces A's file on the remote: A puts its own back and keeps it. (wsgidav keeps
+        // an ETag over a same-size rewrite within its second: the change is seen once the token moves.)
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+        try t.inspector.write(["summaries", fileA], .data(b1), condition: .unconditional)
+        let r = try run("A")
+        XCTAssertTrue(r.uploaded.contains("summaries/\(fileA)"), "\(label): \(StressWorld.brief(r))")
+        XCTAssertEqual(summaries("A")[fileA], a2)
+        XCTAssertEqual(try t.inspector.read(["summaries", fileA], maxBytes: 1 << 26).data, a2, label)
+        try settle("A"); try settle("B")
+    }
+
+    /// A per-device file that does not open under the vault's secret is not placed (a hint only).
+    func scenarioForeignSummariesAreNotPlaced() throws {
+        try twoDevices()
+        try plant(["summaries", "cccccccc.sealed"], Data("SMPU".utf8) + Data([1]) + Data(count: 64))
+        try plant(["summaries", "not-a-device.sealed"], Data("x".utf8))
+        let r = try run("B")
+        XCTAssertTrue(r.skipped.contains { $0.path == "summaries/cccccccc.sealed" }, "\(label): \(r.skipped)")
+        XCTAssertTrue(r.ignored.contains("summaries/not-a-device.sealed"), "\(label): \(r.ignored)")
+        XCTAssertEqual(summaries("B"), [:])
+    }
+
+    func version(_ data: Data?, of name: String) throws -> Int64? {
+        guard let data else { return nil }
+        return try openVault("A").openDevicePublishedSummaries(data, device: device(name)).version
+    }
+
+    /// Another device's file is ordered by the version inside it, never by which side changed: a bridge
+    /// that puts an older copy on the remote (it changed there since B's last run) does not make B take it,
+    /// B puts the later one back; and a push-only run never replaces a later copy with an older one.
+    func scenarioAnOlderCopyNeverReplacesANewer() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        let a2 = try publish("A")
+        try run("A"); try run("B")
+        XCTAssertEqual(summaries("B")[fileA], a2, label)
+        XCTAssertGreaterThan(try XCTUnwrap(try version(a2, of: "A")), try XCTUnwrap(try version(a1, of: "A")))
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+        try t.inspector.write(["summaries", fileA], .data(a1), condition: .unconditional)
+        let r = try run("B")
+        XCTAssertTrue(r.uploaded.contains("summaries/\(fileA)"), "\(label): \(StressWorld.brief(r))")
+        XCTAssertEqual(summaries("B")[fileA], a2, label)
+        XCTAssertEqual(try t.inspector.read(["summaries", fileA], maxBytes: 1 << 26).data, a2, label)
+
+        // B holds the older copy again (a restore): a push-only run leaves the remote's later one alone,
+        // and a two-way run takes it.
+        try a1.write(to: dir("B").appendingPathComponent("summaries/\(fileA)"))
+        let mirror = try run("B") { $0.pushOnly = true }
+        XCTAssertFalse(mirror.uploaded.contains("summaries/\(fileA)"), "\(label): \(StressWorld.brief(mirror))")
+        XCTAssertEqual(try t.inspector.read(["summaries", fileA], maxBytes: 1 << 26).data, a2, label)
+        try run("B")
+        XCTAssertEqual(summaries("B")[fileA], a2, label)
+        try settle("A"); try settle("B")
+    }
+
+    /// A's file at `version`, signed with A's own keys: what another install of A (a copied state folder),
+    /// or A with a clock far ahead, writes. Only A's keys can make a copy that is ordered (format.md §12.5).
+    func aCopy(version: Int64, entries: [UUID: PublishedSummaries.Entry] = [:]) throws -> Data {
+        try openVault("A").sealDeviceFile(entries, device: device("A"), version: version, signer: TestVaults.signing(identity))
+    }
+
+    func remoteA() throws -> Data { try t.inspector.read(["summaries", fileA], maxBytes: 1 << 26).data }
+    var nowMillis: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
+
+    /// Review of #83 (S1), with signatures: a copy of A's file at the version cap, signed by A's own keys (a
+    /// clock far ahead). Beyond the 7-day window, kept as a clock-skew guard, it is no version: it never
+    /// wins, B takes A's real file back, and the runs go quiet at once.
+    func scenarioAForgedCapVersionNeverWins() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        let forged = try aCopy(version: PublishedSummaries.maxVersion)
+        try forged.write(to: dir("B").appendingPathComponent("summaries/\(fileA)"))
+        var uploads = 0
+        for _ in 0..<5 {
+            for name in ["A", "B"] where try run(name).uploaded.contains("summaries/\(fileA)") { uploads += 1 }
+        }
+        XCTAssertEqual(uploads, 0, label)
+        XCTAssertEqual(summaries("B")[fileA], a1, "\(label): B takes A's real file back")
+        XCTAssertEqual(try remoteA(), a1, label)
+        try settle("A"); try settle("B")
+    }
+
+    /// Review of #83 (S1): a copy one below the cap (A's keys), put on the remote, is no version either: A
+    /// puts its own back and goes on writing ordinary versions.
+    func scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        let forged = try aCopy(version: PublishedSummaries.maxVersion - 1)
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+        try t.inspector.write(["summaries", fileA], .data(forged), condition: .unconditional)
+        let r = try run("A")
+        XCTAssertTrue(r.uploaded.contains("summaries/\(fileA)"), "\(label): \(StressWorld.brief(r))")
+        XCTAssertEqual(summaries("A")[fileA], a1, "\(label): A's own file is untouched")
+        XCTAssertEqual(try remoteA(), a1, label)
+        let a2 = try publish("A")
+        let v2 = try XCTUnwrap(try version(a2, of: "A"))
+        XCTAssertLessThan(v2, nowMillis + 1000, "\(label): an ordinary version, nowhere near the cap")
+        try run("A"); try run("B")
+        XCTAssertEqual(summaries("B")[fileA], a2, label)
+        try settle("A"); try settle("B")
+    }
+
+    /// Review of #83 (M2, re-check 1): a copy that does not open is left only when its clear epoch is later
+    /// than the device's key but no later than its vault.json's (a removed or lagging device, whose vault.json
+    /// moved on, holds no key for it). For a current device, whose vault.json names its key's epoch, any
+    /// header above it is a claim anyone with storage access can write: repaired. So is a damaged copy of
+    /// its own epoch.
+    func scenarioALaterEpochCopyIsLeftOnlyByALaggingDevice() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        XCTAssertEqual(summaries("B")[fileA], a1, label)
+        let a = try openVault("A"), other = try makeVault("X")
+        func sealed(epoch: Int) throws -> Data {
+            let json = try PublishedSummaries.encode([:], vaultId: a.vaultId, device: device("A"), version: nowMillis + 10_000)
+            return try PublishedSummaries.seal(try Gzip.compress(json), secret: try other.requireSecret(), vaultId: a.vaultId,
+                                               device: (epoch, nowMillis + 10_000))
+        }
+        func put(_ data: Data) throws {
+            if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+            try t.inspector.write(["summaries", fileA], .data(data), condition: .unconditional)
+        }
+        // Keyless garbage behind a huge epoch, a copy "of epoch 2", and a damaged one of epoch 1: all repaired.
+        let garbage = Data([0x53, 0x4D, 0x50, 0x55, 0x04, 0xFF, 0xFF, 0xFF, 0xFF]) + Data((0..<64).map { UInt8($0) })
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(garbage), Int(UInt32.max))
+        for (n, bad) in [garbage, try sealed(epoch: a.manifest.epoch + 1), try sealed(epoch: a.manifest.epoch)].enumerated() {
+            try put(bad)
+            let r = try run(n == 1 ? "A" : "B")
+            XCTAssertTrue(r.uploaded.contains("summaries/\(fileA)"), "\(label) #\(n): \(StressWorld.brief(r))")
+            XCTAssertEqual(try remoteA(), a1, "\(label) #\(n)")
+            try settle("A"); try settle("B")
+        }
+
+        // B lags: its vault.json names epoch 2 (a key change it has no key for yet); its key is epoch 1.
+        let later = try sealed(epoch: a.manifest.epoch + 1)
+        try put(later)
+        let b = try openVault("B")
+        let manifest = dir("B").appendingPathComponent("vault.json")
+        let original = try Data(contentsOf: manifest)
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: original) as? [String: Any])
+        json["epoch"] = a.manifest.epoch + 1
+        try JSONSerialization.data(withJSONObject: json).write(to: manifest)
+        defer { try? original.write(to: manifest) }
+        XCTAssertEqual(SyncEngine(directory: dir("B"), vault: b, remote: t.remote,
+                                  stateURL: tmp.appendingPathComponent("state-B-lag.json"), options: lagOptions()).localManifestEpoch(),
+                       a.manifest.epoch + 1)
+        for _ in 0..<2 {
+            let r = try SyncEngine(directory: dir("B"), vault: b, remote: t.remote,
+                                   stateURL: tmp.appendingPathComponent("state-B-lag.json"), options: lagOptions()).run()
+            XCTAssertFalse(r.uploaded.contains("summaries/\(fileA)"), "\(label): \(StressWorld.brief(r))")
+            XCTAssertEqual(try remoteA(), later, label)
+        }
+        XCTAssertEqual(summaries("B")[fileA], a1, label)
+    }
+
+    func lagOptions() -> SyncOptions {
+        var o = SyncOptions(deviceLabel: "B")
+        o.deviceID = device("B")
+        o.pushOnly = true   // never brings the changed vault.json anywhere
+        tune(&o)
+        return o
+    }
+
+    /// Review of #83 (S1, re-check 2): a copy of A's file 6 days ahead by another install of A (A's keys)
+    /// is left by A while it is recent, but once its version is more than the window in the past, a quiet A seals its own entries
+    /// again at the clock and puts them, and B takes them.
+    func scenarioAForgedOwnCopyIsReplacedOnceItIsOld() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        let forged = try aCopy(version: nowMillis + 6 * 86_400_000)
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+        try t.inspector.write(["summaries", fileA], .data(forged), condition: .unconditional)
+        XCTAssertFalse(try run("A").uploaded.contains("summaries/\(fileA)"), label)
+        XCTAssertTrue(try run("A").isEmpty, "\(label): quiet while it is recent")
+        let later = Date().addingTimeInterval(30 * 86_400)
+        let r = try run("A") { $0.now = later }
+        XCTAssertTrue(r.uploaded.contains("summaries/\(fileA)"), "\(label): \(StressWorld.brief(r))")
+        let mine = try XCTUnwrap(summaries("A")[fileA])
+        let a = try openVault("A")
+        XCTAssertEqual(try a.openDevicePublishedSummaries(mine, device: device("A"), now: later).entries,
+                       try a.openDevicePublishedSummaries(a1, device: device("A")).entries, label)
+        XCTAssertEqual(try remoteA(), mine, label)
+        try run("B") { $0.now = later }
+        XCTAssertEqual(summaries("B")[fileA], mine, label)
+        XCTAssertTrue(try run("A") { $0.now = later }.isEmpty, label)
+        XCTAssertTrue(try run("B") { $0.now = later }.isEmpty, label)
+    }
+
+    /// Review of #83 (M1), and signatures: a root file put at A's per-device name, or A's sealed per-device
+    /// content without its signature, is never placed; the file `writeDevicePublishedSummaries` writes is.
+    func scenarioOnlyAVersionedDeviceFileTravels() throws {
+        try twoDevices()
+        let v = try openVault("A")
+        let entries = try v.publishedSummaryEntries().entries
+        let unversioned = try v.sealPublishedSummaries(entries)
+        let url = v.devicePublishedSummariesURL(device("A"))
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try unversioned.write(to: url)
+        try run("A")
+        try run("B")
+        XCTAssertNil(summaries("B")[fileA], label)
+        let unsigned = try v.sealDeviceBody(entries, device: device("A"), version: nowMillis)
+        try unsigned.write(to: url)
+        try run("A")
+        try run("B")
+        XCTAssertNil(summaries("B")[fileA], label)
+        let versioned = try v.writeDevicePublishedSummaries(entries)
+        try run("A"); try run("B")
+        XCTAssertEqual(summaries("B")[fileA], versioned, label)
+        try settle("A"); try settle("B")
+    }
+
+    /// A copy written by another install with A's keys, within the window, is ordered after A's own: A leaves it rather than rewriting above it (two installs would otherwise outbid each
+    /// other on every run), and the runs go quiet. It holds until A writes a later version (at most the window).
+    func scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        let ahead = try aCopy(version: nowMillis + 3_600_000)
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+        try t.inspector.write(["summaries", fileA], .data(ahead), condition: .unconditional)
+        let r = try run("A")
+        XCTAssertFalse(r.uploaded.contains("summaries/\(fileA)"), "\(label): \(StressWorld.brief(r))")
+        XCTAssertEqual(summaries("A")[fileA], a1, "\(label): A's own file is never taken")
+        try run("B")
+        XCTAssertEqual(summaries("B")[fileA], ahead, label)
+        try settle("A"); try settle("B")
+        XCTAssertEqual(try remoteA(), ahead, label)
+    }
+
+    /// Locked, nothing is ordered: a two-way locked run leaves a differing copy; a locked staging run
+    /// (pull-only) stages the remote copy for the placing run to order (review of #83, nit).
+    func scenarioLockedRunsLeaveAndStagingStages() throws {
+        try twoDevices()
+        _ = try publish("A")
+        try run("A"); try run("B")
+        let a2 = try publish("A")
+        try run("A")
+        let left = try run("B", locked: true)
+        XCTAssertFalse(left.downloaded.contains("summaries/\(fileA)"), "\(label): \(StressWorld.brief(left))")
+        XCTAssertNotEqual(summaries("B")[fileA], a2, label)
+        let staged = try run("B", locked: true, state: "B-staging") { $0.pullOnly = true }
+        XCTAssertTrue(staged.downloaded.contains("summaries/\(fileA)"), "\(label): \(StressWorld.brief(staged))")
+        XCTAssertEqual(summaries("B")[fileA], a2, label)
+    }
+
+    /// Signed per-device files (format.md §12.5), through the engine: a copy of A's file forged by B (B's keys,
+    /// a later version), by storage alone (garbage behind the header, A's file with a broken signature) or by
+    /// A's keys over another version than the content's never replaces A's real file on either side, is never
+    /// placed, and is repaired: by B (the later ordered copy wins) and by A (its own file), and the runs go
+    /// quiet with A's real file everywhere.
+    func scenarioForgedDeviceFilesNeverWin() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        XCTAssertEqual(summaries("B")[fileA], a1, label)
+        let b = try openVault("B"), a = try openVault("A")
+        let byB = try b.sealDeviceFile([:], device: device("A"), version: nowMillis + 60_000, signer: TestVaults.signing(identityB))
+        var badSig = a1
+        badSig[badSig.count - 1] ^= 0x01
+        let body = try a.sealDeviceBody([:], device: device("A"), version: nowMillis + 60_000)
+        let wrongVersion = PublishedSummaries.attach(try TestVaults.signing(identity).sign(AuthorMessage.summaries(
+            vaultId: a.vaultId, epoch: a.manifest.epoch, epochId: a.manifest.epochId, device: device("A"),
+            version: nowMillis + 120_000, sealed: body)), to: body)
+        let garbage = Data([0x53, 0x4D, 0x50, 0x55, 0x04, 0, 0, 0, UInt8(a.manifest.epoch)]) + Data(repeating: 9, count: 4000)
+        for (n, forged) in [byB, badSig, wrongVersion, garbage].enumerated() {
+            // On the remote: B repairs it with A's real (ordered) file, and so does A.
+            for repairer in ["B", "A"] {
+                if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+                try t.inspector.write(["summaries", fileA], .data(forged), condition: .unconditional)
+                let r = try run(repairer)
+                XCTAssertTrue(r.uploaded.contains("summaries/\(fileA)"), "\(label) #\(n) \(repairer): \(StressWorld.brief(r))")
+                XCTAssertFalse(r.downloaded.contains("summaries/\(fileA)"), "\(label) #\(n) \(repairer)")
+                XCTAssertEqual(try remoteA(), a1, "\(label) #\(n) \(repairer)")
+            }
+            // In B's own folder (a local forgery, or a bad copy a provider left): the remote's ordered copy
+            // replaces it, and nothing forged is uploaded.
+            try forged.write(to: dir("B").appendingPathComponent("summaries/\(fileA)"))
+            let r = try run("B")
+            XCTAssertFalse(r.uploaded.contains("summaries/\(fileA)"), "\(label) #\(n): \(StressWorld.brief(r))")
+            XCTAssertEqual(summaries("B")[fileA], a1, "\(label) #\(n)")
+            XCTAssertEqual(try remoteA(), a1, "\(label) #\(n)")
+            try settle("A"); try settle("B")
+        }
+        // A device that lacks the file never places a forged one.
+        try FileManager.default.removeItem(at: dir("B").appendingPathComponent("summaries/\(fileA)"))
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+        try t.inspector.write(["summaries", fileA], .data(byB), condition: .unconditional)
+        let r = try run("B")
+        XCTAssertNil(summaries("B")[fileA], "\(label): \(StressWorld.brief(r))")
+        XCTAssertTrue(r.skipped.contains { $0.path == "summaries/\(fileA)" }, "\(label): \(r.skipped)")
+        try run("A")
+        try run("B")
+        XCTAssertEqual(summaries("B")[fileA], a1, label)
+    }
+
+    /// A device with two targets carries another device's newer file from one to the other.
+    func scenarioABridgeCarriesSummaries() throws {
+        try twoDevices()
+        let second = MemoryRemote(store: MemoryStore(name: "second"), base: ["vault"])
+        try run("A", via: second, state: "A-second")
+        let b1 = try publish("B")
+        try run("B"); try run("A"); try run("A", via: second, state: "A-second")
+        XCTAssertEqual(try second.read(["summaries", fileB], maxBytes: 1 << 26).data, b1, label)
+        let b2 = try publish("B")
+        try run("B"); try run("A"); try run("A", via: second, state: "A-second")
+        XCTAssertEqual(try second.read(["summaries", fileB], maxBytes: 1 << 26).data, b2, label)
+        XCTAssertTrue(try run("A", via: second, state: "A-second").isEmpty, label)
+    }
+}
+
+final class InboxSummariesOverMemoryTests: InboxSummariesScenarioCase {
+    override func transport() throws -> TransportUnderTest { .memory() }
+
+    /// Found by the N-device stress run: two devices that both sync two remotes handed an adopted
+    /// capture back and forth (one deleted it from a remote, the other uploaded it there again from
+    /// the other remote, where its record was gone). A file adoption explains is never copied.
+    func testTwoBridgesSettleAnAdoptedCapture() throws {
+        let r0 = MemoryRemote(store: MemoryStore(name: "R0"), base: ["vault"])
+        let r1 = MemoryRemote(store: MemoryStore(name: "R1"), base: ["vault"])
+        let ids = [pqIdentity(), pqIdentity()]
+        let x = try SyncDevice(name: "X", root: tmp.appendingPathComponent("X"), identity: ids[0], remote: r0,
+                               device: DeviceID("aaaaaaaa"))
+        let y = try SyncDevice(name: "Y", root: tmp.appendingPathComponent("Y"), identity: ids[1], remote: r0,
+                               device: DeviceID("bbbbbbbb"))
+        _ = try TestVaults.create(at: x.folder, identities: ids, names: ["X", "Y"])
+        let runs: [(SyncDevice, MemoryRemote, String)] = [(x, r0, "R0"), (x, r1, "R1"), (y, r1, "R1"), (y, r0, "R0")]
+        func round() throws -> [String] {
+            try runs.compactMap { d, r, name in
+                let rep = try d.sync(via: r, state: d.root.appendingPathComponent("sync-\(name).json"))
+                return rep.isEmpty ? nil : "\(d.name)/\(name): \(StressWorld.brief(rep))"
+            }
+        }
+        for _ in 0..<3 { _ = try round() }
+        let id = try x.captureVoiceNote(audio)
+        _ = try round()
+        // X adopts between its two runs, as a device does whenever it unlocks.
+        try x.sync(via: r0, state: x.root.appendingPathComponent("sync-R0.json"))
+        XCTAssertEqual(try x.adoptInbox(), 1)
+        var quiet = false
+        var last: [String] = []
+        for _ in 0..<6 where !quiet {
+            last = try round()
+            quiet = last.isEmpty
+        }
+        XCTAssertTrue(quiet, "never quiet: \(last.joined(separator: "\n"))")
+        for d in [x, y] { XCTAssertEqual(d.rootFolderFiles("inbox"), [:], d.name) }
+        for r in [r0, r1] { XCTAssertEqual((try r.list(["inbox"]) ?? []).filter { !$0.name.hasPrefix(".") }, [], r.location) }
+        XCTAssertEqual(try y.vault().reconstruct(noteId: CaptureAdoption.ids(for: id).note).recordings.count, 1)
+    }
+
+    /// KH3's removal (key-hierarchy design §5.2) with per-device summaries: A (home) removes X, so A's file is
+    /// sealed under epoch 2. B, still listed, catches up and opens it. X learns of the change (its folder gets
+    /// the epoch-2 vault.json, as a shared folder brings it) but holds no key for it: X never replaces A's
+    /// epoch-2 file with its own epoch-1 copy, run after run (review of #83, M2). The engine opens nothing for
+    /// X once the keys changed under it (KH3), so X orders nothing.
+    func testARemovedDeviceLeavesTheNewEpochsSummaries() throws {
+        try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26 (always on Linux)")
+        let ids = [pqIdentity(), pqIdentity(), pqIdentity()]
+        let trusts = ids.map { _ in MemoryEpochTrustStore() }
+        let shared = tmp.appendingPathComponent("Shared.sempere"), xFolder = tmp.appendingPathComponent("X.sempere")
+        let root = try TestVaults.create(at: shared, identities: ids, names: ["A", "B", "X"]).root
+        func open(_ i: Int, _ url: URL) throws -> Vault {
+            try Vault.open(at: url, identities: [ids[i]], signing: TestVaults.signing(ids[i]), trust: trusts[i], root: root)
+        }
+        var a = try open(0, shared)
+        let aDev = try XCTUnwrap(a.writerDevice), xDev = try XCTUnwrap(try open(2, shared).writerDevice)
+        let name = PublishedSummaries.deviceFileName(aDev)
+        let a1 = try a.writeDevicePublishedSummaries([:])
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(a1), 1)
+        try FileManager.default.copyItem(at: shared, to: xFolder)   // X's own copy, from before the change
+        let x = try open(2, xFolder)
+
+        try a.removeDevices([xDev.rawValue])
+        XCTAssertEqual(a.manifest.epoch, 2)
+        let a2 = try a.writeDevicePublishedSummaries([:])
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(a2), 2)
+        let remote = MemoryRemote(store: MemoryStore(name: "kh3"), base: ["vault"])
+        func sync(_ folder: URL, _ vault: Vault, _ device: DeviceID, _ state: String) throws -> SyncReport {
+            var o = SyncOptions(deviceLabel: state)
+            o.deviceID = device
+            return try SyncEngine(directory: folder, vault: vault, remote: remote,
+                                  stateURL: tmp.appendingPathComponent("state-kh3-\(state).json"), options: o).run()
+        }
+        _ = try sync(shared, a, aDev, "A")
+        XCTAssertEqual(try remote.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, a2)
+
+        // B, still listed, catches up and reads A's new file.
+        let b = try open(1, shared)
+        XCTAssertEqual(b.manifest.epoch, 2)
+        XCTAssertEqual(try b.openDevicePublishedSummaries(a2, device: aDev).device, aDev)
+
+        // X learns of the change only through the remote: its vault.json of epoch 2 is refused (KH4 carries
+        // epoch changes), but it is the next epoch signed by the home X knows, so X leaves A's file.
+        for round in 0..<2 {
+            let r = try sync(xFolder, x, xDev, "X-remote")
+            XCTAssertFalse(r.uploaded.contains("summaries/\(name)"), "round \(round): \(StressWorld.brief(r))")
+        }
+        XCTAssertEqual(try remote.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, a2)
+        // The shared check (`EpochFrontier.verifiedChild`, as `Vault.removalNotice`) believes the server's
+        // epoch 2; a run whose download budget cannot take that vault.json says so (review of #83, nit).
+        func engine(_ edit: (inout SyncOptions) -> Void = { _ in }) -> SyncEngine {
+            var o = SyncOptions(deviceLabel: "X-check")
+            edit(&o)
+            return SyncEngine(directory: xFolder, vault: x, remote: remote,
+                              stateURL: tmp.appendingPathComponent("state-kh3-X-check.json"), options: o)
+        }
+        XCTAssertEqual(engine().serverChildEpoch(of: x), 2)
+        let tight = engine { $0.limits.maxDownloadBytes = 1 }
+        XCTAssertNil(tight.serverChildEpoch(of: x))
+        XCTAssertTrue(tight.report.skipped.contains { $0.path == Vault.manifestName }, "\(tight.report.skipped)")
+        // An unsigned claim of a later epoch on the server is not believed: a forged vault.json makes X repair.
+        let forgedFolder = tmp.appendingPathComponent("F.sempere")
+        try FileManager.default.copyItem(at: xFolder, to: forgedFolder)
+        // A copy of X that never met the real epoch 2 (X's own trust store remembers it: a sighting holds X back).
+        let f = try Vault.open(at: forgedFolder, identities: [ids[2]], signing: TestVaults.signing(ids[2]),
+                               trust: MemoryEpochTrustStore(), root: root)
+        let forgedRemote = MemoryRemote(store: MemoryStore(name: "kh3-forged"), base: ["vault"])
+        for path in remote.store.filePaths(under: remote.base) {
+            forgedRemote.store.putDirect(path, try XCTUnwrap(remote.store.file(path)))   // same base, ["vault"]
+        }
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: try XCTUnwrap(
+            forgedRemote.store.file(["vault", Vault.manifestName]))) as? [String: Any])
+        json["epochReason"] = "forged"
+        forgedRemote.store.putDirect(["vault", Vault.manifestName], try JSONSerialization.data(withJSONObject: json))
+        var o = SyncOptions(deviceLabel: "F")
+        o.deviceID = xDev
+        let forgedRun = try SyncEngine(directory: forgedFolder, vault: f, remote: forgedRemote,
+                                       stateURL: tmp.appendingPathComponent("state-kh3-F.json"), options: o).run()
+        XCTAssertTrue(forgedRun.uploaded.contains("summaries/\(name)"), StressWorld.brief(forgedRun))
+        // X: the epoch-2 vault.json, no key for it.
+        try FileManager.default.removeItem(at: xFolder.appendingPathComponent(Vault.manifestName))
+        try FileManager.default.copyItem(at: shared.appendingPathComponent(Vault.manifestName),
+                                        to: xFolder.appendingPathComponent(Vault.manifestName))
+        for round in 0..<2 {
+            let r = try sync(xFolder, x, xDev, "X")
+            XCTAssertFalse(r.uploaded.contains("summaries/\(name)"), "round \(round): \(StressWorld.brief(r))")
+            if round == 0 {
+                // KH3's checker opens nothing for a device the keys changed under (structure only), so X
+                // orders nothing and replaces nothing; the later-epoch rule is the second line behind it.
+                XCTAssertTrue(r.skipped.contains { $0.path == "summaries/\(name)" }, "\(r.skipped)")
+            }
+        }
+        XCTAssertEqual(try remote.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, a2)
+        XCTAssertEqual(try Data(contentsOf: xFolder.appendingPathComponent("summaries/\(name)")), a1)
+    }
+
+    /// Signed summaries after a removal (format.md §12.5): A (home) removes X. X's signing keys, even over
+    /// content sealed under the new epoch's key (as if X held it), no longer verify for B: X's entry is gone
+    /// from the list B checked. A file under X's name is never placed; one under A's name signed by X is
+    /// never ordered, and B puts A's real file back over it.
+    func testARemovedDevicesSignedFileIsNeverOrdered() throws {
+        try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26 (always on Linux)")
+        let ids = [pqIdentity(), pqIdentity(), pqIdentity()]
+        let trusts = ids.map { _ in MemoryEpochTrustStore() }
+        let shared = tmp.appendingPathComponent("Shared.sempere"), bFolder = tmp.appendingPathComponent("B.sempere")
+        let root = try TestVaults.create(at: shared, identities: ids, names: ["A", "B", "X"]).root
+        func open(_ i: Int, _ url: URL) throws -> Vault {
+            try Vault.open(at: url, identities: [ids[i]], signing: TestVaults.signing(ids[i]), trust: trusts[i], root: root)
+        }
+        var a = try open(0, shared)
+        let aDev = try XCTUnwrap(a.writerDevice), xDev = try XCTUnwrap(try open(2, shared).writerDevice)
+        try a.removeDevices([xDev.rawValue])
+        let a2 = try a.writeDevicePublishedSummaries([:])
+        let remote = MemoryRemote(store: MemoryStore(name: "removed-signer"), base: ["vault"])
+        func sync(_ folder: URL, _ vault: Vault, _ device: DeviceID, _ state: String) throws -> SyncReport {
+            var o = SyncOptions(deviceLabel: state)
+            o.deviceID = device
+            return try SyncEngine(directory: folder, vault: vault, remote: remote,
+                                  stateURL: tmp.appendingPathComponent("state-rs-\(state).json"), options: o).run()
+        }
+        _ = try sync(shared, a, aDev, "A")
+        try FileManager.default.copyItem(at: shared, to: bFolder)
+        let b = try open(1, bFolder)
+        XCTAssertEqual(b.manifest.epoch, 2)
+        let bDev = try XCTUnwrap(b.writerDevice)
+        _ = try sync(bFolder, b, bDev, "B")
+        let aName = PublishedSummaries.deviceFileName(aDev), xName = PublishedSummaries.deviceFileName(xDev)
+        let later = PublishedSummaries.millis(Date()) + 60_000
+        let asX = try a.sealDeviceFile([:], device: xDev, version: later, signer: TestVaults.signing(ids[2]))
+        let asA = try a.sealDeviceFile([:], device: aDev, version: later, signer: TestVaults.signing(ids[2]))
+        try remote.write([PublishedSummaries.deviceFolderName, xName], .data(asX), condition: .unconditional)
+        try remote.write([PublishedSummaries.deviceFolderName, aName], .data(asA), condition: .unconditional)
+        let r = try sync(bFolder, b, bDev, "B")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bFolder.appendingPathComponent("summaries/\(xName)").path),
+                       StressWorld.brief(r))
+        XCTAssertTrue(r.skipped.contains { $0.path == "summaries/\(xName)" }, "\(r.skipped)")
+        XCTAssertEqual(try Data(contentsOf: bFolder.appendingPathComponent("summaries/\(aName)")), a2)
+        XCTAssertTrue(r.uploaded.contains("summaries/\(aName)"), StressWorld.brief(r))
+        XCTAssertEqual(try remote.read([PublishedSummaries.deviceFolderName, aName], maxBytes: 1 << 26).data, a2)
+    }
+
+    /// A run killed while it checked a received capture leaves its staging folder in `inbox/`
+    /// (hidden: no reader lists it). A later run removes it once it is an hour old, and the
+    /// capture arrives whole.
+    func testAKilledRunsStagingFolderIsCleanedUp() throws {
+        try twoDevices()
+        let id = try capture(on: "A")
+        try run("A")
+        let stage = dir("B").appendingPathComponent("inbox/.sempere-tmp-killed", isDirectory: true)
+        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
+        try Data("half".utf8).write(to: stage.appendingPathComponent(CaptureFile.name(id, .capture)))
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-7200)], ofItemAtPath: stage.path)
+        XCTAssertEqual(try openVault("B").inboxEntries().map(\.id), [], "a staging folder is no inbox entry")
+        try run("B")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stage.path))
+        XCTAssertEqual(inbox("B"), [CaptureFile.name(id, .capture)])
+        XCTAssertEqual(try openVault("B").readCapture(id).audio, audio)
+    }
+    func testCaptureTravelsAndAdoptionClearsIt() throws { try scenarioCaptureTravelsAndAdoptionClearsIt() }
+    func testUnexplainedInboxDeletionIsRestored() throws { try scenarioUnexplainedInboxDeletionIsRestored() }
+    func testLockedRunsUploadButNeverJudge() throws { try scenarioLockedRunsUploadButNeverJudge() }
+    func testForgedInboxFileIsQuarantined() throws { try scenarioForgedInboxFileIsQuarantined() }
+    func testLargeCaptureThroughCutTransfers() throws { try scenarioLargeCaptureThroughCutTransfers() }
+    func testTwoDevicesAdoptTheSameCaptureOffline() throws { try scenarioTwoDevicesAdoptTheSameCaptureOffline() }
+    func testPushOnlyNeverDownloads() throws { try scenarioPushOnlyNeverDownloads() }
+    func testDeviceSummariesTravelAndOwnFileIsNeverTaken() throws { try scenarioDeviceSummariesTravelAndOwnFileIsNeverTaken() }
+    func testForeignSummariesAreNotPlaced() throws { try scenarioForeignSummariesAreNotPlaced() }
+    func testABridgeCarriesSummaries() throws { try scenarioABridgeCarriesSummaries() }
+    func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
+    func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
+    func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
+    func testALaterEpochCopyIsLeftOnlyByALaggingDevice() throws { try scenarioALaterEpochCopyIsLeftOnlyByALaggingDevice() }
+    func testAForgedOwnCopyIsReplacedOnceItIsOld() throws { try scenarioAForgedOwnCopyIsReplacedOnceItIsOld() }
+    func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
+    func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
+    func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
+    func testForgedDeviceFilesNeverWin() throws { try scenarioForgedDeviceFilesNeverWin() }
+}
+
+final class InboxSummariesOverWebDAVMockTests: InboxSummariesScenarioCase {
+    override func transport() throws -> TransportUnderTest { try .mockDAV() }
+    func testCaptureTravelsAndAdoptionClearsIt() throws { try scenarioCaptureTravelsAndAdoptionClearsIt() }
+    func testUnexplainedInboxDeletionIsRestored() throws { try scenarioUnexplainedInboxDeletionIsRestored() }
+    func testLockedRunsUploadButNeverJudge() throws { try scenarioLockedRunsUploadButNeverJudge() }
+    func testForgedInboxFileIsQuarantined() throws { try scenarioForgedInboxFileIsQuarantined() }
+    func testLargeCaptureThroughCutTransfers() throws { try scenarioLargeCaptureThroughCutTransfers() }
+    func testTwoDevicesAdoptTheSameCaptureOffline() throws { try scenarioTwoDevicesAdoptTheSameCaptureOffline() }
+    func testPushOnlyNeverDownloads() throws { try scenarioPushOnlyNeverDownloads() }
+    func testDeviceSummariesTravelAndOwnFileIsNeverTaken() throws { try scenarioDeviceSummariesTravelAndOwnFileIsNeverTaken() }
+    func testForeignSummariesAreNotPlaced() throws { try scenarioForeignSummariesAreNotPlaced() }
+    func testABridgeCarriesSummaries() throws { try scenarioABridgeCarriesSummaries() }
+    func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
+    func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
+    func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
+    func testALaterEpochCopyIsLeftOnlyByALaggingDevice() throws { try scenarioALaterEpochCopyIsLeftOnlyByALaggingDevice() }
+    func testAForgedOwnCopyIsReplacedOnceItIsOld() throws { try scenarioAForgedOwnCopyIsReplacedOnceItIsOld() }
+    func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
+    func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
+    func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
+    func testForgedDeviceFilesNeverWin() throws { try scenarioForgedDeviceFilesNeverWin() }
+}
+
+final class InboxSummariesOverFolderTests: InboxSummariesScenarioCase {
+    override func transport() throws -> TransportUnderTest { .folder(tmp.appendingPathComponent("remote")) }
+    func testCaptureTravelsAndAdoptionClearsIt() throws { try scenarioCaptureTravelsAndAdoptionClearsIt() }
+    func testUnexplainedInboxDeletionIsRestored() throws { try scenarioUnexplainedInboxDeletionIsRestored() }
+    func testLockedRunsUploadButNeverJudge() throws { try scenarioLockedRunsUploadButNeverJudge() }
+    func testForgedInboxFileIsQuarantined() throws { try scenarioForgedInboxFileIsQuarantined() }
+    func testLargeCaptureThroughCutTransfers() throws { try scenarioLargeCaptureThroughCutTransfers() }
+    func testTwoDevicesAdoptTheSameCaptureOffline() throws { try scenarioTwoDevicesAdoptTheSameCaptureOffline() }
+    func testDeviceSummariesTravelAndOwnFileIsNeverTaken() throws { try scenarioDeviceSummariesTravelAndOwnFileIsNeverTaken() }
+    func testABridgeCarriesSummaries() throws { try scenarioABridgeCarriesSummaries() }
+    func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
+    func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
+    func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
+    func testALaterEpochCopyIsLeftOnlyByALaggingDevice() throws { try scenarioALaterEpochCopyIsLeftOnlyByALaggingDevice() }
+    func testAForgedOwnCopyIsReplacedOnceItIsOld() throws { try scenarioAForgedOwnCopyIsReplacedOnceItIsOld() }
+    func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
+    func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
+    func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
+    func testForgedDeviceFilesNeverWin() throws { try scenarioForgedDeviceFilesNeverWin() }
+}
+
+final class InboxSummariesOverEvictingFolderTests: InboxSummariesScenarioCase {
+    override func transport() throws -> TransportUnderTest { TransportUnderTest.evictingFolder(tmp.appendingPathComponent("remote")).0 }
+    override func tune(_ options: inout SyncOptions) { options.unlistedTimeout = 0 }
+    func testCaptureTravelsAndAdoptionClearsIt() throws { try scenarioCaptureTravelsAndAdoptionClearsIt() }
+    func testUnexplainedInboxDeletionIsRestored() throws { try scenarioUnexplainedInboxDeletionIsRestored() }
+    func testLockedRunsUploadButNeverJudge() throws { try scenarioLockedRunsUploadButNeverJudge() }
+    func testTwoDevicesAdoptTheSameCaptureOffline() throws { try scenarioTwoDevicesAdoptTheSameCaptureOffline() }
+    func testDeviceSummariesTravelAndOwnFileIsNeverTaken() throws { try scenarioDeviceSummariesTravelAndOwnFileIsNeverTaken() }
+}
+
+final class InboxSummariesOverEvictedMemoryTests: InboxSummariesScenarioCase {
+    override func transport() throws -> TransportUnderTest { .evictedMemory() }
+    func testCaptureTravelsAndAdoptionClearsIt() throws { try scenarioCaptureTravelsAndAdoptionClearsIt() }
+    func testUnexplainedInboxDeletionIsRestored() throws { try scenarioUnexplainedInboxDeletionIsRestored() }
+    func testTwoDevicesAdoptTheSameCaptureOffline() throws { try scenarioTwoDevicesAdoptTheSameCaptureOffline() }
+    func testDeviceSummariesTravelAndOwnFileIsNeverTaken() throws { try scenarioDeviceSummariesTravelAndOwnFileIsNeverTaken() }
+}
+
+final class InboxSummariesOverWsgidavTests: InboxSummariesScenarioCase {
+    override func transport() throws -> TransportUnderTest { try .wsgidav() }
+    func testCaptureTravelsAndAdoptionClearsIt() throws { try scenarioCaptureTravelsAndAdoptionClearsIt() }
+    func testUnexplainedInboxDeletionIsRestored() throws { try scenarioUnexplainedInboxDeletionIsRestored() }
+    func testLargeCaptureThroughCutTransfers() throws { try scenarioLargeCaptureThroughCutTransfers() }
+    func testDeviceSummariesTravelAndOwnFileIsNeverTaken() throws { try scenarioDeviceSummariesTravelAndOwnFileIsNeverTaken() }
+}

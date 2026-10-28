@@ -1,0 +1,258 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "${applicationName} voice note" : {
+      "comment" : "Siri phrase: starts a quick voice note. Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz de ${applicationName}"
+          }
+        }
+      }
+    },
+    "Dictate a note in ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note. Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dicta una nota en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Dictate in ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note (infinitive in Spanish). Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictar en ${applicationName}"
+          }
+        }
+      }
+    },
+    "End the ${applicationName} voice note" : {
+      "comment" : "Siri phrase: stops the quick voice note. Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Termina la nota de voz de ${applicationName}"
+          }
+        }
+      }
+    },
+    "Finish the ${applicationName} voice note" : {
+      "comment" : "Siri phrase: stops the quick voice note (infinitive in Spanish). Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminar la nota de voz de ${applicationName}"
+          }
+        }
+      }
+    },
+    "New ${applicationName} voice note" : {
+      "comment" : "Siri phrase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva nota de voz en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Record a ${applicationName} voice note" : {
+      "comment" : "Siri phrase; must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graba una nota de voz en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Record a voice note in ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note (infinitive in Spanish). Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabar una nota de voz en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Record a voice note with ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note (infinitive, no article in Spanish). Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabar nota de voz con ${applicationName}"
+          }
+        }
+      }
+    },
+    "Record in ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note. Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graba en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Record voice in ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note (infinitive in Spanish). Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabar voz en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Record with ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note. Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graba con ${applicationName}"
+          }
+        }
+      }
+    },
+    "Start a ${applicationName} voice note" : {
+      "comment" : "Siri phrase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empieza una nota de voz en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Start recording in ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note (infinitive in Spanish). Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar a grabar en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Stop ${applicationName} recording" : {
+      "comment" : "Siri phrase: stops the quick voice note. Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deja de grabar en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Stop dictating in ${applicationName}" : {
+      "comment" : "Siri phrase: stops the quick voice note (infinitive in Spanish). Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de dictar en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Stop recording in ${applicationName}" : {
+      "comment" : "Siri phrase: stops the quick voice note (infinitive in Spanish). Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener la grabación en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Stop the ${applicationName} voice note" : {
+      "comment" : "Siri phrase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detén la nota de voz de ${applicationName}"
+          }
+        }
+      }
+    },
+    "Stop the voice note in ${applicationName}" : {
+      "comment" : "Siri phrase: stops the quick voice note. Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para la nota de voz de ${applicationName}"
+          }
+        }
+      }
+    },
+    "Take a voice note in ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note. Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toma una nota de voz en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Voice note in ${applicationName}" : {
+      "comment" : "Siri phrase: starts a quick voice note. Must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz en ${applicationName}"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

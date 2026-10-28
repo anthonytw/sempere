@@ -1,0 +1,3594 @@
+[
+  {
+    "ranges" : [
+      [
+        0,
+        4
+      ],
+      [
+        14,
+        18
+      ],
+      [
+        25,
+        30
+      ]
+    ],
+    "snippet" : "Café au lait, CAFE noir, café crèm…",
+    "term" : "café",
+    "text" : "Café au lait, CAFE noir, café crème"
+  },
+  {
+    "ranges" : [
+      [
+        4,
+        10
+      ],
+      [
+        16,
+        23
+      ],
+      [
+        29,
+        36
+      ]
+    ],
+    "snippet" : "Die Straße, die STRASSE, die strasse",
+    "term" : "straße",
+    "text" : "Die Straße, die STRASSE, die strasse"
+  },
+  {
+    "ranges" : [
+      [
+        8,
+        9
+      ]
+    ],
+    "snippet" : "Die Straße",
+    "term" : "ss",
+    "text" : "Die Straße"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        8,
+        10
+      ]
+    ],
+    "snippet" : "ﬁsh and fish",
+    "term" : "fi",
+    "text" : "ﬁsh and fish"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        8
+      ]
+    ],
+    "snippet" : "İstanbul",
+    "term" : "istanbul",
+    "text" : "İstanbul"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        4
+      ],
+      [
+        5,
+        9
+      ]
+    ],
+    "snippet" : "ΟΔΟΣ οδος",
+    "term" : "οδος",
+    "text" : "ΟΔΟΣ οδος"
+  },
+  {
+    "ranges" : [
+      [
+        6,
+        12
+      ]
+    ],
+    "snippet" : "naïve résumé",
+    "term" : "resume",
+    "text" : "naïve résumé"
+  },
+  {
+    "ranges" : [
+      [
+        2,
+        3
+      ]
+    ],
+    "snippet" : "が か",
+    "term" : "か",
+    "text" : "が か"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        3
+      ]
+    ],
+    "snippet" : "x̃y",
+    "term" : "xy",
+    "text" : "x̃y"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "x̃y",
+    "term" : "x",
+    "text" : "x̃y"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ]
+    ],
+    "snippet" : "️a️",
+    "term" : "️",
+    "text" : "️a️"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "️a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "aaa",
+    "term" : "aa",
+    "text" : "aaa"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "a",
+    "text" : ""
+  },
+  {
+    "ranges" : [
+      [
+        1,
+        2
+      ]
+    ],
+    "snippet" : "abc",
+    "term" : "  b  ",
+    "text" : "abc"
+  },
+  {
+    "ranges" : [
+      [
+        35,
+        39
+      ]
+    ],
+    "snippet" : "…uick brown fox jumps over the lazy dog and keeps running far bey…",
+    "term" : "lazy",
+    "text" : "The quick brown fox jumps over the lazy dog and keeps running far beyond the hills, the end"
+  },
+  {
+    "ranges" : [
+      [
+        27,
+        31
+      ]
+    ],
+    "snippet" : "line one line two with the word third line here and some more…",
+    "term" : "word",
+    "text" : "line one\nline two with the word\r\nthird line here and some more text to cut"
+  },
+  {
+    "ranges" : [
+      [
+        27,
+        32
+      ]
+    ],
+    "snippet" : "leading spaces then the match and trailing",
+    "term" : "match",
+    "text" : "   leading spaces then the match and trailing   "
+  },
+  {
+    "ranges" : [
+      [
+        14,
+        19
+      ]
+    ],
+    "snippet" : "tab\tseparated\tmatch\there",
+    "term" : "match",
+    "text" : "tab\tseparated\tmatch\there"
+  },
+  {
+    "ranges" : [
+      [
+        6,
+        8
+      ],
+      [
+        15,
+        17
+      ]
+    ],
+    "snippet" : "Emoji 👍🏽 and 👍 here",
+    "term" : "👍",
+    "text" : "Emoji 👍🏽 and 👍 here"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        3
+      ],
+      [
+        7,
+        10
+      ]
+    ],
+    "snippet" : "नमस्ते नमस",
+    "term" : "नमस",
+    "text" : "नमस्ते नमस"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        8
+      ],
+      [
+        9,
+        14
+      ]
+    ],
+    "snippet" : "עִבְרִית עברית",
+    "term" : "עברית",
+    "text" : "עִבְרִית עברית"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        8
+      ],
+      [
+        9,
+        13
+      ]
+    ],
+    "snippet" : "مُحَمَّد محمد",
+    "term" : "محمد",
+    "text" : "مُحَمَّد محمد"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-ö",
+    "text" : "ö😀ŉ\n-がǰiẞ"
+  },
+  {
+    "ranges" : [
+      [
+        2,
+        3
+      ]
+    ],
+    "snippet" : "ǰαŉiE😀åö😀",
+    "term" : "ŉ",
+    "text" : "ǰαŉiE😀åö😀"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\nöǰ",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞẞSS",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ё",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ёö",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "å",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "α",
+    "term" : "α",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "αüi",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "αü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉ-",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "snippet" : "SS",
+    "term" : "S",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "α",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ёåمُ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üẞ",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "が",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰ😀ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀å",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iaمُ",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ü",
+    "term" : "ü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞ",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "が",
+    "term" : "が",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ẞ",
+    "term" : "ẞ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "Eα",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "α👍🏽مُ",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "が",
+    "term" : "が",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉ",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ü",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ёがα",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üが",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ü",
+    "term" : "ü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ё",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉ",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+      [
+        2,
+        4
+      ]
+    ],
+    "snippet" : "öåёü😀åẞがが",
+    "term" : "\nёü",
+    "text" : "öåёü😀åẞがが"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰ",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "aё",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞSS😀",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "aüمُ",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üü",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "がŉSS",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-ёمُ",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰ-",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "å",
+    "term" : "å",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "-",
+    "term" : "-",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "E",
+    "term" : "E",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iü",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üöα",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üi",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SSǰ",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "-",
+    "term" : "-",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ååå",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "Eёå",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "-",
+    "term" : "-",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SS",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "aǰẞ",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ẞ",
+    "term" : "ẞ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "Eǰ😀",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "E",
+    "term" : "E",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُå",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "\nǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "E",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ё",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "Eがå",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        2,
+        3
+      ]
+    ],
+    "snippet" : "ǰöẞEöaёaE",
+    "term" : "ẞ",
+    "text" : "ǰöẞEöaёaE"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُå",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ii",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "α",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُa",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öaŉ",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "E\nё",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰ-ŉ",
+    "text" : "ǰöSSaمُ😀üöǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åё",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åiSS",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "å",
+    "term" : "å",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞがǰ",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "مُ",
+    "term" : "م",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉ\nمُ",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        6,
+        7
+      ]
+    ],
+    "snippet" : "üöiمُEüEiö",
+    "term" : "ü",
+    "text" : "üöiمُEüEiö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉEå",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀å",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "--",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "snippet" : "SS",
+    "term" : "S",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öŉ",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "snippet" : "SS",
+    "term" : "S",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ẞ",
+    "term" : "ẞ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞ",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀مُ😀",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "مُ",
+    "term" : "م",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ö",
+    "term" : "ö",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "É",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ё",
+    "term" : "ё",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "α",
+    "term" : "α",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُ",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üが",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        11,
+        12
+      ]
+    ],
+    "snippet" : "مُ-ŉαẞمُمُẞが",
+    "term" : "が",
+    "text" : "مُ-ŉαẞمُمُẞが"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉ😀",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "Eüi",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "α-ё",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "aE",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SSåǰ",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "-",
+    "term" : "-",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åöSS",
+    "text" : "م"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "が",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "a",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "å",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åŉ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞå",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ü",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉ",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ö",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "snippet" : "SS",
+    "term" : "S",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ё",
+    "term" : "ё",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "α",
+    "term" : "α",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åẞ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öi",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öa😀",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "が",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ẞ",
+    "term" : "ẞ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُ",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ö",
+    "term" : "ö",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ü",
+    "term" : "ü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ]
+    ],
+    "snippet" : "ŉمُSS iαiمُ-",
+    "term" : "i",
+    "text" : "ŉمُSS\niαiمُ-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ё",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰ\nå",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞẞα",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "α\nẞ",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "مُ",
+    "term" : "م",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "i",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SS-E",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "が😀",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "a",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\nαα",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "αåё",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "مُ",
+    "term" : "م",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "å",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "が",
+    "term" : "が",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "snippet" : "SS",
+    "term" : "S",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉöمُ",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "αii",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞǰǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "が-",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞia",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞ",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "å",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀مُё",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "α",
+    "term" : "α",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "å",
+    "term" : "å",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öŉ",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ü",
+    "term" : "ü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ё",
+    "term" : "ё",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\nがŉ",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\n-が",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iü",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "α",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-åمُ",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+      [
+        4,
+        5
+      ]
+    ],
+    "snippet" : "ǰiEŉがåααSS",
+    "term" : "が",
+    "text" : "ǰiEŉがåααSS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞ",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üöSS",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\nE-",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰ",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "がEα",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åẞE",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SSمُが",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "E",
+    "term" : "E",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "i",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "مُ",
+    "term" : "م",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "が",
+    "term" : "が",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "å",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀がŉ",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀E",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰ😀が",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "aü",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\nü",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öaå",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ёαمُ",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "snippet" : "SS",
+    "term" : "S",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ёSS",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "が",
+    "term" : "が",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-",
+    "text" : "😀が\niمُaŉSSöα"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ö",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\nSS",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰёẞ",
+    "text" : "ёمُŉŉ😀öё\n😀å"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉǰ",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "Eǰ",
+    "text" : "😀ёёё-مُǰEŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öiå",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ü😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰö",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀\n",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öがŉ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُα",
+    "text" : "\nöαSSöǰiEمُ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "a",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iα",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "i",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ü",
+    "term" : "ü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉå",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "i",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ü",
+    "term" : "ü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SSمُi",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "E",
+    "term" : "E",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ё",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "-",
+    "term" : "-",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\nE",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞE",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\nẞ",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "-",
+    "term" : "-",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "i",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰが",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "がŉǰ",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "Eがα",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iiẞ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "が",
+    "term" : "が",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰ",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ё",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "が",
+    "term" : "が",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üa",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ö",
+    "term" : "ö",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "aåö",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀SS",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öがが",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öö",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-ё",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "aSSö",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ii",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "E",
+    "term" : "E",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "å",
+    "term" : "å",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُŉü",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ö",
+    "term" : "ö",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-がö",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉSS-",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SS-",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åمُa",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰå",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀ẞ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ё😀i-aüمُüǰ",
+    "term" : "ё",
+    "text" : "ё😀i-aüمُüǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰ\nŉ",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iE",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉǰ",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "aα",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉ😀",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ö",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "-",
+    "term" : "-",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "α",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "å",
+    "term" : "å",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\niё",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "E\n",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "αẞ",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "が",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ёǰ",
+    "text" : "😀がα-iががEü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ü-",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ŉ",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "が",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SS",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ö",
+    "term" : "ö",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "aẞ",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "-ǰمُ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀α-",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iiǰ",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "a",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰё",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ö",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "E",
+    "term" : "E",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üёSS",
+    "text" : "\n"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ü",
+    "term" : "ü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "å😀مُ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åSS-",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ü",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "a",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üE",
+    "text" : "É"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ё",
+    "term" : "ё",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SS",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞα",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "i",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "が",
+    "term" : "が",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ö",
+    "term" : "ö",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ŉ",
+    "term" : "ŉ",
+    "text" : "ŉ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "i",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ö\n",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ẞ",
+    "term" : "ẞ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "が",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀å",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "å",
+    "term" : "å",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "が",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\naẞ",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\nSSö",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ǰ",
+    "term" : "ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ü",
+    "term" : "ü",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ẞåü",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰSS",
+    "text" : "ü"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "üǰ\n",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "E",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "a",
+    "term" : "a",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "öåمُ",
+    "text" : "ẞ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "-",
+    "term" : "-",
+    "text" : "-"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ö",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "がǰ",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iα",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ü😀ǰ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "مُάå",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "αǰمُ",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ö",
+    "term" : "ö",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åü",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        2
+      ]
+    ],
+    "snippet" : "😀",
+    "term" : "😀",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åمُå",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰё",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "E",
+    "text" : "j"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SSöE",
+    "text" : "ǰ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "αå",
+    "text" : "a"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SSẞ",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "SSαё",
+    "text" : "å"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "ё",
+    "term" : "ё",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "a\n",
+    "text" : "😀"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iẞ",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "が",
+    "term" : "が",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "åSS",
+    "text" : "ё"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "i",
+    "term" : "i",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ]
+    ],
+    "snippet" : "مُ",
+    "term" : "م",
+    "text" : "مُ"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "😀α",
+    "text" : "が"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ü",
+    "text" : "ö"
+  },
+  {
+    "ranges" : [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "snippet" : "SS",
+    "term" : "S",
+    "text" : "SS"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "iǰ\n",
+    "text" : "i"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "Eåǰ",
+    "text" : "α"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "ǰEö",
+    "text" : "E"
+  },
+  {
+    "ranges" : [
+
+    ],
+    "term" : "\n😀",
+    "text" : "ŉ"
+  }
+]

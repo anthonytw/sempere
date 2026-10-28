@@ -1,0 +1,69 @@
+{
+  "audio": {
+    "focaccia-memo": {
+      "file": "audio/focaccia-memo.m4a",
+      "sha256": "0ad5154c5b4b7f4467fe2f057ff5f4c884ac9b5458f13174b152ae3909072638",
+      "voice": "af_heart",
+      "title": "Voice memo: next time",
+      "started": "2026-10-05T19:42:10-04:00",
+      "script": "Okay, focaccia notes while I remember. Today's loaf came out a little pale, so next time I'm baking it four minutes longer. The dough felt great after the fridge rest, really bubbly. Oh, and use way more olive oil in the pan, more than you think you need. Tomatoes cut side up. And buy rosemary. We're out of rosemary."
+    },
+    "kepler-recap": {
+      "file": "audio/kepler-recap.m4a",
+      "sha256": "c0be60a96a7fce559229342c525db2f4d2faf9169e545d7ae9df1bc9c6637e9b",
+      "voice": "am_michael",
+      "title": "Lecture recap",
+      "started": "2026-10-21T16:20:35-04:00",
+      "script": "Quick recap of today's lecture. Kepler's third law: the period squared equals the semi-major axis cubed, in years and A U. So for Mars, one point five two cubed is about three point five, and the square root is one point eight eight years. I should check Saturn tomorrow, it should come out around twenty nine and a half. And remember, equal areas means the planet moves fastest at perihelion."
+    }
+  },
+  "fonts": {
+    "caveat": {
+      "file": "Caveat[wght].ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/caveat/Caveat%5Bwght%5D.ttf",
+      "sha256": "0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988"
+    },
+    "kalam": {
+      "file": "Kalam-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/kalam/Kalam-Regular.ttf",
+      "sha256": "57cecb63d4608019371954274ae1d8c397764debd5b19d4a33c1efa4dc923c0b"
+    }
+  },
+  "media": {
+    "saturn": {
+      "file": "saturn-PIA14934.jpg",
+      "url": "https://images-assets.nasa.gov/image/PIA14934/PIA14934~medium.jpg",
+      "sha256": "343d152625234c0108468e401be69dbe503bb41d341c144bd721b83b07cc10ae"
+    },
+    "moon-artemis": {
+      "file": "moon-artemis-ii.jpg",
+      "url": "https://images-assets.nasa.gov/image/Artemis%20II%20at%20the%20pad%20Full%20Snow%20Moon%2002012026_6/Artemis%20II%20at%20the%20pad%20Full%20Snow%20Moon%2002012026_6~medium.jpg",
+      "sha256": "22f2db64e478f13372ff4e6a199346478b4c25979a2af31664100fc53b6f0e2d"
+    },
+    "aurora": {
+      "file": "aurora-iss072e159172.jpg",
+      "url": "https://images-assets.nasa.gov/image/iss072e159172/iss072e159172~medium.jpg",
+      "sha256": "05e8bd2016bc80c72873385305492acdd1aea7c59bb5a33d260645a56b4f4687"
+    },
+    "grand-canyon": {
+      "file": "grand-canyon-iss074e0208838.jpg",
+      "url": "https://images-assets.nasa.gov/image/iss074e0208838/iss074e0208838~medium.jpg",
+      "sha256": "ce5b090afd7545249a5cb23fa3ff37c51f8b8d43a592eeaf2e7cbebf0c544809"
+    },
+    "plankton": {
+      "file": "phytoplankton-iceland.jpg",
+      "url": "https://images-assets.nasa.gov/image/GSFC_20171208_Archive_e001018/GSFC_20171208_Archive_e001018~medium.jpg",
+      "sha256": "85630d1224f53f4395e6bc28c40acbbcd5305d075c52fba881a08873d7bd76f3"
+    },
+    "zinnias": {
+      "file": "zinnias-KSC-20181127-PH_JBS01_0005.jpg",
+      "url": "https://images-assets.nasa.gov/image/KSC-20181127-PH_JBS01_0005/KSC-20181127-PH_JBS01_0005~medium.jpg",
+      "sha256": "bd80c0ed7ace2909ad3e004d95841cf983b7f7071822912b9ea9f3920d07a8c3"
+    },
+    "artemis-launch": {
+      "file": "artemis-ii-launch-causeway.mp4",
+      "url": "https://images-assets.nasa.gov/video/KSC%20ART%20II%20Cause%20Way%20Launch%20low%20angle/KSC%20ART%20II%20Cause%20Way%20Launch%20low%20angle~medium.mp4",
+      "sha256": "2dfcca4fef9cf914eac5c2b8b09a95cdb258e1648af23daf3dfc7ef67d612cbc"
+    }
+  }
+}

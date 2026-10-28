@@ -1,0 +1,103 @@
+[
+  {
+    "box" : [
+      40,
+      100,
+      400,
+      120
+    ],
+    "itemId" : "5ea4c000-0000-4000-8000-000000000110",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 2,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000102",
+    "snippet" : "Typed: the café on the corner of the Straße.…",
+    "source" : "text",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "engine" : "notability-14",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 3,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000103",
+    "snippet" : "Résumé of the cafe visit, written in a café in a…",
+    "source" : "handwriting",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+      {
+        "box" : [
+          124,
+          40,
+          27,
+          20
+        ],
+        "text" : "the"
+      },
+      {
+        "box" : [
+          157,
+          40,
+          36,
+          20
+        ],
+        "text" : "cafe"
+      },
+      {
+        "box" : [
+          367,
+          40,
+          36,
+          20
+        ],
+        "text" : "café"
+      },
+      {
+        "box" : [
+          532,
+          40,
+          27,
+          20
+        ],
+        "text" : "the"
+      }
+    ]
+  },
+  {
+    "end" : 4.5,
+    "engine" : "synthetic-speech-2",
+    "matches" : 2,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000180",
+    "recordingTitle" : "Walk to the café",
+    "snippet" : "…ay we walk down the Straße to the café, and the café is closed again…",
+    "source" : "transcript",
+    "start" : 0,
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "end" : 9.25,
+    "engine" : "synthetic-speech-2",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000180",
+    "recordingTitle" : "Walk to the café",
+    "snippet" : "…RESUME is on page two, after the café.",
+    "source" : "transcript",
+    "start" : 4.5,
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  }
+]

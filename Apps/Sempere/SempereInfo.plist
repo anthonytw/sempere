@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged with the generated Info.plist (INFOPLIST_KEY_* build settings). -->
+	<!-- Export compliance. The app implements standard
+	     encryption (age: ML-KEM-768 + X25519, ChaCha20-Poly1305, HKDF, HMAC, scrypt) beyond the
+	     OS's: under the EAR it is mass-market 5D992.c, self-classified under License Exception
+	     ENC 740.17(b)(1), with no report or BIS filing. NO here is Apple's "exempt from export
+	     compliance documentation": standard algorithms need only the French declaration, and
+	     France is excluded from availability. Adding France means YES plus the
+	     ITSEncryptionExportComplianceCode Apple issues for the approved declaration. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>io.github.anthonytw.sempere.vault</string>
+			<key>UTTypeDescription</key>
+			<string>Sempere Vault</string>
+			<!-- A plain folder, never com.apple.package: iCloud Drive syncs a package as ONE item, so
+			     two devices writing into a vault package make a conflict of the whole vault, and the
+			     version the user does not pick loses every note written on that side (docs/io.md
+			     "Vaults are folders"). -->
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sempere</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>io.github.anthonytw.sempere.backup</string>
+			<key>UTTypeDescription</key>
+			<string>Sempere Backup</string>
+			<!-- A backup (backup.json; BackupDestination writes <vault>.sempere-backup): a plain folder too,
+			     NEVER com.apple.package, for the reason above. Open Vault... copies one in once. -->
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sempere-backup</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>io.github.anthonytw.sempere.notes</string>
+			<key>UTTypeDescription</key>
+			<string>Sempere Notes (drag inside the app)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>io.github.anthonytw.sempere.notebook</string>
+			<key>UTTypeDescription</key>
+			<string>Sempere Notebook (drag inside the app)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Sempere Vault</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>io.github.anthonytw.sempere.vault</string>
+			</array>
+		</dict>
+		<!-- PDFs: offered under Open With (Finder) and in the share sheet, never the default app.
+		     An opened PDF is imported as a new note into the open vault (docs/mac.md). -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>PDF Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+			</array>
+		</dict>
+	</array>
+	<!-- sempere://quick-voice/settings and …/recording: the widgets, the Control Center control and the
+	     Live Activity open the app there (VoiceNoteLink, docs/quick-capture.md). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.github.anthonytw.sempere</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>sempere</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- Recording keeps running with the screen locked or the app in the background (docs/attachments.md §13).
+	     fetch and processing: the sync's scheduled tasks for every vault and target (BackgroundSync.swift, docs/io.md
+     "Sync targets in the app", "Background sync"). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>io.github.anthonytw.sempere.sync.refresh</string>
+		<string>io.github.anthonytw.sempere.sync.processing</string>
+	</array>
+</dict>
+</plist>

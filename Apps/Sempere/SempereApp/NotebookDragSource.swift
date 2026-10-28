@@ -1,0 +1,346 @@
+import Sempere
+import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
+
+/// How a notebook row in the sidebar starts a drag.
+///
+/// A drag the sidebar `List` starts itself (SwiftUI's `onDrag` or `draggable`
+/// on one of its rows) is handled by the list's collection view while it stays
+/// over that list: the rows' drop delegates are never asked (TestFlight build
+/// 7: a notebook dropped on another did nothing; `SidebarDropUITests`' trace
+/// shows the drag begin and no row validate it, on the iPad and the Mac).
+/// Notes dragged in from the note list (another collection view) reach the
+/// rows. So a notebook row starts its drag from a `UIDragInteraction` of its
+/// own (`uikit`), which the list does not own. That view also carries the
+/// row's context menu (`UIContextMenuInteraction`): UIKit coordinates a long
+/// press between a drag and a menu only when both are on one view; with
+/// SwiftUI's `contextMenu` on the row the menu took the long press on the
+/// iPad and the drag never reached a row. `SidebarDropUITests` tries every
+/// style (`SEMPERE_DEBUG_NOTEBOOK_DRAG` picks one in debug builds) and
+/// requires the shipped one to work. Re-tested on the iPadOS 27.0 simulator:
+/// `onDrag` and `transferable` still never reach another row, only `uikit` does.
+enum NotebookDragStyle: String, CaseIterable, Sendable {
+    /// SwiftUI's `onDrag` on the row.
+    case onDrag
+    /// A `UIDragInteraction` on a view over the row: the session is not the list's own.
+    case uikit
+    /// SwiftUI's `draggable` / `dropDestination` (Transferable).
+    case transferable
+
+    static let shipped: NotebookDragStyle = .uikit
+
+    static var current: NotebookDragStyle {
+        #if DEBUG
+        if let v = ProcessInfo.processInfo.environment["SEMPERE_DEBUG_NOTEBOOK_DRAG"], let s = NotebookDragStyle(rawValue: v) {
+            return s
+        }
+        #endif
+        return shipped
+    }
+}
+
+/// A notebook dragged with the Transferable APIs (`NotebookDragStyle.transferable`).
+struct NotebookTransfer: Codable, Transferable, Sendable {
+    var path: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .sempereNotebook)
+    }
+}
+
+/// One entry of a notebook row's context menu. The title is a resource, not
+/// a `String`: the menu is built by UIKit (`UIAction`) as well as SwiftUI, and
+/// a plain `String` would never be looked up in the catalog.
+struct NotebookRowAction: Identifiable, Sendable {
+    let title: LocalizedStringResource
+    let systemImage: String
+    /// Shown as destructive (red) in the menu.
+    var destructive = false
+    let perform: @MainActor @Sendable () -> Void
+    var id: String { title.key }
+    /// The title in the app's language.
+    var localizedTitle: String { String(localized: title) }
+
+    /// A notebook row's menu: New Notebook Inside…, Rename or Move…, Move Notebook To…,
+    /// Move to Top Level when `moveToTop` is given (a notebook inside another), Export Notebook…,
+    /// and Delete Notebook when `delete` is given (an empty notebook).
+    static func notebookMenu(newInside: @escaping @MainActor @Sendable () -> Void,
+                             rename: @escaping @MainActor @Sendable () -> Void,
+                             move: @escaping @MainActor @Sendable () -> Void,
+                             moveToTop: (@MainActor @Sendable () -> Void)? = nil,
+                             export: @escaping @MainActor @Sendable () -> Void,
+                             delete: (@MainActor @Sendable () -> Void)? = nil) -> [NotebookRowAction] {
+        var actions = [NotebookRowAction(title: "New Notebook Inside…", systemImage: "folder.badge.plus", perform: newInside),
+                       NotebookRowAction(title: "Rename or Move…", systemImage: "pencil", perform: rename),
+                       NotebookRowAction(title: "Move Notebook To…", systemImage: "folder", perform: move)]
+        if let moveToTop {
+            actions.append(NotebookRowAction(title: "Move to Top Level", systemImage: "arrow.up.to.line", perform: moveToTop))
+        }
+        actions.append(NotebookRowAction(title: "Export Notebook…", systemImage: ExportCommand.menuImage, perform: export))
+        if let delete {
+            actions.append(NotebookRowAction(title: "Delete Notebook", systemImage: "trash", destructive: true, perform: delete))
+        }
+        return actions
+    }
+}
+
+extension View {
+    /// Makes a sidebar notebook row draggable (dropped on another notebook it
+    /// nests there; on All Notes it goes to the top level) with `menu` as its
+    /// context menu, in the current `NotebookDragStyle`. The whole row drags
+    /// (`hasChildren`: but its trailing disclosure chevron).
+    func notebookDragSource(_ path: String, hasChildren: Bool = false, menu: [NotebookRowAction]) -> some View {
+        modifier(NotebookDragSourceModifier(path: path, hasChildren: hasChildren, menu: menu))
+    }
+}
+
+private struct NotebookDragSourceModifier: ViewModifier {
+    @AppModelEnvironment private var model
+    @Environment(\.undoManager) private var undoManager
+    let path: String
+    let hasChildren: Bool
+    let menu: [NotebookRowAction]
+
+    /// The trailing width left to the row's disclosure chevron.
+    static let chevronWidth: CGFloat = 44
+
+    func body(content: Content) -> some View {
+        switch NotebookDragStyle.current {
+        case .onDrag:
+            content
+                .onDrag { model.beginDrag(.notebook(path), provider: DragPayload.notebook(path).provider()) }
+                .contextMenu { menuButtons }
+        case .uikit:
+            // The handle spans the whole row (the label is stretched to the row's width first: sized
+            // to the label alone, a short name left a sliver to drag on a Mac). A row with children
+            // leaves its trailing disclosure chevron to the row.
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .overlay(alignment: .leading) {
+                    GeometryReader { geo in
+                        UIKitDragHandle(model: model, path: path, menu: menu, undoManager: undoManager)
+                            .frame(width: max(0, geo.size.width - (hasChildren ? Self.chevronWidth : 0)), height: geo.size.height)
+                    }
+                }
+        case .transferable:
+            content.draggable(NotebookTransfer(path: path)).contextMenu { menuButtons }
+        }
+    }
+
+    // help-lint: titled
+    @ViewBuilder private var menuButtons: some View {
+        ForEach(menu) { action in
+            Button(action.localizedTitle, systemImage: action.systemImage, role: action.destructive ? .destructive : nil) { action.perform() }
+        }
+    }
+}
+
+/// A clear view over a notebook row (`NotebookDragStyle.uikit`) whose
+/// `UIDragInteraction` starts the notebook's drag and whose
+/// `UIContextMenuInteraction` shows the row's menu (one view, so UIKit
+/// arbitrates the long press: the menu, then a drag when the finger moves).
+/// Taps go through to the row (the list's selection is the collection view's).
+/// It takes drops on the row too (`UIKitSidebarDrop`): on the iPad a drop over
+/// a platform view inside a row never reaches the row's SwiftUI `onDrop`.
+///
+/// The view is clear, so the lift and the menu's highlight show the row's cell
+/// (`SidebarCellPreview`): with the view itself as the preview, a device showed
+/// nothing lifting under the finger and the notebook seemed not to drag.
+private struct UIKitDragHandle: UIViewRepresentable {
+    let model: AppModel
+    let path: String
+    let menu: [NotebookRowAction]
+    let undoManager: UndoManager?
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        let drag = UIDragInteraction(delegate: context.coordinator)
+        drag.isEnabled = true
+        view.addInteraction(drag)
+        view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
+        view.addInteraction(UIDropInteraction(delegate: context.coordinator.drop))
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.path = path
+        context.coordinator.menu = menu
+        context.coordinator.drop.target = DropTarget(.notebook(path)) ?? .topLevel
+        context.coordinator.drop.undoManager = undoManager
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(model: model, path: path, menu: menu, undoManager: undoManager) }
+
+    @MainActor
+    final class Coordinator: NSObject, UIDragInteractionDelegate, UIContextMenuInteractionDelegate {
+        let model: AppModel
+        var path: String
+        var menu: [NotebookRowAction]
+        /// The row's drops (held here: an interaction keeps its delegate weakly).
+        let drop: UIKitSidebarDrop
+
+        init(model: AppModel, path: String, menu: [NotebookRowAction], undoManager: UndoManager?) {
+            self.model = model
+            self.path = path
+            self.menu = menu
+            drop = UIKitSidebarDrop(model: model, target: DropTarget(.notebook(path)) ?? .topLevel, undoManager: undoManager)
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+            let actions = menu
+            guard !actions.isEmpty else { return nil }
+            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+                UIMenu(children: actions.map { action in
+                    UIAction(title: action.localizedTitle, image: UIImage(systemName: action.systemImage),
+                             attributes: action.destructive ? .destructive : []) { _ in
+                        MainActor.assumeIsolated { action.perform() }
+                    }
+                })
+            }
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    configuration: UIContextMenuConfiguration,
+                                    highlightPreviewForItemWithIdentifier identifier: any NSCopying) -> UITargetedPreview? {
+            SidebarCellPreview.targeted(for: interaction.view)
+        }
+
+        func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: UIDragSession) -> [UIDragItem] {
+            #if DEBUG
+            DropTrace.note("lift notebook=\(path) (uikit)")
+            #endif
+            let provider = model.beginDrag(.notebook(path), provider: DragPayload.notebook(path).provider())
+            let item = UIDragItem(itemProvider: provider)
+            item.localObject = path
+            return [item]
+        }
+
+        func dragInteraction(_ interaction: UIDragInteraction, previewForLifting item: UIDragItem,
+                             session: UIDragSession) -> UITargetedDragPreview? {
+            SidebarCellPreview.drag(for: interaction.view)
+        }
+
+        func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession,
+                             didEndWith operation: UIDropOperation) {
+            // A drag that went nowhere: forget its payload (`onDrag` drags never say so).
+            if operation == .cancel || operation == .forbidden { model.endDrag() }
+        }
+
+        func dragInteraction(_ interaction: UIDragInteraction, sessionAllowsMoveOperation session: UIDragSession) -> Bool {
+            true
+        }
+    }
+}
+
+/// The previews of a sidebar row's UIKit interactions: the row's cell (the
+/// interaction's own view is clear), or nil (UIKit's default) outside one.
+@MainActor
+enum SidebarCellPreview {
+    static func cell(around view: UIView?) -> UIView? {
+        var current = view?.superview
+        while let v = current {
+            if v is UICollectionViewCell || v is UITableViewCell { return v }
+            current = v.superview
+        }
+        return nil
+    }
+
+    static func drag(for view: UIView?) -> UITargetedDragPreview? {
+        guard let cell = cell(around: view), cell.window != nil else { return nil }
+        let parameters = UIDragPreviewParameters()
+        parameters.visiblePath = UIBezierPath(roundedRect: cell.bounds, cornerRadius: 10)
+        return UITargetedDragPreview(view: cell, parameters: parameters)
+    }
+
+    static func targeted(for view: UIView?) -> UITargetedPreview? {
+        guard let cell = cell(around: view), cell.window != nil else { return nil }
+        let parameters = UIPreviewParameters()
+        parameters.visiblePath = UIBezierPath(roundedRect: cell.bounds, cornerRadius: 10)
+        return UITargetedPreview(view: cell, parameters: parameters)
+    }
+}
+
+/// A notebook row's drops through UIKit (`UIDropInteraction` on its drag
+/// handle), with the rules of `SidebarDropDelegate`. All Notes keeps its
+/// SwiftUI `onDrop`, which a notebook's drag reaches
+/// (`SidebarDropUITests.testDroppingANestedNotebookOnAllNotesTakesItToTheTopLevel`).
+@MainActor
+final class UIKitSidebarDrop: NSObject, UIDropInteractionDelegate {
+    let model: AppModel
+    var target: DropTarget
+    weak var undoManager: UndoManager?
+
+    init(model: AppModel, target: DropTarget, undoManager: UndoManager?) {
+        self.model = model
+        self.target = target
+        self.undoManager = undoManager
+    }
+
+    private func trace(_ event: String) {
+        #if DEBUG
+        DropTrace.note("\(event) target=\(target) payload=\(model.draggedPayload.map { "\($0)" } ?? "nil") (uikit)")
+        #endif
+    }
+
+    private func ours(_ session: UIDropSession) -> Bool {
+        session.hasItemsConforming(toTypeIdentifiers: SidebarDropDelegate.acceptedTypes.map(\.identifier))
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        let ours = ours(session)
+        trace("validate ours=\(ours)")
+        return ours
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        trace("updated")
+        let allowed = model.acceptsDrop(on: target, carriesAppTypes: ours(session))
+        model.setDropTarget(allowed ? target : nil)
+        return UIDropProposal(operation: allowed ? .copy : .forbidden)   // never .move: `SidebarDrop.proposedOperation`
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
+        trace("exited")
+        if model.dropTarget == target { model.setDropTarget(nil) }
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+        if model.dropTarget == target { model.setDropTarget(nil) }
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+        trace("perform")
+        let providers = session.items.map(\.itemProvider)
+        _ = SidebarDropDelegate.perform(model: model, target: target, undoManager: undoManager,
+                                        carriesAppTypes: ours(session)) { type in
+            providers.first { $0.hasItemConformingToTypeIdentifier(type.identifier) }
+        }
+    }
+}
+
+/// A clear view that takes sidebar drops for `target` through a `UIDropInteraction`: on the iPad a
+/// list's section header never got a SwiftUI `onDrop`'s callbacks (the Notebooks header, which takes
+/// notebooks to the top level), as rows with a platform view inside do not (`UIKitDragHandle`).
+struct UIKitDropZone: UIViewRepresentable {
+    let model: AppModel
+    let target: DropTarget
+    let undoManager: UndoManager?
+
+    func makeCoordinator() -> UIKitSidebarDrop { UIKitSidebarDrop(model: model, target: target, undoManager: undoManager) }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.addInteraction(UIDropInteraction(delegate: context.coordinator))
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.target = target
+        context.coordinator.undoManager = undoManager
+    }
+}

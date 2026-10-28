@@ -1,0 +1,34 @@
+name: PR description
+
+# Every pull request lists the targeted tests its author ran beyond the PR gate (docs/ci.md,
+# CLAUDE.md): a `## Tests run` section that is not empty. Its own workflow, not a job of
+# ci.yml, because it must run when the description is edited: an `edited` event in ci.yml would
+# cancel that PR's running CI (its concurrency group) and record skipped results for its required
+# jobs on the head commit.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-description-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tests-run:
+    name: PR lists tests run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/check-tests-run.py
+          sparse-checkout-cone-mode: false
+      - name: The description has a non-empty "Tests run" section
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 scripts/check-tests-run.py --self-test
+          python3 scripts/check-tests-run.py

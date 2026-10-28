@@ -1,0 +1,227 @@
+import Foundation
+import Sempere
+
+// MARK: - Push-only mirror (`sempere sync webdav --push-only`)
+//
+// The local vault is the only source of truth; the server is a copy that is
+// not trusted to write back. A two-way sync rejects a vault.json whose
+// recipients changed without a valid tag (format.md §2.1) but takes everything
+// else the server holds; a push-only run can see a corrupted server but never
+// takes anything from it:
+//
+// - nothing is downloaded, and nothing in the vault folder is written,
+//   replaced or deleted (`requireLocalWrite` backs this up in every local
+//   write path; only the sync-state file outside the vault changes);
+// - `vault.json` and `rewrap-journal.json` on the server are overwritten
+//   from the local copy when they differ (reported in `overwritten`), unless
+//   `keepServerChanges` is set and the server copy changed since this device's
+//   last sync: then it is kept and reported as a conflict;
+// - `settings.age` is merged per key and the merge uploaded (SettingsSync),
+//   or, with the vault locked, overwritten from the local copy;
+// - a file the server lacks is uploaded, even one the last sync had (the
+//   server lost it);
+// - a file only the server has is deleted there if and only if a local
+//   compaction or `blobs gc` explains it (as for two-way sync: it was
+//   synced before and `CompactionPlanner` / format.md §8.1.6 allow it);
+// - one that was synced before but is not explained (the local copy may
+//   merely be evicted from iCloud) is kept and listed in `skipped`;
+// - one that was never synced (injected by the server, or from another
+//   writer) is `extraneous`: reported, and removed only with `deleteExtraneous`
+//   and only when an earlier sync's state exists (on a first run every server
+//   file looks never synced, including the notes a local listing missed).
+
+extension SyncEngine {
+    /// A path component that is safe to send in a DELETE (a name chosen by the server).
+    private static func safeComponent(_ c: String) -> Bool {
+        !c.isEmpty && c != "." && c != ".." && !c.contains("/") && !c.contains("\0")
+    }
+
+    // MARK: Mutable files
+
+    func pushMutable(_ name: String, remote: RemoteEntry?) throws {
+        let local = try localMutable(name)
+        guard let local else {
+            guard remote != nil else { return }
+            // Nothing is ever pulled.
+            _ = reportExtraneous(name, remove: [name])
+            return
+        }
+        let localHash = FileDigest.sha256(local)
+        guard let remote else {
+            try push(name, local, condition: .create)
+            try recordMutable(name, hash: localHash)
+            return
+        }
+        // A server file that cannot be read (too large, malformed) is just different.
+        let current = try? fetchMutable(name).data
+        if let current, FileDigest.sha256(current) == localHash {
+            state.mutable[name] = .init(hash: localHash, stamp: remote.stamp)
+            return
+        }
+        // Another epoch on the server (KH4): a later or unverifiable one is never overwritten (J5b holds the run).
+        if name == Vault.manifestName, let current, Self.otherEpochs(local, current),
+           keepServerManifestOfOtherEpoch(local: local, server: current) {
+            return
+        }
+        if options.keepServerChanges, name == Vault.manifestName {
+            // Replace only what this device put there: a copy changed since its last
+            // sync was written by someone else (another device's key change, say).
+            let record = state.mutable[name]
+            guard let record, let current, FileDigest.sha256(current) == record.hash else {
+                if name == Vault.manifestName, let current, EpochManifest.sameExceptLabel(local, current) {
+                    // Another device renamed the vault: the same vault (format.md §1.3), not a conflict.
+                    report.skipped.append(.init(path: name, message: "the server copy differs only in its label; kept on the server"))
+                    return
+                }
+                report.conflicts.append(.init(path: name, remoteCopy: nil, detail: record == nil
+                    ? "the server copy differs and this device never synced it; kept on the server"
+                    : "the server copy changed since this device's last sync; kept on the server"))
+                return
+            }
+        }
+        // Over the copy read just above (`push` makes it conditional on that copy), also with `keepServerChanges`.
+        try push(name, local, condition: .unconditional)
+        afterUpload(name) { [self] in report.overwritten.append(name) }
+        try recordMutable(name, hash: localHash)
+    }
+
+    // MARK: Notes
+
+    func syncNotePushOnly(_ id: String, remoteEntries: [RemoteEntry]?) throws {
+        let dir = root.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
+        var R = Set<RevisionName>()
+        var remoteAtt: RemoteEntry?
+        for e in remoteEntries ?? [] {
+            if e.name == Vault.attachmentsName && e.isCollection { remoteAtt = e; continue }
+            guard !e.isCollection, let n = RevisionName(e.name), n.filename == e.name else {
+                report.ignored.append(SyncReport.printable("notes/\(id)/\(e.name)"))
+                remoteJunk.append([Vault.notesName, id, e.name])
+                continue
+            }
+            R.insert(n)
+        }
+        defer { remoteRevisions[id] = R.isEmpty ? nil : R.map(\.filename).sorted() }
+        // Blobs first, so a revision never reaches the server before the blobs it references.
+        var blobs = try syncBlobTransfers(id, remoteAtt: remoteAtt)
+        var L = Set<RevisionName>()
+        for f in try LocalFS.entries(dir) {
+            if let n = RevisionName(f), n.filename == f { L.insert(n) }
+        }
+        let S = recordedRevisions(id)
+
+        func attempt(_ n: RevisionName, _ body: () throws -> Void) {
+            do { try body() } catch {
+                report.errors.append(.init(path: "notes/\(key(id, n))", message: Self.describe(error)))
+            }
+        }
+
+        let serverOnly = R.subtracting(L)
+        // A partial copy's note not fetched in full: what it lacks is pending, never
+        // extraneous, and nothing of it is judged for deletion (format.md §1.2).
+        let incomplete = PartialCopy.isIncomplete(noteFolder: dir)
+        // A note with a large blob to send keeps its new revisions for the large-blob pass (`LargeUploads.swift`).
+        let waits = waitsForLargeUpload(id)
+        for n in L.subtracting(R).sorted() where !waits {
+            // The pre-upload pass may have made it already (`preuploadNewFiles`), or tried and reported it.
+            switch preuploadOutcome(id, key(id, n)) {
+            case .uploaded: R.insert(n)
+            case .failed: break
+            case .notTried: attempt(n) { try upload(id, n); R.insert(n) }
+            }
+        }
+
+        // Read only when a deletion is judged or a shared snapshot's coverage
+        // is not recorded yet (see syncNote); the cover is of what the server
+        // holds after the uploads, as before.
+        lazy var loaded: LoadedNote? = loadForSync(id)
+        let coverNames = R
+        lazy var cover = (loaded?.revisions ?? []).filter { coverNames.contains($0.name) }.compactMap(SnapshotCoverage.init)
+        let epoch = Date(timeIntervalSince1970: 0)
+
+        for n in serverOnly.sorted() {
+            attempt(n) {
+                let path = "notes/\(key(id, n))"
+                if incomplete {
+                    if S.contains(n) {
+                        report.skipped.append(.init(path: path, message: "the note is not completely downloaded here (partial copy); kept on the server"))
+                    } else {
+                        pendingKept += 1
+                    }
+                    return
+                }
+                guard S.contains(n) else {   // never synced: not ours
+                    if reportExtraneous(path, remove: [Vault.notesName, id, n.filename]) { R.remove(n) }
+                    return
+                }
+                guard loaded != nil else {
+                    report.skipped.append(.init(path: path, message: "missing locally; cannot check it against compaction (vault not unlocked), kept on the server"))
+                    return
+                }
+                var snaps = cover
+                if n.kind == .snapshot {
+                    guard let included = state.files[key(id, n)]?.included else {
+                        report.skipped.append(.init(path: path, message: "missing locally; its coverage was never recorded, kept on the server"))
+                        return
+                    }
+                    snaps.append(SnapshotCoverage(name: n, included: included, wall: epoch))
+                }
+                guard CompactionPlanner.deletable(names: [n], wall: [n: epoch], snapshots: snaps, retention: 0,
+                                                  now: options.now).contains(n) else {
+                    report.skipped.append(.init(path: path, message: "missing locally and not explained by compaction, kept on the server"))
+                    return
+                }
+                if !options.dryRun { try transport.delete([Vault.notesName, id, n.filename]) }
+                report.deleted.append(.init(side: "remote", path: path))
+                R.remove(n)
+            }
+        }
+
+        try syncBlobDeletions(id, &blobs, remoteRevisions: R)
+
+        guard !options.dryRun else { return }
+        let shared = L.intersection(R)
+        var coverage: [RevisionName: Included] = [:]
+        if needsCoverage(id, shared) {
+            for r in loaded?.revisions ?? [] {
+                if case .snapshot(let inc, _) = r.body { coverage[r.name] = inc }
+            }
+        }
+        for n in shared {
+            let k = key(id, n)
+            state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included)
+        }
+        for n in S where !L.contains(n) && !R.contains(n) { state.files[key(id, n)] = nil }
+    }
+
+    // MARK: Extraneous
+
+    /// Lists `path` as extraneous and, with `deleteExtraneous`, removes `remove`
+    /// from the server. Returns true when it was (or in a dry run would be) removed.
+    @discardableResult
+    func reportExtraneous(_ path: String, remove components: [String]) -> Bool {
+        report.extraneous.append(SyncReport.printable(path))
+        guard options.deleteExtraneous, components.allSatisfy(Self.safeComponent) else { return false }
+        guard hadState else {
+            // First sync: a note iCloud has not listed locally yet looks like this too.
+            report.skipped.append(.init(path: SyncReport.printable(path),
+                                        message: "first sync to this server: extraneous files are only listed; run again to remove them"))
+            return false
+        }
+        report.deleted.append(.init(side: "remote", path: SyncReport.printable(path)))
+        if !options.dryRun {
+            do { try transport.delete(components) } catch {
+                report.deleted.removeLast()
+                report.errors.append(.init(path: SyncReport.printable(path), message: Self.describe(error)))
+                return false
+            }
+        }
+        return true
+    }
+
+    /// Entries the server holds that are not vault files (`ignored`) are extraneous too.
+    func deleteRemoteJunk() {
+        for comps in remoteJunk {
+            reportExtraneous(comps.joined(separator: "/"), remove: comps)
+        }
+    }
+}

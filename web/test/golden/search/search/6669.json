@@ -1,0 +1,18 @@
+[
+  {
+    "end" : 15,
+    "engine" : "synthetic-speech-2",
+    "matches" : 2,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000180",
+    "recordingTitle" : "Walk to the café",
+    "snippet" : "…he STRASSE, and another about ﬁsh and fish.",
+    "source" : "transcript",
+    "start" : 9.25,
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  }
+]

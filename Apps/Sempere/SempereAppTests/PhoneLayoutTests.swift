@@ -1,0 +1,368 @@
+import Foundation
+import PencilKit
+import SwiftUI
+import Testing
+import UIKit
+@testable import SempereApp
+import Sempere
+
+/// The iPhone reader (`PhoneLayout.swift`): the stack navigation rules, the
+/// reading mode of the canvas at iPhone sizes, and that the iPad keeps
+/// drawing. Pure rules run on every destination; the view checks use the
+/// destination's idiom, so the iPhone simulator run in CI exercises the phone
+/// side and the iPad run the other.
+struct CompactNavigationTests {
+    @Test func poppingToTheListDropsTheNoteOnly() {
+        #expect(CompactNavigation.clear(whenShowing: .content) == .init(note: true, sidebar: false))
+    }
+
+    @Test func poppingToTheSidebarDropsBothSelections() {
+        #expect(CompactNavigation.clear(whenShowing: .sidebar) == .init(note: true, sidebar: true))
+    }
+
+    @Test func showingTheNoteDropsNothing() {
+        #expect(CompactNavigation.clear(whenShowing: .detail) == .init())
+    }
+
+    @Test func aSelectedNoteOpensTheDetailColumn() {
+        let id = UUID()
+        #expect(CompactNavigation.column(note: id, sidebar: .allNotes, current: .sidebar) == .detail)
+        #expect(CompactNavigation.column(note: id, sidebar: nil, current: .content) == .detail)
+        #expect(CompactNavigation.column(note: id, sidebar: nil, current: .detail) == nil)   // already there
+    }
+
+    @Test func aSidebarSelectionOpensTheListOnlyFromTheSidebar() {
+        #expect(CompactNavigation.column(note: nil, sidebar: .tag("lecture"), current: .sidebar) == .content)
+        #expect(CompactNavigation.column(note: nil, sidebar: .tag("lecture"), current: .content) == nil)
+        #expect(CompactNavigation.column(note: nil, sidebar: .tag("lecture"), current: .detail) == nil)
+        #expect(CompactNavigation.column(note: nil, sidebar: nil, current: .sidebar) == nil)
+    }
+
+}
+
+/// What a back swipe does to the model (`AppModel.didShowCompactColumn`, the
+/// handler `RootView` runs on an iPhone).
+@MainActor
+struct CompactBackTests {
+    static let lecture = AppModelTests.lecture
+
+    /// Back to the list: the note is deselected (so its row can be tapped
+    /// again), its editor closed and its pending ink saved; the notebook stays.
+    /// Back to the notebooks: the sidebar selection goes too.
+    @Test func backSavesTheNoteAndClearsTheSelectionsItLeft() async throws {
+        let (url, key) = try AppModelTests.fixtureVault()
+        let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .seconds(60))
+        try await model.openVault(at: url)
+        try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
+        model.sidebarSelection = .allNotes
+        model.selectedNoteID = Self.lecture
+        await model.showSelectedNote()
+        let editor = try #require(model.editor)
+        let page = try #require(editor.currentPage)
+        var drawing = editor.drawing(for: page.id)
+        drawing.strokes.append(TS.canvasStroke(TS.stroke(y: 500)))
+        editor.drawingDidChange(pageID: page.id, drawing: drawing, tool: nil)
+        let vault = try #require(model.vault)
+        let before = try vault.reconstruct(noteId: Self.lecture).pages.first { $0.id == page.id }?.strokes.count ?? 0
+
+        await model.didShowCompactColumn(.content)
+        #expect(model.selectedNoteID == nil)
+        #expect(model.editor == nil)
+        #expect(model.sidebarSelection == .allNotes)
+        let after = try vault.reconstruct(noteId: Self.lecture).pages.first { $0.id == page.id }?.strokes.count ?? 0
+        #expect(after == before + 1, "the stroke drawn before going back was saved")
+
+        // The same row again: a change, so the stack pushes the note.
+        #expect(CompactNavigation.column(note: Self.lecture, sidebar: model.sidebarSelection, current: .content) == .detail)
+
+        await model.didShowCompactColumn(.sidebar)
+        #expect(model.sidebarSelection == nil)
+        await model.didShowCompactColumn(.detail)   // nothing to drop
+        #expect(model.sidebarSelection == nil && model.selectedNoteID == nil)
+        model.close()
+    }
+}
+
+struct PhoneReadingTests {
+    @Test func aPhoneReadsUntilAnnotationIsOn() {
+        #expect(NoteModeInput.of(.reading, on: .phone).drawingSuspended)
+        #expect(!NoteModeInput.of(.annotating, on: .phone).drawingSuspended)
+        // The Hand keeps the canvas un-suspended so selection mode runs; nothing draws there (selection mode).
+        #expect(!NoteModeInput.of(.hand, on: .phone).drawingSuspended)
+        #expect(NoteModeInput.of(.hand, on: .phone).selectingItems)
+    }
+
+    @Test func thePhonePaletteShowsOnlyWhileAnnotating() {
+        #expect(NoteModeInput.of(.annotating, on: .phone).showsPalette)
+        #expect(!NoteModeInput.of(.hand, on: .phone).showsPalette, "the Hand needs no palette")
+        #expect(!NoteModeInput.of(.reading, on: .phone).showsPalette)
+    }
+
+    @Test func thePhonePaletteIsAlwaysTheShortOne() {
+        #expect(PhoneReading.paletteCompact(isPhone: true, stored: false))
+        #expect(!PhoneReading.paletteCompact(isPhone: false, stored: false))
+        #expect(PhoneReading.paletteCompact(isPhone: false, stored: true))
+    }
+
+    @Test func theNextNoteOpensInReadingMode() {
+        #expect(NoteMode.initial == .reading)
+    }
+
+    /// The footer below a finite page never writes while an iPhone is reading.
+    @Test func theFooterAddsAPageOnlyWhenTheNoteIsBeingWritten() {
+        #expect(PhoneReading.footer(infinite: false, isLast: true, readOnly: false, reading: false) == .addPage)
+        #expect(PhoneReading.footer(infinite: false, isLast: true, readOnly: false, reading: true) == .none)
+        #expect(PhoneReading.footer(infinite: false, isLast: true, readOnly: true, reading: false) == .none)
+        #expect(PhoneReading.footer(infinite: false, isLast: false, readOnly: false, reading: true) == .nextPage)
+        #expect(PhoneReading.footer(infinite: true, isLast: false, readOnly: false, reading: false) == .none)
+    }
+
+    @Test func deviceNamesInTheKeyTexts() {
+        #expect(RememberedKeys.name(isMac: false, isPhone: false) == "this iPad")
+        #expect(RememberedKeys.name(isMac: false, isPhone: true) == "this iPhone")
+        #expect(RememberedKeys.name(isMac: true, isPhone: false) == "this Mac")
+    }
+}
+
+/// The canvas in windows of iPhone sizes (points): 6.9" Pro Max portrait, 6.3" portrait,
+/// the small SE, and a landscape one.
+@MainActor
+@Suite(.serialized)
+struct PhoneCanvasTests {
+    static let sizes: [CGSize] = [CGSize(width: 440, height: 956), CGSize(width: 402, height: 874),
+                                  CGSize(width: 375, height: 667), CGSize(width: 956, height: 440)]
+
+    static func host(size: CGSize, pageSize: PageSize = PageSize(width: 612, height: 792, infinite: false, breakHeight: 792),
+                     toolbox: DrawingToolbox = .shared) -> (UIWindow, PageCanvasHost) {
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        let host = PageCanvasHost(frame: window.bounds, embedded: false, toolbox: toolbox)
+        window.addSubview(host)
+        window.isHidden = false
+        host.apply(paper: .blank, pageSize: pageSize)
+        host.layoutIfNeeded()
+        return (window, host)
+    }
+
+    @Test func thePageFitsTheWidthAtEveryPhoneSize() {
+        for size in Self.sizes {
+            let (window, host) = Self.host(size: size)
+            #expect(abs(host.canvas.zoomScale - size.width / 612) < 0.0005, "\(size)")
+            #expect(host.fitScale == host.canvas.zoomScale)
+            // Every device zooms out to half the fit (build 8: an iPhone locked to the width on pageless notes).
+            #expect(abs(host.canvas.minimumZoomScale - host.fitScale * ZoomDetent.minimumFactor) < 0.0005)
+            #expect(abs(host.canvas.maximumZoomScale - host.fitScale * 4) < 0.0005)
+            window.isHidden = true
+        }
+    }
+
+    @Test func readingModeLeavesTheFingersToScrollAndZoom() {
+        let (window, host) = Self.host(size: Self.sizes[0])
+        host.drawingSuspended = true
+        #expect(!host.canvas.drawingGestureRecognizer.isEnabled)
+        #expect(host.canvas.isScrollEnabled)
+        #expect(host.canvas.pinchGestureRecognizer?.isEnabled ?? true)
+        #expect(host.canvas.panGestureRecognizer.isEnabled)
+        window.isHidden = true
+    }
+
+    /// TestFlight build 4: PencilKit's `.anyInput` makes the canvas's own scroll take two fingers
+    /// even with its drawing off, so a pageless note did not scroll with one finger while reading.
+    /// On the phone one finger scrolls whenever no finger draws (reading, the Hand, a read-only
+    /// note) and two while annotating; the iPad keeps PencilKit's own rule.
+    @Test func oneFingerScrollsTheOnePageCanvasWhileNoFingerDraws() {
+        let (window, host) = Self.host(size: Self.sizes[1], pageSize: PageSize(width: 612, height: 792, infinite: true,
+                                                                               breakHeight: 792))
+        defer { window.isHidden = true }
+        let pan = host.canvas.panGestureRecognizer
+        host.drawingSuspended = true
+        guard Platform.isPhone else { return }
+        // After each change PencilKit recounts the fingers itself (as it does when the palette's
+        // visibility changes or its view moves to a window): the count must survive it.
+        func expectTouches(_ n: Int, _ what: Comment) {
+            #expect(pan.minimumNumberOfTouches == n, what)
+            #expect(Self.pencilKitRecount(host.canvas), "PencilKit's tiled view")
+            #expect(pan.minimumNumberOfTouches == n, "after PencilKit's own recount: \(what)")
+        }
+        expectTouches(1, "reading")
+        host.drawingSuspended = false
+        expectTouches(2, "annotating: one finger draws")
+        host.itemSelectionActive = true
+        expectTouches(1, "the Hand")
+        host.itemSelectionActive = false
+        expectTouches(2, "annotating again")
+        host.isReadOnly = true
+        expectTouches(1, "read-only")
+        host.isReadOnly = false
+        host.drawingSuspended = true
+        expectTouches(1, "reading again")
+        #expect(PageCanvasHost.phonePanTouches(fingerDraws: true) == 2)
+    }
+
+    /// TestFlight build 5: a moment after Annotate went off, a pageless note needed two fingers again.
+    /// PencilKit had set its scroll back to two fingers when the palette finished hiding
+    /// (`-[PKTiledView _updateForToolPickerVisibilityChange:]` → `updateForAllowedDrawingInput`), because
+    /// the drawing policy still let a finger draw. Each tool and mode, then PencilKit's recount: reading
+    /// and the Hand keep one finger.
+    @Test func pencilKitsOwnRecountKeepsReadingAtOneFinger() {
+        let (window, host) = Self.host(size: Self.sizes[1], pageSize: PageSize(width: 612, height: 792, infinite: true,
+                                                                               breakHeight: 792),
+                                       toolbox: DrawingToolbox(defaults: DrawingToolboxTests.scratchDefaults()))
+        defer { window.isHidden = true }
+        guard Platform.isPhone else { return }
+        let pan = host.canvas.panGestureRecognizer
+        for tool in DrawingToolState.compactTools(selected: .pen) {   // pen, marker, eraser (object), lasso
+            host.drawingSuspended = false
+            #expect(host.select(drawingTool: tool))
+            #expect(pan.minimumNumberOfTouches == 2, "annotating with \(tool)")
+            host.drawingSuspended = true
+            #expect(host.canvas.drawingPolicy == .pencilOnly, "reading: no finger draws")
+            _ = Self.pencilKitRecount(host.canvas)
+            // Also what a move to a window does (`-[PKTiledView didMoveToWindow]`).
+            host.removeFromSuperview()
+            window.addSubview(host)
+            #expect(pan.minimumNumberOfTouches == 1, "reading after \(tool), after PencilKit's recount")
+            host.drawingSuspended = false
+            host.itemSelectionActive = true
+            _ = Self.pencilKitRecount(host.canvas)
+            #expect(pan.minimumNumberOfTouches == 1, "the Hand after \(tool)")
+            host.itemSelectionActive = false
+        }
+    }
+
+    /// Runs PencilKit's own finger count (`-[PKTiledView updateForAllowedDrawingInput]`, private) on the
+    /// canvas's tiled view, as PencilKit does by itself; false if there is no such view.
+    static func pencilKitRecount(_ canvas: PKCanvasView) -> Bool {
+        let selector = NSSelectorFromString("updateForAllowedDrawingInput")
+        var views: [UIView] = [canvas]
+        var found = false
+        while let view = views.popLast() {
+            if NSStringFromClass(type(of: view)).contains("PKTiledView"), view.responds(to: selector) {
+                view.perform(selector)
+                found = true
+            }
+            views.append(contentsOf: view.subviews)
+        }
+        return found
+    }
+
+    @Test func annotatingTurnsFingerDrawingBackOn() {
+        let (window, host) = Self.host(size: Self.sizes[1])
+        host.drawingSuspended = true
+        host.drawingSuspended = false
+        // `drawsInk`: PencilKit's gesture, or on a Mac the app's smoothed pointer ink (Smooth Mouse Strokes).
+        #expect(host.drawsInk)
+        window.isHidden = true
+    }
+
+    @Test func aReadOnlyNoteStaysUndrawableWhateverTheMode() {
+        let (window, host) = Self.host(size: Self.sizes[2])
+        host.isReadOnly = true
+        host.drawingSuspended = false
+        #expect(!host.canvas.drawingGestureRecognizer.isEnabled)
+        window.isHidden = true
+    }
+
+    /// Fingers draw on a phone (it has no Pencil); the iPad keeps the system's
+    /// Pencil preference (`.default`) and the Mac draws with the pointer.
+    @Test func theDrawingPolicyFollowsTheDevice() {
+        let (window, host) = Self.host(size: Self.sizes[0])
+        switch UIDevice.current.userInterfaceIdiom {
+        case .phone:
+            #expect(host.canvas.drawingPolicy == .anyInput, "annotating")
+            host.drawingSuspended = true
+            #expect(host.canvas.drawingPolicy == .pencilOnly, "reading: no finger draws (and PencilKit's scroll takes one)")
+            host.drawingSuspended = false
+            host.itemSelectionActive = true
+            #expect(host.canvas.drawingPolicy == .pencilOnly, "the Hand")
+            host.itemSelectionActive = false
+        case .pad where !ProcessInfo.processInfo.isMacCatalystApp: #expect(host.canvas.drawingPolicy == .default)
+        default: #expect(host.canvas.drawingPolicy == .anyInput)
+        }
+        #expect(!(Platform.isPhone && Platform.isMac))
+        window.isHidden = true
+    }
+
+    @Test func theIPadCanvasIsNotSuspendedByDefault() {
+        let (window, host) = Self.host(size: CGSize(width: 1024, height: 1366))
+        #expect(!host.drawingSuspended)
+        #expect(host.drawsInk)
+        window.isHidden = true
+    }
+
+    @Test func aFinitePageEndsWithRoomForTheFooterAtPhoneWidth() {
+        let (window, host) = Self.host(size: Self.sizes[0])
+        host.footer = .nextPage
+        host.layoutIfNeeded()
+        let z = host.canvas.zoomScale
+        #expect(host.canvas.contentSize.height >= (792 * z) + PageExtent.footerScreenHeight - 0.5)
+        #expect(!host.footerButton.isHidden)
+        window.isHidden = true
+    }
+}
+
+/// The root view hosted at an iPhone size: it must lay out without trapping,
+/// on the welcome screen as well as with an unlocked vault.
+@MainActor
+@Suite(.serialized)
+struct PhoneRootTests {
+    static func host(_ model: AppModel) -> (UIWindow, UIViewController) {
+        let controller = UIHostingController(rootView: RootView()
+            .environment(model).environment(VaultLibrary(storeURL: TestTemp.root
+                .appendingPathComponent(UUID().uuidString).appendingPathComponent("recents.json"))).environment(RememberedKeys(store: MemoryDeviceKeyStore())))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.rootViewController = controller
+        window.isHidden = false
+        controller.view.layoutIfNeeded()
+        return (window, controller)
+    }
+
+    @Test func theWelcomeScreenLaysOutAtPhoneWidth() {
+        let model = AppModel()
+        let (window, controller) = Self.host(model)
+        #expect(controller.view.bounds.width == 402)
+        #expect(model.phase == .noVault)
+        window.isHidden = true
+    }
+
+    /// The split view with an unlocked vault and a note open, at phone width.
+    @Test func anUnlockedVaultWithANoteLaysOutAtPhoneWidth() async throws {
+        let (url, key) = try AppModelTests.fixtureVault()
+        let model = AppModel(deviceStateURL: TS.deviceStateURL())
+        try await model.openVault(at: url)
+        try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
+        let (window, controller) = Self.host(model)
+        model.selectedNoteID = AppModelTests.lecture
+        await model.showSelectedNote()
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        #expect(controller.view.bounds.width == 402)
+        #expect(model.phase == .unlocked)
+        #expect(model.editor?.noteID == AppModelTests.lecture)
+        window.isHidden = true
+        model.close()
+    }
+}
+
+/// TestFlight build 6: iCloud Drive missing from the picker on an iPhone is a
+/// device setting; the welcome and new-vault screens say where to turn it on.
+@MainActor
+struct ICloudDriveHelpTests {
+    @Test func theStepsNameTheDeviceSettingAndTheFilesLocation() {
+        let phone = ICloudDriveHelp.steps(device: "iPhone")
+        #expect(phone.first?.contains("Settings app ▸ your name ▸ iCloud ▸ iCloud Drive") == true)
+        #expect(phone.first?.contains("Sync this iPhone") == true)
+        #expect(phone.contains { $0.contains("Browse") && $0.contains("Edit") })
+        #expect(ICloudDriveHelp.steps(device: "iPad").first?.contains("Sync this iPad") == true)
+        #expect(ICloudDriveHelp.deviceName == (Platform.isPhone ? "iPhone" : "iPad"))
+        #expect(ICloudDriveHelp.isShown == !Platform.isMac)
+    }
+}
+
+/// Review of #135: the device-key and Choose Devices to Keep sheets asked for 460 points of
+/// width, more than an iPhone has (390), so their forms ran off the screen there.
+struct SheetSizingTests {
+    @Test func aPhoneSheetHasNoMinimumWidth() {
+        #expect(SheetSizing.minWidth(460, isPhone: true) == nil)
+        #expect(SheetSizing.minWidth(460, isPhone: false) == 460)
+    }
+}

@@ -1,0 +1,1978 @@
+# Vault I/O
+
+How `Sources/Sempere` reads and writes a vault directory. Not normative:
+`docs/format.md` is the format; this records the implementation choices on
+top of it.
+
+## Types
+
+- `EpochManifest`: `vault.json` (§2, §15.3), pretty-printed with sorted keys.
+- `BodyFraming`: `SMPR` ‖ `0x01` ‖ tag ‖ `gzip(JSON)` (§4). gzip comes from
+  CZlib with `windowBits = 15 + 16`; the gzip header has mtime 0 and OS 255,
+  so output does not depend on the platform. Unframing without the vault
+  key returns the body marked `verified == false`.
+- `Vault`: a `.sempere` directory plus the identities it was opened with.
+  Opened without identities it is locked (`isLocked`) and only lists
+  names. Opened with a listed device's key it reads and writes; with the
+  recovery key it only reads (`isRecoveryOpen`, writes throw
+  `recoveryKeyReadOnly`). Note-store
+  methods (`write`, `readRevision`, `reconstruct`, `snapshot`, `compact`,
+  `history`, `nextSeq`, `verify`) and identity files (`keys/`, §3.2) are
+  extensions on it.
+
+## Editing a note
+
+`Vault.apply(_:to:deviceState:app:)` writes one delta of `Op`s as this device:
+device id and hybrid clock come from a `DeviceState` file (saved before the
+revision is written), the clock first observes every readable revision of the
+note so the new ops win LWW, and `seq` comes from `nextSeq`. `NoteOps.newNote`
+builds the ops for a new note (one page, all metadata fields, one `addTag` per
+tag). Tag edits use `NoteOps.addTag` / `removeTag` / `setTags`, which take the
+note's reconstructed state: a `removeTag` lists the instances it observed
+(`format.md` §5.4.1); the app's `NoteWriter.append(to:building:)` builds them
+from the note as read at write time.
+
+The app does the same with its own `DeviceClock` actor (`NoteWriter.append`
+for browser edits, `NoteWriter.write` for canvas autosave), so one process
+ticks one in-memory clock over the state file instead of two writers
+racing on it.
+
+## Notebook paths
+
+`NotebookPath` and `NotebookNode` (`Notebooks.swift`) implement the `/`
+convention of `format.md` §5.4: `components` trims segments and drops empty
+ones, `canonical` joins them back, `name(_:isWithin:)` compares whole
+segments (`A/Bc` is not in `A/B`), `renamed(_:from:to:)` replaces a path
+prefix, and `NotebookNode.tree` builds the sidebar forest with implicit
+parent levels. The app renames or moves a notebook as one `setMeta` of
+`notebook` per affected note (deleted notes included) and writes canonical
+names for new edits; it never rewrites names it does not touch.
+
+## Every vault is an in-app copy (app)
+
+The app reads and writes only vaults in its own store (`VaultStore`, docs/design/device-first-sync.md
+§2; "Sync targets in the app" below). It never reads a vault in place in iCloud Drive or another
+provider's folder (removed in P7): such a folder is copied in, and may stay a sync target, whose provider
+hazards (evicted files, folders listed before their files, conflict versions) the sync engine's folder
+transport handles ("Folder targets in providers"). So `Sources/` and the app read every vault with plain
+`FileManager` calls, without file coordination.
+
+- **Open Vault…** (`AppModel.copyIn`): a picked folder in iCloud Drive (or another provider that reports
+  its files as ubiquitous) is downloaded first, every file (`downloadSourceFolder`, `CloudVault.download`:
+  `.<name>.icloud` stand-ins and dataless files mapped to their names, `startDownloadingUbiquitousItem`, a
+  stall after 90 s without progress), then copied in under one coordinated read (`StorageLocation`:
+  provider storage that does not report ubiquitous files is coordinated too). A restore from a backup in
+  iCloud Drive does the same.
+- **Recents of earlier builds** that opened a vault in place (a bookmark, no store id) copy that folder in
+  when chosen, as Open Vault… does; the folder is left as it was (Q5: no migration).
+- **A WebDAV join** opens a partial copy at once and fills it ("WebDAV vaults in the app" below).
+- **Background sync** is the sync targets' ("Sync targets in the app", "Background (iOS)").
+
+What the copy-in cannot promise: a provider that does not list a folder (or reports files it never
+delivers) makes the copy wait until the stall error; try again once Files shows the contents.
+
+## Opening a vault fast (app)
+
+The note list is shown from a persistent local **index**: the encrypted
+per-device summary cache (`SummaryCache`, `format.md` §10) in Application
+Support, never in iCloud. It holds each note's summary (title, tags,
+notebook, deleted flag, counts, newest time, and whatever `NoteSummary` gains,
+such as recognized text for search) and the sorted revision file names it was
+made from. On a reopen it is decrypted and shown as it is, before any note
+folder is looked at (`openSummaryCache`, `Perf` phase `index.load`).
+
+Keeping it current (`AppModel.reconcile`, `VaultIndex.swift`):
+
+1. **Enumerate by name** (`VaultEnumeration`, phase `reconcile.enumerate`):
+   one directory listing per note folder, iCloud placeholders mapped to
+   their real names, no file read, no iCloud state asked.
+2. **Diff** (`IndexDiff`): revision files are write-once and named by
+   `(hlc, device, seq)` (`format.md` §5), so a note whose names equal those
+   of its shown summary is unchanged: nothing is downloaded, coordinated or
+   decrypted for it. Changed and new notes are read; notes whose folder is
+   gone leave the list (only notes listed before the pass, so one created
+   meanwhile stays).
+3. **Download and read only what changed** (phases `reconcile.download`,
+   `reconcile.coordinate`, `reconcile.read`); `indexedNames` records the names
+   each summary was made from.
+
+### Summaries of a changed note
+
+A note that changed since its summary was cached is read in full once, and
+its reduction is kept in memory next to the cache (`SummaryCheckpoint`, at
+most `SummaryCache.checkpointBudget` strokes, items and pages over all notes,
+least recently used first out; never on disk, and never for notes listed for
+the first time). When it changes again by gaining files only, just the new
+files are read and merged into that reduction (`NoteReducer.advance`), so an
+edit or a remote arrival costs one decrypt instead of one per revision. The
+reduction stands for the old files as a snapshot that includes them all
+would (`format.md` §5.3), so the merge is used only where the result is
+provably the full reduction's: every new file is a delta ordered after every
+reduced revision and recorded stamp, none is already covered, none re-adds an
+id the reduction saw go or replaces a stroke that is not live, and none is an
+orphan. Anything else (a snapshot, a compaction, a file gone, a delta from a
+device whose clock is behind, an unreadable or newer revision) reads the note
+in full. The summary is then identical; the kept state may hold more stroke
+tombstones and lineage records than a full reduction, as a compacted vault's
+snapshot would, which no summary field reads (`IncrementalSummaryTests`,
+`MergeTests.testIncrementalReductionEqualsReconstruct`).
+
+Passes run when the vault opens, on a reload and, for the notes named, when a sync run reports what it
+changed (`applySyncChanges`).
+Every pass waits for the index to be loaded first, so it never mistakes an
+unloaded index for a vault where everything changed. A pull to refresh also
+re-reads notes the index file does not hold (a summary with a problem).
+
+**List updates** are batched and throttled: queued summaries are applied at
+most every 250 ms (`listUpdateInterval`) as differences (`NoteListDiff`: a
+summary whose title order is unchanged is replaced in place, others are
+removed and merged in; no re-sort), and `visibleNotes`, `tags` and
+`notebookTree` are computed once per change of the list or the filters
+(`DerivedLists`), not on every render. An edit's own re-read is applied at
+once and supersedes anything queued for that note. The list stays a lazy
+SwiftUI `List`.
+
+## Opening a note fast (app)
+
+- **Fast decoding.** A revision's point arrays are parsed by a hand-written
+  exact reader (`FastRevisionDecoder`) instead of generic `Codable`
+  decoding; the JSON is unchanged and anything unusual goes through the
+  ordinary decoder.
+- **Drawing cache** (`DrawingCache`, `format.md` §10.1): per note version
+  (note id + sorted revision file names) a layout (the note without stroke
+  geometry) and each page's PencilKit `dataRepresentation`, sealed under a
+  key derived from the vault key, in `Library/Caches/Sempere/Drawings`.
+  Opening a note lists its folder's names; when that version's layout is
+  cached the editor opens from it at once (`NoteEditor.isPreparing`: shown,
+  not editable) and the shown page's drawing comes from the cache, while the
+  revisions are read in the background. Once read, every cached drawing
+  shown is checked against the strokes (`DrawingPreparation.matches`: count,
+  texture seed from the stroke id, ink, points, ends, transform); a match
+  becomes the page's ledger without any conversion, a mismatch is replaced
+  by the real page (`canvasGeneration`) before anything can be drawn.
+- **On a miss** the page is converted off the main actor, the strokes on
+  screen first (`DrawingPreparation.convert(visible:)`, shown as soon as
+  they are ready, drawing disabled until the whole page is in), and stored
+  in the cache afterwards. Closing a note that was edited stores its new
+  version (layout, unchanged pages as shown, changed pages converted in the
+  background) and drops the old one.
+- The cache is limited to 200 MB (`UserDefaults` key
+  `Sempere.drawingCacheMegabytes`), least recently used files first. Opening
+  it deletes every other vault's folder (and this vault's under an older
+  key); closing the vault deletes its folder.
+- **Attachments.** Three caches keep them across note opens and launches, each
+  per vault key and deleted when the vault closes:
+  - `BlobCache` (`Library/Caches/Sempere/Blobs`, 512 MB, `Sempere.blobCacheMegabytes`):
+    the decrypted, verified blob files PDFKit and ImageIO read. File names are
+    keyed (`format.md` §10.1); a file left by an earlier launch is hashed again
+    before use (`adopted`), never decrypted again. Not on a Mac: there files
+    are not encrypted at rest, so quitting deletes them (`purgeAtQuit`), a launch
+    deletes what a crashed one left before any vault opens (`purgeAtLaunch`),
+    and a reopened PDF is decrypted again (its preview still shows at once).
+    Recordings, clips and transcripts are never kept (`BlobCache.isTransient`):
+    deleted when nothing plays or reads them, and at the next launch if a
+    session was killed first.
+  - `RenderCache` (`Library/Caches/Sempere/Renders`, 256 MB,
+    `Sempere.renderCacheMegabytes`, plus 96 MB of decoded images in memory):
+    image items as drawn (`ItemRendering`), and one preview bitmap per PDF page
+    item at the unzoomed screen scale. A PDF page shows its preview at once,
+    before its blob is opened, and the tile layer draws the sharp page over
+    it. Files are sealed like the drawing cache's.
+  - The page's tiles themselves are Core Animation's and are not kept: they
+    are redrawn from the open PDF at whatever zoom the page is shown, which is
+    why the preview, not the tiles, is what persists.
+
+## Changes from other devices while a note is open (app)
+
+A note open in an editor takes revisions written elsewhere (another device
+through iCloud Drive or any other sync, the CLI, this device's browser
+edits) in place, without being reopened (`AppModel+RemoteMerge`,
+`NoteEditor.mergeRevisions`).
+
+- **Detection** is the change-driven listing (above): each pass lists the
+  note folders by name, and an open editor whose folder holds a revision file
+  name it has neither read nor written (`NoteEditor.knownRevisionNames`) gets
+  a merge. A sync run that took a revision lists that note again at once
+  (`applySyncChanges`); a reload lists every note. At most one merge runs per note.
+- **Before reading**, a partial copy's note is fetched (`downloadNote`); the editor never writes to a
+  note still marked incomplete. The merge
+  waits while a canvas is mid-stroke or mid-erase (at most `inkWaitLimit`,
+  30 s, then it gives up and the next listing tries again: a canvas that never
+  reports a stroke's end cannot stall the note's merges), then saves what is pending
+  (one delta through the editor's `NoteWriter`, as autosave does) and reads
+  the note again. A save that starts during that read (autosave, a page
+  gesture) makes it read again (`writeEpoch`), since its strokes would
+  otherwise look removed elsewhere. A note with an unreadable revision is not
+  merged (tried again when its names change); a read-only editor (Recently
+  Deleted, unreadable revisions) is reopened instead.
+- **Reading only what is new**: only revision files the last read did not
+  decode are decrypted (`read(reuse:)`), and from the second merge on only
+  the new revisions are reduced, onto the note as the last merge left it
+  (`ReducedNote.updated(with:)`, off the main actor), which also names the
+  pages they changed. That is done only where it is exact: deltas that sort
+  after every revision already reduced, none covered by a snapshot, holding
+  only stroke adds and removes, page order, recognition and paper of a live
+  page, meta and delete/restore, no stroke id seen before, no second
+  replacement of one stroke (§5.6.1), and registers whose stamp is older.
+  Anything else (a late arrival, a snapshot, a compaction, a page or item
+  op, tags) reduces every revision again, as a fresh read does.
+  `ReducedNoteTests` compares both over random interleavings of several
+  devices.
+- **Applying** is synchronous on the main actor, so no canvas can report a
+  drawing in between. Per page, `StrokeLedger.mergeStored` takes the merged
+  strokes as what is on disk and keeps what is pending here (strokes drawn
+  since the save stay live on top, unsaved erasures stay erased): only that
+  is ever written afterwards, never the other device's adds or removals (no
+  echo). Canvas strokes are reused where every stored stroke they stand for
+  is still live; only new strokes are converted. Every canvas showing a page
+  whose ink changed (`RemoteInkView`) shows the merged drawing at once at the
+  same scroll and zoom, and drops that page's undo steps (an older undo could
+  put back a drawing without the other device's strokes and so erase them);
+  other pages keep theirs. Items, papers, page order and additions or
+  removals, recognition, meta and recordings are taken as merged; the item
+  layer, text boxes and the selection follow the editor's pages. An infinite
+  page that grew here and is not saved keeps its height. Concurrent edits are
+  decided by the format (`format.md` §5.3, §8.2.2): the editor shows what
+  every device reconstructs.
+- **Shown**: "Updated from another device" for a few seconds above the
+  canvas when a revision of another device changed what the note shows
+  (`NoteEditor.remoteUpdates`). Signpost `note.remoteMerge` (detail: the
+  outcome); `note.remoteMerge.apply` is its main-actor part (detail: pages
+  compared, strokes visited). When the read named the changed pages, only
+  those are compared and merged into their ledgers; the other pages, their
+  ledgers, canvases and undo steps are left as they are.
+
+## Performance timing (app)
+
+Every phase above is an `os_signpost` interval (subsystem
+`io.github.anthonytw.sempere`, category Points of Interest), in every build:
+`vault.open`, `index.load`, `reconcile` (`.enumerate`, `.coordinate`,
+`.download`, `.read`, `.validate`), `list.update`, `note.open`,
+`note.download`, `note.read`, `note.reconstruct`, `note.cache`,
+`note.convert`, `note.firstRender`, `cache.write`, `item.picture` (`hit` or
+`drawn`), `pdf.open` (`fetched`, `adopted` or `cached`), `pdf.preview`
+(`hit`, `drawn` or `missing`), and `change.notified` events. Comparing a first
+open with a reopen: open a PDF note, close the app, launch it again, open the
+note: `pdf.open … adopted` and `pdf.preview … hit` lines replace `fetched` and
+`drawn`. `AttachmentPersistenceTests` prints `PERF-REPORT pdf-reopen` lines
+in the CI `app` log. Debug builds also log each finished interval to the console
+(`SemperePerf <phase> <ms> ms <detail>`) and to `Library/Logs/SemperePerf.log`
+in the app container (the previous run's as `.1`):
+
+```
+xcrun devicectl device copy from --device <id> --domain-type appDataContainer \
+    --domain-identifier io.github.anthonytw.sempere --source Library/Logs/SemperePerf.log --destination .
+```
+
+Details hold counts and 8-hex-digit note id prefixes only. `SEMPERE_PERF_LOG=0`
+turns the debug log off; `SEMPERE_DEBUG_DRAWING_CACHE=0` runs without the
+drawing cache, for comparisons.
+
+## Recent vaults after a restart
+
+Recents are store vaults (by id) and WebDAV locations; a bookmark recent is an earlier build's in-place
+vault, which is copied in when chosen ("Every vault is an in-app copy"). For those bookmarks, and folder
+targets' bookmarks: right after a device restarts, iCloud Drive (and other providers) can take a
+while to come up: a recent vault's bookmark does not resolve yet, or it
+resolves to a folder iCloud has not listed. Before this was handled, the launch
+reopen took the failed resolve for a dead bookmark and dropped the entry, so
+the vault vanished from the welcome list until it was chosen again.
+
+Now (`RecentVaultAvailability.swift`, `VaultLibrary.states`):
+
+* A recent vault is never dropped by a failed resolve or open; only Remove
+  (swipe, or the row's context menu) takes it off the list.
+* Each entry keeps the path where it was last reached (`RecentVault.path`), so
+  the list knows it is in iCloud Drive or another provider without resolving.
+* The library checks every entry off the main actor (`checkRecents`:
+  bookmark resolution and a look for `vault.json` or its `.icloud` stand-in,
+  under the bookmark's scope). A vault that may be in a cloud provider and is
+  not reachable is **waiting** ("Waiting for iCloud…") for
+  `RecentVaultCheck.patience` (3 minutes), then **missing** (the bookmark still
+  resolves, the folder is gone and its parent is there) or **unreachable**
+  (iCloud Drive off or signed out, or the vault went with its folder). A vault
+  on this device has nothing to wait for and is reported at once.
+* Checks repeat with a backoff (1, 2, 4, 8, 16, then every 30 s; once a minute
+  for ten minutes when only gone vaults are left), and start over when the scene becomes active
+  or the iCloud account changes (`NSUbiquityIdentityDidChange`).
+* The launch reopen, File ▸ Reopen Last Vault and a tap on a waiting row do not
+  show an error: the vault opens by itself as soon as a check finds it
+  (`openWhenAvailable`, `takeReadyPendingOpen`), unless another vault was opened
+  meanwhile.
+
+The app has no iCloud container entitlement (free personal-team builds cannot
+have one; vaults are folders the user picks), so there is no ubiquity container
+to look up and no `NSMetadataQuery` over iCloud scopes: the bookmark and the
+folder are what is checked. Tests fake the iCloud side with `FakeVaultCloud`
+(`RecentVaultWaitTests`).
+
+## Saved folder access (sandboxed Mac)
+
+The app opens a vault folder through the system picker and remembers it as a
+bookmark (`VaultBookmark`, recent vaults in `VaultLibrary`). Whether a
+remembered folder is still usable after a relaunch is the platform's decision:
+
+* **iPadOS:** a bookmark made from a picker URL carries its security scope;
+  `startAccessingSecurityScopedResource()` on the resolved URL grants access.
+  Verified on devices.
+* **Mac Catalyst, not sandboxed:** the app can read what the user can; scope
+  calls return false and nothing depends on them.
+* **Mac Catalyst, sandboxed (Mac App Store, `Sempere.entitlements`):**
+  `.withSecurityScope` is AppKit-only and is not in the Catalyst SDK, so
+  bookmarks are made with plain options, as on iOS (`VaultBookmark.make`).
+  Apple documents security-scoped bookmarks for sandboxed apps with the
+  `com.apple.security.files.bookmarks.app-scope` entitlement (set) and
+  `files.user-selected.read-write` (set); whether a plain bookmark of a
+  picker URL brings the sandbox extension back after a relaunch under
+  Catalyst **has not been verified**: it needs a signed sandboxed build on a
+  Mac, which CI does not have.
+
+What the code does so that either answer is safe:
+
+* `AppModel.openVault` lists the folder before reading anything
+  (`FolderAccess.check`). When the system refuses (`EPERM`/`EACCES`, Cocoa
+  257/513, also as an underlying error) it throws `FolderAccess.Problem.noAccess`
+  naming the vault folder, instead of a file error from inside `Vault.open`.
+* `RootView.reopen` already turns any failure of a recent vault (other than
+  waiting for iCloud, above) into a message and the folder picker, so a lost permission ends with the user choosing the
+  folder again, and `remember` saves a fresh bookmark from that scope.
+  At launch (`pickOnFailure: false`) only the message shows.
+* A stale bookmark is re-saved while its scope is held (`VaultBookmark.resolve`).
+* DEBUG builds log `SempereDebug folderAccess scoped=<0|1> listable=<0|1>` for
+  every open (no names), to read the answer off a real sandboxed build: after
+  choosing a folder and relaunching, `scoped=0 listable=0` means the plain
+  bookmark does not survive, and the fix is a Catalyst-only
+  `NSURL` bookmark call through an Objective-C shim, which this repository
+  does not have.
+* The vault's own files under `notes/` are written only through the open
+  scope; nothing outside the picked folder is touched. The temporary PDFs of
+  drag and drop (`docs/mac.md`) are in the app's container.
+
+## Share and export (app)
+
+The app exports notes through the system share sheet and Save to Files. It
+renders with the CLI's renderers: `SempereRender.ShareExport` lays the files
+out (the same bytes `sempere export` writes) and `TreeExporter` (in
+`SempereRender`) writes the Markdown and HTML trees.
+
+| Format | One note | Several notes |
+| --- | --- | --- |
+| PDF | `<stem>.pdf` | one per note, or one merged `Sempere-Notes.pdf` |
+| PNG pages | `<stem>-p001.png`, ... (`-p001-2.png`, ... for the further images of a pageless page) | a folder per note |
+| Text (Markdown) | `<stem>.md` leading with the recognized text; with the PDF (optional, off) or page PNGs, a folder with them and `README.md` | `Sempere Export/`, mirroring the notebook tree |
+| Media | a folder `<stem>/` with the note's recordings, transcripts, clips, images and PDFs and `media.json` ("Media export" below) | a folder per note; notes without media are counted, not written |
+
+`<stem>` is `ExportName.stem` (sanitized title and the first 8 characters of the
+note id). Options: paper background (on), PNG resolution (72, 144, 216, 300
+dpi), merged PDF, and for text the PDF (off) and page images. The text export
+is disabled when no selected note has recognized handwriting, the media
+export when none has a recording, video, image or PDF. HTML is the
+CLI's only (`sempere export --format html`). A one-off share writes no export
+manifest.
+
+- **Selection.** "Select" in the note list ticks several notes; a keyboard
+  command-click does too. The export commands act on the ticked notes, else the
+  open note. `ExportCommand` is the one place that names the actions: the list
+  toolbar and context menu, the note toolbar and the Catalyst menu bar
+  (`ExportMenuCommands`, File menu) all build from it.
+- **Off the main actor, with cancel.** `AppModel.exportNotes` reads each note
+  (a partial copy's notes are fetched first and refused while still incomplete, so a note missing a
+  revision is reported as a failure, never exported stale; same rules as opening a note) and renders in a detached task, checking cancellation between
+  notes. `ExportJob` drives it for the export sheet: progress over both phases,
+  Cancel, failures listed per note while the others are exported (also in a
+  merged PDF, which leaves out a note that cannot be rendered). One export at a
+  time: an Export command while the sheet is up is ignored. Closing the
+  vault cancels it (generation token). Nothing is written to the vault.
+- **Scratch files.** Output is staged under `tmp/SempereExports/<uuid>` (file
+  protection "complete" on iOS), deleted when the sheet closes and at every
+  launch. A run owns its folder: a run that is canceled, fails or outlives
+  its sheet deletes it when it ends (the note being rendered at that moment
+  finishes, and no file is written once the run is canceled). Share and Save to Files copy from there.
+- **Plaintext.** Exports strip nothing and encrypt nothing, exactly like the
+  CLI's; the sheet says so. The share sheet holds the selected notes' states at
+  once while rendering; "Export to Folder or Zip…" (below) streams one note at a time.
+
+The app's Markdown/HTML share export never skips notes as up to date: it writes into a fresh
+scratch folder and deletes the manifest afterwards (`ShareExport`), so there is nothing to compare
+with; `TreeExporter.environment` stays unset there. Only the CLI re-runs into the same folder.
+
+## Bulk export (app and CLI)
+
+"Export to Folder or Zip…" exports many notes at once: the ticked notes of the list
+(Export ▸ To Folder or Zip…), a notebook with its sub-notebooks (the
+notebook's context menu), or the whole vault (All Notes' context menu, and
+File ▸ Export to Folder or Zip… on a Mac, which takes the ticked notes, else the
+sidebar's notebook, else the vault). iPad, iPhone and Mac share the sheet
+(`BulkExportSheet`).
+
+- **Formats.** PDF (one file per note), PDF + attachments (recordings with
+  their transcripts and video clips embedded and listed on a last page, as the
+  share sheet's "PDF + attachments"), PNG pages (a folder of `p001.png`, ...
+  per note), Media (a folder per note, "Media export" below; notes whose
+  summary names no audio, video, image or PDF blob are not planned, so they
+  are never read). SVG is the CLI's only, as in the single-note export.
+- **Layout.** "Folders like your notebooks" (on by default) mirrors the
+  notebook tree (`TreeExporter.folders`: sanitized segments, names that differ
+  only by case share one spelling); a notebook export starts at that notebook
+  (`School/Math` gives `Math/…`). Off: every note at the top.
+- **Names.** `ExportName.stem` (`<title>-<8 hex of the id>`): path separators,
+  `\ : * ? " < > |`, controls and newlines become `-`, length is capped, an empty
+  title is `untitled`, reserved folder names (`CON`, `NUL`, ...) get `_`. Two
+  notes whose names would still clash in one folder (equal ignoring case and
+  Unicode normalization, or equal to a sub-folder's name) take the full id,
+  then `-2`, `-3`, ...; the note with the smaller id keeps the short name, so
+  a re-run names every note the same way (`BulkExportPlan.jobs`).
+- **Destination.** A folder the user picks (the default on a Mac; on iPadOS
+  any Files location): files are written in place, the picked folder's
+  security scope held for the run. A folder inside the vault is refused. Or a
+  zip archive (the default on iPad and iPhone), staged under
+  `tmp/SempereBulkExports/<uuid>` (file protection "complete"), then Share…
+  or Save to Files…; deleted when the sheet closes and at launch.
+- **One note at a time, bounded memory.** `AppModel.runBulkExport` loops over
+  the jobs: fetch (a partial copy), read (as for the share export), fetch embedded media for PDF + attachments
+  (every file it writes for Media),
+  render and write in a detached task, then let go. Only one note's state is
+  held; PDFs stream (clips never in memory) to `<name>.pdf.partial` and are
+  renamed when complete; zip entries are streamed from those files
+  (`ZipWriter`: stored, CRC first, zip64 past 4 GiB or 65 535 entries) and the
+  staged files deleted. A 1.4 GB vault takes the memory of its largest note.
+- **Read ahead, bounded by bytes.** While a note renders, the next ones (at most two)
+  are downloaded and read (`LoadAhead`, SempereRender): one read at a time and in job
+  order, so fetches still happen in the order the jobs run, and wall time
+  approaches the longer of the read and render phases instead of their sum. The
+  estimated memory of the note being rendered plus those read ahead stays under 256 MiB
+  (`ByteBudget`; a note's estimate is 8 × its revision files on disk, 64 MiB when they
+  cannot be measured). A note that does not fit is read on its own, when its turn comes,
+  and nothing after it is read before it has been reserved (the reads after a note that did not fit, or that is up to date and skipped, wait for it, then go on). Reading ahead never touches the
+  `BulkExportSession`, except `wouldSkip` (a read-only `skip`, so a note that is up to
+  date is not read): `skip`, `fail` and `export` still happen in job order from the one
+  loop, so the outcomes, the skipped and failed counts and Stop behave as one note at a
+  time. Stop and closing the vault cancel the reads in flight and wait for them.
+- **Progress, Stop, failures.** Progress counts notes (and skipped and failed
+  ones). Stop ends after the note being written: a folder keeps what was
+  written, a zip is deleted. A note that cannot be downloaded, read or
+  rendered is listed at the end ("Not exported", title, id prefix, reason) and
+  the batch goes on; nothing is half written for it. Closing the vault stops
+  the run (generation token). Nothing is written to the vault.
+- **Resumable-ish.** The folder gets a hidden manifest,
+  `.sempere-export-bulk.json`: per file, the note id, the note's version (a
+  fingerprint of its revision file names, `BulkExportPlan.version`), the
+  options (`BulkExportOptions.fingerprint`) and the size written. Exporting
+  again into the same folder skips a note when every file it wrote is still
+  there with the same name and size, for the same note version and options,
+  before anything is downloaded or read; the sheet and the CLI say how many
+  were skipped. The manifest is saved every 10 notes and at the end (also
+  after Stop), so an interrupted run redoes at most ten notes. It is untrusted
+  when read back: a path that would leave the folder is ignored, and it can
+  only make a run skip, never delete. A zip is never resumed.
+- **Shared core.** `BulkExportPlan` (selection → jobs), `BulkExportSession`
+  (skip, render, write, manifest, zip) and `ZipWriter` live in
+  `SempereRender`; `sempere export --all --format pdf|png` runs the same
+  session (docs/cli.md "Bulk export"), and the sheet shows the equivalent
+  command for a notebook or the vault.
+
+## The attachment list page (app and CLI)
+
+"PDF + attachments" (the share sheet's and "Export to Folder or Zip…"'s, the CLI's
+`--attachments`, `--recordings attach`, `--videos attach`) ends with a list of
+what the PDF carries: one row per recording, its transcript (when embedded) and
+video clip, with the kind, the title, the pages of the PDF it appears on (a
+recording's cards, a clip; "–" for none), the duration and the size. The rows
+follow the notes (a merged PDF heads each note's rows with its title), the
+recordings in their order, then the clips in page order. US Letter, as many
+pages as the rows need (about 35 rows a page; a title too long for its column
+is cut at the end of its first line).
+
+- **Links.** Each embedded file gets a FileAttachment annotation (the viewer's
+  paperclip in the left margin) naming the same file specification as the
+  document's `/EmbeddedFiles`: opening it opens or saves the file, also in
+  viewers that have no panel for document attachments. The
+  Page column links to the first page it appears on. `pdfdetach -list` counts
+  each file twice (the name tree and the annotation); the file is stored once.
+- **Not embedded.** A recording or clip left out (missing, not downloaded,
+  over the size limit) is listed with "(not embedded)" and no file link.
+  `sempere export --recordings list` lists them all without embedding anything.
+- **Text.** Laid out by the export's shaper (CoreText in the app, the bundled
+  Noto in the CLI), so it is the same page from both; without a shaper the
+  page is left out with a warning. A note without recordings or clips gets no
+  page. Shared code: `AttachmentList` (SempereRender), drawn by `PDFWriter`.
+
+## Media export (app and CLI)
+
+"Media" (the share sheet, "Export to Folder or Zip…", `sempere export --format media`)
+writes a note's attachments as files: one folder per note, named like its
+other exports (`ExportName.stem`), holding
+
+- each recording, byte for byte as stored, and its transcript as a `.txt` of
+  time-stamped lines (`Transcript.plainText`) next to it;
+- each video clip, streamed from the vault, location metadata removed in place
+  unless kept (`--keep-image-metadata`), as "PDF + attachments" does;
+- each image, JPEG and PNG with their metadata removed unless kept (other
+  formats, and JPEG or PNG over 64 MiB, as stored, with a warning);
+- each PDF (the document behind `pdfPage` items), as stored;
+- `media.json`: `{"format": "sempere-media/1", "note", "title", "files": [{"file",
+  "kind" (recording, video, image, pdf), "title", "pages" (1-based note pages
+  it appears on), "duration", "started" (RFC 3339), "transcript" (the .txt),
+  "type", "size"}]}`.
+
+Each blob is written once however often it is placed. Names are
+`<title>-<Kind>-<n>[-<recording title>].<ext>` (`Physics-Week-3-Recording-1-Lecture.m4a`,
+`…-Image-2.jpg`), every part through `ExportName.component`, the title and the
+recording title capped at 60 bytes, unique ignoring case; the extension comes
+from the media type (`bin` when unknown). Every file is decrypted and verified
+on its way out (`BlobSource.stream`, never whole in memory) into a temporary
+file next to its name and moved into place. A blob that is missing or not
+downloaded is left out with a warning; one that fails verification while it is
+written fails that note (its files are removed) and the export goes on. A note
+without media writes nothing (the CLI warns, the app counts it). The bulk export
+records the files in its manifest, so a re-run skips unchanged notes and a
+changed note's earlier files are removed first. Shared code: `MediaExport`
+(SempereRender), used by `ShareExport`, `BulkExportSession` and the CLI.
+
+## Vaults are folders (app)
+
+The app exports the UTType `io.github.anthonytw.sempere.vault` (extension
+`sempere`), conforming to `public.folder` only (`Apps/Sempere/SempereInfo.plist`,
+merged into the generated Info.plist), so opening a vault from Files launches
+Sempere. It is **not** a package (`com.apple.package`): iCloud Drive syncs a
+package as one item, so a note written into it on one device while another
+device also wrote (a large import on the Mac, a new note on the iPad) made a
+conflict of the whole vault, and the version the user did not pick in the
+system's "choose a version" prompt took that note with it (TestFlight 1.0.0,
+2026-10). As a plain folder each file syncs on its own, write-once files never
+conflict, and the app resolves the few mutable files itself ("Conflicting
+versions" below). Files and Finder show a vault as a folder.
+
+The picker accepts that type and plain folders: a folder holding a vault
+opens whatever its name (a backup or export without the extension, a vault
+renamed in Files); requiring the extension would only refuse vaults the app
+can read. On a Mac it is AppKit's open panel set to choose folders
+(`MacFolderPanel`, as for the folders the app writes to, without New
+Folder): UIKit's picker there, given the vault type and `public.folder`,
+navigated into folders without letting one be chosen (TestFlight 1.0.0 (8)).
+`VaultLocator.resolve` turns
+what was picked into the vault folder: a folder holding exactly one
+`.sempere` resolves to it (several: an error naming them); with none, one
+`.sempere-backup` (a backup: a one-time copy). A file or folder
+inside a vault (`vault.json`, `notes/…`) is an error naming the vault: the
+access the picker grants covers the picked item and what is below it, never
+its parents, so the vault could not be read from it. The pickers say so before
+that (`PickedFolderRules`): on a Mac the open panel's delegate (`MacPanelRules`)
+greys out everything inside a `….sempere` or `….sempere-backup` and refuses a
+choice made inside one with words naming the folder to choose; on an iPhone or
+iPad the pick is refused with an alert ("go back to “Wompa.sempere” and tap Open
+there"). Neither picker can choose such a folder as an item without going into it:
+only a package keeps a picker out, and vaults are folders (above). The Mac's panel
+has `canChooseFiles` on with the delegate enabling plain folders only (never a package such as `Foo.app` or a
+Photos library; an item it cannot read yet stays enabled and is checked after the pick, under the panel's grant): with files off it
+greyed out every `.sempere` (a document type of the app), while a `.sempere-backup`
+(not one) stayed choosable (owner's test of TestFlight build 10).
+New vaults are always created as `<name>.sempere`. Security scope is held on
+the URL the user picked. The CLI and the on-disk layout are unaffected.
+
+A vault created by a build that still declared the package type may be held
+by iCloud Drive as a package until it is re-created; `sempere vault
+merge-copy` merges any copy of it (the other device's, or a version restored
+from iCloud's version history) into a new vault without losing a file.
+
+What made them packages (confirmed on the owner's account, build 12): the folders carry a
+`com.apple.FinderInfo` extended attribute whose Finder flags have `kHasBundle` (0x2000) set, bytes
+`00 00 00 00 00 00 00 00 20 00 …` (the flags are the big-endian `UInt16` at offset 8). With that bit the
+Finder, Files and the pickers show a folder as a package on every device, and iCloud Drive syncs it as
+one item, so the whole-vault conflict above comes back, even for a folder the iPad's build 12 had just
+made; Launch Services was clean (only `public.folder`). The app clears that one bit
+(`FinderBundleBit`, core; `BundleBitRepair`, app, logged under the `bundleBit` category) and keeps
+every other byte, removing the attribute when nothing else is left, on every `….sempere` and
+`….sempere-backup` folder it makes or uses:
+- the store's vaults: when one opens (`openVault(at:)`) and whenever the store is listed
+  (`refreshStoredVaults`: at launch and after a create, copy-in or restore, which keep the source's
+  attributes);
+- a folder sync target: when it is added (`addFolderTarget`) and before and after each run;
+- a backup folder: before and after each Back Up Now.
+It writes the attribute under the security scope the app already holds for the folder. Whether
+iCloud Drive sets the bit again after a round trip could not be tested here (no iCloud on the seat or
+the simulator): the clearing at each run puts it right again either way, and the log says how often it
+had to. The CLI does the same on macOS (`clearBundleBits`, `FinderBundleBit.clearFolders`): `sempere backup` on the
+vault and the backup folder, `sempere sync folder` and `sempere store sync` on the vault and the folder target,
+before and after each run, with a line on stderr for each folder it cleared. The attribute calls never follow a
+symbolic link (`XATTR_NOFOLLOW`).
+
+iCloud Drive may also keep holding `….sempere` folders as packages for an account where such a
+build ran, new ones included: in the owner's test of build 11 the iCloud sync folder
+"Wompa.sempere" showed as a file without an icon in the Mac's panel, which greyed it out as a
+package, and the iPhone's picker greyed it out too (the `.sempere-backup` beside it, a newer
+extension, showed as a folder; a vault outside iCloud Drive showed as a folder). The pickers take
+such an item as the folder it is (`PickedFolderRules.isFolderLike`): a `….sempere` or
+`….sempere-backup` the system reports as a package is enabled in the Mac's panel (which keeps out
+of it), and the document picker's types include `com.apple.package`
+(`UTType.vaultPickerTypes`, `folderPickerTypes`, Restore from Backup's importer), with any other
+package refused after the pick ("Choose a folder."). After the pick:
+- Open Vault…'s copy-in reads the item under one coordinated read, which downloads it.
+- Restore from Backup's preview reads the pick under a coordinated read and downloads `backup.json`
+  and `vault.json` first (`previewRestore`; a stand-in counts as the file, `BackupLocation.isBackup`);
+  the restore downloads the rest.
+- Sync With, Add Folder… and Choose Again…: a sync folder picked itself is the target
+  (`folderTargetLocation`), but only once it is on the device as a folder. A `….sempere` that is not
+  (an iPhone lists a package not downloaded as a `.<name>.icloud` stand-in, or not at all), picked
+  itself or found only as a stand-in in the picked folder, is refused with "not on this device yet"
+  (`SyncTargetProblem.notDownloaded`) after the app asked iCloud Drive for it
+  (`requestDownload(of:scope:)`): the first run would otherwise make an empty folder of that name
+  over the other devices' package (review of #115). Choosing it again once it is there works.
+
+Folders that get plaintext (Export to Folder, an unlisted device's Save Files: `PickedFolderRules`
+`.exportFolder`) never take a vault or a backup itself, and a backup folder (`.writeFolder`) never
+takes a vault itself: a backup goes next to it.
+
+## Conflicting versions (app)
+
+The app never reads a vault in place, so it resolves no provider conflict versions itself. A folder target
+in iCloud Drive or another provider gets them merged by the sync engine (`ConflictVersions.swift`, by the
+rules of `format.md` §1.3: write-once files are a union, `settings.age` is merged per key, a `vault.json` both
+devices changed is kept and reported unless one is a later version by home); see "Folder targets in providers". `sempere vault
+merge-copy` merges any whole copy of a vault into another without losing a file.
+
+## Atomic writes
+
+Every file the library writes (revisions, `vault.json`, epoch records, join
+requests, the passphrase copy) goes through one helper:
+
+1. write the bytes to `.sempere-tmp-<uuid>` **in the destination directory**
+   (same filesystem, so the rename cannot turn into a copy);
+2. `fsync` it;
+3. `rename(2)` it onto the final name;
+4. `fsync` the directory, so the rename itself survives a crash.
+
+A reader or a sync client sees either no file (or the previous version) or
+the complete new one, never a partial file. Temp names start with a dot and
+lack the `.age` suffix, so every listing ignores them. Deletions (compaction,
+an approved join request) also fsync their directory. Filesystems that cannot fsync a
+directory (`EINVAL`, `ENOTSUP`) are accepted (`verify` reports a
+leftover as `unknownFile`; nothing deletes it automatically).
+
+**Blobs** (`notes/<id>/att/`, `format.md` §8.1.4) are streamed: the age
+file is written chunk by chunk to `.sempere-tmp-<uuid>` in the note's `att/`
+(mode 0600) and `fsync`ed, then put in place with `link(2)` onto the final
+name, which fails rather than replace an existing file, then the temporary
+name is unlinked and the directory `fsync`ed. On file systems without hard
+links (FAT, some network shares) it falls back to the existence check and
+`rename(2)` above. The only blob that is ever replaced is one whose first
+chunk does not decrypt to a valid header for its name (format.md §8.1.4
+step 2), or one `blobs repair` re-encrypts or renames. Writers write the blob before the
+revision that references it, so a crash leaves an unreferenced blob, never
+a dangling reference. `withBlobFile` and `blobs extract --out` decrypt to a
+private file that appears (or is handed out) only once the whole content
+verified.
+
+Revisions are write-once: `write` refuses an existing name and a reused
+`(device, seq)` before renaming. The existence check and the rename are not
+one atomic step, but two writers can only race on one name if they share a
+device id and sequence number, which the format already rules out.
+
+`nextSeq` takes the largest `seq` seen in file names **and** in any readable
+snapshot's `included`, so a device whose old revisions were compacted away
+does not reissue a `seq` that a snapshot already claims to cover (which
+would make readers drop the new delta).
+
+## Backups
+
+`Backup` (`Sources/Sempere/Backup.swift`) copies a vault's format files
+(`vault.json`, `reencrypt-journal.age` (KH6), `settings.age`, `keys/*.key.age` (the passphrase copy),
+`epochs/*.epoch.age`, `notebooks/*.notebook.age`,
+`notes/<id>/<revision>`, `notes/<id>/att/<blob>`;
+nothing else) with the same atomic-write helper, then reads each copy back
+and compares SHA-256. The backup folder is a vault plus `backup.json`
+(`format: sempere-backup/1`, `vaultId`, `created`, `updated`, `completed`,
+and `files`: path → `sha256`, `size`)
+and `versions/<UTC time>/` (previous copies of files a run replaced or, for
+the journal, removed). Revisions are copied first, then the epoch record, and
+`vault.json` last, so a run cut short never leaves a manifest newer than its
+notes or naming a record the backup lacks; `restore` writes
+`vault.json` last for the same reason, behind a `.sempere-restore.json`
+marker that lets the same command resume. `backup.json` is saved every 100
+files (every twentieth of the index once it holds more than 2 000 entries) and at the end; a file on disk that it does not list is hashed against
+the source before it is trusted. `--prune` uses `CompactionPlanner` with
+retention 0 over snapshots present in both the source and the backup (a
+pruned snapshot's own coverage is read from the backup's copy), as WebDAV sync
+does for deletions. The tar writer is POSIX ustar (names up to 255 bytes via
+the prefix field); the archive is verified with a small reader before it is
+renamed into place.
+
+`updated` is written by every run (also one with file errors, and the
+periodic saves of one cut short); `completed`, optional, only at the end of a
+run without a file error, so it is what an overdue check counts from. `Backup.status` reads
+`backup.json` alone (last run, last complete run, notes, files, bytes,
+sizes summed with saturation since the index may be hostile);
+`Backup.preview` lists a backup or vault folder without a key (notes,
+revisions, attachments, bytes, newest revision from the file names' clocks);
+`Backup.checkRestoreTarget` refuses a target before anything is written,
+including one that is, holds or lies inside a `protecting` folder (the open
+vault). The CLI's `backup status` and `restore --dry-run` and the app use them.
+
+### Backups in the app
+
+Settings ▸ Backups (`AppModel+Backup.swift`, `BackupSettings.swift`,
+`BackupViews.swift`) runs the CLI's core; `docs/cli.md` "The app's Backups"
+maps each control to its command.
+
+- **What a backup is.** A backup is one device's frozen snapshot of the vault,
+  for restoring it: nothing syncs from it or into it. A sync target is the
+  other thing: a shared, live, two-way meeting place that other devices open
+  (Open Vault…) and then join (Join This Device). TestFlight 1.0.0 (9): an
+  owner took one for the other, so the two are kept apart in name and in place:
+  Settings ▸ Backups opens with a line saying so and pointing at Sync Targets,
+  New Vault asks for them in two sections ("Sync With", "Back Up To"), and a
+  backup's folder is named `.sempere-backup`, never `.sempere`.
+- **Folder.** The user picks a folder (another drive, another cloud
+  provider's folder in Files), in Settings ▸ Backups or in New Vault's optional
+  "Back Up To" (the same `chooseBackupFolder`, once the vault exists). The
+  backup goes into "<vault>.sempere-backup" inside
+  it (the next free "<vault> N.sempere-backup" when that name holds something else
+  than this vault's backup or an empty folder), on every device: the core's
+  `BackupDestination.folder`, shared with `sempere backup --into`, through
+  `BackupLocation.subfolder`. Only a folder that is this vault's backup
+  named "….sempere-backup" already, or an empty folder so named, takes the backup itself.
+  A backup is a vault folder that Open Vault… on any device copies in once
+  (TestFlight 1.0.0 (8): backups written as plain "<vault> Backup" folders,
+  or poured into the picked folder on the iPad, could not be moved between
+  devices; (9): #108's "<vault>.sempere" backups looked like the sync folder).
+  The type `io.github.anthonytw.sempere.backup` ("Sempere Backup", extension
+  `sempere-backup`) is exported as `public.folder`, never a package, like the
+  vault's ("Vaults are folders"). Back Up Now resolves the folder again at every run
+  (`BackupLocation.runSubfolder`): a backup of this vault an earlier build
+  named "<vault> Backup" or "<vault>.sempere" (or the recorded subfolder) is renamed
+  in place to "<vault>.sempere-backup" when that name is free and `backup.json`
+  proves it is this vault's (`BackupDestination.renameLegacy`, shared with
+  `--into`: one rename, no file inside touched; else it is left alone and a new
+  backup starts next to it); the recorded subfolder is kept while
+  `BackupDestination.folder` takes it as it is; a name another device's vault took
+  meanwhile moves on to the next free one; a backup an earlier build wrote straight into the
+  picked folder (the iPad) gets a "<vault>.sempere-backup" of its own inside it, its
+  files left as they are, and is continued there. A backup of this vault an earlier build
+  named "….sempere" or "… Backup", picked itself (an earlier bookmark, or `--into` it), is
+  continued where it is, never given a second full backup nested inside it (review of #109). That nested backup is the one
+  folder inside a backup that `BackupDestination.folder` takes (this vault's own
+  `.sempere-backup` inside this vault's older backup), so `sempere backup --into`
+  on it agrees with the app; anything else inside a backup is refused. A vault, another vault's backup, a backup whose
+  `backup.json` cannot be read, a folder inside a vault or a backup, the open
+  vault or a folder inside it is refused. "Empty" counts hidden entries (an
+  iCloud `.<name>.icloud` stand-in is a file not downloaded; only Finder's
+  `.DS_Store` is ignored), and a folder that cannot be listed is not empty;
+  `Backup.run` applies the same rule.
+- **Never a sync target.** What a folder is is decided by its content, never its
+  name: one holding `backup.json` (or `.backup.json.icloud`) is a backup. A backup's
+  folder holds `vault.json`, so a sync
+  target could be pointed at it, and a sync would write into it and pass note
+  deletions and compactions on. `VaultStore.checkFolderTarget` refuses any
+  folder holding `backup.json`, and any folder inside a vault or a backup
+  (`BackupDestination.enclosingHolders`: a backup's `versions/<time>/` holds this vault's
+  `vault.json`, which the engine's same-vault check takes; review of #109), for Add Folder…,
+  Choose Again…, Keep syncing, the CLI's `store target add` and `store import --keep-syncing`. A folder above
+  holding this same vault (a bare copy build 10 synced there) does not count. The app also refuses, by name, a
+  folder below a `….sempere` or `….sempere-backup` (on iOS it cannot read above a picked folder; an app's
+  container, directly in `Library/Containers` or `Shared/AppGroup`, is not one). This is checked when a target is
+  added only: `FolderTargetRun.check` looks at the folder itself (a backup is never synced), so a target that
+  worked before, under an earlier build's backup written straight into a plain folder, keeps syncing (review of #113). Add Folder… on the
+  backup's parent folder uses the next free "<vault> N.sempere" when the backup has the
+  sync folder's name (#108's). Open Vault…
+  on a backup is a one-time import: the sheet is titled "Open Vault Backup", shows no "Keep
+  syncing", and says the backup is copied once and that syncing (and joining) means opening the
+  vault's `.sempere` sync folder; when the vault is on the device already it says that copy opens and
+  nothing is copied, and points at Restore from Backup… for the backup's notes. A store vault with no
+  sync target (a backup copied in, a one-time import) offers no Join This Device on its unlock sheet
+  (`AppModel.canJoinOpenVault`): a join request travels through a target. `VaultLocator` takes a `.sempere-backup` picked
+  itself, or the one in a picked folder that holds no `.sempere` (the sync folder wins);
+  the copy is named after the vault (`VaultStore.displayName` drops
+  `.sempere-backup`), and a restore suggests "<vault> (Restored)". The app keeps a bookmark of the picked
+  folder (`VaultBookmark`, plain options as for vaults, see "Saved folder
+  access") plus the subfolder name, per vault and per device
+  (`BackupRecord` in `UserDefaults` under `Sempere.backup.<vault id>`); access
+  granted to the picked folder covers the subfolder. Picking an existing
+  backup takes its last backup from `backup.json`'s `completed` (a run with
+  file errors or cut short is none). A bookmark that no longer
+  resolves, or a folder that is gone, is reported by name ("choose it again").
+- **Back Up Now** is `Backup.run` off the main actor, with the picked folder's
+  security scope held for the run. A partial copy (a join not finished) is
+  completed first (`completePartialCopy`: one run of its server), or the backup
+  is refused: a note not downloaded would be missing from it.
+  The run's `afterEachFile` counts files for the progress line and stops the
+  run when the user taps Stop or the vault closes (the backup holds only
+  complete files; the next run finishes it). The run counts as the last
+  backup only without file errors. After a Verify Backup found problems, the
+  next run compares every file by hash (`--checksum`), so damaged copies are
+  replaced, not skipped for having the right size.
+- **Verify Backup** is `Backup.verify` with the unlocked key (every revision
+  decrypted and checked), or hashes only when the vault is locked; the
+  problems are listed (`BackupVerifyReport.problemLines`; at most
+  `BackupText.problemLimit` in a box that scrolls, then "…and N more."). A folder
+  that cannot take the backup and a failed run or check are alerts.
+- **Reminder.** "Remind me after N days without a backup" schedules one local
+  notification per vault (`UNUserNotificationCenter`, identifier
+  `Sempere.backupReminder.<vault id>`), due N days after the last backup, or
+  after the reminder was switched on when there is none, but never sooner than
+  an hour from now. It is rescheduled after every backup, every change of the
+  setting and every unlock; Settings shows an overdue backup in red even when
+  notifications are not allowed. The text names the vault, never a note. The
+  due rule is `BackupSchedule` (core), shared with `sempere backup status
+  --max-age`, which counts from `backup.json`'s `completed` instead of this
+  device's record; a last backup dated more than a day ahead of the clock
+  counts as overdue.
+- **Restore from Backup** (Settings, and the welcome screen when no vault is
+  open): pick a backup folder, a folder holding one, or any vault folder
+  (`BackupLocation.restoreSource`); the sheet shows `Backup.preview` (notes,
+  versions, attachments, size, newest change, when it was backed up) before
+  anything is written. The restore goes into a new "<name>.sempere" on this
+  device or in a chosen folder through `Backup.restore(protecting: [open
+  vault])`, coordinated in iCloud Drive; a backup whose `vault.json` does not
+  open (one listing a classic key, say) is refused as in the CLI. The new vault is added to the recents and can be
+  opened from the sheet; it has the backed-up vault's id and opens with the
+  same key. The open vault is never written.
+- A backup folder in iCloud Drive is downloaded before a restore; a backup
+  *into* iCloud Drive is written with plain file writes, which iCloud uploads,
+  but an evicted file of an earlier run there reads as missing to Verify
+  Backup. Prefer a folder that stays local (an external drive) or another
+  provider.
+
+## Listing errors
+
+A directory that does not exist lists as empty (sync tools drop empty
+directories). Any other listing failure throws `VaultError.io`
+(`noteIDs`, `revisionNames`, `nextSeq`) or, in
+`verify()`, becomes an `unlistable` entry that makes the report unhealthy.
+"Could not read" never looks like "nothing there".
+
+`nextSeq(noteId:device:)` throws when a snapshot of the note cannot be read,
+since its coverage is unknown. Callers that already hold all revisions use
+`Vault.nextSeq(from:device:)`, which reads nothing (`snapshot()` does).
+
+## Key changes (format.md §3.3)
+
+There is no in-place rewrite. Under the key hierarchy (`format.md` §2, §15;
+`docs/design/key-hierarchy.md`) every file is encrypted to the vault identity,
+so the only list changes of this version touch `vault.json` alone, written by
+the home device (`Sources/Sempere/VaultDevices.swift`):
+
+- **Approve** (`approveDevice`): the request in `joins/` whose commitment the
+  typed words give is checked (this vault, a post-quantum key, a valid kind, a
+  key and id not listed, the addition bound), an entry with a wrap of `K_e`
+  and home's `addSig` is appended, `listTag`, `markersTag` and `authorSig` are
+  computed again, and `vault.json` is replaced in one atomic write; then the
+  trust record is saved and the request deleted. The write starts from the
+  `vault.json` on disk and stops (`manifestCorrupt`) if it is no longer the
+  version this value opened (`requireUnchangedOnDisk`), so a change another
+  copy made is never undone.
+- **Rename** (`renameDevice`): the same, for one entry's `name`.
+- **Label** (`setLabel`): any listed device whose list checks; the label is
+  covered by nothing, so the rest of `vault.json` is written back unchanged.
+- **Create** (`Vault.create`): the epoch record is durable under its final
+  name before `vault.json` names it; the passphrase copy, if any, before
+  `vault.json` too, so a crash leaves no vault rather than a vault without its
+  files.
+
+A joining device (`writeJoinRequest`, `confirmJoin`) writes only its request,
+and its trust record once the reply words match. Removal, handoff, takeover
+and recovery-kit replacement are new epochs (KH3; over sync, KH4), and re-encrypting
+everything (KH6) brings back a resumable journal (`reencrypt-journal.age`,
+`format.md` §15.8), not in this version.
+
+## Reading and verification
+
+`readRevision` reports one typed error per stage: `undecryptable` (age),
+`tagMismatch`, `corruptBody` (magic, version, gzip), `undecodable` (JSON, or
+content naming another note or file name). `reconstruct` and `snapshot`
+refuse to proceed past an unreadable revision; `loadNote` returns what is
+readable plus the failures. `compact` deletes only names returned by
+`CompactionPlanner` over readable revisions, so an unreadable file is never
+deleted and never counts as coverage. `verify()` never throws: it re-checks
+`vault.json` (format, each wrap one stanza, this device's wrap opening to the
+key in use, the list check of `format.md` §2.1), the epoch record, the join
+requests and the passphrase copy's name, and gives every entry a status; a
+file with other stanzas than the one to the vault identity is
+`extraStanzas`.
+
+## Sync engine and transports (`Sources/SempereSync`)
+
+The two-way sync described under "WebDAV sync" below is one engine, `SyncEngine` in the
+`SempereSync` target (Foundation and swift-crypto only, no network code, Linux-tested). Every rule
+lives there: what is copied, checked before it is placed (format.md §9.1), quarantined, deleted
+and recorded (`SyncState`), the run bounds (`SyncLimits`), partial copies (`PartialRun`,
+`FetchScope`, `PartialCopyState`), push-only mirrors and the app's local copies (`LocalCopy`).
+It reaches the other side only through the `SyncRemote` protocol (`SyncRemote.swift`), whose
+operations are the ones the engine makes, with transport-neutral names:
+
+| `SyncRemote` | What it does | WebDAV (`WebDAVSyncRemote`) |
+| --- | --- | --- |
+| `list`, `listTree`, `stat` | children of a collection, everything below one at once (or `.refused`), one file's metadata; nil when absent | PROPFIND `Depth: 1`, `Depth: infinity`, `Depth: 0` |
+| `read(_:maxBytes:)` | a bounded file and its version token (`etag`) | GET |
+| `download(_:to:resumeFrom:ifETag:…)` | a file streamed to disk in pieces, resumed when its strong version token still matches; one that cannot resume starts over | GET with `Range` / `If-Range`; a 416 starts over |
+| `write(_:_:condition:)` | data or a file, `PutCondition` `.create` / `.replace(etag:)` / `.unconditional`; false when the precondition failed | PUT with `If-None-Match: *` / `If-Match` |
+| `moveNoOverwrite`, `makeCollection`, `createBase`, `delete(_:ifETag:)` | rename without replacing, make a collection (or report its missing parent), make the base, delete (only that version) | MOVE `Overwrite: F`, MKCOL, MKCOL of each ancestor, DELETE with `If-Match` |
+| `interrupt`, `location`, `missingCollectionError` | the run's bound and cancellation reach a request in flight; where the remote is, for messages; the transport's own "not there" error | `WebDAVClient.interrupt`, the URL, a PROPFIND 404 |
+| `capabilities`, `RemoteEntry.availability`, `requestDownload`, `conflictVersions`, `resolveConflicts`, `changes` | what the remote promises (`RemoteCapabilities`: strong stamps, ranged reads, deep listing, folder stamps that follow a child write, atomic create, maximum object size), and hooks for stores that evict files, fork conflict versions or announce changes; defaults: available, nothing to do, no versions, no hints | strong stamps, ranged reads, deep listing and folder stamps (each still checked per server), no atomic create (blobs go to a temporary name, then MOVE); the hook defaults |
+
+Engine failures are `SyncError` (`vaultMismatch`, `limitExceeded`, `cancelled`, ...); a transport's
+own failures are its own error type and pass through unchanged (`WebDAVError`). A transport marks
+the ones a later run may not see (no network, a cut connection) as `TransientRemoteError`, so the
+engine keeps a partial download for the next run.
+
+**Short connection windows** (offline audit: a device online only now and then). Every request of a
+run goes through `LinkBreaker` (`HoldGatedRemote`): three in a row that fail because the remote cannot be reached
+(`TransientRemoteError.isUnreachable`: `WebDAVError.offline`, the network-down errnos of a share, a dropped connection
+in `MemoryRemote`; never a full disk, a quota, `EIO`, a busy lock or a TLS failure, which are only `isTransient`, a
+partial download worth keeping) stop the run as a run bound does (`SyncError.connectionLost`,
+`SyncReport.stoppedEarly`, `linkLost`), instead of trying every file left with a timeout each. The run's
+errors are tagged (`SyncReport.Issue.kind`: `network`, `stopped`, `arrivalStall`), and
+Network failures count as cuts only when they ended the run (the breaker tripped); one the run completed around
+stays a lasting error. A device that has asked to join and not confirmed writes only its join request (`HoldGate`).
+`SyncReport.outcome` says how it went for a scheduler (with `stopReason`: a server bound such as
+`maxEntries` stays a failure): a run cut short (a cancel, its time bound, the link lost) that moved something is a
+success with changes (the next run in 30 s), one that moved nothing over a dead link is offline;
+`WebDAVSyncProblem.from(report:)` and `SyncSchedule.finished(at:outcome:)` read it. Before the notes, a run
+sends this device's new quick voice notes (`inbox/`, files new on one side only; deletions wait for
+the pass after the notes) and its own summaries file, and the notes go in order: those with revisions
+written here that the target lacks first, the newest first, then the rest by id. Per-device summaries
+signed by their device more than 7 days (and less than a year) ahead of this device's clock are left in
+place, never replaced by an older copy, and read once the clock reaches them (`SyncReport.clock` names
+the devices).
+
+*Large blobs go last* (P3, `LargeUploads.swift`): a blob PUT cannot resume, so a blob larger than 1 MiB (or as large
+as one a window recently cut short) is not sent with its note: the run first does everything else, then sends the large
+blobs smallest first, one at a time, each note's new revisions right after its last large blob (a revision never goes
+before a blob it may reference; until then they stay local, without an error, and an adopted capture stays on the
+target). An upload of 64 KiB or more that a window cut short (the link dropped mid-request, the time bound, a cancel;
+never a request that did not connect at all, `TransientRemoteError.sentNothing`) is remembered in the sync state with
+its time (`largeUploads.cutAt`, `cutWhen`; forgotten after a day). The next runs read it once at their start: blobs that
+large go last too, and those of 1 MiB or more and that large are left for a longer run (`SyncReport.deferred`, not an
+error; such a run records no `synced`), until a run told it has time (`SyncOptions.largeBlobs = .now`: the app's
+background processing task and Sync Now, the CLI's `--large-blobs now`), or the run after six runs in a row that left
+one, tries them. That forced turn spends the record unless it is cut again; a larger blob that goes through clears it
+too. Only runs that reach the large-blob pass count toward the six (where every run is cut earlier, as on a large vault
+over very short windows, only `.now` runs send them). What the pass uploads is recorded as held on both sides, with
+the bytes sent, as the note loop records its uploads.
+
+*Listing in batches* (P7, `BatchedListing.swift`): without a deep listing (off, refused, over 5 000 note folders, or
+over the 16 MiB bound), a run with more than 32 note folders to list one by one lists them in batches (8 notes, doubling
+up to 128) and runs each batch's downloads, uploads and note loop before listing the next. The notes go in the order
+above, and the rest start after the last note an earlier run synced (`listingPass.cursor`; the cursor stops at a note
+whose listing or transfers met the dying link). A sweep that reaches the last note with every folder listed counts as a full
+listing from when it started (`lastFullListing`), so `--skip-unchanged` takes over on short windows too.
+
+**The in-memory transport.** `MemoryRemote` (`MemoryRemote.swift`, in `SempereSync`, Foundation only)
+keeps a vault layout in a `MemoryStore` shared by every remote made on it (one "server" for several
+devices) and keeps every promise above: counter version tokens, create-only and conditional
+writes, moves that never overwrite, ranged and resumed downloads, deep listings, folder tokens that
+change with anything below them (`MemoryStore.Behavior` sets atomic writes and a size limit, and
+`capabilities` reports them). `MemoryFaults` breaks those promises from a seed, per operation and
+path (so concurrent transfers replay): requests dropped, refused, applied with the answer lost or
+cut midway, latency (interruptible), and a hostile server's wrong bytes, listings that drop or
+invent entries or misreport sizes, and version tokens that change underneath. The store can also
+act like a provider that evicts files (`evict`, or every file as it is written:
+`Behavior.evictOnWrite`; `requestDownload` after `arrivalDelay` operations; folders listed before
+their children, `setArriving`, listed as not downloaded until asked for), which the engine's arrival
+rules (below) handle.
+It serves the transport conformance suite, the engine's scenarios over every transport and the
+N-device stress run (docs/ci.md "Transports", "Sync stress"); nothing in the app or the CLI uses it.
+
+**The folder transport.** `FolderRemote` (`FolderRemote.swift`, in `SempereSync`, Foundation and POSIX
+only, Linux-tested) is a `SyncRemote` over a directory: a vault folder in iCloud Drive or another
+provider, on a USB drive, a network share or anywhere else (`sempere sync folder`; the app's folder
+targets later, design §8.1). What it promises:
+
+| | How |
+| --- | --- |
+| version tokens | `"<device>-<inode>-<size>-<mtime ns>-<ctime ns>"` from `lstat(2)`, plus 16 hex digits of the SHA-256 of a file at the base of at most 64 KiB (`vault.json`, `settings.age`: the files rewritten in place). Never the modification time alone: a replace through a new file changes the inode and the change time within one tick of a coarse clock (FAT: 2 s), and the digest catches a same-size rewrite in place where neither moves. Strong |
+| create only | a hidden temporary file in the same folder (`.sempere-tmp-<uuid>`), flushed, then `link(2)` (fails if the name exists); where the file system has no hard links (FAT, some shares), a check and `rename(2)` under the lock |
+| conditional replace and delete | the token compared and the file renamed (or unlinked) under the lock: an advisory `flock(2)` on `.sempere-lock` at the base (hidden from listings) in a plain folder, the coordinated write itself in a provider's |
+| reads | bounded (the size first, then never more than the bound), opened without following a link (`O_NOFOLLOW` at each folder); downloads resume at an offset when the token still matches |
+| a hostile folder (format.md §9) | symbolic links never followed nor listed (every other operation checks each component first), FIFOs, sockets and devices not listed, names that are not UTF-8 never listed, unusable path components refused, listings bounded (`Limits.maxEntries`) |
+| errors | `FolderRemoteError`; I/O failures a later run may not see (`EIO`, `ENOTCONN`, `ESTALE`, `ETIMEDOUT`, a full disk, ...) and the lock staying busy are transient; missing files, bounds, links and bad names are not |
+
+What a provider adds comes from a `FolderProvider` (`FolderProvider.swift`): `PlainFolder` (Linux's
+default: nothing to add), `UbiquitousFolderHooks` (Apple platforms' default, `#if canImport(Darwin)`,
+below) and `EvictingFolderProvider` (a provider simulated on any file system for tests:
+dataless files, `.<name>.icloud` stand-ins, folders listed before their files, delayed delivery,
+download errors, conflict versions, change hints; the design's `EvictingFolderRemote` is a
+`FolderRemote` over it).
+
+### Folder targets in providers
+
+A vault folder that iCloud Drive or another provider holds keeps every hazard the app's in-place
+iCloud code handled (design §3.3); the folder transport and the engine handle them instead, so they
+apply wherever a folder target is, and to the CLI:
+
+- **Classification** (`FolderLocation`, moved from the app's `StorageLocation`): iCloud Drive, a
+  Mac's `~/Library/CloudStorage/<Provider>-…`, iPadOS's `File Provider Storage` and shared app-group
+  containers are a provider's (`managesFiles`), and so is any folder whose items report
+  `isUbiquitousItem`. Every read and write there is coordinated (`NSFileCoordinator`, reads with
+  `.withoutChanges`); a plain folder is not.
+- **Evicted files.** In a ubiquitous folder, a `.<name>.icloud` stand-in is listed as `<name>`, and a
+  dataless file (`SF_DATALESS`, or a "not downloaded" downloading status) under its own name; both
+  are listed with `availability` `.remoteOnly` (`.downloading` once asked for, `.failed` with the
+  provider's error). Reading one throws `FolderRemoteError.unavailable` (transient, `isUnavailable`)
+  instead of blocking on a download.
+- **Folders listed before their files.** A folder (other than the base) that lists no visible file
+  yet is `.downloading`; the base itself not downloaded, or present only as a stand-in in the folder
+  above (`.<name>.icloud`), makes its listing fail as `unavailable` (after asking for it), so nothing
+  is judged ("The target folder evicted whole" below).
+- **Conflict versions** (`NSFileVersion`): `conflictVersions`, `readVersion`, `resolveConflicts`.
+- **Change hints**: `changes()` is an `NSFilePresenter` on the base (any coordinated writer: iCloud's
+  daemon, the app, the CLI), as paths below it; elsewhere nil (poll).
+
+The engine's rules for them (`Arrivals.swift`, `ConflictVersions.swift`), for any transport that
+lists availability:
+
+- **A listed file exists.** An evicted file is never taken as dropped, missing or extraneous: it is
+  in the listing, so nothing is uploaded over it and no deletion is judged from its absence. Files
+  the run would download that the provider has not downloaded are asked for (`requestDownload`, in
+  windows of 64) as soon as the listings are in; each read waits for its file, all of them together
+  at most `SyncOptions.arrivalWait` (10 s; the CLI's `--wait`, 30 s). What has not arrived is
+  reported in `SyncReport.arriving` and left for a later run (its note records no folder stamp, so
+  the next run lists it again); a dry run or a mirror asks for nothing. One still arriving
+  `arrivalStall` (15 min) after this device first asked for it is also reported in `errors`, with
+  `kind: arrivalStall` (the provider may be offline or full): never deleted, never given up on, and not
+  a failure of the run (no backoff). Only time this device could sync counts: a gap of more than
+  `arrivalGap` (30 min) between two runs (asleep, offline) is left out, and so is the time before
+  `SyncOptions.networkReturned` (the app's path monitor).
+- **Folders listed before their files** (`notes/`, a note folder, its `att/`, `notebooks/`) are
+  arriving for `unlistedTimeout` (120 s, iCloud's `cloudUnlistedTimeout`) from when this device first
+  found them so: the note is left out of the run with its records kept, nothing in it judged. After
+  that its listing is taken as it is: an emptied folder still deletes nothing (an emptied remote
+  folder never explains a deletion) and its files are put back. So "arriving" never waits for ever.
+  An `att/`-only folder (an import in progress elsewhere: blobs before their revision) is not a note
+  until a revision appears.
+- **The remote's `vault.json`** is waited for before anything else; still away after the wait, the
+  run stops (`SyncError.notDownloaded`) rather than sync without knowing it is the same vault.
+- **The target folder evicted whole.** Builds before 2026-10-15 exported `.sempere` as a package, and
+  iCloud Drive on accounts that saw those builds still holds such vault folders as packages: it evicts
+  one whole (Files ▸ "Remove Download"), leaving only `.<name>.sempere.icloud` (or a folder listed
+  without its files). The run asks for it, reports it in `arriving` (path `/`) and ends without writing
+  anything (`SyncEngine.listBase`); once it is back, a later run syncs, with no step by the user. A
+  stand-in there for longer than `arrivalStall` is also an error, as for a file. The engine never makes
+  a base the transport refuses (`SyncRemote.checkAbsentBase`): an empty folder beside the package would
+  be a second copy of the vault that iCloud keeps (`<name> 2.sempere`), and every later run would sync
+  into it. The rule for a folder target that is not there is one, `FolderRemote.absentBase`, applied by
+  `FolderTargetRun.check` before a run and by the engine at the moment it would make the folder (so
+  `sempere sync folder` and a folder that goes away during a run keep it too): a stand-in is arriving;
+  a folder synced with this device before (its sync state records `vault.json`, `SyncState.syncedBefore`: a
+  state file alone does not count, and a run that only found the folder on its way saves none) that is gone is
+  never made again
+  (`FolderTargetError.missing`, "the folder is gone"; `.unavailable` when the folder above is gone or its
+  volume not mounted); one never synced may be made (the first run). `createBase` itself refuses to
+  make a folder beside its stand-in, and a re-encryption's claim goes through the same rule
+  (`ReencryptCoordinator.Target.syncedBefore`; the app opens its targets through `FolderTargetRun.check`). One window
+  stays open: iCloud may remove the stand-in a moment before the package appears; a run in between sees nothing
+  (a folder synced before is then refused as gone and syncs on the next run).
+- When each one was first seen is kept in the sync state (`SyncState.arriving`), so the bounds hold
+  across runs and processes.
+- **Conflict versions** of the root's mutable files are settled before they are synced (format.md
+  §1.3, §13.3; the app's `CloudConflicts` rules): a `vault.json` version that is the current file or
+  differs only in its label is dropped, any other `vault.json` version is kept as a local
+  conflict copy and reported (exit 3); `settings.age` versions that verify are merged per key into
+  the local copy (locked: left until an unlocked run), which the settings sync then merges with the
+  remote's; the web viewer's summaries and index keep the current version. Then the versions are
+  removed, so no version picker ever reaches the user. Mirrors and dry runs leave them alone.
+
+**Adding a transport.** Conform a type to `SyncRemote` in its own target; one that talks to a
+network goes beside `SempereWebDAV` and needs the network allowances (`scripts/check-portability.sh`,
+the `NETWORK_ALLOWED` list in `scripts/release-check.sh`, the privacy policy), and `SempereSync`
+stays network-free. Map paths (component lists below the remote's base, built from validated vault
+names; refuse a component that is empty, `.`, `..` or holds a `/`, as `WebDAVClient` does) and
+version tokens (they change whenever the bytes do; a strong one, not `W/"…"`, backs conditions and
+resumes), bound what is read, and keep the hooks' defaults unless the store needs them. Then give it
+a fixture in the conformance suite and the engine's scenarios (docs/ci.md "Transports"). Possible
+later ones are first-class S3-compatible or Dropbox adapters (docs/design/device-first-sync.md §3.4).
+
+## WebDAV sync (`Sources/SempereWebDAV`)
+
+The one target with network code: the WebDAV client and transport, and `WebDAVSyncRemote`, the
+engine's WebDAV adapter (the engine itself is in `SempereSync`, above). It talks to a plain WebDAV collection that
+holds a copy of the vault folder (same layout, `vault.json` at the collection
+root) using PROPFIND (Depth 1; one `Depth: infinity` listing of `notes/` where the server is seen to answer it in full, "One listing for every note folder" below), GET (with `Range` for blobs), PUT, MKCOL, MOVE and DELETE, so any server
+works (Nextcloud, Apache `mod_dav`, nginx dav, rclone serve webdav,
+wsgidav). Everything is behind `WebDAVTransport`; `URLSessionTransport` is
+the real one (it never follows redirects, so credentials cannot be forwarded
+and methods cannot be rewritten) and tests use an in-memory server.
+
+**Security.** Basic auth, `https` only; `http` is accepted for `localhost`,
+`127.0.0.1` and `[::1]`. Credentials in the URL are refused. Everything on the
+server is already age-encrypted, except `vault.json` (public by design).
+A remote `vault.json` with another `vaultId` aborts the run before any
+change.
+
+**What is synced.** `vault.json`, `settings.age` (shared
+settings, merged per key: below), the notebook records `notebooks/<uuid>.notebook.age`
+(format.md §14: write-once, so each side gets the other's; uploads only create, nothing is
+deleted, and an unlocked run places a downloaded record only once it opens),
+`notes/<uuid>/<name>.age` and each note's attachment blobs
+`notes/<uuid>/att/<64 hex>.<kind>.age` (below). Remote entries that are not a lowercase-UUID note
+directory, a canonical revision file name (format.md §5), an `att`
+collection or a canonical blob name (format.md §8.1.2) are ignored and
+listed, never downloaded, so a hostile name cannot escape the vault. The
+capture inbox `inbox/<captureId>.<kind>.age` and the per-device published
+summaries `summaries/<device>.sealed` are synced too (below). `keys/`
+and unknown files are not synced. A downloaded revision must start with the
+age header or it is rejected, and before it is placed it is checked as
+format.md §9.1 says (tag, note and name with the vault unlocked; age
+structure when locked); a file that fails is quarantined next to the sync
+state (`<state>.quarantine/`; a later copy of the same path with other bytes
+beside it as `<name>.copy-<16 hex digits of its SHA-256>`, never over one, at
+most 16 distinct copies of a path), reported, and not fetched again while it and
+the local `vault.json` are unchanged (`--retry-quarantined`). A first pull
+with `--identity` checks under the `vault.json` it pulls. Remote names are reported with control
+characters escaped, so a hostile name cannot drive the terminal. Response
+bodies are read incrementally and the request is canceled past a limit
+(`maxFileBytes`, 256 MiB, for revisions; 16 MiB for listings, manifests and
+everything else), so a server cannot make the client buffer more.
+
+**Write-once files.** For each note the run compares the local and remote file
+sets with the set recorded at the last sync (`SyncState.files`):
+
+| local | remote | in last sync | action |
+| --- | --- | --- | --- |
+| yes | no | no | upload (`If-None-Match: *`) |
+| no | yes | no | download |
+| yes | no | yes | the server dropped it: delete locally if compaction allows, else upload it again |
+| no | yes | yes | this side dropped it: delete remotely if compaction allows, else download it again |
+
+An existing file is never overwritten on either side. Downloads go to a
+`.sempere-tmp-<uuid>` file in the target directory, are fsynced, and are
+linked into place with `link(2)` (fails if the name exists), so a partial file
+never appears under its final name and a file that showed up meanwhile wins.
+
+**Compaction deletes.** Sync never decides on its own to delete. A removed file
+is deleted on the other side only if `CompactionPlanner.deletable` says so,
+with retention 0 (the side that removed it already applied the retention
+window) over the revisions held locally: a delta needs a snapshot that covers it,
+a snapshot needs one that subsumes it. The covering snapshot must be one the
+remote side holds: on the server (as listed at the start of the run) for a file
+the server dropped, since a compaction there keeps its covering snapshot there,
+and also on the server for a remote delete. A file the server dropped is also
+held to what any compactor or thinner of this format guarantees (format.md §5.3,
+§5.8.4; security review stage 4, S2), since the server needs no key to drop
+files: never a checkpoint or the created anchor
+(`CompactionPlanner.neverDeleted`), never a set that would leave a complete
+checkpoint incomplete (`deletionKeepsCheckpoints`: its positioned snapshots and
+witnesses stay), and nothing in a note with an unreadable revision. Its age is
+not judged: thinning everything except checkpoints is a legitimate action. An emptied or recreated remote
+folder therefore deletes nothing locally; its files are uploaded again. A snapshot removed locally can only be judged from
+the `included` coverage recorded when it was last synced. Without an unlocked
+vault nothing can be checked, so nothing is deleted. A removal that fails the
+check is undone (the file is copied back).
+
+A deletion settled this way is remembered in the state (`thinned`) once
+neither side holds the file. If it comes back on one side only (another device
+or another remote brought it back), it is not copied as a new file: it is
+fetched if it is on the server, and judged again with its content over every
+revision both sides hold, by the rules above; explained, it is deleted from
+both sides, else it is copied and forgotten. This is what lets two devices sync
+the same two remotes: without it, one deleted a thinned delta from a remote
+while the other uploaded it there again from the other remote, for ever
+(docs/design/device-first-sync.md §5.4).
+
+**Attachment blobs** (`docs/attachments.md` §4). Each note's `att/` follows
+the same write-once table, keyed `<noteId>/att/<name>` in the state. A note
+whose listing has an `att` collection costs one more PROPFIND. Per note,
+blobs are transferred before revisions, so a revision does not arrive before
+the blobs it references (format.md §8.1.4 step 4) unless a blob transfer
+fails: that one is reported and retried by the next run while the note's
+revisions still sync, and readers draw a placeholder for it meanwhile
+(§8.5.2). Small kinds go first (transcripts, images, PDFs, then the rest), smaller files first.
+
+- *Streaming, own limit.* An upload is a PUT streamed from the file. A
+  download is a series of `Range` GETs of 2 MiB (`blobSegmentBytes`), each
+  streamed to a partial file, so memory stays bounded by one segment even
+  when the server is faster than the disk (on Linux, URLSession queues every
+  delivery for its delegate without flow control; with 2 MiB segments the
+  resident set stayed near 20 MiB for blobs of 300 MB to 1 GB against a
+  local wsgidav). A server that ignores `Range` sends the file in one
+  streamed 200, which is still written to disk as it arrives but, on Linux,
+  is no longer bounded in memory by the segment size. Blob files have their own limit, `maxBlobBytes` (default
+  1 GiB + 64 MiB, `--max-blob-mib`): a larger one is neither uploaded nor
+  downloaded, and a body is cut off at the limit whatever the listing said.
+  A downloaded blob must have the listed size and start with the age header,
+  or it is not written. With the vault unlocked it is then decrypted whole
+  and checked (framing, padding, hash, keyed name: format.md §9.1) before it
+  is linked into place; one that fails is quarantined, never placed.
+- *Write-once on the server.* An upload goes to `att/.sempere-tmp-<uuid>`
+  (`If-None-Match: *`) and is renamed with `MOVE` and `Overwrite: F`, so no
+  reader sees a partial blob under its name (a server that writes PUT bodies
+  in place would show one) and an existing blob is never replaced; losing
+  that race is success, since the name is keyed by the content hash. The
+  temporary name is recorded in the state before the upload and deleted
+  afterwards, or by the next run if this one dies. Other devices' temporary
+  names are skipped silently.
+- *Resumable.* A download goes to `att/.sempere-tmp-part-<name>` and is linked
+  into place (`link(2)`). If the run is cut off, the partial file stays and
+  the remote ETag is recorded in the state (saved at once); the next run asks
+  for the rest with `Range` and `If-Range: <etag>`, so a blob replaced on the
+  server meanwhile comes whole again. Only a strong ETag is a validator: with
+  a weak (`W/"…"`) or missing one nothing is resumed, the download starts
+  over, and its segments are not validated against each other (the checks
+  before placing still apply). A partial file as long as the listing
+  says is only checked and placed. A partial file whose blob is no longer
+  wanted is removed. Uploads restart from the beginning (WebDAV has no
+  standard partial PUT), but only the blob that was cut off. A run killed at
+  any request is finished by the next one (`BlobResumeTests`).
+- *GC-safe deletes.* A blob one side dropped since the last sync is deleted
+  on the other side only if format.md §8.1.6 rules 1–3 hold for its note
+  there (the side that dropped it applied rule 4): every local revision of
+  the note was read and verified and every revision the server holds is one
+  of them (they are byte-identical copies, so both sides' sets were read);
+  and no revision read references a
+  content hash whose keyed name is the blob's (any kind). Otherwise the blob
+  is copied back. A blob the server dropped also needs rule 4 as this device
+  sees it (security review 2026-10, S2 for blobs): the deletion is followed
+  only once this device has found the blob collectable for
+  `blobRetention` (the compaction retention, 30 days), from the first run that
+  found it so, with every run since agreeing (`unreferencedSince` in the sync
+  state). Until then it is kept here and not uploaded again (nothing
+  references it), and listed as skipped; a run that finds it referenced (a
+  delta that was still in flight) uploads it again and forgets the date. A
+  server, which holds no key, can therefore not make devices delete a blob
+  sooner than a collector of this format could. A side with no `att/` at all (a wiped or recreated
+  folder) deletes nothing on the other. With the vault locked nothing is
+  checked: the blob is neither deleted nor copied back, and is listed as
+  skipped.
+
+`sempere-index.json` lists revisions only (`docs/web-viewer.md`), so blobs do
+not change it; the run still rewrites the server's copy to list the
+revisions the server holds afterwards.
+
+**Mutable files.** `vault.json` is compared by
+content hash (SHA-256) against the last-synced hash; the server ETag (or
+Last-Modified) is only recorded to send `If-Match` on upload. Local only
+changed: PUT with `If-Match` (without it when the server's ETag is weak,
+`W/"…"`, which never matches `If-Match`). Remote only changed: atomic replace. Both
+changed (or no common ancestor and different content): the remote copy is
+saved as `<name>.conflict-<device>-<yyyymmddThhmmssZ>.<ext>` in the vault root
+(not again if an identical one exists), nothing else changes, and the
+conflict is reported on every run until the files agree. A PUT rejected with
+412 is judged by the bytes, not the ETag: the server copy is read again, and
+only different bytes are a change there (then both changed, as above); an
+ETag that moved over the same bytes is retried with the new one (3 tries, then
+the upload waits for a later run, listed as skipped), so no conflict copy
+identical to the server's is ever made. Two `vault.json` versions that differ only in `label`
+(a vault renamed on two devices) are the same vault (format.md §1.3), not a
+conflict: the server's copy, the one every device shares, is taken (as
+iCloud Drive's current version stays), and a push-only run keeps it on the
+server and lists it as skipped. When both sides changed `vault.json` and the
+vault is unlocked, the later version by the home device (`Vault.isLaterVersion`:
+the same epoch, every check passing, its list holding the other's; format.md
+§1.3) is kept on both sides (taken, or uploaded unconditionally) instead of a
+conflict copy.
+`settings.age` (format.md §13) is merged instead when both sides changed and
+the vault is unlocked: both copies are opened (tag verified), merged per key,
+and the result written locally and uploaded with `If-Match` (`merged` in the
+report; a 412 is merged on the next run). A copy that does not verify never
+replaces one that does, and is replaced by it. A copy that needs a newer reader
+(`$minReaderVersion`) is never opened: it is mirrored byte for byte over a copy
+this version can read; two such copies that differ follow the conflict rule
+above, as does the file while the vault is locked. A run that pulled a new `vault.json`
+leaves `settings.age` to the next run, which opens the vault with it.
+Before a remote `vault.json` replaces the local one, it is checked
+(`Vault.incomingManifestProblem`, format.md §1.3, §2.1): one that differs only in
+its label passes without a key; any other passes only when the vault is
+unlocked and it is a later version of the local one by the home device (the
+same vault, root, epoch, `epochId` and epoch head — the same home, first list and
+`epochSig` — every tag and signature verifying, the local list's entries all
+still there). Another epoch (KH3), an older version or
+a list that does not hold the local one is never taken. Otherwise it is listed in
+`rejected`, the local file stays and the sync state is not updated, so the
+next run reports it again.
+
+**The capture inbox** (`InboxSync.swift`, format.md §11.4, design §5.3). Inbox files are deleted
+once adopted and re-sealed by a key change, so they are not write-once. A file on one side only is
+copied over (create only; on a remote without atomic creates, through a temporary name and a move,
+as blobs are, so a reader never sees half of a 256 MiB capture), and a received one is downloaded into
+a hidden staging folder in `inbox/`, checked there (unlocked: `Vault.checkIncomingInboxFile`, the tag
+under the capture key ring and the manifest, as adoption reads it; locked: its age structure) and
+linked into place, or quarantined. A file on one side only that adoption explains is deleted from that
+side, never copied: the note derived from its capture id has a revision here, is complete, and adoption
+deletes that file after it (`CaptureAdoption.consumed`; for a transcript, judged with its bytes).
+Adoption would delete it there anyway, and two devices that bridge two targets would otherwise hand an
+adopted capture back and forth for ever (found by the N-device stress run). A file both sides held at
+the last run (`SyncState.inbox`) that one side lacks now, and that adoption does not explain, is copied
+back. A locked run uploads (quick captures into a closed vault) and downloads files never synced, but judges no deletion. The
+inbox is synced after the notes, so an adopted note reaches each side before its inbox files go. A
+file on both sides with different bytes (a key change re-sealed one) is reported in `skipped` and
+neither copy is replaced (that is rewrap-replace, key hierarchy KH6). Unchanged files are recognized
+by the remote's version token and the local size and modification time, so a large capture is not
+hashed or fetched again every run. Push-only runs upload and follow explained deletions on the
+server, never write locally.
+
+**Per-device summaries** (`DeviceSummariesSync.swift`, format.md §12.5). `summaries/<device>.sealed`
+is written only by its device (`Vault.writeDevicePublishedSummaries`, `sempere vault summaries
+--device-file`), named by its id in the vault (`writerDevice`), with its device id and a `version`
+inside the sealed content and a P-256 + ML-DSA-65 signature by the device's signing pair over the
+vault, epoch, device, version and sealed bytes (`SMPU` `0x04`: epoch and version in the clear header,
+signature checked before anything is decrypted; `AuthorMessage.summaries`). A copy is
+ordered when it opens, names the device, its signature verifies under the `sign` keys of a device
+with that id in this device's opened and checked `vault.json` (`Vault.summariesSigningKeys`; never
+keys from a received file; none when two entries share the id, which approval and takeover prevent,
+`DeviceIds`), and its version is at most 7 days ahead of this device's clock (a
+clock-skew guard, `PublishedSummaries.accepted`). Another device's file is copied to the side that
+lacks it only when it is ordered; when both sides hold different copies, the later ordered copy wins
+(equal versions: the greater SHA-256), so an older copy never replaces a newer one, an unsigned or
+badly signed copy never replaces a signed one and is repaired by it, and a device with two targets
+carries the newer one from one to the other. Signed means authentic, not current: whoever can write to
+one target can put an older genuine copy back there, and it stays until a run with a later copy
+replaces it. "The side that changed since the last run wins", the
+earlier rule, has no order between versions and let two versions circle two bridges for ever
+(`testTwoBridgesSettleAnotherDevicesSummaries`). This device's own file (`SyncOptions.deviceID`, the
+vault device's id) replaces the remote's whenever they differ, is never taken from the remote, and
+leaves a remote copy ordered after it (only its own keys can sign one: another install with them)
+until its next later write, or until that copy's version is more than the window in the past, when
+it seals and signs its own entries again at the clock and puts them
+(`SyncState.MutableRecord.recheckAfter`). Runs go quiet meanwhile. A copy this device cannot open is
+never replaced when its clear header names an epoch above its key's and no later than its local
+`vault.json`'s, or than the server's when that is a verified child of the epoch this device pinned
+(`EpochFrontier.verifiedChild`, the check `Vault.removalNotice` makes too: link under the pinned link
+keys, `epochSig` by the pinned home or a takeover's signatures by the pinned kit and its new home;
+a lagging or removed device holds no key for it; recorded); anything else that does not open
+(damaged, stale, or a header nobody with the key wrote) is replaced. A run whose download budget
+cannot take the server's `vault.json` for that check says so in `skipped`. Locked, or with a
+`vault.json` that did not check, a differing copy is left on both sides, except that a locked staging
+run (pull-only) stages the remote copy for the placing run to order; push-only runs never replace a
+later copy. A received file is placed only when it is ordered (unlocked) or starts with `SMPU` `0x01`
+or `0x04` (locked); otherwise it is listed in `skipped` (a hint, not quarantined: after a key change
+an older file is only stale). Nothing is deleted.
+
+**Push-only mirror** (`--push-only`, `SyncOptions.pushOnly`). A two-way
+sync rejects a `vault.json` that is not a later version by the home device
+(format.md §2.1, above), but it still takes whatever else the server holds:
+new revisions and blobs, deletions it can explain. For a server that
+is only a copy (the web viewer's mirror) and is not trusted to write back, the
+run is one-way, and the server can be corrupted but can never feed anything
+back:
+
+- nothing is downloaded, and nothing in the vault folder is written, restored
+  or deleted (every local write path refuses in this mode; only the sync-state
+  file outside the vault changes);
+- a file the server lacks is uploaded, including one the last sync had;
+- `vault.json` on the server is replaced by the
+  local copy when it differs (reported in `overwritten`); a malformed server
+  manifest is repaired the same way, one of another vault still aborts;
+- a file only the server has is deleted there if it was synced before and the
+  compaction (`CompactionPlanner`) or blob collection (§8.1.6 rules 1–3) rules
+  explain its absence locally, exactly as in the table above;
+- one synced before but not explained (or unjudgeable with the vault locked) is
+  kept and listed as skipped: a local listing can miss files, notably evicted
+  iCloud ones;
+- one never synced and not explained (injected revision or blob, junk
+  names) is `extraneous`: reported, and removed only with
+  `--delete-extraneous`, and only when sync state from an earlier run exists:
+  on a first run every server file looks never synced, including those of a
+  note the local listing missed, so they are only listed (as skipped). The
+  flag can still delete a legitimate file another writer added since.
+
+**Device changes** (key hierarchy KH4, `format.md` §15.15, `EpochSync.swift`). Every run syncs `epochs/`
+first (the union, pushed to every target; a `vault.json` never goes to a target without its record), then
+judges a `vault.json` of another epoch by the chain and the precedence rule (`Vault.judgeIncoming`): a later
+epoch it verifies is taken, the vault reopened, pinned and this device's own files caught up before the notes;
+one it cannot verify yet (its record has not arrived) is remembered as a sighting in the trust store and holds
+every run back to `epochs/` and `vault.json` (J5b); one that does not list this device makes it unlisted (it
+uploads nothing, keeps pulling); when its own chain is the later one it replaces the target's. Received files
+the acceptance rule does not take are kept aside, never placed; files whose record has not arrived are pending.
+An accepted copy replaces an unaccepted one of the same path on either side, after it is set aside, under a
+strong version tag. `joins/` follows deletions by home, `keys/` drops superseded passphrase copies. The
+remover's best-effort pull is `EpochChangePull` (pull-only, a throwaway state, 10 s per target).
+
+**Bounds per run** (`SyncLimits`, security review 2026-10, W5). Each
+request is bounded on its own; the run as a whole is bounded too: at most
+100 000 note folders listed, 10⁶ remote entries listed (root, note folders,
+`att/`), 64 GiB downloaded and 12 hours (`--max-notes`, `--max-entries`,
+`--max-download-mib`, `--max-minutes`). Time is checked before each note and
+each download, and a request in flight is canceled once the time is up
+(`WebDAVRequest.interrupt`, polled a few times a second; a cancellation,
+`isCancelled`, stops it the same way): a server that trickles a response,
+never idle long enough for the idle timeout, cannot hold a run past its bound,
+and a cut blob download keeps its partial file. Bytes are checked before (from the listing) and after each download.
+Reaching a bound stops the run: the error says which (`stoppedEarly` in the
+JSON report), what was done is recorded in the state, and the next run
+continues from there. A note folder whose listing fails is an error for that
+note: nothing is judged for it this run and its records are kept. A run that
+did not list every note folder leaves the server's `sempere-index.json` and
+`sempere-summaries.sealed` as they are.
+
+**State.** `$XDG_STATE_HOME/sempere/sync/<hash of URL and vault path>.json`:
+file names, hashes, ETags and snapshot coverage, no secrets. Deleting it makes
+the next run a first sync: nothing is deleted, nothing overwritten. It is
+saved at the end of a run. Before each blob transfer only the transfers in
+flight (temporary upload names, partial downloads) are saved, to
+`<state>.json.transfers` beside it; the next run takes them in, and the
+end-of-run save removes that file. A killed run's other progress is found on
+both sides by the next run.
+
+**Concurrent transfers and progress** (`TransferPool`, `Prefetch.swift`).
+On a high-latency link round trips dominate (a first pull of ~800 files
+makes ~2 000 requests), so the note folders, then their `att/`, are listed `concurrency` at a time
+(`SyncOptions.concurrency`, `--jobs`, default 6, 1 to 16), and a
+two-way run downloads what the note loop would download as new on the
+server (each note's revisions and blobs that neither the vault holds nor the
+last sync recorded) the same number at a time, before the note loop: a
+note's blobs first, its revisions only once they all finished (format.md
+§8.1.4 step 4). Each download is the one the note loop makes, with every
+check, quarantine and resume; what it shares with the run (state, report,
+budget) is under one lock. Run bounds hold across threads: listed sizes are
+reserved before each download, and the first bound reached, or a
+cancellation (`isCancelled`, asked before each listing, note and download and
+between blob segments), stops the pool: no new transfer starts, the running
+ones finish (a blob stops at its next segment and keeps its partial file),
+and the run stops early as it would one at a time. The note loop then runs
+as usual; what the prefetch tried and failed is reported once and not tried
+again in the same run. Uploads work the same way (`Preupload.swift`): before
+the note loop, what it would upload as new on this side (a two-way run: what
+the server's listing lacks and the last sync did not record; a push-only run:
+what the listing lacks) is uploaded the same number at a time, a note's blobs
+first and its revisions once they all finished, each through the note loop's
+own `upload` / `uploadBlob` (`If-None-Match: *`; a blob to a temporary name,
+then `MOVE` without overwrite), so nothing on the server is ever replaced.
+The note loop counts those as its own uploads (also for the folder-ETag check
+of "Unchanged notes"), decides deletions and restores exactly as before, and
+does not try a failed one again in the same run. Revisions over 8 MiB, read
+whole to upload, are left to the note loop. Reports are sorted by path where
+the prefetch or the uploads added to them, so they do not depend on thread
+timing. Deletions and the mutable files stay one at a time. The transport
+keeps one connection per transfer alive between requests
+(`httpMaximumConnectionsPerHost` 16, the most `--jobs` allows; URLSession's
+default of 6 queued the rest). `SyncOptions.progress` gets a
+`SyncProgress` (stage; notes listed and synced; files and bytes
+downloaded of the total, known once every note folder was listed; uploads)
+from the run's threads, one call at a time; the final value is in the
+report's `progress`. Counts only grow: a file counts as done once it is
+placed (one that failed, was quarantined or was cut short does not), and its
+bytes never more than its listed size, even when a server answers a resumed
+request with the whole file. Partial pulls ("Partial copies") have their
+own concurrency (`FetchScope.concurrency`) and report the same
+progress: the metadata pull its note count, a fetch the files and bytes it
+fetches and the notes it went through; a fetch stops between notes on a
+cancellation.
+
+**Unchanged notes.** With `skipUnchangedNotes` (`--skip-unchanged`; the
+app's runs) a run does not list a note folder whose ETag in the `notes/`
+listing is the one recorded when the last run left that note in step on
+both sides, when the local folder holds exactly the recorded revisions (and
+no blob when the server had no `att/`); it takes the recorded revisions as
+the server's. A note's `att/` is listed every run, since many servers change
+a folder's ETag only for its direct children. It is trusted only where it
+is seen to work: after this device writes a revision into a note folder,
+the next run checks that folder's ETag changed; one check that passes
+enables it, one that fails disables it for good (until the state is
+deleted). Weak (`W/`) and missing ETags are never recorded. Any doubt in a
+note's run (an error, a skipped, ignored or extraneous file, a file on one
+side only, a write) clears its record so the next run lists it, and a run
+lists every note at least every `fullListingInterval` (a day).
+
+**One listing for every note folder** (`deepListing`, `TreeListing.swift`;
+off with `--no-deep-listing`). Listing each note folder and each `att/` costs a
+request apiece every run (~685 for a vault of 640 notes, even when nothing
+changed). `PROPFIND` with `Depth: infinity` on `notes/` gives the same entries
+in one request where the server allows it; many refuse it (Apache's default)
+and some answer it as `Depth: 1` (Sabre/Nextcloud with infinite depth off), so
+it is trusted only where it is seen to work. A run that has not seen it work
+asks for the tree once and compares it with the listing of a sample of
+`verifySample` (16) note folders and their `att/`, spread over the vault, taking
+the other folders from the tree in the same run (a vault of 640 notes: about
+20 requests); a vault with no more folders than that, or a sample that differs
+from the tree, is listed one by one as before. When every note
+folder and `att/` it listed holds exactly what the tree says, the server is
+recorded (`treeListing` in the sync state) as answering in full. A refusal (a
+4xx such as 403 `propfind-finite-depth`, a 501, or an answer with nothing below
+the note folders) is recorded for good, until the state is deleted; any other
+difference (another device writing between the two) records nothing and the
+next run checks again. Runs within `fullListingInterval` (a day) of the last
+check take every note folder and `att/` from the tree: the root, `notes/` and
+the tree, three PROPFINDs whatever the vault's size; a later run checks again.
+Only with 8 to 5 000 note folders (below, the requests saved are few; above,
+the answer nears the 16 MiB listing bound). A tree request that fails (5xx, a
+cut connection, too large) falls back to one-by-one listings for that run. A
+tree that missed files (a server whose behavior changed since the check) loses
+nothing: the server is untrusted anyway, and a file it does not list is one it
+dropped (uploaded again, or a revision deleted here only when compaction
+explains it from snapshots the server lists, as above).
+
+**Partial copies** (format.md §1.2). A vault can be opened from
+its root files and note list and filled later, so a large vault (~1 GB,
+~800 files) is usable after a few requests. The state is
+in the vault folder itself, not in the sync state: `.sempere-partial/` at the
+root (its `record.json` says whether the note list is complete; the server's
+`sempere-summaries.sealed` is kept there as `summaries.sealed`), a
+`.sempere-pending` marker in each note folder whose revisions have not all
+arrived, and `att/.<blob>.sempere-pending` for each blob not fetched. Three
+kinds of run (`SyncOptions.partial`, `LocalCopy`):
+
+- *Metadata pull* (`.metadata`, `downloadMetadata`, `sempere sync webdav
+  --metadata-only`): marks the folder partial first (so an interrupted pull
+  never looks complete), takes `vault.json` and `settings.age`
+  as a two-way pull does (same checks), fetches the server's sealed summaries
+  into `.sempere-partial/` (bounded at 64 MiB, opened only by a reader with the
+  key, never trusted beyond that: a missing or unreadable one only means notes
+  are listed as they arrive), lists `notes/` (one PROPFIND) and makes one
+  marked folder per note. Three to four requests whatever the vault's size;
+  nothing is uploaded or deleted. The copy is *usable* once a run listed every
+  note folder (`record.json` `listed`); until then it is not opened and no
+  fetch runs. Until then every server note is marked whatever its folder
+  holds, so files already there (linked in by a re-download, `LocalCopy.redownload`, or left by an
+  unfinished full download) are only a head start; a later metadata pull marks
+  only notes it has no folder for. It refuses a complete vault (marking its
+  notes would block edits to them).
+- *Fetch* (`.fetch(FetchScope)`, `fetch`, `--fetch [--note ID]
+  [--no-blobs]`): for each note in scope (the ones asked for first; every
+  incomplete note by default; `maxNotes` per run so a push never waits long for
+  the sync state), lists its folder and `att/` on the server *as they are now*
+  (concurrently, `concurrency`, default 4), downloads every revision there that
+  the folder lacks (revisions up to 8 MiB concurrently, larger ones one at a
+  time, so memory stays below 32 MiB plus one revision), checks each as any
+  download is (format.md §9.1: fully with the vault unlocked, else its age
+  structure; a refused one is quarantined and reported, and counts as
+  settled, as in a full download: the note opens without it and the copy can
+  complete; later runs list it under `skipped` until it changes on the server
+  or `--retry-quarantined`; a refused blob likewise gets no stand-in),
+  then either downloads the note's blobs (`blobs: .all` or `.only`, streamed and
+  resumable as above) or leaves a stand-in for each one it lacks, removes
+  stand-ins of blobs the server no longer has, records what both sides now
+  hold in the sync state, and only then removes the note's marker. A note
+  whose folder is gone from the server loses its stub (if it holds no
+  revision), but only once `notes/` no longer lists it either: a 404 for a
+  folder `notes/` still lists (or cannot confirm) keeps the stub marked and is
+  reported as an error, so the next run tries again (otherwise the note would
+  be missing here and, once the copy is complete, look extraneous to a
+  `--delete-extraneous` mirror). When nothing is pending, `.sempere-partial/` goes: the copy is
+  complete. A fetch never uploads, never deletes anything on the server, never
+  writes a root file and never touches a complete note's revisions, so it
+  runs while the copy is open and edited.
+- *Ordinary runs*. A two-way sync completes a partial copy (it downloads what
+  is missing, then removes markers and stand-ins as each note settles). A
+  push-only run (the app's pushes) treats what the copy lacks as pending: in
+  an incomplete note nothing is judged for deletion and server-only files are
+  kept (counted in `partial.keptOnServer`, never `extraneous`); a blob with a
+  stand-in likewise. `--delete-extraneous` is refused while the copy is
+  partial. The server's `sempere-summaries.sealed` is not rewritten while a
+  note is incomplete (its entries come from the local notes and would drop
+  the missing ones); `sempere-index.json` lists the server's files and still is.
+
+Why a push from a partial copy can delete nothing it has not fetched: a push
+deletes on the server only a file it recorded as synced (on both sides) and
+that compaction or blob collection explains locally; a file the copy never
+held is never recorded (a fetch records only what it placed). Writers refuse
+incomplete notes (format.md §1.2), so no local compaction, thinning or blob
+collection runs where files are missing. The guarantee is property-tested
+(`PartialCopyTests.testRandomInterleavingsNeverLoseAServerFile`: fetches of
+random scopes, pushes, local edits, another device writing and injected
+request failures, in random order; the server never loses a file) and run
+against wsgidav (`testPartialCopyLifecycle`, `CLIWebDAVTests.testPartialCopyAgainstRealServer`).
+
+*Interruptions.* A metadata pull cut off leaves the copy unusable; the next
+one continues. A fetch cut off leaves the notes it had not finished marked
+(their placed revisions stay), and a blob cut off resumes from its partial
+file (`If-Range`, as above). A push in between changes nothing on the server
+but uploads.
+
+*Other writers.* Notes another device writes after the metadata pull reach
+an incomplete note when it is fetched (its folder is listed then); a note
+already complete, or one created after the pull, arrives only by downloading
+again, as for any copy. Compaction elsewhere is fine: a fetch takes the
+note's folder as it is.
+
+*Whole-vault work on a partial copy.* The CLI refuses what must see every
+file: `export --all`, bulk export, `backup`, `search`, `compact --all`, `blobs`
+over every note, `recognize --all`, `transcribe --all`, `vault index`, `vault
+summaries`, and device key changes (core refuses those). `notes show`, edits
+and everything else naming an incomplete note fail with "not completely
+downloaded"; `notes list` shows such notes with that problem. The app fetches
+what it needs instead (below).
+
+**Testing.** `scripts/test-webdav.sh` starts a local wsgidav
+(`pip install -r scripts/webdav-server-requirements.txt`, the pinned versions;
+the script refuses another wsgidav unless `SEMPERE_WEBDAV_ANY_SERVER=1`) and runs
+the integration tests, which are skipped unless `SEMPERE_WEBDAV_TEST_URL` is
+set; the script sets it and fails if any of them skipped. CI runs the script on
+every change to the package, in the `webdav` job (Linux) and at the end of the
+`macos` job (the large-blob test at 64 MB: `SEMPERE_WEBDAV_LARGE_MB`). Both
+matter: Apple's URLSession, revalidating from an HTTP cache, adds
+`If-None-Match` to a DELETE, which wsgidav 4.3.5 answers with 412 (compaction
+would never reach the server, `testTwoVaultsThroughOneServer`), while
+FoundationNetworking on Linux sends no such header. The transport keeps no
+cache, and the pinned 4.3.5 refuses such a request, so the macOS job catches
+a regression the Linux job cannot.
+
+## Sync targets in the app
+
+Every in-app vault (the store, docs/design/device-first-sync.md §2) can have any number of sync
+targets, and every vault with one keeps syncing, open or not, each isolated from the others (§4.2).
+The app only ever reads and writes the in-app copy, on every platform; targets are outside copies it
+syncs with both ways.
+
+- **Targets** are `SyncTarget`s in the store's registry (`SyncTargetRegistry`,
+  `<store>/.sync/<vault id>/targets.json`, shared with `sempere store target`): a **folder** (iCloud
+  Drive, another provider's folder, a drive, a share, any folder; the app keeps a bookmark of the folder
+  the user picked, `options: []`, and the copy's subfolder) or a **WebDAV** server folder (its password in
+  the Keychain under the target's id). The kind is an open string, so a later transport (§3.4) adds a
+  kind, and a target of a kind this version does not know is listed, never run. Each target's sync
+  state, quarantine and transfers live in `<store>/.sync/<vault id>/<target id>/`; removing the vault
+  removes them, removing a target never touches the folder or server.
+- **The store's place**: on an iPhone or iPad `<App Group>/Library/Application Support/Sempere/Vaults`
+  (`VaultStoreRoot`, `completeUntilFirstUserAuthentication`), so voice notes reach the inbox from the
+  Lock Screen; on a Mac `Application Support/Sempere/Vaults` in the app's container (no App Group
+  entitlement there). A store an earlier build left in Application Support moves over once.
+- **Setting up.** New Vault's "Sync With" (none, or a folder: the place other devices open to join; a WebDAV
+  server is added afterwards in Sync Targets, whose sheet needs the vault, and the footer says so; its
+  separate "Back Up To" is a backup, above), "Open Vault…" (`OpenVaultSheet`:
+  the vault is copied in; "Keep syncing with this folder", on by default for iCloud Drive and other
+  providers' folders, off for a local folder such as an export, makes the folder a target; on a vault
+  already in the store it adds the folder to that copy), connecting to a WebDAV server (a store vault
+  with a WebDAV target, below), and File ▸ Sync Targets…, the sidebar's More menu and Settings ▸ Sync &
+  Devices next to Devices (`SyncTargetsSheet`: every target with its status, Add Folder…, Sync Now, Remove).
+  The sidebar's More menu also has Open Vault…, which starts the picker without closing the vault (the open
+  vault stays open until the picked one is copied in). Add Device says where the new device finds the vault,
+  from the vault's real targets (`AddDeviceText`: "pick “Whoopie.sempere” in iCloud Drive ▸ Sempere", or the
+  WebDAV server's address, then Join This Device; "On My iPad ▸ …" for an app's Documents, the folders inside
+  `File Provider Storage` alone for that storage (Files' On My iPad and other File Provider extensions share such
+  paths, so no claim is made about which), "Google Drive ▸ …" for `GoogleDrive-<account>`); a folder only this
+  device reaches (an app's container) gets no join steps but says a target both devices reach is needed; with no target it
+  says one is needed first and opens Sync Targets. The copy's subfolder is recorded by comparing the picked
+  folder and the copy's folder after the same normalization (`AppModel.subfolder(of:in:)`):
+  `standardizedFileURL` drops `/private` from `/private/var/…` only for a path that exists, so on an iPhone or
+  iPad build 10 recorded none and its runs wrote the vault into the picked folder itself. Such a target is
+  held (`FolderTargetAccess.isMisrecorded`, decided from its record alone: a stored path below the path its
+  bookmark recorded, and no subfolder): no run reads or writes anything, nothing is repaired or saved by itself,
+  and Sync Targets says "Set up wrong by an earlier build. Remove it and add the folder again." with Remove and
+  Choose Again… (a new start, a union, with the subfolder). Runs into the bare folder only ever wrote and deleted the vault's own names
+  (`vault.json`, `settings.age`, `notes/`, `notebooks/`, `epochs/`, `joins/`, `keys/`, `inbox/`, summaries,
+  `.sempere-lock`); `deleteExtraneous` is off for folder targets, so other files there were left alone. `AppModel.folderTargetLocation` (New Vault, Add Folder…, Choose Again…, Keep syncing) takes a picked
+  `….sempere` folder itself when its `vault.json` names THIS vault (or is not downloaded yet) or it is empty (one
+  holding other files and no vault is refused); any other folder gets `<picked>/<name>.sempere`, never itself, even
+  when it holds this vault's bare copy from build 10 (re-check of #113; a held target's message says those leftover
+  files can be deleted once every device syncs the subfolder, and `store sync` holds such a target too); a picked
+  folder holding another vault is refused
+  ("This folder holds another vault (Name)…", TestFlight 1.0.0 (9): an earlier test vault in iCloud Drive took
+  a new vault's target); a `vault.json` not downloaded yet (iCloud's stand-in) is taken as before. Any other
+  folder gets the copy in `<picked>/<name>.sempere`, or the next free `<name> N.sempere` when that name holds
+  a backup or another vault, made by the first run. The engine is the last guard: `checkSameVault` compares
+  the two `vault.json` ids before every run and refuses another vault (`SyncError.vaultMismatch`, "The
+  server folder now holds another vault. Nothing was synced.") before writing anything, two-way or
+  upload-only, after waiting for an evicted `vault.json` (`SyncTargetTests.testAFolderHoldingAnotherVaultIsNeverWritten`). Adding
+  a target to a vault that has notes is a union: the first run copies what either side lacks and
+  deletes nothing. The same place twice is refused, and so is a folder inside the store.
+- **Folder runs** (`FolderTargetRun`, the same as `sempere store sync`): the engine over `FolderRemote`
+  with the provider's hooks (`FolderProviders.detect`: iCloud Drive and other providers are coordinated,
+  evicted files and folders listed before their files are *arriving*, conflict versions are merged or
+  kept and resolved; docs/io.md "Folder targets in providers"), two-way while the vault is open and
+  unlocked here, upload-only otherwise, waiting at most `folderArrivalWait` (10 s) per run for files a
+  provider is downloading. A folder synced before that is gone is not recreated ("The folder is gone…
+  Choose it again", nothing deleted here); one whose saved permission no longer opens it (a dead bookmark) says the same, with
+  "Choose Again…" in Sync Targets (the run then starts over as a union: chosen on an old backup, it brings
+  back revisions thinned since, so nothing is lost but the vault grows); one whose parent is gone while no
+  bookmark is involved (the CLI's paths) is offline. A bookmark that does not resolve because the folder the
+  user picked is on a removable volume that is not mounted now (`/Volumes/<name>` on a Mac,
+  `…/LiveFiles/com.apple.filesystems.<daemon>/<name>` on iPadOS and iOS: an unplugged USB drive, an unmounted share)
+  is offline too, "can't be reached now", never "choose it again"; anything else, a folder deleted with the folder
+  it was in included, is gone (`FolderReach`, offline audit A-P2; backups say the same). Scheduled runs resolve
+  bookmarks `.withoutMounting`, so a Mac does not try to mount an absent share every minute; Sync Now, and a run
+  asked for by the unlock, the app becoming active or the network coming back (at most every 5 minutes), may mount
+  it, and the offline text says Sync Now connects it. A stale bookmark (the folder moved or was renamed) is
+  saved again. In iCloud Drive (or another provider that uploads), a run only writes local files: the files it
+  wrote that the provider has not uploaded yet (`ubiquitousItemIsUploaded`, `isUploading`) are kept in
+  `<target state dir>/provider-uploads.json` and asked again each run, and while any wait the bar, the welcome list
+  and Vault Details say "n changes waiting for iCloud to upload" and "Written to the folder …" instead of "Synced"
+  and "Last sync" (offline audit P15); an upload error (a full iCloud storage) is a problem the bar shows. The
+  unlisted screen counts them as on no target. A run is marked in flight before it starts; when the next run finds
+  the mark (a run that threw or was killed before recording what it wrote), it looks at every file of the folder.
+  Past 20,000 paths the record is truncated, and the target then counts as holding none of this device's files. Closed vaults' periodic runs pause while the app is in the background (a voice note into
+  one still uploads). Folder targets run 2 s after a write and every minute.
+- **Voice notes** go to the one vault their capture profile names: straight into its in-app inbox,
+  found in the store by vault id whatever the profile's bookmark says, open or not; its targets upload
+  them at once (`QuickCapture.deliveredNotification` → `SyncCoordinator.captureDelivered`).
+- **Key changes**: the home device renames, removes, hands home over and replaces the kit from the device list
+  (`AppModel+Devices`, KH5): every target is synced first (at most 10 s each, design §5.2 step 2), the editors
+  close, the new epoch is written and the vault reopens under it; the next runs carry it to every target.
+  Approvals and renames made elsewhere arrive as a later `vault.json` and reopen the vault. A run that finds
+  this device unlisted reopens the vault (it then refuses writes) and the note list shows a banner; a run held
+  back for more than a day by a change it cannot verify says so too (`AppModel+DeviceNotices`). `epochs/`, `joins/` and `keys/` reach every target (KH4); a later epoch
+  arrives the same way, and the vault reopens under it (`format.md` §15.15).
+- **`SyncCoordinator`** (one per app, started at launch) owns one `SyncSession` per (vault, target). The
+  open vault's sessions run two-way while the vault is unlocked here; every other session runs
+  upload-only. At most two runs go at once across the app (`maxConcurrentRuns`), at most one per
+  session, and one slot is kept for the open vault: background runs take at most one, so slow uploads
+  of closed vaults never hold up the open vault's runs or Sync Now (a run queued before its vault was
+  opened takes that slot as soon as it is: priority is asked again whenever slots are handed out). The
+  closed vaults share the other slot: one closed vault's slow upload holds up the others' runs until it
+  ends (bounded by the run's limits); per-vault slots are a follow-up. Two targets of one vault take
+  turns on the vault's write lock, and a device with two targets bridges them. Each session has its own
+  sync state, quarantine, credentials, schedule, backoff and status: one vault's wrong
+  password, hung server (bounded by the run's limits) or full disk never delays or fails another
+  (`SyncCoordinatorTests`).
+- **When** (`SyncSchedule`, pure, in `SempereSync`): once at the start and after the unlock (two-way
+  from then on), `writeDelay` (10 s) after the last write (every `NoteWriter` delta and blob counts),
+  when the app becomes active (every session) and when it goes to the background, and on "Sync Now".
+  Otherwise every 30 s while the last run brought something or left files arriving, then 5 minutes,
+  doubling with each run that changed nothing up to 15 minutes. After a failure, 30 s doubling up to
+  15 minutes; a write or a demand still runs sooner. At most one run at a time; a write during a run
+  schedules another. A run cut short after it moved files by a cancel (the background time taken back) or
+  its time bound is no failure: no problem shown, no backoff, no last success; the bar says the rest follows
+  (offline audit P4). The server bounds (entries listed, bytes downloaded, notes) stay failures. Each session's loop sleeps
+  until its next run (at most a minute), woken by writes, demands and changes of state, instead of looking every
+  second (offline audit P11). While the device has no network path (`NWPathMonitor`), WebDAV targets start no
+  run by themselves (Sync Now still tries) and their bar says offline; folder targets go on. When the path comes
+  back and holds for 10 s, WebDAV targets stop saying offline and every session, folder targets too, runs at once
+  and forgets its backoff (offline audit P12); a blip starts no run. While the app is off screen, background tasks take over (below).
+- **Background (iOS; P8, design §4.2).** Leaving the screen, every session runs once (the last edits), and
+  the runs going or asked for finish under one `beginBackgroundTask` assertion
+  (`finishTargetRunsInBackground`; when iOS takes the time back first, a processing task is asked for).
+  Then a `BGAppRefreshTask` (`…sync.refresh`) is asked for whenever any vault has a target, and a
+  `BGProcessingTask` (`…sync.processing`) while a target has changes to upload (`scheduleBackgroundRefresh`);
+  it requires the network only while a WebDAV target has uploads waiting, so a folder target on a device that is
+  never online still gets it (offline audit A-P3). A task works whether or not a vault is open: a launch in the background
+  starts the coordinator with closed vaults' periodic runs paused, so their runs wait for the task's budget
+  (`runBackgroundTask`). The task runs one pair at a time in `BackgroundBudget.order` (`SempereSync`, pure):
+  vaults with local changes no target confirmed first, then the open vault's, then the rest; within each,
+  the pair a task tried least recently first (`lastTried`, kept in `UserDefaults` across launches), then the
+  oldest last success, so a target that keeps failing or never fits moves to the back and none starves. A
+  refresh shares 25 s out: each run is bounded by `remaining / runs left`, at least 5 s
+  (`SyncLimits.maxDuration`), and runs that do not fit wait for the next task. A processing task runs full
+  passes, at the default bounds, until a pass changes nothing (at most three). iOS ending a task sets the
+  task's cancel flag and the coordinator's app-wide one (`cancelAllRuns`), so every run going, a foreground
+  one without a bound included, stops between files, saving its sync state first (`CancelledRunStateTests`);
+  a session whose run is already going is skipped by the task, never waited for. Each run's errors, bound
+  and backoff are its own session's (`BackgroundTargetsTests`).
+- **Locked staging** (P8b, design §4.1, `LockedStaging` in `SempereSync`). A closed or locked vault's
+  upload-only run also stages what other devices wrote: a **pull-only** run (`SyncOptions.pullOnly`,
+  `PullOnlyRemote`: nothing is ever written to the target) without a key, into a shadow of the working copy
+  (`<target state dir>/incoming/copy.sempere`, hard links of the copy's write-once files; its root files are
+  copied once, when it is made, and never rewritten). Received files are checked for their structure only,
+  nothing is deleted, and nothing reaches the working copy. Every background task's run stages; in the
+  foreground at most every 15 minutes (`SyncSession.stageInterval`); never for a partial copy. The bar and
+  the library say "n files from other devices are on this device and arrive when the vault is unlocked"
+  (`SyncSession.staged`). The first two-way run after the unlock places them: a pull-only engine run of the
+  working copy against the shadow as a local folder, with the key, so every write-once file is checked
+  fully and placed or quarantined as any download is (format.md §9.1). Root files are never placed (the
+  shadow's are set to the copy's first): they come only through the two-way run and its checks. What the
+  target's sync state shows this device removed on purpose (thinned or collected files, adopted voice
+  notes) is dropped from the shadow first, so nothing comes back. What it placed reaches the model with the
+  run's arrivals; the staging is removed after every placing attempt. The place needs no network: a vault
+  opened offline is current up to its last staging. Tests: `LockedStagingTests` (package),
+  `FolderTargetAppTests.aClosedVaultStages…`.
+- **Details, Storage and Repair** (P9; `TargetInspection.swift`, `AppModel+VaultDetails`, `VaultDetailsViews`;
+  `sempere store info`, `sempere store quarantine`). Vault Details (Sync Targets ▸ Details and Repair, and
+  Settings ▸ Storage) reads this device only: the copy's sizes and, per target, its last sync, files in step,
+  staged files, state size, the devices whose revisions or summaries it held at the last sync (devices per
+  target, design Q8: no format change) and its quarantine. Repair adopts a quarantined write-once file only
+  through a pull-only run from a scratch folder under the open vault's keys (`TargetQuarantine.adopt`), so it
+  gets every check a download gets, and reports what it placed as an arrival; root files are never adopted.
+  Add WebDAV Server… is the connect sheet in its add-target mode: the same server check and certificate
+  trust, then `WebDAVConnection.checkTargetFolder` accepts only an empty, missing or same-vault folder.
+  The welcome screen lists store vaults and WebDAV vaults still joining in one list, each with its targets'
+  status (`VaultListStatusLine`).
+- **Published summaries.** An unlocked two-way run of a complete copy creates and keeps current the
+  target's `sempere-summaries.sealed` (`SyncOptions.publishSummaries`, without the web index): a device
+  joining the vault lists the notes from it before they arrive (`JoinAppTests`). Never from a partial copy,
+  and never from a run that took another `vault.json` (the next run publishes). The write is conditional on
+  the version the run read (ETag, or the folder's stamp); when another device replaced it meanwhile the run
+  reads it again and keeps that copy's entries for notes it has none for, up to three times, so two devices
+  never leave the older, smaller copy (`SyncFollowUpTests`).
+- **Network (WebDAV).** `WebDAVReachability` (`NWPathMonitor`, which only watches the device's interfaces)
+  reports the network coming back: every WebDAV session forgets its backoff and runs soon
+  (`SyncCoordinator.networkChanged`). Folder targets follow their provider instead.
+- **Arrivals** (`LocalChanges`, the report's `changed`): what a two-way run wrote in the copy. The
+  notes it touched are listed again (`reconcile(scope:)`, only those), and an open editor of one
+  merges the new revisions in place (`AppModel+RemoteMerge`, as for any listing); `settings.age`
+  taken or merged runs the settings pass (`SettingsSyncBridge` applies it); inbox files start
+  adoption; notebook records reload the tree; other devices' published summaries refresh the rows of
+  notes not here yet. A new `vault.json` with another device list or secret (a key change made with
+  the CLI elsewhere) saves and closes every editor and opens the vault again with this device's keys,
+  as after a key change made here (`keyEpoch`), then opens again the notes that were open (they say
+  "Updated from another device"); if this device's key is no longer listed, the vault closes and says
+  so. A label alone changes nothing. Until the vault is open under the new `vault.json`, or for good
+  when that fails, its runs only upload (`syncVaultStale`), and after every two-way run (also one that
+  stopped or threw) the open vault is compared with the disk. The engine never checks files under a
+  stale vault either: a run whose `Vault` no longer matches `vault.json` on disk opens it again first,
+  and a quarantine record names the key the file was checked under (`checkerKeyID`), so a run under
+  another key checks it again (review of #70: a stale vault had kept another device's new notes out
+  for good).
+- **The write lock** (`VaultStore.writeLock`, `<store>/.locks/<vault id>.write`, the lock every writer of
+  the vault on the device takes, the CLI's included): a run holds it while it settles and
+  replaces the copy's mutable files (`vault.json`, the journal, `settings.age`;
+  `SyncOptions.localWriteLock`), and the model holds it while it writes `settings.age`, so a merge
+  never interleaves with the app's own write. A run that cannot take it within 30 s leaves those
+  files to the next run (listed as skipped). Revisions and blobs are write-once and need no lock.
+  A run never holds it across a request (`MutableLockScope.swift`): the server's copies are read
+  before it is taken, the judging and local writes happen under it, and the uploads it decided are made
+  after it is released, each only over the copy judging saw: create-only, `If-Match` on the version read,
+  or, for a server with no strong version token, after reading the file again and finding the same bytes.
+  One the server refuses because its copy moved on is judged again in another round (three at most, then
+  the next run); `settings.age` is not uploaded when `vault.json` from the same round did not land. A hung or slow server never blocks an edit (`WriteLockScopeTests`).
+- **Leftovers of "Download Again"** (earlier builds): at launch, before any session runs,
+  `LocalCopy.recoverInterruptedRedownload` puts a copy back from `<copy>.old` when the copy is missing,
+  removes an unfinished `<copy>.download` and its state, and removes `<copy>.old` only when the copy
+  holds every revision, blob, inbox file and notebook record in it; otherwise it is kept and named in an
+  alert, which offers Show in Finder on a Mac and Share… elsewhere.
+- **Status** (`SyncStatus`, the note list's bar): syncing; synced (and how many files a provider
+  still delivers); "n changes not synced yet"; offline ("Changes are kept on this device and sync
+  when the server can be reached", not an error); waiting for the unlock (a closed or locked vault);
+  or the problem and what to do (wrong password, certificate, the folder gone or holding another
+  vault, a device list changed on both sides, files that failed). The menu has Sync Now and Server
+  Settings…; "Download Again" is gone, since a run takes what the server has.
+- **Other writers.** Several devices write to one server folder; their files meet by the engine's
+  union rules (docs/design/device-first-sync.md §5), conflicts on `vault.json` keep both copies and
+  are reported. Tests: `TwoDeviceSyncAppTests` (two `AppModel`s on one in-memory server running the
+  real engine: a note and a rename reaching the other device's list and open editor, edits made
+  offline on both, settings, a 6 MB attachment, runs cut midway, a server folder that vanishes and
+  comes back empty, a vault reopened while a run goes, a closed vault that only uploads);
+  `FolderTargetAppTests` (two devices through one folder under `EvictingFolderProvider`: notes and an
+  open editor's merge, a target folder deleted or unreachable, files evicted while runs go, a
+  provider's conflict copy, two targets bridged by one device and a new target that gets every note,
+  a voice note recorded while its vault is closed, the store's move and old WebDAV copies carried
+  over).
+
+## WebDAV vaults in the app
+
+For people with no Mac and no iCloud, the app keeps a vault on a WebDAV
+server it talks to itself (`Open Vault ▸ WebDAV…`). It wraps the same
+`SempereSync` engine and `SempereWebDAV` transport as `sempere sync webdav`; nothing about the server
+side changes, and any server the CLI works with works here.
+
+**One transport per connection.** `LiveWebDAVRemote` keeps a single `URLSessionTransport` in a
+`WebDAVTransportPool`, keyed by URL, user, password and pin, so consecutive runs and fetches reuse its
+TCP/TLS connections. A different key replaces it (trust is decided by that transport's own
+`PinnedServerTrust`, built from the key's pin, so a pin is never evaluated under another); closing the vault
+(`stopWebDAV`) empties the pool. A dropped transport is not killed: operations still holding it finish, and
+its sessions invalidate in `deinit` (`finishTasksAndInvalidate`). "Test Connection" builds its own transport
+(it needs the certificate recorder).
+
+**Model: a store vault with a WebDAV target, synced both ways.** The vault the app opens is a store
+vault (`<store>/<vault id>/<name>.sempere`) and the server one of its targets (`WebDAVLocationStore` is
+the WebDAV view of the target registry; sync state and quarantine in the target's own folder). The first
+download builds it in the store. WebDAV copies of earlier builds (`Application Support/Sempere/WebDAV/`,
+`webdav.json`) become store vaults at launch, before anything syncs (`LegacyWebDAV`,
+`AppModel.convertLegacyWebDAV`), and nothing an old copy holds is ever deleted. What an interrupted "Download
+Again" left is recovered first. When the store does not hold the vault, the location's sync state, quarantine
+and transfers move to the target's folder first, then the copy into the store (`<folder>.*` leftovers next to
+it), so the first run neither uploads nor checks everything again; a marker in the target's folder lets a
+launch that stopped midway finish the same way. When the store already holds the vault, the old copy is
+uploaded once (upload-only, its Keychain password), then set aside in `<store>/.sync/legacy-kept/<id>/` and
+the server becomes one more target of the store vault (a union); if that upload fails while the old copy holds
+files the store lacks or the server never confirmed (`LocalCopy.unconfirmedChanges` counts revisions, blobs,
+`vault.json`, `settings.age` and inbox files), it stays where it was, an alert names it (Show in
+Finder, Share) and the next launch tries again. The target keeps the location's id, so the Keychain password
+still applies. Connecting to a server whose vault is already on this device adds the server as a
+target of that vault (the first run is a union). Every read and
+write goes to that copy through the usual plain-folder paths (no iCloud
+code runs for it), so the app works offline exactly as with a vault on the
+device. The server is kept in step by two-way runs of the engine
+(`LocalCopy.sync`, "Sync targets in the app" below) while the vault is open
+and unlocked: they take what other devices wrote (every file checked before
+it is placed, format.md §9.1), merge `settings.age`, upload what this device
+wrote and follow the deletions the rules explain. While the vault is closed
+or locked, its runs only upload (`SyncOptions.pushOnly` with
+`keepServerChanges`): nothing unverified is placed in a copy nobody unlocked,
+and what other devices wrote arrives at the next unlock.
+
+**Connecting** (`WebDAVConnectSheet`, logic in `WebDAVLocation`,
+`WebDAVConnection`): URL, user name, password, "Test Connection".
+- `https` only; plain `http` is accepted for `localhost` alone (as the CLI).
+  Credentials in the URL are refused.
+- The password is stored only in the Keychain (generic password, service
+  `io.github.anthonytw.sempere.webdav`, account the target id,
+  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` so background tasks can run while the device is locked;
+  items of earlier builds (`WhenUnlocked`) are moved over when next read; before the first unlock after a
+  restart a run says "waiting for unlock", with no backoff and no problem; never synchronizable), is
+  never logged and never written to a file or `UserDefaults`. The rest of the
+  target (URL, user, certificate pin) is in the store's target registry
+  (`<store>/.sync/<vault id>/targets.json`), holding no secret.
+- The test lists the URL (PROPFIND, Depth 1) and says what it found:
+  reachable and a vault; reachable with vaults one level below; reachable
+  with no vault; or why not (offline, wrong user or password, not found, not
+  a WebDAV server, a redirect, an untrusted certificate). The **vault list**
+  is the URL itself when it holds a `vault.json`, otherwise each collection
+  directly below it that holds one (at most 64 collections are looked into).
+  A vault is named by its `vault.json` `label` (format.md §2) when it has
+  one, else by its folder: a server folder called `dav` says nothing. The
+  location and its recent-vault row take the label of the copy each time it
+  is opened, so a label set later (`sempere vault label`, then a sync)
+  arrives with the next two-way run.
+  Names and ids from the server are untrusted: control characters are
+  escaped and lengths bounded before display.
+- **Self-signed certificates** need an explicit, loud opt-in. When the
+  system does not trust the server's certificate, the test shows its SHA-256
+  fingerprint and subject in a red warning box ("Anyone who can intercept
+  this connection could present such a certificate. Trust it only if this
+  fingerprint is the one your server shows.") with a "Trust This
+  Certificate" button and a confirmation. What is stored is a pin of that
+  exact leaf certificate (its SHA-256) for that one location: no other
+  certificate, self-signed or not, is accepted for it in place of system
+  trust, and a changed certificate fails with "the server's certificate
+  changed" until the user trusts the new one. Evaluation happens in the app
+  (`PinnedServerTrust`, Security framework) behind the library's
+  `WebDAVServerTrust` hook; the CLI has no pin and relies on the system's
+  trust store.
+
+**Opening without downloading everything first** ("Partial copies"
+above). Choosing a vault from the list makes a partial copy: a metadata pull
+takes `vault.json`, `settings.age`, the server's sealed summaries
+and the note list (a few requests, whatever the size of the vault: a
+~1 GB, ~800-file vault opens in seconds), and the copy opens
+locked with the usual unlock sheet. It is opened only once a metadata pull
+finished without errors and listed every note (`WebDAVLocation.downloaded`,
+`LocalCopy.isUsable`); one that stopped continues when the vault is
+opened again. While the pull runs (and while
+a re-download pulls), an overlay shows a bar with the stage and counts
+("Connecting to the server…", then "Listing the server: n of n notes")
+(`WebDAVDownloadStatus`, from the run's `SyncProgress` through
+`WebDAVProgressRelay`) and a Cancel: the run stops after the requests in
+flight, nothing is reported as an error, and opening the vault again
+continues. The fill
+that follows has no second overlay: it shows as
+the note list's spinners on the pending rows. Offline, a usable copy opens from what it holds.
+
+The rest arrives through the vault's own sync (`AppModel+Join`, docs/design/device-first-sync.md §8.2).
+The copy is a store vault like any other; while it is partial (`partialCopyRoot`):
+
+- *The fill.* Once the vault is unlocked, its two-way runs (`SyncSession`, "Sync targets in the app")
+  complete the copy: every note, then every attachment (design Q3: always). What a run completed reaches the
+  list through its report (`applySyncChanges`, which also looks again at the notes still pending).
+- *The list.* A note marked incomplete is never read: `reconcile` lists it as pending (`pendingNoteIDs`, the
+  row's spinner) with its row from the server's sealed summaries (`.sempere-partial/summaries.sealed`, opened
+  with the key at the unlock, `webdavUnlocked`), or a placeholder row without them, until it is complete.
+- *Opening a note* not downloaded yet fetches just that note (`downloadNote` → `downloadPartialNote`:
+  `LocalCopy.fetch` with a one-note `FetchScope`, revisions only), then reads it. The note pane says
+  "Downloading this note from <server>…" with a Cancel (`cancelNoteDownload`), and the wait is bounded
+  (`noteFetchTimeout`, 60 s: a fetch may queue behind a long fill run); past it, or offline, it fails with
+  "not downloaded from <server> yet" and the note stays pending. The fetch itself goes on, and lists the
+  note once it is in. Fetches run one at a time (`joinFetch`). The editor's re-check, and every model
+  write (`commit(ids:)`), refuse a note still marked incomplete (`partialNoteVerifier`); core refuses any
+  write to one anyway (format.md §1.2).
+- *The bar* says "Downloading from <server>: n of m notes…" over a progress bar while the fill goes
+  (`joinProgress`, `JoinProgress`, from each listing pass), and the empty list says the same.
+- *Attachments* a page shows, a recording plays or a paste copies that are still stand-ins are fetched alone
+  (`partialBlobFetcher`, through the attachment cache, `ensureBlobLocal`, `blobWritePreparer`).
+- *Waiting while partial:* a backup first runs the server once and refuses if the copy is still partial
+  (`completePartialCopy`); thinning waits (automatic thinning skips, a manual run says the vault is not
+  downloaded yet); key changes wait for the copy to be complete. Export and history fetch the note
+  first (`downloadNote`).
+
+**When it syncs, the status, other writers**: "Sync targets in the app" below.
+
+**Key changes for a WebDAV vault**: the sync carries `joins/`, `epochs/` and `keys/` (KH4), so a device change
+made on home (the device list, KH5) or with the CLI reaches every device over a WebDAV target. A device joining a WebDAV or folder
+vault in the app makes its keys and request from the unlock sheet (Join This Device); while it waits, the vault's
+runs are keyless two-way join runs (`SyncOptions.firstPullIdentities`) that carry the request up and take home's
+approval down, then the reply words confirm it (`AppModel+JoinDevice`). A run without the vault's key (a locked vault,
+a join) never replaces a target's `vault.json` with a later one of the same epoch from another target, and never
+creates `vault.json` on a target whose root already showed `epochs/` (only where the vault is being created): spreading
+a list is left to a run that can check it.
+
+**Removing** ("Remove from This Device", on the welcome screen) deletes the
+local copy, its sync state, the Keychain password, the recent entry and this
+device's keys for the vault. When the copy holds changes the server has not
+confirmed, the confirmation says how many will be lost and to open the vault
+and sync first. The same check as Delete from This Device runs first
+(`KeyRemoval`): when this device manages the vault's devices it offers to open
+the vault and make another device home, when it is the vault's only device it
+says that only the recovery kit restores write access, and when another local
+copy opens with the same keys they are kept.
+
+**Recents.** A WebDAV vault is a recent entry with its location id and no
+bookmark (`RecentVault.webdav`), so "reopen the last vault" at launch opens
+the local copy, offline too.
+
+**Mac.** The sandboxed Mac build has `com.apple.security.network.client`
+for this (`scripts/release-check.sh` lists every entitlement and why).

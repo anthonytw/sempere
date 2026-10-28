@@ -1,0 +1,200 @@
+[
+  {
+    "end" : 14,
+    "engine" : "synthetic-speech-2",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000003",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000382",
+    "snippet" : "The last café of the day.",
+    "source" : "transcript",
+    "start" : 12.5,
+    "title" : "broken transcripts",
+    "words" : [
+
+    ]
+  },
+  {
+    "engine" : "vision-26",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 1,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000101",
+    "snippet" : "Café au lait the Straße is long",
+    "source" : "handwriting",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+      {
+        "box" : [
+          40,
+          40,
+          36,
+          20
+        ],
+        "text" : "Café"
+      }
+    ]
+  },
+  {
+    "box" : [
+      40,
+      260,
+      200,
+      40
+    ],
+    "itemId" : "5ea4c000-0000-4000-8000-000000000111",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 2,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000102",
+    "snippet" : "\\text{café} = \\frac{a}{b}",
+    "source" : "math",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      0,
+      0,
+      612,
+      792
+    ],
+    "engine" : "semperepdf-1",
+    "itemId" : "5ea4c000-0000-4000-8000-000000000112",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 2,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000102",
+    "pdfPage" : 7,
+    "snippet" : "Printed handout CAFÉ menu: espresso, latte Straße…",
+    "source" : "pdf",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      40,
+      100,
+      400,
+      120
+    ],
+    "itemId" : "5ea4c000-0000-4000-8000-000000000110",
+    "matches" : 2,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 2,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000102",
+    "snippet" : "Typed: the café on the corner of the Straße.…",
+    "source" : "text",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "engine" : "notability-14",
+    "matches" : 2,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 3,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000103",
+    "snippet" : "Résumé of the cafe visit, written in a café in a…",
+    "source" : "handwriting",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+      {
+        "box" : [
+          157,
+          40,
+          36,
+          20
+        ],
+        "text" : "cafe"
+      },
+      {
+        "box" : [
+          367,
+          40,
+          36,
+          20
+        ],
+        "text" : "café"
+      }
+    ]
+  },
+  {
+    "end" : 4.5,
+    "engine" : "synthetic-speech-2",
+    "matches" : 2,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000180",
+    "recordingTitle" : "Walk to the café",
+    "snippet" : "…e walk down the Straße to the café, and the café is closed again…",
+    "source" : "transcript",
+    "start" : 0,
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "end" : 9.25,
+    "engine" : "synthetic-speech-2",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000180",
+    "recordingTitle" : "Walk to the café",
+    "snippet" : "…UME is on page two, after the café.",
+    "source" : "transcript",
+    "start" : 4.5,
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "end" : 80,
+    "engine" : "synthetic-speech-2",
+    "matches" : 3,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000180",
+    "recordingTitle" : "Walk to the café",
+    "snippet" : "Ending: café café café.",
+    "source" : "transcript",
+    "start" : 75.5,
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "engine" : "vision-26",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000002",
+    "page" : 2,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000202",
+    "snippet" : "kein Kaffee im CAFE heute",
+    "source" : "handwriting",
+    "title" : "Ärger im Café",
+    "words" : [
+      {
+        "box" : [
+          166,
+          40,
+          36,
+          20
+        ],
+        "text" : "CAFE"
+      }
+    ]
+  }
+]
