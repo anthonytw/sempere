@@ -20,6 +20,9 @@ macOS and Linux, and a read-only web viewer.
 - **Attachments.** PDF pages, images, video, typed text, audio recordings with
   transcripts, and quick voice notes from the Lock Screen.
 
+**Coming in the next release:** a simple Apple Watch app, a widget that records quick
+voice notes from the watch into the vault's inbox ([docs/quick-capture.md](docs/quick-capture.md)).
+
 Sempere is free software under GPL-3.0-or-later with an App Store exception
 (`LICENSE`, `LICENSE-EXCEPTION`). It has no telemetry and no warranty. What the
 encryption protects, and what it does not, is in [docs/security.md](docs/security.md).

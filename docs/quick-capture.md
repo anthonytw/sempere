@@ -13,6 +13,10 @@ it is ready, its transcript in that card. Format: `format.md` §11. Code: core
 `QuickCapture.swift`, `AppModel+Inbox.swift`, `SempereShared/` (intents) and
 `SempereWidgets/` (widget extension).
 
+**Next release: Apple Watch.** A simple watch app adds one more way in: a
+widget that records a voice note on the watch and seals it into the inbox
+like any other capture. Nothing more than capture is planned for the watch.
+
 ## Why a capture key and an inbox
 
 Age encryption needs only a public key (the vault identity's `v_e`, §15.2),
