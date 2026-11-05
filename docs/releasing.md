@@ -415,9 +415,12 @@ Approval with manual release leaves the version "Pending Developer Release". On 
      `vMAJOR.MINOR.PATCH[-pre]` and equals `Version.swift`, and `CHANGELOG.md` has a non-empty
      `## [X.Y.Z] - YYYY-MM-DD` section with no `TODO(user)` (`scripts/changelog-section.sh`). `just release-ready`
      runs the same checks before anything is pushed.
-   - **linux** (static, x86_64 and aarch64, in `swift:6.4-noble`) and **macos** (universal) build, check that
-     the binary is static or universal and prints the tag's version, and package `sempere-X.Y.Z-<platform>.tar.gz`
+   - **linux** (fully static with the Static Linux SDK, x86_64 and aarch64, `scripts/build-linux-static.sh` in
+     `swift:6.4.2-noble`) and **macos** (universal) build, check that the binary is static or universal and prints the tag's version, and package `sempere-X.Y.Z-<platform>.tar.gz`
      (binary, LICENSE, LICENSE-EXCEPTION, README, CHANGELOG, `docs/cli.md`, `fonts/`; `scripts/package-cli.sh`).
+   - **linux-distros** installs each Linux tarball as the docs say and runs it (version, a new vault,
+     HTTPS with certificate checks) in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20
+     (`scripts/smoke-linux-cli.sh`); **publish** waits for it.
    - **publish** writes `SHA256SUMS`, attests build provenance for the tarballs and `SHA256SUMS`, and runs
      `gh release create` with the CHANGELOG section as notes (a `-suffix` tag is a prerelease).
 

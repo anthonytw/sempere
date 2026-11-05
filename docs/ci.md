@@ -162,7 +162,8 @@ then say so.
   `web-golden` (the Swift CLI's exports of the fixture vaults compared with
   `web/test/golden`). A Swift change that moves the goldens shows up on `main`; regenerate
   them with `web/scripts/golden.sh` ([web-viewer.md](web-viewer.md)).
-- **Shipping-only steps** run on `main`: the static Linux release build, the app's simulator
+- **Shipping-only steps** run on `main`: the static (musl) Linux release build (`linux-static`,
+  `scripts/build-linux-static.sh`), the app's simulator
   suites and the Mac Catalyst suites (`scripts/app.sh test-mac`, `test-mac-ui`, ad-hoc signed
   and sandboxed). When the app job fails, its "Summary of failures" step prints the failing tests and UI-test window
   dumps.

@@ -4,7 +4,7 @@ The Linux and macOS face of Sempere: keys, vault management, note editing,
 verification, export and recovery. Everything the app does to vault data can
 be done here and scripted with `--json`; only the drawing itself needs the
 app. It builds with `swift build -c release --product sempere`
-and CI publishes a static Linux binary. The executable only parses arguments,
+and CI publishes a fully static Linux binary (no system libraries needed). The executable only parses arguments,
 talks to the terminal and sets exit codes; everything else lives in
 `Sources/Sempere` and `Sources/SempereRender`.
 

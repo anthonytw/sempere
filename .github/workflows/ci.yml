@@ -152,44 +152,27 @@ jobs:
       # (docs/import-notability.md "Structure"); a step of this job so the rulesets need no change.
       - name: Removable importers (build and test without Sources/SempereNotability)
         run: scripts/check-removable-importers.sh
-      # The static release build only matters for what ships: main and releases. It has its own
-      # cache entry (main restores and saves it; PRs never build it), so PR restores stay the size of
-      # the debug build. It holds the whole .build: where the release products and intermediates go
-      # depends on SwiftPM's build system. Restored here, after the debug cache was saved.
-      - id: release-cache
-        name: Restore the release build cache (toolchain + resolved packages)
-        if: github.event_name != 'pull_request'
-        uses: ./.github/actions/build-cache
-        with:
-          prefix: linux-release
-          version-cmd: swift --version
-      - name: Release build of the CLI (static stdlib)
-        if: github.event_name != 'pull_request'
-        # Swift 6.4's default build system does not link Foundation's own static
-        # dependencies under --static-swift-stdlib; name them explicitly (CLAUDE.md).
-        run: >-
-          swift build -c release --product sempere --static-swift-stdlib
-          -Xlinker -lCoreFoundation -Xlinker -l_FoundationICU
-          -Xlinker -l_FoundationCollections -Xlinker -l_FoundationCShims
-          -Xlinker -lswiftSynchronization -Xlinker -l_CFXMLInterface
-          -Xlinker -l_CFURLSessionInterface -Xlinker -lcurl -Xlinker -lxml2
-      - name: Verify the CLI is static
-        if: github.event_name != 'pull_request'
-        run: |
-          .build/release/sempere --version
-          ldd .build/release/sempere
-          if ldd .build/release/sempere | grep -Eq 'libswift|libFoundation'; then echo "not static" >&2; exit 1; fi
-      - uses: actions/cache/save@v4
-        if: success() && github.ref == 'refs/heads/main'
-        with:
-          path: .build
-          key: ${{ steps.release-cache.outputs.key }}-${{ github.sha }}
+
+  # The static (musl) release build, on main only: the same script as release.yml, so a change
+  # that breaks it (an API that differs between glibc and musl) shows up before a tag. Its own job
+  # because the SDK pins an exact Swift version (scripts/build-linux-static.sh), unlike the
+  # required "Linux (swift:6.4-noble)" job's image.
+  linux-static:
+    name: Linux static release build (musl)
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.package == 'true'
+    runs-on: ubuntu-24.04
+    container: swift:6.4.2-noble
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build (Static Linux SDK; checks there are no shared libraries)
+        run: scripts/build-linux-static.sh x86_64 dist-bin/sempere
+      - run: dist-bin/sempere --version
       - uses: actions/upload-artifact@v4
-        if: success() && github.event_name != 'pull_request'
         with:
           name: sempere-linux-x86_64
-          path: .build/release/sempere
-          if-no-files-found: ignore
+          path: dist-bin/sempere
+          if-no-files-found: error
 
   localization:
     name: Localization catalogs and app scenes (Linux)

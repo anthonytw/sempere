@@ -10,16 +10,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # Swift 6.4's default build system does not link Foundation's own static
-  # dependencies under --static-swift-stdlib; name them explicitly (CLAUDE.md).
-  STATIC_FLAGS: >-
-    --static-swift-stdlib
-    -Xlinker -lCoreFoundation -Xlinker -l_FoundationICU
-    -Xlinker -l_FoundationCollections -Xlinker -l_FoundationCShims
-    -Xlinker -lswiftSynchronization -Xlinker -l_CFXMLInterface
-    -Xlinker -l_CFURLSessionInterface -Xlinker -lcurl -Xlinker -lxml2
-
 jobs:
   prepare:
     name: Check version and changelog
@@ -71,7 +61,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   linux:
-    name: Linux ${{ matrix.arch }} (static)
+    name: Linux ${{ matrix.arch }} (static, musl)
     needs: prepare
     strategy:
       fail-fast: true
@@ -82,28 +72,57 @@ jobs:
           - arch: aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    container: swift:6.4-noble
+    # Must be the Swift version scripts/build-linux-static.sh pins its Static Linux SDK to.
+    container: swift:6.4.2-noble
     steps:
       - uses: actions/checkout@v4
-      - name: Install zlib headers
-        run: |
-          apt-get update -q
-          apt-get install -y -q zlib1g-dev
-      - name: Build
-        run: swift build -c release --product sempere $STATIC_FLAGS
-      - name: Verify the CLI is static and reports the tag's version
-        run: |
-          bin=.build/release/sempere
-          test "$($bin --version | sed -n 1p)" = "sempere ${{ needs.prepare.outputs.version }}"
-          ldd "$bin"
-          if ldd "$bin" | grep -Eq 'libswift|libFoundation'; then echo "not static" >&2; exit 1; fi
+      - name: Build (Static Linux SDK; checks there are no shared libraries)
+        run: scripts/build-linux-static.sh ${{ matrix.arch }} dist-bin/sempere
+      - name: The CLI reports the tag's version
+        run: test "$(dist-bin/sempere --version | sed -n 1p)" = "sempere ${{ needs.prepare.outputs.version }}"
       - name: Package
-        run: scripts/package-cli.sh .build/release/sempere "${{ needs.prepare.outputs.version }}" "linux-${{ matrix.arch }}" dist
+        run: scripts/package-cli.sh dist-bin/sempere "${{ needs.prepare.outputs.version }}" "linux-${{ matrix.arch }}" dist
       - uses: actions/upload-artifact@v4
         with:
           name: dist-linux-${{ matrix.arch }}
           path: dist/*.tar.gz
           if-no-files-found: error
+
+  # The Linux tarballs, installed as the docs say, run on old and new distributions (glibc and musl).
+  # Each image runs under `docker run` from the host: JavaScript actions cannot run inside Alpine.
+  linux-distros:
+    name: Linux ${{ matrix.arch }} on other distributions
+    needs: [prepare, linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-linux-${{ matrix.arch }}
+          path: dist
+      - name: Install and run in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41, Alpine 3.20
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          status=0
+          for image in debian:12 ubuntu:22.04 ubuntu:26.04 fedora:41 alpine:3.20; do
+            docker run --rm -v "$PWD:/w:ro" "$image" sh -c '
+              if command -v apk >/dev/null; then apk add -q ca-certificates >/dev/null
+              elif command -v apt-get >/dev/null; then apt-get update -qq >/dev/null && apt-get install -y -qq ca-certificates >/dev/null
+              fi
+              sh /w/scripts/smoke-linux-cli.sh "/w/dist/sempere-$0-linux-$1.tar.gz" "$0"' "$VERSION" "$ARCH" \
+              || { echo "::error::$image ($ARCH) failed"; status=1; }
+          done
+          exit $status
 
   macos:
     name: macOS universal
@@ -132,7 +151,7 @@ jobs:
 
   publish:
     name: Checksums, attestations, release
-    needs: [prepare, linux, macos]
+    needs: [prepare, linux, linux-distros, macos]
     runs-on: ubuntu-24.04
     permissions:
       contents: write      # create the release
