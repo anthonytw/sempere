@@ -287,8 +287,11 @@ just ci-release
 ```
 
 Every suite, iPad and iPhone simulators included; it takes over the screen for a long time. Expected end:
-`local-ci: all passed in N min; local/release-sweep posted for 1a2b3c4d`. `release.yml` refuses to publish a
-`vX.Y.Z` tag on a commit without this status. The sweep also satisfies the TestFlight gate, so there is no need
+`local-ci: all passed in N min; local/release-sweep posted for 1a2b3c4d`. The sweep gates the App Store
+submission: it runs once, here, before B.3. At tag time (B.6) `release.yml` only checks that the tagged commit
+builds the same thing: it has this status, or it is a later commit on `main` whose changes since a swept one are
+all release-neutral (`scripts/release-sweep-check.sh`: the changelog, docs, CI config, release tooling, root
+Markdown). The sweep also satisfies the TestFlight gate, so there is no need
 to run `ci-testflight` as well. From here on, pass `$sha` (in a new shell, paste it) instead of `main`, so the
 App Store build and the tag are provably the same commit even if something merges meanwhile.
 
@@ -393,7 +396,7 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    ok    on origin/main
    ok    Version.swift = 1.0.0
    ok    CHANGELOG.md: ## [1.0.0] - 2026-11-03
-   ok    local/release-sweep: success
+   ok    local/release-sweep: success on 1a2b3c4d
    ok    v1.0.0 is free
    created signed tag v1.0.0 on 1a2b3c4d (local only)
 
@@ -406,8 +409,9 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    it with `git tag -d v1.0.0`.
 
    The workflow (`.github/workflows/release.yml`):
-   - **prepare** fails unless the tag points at a commit on `main`, that commit has a successful
-     `local/release-sweep` status (a prerelease tag `vX.Y.Z-rc.N` only warns), the tag is
+   - **prepare** fails unless the tag points at a commit on `main`, that commit passed the release
+     sweep, itself or through a swept ancestor with only release-neutral changes since
+     (`scripts/release-sweep-check.sh`; a prerelease tag `vX.Y.Z-rc.N` only warns), the tag is
      `vMAJOR.MINOR.PATCH[-pre]` and equals `Version.swift`, and `CHANGELOG.md` has a non-empty
      `## [X.Y.Z] - YYYY-MM-DD` section with no `TODO(user)` (`scripts/changelog-section.sh`). `just release-ready`
      runs the same checks before anything is pushed.
@@ -421,7 +425,8 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    `v1.0.0 prerelease=false published=…` and the five assets, `OK` for each tarball in `SHA256SUMS`,
    `attested: …` for each tarball, and `sempere 1.0.0` from the macOS binary.
 
-   If **prepare** fails, nothing was published: fix the cause on `main` (a new commit needs a new sweep), delete
+   If **prepare** fails, nothing was published: fix the cause on `main` (a commit that changes built files needs a new sweep; a
+   changelog, docs or release-tooling fix does not), delete
    the tag (`git push origin :refs/tags/v1.0.0 && git tag -d v1.0.0`) and tag again. To try the workflow without
    a release, prepare and tag a prerelease (`just release-prep 1.0.1-rc.1`, …). Not included: a man page
    (`sempere --help` and `docs/cli.md` ship instead) and Apple notarization of the macOS CLI binary.
@@ -452,8 +457,8 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    astro-site PR #15 (see Prerequisites).
 
 **If the date slips** (approval comes after the CHANGELOG date, or you postpone): the tagged commit must carry
-the real date, so the date goes in a one-line PR. That PR is a new commit: run `just ci-release` on it (B.2,
-with a new `$sha`) before `release-ready` passes, and tag that commit. The App Store build (from the old commit)
+the real date, so the date goes in a one-line PR; tag its merge commit. It needs no new sweep: `release-ready`
+accepts it through the swept commit, since only `CHANGELOG.md` changed. The App Store build (from the old commit)
 then differs from the tagged commit only in `CHANGELOG.md`; that is fine, and there is no need for a new build.
 
 ## C. A hotfix
