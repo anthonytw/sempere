@@ -5,11 +5,11 @@ repository, `anthonytw/homebrew-tap` (users run `brew install anthonytw/tap/semp
 It installs the release tarballs built by `.github/workflows/release.yml`; nothing is
 compiled on the user's machine. The tap repo is not created by this project's tooling.
 
-## One-time setup
+## The tap
 
-1. TODO(user): create the public repo `anthonytw/homebrew-tap` (the `homebrew-` prefix is
-   required) with a `Formula/` directory.
-2. TODO(user): decide whether to automate updates (below) or paste by hand.
+[anthonytw/homebrew-tap](https://github.com/anthonytw/homebrew-tap) holds formulae for several
+projects. Its CI audits, installs and tests every changed formula on macOS and Linux (x86_64,
+arm64), so a formula update goes in as a PR there and merges when CI is green.
 
 ## Publishing a release to the tap
 
