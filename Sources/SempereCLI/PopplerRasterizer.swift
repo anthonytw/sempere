@@ -155,7 +155,7 @@ enum ExecLimited {
     private static func limit(_ r: Resource, _ value: rlim_t?) {
         guard let value else { return }
         var rl = rlimit(rlim_cur: value, rlim_max: value)
-        #if os(Linux)
+        #if canImport(Glibc)   // glibc wraps the RLIMIT_ constants in an enum; musl and Darwin use Int32
         let id: __rlimit_resource_t
         switch r {
         case .cpu: id = __rlimit_resource_t(RLIMIT_CPU.rawValue)
