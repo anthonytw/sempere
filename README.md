@@ -3,6 +3,10 @@
 End-to-end-encrypted handwriting notes for iPad, iPhone and Mac, a command-line tool for
 macOS and Linux, and a read-only web viewer.
 
+**[Get it on the App Store](https://apps.apple.com/us/app/sempere/id6819333304)** (free; iPad,
+iPhone and Mac) · [Website](https://sempere.anthonywertz.com) ·
+[Live demo](https://sempere.anthonywertz.com/demo/)
+
 - **Keys you hold.** Every note is an [age](https://age-encryption.org) file encrypted
   to post-quantum hybrid (ML-KEM-768 + X25519) keys. Each device's key is made on that
   device and never leaves it (in the app, it stays in the device's Keychain); the
@@ -25,6 +29,17 @@ Sempere is free software under GPL-3.0-or-later with an App Store exception
 encryption protects, and what it does not, is in [docs/security.md](docs/security.md).
 The CLI bundles the Noto fonts (SIL Open Font License 1.1,
 `Sources/SempereFonts/Fonts/OFL.txt`) for text in exports.
+
+## Install
+
+- **The app:** [App Store](https://apps.apple.com/us/app/sempere/id6819333304), for iPadOS, iOS and
+  macOS 27 or later.
+- **The CLI, with Homebrew** (macOS and Linux): `brew install anthonytw/tap/sempere`.
+- **The CLI, from a release archive:** each [release](https://github.com/anthonytw/sempere/releases)
+  has a universal macOS archive and Linux archives for x86_64 and aarch64, with `SHA256SUMS` and build
+  provenance. The Linux binary needs glibc 2.38 or later and the system's libcurl and libxml2
+  (`libxml2.so.2`: Ubuntu 24.04, Debian 13, Fedora 39+; not Ubuntu 25.10 or 26.04). Step-by-step
+  instructions: [Install Sempere](https://sempere.anthonywertz.com/docs/start/install/).
 
 ## Build
 
@@ -75,7 +90,7 @@ iPadOS/iOS 27 and macOS 27 (Mac Catalyst). Open `Apps/Sempere/Sempere.xcodeproj`
 
 ## Releases, contributing, security
 
-Tagged releases publish the CLI for Linux (static, x86_64 and aarch64) and macOS
+Tagged releases publish the CLI for Linux (x86_64 and aarch64) and macOS
 (universal) with checksums and build provenance: see [CHANGELOG.md](CHANGELOG.md). The maintainer's runbook for TestFlight builds, App Store
 and CLI releases is [docs/releasing.md](docs/releasing.md). Issues (bug reports, feature
 requests, translation suggestions) are welcome; pull requests from outside the repository are not
