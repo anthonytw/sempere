@@ -39,21 +39,20 @@ jobs:
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "::error::tag $GITHUB_REF_NAME is not on main; releases are cut from merged, CI-checked commits"; exit 1
           fi
-      # Every suite, on a Mac, for the exact commit being released: scripts/local-ci.sh --release posts
-      # `local/release-sweep` (docs/ci.md). A prerelease tag (vX.Y.Z-rc.1, for exercising this
-      # workflow) only warns.
+      # Every suite, on a Mac (scripts/local-ci.sh --release posts `local/release-sweep`, docs/ci.md), for
+      # this commit or for a swept ancestor that differs from it only in release-neutral files such as
+      # CHANGELOG.md and docs (scripts/release-sweep-check.sh). A prerelease tag (vX.Y.Z-rc.1, for
+      # exercising this workflow) only warns.
       - name: The commit passed the release sweep (local/release-sweep)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          state=$(gh api "repos/${{ github.repository }}/commits/$GITHUB_SHA/status" \
-            --jq '[.statuses[] | select(.context == "local/release-sweep")][0].state // "missing"')
-          echo "local/release-sweep on $GITHUB_SHA: $state"
-          if [ "$state" != success ]; then
-            msg="local/release-sweep is $state on $GITHUB_SHA; run scripts/local-ci.sh --release on that commit first"
+          if line=$(scripts/release-sweep-check.sh "$GITHUB_SHA" "${{ github.repository }}"); then
+            echo "$line"
+          else
             case "$GITHUB_REF_NAME" in
-              *-*) echo "::warning::$msg (prerelease tag: not blocking)" ;;
-              *) echo "::error::$msg"; exit 1 ;;
+              *-*) echo "::warning::${line#FAIL  } (prerelease tag: not blocking)" ;;
+              *) echo "::error::${line#FAIL  }"; exit 1 ;;
             esac
           fi
       - id: v

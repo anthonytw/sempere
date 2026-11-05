@@ -10,8 +10,8 @@
 #
 # The checks are release.yml's `prepare` job, run before anything is published: the commit is on
 # origin/main, Version.swift there says VERSION, CHANGELOG.md there has a dated section for VERSION with no
-# TODO(user) (scripts/changelog-section.sh), and the commit has a successful `local/release-sweep` status
-# (`just ci-release`; a prerelease only warns). The tag is signed with your git signing key (`git tag -s`).
+# TODO(user) (scripts/changelog-section.sh), and the commit passed the release sweep (`just ci-release`): itself, or
+# a swept ancestor with only release-neutral changes since (scripts/release-sweep-check.sh; a prerelease only warns). The tag is signed with your git signing key (`git tag -s`).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -79,12 +79,10 @@ changelog() {
   fi
 }
 sweep() {
-  local state
-  state=$(gh api "repos/$gh_repo/commits/$sha/status" \
-    --jq '[.statuses[] | select(.context == "local/release-sweep")][0].state // "missing"' 2>/dev/null) || state="unknown (gh api failed)"
-  if [[ $state == success ]]; then echo "ok    local/release-sweep: success"; return 0; fi
-  if [[ $prerelease == true ]]; then echo "warn  local/release-sweep is $state (a prerelease only warns)"; return 0; fi
-  echo "FAIL  local/release-sweep is $state on ${sha:0:8}: run 'just ci-release' on that commit"; return 1
+  local line
+  if line=$(scripts/release-sweep-check.sh "$sha" "$gh_repo"); then echo "$line"; return 0; fi
+  if [[ $prerelease == true ]]; then echo "warn  ${line#FAIL  } (a prerelease only warns)"; return 0; fi
+  echo "$line"; return 1
 }
 not_tagged() {
   if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then echo "FAIL  tag $tag already exists here"; return 1; fi
