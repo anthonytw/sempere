@@ -6,23 +6,30 @@
 class Sempere < Formula
   desc "Keys, verification, export and recovery for Sempere encrypted handwriting vaults"
   homepage "https://github.com/anthonytw/sempere"
-  version "@VERSION@"
   license "GPL-3.0-or-later"
 
+  # Literal versions in the URLs: brew audit refuses a `version` it can scan from them.
   on_macos do
-    # One universal (arm64 + x86_64) binary.
-    url "https://github.com/anthonytw/sempere/releases/download/v#{version}/sempere-#{version}-macos-universal.tar.gz"
-    sha256 "@SHA256_MACOS_UNIVERSAL@"
+    # One universal (arm64 + x86_64) binary for both. `brew style` allows url/sha256 only
+    # inside on_arm/on_intel, not directly in on_macos.
+    on_arm do
+      url "https://github.com/anthonytw/sempere/releases/download/v@VERSION@/sempere-@VERSION@-macos-universal.tar.gz"
+      sha256 "@SHA256_MACOS_UNIVERSAL@"
+    end
+    on_intel do
+      url "https://github.com/anthonytw/sempere/releases/download/v@VERSION@/sempere-@VERSION@-macos-universal.tar.gz"
+      sha256 "@SHA256_MACOS_UNIVERSAL@"
+    end
   end
 
   on_linux do
-    on_intel do
-      url "https://github.com/anthonytw/sempere/releases/download/v#{version}/sempere-#{version}-linux-x86_64.tar.gz"
-      sha256 "@SHA256_LINUX_X86_64@"
-    end
     on_arm do
-      url "https://github.com/anthonytw/sempere/releases/download/v#{version}/sempere-#{version}-linux-aarch64.tar.gz"
+      url "https://github.com/anthonytw/sempere/releases/download/v@VERSION@/sempere-@VERSION@-linux-aarch64.tar.gz"
       sha256 "@SHA256_LINUX_AARCH64@"
+    end
+    on_intel do
+      url "https://github.com/anthonytw/sempere/releases/download/v@VERSION@/sempere-@VERSION@-linux-x86_64.tar.gz"
+      sha256 "@SHA256_LINUX_X86_64@"
     end
   end
 
