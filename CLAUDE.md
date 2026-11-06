@@ -116,7 +116,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `test-mac-offline`, every Mac UI test and the Mac launch smoke tests; posts `local/testflight-suite`).
 - **Before a release**: `scripts/local-ci.sh --release` (everything, iPad and iPhone simulators
   included; posts `local/release-sweep`; it gates the App Store submission, and `release.yml` accepts a tag on that commit
-  or on a later one whose changes since are release-neutral, `scripts/release-sweep-check.sh`).
+  or on a later one whose changes since are release-neutral, `scripts/release-sweep-check.sh`). A CLI-only
+  release (`release-prep --no-app`) needs no sweep, only the CLI's GitHub CI jobs green on the tagged commit).
 
 ### Parallel agents
 

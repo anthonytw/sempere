@@ -27,6 +27,7 @@ jobs:
     permissions:
       contents: read
       statuses: read   # the release sweep's status on the tagged commit
+      checks: read     # a CLI-only release's CI jobs instead (scripts/release-sweep-check.sh)
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
