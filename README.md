@@ -37,8 +37,8 @@ The CLI bundles the Noto fonts (SIL Open Font License 1.1,
 - **The CLI, with Homebrew** (macOS and Linux): `brew install anthonytw/tap/sempere`.
 - **The CLI, from a release archive:** each [release](https://github.com/anthonytw/sempere/releases)
   has a universal macOS archive and Linux archives for x86_64 and aarch64, with `SHA256SUMS` and build
-  provenance. The Linux binary needs glibc 2.38 or later and the system's libcurl and libxml2
-  (`libxml2.so.2`: Ubuntu 24.04, Debian 13, Fedora 39+; not Ubuntu 25.10 or 26.04). Step-by-step
+  provenance. From 1.0.1 the Linux binary is fully static and runs on any distribution of its
+  architecture (1.0.0's needed glibc 2.38+, libcurl and `libxml2.so.2`). Step-by-step
   instructions: [Install Sempere](https://sempere.anthonywertz.com/docs/start/install/).
 
 ## Build

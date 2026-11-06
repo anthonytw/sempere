@@ -33,9 +33,7 @@ Before trusting a download you can also verify provenance:
 
 ## Notes
 
-- The Linux binary is static except for libcurl and libxml2 (used by WebDAV sync); on
-  Linuxbrew these come from the system. If `brew audit` objects, add
-  `depends_on "curl"` / `depends_on "libxml2"` under `on_linux`.
+- The Linux binary is fully static (Static Linux SDK, musl): it needs nothing from the system.
 - The macOS binary is not notarized. Homebrew downloads set no quarantine flag, so it runs;
   a tarball downloaded in a browser may need `xattr -d com.apple.quarantine sempere`.
   TODO(user): notarize once the Developer ID certificate exists (requires the paid program).

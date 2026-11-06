@@ -165,15 +165,14 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 - On Linux, `XMLParser` (and `XMLDocument`) live in `FoundationXML`, and
   `URLSession` in `FoundationNetworking`. Guard the import with
   `#if canImport(FoundationXML)`; macOS has them in Foundation.
-- `swift build --static-swift-stdlib` on Linux (Swift 6.4) fails to link with
-  undefined ICU / `_FoundationCollections` / Synchronization / CoreFoundation
-  symbols: the default build system omits Foundation's static dependencies.
-  Pass them explicitly, as CI does: `-Xlinker -lCoreFoundation -Xlinker
-  -l_FoundationICU -Xlinker -l_FoundationCollections -Xlinker
-  -l_FoundationCShims -Xlinker -lswiftSynchronization -Xlinker -l_CFXMLInterface
-  -Xlinker -l_CFURLSessionInterface -Xlinker -lcurl -Xlinker -lxml2` (the last four for FoundationXML and
-  FoundationNetworking, used by `SempereWebDAV`; libcurl and libxml2 stay dynamic). Do not put these in
-  `linkerSettings` (they break dynamic builds and `swift test`).
+- The Linux release binary is fully static: built with Swift's Static Linux SDK (musl) by
+  `scripts/build-linux-static.sh` (release.yml, and ci.yml `linux-static` on `main`), which pins the SDK to
+  an exact Swift version and refuses a binary with any shared library. `Sources/` must therefore build
+  against musl too: import with `#if canImport(Glibc)` / `#elseif canImport(Musl)`, never `#if os(Linux)`
+  for libc types (glibc wraps `RLIMIT_*` in an enum; musl has plain `Int32`), and avoid overloads that
+  only resolve with glibc's module set (`String(someArrayOfStringLiterals)` is ambiguous under musl:
+  use `.joined()`). The SDK has no XCTest, so tests run on glibc only; the release's `linux-distros`
+  job runs the tarball in several distributions (`scripts/smoke-linux-cli.sh`).
 - `Sources/` must also compile for iOS and Mac Catalyst (the app links it), not
   just macOS and Linux. Some Foundation API is macOS-only:
   `FileManager.homeDirectoryForCurrentUser` is unavailable there (use

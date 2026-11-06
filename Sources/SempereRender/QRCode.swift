@@ -68,7 +68,7 @@ public struct QRCode: Hashable, Sendable {
 
     /// The symbol as text rows, `#` dark and `.` light, top row first.
     public var rows: [String] {
-        (0..<size).map { y in String((0..<size).map { self[$0, y] ? "#" : "." }) }
+        (0..<size).map { y in (0..<size).map { self[$0, y] ? "#" : "." }.joined() }
     }
 
     // MARK: - Encoding
