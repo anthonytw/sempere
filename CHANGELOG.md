@@ -6,7 +6,7 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [Unreleased]
 
-## [1.0.1] - TODO(user): release date (YYYY-MM-DD)
+## [1.0.1] - 2026-11-06
 
 ### Fixed
 
