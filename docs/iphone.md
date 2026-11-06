@@ -268,9 +268,8 @@ why not share the palette across all devices for consistency?" So every device d
   fountain pen anyway); the squeeze's palette at the Pencil's hover position (it toggles the docked palette's choices).
 
 Tests: `DrawingToolsTests` (Linux: per-tool settings, storage, the Pencil's actions), `DrawingToolboxTests`,
-`EraserPreferenceTests` (PencilKit tools, the canvases following the state), `DrawingPaletteUITests` (iPad,
-iPhone, Mac: the palette with the modes, a color and a width reaching the stroke, the erasers and the lasso,
-compact and full).
+`EraserPreferenceTests` (PencilKit tools, the canvases following the state), `PaletteButtonUITests` (iPad,
+Mac: Annotate shows and hides the palette) and `PhoneCanvasModeUITests` (iPhone and iPad: the modes).
 
 ## Quick voice notes
 

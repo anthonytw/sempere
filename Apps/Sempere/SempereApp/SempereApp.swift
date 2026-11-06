@@ -78,9 +78,6 @@ struct SempereApp: App {
         // Every in-app vault with a sync target keeps syncing, open or not (`SyncCoordinator`), once what an
         // interrupted "Download Again" of an earlier build left is recovered.
         Task { @MainActor in
-            // WebDAV vaults of earlier builds become store vaults with a WebDAV target, their sync state and
-            // quarantine carried over, nothing of an old copy deleted (docs/io.md "Sync targets in the app").
-            await model.convertLegacyWebDAV(library: library)
             await model.recoverWebDAVLeftovers()
             // Launched by iOS for a background task: closed vaults' sessions wait for the task's budget
             // (`runBackgroundTask`) instead of each starting a run of its own.

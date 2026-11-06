@@ -17,7 +17,7 @@ enum DragLog {
     static let logger = Logger(subsystem: "io.github.anthonytw.sempere", category: "drag")
 
     /// A step of a drag (debug level). Also appended to the DEBUG trace file when `SEMPERE_DEBUG_DROPS` is set
-    /// (`NoteFileDrag.dragTrace`, read by `MacDragToFinderUITests`).
+    /// (`NoteFileDrag.dragTrace`).
     nonisolated static func step(_ line: String) {
         logger.debug("\(line, privacy: .public)")
         NoteFileDrag.dragTrace(line)

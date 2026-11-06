@@ -5,7 +5,9 @@ import XCTest
 /// the note list (or the sidebar, or a field) had taken the focus the button flipped its icon and nothing came
 /// up. Sempere's own palette (`DrawingPaletteView`) is a view of the note and needs no focus: Annotate brings it
 /// up wherever the focus is, and a second tap (back to reading) puts it away, on the iPad and on the Mac (where
-/// PencilKit's never showed at all). The demo vault's "thoughts" note is paged (the page stack). Run by
+/// PencilKit's never showed at all). The demo vault's "thoughts" note is paged (the page stack). The one test
+/// opens it with the sidebar and the list on screen (the list holds the focus); a note alone on screen is the same
+/// toggle without the regression. Run by
 /// `scripts/app.sh test-ui|test-mac-ui -only-testing:SempereAppUITests/PaletteButtonUITests`. On a phone
 /// `PhoneCanvasModeUITests` covers the same.
 final class PaletteButtonUITests: XCTestCase {
@@ -61,15 +63,6 @@ final class PaletteButtonUITests: XCTestCase {
             press(annotate(app))
             XCTAssertTrue(palette(app).waitForNonExistence(timeout: 10), "\(what) \(round): reading put the palette away")
         }
-    }
-
-    /// With the note alone on screen, each tap shows or hides the palette.
-    @MainActor
-    func testAnnotateShowsAndHidesThePalette() throws {
-        let app = launch(columns: "detailOnly")
-        defer { app.terminate() }
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "pageCanvas").firstMatch.waitForExistence(timeout: 30))
-        checkToggles(app, "canvas alone")
     }
 
     /// The owner's case: with the sidebar and the note list on screen, the list holds the focus (a note

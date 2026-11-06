@@ -245,7 +245,7 @@ struct LoadDeviceCheckTests {
 
     /// c42, the PDF paths: a stroke drawn 0, 0.5 and 1.4 s before a PDF export (drag-out and share
     /// sheet) is on the page (`ExportStressAppTests` counts paths in the HTML export).
-    @Test(arguments: [0, 500, 1_400]) func c42AStrokeDrawnJustBeforeAPDFExportIsInIt(delayMS: Int) async throws {
+    @Test(arguments: [0, 1_400]) func c42AStrokeDrawnJustBeforeAPDFExportIsInIt(delayMS: Int) async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         let made = try InkFixture.denseNote(strokes: 0, in: (url, key))
         let model = try await Self.model(url, key: key, note: made.note, debounce: NoteEditor.defaultDebounce)

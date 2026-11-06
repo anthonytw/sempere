@@ -169,6 +169,16 @@ final class MouseInkController: NSObject, UIGestureRecognizerDelegate {
     private var settledAt: CFTimeInterval = 0
     /// The clock, for tests.
     var now: () -> CFTimeInterval = CACurrentMediaTime
+    /// Runs `work` after `delay` seconds on the main actor. Tests replace it with one they fire by hand, so no
+    /// test waits on the controller's real timers.
+    var schedule: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, work in
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay))
+            work()
+        }
+    }
+    /// Where the smoothing level is read from (the app's settings; tests pass a suite of their own).
+    var defaults: UserDefaults = .standard
     private var savedPanTouchTypes: [NSNumber]?
 
     // One stroke's state.
@@ -258,7 +268,7 @@ final class MouseInkController: NSObject, UIGestureRecognizerDelegate {
     func begin(at s: StrokeSmoothing.Sample) {
         resetStroke()
         guard let canvas, let tool = canvas.tool as? PKInkingTool,
-              let parameters = MouseSmoothing.load().parameters else { return }
+              let parameters = MouseSmoothing.load(defaults).parameters else { return }
         self.tool = tool
         started = Date()
         filter = StrokeSmoothing.StreamlineFilter(parameters: parameters)
@@ -312,8 +322,7 @@ final class MouseInkController: NSObject, UIGestureRecognizerDelegate {
         after.strokes.append(stroke)
         canvas.drawing = after
         registerUndo(restoring: DrawingBox(before), redoing: DrawingBox(after))
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.settleTimeout)
+        schedule(Self.settleTimeout.timeInterval) { [weak self] in
             if self?.settleToken == token { self?.clearSettling() }
         }
     }
@@ -327,8 +336,7 @@ final class MouseInkController: NSObject, UIGestureRecognizerDelegate {
         // A frame after the report, and never before `settleMinimum` from the stroke's end (review of #107: an
         // early or stale report took the stand-in away before the new stroke was drawn).
         let delay = Self.clearDelay(reportAt: now(), strokeEndedAt: settledAt)
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
+        schedule(delay) { [weak self] in
             if self?.settleToken == token { self?.clearSettling() }
         }
     }
@@ -452,5 +460,12 @@ final class MouseInkController: NSObject, UIGestureRecognizerDelegate {
             }
         }
         undo.setActionName(action)
+    }
+}
+
+extension Duration {
+    /// The duration in seconds.
+    var timeInterval: TimeInterval {
+        Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 }

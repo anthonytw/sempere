@@ -87,6 +87,8 @@ final class DrawingCache: @unchecked Sendable {
     /// Total size kept, in bytes.
     let capBytes: Int
     private let key: LocalCacheKey
+    /// Stamps a file's last use (its modification date), which orders the trim; tests step it by hand.
+    private let clock: @Sendable () -> Date
     private let lock = NSLock()
     private var closed = false
     /// Bytes stored, as far as this instance knows (exact after `trim`).
@@ -97,7 +99,9 @@ final class DrawingCache: @unchecked Sendable {
     ///
     /// - Throws: `VaultError.locked` when the vault secret is not known, or a
     ///   file error when the folder cannot be created.
-    init(root: URL, vault: Vault, capBytes: Int = DrawingCache.configuredCapBytes) throws {
+    init(root: URL, vault: Vault, capBytes: Int = DrawingCache.configuredCapBytes,
+         clock: @escaping @Sendable () -> Date = { Date() }) throws {
+        self.clock = clock
         key = try LocalCacheKey(vault: vault, purpose: "drawing-cache", magic: Self.magic)
         directory = root.appendingPathComponent(key.name, isDirectory: true)
         self.capBytes = max(capBytes, 1 << 20)
@@ -182,7 +186,7 @@ final class DrawingCache: @unchecked Sendable {
               let sealed = try? BoundedRead.contents(of: url, maxBytes: Self.maxFileBytes),
               let plain = try? key.open(sealed, fileName: name) else { return nil }
         // Least recently used goes first: a read is a use.
-        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+        try? FileManager.default.setAttributes([.modificationDate: clock()], ofItemAtPath: url.path)
         return plain
     }
 
@@ -190,6 +194,7 @@ final class DrawingCache: @unchecked Sendable {
         guard !isClosed, let sealed = try? key.seal(plain, fileName: name) else { return }
         let url = directory.appendingPathComponent(name)
         guard (try? sealed.write(to: url, options: .atomic)) != nil else { return }
+        try? FileManager.default.setAttributes([.modificationDate: clock()], ofItemAtPath: url.path)
         let total = lock.withLock { () -> Int in
             approximateBytes += sealed.count
             return approximateBytes

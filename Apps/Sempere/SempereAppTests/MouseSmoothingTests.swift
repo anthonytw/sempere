@@ -19,12 +19,33 @@ struct MouseSmoothingTests {
         (0...200).map { i in S(x: 100 + Double(i) * 2, y: 200 + (i % 2 == 0 ? 1.5 : -1.5), t: 50 + Double(i) / 120) }
     }
 
-    static func withLevel<T>(_ level: StrokeSmoothing.Level?, _ body: () throws -> T) rethrows -> T {
-        let defaults = UserDefaults.standard
-        let saved = defaults.object(forKey: MouseSmoothing.key)
-        if let level { defaults.set(level.rawValue, forKey: MouseSmoothing.key) } else { defaults.removeObject(forKey: MouseSmoothing.key) }
-        defer { defaults.set(saved, forKey: MouseSmoothing.key) }
+    /// A defaults suite of this test's own holding `level` (never `UserDefaults.standard`).
+    static func defaults(_ level: StrokeSmoothing.Level?) -> UserDefaults {
+        let d = TestDefaults.suite("mouse-smoothing-\(UUID().uuidString)")!
+        if let level { d.set(level.rawValue, forKey: MouseSmoothing.key) }
+        return d
+    }
+
+    static func withLevel<T>(_ level: StrokeSmoothing.Level?, _ ink: MouseInkController, _ body: () throws -> T) rethrows -> T {
+        ink.defaults = defaults(level)
         return try body()
+    }
+
+    static func withLevel<T>(_ level: StrokeSmoothing.Level?, _ host: PageCanvasHost, _ body: () throws -> T) rethrows -> T {
+        host.smoothingDefaults = defaults(level)
+        return try body()
+    }
+
+    /// The controller's own timers, fired by hand: nothing in these tests waits on a clock.
+    final class Timers {
+        var pending: [(delay: TimeInterval, work: @MainActor () -> Void)] = []
+        func schedule(_ delay: TimeInterval, _ work: @escaping @MainActor () -> Void) { pending.append((delay, work)) }
+        /// Runs the timers set for `delay` (all when nil), once each.
+        @MainActor func fire(delay: TimeInterval? = nil) {
+            let due = pending.filter { delay == nil || abs($0.delay - delay!) < 1e-9 }
+            pending.removeAll { t in due.contains { abs($0.delay - t.delay) < 1e-9 } }
+            for t in due { t.work() }
+        }
     }
 
     // MARK: - When it applies
@@ -53,21 +74,21 @@ struct MouseSmoothingTests {
     }
 
     @Test func theSettingDefaultsToOff() {
-        Self.withLevel(nil) { #expect(MouseSmoothing.load() == .off) }
-        Self.withLevel(.strong) { #expect(MouseSmoothing.load() == .strong) }
-        Self.withLevel(.off) { #expect(MouseSmoothing.load() == .off) }
-        UserDefaults.standard.set("wobbly", forKey: MouseSmoothing.key)
-        #expect(MouseSmoothing.load() == .off)
-        UserDefaults.standard.removeObject(forKey: MouseSmoothing.key)
+        #expect(MouseSmoothing.load(Self.defaults(nil)) == .off)
+        #expect(MouseSmoothing.load(Self.defaults(.strong)) == .strong)
+        #expect(MouseSmoothing.load(Self.defaults(.off)) == .off)
+        let wobbly = Self.defaults(nil)
+        wobbly.set("wobbly", forKey: MouseSmoothing.key)
+        #expect(MouseSmoothing.load(wobbly) == .off)
     }
 
     /// On the iPad (the simulator CI runs), a canvas never hands any input to
     /// the mouse ink: PencilKit's drawing gesture takes the Pencil as before.
     @Test func theIPadCanvasKeepsPencilKitsGesture() throws {
         guard !Platform.isMac else { return }
-        try Self.withLevel(.strong) {
-            let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900), embedded: false,
+        let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900), embedded: false,
                                   toolbox: DrawingToolbox(defaults: DrawingToolboxTests.scratchDefaults()))
+        try Self.withLevel(.strong, host) {
             #expect(host.select(tool: .pen))
             #expect(!host.pointerInkActive)
             #expect(host.canvas.drawingGestureRecognizer.isEnabled)
@@ -82,7 +103,7 @@ struct MouseSmoothingTests {
         guard Platform.isMac else { return }
         let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900), embedded: false,
                                   toolbox: DrawingToolbox(defaults: DrawingToolboxTests.scratchDefaults()))
-        Self.withLevel(.light) {
+        Self.withLevel(.light, host) {
             #expect(host.select(tool: .pen))
             #expect(host.pointerInkActive)
             #expect(!host.canvas.drawingGestureRecognizer.isEnabled)
@@ -95,7 +116,7 @@ struct MouseSmoothingTests {
             #expect(!host.pointerInkActive)
             #expect(host.select(tool: .marker))
         }
-        Self.withLevel(.off) {
+        Self.withLevel(.off, host) {
             host.applyTool()
             #expect(!host.pointerInkActive)
             #expect(host.canvas.drawingGestureRecognizer.isEnabled)
@@ -143,12 +164,19 @@ struct MouseSmoothingTests {
     // MARK: - On the canvas
 
     static func canvas(_ strokes: [PKStroke]) -> (PKCanvasView, MouseInkController) {
+        let (canvas, ink, _) = canvasWithTimers(strokes)
+        return (canvas, ink)
+    }
+
+    static func canvasWithTimers(_ strokes: [PKStroke]) -> (PKCanvasView, MouseInkController, Timers) {
         let canvas = PKCanvasView(frame: CGRect(x: 0, y: 0, width: 800, height: 1000))
         let ink = MouseInkController()
+        let timers = Timers()
+        ink.schedule = timers.schedule
         ink.attach(to: canvas)
         canvas.drawing = PKDrawing(strokes: strokes)
         canvas.tool = PKInkingTool(.pen, color: .black, width: 3)
-        return (canvas, ink)
+        return (canvas, ink, timers)
     }
 
     /// Everything a stroke holds, exactly: ink, color, transform, mask,
@@ -179,7 +207,7 @@ struct MouseSmoothingTests {
         let container = UndoContainer(frame: canvas.frame)
         container.addSubview(canvas)
         let before = canvas.drawing.strokes.map(Self.content)
-        try Self.withLevel(.light) {
+        try Self.withLevel(.light, ink) {
             Self.drag(ink, Self.jaggedDrag())
             #expect(!ink.isDrawing)
             let strokes = canvas.drawing.strokes
@@ -200,7 +228,7 @@ struct MouseSmoothingTests {
     @Test func thePreviewIsStreamlinedWhileDragging() {
         let (canvas, ink) = Self.canvas([])   // the controller holds the canvas weakly
         defer { withExtendedLifetime(canvas) {} }
-        Self.withLevel(.strong) {
+        Self.withLevel(.strong, ink) {
             let raw = Self.jaggedDrag()
             ink.begin(at: raw[0])
             ink.add(raw.dropFirst())
@@ -217,61 +245,69 @@ struct MouseSmoothingTests {
 
     /// TestFlight build 8 (Mac): a flash after every mouse stroke. The finished stroke's line stays over the
     /// canvas until PencilKit reports it drew it (or a timeout), never removed before the stroke is on the page.
-    @Test func aFinishedStrokeStaysShownUntilTheCanvasRenderedIt() async throws {
-        let (canvas, ink) = Self.canvas([])
+    @Test func aFinishedStrokeStaysShownUntilTheCanvasRenderedIt() throws {
+        let (canvas, ink, timers) = Self.canvasWithTimers([])
         defer { withExtendedLifetime(canvas) {} }
-        Self.withLevel(.light) { Self.drag(ink, Self.jaggedDrag()) }
+        var clock: CFTimeInterval = 100
+        ink.now = { clock }
+        Self.withLevel(.light, ink) { Self.drag(ink, Self.jaggedDrag()) }
         #expect(canvas.drawing.strokes.count == 1)
         #expect(ink.isSettling, "the stand-in is up as the stroke is handed to PencilKit")
         #expect(ink.previewPoints.isEmpty && !ink.isDrawing)
+        clock += 1   // the stroke ended long enough ago: the report is not an early one
+        timers.pending.removeAll()
         ink.renderingFinished()
-        try await Task.sleep(for: .milliseconds(150))
+        #expect(timers.pending.map(\.delay) == [MouseInkController.renderGrace], "a frame or two after the report")
+        timers.fire(delay: MouseInkController.renderGrace)
         #expect(!ink.isSettling, "gone once the canvas has drawn it")
 
-        Self.withLevel(.light) { Self.drag(ink, Self.jaggedDrag()) }
+        timers.pending.removeAll()
+        Self.withLevel(.light, ink) { Self.drag(ink, Self.jaggedDrag()) }
         #expect(ink.isSettling)
-        try await Task.sleep(for: MouseInkController.settleTimeout + .milliseconds(200))
+        #expect(timers.pending.map(\.delay) == [MouseInkController.settleTimeout.timeInterval])
+        timers.fire()
         #expect(!ink.isSettling, "gone after the timeout without a report")
 
-        Self.withLevel(.light) { Self.drag(ink, Self.jaggedDrag()) }
+        Self.withLevel(.light, ink) { Self.drag(ink, Self.jaggedDrag()) }
         ink.cancelStroke()
         #expect(!ink.isSettling, "a replaced drawing drops it at once")
+        timers.fire()   // the older stroke's timers find a newer token (or nothing) and change nothing
 
         // A report right at the stroke's end (stale, or sent from inside the assignment) does not take it
         // away before `settleMinimum`; a later one goes a couple of frames after it (review of #107).
         #expect(abs(MouseInkController.clearDelay(reportAt: 10, strokeEndedAt: 10) - MouseInkController.settleMinimum) < 1e-9)
         #expect(MouseInkController.clearDelay(reportAt: 10.5, strokeEndedAt: 10) == MouseInkController.renderGrace)
-        var clock: CFTimeInterval = 100
-        ink.now = { clock }
-        Self.withLevel(.light) { Self.drag(ink, Self.jaggedDrag()) }
-        ink.renderingFinished()   // at once
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(ink.isSettling, "an immediate report is not enough")
-        clock += 1
-        try await Task.sleep(for: .milliseconds(150))
+        clock = 100
+        Self.withLevel(.light, ink) { Self.drag(ink, Self.jaggedDrag()) }
+        timers.pending.removeAll()
+        ink.renderingFinished()   // at once: the timer is set for settleMinimum, not a frame
+        let early = try #require(timers.pending.first)
+        #expect(abs(early.delay - MouseInkController.settleMinimum) < 1e-9, "an immediate report is not enough")
+        #expect(ink.isSettling)
+        timers.fire()
         #expect(!ink.isSettling)
     }
 
     /// TestFlight build 10 (Mac): after a stroke the OTHER strokes flashed, because PencilKit redraws the whole
     /// drawing it is handed. The strokes already on the page are pictured over the canvas, with the new
     /// stroke's stand-in, until the canvas has drawn them again; the first stroke on a blank page has none.
-    @Test func existingStrokesAreStoodInForWhileTheCanvasRedrawsThem() async throws {
-        let (canvas, ink) = Self.canvas([])
+    @Test func existingStrokesAreStoodInForWhileTheCanvasRedrawsThem() throws {
+        let (canvas, ink, timers) = Self.canvasWithTimers([])
         defer { withExtendedLifetime(canvas) {} }
-        Self.withLevel(.light) { Self.drag(ink, Self.jaggedDrag()) }
+        Self.withLevel(.light, ink) { Self.drag(ink, Self.jaggedDrag()) }
         #expect(!ink.isStandingInForExisting, "a blank page has nothing else to redraw")
         ink.renderingFinished()
-        try await Task.sleep(for: .milliseconds(200))
+        timers.fire()
         #expect(!ink.isSettling)
 
-        Self.withLevel(.light) { Self.drag(ink, Self.jaggedDrag()) }
+        Self.withLevel(.light, ink) { Self.drag(ink, Self.jaggedDrag()) }
         #expect(canvas.drawing.strokes.count == 2)
         #expect(ink.isStandingInForExisting, "the first stroke is pictured while the second is handed to PencilKit")
         ink.renderingFinished()
-        try await Task.sleep(for: .milliseconds(200))
+        timers.fire()
         #expect(!ink.isStandingInForExisting && !ink.isSettling, "both go once the canvas drew them")
 
-        Self.withLevel(.light) { Self.drag(ink, Self.jaggedDrag()) }
+        Self.withLevel(.light, ink) { Self.drag(ink, Self.jaggedDrag()) }
         #expect(ink.isStandingInForExisting)
         ink.cancelStroke()
         #expect(!ink.isStandingInForExisting, "a replaced drawing drops it at once")
@@ -279,12 +315,12 @@ struct MouseSmoothingTests {
 
     @Test func offOrAnEraserDrawsNothing() {
         let (canvas, ink) = Self.canvas([])
-        Self.withLevel(.off) {
+        Self.withLevel(.off, ink) {
             Self.drag(ink, Self.jaggedDrag())
             #expect(canvas.drawing.strokes.isEmpty)
         }
         canvas.tool = PKEraserTool(.bitmap)
-        Self.withLevel(.light) {
+        Self.withLevel(.light, ink) {
             Self.drag(ink, Self.jaggedDrag())
             #expect(canvas.drawing.strokes.isEmpty)
         }
@@ -294,7 +330,7 @@ struct MouseSmoothingTests {
     /// none of the old page's stroke.
     @Test func aCancelledStrokeIsNeverAdded() {
         let (canvas, ink) = Self.canvas([])
-        Self.withLevel(.light) {
+        Self.withLevel(.light, ink) {
             let raw = Self.jaggedDrag()
             ink.begin(at: raw[0])
             ink.add(raw.dropFirst())
@@ -315,7 +351,7 @@ struct MouseSmoothingTests {
         let (canvas, ink) = Self.canvas(full.strokes)
         let tool = PKInkingTool(.pen, color: .black, width: 3)
         canvas.tool = tool
-        Self.withLevel(.light) { Self.drag(ink, Self.jaggedDrag()) }
+        Self.withLevel(.light, ink) { Self.drag(ink, Self.jaggedDrag()) }
         #expect(canvas.drawing.strokes.count == full.strokes.count + 1)
         editor.drawingDidChange(pageID: page.id, drawing: canvas.drawing, tool: tool)
         await editor.flush()

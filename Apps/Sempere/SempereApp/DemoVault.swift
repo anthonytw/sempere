@@ -73,7 +73,7 @@ enum DemoVault {
     ///
     /// `denseStrokes` (UI tests, `SEMPERE_DEMO_DENSE`): also a pageless ruled note "dense"
     /// holding that many synthetic strokes (`SyntheticInk`), like a long note imported from
-    /// Notability, for zoom, scroll and menu checks on a dense page (`IPadZoomScrollUITests`).
+    /// Notability, for zoom, scroll and menu checks on a dense page.
     ///
     /// `searchNotes` (UI tests, `SEMPERE_DEMO_SEARCH`): also two notes with recognized handwriting
     /// for the search highlights (`searchNoteOps`).

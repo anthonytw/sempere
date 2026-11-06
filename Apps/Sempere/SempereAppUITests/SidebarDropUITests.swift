@@ -245,29 +245,6 @@ final class SidebarDropUITests: XCTestCase {
         XCTAssertTrue(made, "the new notebook is in the sidebar")
     }
 
-    /// The notebook rows' context menu lives on the drag handle now: it still opens.
-    @MainActor
-    func testNotebookRowsKeepTheirContextMenu() throws {
-        let app = launch()
-        defer { app.terminate() }
-        require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
-        showSidebar(app)
-        let work = sidebarRow(app, "Work")
-        require(work, "sidebar row Work", in: app)
-        sleep(1)
-        #if targetEnvironment(macCatalyst)
-        work.rightClick()
-        #else
-        work.press(forDuration: 1.5)
-        #endif
-        #if targetEnvironment(macCatalyst)
-        let item = app.menuItems["Move Notebook To…"].firstMatch
-        #else
-        let item = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Move Notebook To…")).firstMatch
-        #endif
-        require(item, "context menu item Move Notebook To…", in: app, timeout: 10)
-    }
-
     /// Opens the context menu of the notebook row `path` and picks `title`.
     @MainActor
     private func pickFromMenu(_ app: XCUIApplication, row path: String, _ title: String) {

@@ -470,7 +470,7 @@ Streaming it needs an admin account:
 `/usr/bin/log stream --level debug --predicate 'subsystem == "io.github.anthonytw.sempere" AND category == "drag"'`.
 Debug builds also append the steps to `tmp/drag-trace.txt` in the app's container with `SEMPERE_DEBUG_DROPS`.
 
-XCUITest's pointer drops nothing into the Finder (`MacDragToFinderUITests`), so a drag out is checked
+XCUITest's pointer drops nothing into the Finder (its drag test was deleted: it could not tell a fix from the bug), so a drag out is checked
 by hand, on any build including TestFlight, with three hidden switches (`NoteDragDebug`, `UserDefaults`; Mac only,
 never synced). The style is read once per launch (rows read it in every body) and the other two when a drag begins:
 

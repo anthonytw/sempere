@@ -3,21 +3,21 @@
 #
 #   scripts/app.sh test       # xcodebuild test on an iPad simulator
 #   scripts/app.sh test-phone # the iPhone suites (PhoneLayoutTests) on an iPhone simulator
-#   scripts/app.sh test-phone-ui # the iPhone canvas UI tests (PhoneCanvasUITests: tap selects, hold menu, finger draws; PhoneParityUITests: stack, new note, Settings, import, search, unlock; PhoneReadingScrollUITests: one finger scrolls while reading; PhoneCanvasModeUITests: Reading, Hand and Annotate; SearchHighlightUITests: search highlights and stepping) on an iPhone simulator
+#   scripts/app.sh test-phone-ui # the iPhone UI tests (ui_phone below: canvas with a finger, stack, new note, Settings, import, search, unlock) on an iPhone simulator
 #   scripts/app.sh build-ios  # compile only: the app, its unit tests and its UI tests for an iOS simulator (runs nothing)
 #   scripts/app.sh catalyst   # Mac Catalyst build, unsigned
+#                             # Every UI test class is in exactly one device list below (scripts/check-ui-tests.sh, in
+#                             # local-ci's `help` step, fails on a class that is in none, or a name that is no class).
 #   scripts/app.sh pseudo     # UI-test layout check in the double-length, right-to-left and Spanish languages, iPad
 #                             # simulator (by hand; the gate runs the in-process PseudoLanguageLayoutTests in test-mac)
 #   scripts/app.sh pseudo-mac # the same as the Mac Catalyst app, at a narrow and a wide window (takes over the screen)
 #   scripts/app.sh test-mac   # every app suite on Mac Catalyst, ad-hoc signed and sandboxed
 #   scripts/app.sh test-mac-offline # the same with no network: signed with SempereOfflineTests.entitlements (no
 #                              # network.client), so the sandbox refuses every connection; OfflineModeTests checks it
-#   scripts/app.sh test-mac-ui # the Mac UI tests (MacWindowUITests, MacItemUITests, SidebarDropUITests, MacFocusUITests,
-#                              # KeyShareMacUITests, QuitPurgeMacUITests, NewVaultSheetUITests, MacImportUITests, MacExportUITests, MacRealMouseUITests,
-#                              # VaultStoreUITests) on Mac Catalyst
-#   scripts/app.sh test-mac-perf # the dense-note performance suite (DensePerformanceTests) on Mac Catalyst: open time, scroll and zoom
-#                              # frame hitches, memory, against baselines (slow; test-mac leaves it out)
-#   scripts/app.sh test-ui    # the iPad UI tests (SidebarDropUITests: real drags; the launch smoke tests) on an iPad simulator
+#   scripts/app.sh test-mac-ui # the Mac UI tests (ui_mac below) on Mac Catalyst
+#   scripts/app.sh test-mac-perf # the benchmarks (perf_suites below: dense-note open time, scroll and zoom frame hitches, memory,
+#                              # note-open timings) on Mac Catalyst: slow, wall-clock; test, test-mac and the PR gate leave them out
+#   scripts/app.sh test-ui    # the iPad UI tests (ui_ipad below: real drags, finger input, the launch smoke tests) on an iPad simulator
 #   scripts/app.sh test-mac-smoke # the launch smoke tests (LaunchSmokeUITests: fresh state, every layout and window) on Mac Catalyst
 #   scripts/app.sh simulator [PREFIX [SUFFIX]] # print the simulator id `test` would use (or one named PREFIX…SUFFIX)
 #
@@ -107,8 +107,45 @@ narrowed=false
 for arg in ${extra[@]+"${extra[@]}"}; do [[ "$arg" == -only-testing:* ]] && narrowed=true; done
 suites() { if $narrowed; then only=(); else only=("$@"); fi; }
 # The slow performance suite (test-mac-perf): out of test-mac, which would otherwise run every app suite.
-perf_suites=(-skip-testing:SempereAppTests/DensePerformanceTests)
 only=()
+
+# --- Benchmarks (wall-clock and memory measurements; never part of the PR gate) ------------------------------------
+# The one place the excluded set is named: `test`, `test-mac` and `test-mac-offline` skip these, `test-mac-perf` runs
+# only these (local-ci.sh --testflight and --release). A new benchmark goes in a suite of its own and in this list.
+perf_suites=(DensePerformanceTests PerformanceReportTests MainActorBenchmarkTests)
+perf_skip=(); perf_only=()
+for suite_name in "${perf_suites[@]}"; do
+  perf_skip+=("-skip-testing:SempereAppTests/$suite_name")
+  perf_only+=("-only-testing:SempereAppTests/$suite_name")
+done
+
+# --- UI tests: one list per device ---------------------------------------------------------------------------
+# Every XCTestCase class under Apps/Sempere/SempereAppUITests is in at least one list (scripts/check-ui-tests.sh fails
+# otherwise, so a new class cannot silently never run). An entry is `Class` or `Class/testName`. Classes that skip
+# themselves on a device (a setUp XCTSkip) may be listed for it: they cost nothing there.
+# ui-lists:begin
+ui_mac=(MacWindowUITests MacItemUITests SidebarDropUITests MacFocusUITests QuitPurgeMacUITests NewVaultSheetUITests
+        MacImportUITests MacExportUITests MacRealMouseUITests FolderPickerUITests MacNoteModeUITests NoteToolbarUITests
+        VaultStoreUITests)
+ui_mac_smoke=(LaunchSmokeUITests)
+ui_ipad=(SidebarDropUITests PadFocusUITests SearchHighlightUITests PaletteButtonUITests IPadCanvasUITests
+         LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote
+         LaunchSmokeUITests/testFreshLaunchDoubleColumn LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour
+         NewVaultSheetUITests MacImportUITests MacExportUITests FolderPickerUITests PhoneCanvasModeUITests
+         NoteToolbarUITests VaultStoreUITests)
+ui_phone=(PhoneCanvasUITests PhoneParityUITests PhoneReadingScrollUITests PhoneCanvasModeUITests NoteToolbarUITests
+          SearchHighlightUITests)
+# 18 launches: only `scripts/app.sh pseudo` (local-ci.sh --release).
+ui_pseudo=(PseudoLanguageUITests)
+# Screenshot generators (scripts/screenshots.sh): they assert nothing.
+ui_tooling=(ScreenshotTests DocsScreenshotTests)
+# ui-lists:end
+# `ui_suites NAME…`: -only-testing for those UI test entries (unless the caller narrowed the run).
+ui_suites() {
+  local entries=() entry
+  for entry in "$@"; do entries+=("-only-testing:SempereAppUITests/$entry"); done
+  suites "${entries[@]}"
+}
 
 # Temp-folder guard (docs/ci.md "Temp-folder guard"): a Mac Catalyst run must leave the sandboxed app
 # container's tmp as it found it. Tests that leaked there piled up 195,000 folders and hit APFS's 65,535
@@ -194,7 +231,7 @@ case "${1:-}" in
   test)
     sim=$(pick_simulator)
     settle_simulator "$sim"
-    skip=("${perf_suites[@]}"); $narrowed && skip=()   # the performance suite is the Mac's (test-mac-perf)
+    skip=("${perf_skip[@]}"); $narrowed && skip=()   # the benchmarks are the Mac's (test-mac-perf)
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${skip[@]+"${skip[@]}"} ${extra[@]+"${extra[@]}"}
     ;;
@@ -221,9 +258,7 @@ case "${1:-}" in
     # automation (macOS Automation Mode); the iPad runs of these tests skip.
     sim=$(pick_simulator iPhone)
     settle_simulator "$sim"
-    suites -only-testing:SempereAppUITests/PhoneCanvasUITests -only-testing:SempereAppUITests/PhoneParityUITests \
-      -only-testing:SempereAppUITests/PhoneReadingScrollUITests -only-testing:SempereAppUITests/PhoneCanvasModeUITests \
-      -only-testing:SempereAppUITests/NoteToolbarUITests -only-testing:SempereAppUITests/SearchHighlightUITests
+    ui_suites "${ui_phone[@]}"
     xcb test "${lang[@]}" -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" ${only[@]+"${only[@]}"} \
       -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"} \
@@ -260,6 +295,8 @@ case "${1:-}" in
       signing=(CODE_SIGNING_ALLOWED=NO)
       prefix=
     fi
+    pseudo_only=()
+    for entry in "${ui_pseudo[@]}"; do pseudo_only+=("-only-testing:SempereAppUITests/$entry"); done
     status=0
     mkdir -p build/pseudo
     for mode in double rtl es; do
@@ -267,7 +304,7 @@ case "${1:-}" in
       rm -rf "build/pseudo/$prefix$mode.xcresult"   # xcodebuild refuses to write over an earlier run's bundle
       TEST_RUNNER_SEMPERE_PSEUDO=$mode xcb test -project "$project" -scheme SempereScreenshots \
         -derivedDataPath "$derived" "${destination[@]}" \
-        -only-testing:SempereAppUITests/PseudoLanguageUITests -parallel-testing-enabled NO \
+        "${pseudo_only[@]}" -parallel-testing-enabled NO \
         -resultBundlePath "build/pseudo/$prefix$mode.xcresult" "${signing[@]}" ${extra[@]+"${extra[@]}"} || status=$?
       echo "PSEUDO-TIME $prefix$mode end $(date -u +%H:%M:%S) status=$status"
       if [[ $status -ne 0 ]] && fail_fast; then break; fi   # the first failing language ends the step
@@ -284,7 +321,7 @@ case "${1:-}" in
     tmp_guard_start
     # Ad-hoc signed: a sandboxed Catalyst test host has to be signed to launch.
     suites -only-testing:SempereAppTests
-    skip=("${perf_suites[@]}"); $narrowed && skip=()
+    skip=("${perf_skip[@]}"); $narrowed && skip=()
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} ${skip[@]+"${skip[@]}"} \
       CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${extra[@]+"${extra[@]}"}
@@ -299,7 +336,7 @@ case "${1:-}" in
     shutdown_simulators
     tmp_guard_start
     suites -only-testing:SempereAppTests
-    skip=("${perf_suites[@]}"); $narrowed && skip=()
+    skip=("${perf_skip[@]}"); $narrowed && skip=()
     offline_log=$(mktemp -t sempere-offline)
     set +e
     TEST_RUNNER_SEMPERE_OFFLINE_TEST=1 xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
@@ -319,11 +356,12 @@ case "${1:-}" in
     exit $status
     ;;
   test-mac-perf)
-    # Dense-note performance (DensePerformanceTests, docs/ci.md "Performance tests"): open time, scroll and
-    # zoom frame hitches and memory on generated notes, against checked-in baselines. Slow (minutes).
+    # The benchmarks (`perf_suites` above, docs/ci.md "Performance tests"): dense-note open time, scroll and
+    # zoom frame hitches and memory on generated notes, against checked-in baselines, and the note-open timings
+    # of PerformanceReportTests. Slow (minutes).
     # SEMPERE_PERF_RECORD=1 prints new baselines (pass it as TEST_RUNNER_SEMPERE_PERF_RECORD=1).
     shutdown_simulators
-    suites -only-testing:SempereAppTests/DensePerformanceTests
+    suites "${perf_only[@]}"
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} \
       CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${extra[@]+"${extra[@]}"}
@@ -333,14 +371,7 @@ case "${1:-}" in
     tmp_guard_start
     console_check
     # The UI tests live in the SempereScreenshots scheme (never built by `test`).
-    suites -only-testing:SempereAppUITests/MacWindowUITests -only-testing:SempereAppUITests/MacItemUITests \
-      -only-testing:SempereAppUITests/SidebarDropUITests -only-testing:SempereAppUITests/MacFocusUITests \
-      -only-testing:SempereAppUITests/KeyShareMacUITests -only-testing:SempereAppUITests/QuitPurgeMacUITests \
-      -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
-      -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/MacRealMouseUITests \
-      -only-testing:SempereAppUITests/FolderPickerUITests \
-      -only-testing:SempereAppUITests/MacNoteModeUITests -only-testing:SempereAppUITests/NoteToolbarUITests \
-      -only-testing:SempereAppUITests/VaultStoreUITests
+    ui_suites "${ui_mac[@]}"
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} \
       "${mac_ui_signing[@]}" ${extra[@]+"${extra[@]}"}
@@ -349,7 +380,7 @@ case "${1:-}" in
     shutdown_simulators
     tmp_guard_start
     # Fresh-state launches, every column layout, every window and sheet (docs/ci.md).
-    suites -only-testing:SempereAppUITests/LaunchSmokeUITests
+    ui_suites "${ui_mac_smoke[@]}"
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} \
       "${mac_ui_signing[@]}" ${extra[@]+"${extra[@]}"}
@@ -360,16 +391,7 @@ case "${1:-}" in
     # and for the first-unlock notices (About Your Key, the quick tour).
     sim=$(pick_simulator)
     settle_simulator "$sim"
-    suites -only-testing:SempereAppUITests/SidebarDropUITests -only-testing:SempereAppUITests/PadFocusUITests \
-      -only-testing:SempereAppUITests/SearchHighlightUITests \
-      -only-testing:SempereAppUITests/PaletteButtonUITests \
-      -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote \
-      -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDoubleColumn \
-      -only-testing:SempereAppUITests/LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour \
-      -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
-      -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/FolderPickerUITests \
-      -only-testing:SempereAppUITests/PhoneCanvasModeUITests -only-testing:SempereAppUITests/NoteToolbarUITests \
-      -only-testing:SempereAppUITests/VaultStoreUITests
+    ui_suites "${ui_ipad[@]}"
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" ${only[@]+"${only[@]}"} \
       -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}

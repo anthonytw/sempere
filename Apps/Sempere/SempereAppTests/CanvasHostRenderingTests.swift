@@ -136,40 +136,6 @@ struct CanvasHostRenderingTests {
         try await Self.expectBandMatches(host, strokes, top: 9_000 - 20, "zoom 2.5x")
     }
 
-    @Test func everyInkShowsOnTheCanvas() async throws {
-        var strokes: [Stroke] = []
-        for (i, tool) in InkTool.allCases.enumerated() {
-            let w = tool == .marker ? 14.0 : 3.0
-            let y = 5_000 + Double(i) * 60
-            let points = (0..<60).map { j in
-                StrokePoint(x: 60 + Double(j) * 8, y: y + 6 * sin(Double(j) / 4), t: Double(j) / 120,
-                            w: w, h: w, o: 1, f: 0.5, az: 0, al: .pi / 2)
-            }
-            // Dark colors so every ink passes the darkness threshold.
-            strokes.append(Stroke(ink: Ink(tool: tool, color: Sempere.Color(r: 0x10, g: 0x10, b: 0x60, a: 0xFF),
-                                           width: w), points: points))
-        }
-        let (window, host) = Self.host(strokes, height: 6_000)
-        defer { window.isHidden = true }
-        for (i, tool) in InkTool.allCases.enumerated() {
-            let y = 5_000 + Double(i) * 60
-            // Only this stroke's band: the top 50 points of the screen. Its tile
-            // can arrive after the rest of the screen has settled (snapshot
-            // waits on the whole screen), so the band is snapshotted again,
-            // up to five times, until it shows ink.
-            var ink = 0, top = 0.0
-            for _ in 0..<5 where ink == 0 {
-                let (shot, rect) = try await Self.snapshot(host, top: y - 25)
-                let band = CGRect(x: 0, y: 0, width: shot.size.width * shot.scale,
-                                  height: 50 * host.canvas.zoomScale * shot.scale)
-                let crop = try #require(shot.cgImage?.cropping(to: band))
-                ink = Self.darkPixels(UIImage(cgImage: crop))
-                top = rect.minY
-            }
-            #expect(ink > 0, "\(tool) drew nothing at y \(top)")
-        }
-    }
-
     @Test func thousandsOfStrokesAllLoadAndTheLastOnesShow() async throws {
         var strokes: [Stroke] = []
         for i in 0..<4_000 {

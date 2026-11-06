@@ -313,18 +313,17 @@ struct DrawingCacheTests {
         #expect(layout.state.meta == state.meta)
     }
 
-    /// Least recently used files go first once the cap is passed.
-    @Test func theCacheIsTrimmedLeastRecentlyUsedFirst() async throws {
+    /// Least recently used files go first once the cap is passed. The cache's clock is stepped by hand
+    /// (10 s per use), so the order never depends on the file system's timestamp resolution or the runner's speed.
+    @Test func theCacheIsTrimmedLeastRecentlyUsedFirst() throws {
         let root = Self.tempDir()
-        let cache = try DrawingCache(root: root, vault: try Self.vault(), capBytes: 1 << 20)
+        let tick = StepClock()
+        let cache = try DrawingCache(root: root, vault: try Self.vault(), capBytes: 1 << 20, clock: { tick.next() })
         let note = UUID()
         let blob = Data(repeating: 7, count: 300 << 10)
         let pages = (0..<3).map { _ in UUID() }
         let key = DrawingCache.Key(note: note, revisions: ["r"])
-        for p in pages {
-            cache.store(drawing: blob, for: key, page: p)
-            try await Task.sleep(for: .milliseconds(1100))   // modification dates have 1 s steps on some file systems
-        }
+        for p in pages { cache.store(drawing: blob, for: key, page: p) }
         #expect(cache.drawing(key, page: pages[0]) != nil)   // a use: now the most recent
         cache.store(drawing: blob, for: key, page: UUID())   // over the cap
         #expect(cache.totalBytes <= 1 << 20)
@@ -373,4 +372,11 @@ struct DrawingCacheTests {
         _ = DrawingPreparation.convert(Array(strokes.prefix(10)), visible: .zero) { _ in none = true }
         #expect(!none)
     }
+}
+
+/// A clock that moves 10 s on every reading.
+final class StepClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var t = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    func next() -> Date { lock.withLock { t += 10; return t } }
 }

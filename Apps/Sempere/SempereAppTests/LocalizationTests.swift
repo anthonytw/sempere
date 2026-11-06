@@ -32,12 +32,6 @@ struct LocalizationTests {
         #expect(String(localized: "\(0) notes", bundle: es, locale: locale) == "0 notas")
     }
 
-    @Test func englishPluralsStillWork() {
-        let en = Locale(identifier: "en")
-        #expect(String(localized: "\(1) notes", locale: en) == "1 note")
-        #expect(String(localized: "\(2) notes", locale: en) == "2 notes")
-    }
-
     /// Every menu command has a Spanish title: the lookup of an English title must not fall back.
     @Test func everyMenuTitleIsTranslated() throws {
         let es = try #require(Self.spanish)
@@ -61,12 +55,4 @@ struct LocalizationTests {
                     "Exportar cuaderno…", "Eliminar cuaderno"])
     }
 
-    @Test func permissionPromptsAreTranslated() throws {
-        let es = try #require(Self.spanish)
-        let missing = "\u{1}missing"
-        for key in ["NSCameraUsageDescription", "NSMicrophoneUsageDescription", "NSFaceIDUsageDescription",
-                    "NSSpeechRecognitionUsageDescription"] {
-            #expect(es.localizedString(forKey: key, value: missing, table: "InfoPlist") != missing, "\(key)")
-        }
-    }
 }

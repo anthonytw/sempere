@@ -157,35 +157,6 @@ struct AttachmentIndexAppTests {
         model.close()
     }
 
-    /// A late delta that uses the blob again resets its clock.
-    @Test func aLateReferenceResetsTheWindow() async throws {
-        let clock = IndexTestClock(t0)
-        let (model, url, key, _, audio, _) = try await indexedModel(clock: clock)
-        let audioName = try name(model, audio)
-        let vault = try #require(model.vault)
-        let page = try #require(try vault.reconstruct(noteId: Self.lecture).pages.first).id
-        let before = Set(try vault.revisionNames(of: Self.lecture).map(\.filename))
-        clock.now = t0.addingTimeInterval(29 * day)
-        try TS.writeAsAnotherDevice([.addItem(page: page, item: AttachmentEditorTests.imageItem(audio))], to: Self.lecture,
-                                    vault: url, key: key)
-        try await model.reconcile()
-        #expect(await TS.waitUntil { !model.attachmentStorage().unused.contains { $0.fileName == audioName } })
-        await model.attachmentIndexIdle()
-        // Compaction drops that revision later: unused again, with a new window.
-        let late = try #require(Set(try vault.revisionNames(of: Self.lecture).map(\.filename)).subtracting(before).first)
-        try FileManager.default.removeItem(at: url.appendingPathComponent("notes/\(Self.lecture.uuidString.lowercased())/\(late)"))
-        clock.now = t0.addingTimeInterval(40 * day)
-        try await model.reconcile()
-        #expect(await TS.waitUntil { model.attachmentStorage().unused.contains { $0.fileName == audioName } })
-        let item = try #require(model.attachmentStorage().unused.first { $0.fileName == audioName })
-        #expect(item.firstSeen == t0.addingTimeInterval(40 * day))
-        #expect(item.lastUse?.revision == late)
-        clock.now = t0.addingTimeInterval(60 * day)
-        #expect(!item.isEligible(at: clock.now))
-        #expect(try await model.deleteUnusedAttachments([item]).deleted == 0)
-        model.close()
-    }
-
     /// An item removed in the editor: its image is held by history (the editor's own state says so).
     @Test func aRemovedItemIsHeldByHistory() async throws {
         let clock = IndexTestClock(t0)

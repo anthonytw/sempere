@@ -318,20 +318,6 @@ final class VaultLibrary {
         save()
     }
 
-    /// Recent WebDAV entries of locations that became store vaults (`LegacyWebDAV.convert`): each now
-    /// names its store vault.
-    func convertWebDAVRecents(_ vaults: [UUID: UUID]) {
-        guard !vaults.isEmpty else { return }
-        var changed = false
-        for i in recents.indices {
-            guard let location = recents[i].webdav, let vault = vaults[location] else { continue }
-            recents[i].webdav = nil
-            recents[i].storeID = vault
-            changed = true
-        }
-        if changed { save() }
-    }
-
     /// `Application Support/Sempere/recents.json`.
     static var defaultStoreURL: URL { AppSupport.sempere.appendingPathComponent("recents.json") }
 

@@ -101,15 +101,4 @@ struct VoiceNoteStatusTests {
         #expect(store.read() == nil, "an unknown phase")
     }
 
-    /// The Live Activity's state gained fields: one written by build 7 still decodes.
-    @Test func activityStateOfAnEarlierBuildDecodes() throws {
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        let old = Data(#"{"started":0,"paused":false}"#.utf8)
-        let state = try JSONDecoder().decode(VoiceNoteAttributes.ContentState.self, from: old)
-        #expect(state.isRecording)
-        #expect(state.result == nil)
-        let done = VoiceNoteAttributes.ContentState(started: Date(), result: .savedToInbox, ended: Date())
-        #expect(!done.isRecording)
-        #endif
-    }
 }

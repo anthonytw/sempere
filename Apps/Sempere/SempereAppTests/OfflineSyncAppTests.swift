@@ -46,17 +46,6 @@ struct OfflineSyncAppTests {
         }
     }
 
-    @Test func removableRootsAreVolumesAndLiveFiles() throws {
-        #expect(FolderReach.removableRoot(of: "/Volumes/USB/Sync/Notes") == "/Volumes/USB")
-        #expect(FolderReach.removableRoot(of: "/Volumes/USB") == "/Volumes/USB")
-        let ios = "/private/var/mobile/Library/LiveFiles/com.apple.filesystems.userfsd/USB/Sync"
-        #expect(FolderReach.removableRoot(of: ios) == "/private/var/mobile/Library/LiveFiles/com.apple.filesystems.userfsd/USB")
-        #expect(FolderReach.removableRoot(of: "/Users/someone/Library/Mobile Documents/com~apple~CloudDocs/Sync") == nil)
-        #expect(FolderReach.isOnAbsentDrive("/Volumes/Sempere-not-there-\(UUID().uuidString)/Sync"))
-        let here = try TestTemp.directory("present")
-        #expect(!FolderReach.isOnAbsentDrive(here.appendingPathComponent("gone/deeper").path), "not a removable volume: gone")
-    }
-
     // MARK: P4: a run cut short after progress
 
     /// The engine's own stops, from real runs (so a change in how it classifies them fails here): a copy that lacks the

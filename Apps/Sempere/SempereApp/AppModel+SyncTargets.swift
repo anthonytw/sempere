@@ -12,22 +12,14 @@ enum VaultStoreRoot {
     static let appGroup = "group.io.github.anthonytw.sempere"
 
     /// The store's folder: `<App Group>/Library/Application Support/Sempere/Vaults` when the App Group
-    /// container is there, else `legacy`. A store at `legacy` (an earlier build's) moves into the App Group
-    /// once, when the App Group holds none yet; if the move fails it stays in use where it is. The folder
+    /// container is there, else `legacy` (the Mac's).
+    /// There is no move of an earlier build's store (no pre-v1 compatibility). The folder
     /// is `completeUntilFirstUserAuthentication` (quick capture writes from the Lock Screen; every file
     /// is age-encrypted anyway).
     static func prepare(appGroup container: URL?, legacy: URL) -> URL {
         guard let container else { return legacy }
         let root = container.appendingPathComponent("Library/Application Support/Sempere/Vaults", isDirectory: true)
         let fm = FileManager.default
-        if !fm.fileExists(atPath: root.path), fm.fileExists(atPath: legacy.path) {
-            do {
-                try fm.createDirectory(at: root.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try fm.moveItem(at: legacy, to: root)
-            } catch {
-                return legacy
-            }
-        }
         try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         #if os(iOS)
         try? fm.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: root.path)
@@ -36,164 +28,6 @@ enum VaultStoreRoot {
     }
 }
 
-/// WebDAV vaults of earlier builds (`Application Support/Sempere/webdav.json` and a copy per location in
-/// `Application Support/Sempere/WebDAV/<id>/`) become store vaults with a WebDAV target, at launch, before
-/// anything syncs (`AppModel.convertLegacyWebDAV`). The target keeps the location's id, so its Keychain
-/// password still applies. Nothing an old copy holds is ever deleted (review of #72, G1–G4):
-///
-/// 1. What an interrupted "Download Again" left in the copy is recovered first
-///    (`LocalCopy.recoverInterruptedRedownload`).
-/// 2. **The store does not hold the vault**: the location's sync state (state file, quarantine, transfers)
-///    moves to the target's folder first, then the copy into the store, so the first run neither uploads
-///    nor checks everything again. `<folder>.*` leftovers go next to the vault, never into the state.
-///    A marker in the target's folder (`movedMarker`) says the copy moved, so a launch that stopped
-///    midway finishes the same way.
-/// 3. **The store already holds the vault** (opened from a folder, or another server): the old copy is
-///    uploaded once (`upload`, upload-only) so the server holds what it has, then set aside in
-///    `<store>/.sync/legacy-kept/<id>/`, never deleted, and the server becomes one more target of the
-///    store vault (a union). If the upload fails while the old copy holds files the store vault lacks or
-///    the server never confirmed, nothing is converted: it stays where it is and is reported (`kept`), and
-///    the next launch tries again.
-enum LegacyWebDAV {
-    /// A location as earlier builds stored it.
-    struct Location: Codable, Sendable {
-        var id: UUID
-        var url: String
-        var user: String?
-        var pinnedCertificate: String?
-        var vaultId: String
-        var name: String
-        var folderName: String
-        var downloaded = false
-        var lastPush: Date?
-
-        /// As the WebDAV code reads it (for the upload).
-        var webdav: WebDAVLocation {
-            WebDAVLocation(id: id, url: url, user: user, pinnedCertificate: pinnedCertificate, vaultId: vaultId, name: name,
-                           folderName: folderName, downloaded: downloaded, lastPush: lastPush)
-        }
-    }
-
-    /// An old copy left where it was, or set aside with files the store vault lacks.
-    struct Kept: Equatable, Sendable {
-        var name: String
-        var folder: URL
-        /// The upload before setting it aside failed: it stays in place until a later launch uploads it.
-        var notUploaded: Bool
-    }
-
-    struct Outcome: Sendable {
-        /// Location id → vault id, for every location converted.
-        var converted: [UUID: UUID] = [:]
-        var kept: [Kept] = []
-    }
-
-    /// The marker of a copy moved into the store (in the target's state folder).
-    static let movedMarker = ".legacy-copy-moved"
-
-    /// The locations `list` names (none when it is missing or unreadable).
-    static func locations(_ list: URL) -> [Location] {
-        guard let data = try? Data(contentsOf: list) else { return [] }
-        return (try? JSONDecoder().decode([Location].self, from: data)) ?? []
-    }
-
-    /// Converts what `list` names (see above). `upload` runs an upload-only sync of an old copy against its
-    /// server and returns whether it ended without problems; it is called only when the store already
-    /// holds the vault.
-    @discardableResult
-    static func convert(list: URL, root: URL, store: VaultStore,
-                        upload: (Location, LocalCopy) -> Bool = { _, _ in false }) -> Outcome {
-        let fm = FileManager.default
-        let all = locations(list)
-        guard !all.isEmpty else { return Outcome() }
-        var out = Outcome()
-        var left: [Location] = []
-        for l in all {
-            guard let vault = UUID(uuidString: l.vaultId) else { left.append(l); continue }
-            let dir = root.appendingPathComponent(l.id.uuidString.lowercased(), isDirectory: true)
-            let oldCopy = LocalCopy(directory: dir, folderName: l.folderName)
-            _ = oldCopy.recoverInterruptedRedownload()
-            var target = SyncTarget.webdav(l.url, user: l.user, name: l.name, id: l.id)
-            target.pinnedCertificate = l.pinnedCertificate
-            target.joined = l.downloaded
-            target.lastSuccess = l.lastPush
-            let stateDir = store.targets.stateDirectory(l.id, of: vault)
-            let marker = stateDir.appendingPathComponent(movedMarker)
-            let vaultDir = store.root.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true)
-            do {
-                if store.entry(id: vault) != nil, !fm.fileExists(atPath: marker.path) {
-                    // The store already holds the vault: upload, then set the old copy aside.
-                    if oldCopy.exists {
-                        let extra = LocalCopy.vaultFiles(in: oldCopy.folder)
-                            .subtracting(LocalCopy.vaultFiles(in: store.entry(id: vault)?.url ?? vaultDir))
-                        let pending = oldCopy.unconfirmedChanges()
-                        if !upload(l, oldCopy), pending > 0 || !extra.isEmpty {
-                            out.kept.append(Kept(name: l.name, folder: oldCopy.folder, notUploaded: true))
-                            left.append(l)
-                            continue
-                        }
-                        let aside = store.targets.root.appendingPathComponent("legacy-kept", isDirectory: true)
-                            .appendingPathComponent(l.id.uuidString.lowercased(), isDirectory: true)
-                        try fm.createDirectory(at: aside.deletingLastPathComponent(), withIntermediateDirectories: true)
-                        if fm.fileExists(atPath: aside.path) {
-                            try fm.moveItem(at: aside, to: aside.appendingPathExtension("\(Int(Date().timeIntervalSince1970))"))
-                        }
-                        try fm.moveItem(at: dir, to: aside)
-                        if !extra.isEmpty {
-                            out.kept.append(Kept(name: l.name, folder: aside.appendingPathComponent(l.folderName), notUploaded: false))
-                        }
-                    }
-                    // Its state described the old copy, not the store's: the first run is a union.
-                    if !store.targets.targets(of: vault).contains(where: { $0.id == l.id }) {
-                        try? fm.removeItem(at: stateDir)
-                    }
-                    target.joined = true
-                    try store.targets.save(target, to: vault)
-                } else {
-                    // The store does not hold it (or a launch that stopped midway moved it): state first,
-                    // then the copy, then the target.
-                    try fm.createDirectory(at: stateDir, withIntermediateDirectories: true)
-                    for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? []
-                    where name != l.folderName && !name.hasPrefix(l.folderName + ".") {
-                        let to = stateDir.appendingPathComponent(name)
-                        if fm.fileExists(atPath: to.path) { continue }   // moved by a launch that stopped midway
-                        try fm.moveItem(at: dir.appendingPathComponent(name), to: to)
-                    }
-                    if oldCopy.exists {
-                        try fm.createDirectory(at: vaultDir, withIntermediateDirectories: true)
-                        try Data().write(to: marker)
-                        try store.writeLock(for: vault).withLock(timeout: 30) {
-                            // Leftovers of an interrupted Download Again (`<folder>.old`) go next to the vault,
-                            // where `recoverWebDAVLeftovers` finds them.
-                            for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] where name.hasPrefix(l.folderName + ".") {
-                                try fm.moveItem(at: dir.appendingPathComponent(name), to: vaultDir.appendingPathComponent(name))
-                            }
-                            try fm.moveItem(at: oldCopy.folder, to: vaultDir.appendingPathComponent(l.folderName, isDirectory: true))
-                        }
-                    }
-                    try store.targets.save(target, to: vault)
-                }
-                out.converted[l.id] = vault
-            } catch {
-                left.append(l)
-            }
-        }
-        if left.isEmpty {
-            try? fm.removeItem(at: list)
-        } else if left.count != all.count, let data = try? JSONEncoder().encode(left) {
-            try? data.write(to: list, options: .atomic)
-        }
-        // Only once the list no longer names them: their folders (now empty) and markers.
-        for l in all where out.converted[l.id] != nil {
-            let dir = root.appendingPathComponent(l.id.uuidString.lowercased(), isDirectory: true)
-            if ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).isEmpty { try? fm.removeItem(at: dir) }
-            if let vault = UUID(uuidString: l.vaultId) {
-                try? fm.removeItem(at: store.targets.stateDirectory(l.id, of: vault).appendingPathComponent(movedMarker))
-            }
-        }
-        return out
-    }
-}
 /// A folder target's folder, reachable for one run: its bookmark resolved (security scope held until
 /// `close`), else its path.
 struct FolderTargetAccess {
@@ -561,43 +395,6 @@ extension AppModel {
         webdavLocations.reload()
         syncCoordinator.refresh()
         if let open = syncCoordinator.openVault { adoptOpenSessions(open) }
-    }
-
-    // MARK: - Old WebDAV copies
-
-    /// At launch, before anything syncs: WebDAV vaults of earlier builds become store vaults with a WebDAV
-    /// target (`LegacyWebDAV`). An old copy of a vault the store already holds is uploaded once first
-    /// (upload-only, with its Keychain password), then set aside, never deleted; one that could not be
-    /// uploaded while it holds what the store lacks stays where it was and is named in an alert (Show in
-    /// Finder or Share), and the next launch tries again.
-    func convertLegacyWebDAV(library: VaultLibrary, list: URL = AppSupport.sempere.appendingPathComponent("webdav.json"),
-                             root: URL = AppSupport.folder("WebDAV")) async {
-        guard FileManager.default.fileExists(atPath: list.path) else { return }
-        let store = syncStore, remote = webdavRemote, passwords = webdavPasswords
-        let outcome = await Task.detached(priority: .userInitiated) {
-            LegacyWebDAV.convert(list: list, root: root, store: store) { location, copy in
-                guard let endpoint = try? Self.endpoint(location.webdav, passwords: passwords) else { return false }
-                var options = SyncOptions(deviceLabel: "app")
-                // Bounded: a server that answers slowly must not hold up the launch for long (it is retried
-                // at the next launch).
-                options.limits.maxDuration = 15
-                guard let report = try? remote.push(endpoint, copy: copy, vault: nil, options: options) else { return false }
-                return report.errors.isEmpty && report.stoppedEarly == nil
-            }
-        }.value
-        if !outcome.converted.isEmpty {
-            library.convertWebDAVRecents(outcome.converted)
-            await library.refreshStoredVaults()
-            syncTargetsChanged()
-        }
-        if let kept = outcome.kept.first {
-            let message = kept.notUploaded
-                ? String(localized: "“\(kept.name)” from an earlier version holds notes the server has not received, and it could not be uploaded now. It was kept as it is, at \(kept.folder.path). Sempere tries again at the next launch; you can also share it or merge it in with the sempere command-line tool (vault merge-copy).",
-                         comment: "First %@ is the vault's name, the second a folder path")
-                : String(localized: "An earlier version's copy of “\(kept.name)” holds notes or attachments the copy on this device lacks. They were uploaded to the server, and the old copy was kept at \(kept.folder.path). Merge it in with the sempere command-line tool (vault merge-copy) before removing it.",
-                         comment: "First %@ is the vault's name, the second a folder path")
-            webdavLeftover = WebDAVLeftover(folder: kept.folder, message: message)
-        }
     }
 
     // MARK: - Adding and removing

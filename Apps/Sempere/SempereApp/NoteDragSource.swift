@@ -5,7 +5,7 @@ import UIKit
 /// How a row of the note list starts its drag (`NoteDragOut`).
 ///
 /// TestFlight build 8, bug 7: on a Mac a note dragged to the Finder makes no file, and XCUITest's synthetic
-/// pointer drops nothing into the Finder even for controls (`MacDragToFinderUITests`), so the drag is
+/// pointer drops nothing into the Finder even for controls (a UI test of it was deleted), so the drag is
 /// checked by hand with the `drag` log (`DragLog`). Hidden switches (`NoteDragDebug`, Mac only, any build,
 /// set in Settings ▸ About's hidden Drag Diagnostics, `DragTestSection`; docs/mac.md "Debugging a drag out")
 /// pick the style and two experiments; the iPad always uses `onDrag`.

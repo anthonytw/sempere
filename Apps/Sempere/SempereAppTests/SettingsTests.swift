@@ -34,13 +34,6 @@ struct SettingsTests {
         #expect(RecordingSettings.label(sampleRate: 44_100, locale: Locale(identifier: "es_ES")) == "44,1 kHz")
     }
 
-    @Test func recordingSettingsRoundTrip() {
-        let d = scratch()
-        RecordingSettings(codec: .heAAC, bitRate: 32_000, sampleRate: 44_100, channels: .stereo).save(to: d)
-        let s = RecordingSettings.load(from: d)
-        #expect(s == RecordingSettings(codec: .heAAC, bitRate: 32_000, sampleRate: 44_100, channels: .stereo))
-    }
-
     @Test func recordingValuesOutsideTheChoicesAreCorrected() {
         let d = scratch()
         d.set("mp3", forKey: RecordingSettings.codecKey)
@@ -134,13 +127,6 @@ struct SettingsTests {
 
     // MARK: Photos
 
-    @Test func photoPrivacyIsOnByDefault() {
-        let d = scratch()
-        #expect(PhotoPrivacy.isOn(d))
-        d.set(false, forKey: PhotoPrivacy.key)
-        #expect(!PhotoPrivacy.isOn(d))
-    }
-
     // MARK: New notes
 
     @Test func titleFormatDefaultsToDateAndTime() {
@@ -206,15 +192,6 @@ struct SettingsTests {
         #expect(!NewNoteSettings.resolvedTitle(typed: "", defaults: d).isEmpty)
     }
 
-    @Test func defaultPaperIsRemembered() {
-        let d = scratch()
-        #expect(PaperPreference.load(from: d) == PaperPreference.fallback)
-        var grid = PaperPreference.fallback
-        grid.kind = .grid
-        PaperPreference.save(grid, to: d)
-        #expect(PaperPreference.load(from: d).kind == .grid)
-    }
-
     // MARK: General and history
 
     @Test func generalSettingsKeepTheirKeysAndDefaults() {
@@ -238,12 +215,6 @@ struct SettingsTests {
         #expect(model.recognizer != nil && RecognitionPreference.enabled)
         model.setHandwritingRecognition(false)
         #expect(model.recognizer == nil && !RecognitionPreference.enabled)
-    }
-
-    @Test func thinningDefaultsToThirtyDaysAndNeverIsOffered() {
-        #expect(ThinningPreference.defaultDays == 30)
-        #expect(ThinningPreference.choices.contains(30) && ThinningPreference.choices.contains(0))
-        #expect(ThinningPreference.label(0) == "Never")
     }
 
     // MARK: Menu

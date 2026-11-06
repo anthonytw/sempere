@@ -70,10 +70,12 @@ struct AttachmentPersistenceTests {
         let refs = (0..<3).map { store.put(Data(repeating: UInt8($0), count: 100)) }
         let root = Self.root()
         let first = BlobCache(root: root, fetch: store.fetch)
-        for ref in refs {
-            _ = try await first.acquire(note: Self.lecture, ref: ref)
+        let start = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        for (i, ref) in refs.enumerated() {
+            let file = try await first.acquire(note: Self.lecture, ref: ref)
             await first.release(note: Self.lecture, ref: ref)
-            try await Task.sleep(for: .milliseconds(20))   // distinct modification dates
+            // Distinct modification dates, set outright: no sleeping for the file system's clock to tick.
+            try FileManager.default.setAttributes([.modificationDate: start.addingTimeInterval(Double(i) * 10)], ofItemAtPath: file.path)
         }
         let second = BlobCache(root: root, maxBytes: 250, fetch: store.fetch)
         #expect(!(await second.contains(note: Self.lecture, ref: refs[0])), "the least recently used went")
@@ -467,75 +469,4 @@ struct AttachmentPersistenceTests {
         print("PERF-REPORT text boxes: \(items.count) drawn \(firstTime), reopened from the cache \(reopenTime)")
     }
 
-    // MARK: timings
-
-    /// First open against reopen of a PDF note (the #56 signposts' phases
-    /// `pdf.open` and `pdf.preview`, measured here end to end): ten pages of
-    /// a 60-page PDF shown one after another, as paging through the note.
-    /// "First" decrypts the blob and draws each page; "reopen" is the next
-    /// launch: new caches on the same folders. Prints `PERF-REPORT` lines.
-    @Test func reopeningAPDFNoteIsFasterThanTheFirstOpen() async throws {
-        let (vault, _) = try TS.unlockedFixture()
-        let data = NSMutableData()
-        var box = CGRect(x: 0, y: 0, width: 612, height: 792)
-        let consumer = try #require(CGDataConsumer(data: data as CFMutableData))
-        let ctx = try #require(CGContext(consumer: consumer, mediaBox: &box, nil))
-        for n in 0..<60 {
-            ctx.beginPDFPage(nil)
-            ctx.setStrokeColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
-            for k in 0..<120 {   // vector content, as a drawn page
-                let y = Double((k * 37 + n * 11) % 760) + 16
-                ctx.move(to: CGPoint(x: 20, y: y))
-                ctx.addCurve(to: CGPoint(x: 590, y: 792 - y), control1: CGPoint(x: 200, y: y + 40), control2: CGPoint(x: 400, y: y - 40))
-            }
-            ctx.strokePath()
-            ctx.endPDFPage()
-        }
-        ctx.closePDF()
-        let ref = try vault.writeBlob(note: Self.lecture, data as Data, type: "application/pdf")
-        let items = (0..<10).map {
-            Item.pdfPage(blob: ref, pageIndex: $0, pageSize: Size(w: 612, h: 792), frame: Rect(x: 0, y: 0, w: 612, h: 792), z: "a")
-        }
-        let blobs = Self.root(), renders = Self.root()
-        func blobCache() -> BlobCache {
-            BlobCache(root: blobs) { note, ref, dest in
-                try await AppModel.fetchBlob(ref, of: note, from: vault, to: dest)
-            }
-        }
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 820, height: 1061))
-        window.isHidden = false
-        defer { window.isHidden = true }
-
-        func seconds(_ d: Duration) -> Double { Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18 }
-        /// Seconds until the first page shows something real, and until every page did.
-        func run(reopen: Bool) async throws -> (first: Double, all: Double) {
-            let layer = ItemLayerView(frame: window.bounds)
-            window.addSubview(layer)
-            defer { layer.removeFromSuperview() }
-            layer.setZoom(820 / 612)
-            let source = ItemLayerSource(cache: blobCache(), renders: RenderCache(root: renders, vault: vault))
-            let clock = ContinuousClock(), start = clock.now
-            var first: Double?
-            for item in items {
-                layer.show([item], note: Self.lecture, paper: .blank, source: source)
-                // First open: the page is drawn once its document is open. Reopen: its preview is there.
-                let shown = await TS.waitUntil(timeout: .seconds(30)) {
-                    reopen ? layer.previewedItemIDs == [item.id] : layer.tiledItemIDs == [item.id]
-                }
-                #expect(shown)
-                if first == nil { first = seconds(clock.now - start) }
-                if !reopen { #expect(await TS.waitUntil(timeout: .seconds(30)) { layer.isSettled }) }   // previews stored
-            }
-            return (first ?? 0, seconds(clock.now - start))
-        }
-        let cold = try await run(reopen: false)
-        let warm = try await run(reopen: true)
-        print(String(format: "PERF-REPORT pdf-reopen first page: first open %.0f ms, reopen %.0f ms", cold.first * 1000, warm.first * 1000))
-        print(String(format: "PERF-REPORT pdf-reopen 10 pages: first open %.0f ms, reopen %.0f ms", cold.all * 1000, warm.all * 1000))
-        // The first open's first page counts only until its document is open (its tiles draw
-        // later); paging through ten pages is the comparison that means something.
-        // Wall-clock on a shared runner: allow noise (1.94 s against 1.72 s failed once on a loaded
-        // iPad simulator run); a reopen that is really slower than the first open is far outside 1.5x.
-        #expect(warm.all <= cold.all * 1.5, "a reopen pages through the note no slower than the first open (within noise)")
-    }
 }

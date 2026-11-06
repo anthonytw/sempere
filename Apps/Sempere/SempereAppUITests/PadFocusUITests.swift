@@ -5,6 +5,7 @@ import XCTest
 /// The open note's canvas, the list and the sidebar update while the search field
 /// is typed in; every key must reach the field. A canvas only takes the focus by
 /// itself through `CanvasFocus` (never from a text input elsewhere).
+/// One test: a notebook is selected in the sidebar first (a superset of typing in the search field alone).
 /// Run by `scripts/app.sh test-ui`; skipped on the Mac.
 final class PadFocusUITests: XCTestCase {
     override func setUpWithError() throws {
@@ -61,15 +62,6 @@ final class PadFocusUITests: XCTestCase {
         let value = field.value as? String ?? ""
         if value != "cellular" { dump(app, "\(tag)-value") }
         XCTAssertEqual(value, "cellular", "every key reached the search field")
-    }
-
-    /// A tap in the search field keeps the keyboard there while the results change under it.
-    @MainActor
-    func testTheSearchFieldKeepsTheKeyboardWhileTyping() throws {
-        let app = launch()
-        defer { app.terminate() }
-        ready(app)
-        searchAndType(app, tag: "search")
     }
 
     /// After a notebook is picked in the sidebar, the search field still gets every key:

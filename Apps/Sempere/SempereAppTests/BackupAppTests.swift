@@ -115,11 +115,10 @@ struct BackupAppTests {
         #expect(why.contains("holds it") && why.contains("inside it"), "\(why)")
     }
 
-    /// Back Up Now resolves the folder at every run. A legacy "<name> Backup" or "<name>.sempere" of this vault is
-    /// renamed to "<name>.sempere-backup" when that name is free (left alone otherwise); a backup written straight into
-    /// the picked folder (the iPad) gets a "<name>.sempere-backup" inside it, its files untouched, and is continued
-    /// there (the CLI's `--into` takes the same folder); a recorded name another vault's backup took moves on to " 2".
-    @Test func backUpNowMovesLegacyDestinationsToTheNewRule() throws {
+    /// Back Up Now resolves the folder at every run: a backup written straight into the picked folder (the iPad)
+    /// gets a "<name>.sempere-backup" inside it, its files untouched, and is continued there (the CLI's `--into`
+    /// takes the same folder); a recorded name another vault's backup took moves on to " 2".
+    @Test func backUpNowResolvesTheFolderAtEveryRun() throws {
         let scratch = try Scratch()
         defer { scratch.cleanUp() }
         let (fixture, _) = try AppModelTests.fixtureVault()
@@ -129,29 +128,6 @@ struct BackupAppTests {
         func run(_ picked: URL, _ recorded: String?) throws -> (subfolder: String?, renamed: String?) {
             try BackupLocation.runSubfolder(in: picked, recorded: recorded, vaultId: id, vaultName: "Notes", openVault: nil)
         }
-        // "<name> Backup" renamed in place.
-        let mac = try scratch.folder("Mac")
-        _ = try Backup.run(source: vault, to: mac.appendingPathComponent("Notes Backup"))
-        let moved = try run(mac, "Notes Backup")
-        #expect(moved.subfolder == "Notes.sempere-backup" && moved.renamed == "Notes Backup")
-        #expect(try fm.contentsOfDirectory(atPath: mac.path) == ["Notes.sempere-backup"])
-        #expect(Backup.verify(at: mac.appendingPathComponent("Notes.sempere-backup")).isHealthy)
-        #expect(try run(mac, "Notes.sempere-backup").subfolder == "Notes.sempere-backup", "kept from then on")
-        // #108's "<name>.sempere", recorded: renamed the same way, contents untouched.
-        let v108 = try scratch.folder("V108")
-        _ = try Backup.run(source: vault, to: v108.appendingPathComponent("Notes.sempere"))
-        let inside = try fm.contentsOfDirectory(atPath: v108.appendingPathComponent("Notes.sempere").path).sorted()
-        let r108 = try run(v108, "Notes.sempere")
-        #expect(r108.subfolder == "Notes.sempere-backup" && r108.renamed == "Notes.sempere")
-        #expect(try fm.contentsOfDirectory(atPath: v108.appendingPathComponent("Notes.sempere-backup").path).sorted() == inside)
-        // The new name is taken (another vault's backup): the old folder is left alone, a new one next to it.
-        let both = try scratch.folder("Both")
-        _ = try Backup.run(source: vault, to: both.appendingPathComponent("Notes Backup"))
-        try fm.createDirectory(at: both.appendingPathComponent("Notes.sempere-backup"), withIntermediateDirectories: true)
-        try Data("x".utf8).write(to: both.appendingPathComponent("Notes.sempere-backup/other"))
-        let next = try run(both, "Notes Backup")
-        #expect(next.subfolder == "Notes 2.sempere-backup" && next.renamed == nil)
-        #expect(fm.fileExists(atPath: both.appendingPathComponent("Notes Backup/backup.json").path))
         // The iPad's backup straight in the picked folder: a "<name>.sempere-backup" inside, nothing else touched,
         // continued at the next run (the nested backup `BackupDestination.folder` takes, as `--into` does).
         let pad = try scratch.folder("Pad")
@@ -254,9 +230,6 @@ struct BackupAppTests {
         }
         #expect(BackupLocation.suggestedName(forBackup: backup) == "Notes (Restored)")
         #expect(BackupLocation.suggestedName(forBackup: drive.appendingPathComponent("Notes 2.sempere-backup")) == "Notes 2 (Restored)")
-        // Backups of earlier builds ("<name> Backup N", "<name>.sempere").
-        #expect(BackupLocation.suggestedName(forBackup: drive.appendingPathComponent("Notes Backup 3")) == "Notes (Restored)")
-        #expect(BackupLocation.suggestedName(forBackup: drive.appendingPathComponent("Notes.sempere")) == "Notes (Restored)")
         #expect(BackupLocation.suggestedName(forBackup: fixture) == "sample (Restored)")
     }
 

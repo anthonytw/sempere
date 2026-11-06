@@ -516,6 +516,10 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     let objectEraser = ObjectEraserController()
     /// Smoothed mouse and trackpad strokes on a Mac (`MouseInk.swift`).
     private let mouseInk = MouseInkController()
+    /// Where "Smooth Mouse Strokes" is read from (the app's settings; tests give a suite of their own).
+    var smoothingDefaults: UserDefaults = .standard {
+        didSet { mouseInk.defaults = smoothingDefaults }
+    }
     /// The "Smooth Mouse Strokes" level last applied (Mac; Off elsewhere).
     private var smoothingLevel = StrokeSmoothing.Level.off
     /// Bottom of the ink on the page (page points), nil without ink.
@@ -982,7 +986,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     @objc nonisolated private func defaultsChanged() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let level = MouseSmoothing.load()
+            let level = MouseSmoothing.load(self.smoothingDefaults)
             guard level != self.smoothingLevel else { return }
             self.smoothingLevel = level
             self.updateEraser()
@@ -1010,7 +1014,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         let editable = drawingEditable
         let ours = editable && objectEraserSelected
         objectEraser.setActive(ours)
-        if Platform.isMac { smoothingLevel = MouseSmoothing.load() }
+        if Platform.isMac { smoothingLevel = MouseSmoothing.load(smoothingDefaults) }
         let pointer = !ours && MouseSmoothing.takesPointer(
             isMac: Platform.isMac, level: smoothingLevel, editable: editable,
             inkingTool: toolbox.state.tool.isInk, rulerActive: canvas.isRulerActive)

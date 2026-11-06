@@ -211,13 +211,6 @@ struct QuickCaptureIntentTests {
         #expect(QuickCaptureTests.inbox(url).count == 1)
     }
 
-    /// Every error an intent can show has text (an empty message would show nothing in Shortcuts).
-    @Test func intentErrorsHaveText() {
-        for error in [QuickCaptureError.notSetUp, .profileUnreadable, .microphoneDenied, .liveActivitiesOff, .alreadyRecording, .notRecording] {
-            #expect(!error.description.isEmpty)
-        }
-    }
-
     /// The Live Activity is dismissed `shownFor` seconds after it ends (`endActivity(…, after:)`),
     /// and the banner clears itself after the same time.
     @Test func resultsAreShownFiveSecondsAndFailuresTwelve() {

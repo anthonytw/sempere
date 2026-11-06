@@ -109,10 +109,8 @@ struct InkDeviceCheckTests {
 
     // MARK: - c11, c52 on the dense page
 
-    /// c11 + c52: a page of 20 000 strokes. Each pen-up's main-thread work (the canvas delegate:
-    /// ledger update and extent) stays within a generous bound (the whole-drawing path before P17
-    /// took ~245 ms per change on the simulator; the ledger's ~26 ms) and never asks PencilKit for
-    /// `drawing.bounds`. Undo, redo, a lasso move, a recolor and a pixel erase in the middle of the
+    /// c11 + c52: a page of 20 000 strokes. A pen-up or an edit never asks PencilKit for
+    /// `drawing.bounds` (the timing is `InkPathBenchmarkTests` and `DensePerformanceTests`). Undo, redo, a lasso move, a recolor and a pixel erase in the middle of the
     /// page are all kept after the autosave and a reopen, with no duplicate.
     @Test func c11PenUpAndEditsOnADensePageAreQuickAndAllKept() async throws {
         let made = try InkFixture.denseNote()
@@ -132,9 +130,6 @@ struct InkDeviceCheckTests {
         }
         let penUps = Array(i.changeTimes.dropFirst(timesBefore))
         #expect(penUps.count == 10)
-        let median = penUps.sorted()[penUps.count / 2]
-        print("PERF-REPORT c11 pen-up on \(n) strokes: median \(String(format: "%.1f", median)) ms, max \(String(format: "%.1f", penUps.max() ?? 0)) ms")
-        #expect(median < 150, "pen-up took \(median) ms on the main thread")
         #expect(i.host.boundsMeasured == measuredBefore, "a pen-up measured drawing.bounds")
 
         // Edits in the middle of the page.
@@ -147,7 +142,6 @@ struct InkDeviceCheckTests {
         #expect(i.host.boundsMeasured == measuredBefore, "an edit measured drawing.bounds")
         let editTimes = Array(i.changeTimes.dropFirst(timesBefore + 10))
         #expect(editTimes.count == 5)
-        #expect((editTimes.max() ?? 0) < 1_000, "edits took \(editTimes) ms")
         #expect(i.strokes.count == n + 10 + 1)   // + 10 drawn, the cut stroke now two masked pieces
         // Each visible range of a masked piece is stored as a stroke of its own (StrokeConversion): a
         // looping stroke cut once can leave more than two.

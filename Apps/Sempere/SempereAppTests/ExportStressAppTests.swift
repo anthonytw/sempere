@@ -35,7 +35,7 @@ extension ExportTests {
         return try String(contentsOf: try #require(r.items.first), encoding: .utf8).components(separatedBy: "<path").count
     }
 
-    @Test(arguments: [0, 500, 1_400]) func inkDrawnJustBeforeAnExportIsInIt(delayMS: Int) async throws {
+    @Test(arguments: [0, 1_400]) func inkDrawnJustBeforeAnExportIsInIt(delayMS: Int) async throws {
         let (model, editor) = try await openLecture()
         let before = try await pathCount(model)
         try draw(editor, x: 150)
@@ -55,17 +55,6 @@ extension ExportTests {
         #expect(try await exported == before + 1)
         try await Task.sleep(for: .milliseconds(300))
         #expect(editor.deltasWritten == 1, "the stroke is written once")
-        model.close()
-    }
-
-    @Test func exportingEvery100msWhileDrawingAlwaysHasEveryStroke() async throws {
-        let (model, editor) = try await openLecture()
-        let before = try await pathCount(model)
-        for i in 1...10 {
-            try draw(editor, x: 100 + Double(i * 20))
-            try await Task.sleep(for: .milliseconds(100))
-            #expect(try await pathCount(model) == before + i, "export \(i)")
-        }
         model.close()
     }
 

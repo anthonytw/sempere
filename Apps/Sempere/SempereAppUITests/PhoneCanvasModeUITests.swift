@@ -270,11 +270,7 @@ final class PhoneCanvasModeUITests: XCTestCase {
     /// canvas does. Reading → Annotate → Reading (waiting: bug 2) → Hand → Reading → Annotate → Hand → Annotate
     /// (bug 3: from the Hand straight to the pencil) → Hand → Reading. On the way: the palette has no Hand (owner,
     /// 2026-10-19: "It serves no purpose there"; the top bar's Hand is the only one, and from Annotate it goes
-    /// straight to Hand mode). Then bug 2 after each tool: Annotate with the pen, marker, object eraser or lasso
-    /// picked, then off; after a wait (PencilKit's recount, the object eraser and lasso restoring their saved
-    /// counts) one finger still scrolls the pageless note and draws nothing. (One launch: these were three tests,
-    /// `testThePaletteHasNoHand` and `testLeavingAnnotateFromEachToolKeepsOneFingerScrolling` each opening the same
-    /// note again; the first's transitions were already here.)
+    /// straight to Hand mode). The per-tool loop is `testLeavingAnnotateFromEachToolKeepsOneFingerScrolling`.
     @MainActor
     func testEveryTransitionMatchesWhatTheCanvasDoes() throws {
         let app = launch()
@@ -304,6 +300,18 @@ final class PhoneCanvasModeUITests: XCTestCase {
         tap(annotateButton(app))
         Thread.sleep(forTimeInterval: 3)
         expect(.reading, app, canvas, after: "hand, pencil, pencil, 3 s")
+    }
+
+    /// Bug 2 after each tool: Annotate with the pen, marker, object eraser or lasso picked, then off; after a wait
+    /// (PencilKit's recount, the object eraser and lasso restoring their saved counts) one finger still scrolls the
+    /// pageless note and draws nothing. Its own test (it was the tail of the transitions test, which took 361 s of
+    /// the iPad UI step on CI): the four tools are independent cases of one launch, each ending in reading mode.
+    @MainActor
+    func testLeavingAnnotateFromEachToolKeepsOneFingerScrolling() throws {
+        let app = launch()
+        defer { app.terminate() }
+        guard let canvas = pagelessCanvas(app) else { return XCTFail("no canvas reports the demo items") }
+        expect(.reading, app, canvas, after: "open")
         for tool in ["Object Eraser", "Lasso", "Marker", "Pen"] {
             tap(annotateButton(app))
             pick(tool, app)

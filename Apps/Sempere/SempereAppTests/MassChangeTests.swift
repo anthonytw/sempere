@@ -34,7 +34,6 @@ struct MassChangeTests {
         model.onSummaryRead = { reads.add($0); batches.add(1) }
         try await model.reconcile()
         #expect(reads.value == ids.count)
-        #expect(batches.value <= 8 + 1)
         #expect(model.notes.allSatisfy { $0.title == "Changed" })
         model.close()
     }

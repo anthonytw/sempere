@@ -7,10 +7,8 @@ import UIKit
 
 /// The one-page canvas of a long pageless note (TestFlight 1.0.0 (6), the owner's iPad, a note
 /// imported from Notability): a pinch zooms out below the fitted width, centered; an update in
-/// the middle of a pinch leaves the zoom alone; the ruled paper is drawn only near the screen;
-/// and the main thread's time per scroll and per pinch frame on a dense page is measured
-/// (`PERF-REPORT` lines). The pinch on the screen and the scroll hitches are in
-/// `IPadZoomScrollUITests` (iPad simulator).
+/// the middle of a pinch leaves the zoom alone; the ruled paper is drawn only near the screen.
+/// The scroll and pinch frame cost on a dense page is `DensePerformanceTests` (`test-mac-perf`).
 @MainActor
 @Suite(.serialized, .timeLimit(.minutes(10)))
 struct CanvasZoomScrollTests {
@@ -122,102 +120,5 @@ struct CanvasZoomScrollTests {
         check("top")
         canvas.contentOffset = CGPoint(x: 0, y: tall * 0.6)   // the canvas's delegate is told
         check("scrolled")
-    }
-
-    // MARK: Measured
-
-    /// Main-thread time per frame while scrolling and pinching a dense page (UIKit's layout,
-    /// PencilKit's and the app's work, and the Core Animation commit). Printed for comparisons;
-    /// the bound only catches a page that would stall.
-    @Test func scrollingAndZoomingADensePageMeasured() async throws {
-        let i = try await Self.dense()
-        defer { i.close() }
-        #expect(await i.ready(timeout: .seconds(120)))
-        let canvas = i.host.canvas
-        let fit = Self.fit(i.host)
-        canvas.layoutIfNeeded()
-        CATransaction.flush()
-
-        var scroll: [Double] = []
-        for _ in 0..<150 {
-            let t0 = DispatchTime.now().uptimeNanoseconds
-            canvas.contentOffset.y += 24
-            canvas.layoutIfNeeded()
-            CATransaction.flush()
-            scroll.append(Self.ms(since: t0))
-        }
-        var zoom: [Double] = []
-        var steps: [CGFloat] = []
-        for k in 0..<30 {
-            let t = CGFloat(k) / 30
-            steps.append(fit * (1 + t))
-        }
-        for k in 0..<30 {
-            let t = CGFloat(k) / 30
-            steps.append(fit * (2 - 1.4 * t))
-        }
-        for z in steps {
-            let t0 = DispatchTime.now().uptimeNanoseconds
-            canvas.zoomScale = z
-            canvas.layoutIfNeeded()
-            CATransaction.flush()
-            zoom.append(Self.ms(since: t0))
-        }
-        // What drawing the paper of one screen costs (Core Animation draws the shape layers again as
-        // they move; here Core Graphics draws them, the visible rect clipped), at 40 places down the page.
-        let (paperView, _) = Self.paperShapeLayers(i.host)
-        var paint: [Double] = []
-        if let paperView {
-            canvas.zoomScale = fit
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 2
-            let renderer = UIGraphicsImageRenderer(size: canvas.bounds.size, format: format)
-            let maxY = max(canvas.contentSize.height - canvas.bounds.height, 0)
-            for k in 0..<40 {
-                canvas.contentOffset = CGPoint(x: 0, y: maxY * CGFloat(k) / 40)
-                canvas.layoutIfNeeded()
-                CATransaction.flush()
-                let origin = canvas.bounds.origin
-                let t0 = DispatchTime.now().uptimeNanoseconds
-                _ = renderer.image { ctx in
-                    ctx.cgContext.translateBy(x: -origin.x, y: -origin.y)
-                    paperView.layer.render(in: ctx.cgContext)
-                }
-                paint.append(Self.ms(since: t0))
-            }
-            // The same render of an empty layer: the bitmap's own cost, to subtract.
-            let empty = CALayer()
-            empty.frame = paperView.layer.bounds
-            var base: [Double] = []
-            for _ in 0..<40 {
-                let t0 = DispatchTime.now().uptimeNanoseconds
-                _ = renderer.image { ctx in empty.render(in: ctx.cgContext) }
-                base.append(Self.ms(since: t0))
-            }
-            print("PERF-REPORT canvas empty-layer render (baseline): \(Self.summary(base))")
-        }
-        print("PERF-REPORT canvas paper per screen on a \(Int(canvas.contentSize.height)) pt page: \(Self.summary(paint))")
-        // What Core Animation holds for the ruling while one screen shows: shape layers, their path
-        // elements and their area; and the same for one layer per look spanning the note (before).
-        func elements(_ path: CGPath?) -> Int {
-            var n = 0
-            path?.applyWithBlock { _ in n += 1 }
-            return n
-        }
-        let (_, shown) = Self.paperShapeLayers(i.host)
-        let z = canvas.zoomScale
-        let shownElements = shown.reduce(0) { $0 + elements($1.path) }
-        let shownArea = shown.reduce(0.0) { $0 + Double($1.bounds.width * $1.bounds.height) }
-        let pageSize = i.editor.pageSize
-        let paperHeight = canvas.contentSize.height / z
-        let whole = PaperView.groups(paper: Self.ruled, size: CGSize(width: CGFloat(pageSize.width), height: paperHeight),
-                                     sheetHeight: 792)
-        let wholeElements = whole.reduce(0) { $0 + elements($1.path) }
-        let wholeArea = Double(whole.count) * Double(CGFloat(pageSize.width) * z * paperHeight * z)
-        print(String(format: "PERF-REPORT canvas paper layers: %d shape layers, %d path elements, %.2f Mpt² (one layer per look for the note: %d layers, %d elements, %.2f Mpt²)",
-                     shown.count, shownElements, shownArea / 1e6, whole.count, wholeElements, wholeArea / 1e6))
-        print("PERF-REPORT canvas scroll on \(i.strokes.count) strokes, ruled: \(Self.summary(scroll))")
-        print("PERF-REPORT canvas pinch on \(i.strokes.count) strokes, ruled: \(Self.summary(zoom))")
-        #expect((scroll.max() ?? 0) < 2_000 && (zoom.max() ?? 0) < 2_000)
     }
 }
