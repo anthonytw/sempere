@@ -474,7 +474,7 @@ final class CLICommandTests: CLITestCase {
 
     func testUsageAndHelp() throws {
         // The first line is `sempere VERSION`; the GPL notice follows (CLIAboutTests).
-        XCTAssertEqual(try cli(["--version"]).out.split(separator: "\n").first.map(String.init), "sempere 1.0.0")
+        XCTAssertEqual(try cli(["--version"]).out.split(separator: "\n").first.map(String.init), "sempere 1.0.1")
         XCTAssertEqual(try cli(["bogus"]).status, 2)
         XCTAssertEqual(try cli(["notes", "list"]).status, 2)   // no vault given
         // Every usage error is one `sempere:` line (docs/cli.md), whether the
