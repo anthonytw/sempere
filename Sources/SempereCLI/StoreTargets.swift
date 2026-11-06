@@ -102,7 +102,7 @@ struct StoreTargetAdd: ParsableCommand {
         var target: SyncTarget
         if let folder {
             let url = URL(fileURLWithPath: folder, isDirectory: true).standardizedFileURL
-            try store.checkFolderTarget(url, vaultId: entry.vaultId)
+            try store.checkFolderTarget(url)
             target = .folder(url, name: name)
         } else {
             let text = webdav ?? ""
@@ -260,7 +260,6 @@ struct StoreSync: ParsableCommand {
                 switch t.kind {
                 case .folder:
                     guard let path = t.path else { throw SyncTargetError.io("target \(t.name) has no path") }
-                    if t.isMisrecorded { throw SyncTargetError.misrecorded(path) }
                     let folder = URL(fileURLWithPath: path, isDirectory: true)
                     clearBundleBits([entry.url, folder])
                     defer { clearBundleBits([entry.url, folder]) }

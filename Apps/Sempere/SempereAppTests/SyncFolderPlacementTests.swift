@@ -63,82 +63,18 @@ struct SyncFolderPlacementTests {
         #expect(FolderTargetAppTests.noteFiles(copy) == FolderTargetAppTests.noteFiles(device.folder))
     }
 
-    /// A target build 10 recorded without its subfolder (bookmark of the picked folder, path of the copy's folder, no
-    /// subfolder) is held, decided from its record alone: no run reads or writes anything, nothing is repaired or
-    /// saved by itself, and Sync Targets says to remove it or choose again. Choose Again gives it its subfolder
-    /// (review of #113).
-    @Test func aTargetRecordedWithoutItsSubfolderIsHeldUntilChosenAgain() async throws {
+    /// A picked `.sempere` folder is the target itself; one holding other files and no vault is refused, an empty one
+    /// is taken.
+    @Test func aPickedSempereFolderIsTheTargetItself() async throws {
         let (device, picked) = try await Self.setUp()
         defer { device.model.close() }
         let name = device.folder.lastPathComponent
-        let store = device.store
-        let bookmark = try picked.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        let lost = SyncTarget.folder(picked.appendingPathComponent(name), bookmark: bookmark, subfolder: nil)
-        #expect(FolderTargetAccess.isMisrecorded(lost))
-        try store.targets.add(lost, to: device.vaultID)
-        device.model.syncTargetsChanged()
-        let session = try #require(device.model.syncSessions.first { $0.locationID == lost.id })
-        await session.syncNow()
-        #expect(session.needsAttention, "\(session.headline)")
-        #expect(Self.listing(picked) == ["keep.txt"], "nothing written")
-        #expect(throws: FolderTargetAccess.Misrecorded.self) { try FolderTargetAccess.open(lost) }
-        let kept = try #require(store.targets.targets(of: device.vaultID).first { $0.id == lost.id })
-        #expect(kept.path == lost.path && kept.subfolder == nil && kept.bookmark == lost.bookmark && kept.name == lost.name,
-                "nothing saved by itself")
-        // A correct record is not held: the subfolder recorded, or the picked folder itself.
-        #expect(!FolderTargetAccess.isMisrecorded(.folder(picked.appendingPathComponent(name), bookmark: bookmark, subfolder: name)))
-        #expect(!FolderTargetAccess.isMisrecorded(.folder(picked, bookmark: bookmark, subfolder: nil)))
-
-        // Choose Again on the same folder: the subfolder, and the run fills it.
-        try device.model.rechooseFolderTarget(lost.id, of: device.vaultID, picked: picked)
-        let chosen = try #require(store.targets.targets(of: device.vaultID).first { $0.id == lost.id })
-        #expect(chosen.subfolder == name && !FolderTargetAccess.isMisrecorded(chosen))
-        let again = try #require(device.model.syncSessions.first { $0.locationID == lost.id })
-        await again.syncNow()
-        #expect(!again.needsAttention, "\(again.headline)")
-        #expect(Self.listing(picked) == ["keep.txt", name].sorted())
-        #expect(FolderTargetAppTests.noteFiles(picked.appendingPathComponent(name)) == FolderTargetAppTests.noteFiles(device.folder))
-    }
-
-    /// Re-check of #113: the usual held target, whose runs left this vault's bare copy in the picked folder. Choose
-    /// Again on that folder gives the subfolder (never the bare folder again) and starts over as a union; Add Folder…
-    /// on it gives the subfolder too; picking the `.sempere` folder itself uses it.
-    @Test func aFolderHoldingTheBareCopyGetsTheSubfolder() async throws {
-        let (device, picked) = try await Self.setUp()
-        defer { device.model.close() }
-        let name = device.folder.lastPathComponent
-        let store = device.store
-        _ = try FolderTargetRun.run(vaultFolder: device.folder, folder: picked, vault: nil,
-                                    stateURL: TestTemp.root.appendingPathComponent("bare-\(UUID().uuidString)/state.json"),
-                                    twoWay: false)
-        #expect(FileManager.default.fileExists(atPath: picked.appendingPathComponent("vault.json").path))
-        let bookmark = try picked.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        let held = SyncTarget.folder(picked.appendingPathComponent(name), bookmark: bookmark, subfolder: nil)
-        try store.targets.add(held, to: device.vaultID)
-        device.model.syncTargetsChanged()
-        #expect(FolderTargetAccess.isMisrecorded(held))
-        let bare = Self.listing(picked)
-
-        try device.model.rechooseFolderTarget(held.id, of: device.vaultID, picked: picked)
-        let chosen = try #require(store.targets.targets(of: device.vaultID).first { $0.id == held.id })
-        #expect(chosen.subfolder == name && !chosen.isMisrecorded)
-        #expect(chosen.path == picked.appendingPathComponent(name).standardizedFileURL.path)
-        let session = try #require(device.model.syncSessions.first { $0.locationID == held.id })
-        await session.syncNow()
-        #expect(!session.needsAttention, "\(session.headline)")
         let copy = picked.appendingPathComponent(name)
-        #expect(FolderTargetAppTests.noteFiles(copy) == FolderTargetAppTests.noteFiles(device.folder))
-        #expect(Set(Self.listing(picked)) == Set(bare + [name]), "the bare copy is left as it was")
-
-        // Removed and added again with Add Folder…: the subfolder, which already holds this vault.
-        try await device.model.removeSyncTarget(held.id, of: device.vaultID)
         let added = try device.model.addPickedFolderTarget(picked, to: device.vaultID)
-        #expect(added.subfolder == name)
-        // The `.sempere` folder picked itself is the target.
+        await device.model.syncAllTargetsNow()
         try await device.model.removeSyncTarget(added.id, of: device.vaultID)
         let itself = try device.model.addPickedFolderTarget(copy, to: device.vaultID)
         #expect(itself.subfolder == nil && itself.path == copy.standardizedFileURL.path)
-        // A `.sempere` folder holding other files and no vault is refused; an empty one is taken.
         let stray = picked.deletingLastPathComponent().appendingPathComponent("Stray-\(UUID().uuidString).sempere")
         try FileManager.default.createDirectory(at: stray, withIntermediateDirectories: true)
         #expect(try AppModel.folderTargetLocation(picked: stray, vaultFolderName: name, vaultId: device.vaultID)
@@ -147,25 +83,6 @@ struct SyncFolderPlacementTests {
         #expect(throws: SyncTargetProblem.notAVault(stray.lastPathComponent)) {
             try AppModel.folderTargetLocation(picked: stray, vaultFolderName: name, vaultId: device.vaultID)
         }
-    }
-
-    /// The Mac half of a build-10 setup: the iPad synced bare into `junk`, the Mac into `junk/<Name>.sempere`. This
-    /// vault's own copy above is no reason to refuse the Mac's target (review of #113).
-    @Test func thisVaultsOwnBareCopyAboveIsNoReasonToRefuse() async throws {
-        let (device, picked) = try await Self.setUp()
-        defer { device.model.close() }
-        let name = device.folder.lastPathComponent
-        _ = try FolderTargetRun.run(vaultFolder: device.folder, folder: picked, vault: nil,
-                                    stateURL: TestTemp.root.appendingPathComponent("bare-\(UUID().uuidString)/state.json"),
-                                    twoWay: false)
-        let sub = picked.appendingPathComponent(name, isDirectory: true)
-        // As build 10 recorded it on the Mac: the picked folder's scope, the copy in its subfolder.
-        let target = try device.model.addFolderTarget(sub, scope: picked, to: device.vaultID)
-        #expect(target.subfolder == name)
-        await device.model.syncAllTargetsNow()
-        let session = try #require(device.model.syncSessions.first { $0.locationID == target.id })
-        #expect(!session.needsAttention, "\(session.headline)")
-        #expect(FolderTargetAppTests.noteFiles(sub) == FolderTargetAppTests.noteFiles(device.folder))
     }
 
     /// Review of #109: a folder inside a vault or a backup is never a sync target: by content (a backup's

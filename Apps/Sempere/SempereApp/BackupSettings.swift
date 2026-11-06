@@ -158,7 +158,7 @@ enum BackupLocation {
     /// - `recorded` (the subfolder saved for `picked`) is kept while `BackupDestination.folder` takes it as it
     ///   is, the very rule `sempere backup --into` applies to it;
     /// - otherwise `subfolder(in:…)`: so a name another device's vault took meanwhile moves on to the next
-    ///   free "<vault> N.sempere-backup", and a backup an earlier build wrote straight into `picked` (the iPad)
+    ///   free "<vault> N.sempere-backup", and a backup written straight into `picked` (`sempere backup --to`)
     ///   gets a new "<vault>.sempere-backup" inside it, its old files left as they are.
     static func runSubfolder(in picked: URL, recorded: String?, vaultId: UUID, vaultName: String, openVault: URL?,
                              fileManager fm: FileManager = .default) throws -> String? {
@@ -196,10 +196,9 @@ enum BackupLocation {
     }
 
     /// The name offered for a restored vault: the backup folder's name
-    /// without ".sempere-backup" or ".sempere" (and without the " Backup" earlier builds added), then " (Restored)".
+    /// without ".sempere-backup" or ".sempere", then " (Restored)".
     static func suggestedName(forBackup source: URL) -> String {
         var name = source.deletingPathExtension().lastPathComponent
-        if let r = name.range(of: #" Backup( \d+)?$"#, options: .regularExpression) { name.removeSubrange(r) }
         name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty { name = String(localized: "Notes", comment: "Restore from Backup: default name of a restored vault") }
         return String(localized: "\(name) (Restored)", comment: "Restore from Backup: suggested name of the new vault; %@ is the backed-up vault's name")

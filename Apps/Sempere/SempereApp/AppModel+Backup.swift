@@ -102,7 +102,7 @@ extension AppModel {
     /// backup folder inside it and whether a scope was started (the caller
     /// stops it on `picked`).
     /// With `resolveFor` (Back Up Now: the vault's name), the backup folder inside the picked one is resolved
-    /// again for this run (`BackupLocation.runSubfolder`: a name taken by another vault skipped, a backup an earlier build wrote straight into the picked folder given
+    /// again for this run (`BackupLocation.runSubfolder`: a name taken by another vault skipped, a backup written straight into the picked folder given
     /// a "<vault>.sempere-backup" of its own), and the record follows.
     private func openBackupFolder(_ vaultId: UUID, resolveFor vaultName: String? = nil) throws
         -> (picked: URL, dest: URL, scoped: Bool) {

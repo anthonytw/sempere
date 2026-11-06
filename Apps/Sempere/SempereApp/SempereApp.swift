@@ -32,7 +32,6 @@ struct SempereApp: App {
         #else
         let keys = RememberedKeys()
         #endif
-        RememberedKeys.removeOldLocationsFile()
         // A view updated outside its window's environment falls back to these (`AppModelEnvironment`).
         VaultLibrary.current = library
         RememberedKeys.current = keys
@@ -76,7 +75,7 @@ struct SempereApp: App {
         // Background sync (iOS): the model the scheduled tasks sync (`.backgroundTask` below).
         BackgroundSync.model = model
         // Every in-app vault with a sync target keeps syncing, open or not (`SyncCoordinator`), once what an
-        // interrupted "Download Again" of an earlier build left is recovered.
+        // interrupted "Download Again" left is recovered.
         Task { @MainActor in
             await model.recoverWebDAVLeftovers()
             // Launched by iOS for a background task: closed vaults' sessions wait for the task's budget

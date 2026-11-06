@@ -52,12 +52,6 @@ final class RememberedKeys {
         self.store = store
     }
 
-    /// Deletes the file where earlier builds kept the folders each remembered key was offered at (no keys in it).
-    static func removeOldLocationsFile() {
-        try? FileManager.default.removeItem(at: DeviceClock.defaultURL.deletingLastPathComponent()
-            .appendingPathComponent("RememberedKeyLocations.json"))
-    }
-
     /// "this iPad", "this iPhone", or "this Mac" under Mac Catalyst.
     @MainActor static var deviceName: String {
         name(isMac: ProcessInfo.processInfo.isMacCatalystApp, isPhone: Platform.isPhone)

@@ -109,15 +109,6 @@ struct SyncTargetsSheet: View {
 
 /// One target: its kind, place and status line.
 private struct SyncTargetRow: View {
-    /// A held target's folders: the one build 10 synced bare (`junk`) and the copy's own name (`Wompa.sempere`).
-    static func oldFolderName(_ target: SyncTarget) -> String {
-        target.bookmarkedPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? ""
-    }
-
-    static func newFolderName(_ target: SyncTarget) -> String {
-        target.path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? target.name
-    }
-
     let target: SyncTarget
     let session: SyncSession?
     let rechoose: () -> Void
@@ -131,20 +122,7 @@ private struct SyncTargetRow: View {
                 Text(target.name)
                 Text(target.kind == .webdav ? (target.url ?? "") : (target.path ?? ""))
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                if FolderTargetAccess.isMisrecorded(target) {
-                    // Set up wrong by build 10 (its copy went into the picked folder itself): held, never synced.
-                    Text("Set up wrong by an earlier build. Remove it and add the folder again.")
-                        .font(.caption).foregroundStyle(.orange)
-                        .accessibilityIdentifier("syncTargetMisrecorded")
-                    Text("The vault's files left directly in “\(Self.oldFolderName(target))” are a copy an earlier build made there. Delete them once every device syncs the new “\(Self.newFolderName(target))”.",
-                         comment: "Held sync target; first %@ is the old folder's name (junk), the second the vault's folder name (Wompa.sempere)")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button("Choose Again…", action: rechoose)
-                        .font(.caption)
-                        .buttonStyle(.borderless)
-                        .help("Choose the folder of this sync target again")
-                        .accessibilityIdentifier("syncTargetRechoose")
-                } else if let session {
+                if let session {
                     Text(session.headline).font(.caption)
                         .foregroundStyle(session.needsAttention ? .orange : .secondary)
                     // A folder that went away, or a saved permission that no longer opens it (review of #72, G5).

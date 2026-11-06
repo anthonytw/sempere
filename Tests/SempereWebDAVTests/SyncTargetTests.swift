@@ -126,48 +126,25 @@ final class SyncTargetTests: SyncTestCase {
         XCTAssertNoThrow(try store.checkFolderTarget(tmp.appendingPathComponent("Drive/Mine.sempere")))
     }
 
-    /// Review of #113: the refusal of a folder inside a vault or a backup is for new targets only, and never counts
-    /// this vault's own copy above (a bare copy build 10 synced there from an iPad). A target that worked before, under
-    /// an earlier build's backup written straight into a plain folder, keeps syncing.
-    func testExistingTargetsUnderAnOldBackupOrTheVaultsOwnCopyKeepSyncing() throws {
-        let store = VaultStore(root: tmp.appendingPathComponent("store"))
+    /// Review of #113: the refusal of a folder inside a vault or a backup is for new targets only: a run looks at the
+    /// folder itself, so a target next to a backup written straight into a plain folder keeps syncing.
+    func testExistingTargetsNextToABackupKeepSyncing() throws {
         let a = try makeVault("A")
         _ = try delta(a, device: devA, t: 0, title: "mine", note: UUID())
-        // The vault's own bare copy in `junk`, its correct target in `junk/A.sempere`: allowed; another vault's is not.
-        let junk = tmp.appendingPathComponent("junk")
-        try FileManager.default.createDirectory(at: junk, withIntermediateDirectories: true)
-        _ = try FolderTargetRun.run(vaultFolder: dir("A"), folder: junk, vault: nil,
-                                    stateURL: tmp.appendingPathComponent("bare.json"), twoWay: false)
-        XCTAssertNoThrow(try store.checkFolderTarget(junk.appendingPathComponent("A.sempere"), vaultId: a.vaultId))
-        XCTAssertThrowsError(try store.checkFolderTarget(junk.appendingPathComponent("A.sempere"), vaultId: UUID()))
-        XCTAssertThrowsError(try store.checkFolderTarget(junk.appendingPathComponent("A.sempere")))
-        // The iPad's old backup straight in a plain folder, with a target next to it inside: runs go on.
         let pad = tmp.appendingPathComponent("Pad")
         _ = try Backup.run(source: a, to: pad)
-        let target = pad.appendingPathComponent("A.sempere")
-        for (i, folder) in [target, junk.appendingPathComponent("A.sempere")].enumerated() {
-            let report = try FolderTargetRun.run(vaultFolder: dir("A"), folder: folder, vault: try openVault("A"),
-                                                 stateURL: tmp.appendingPathComponent("t\(i).json"), twoWay: true)
-            XCTAssertTrue(report.errors.isEmpty, "\(report.errors)")
-            XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("vault.json").path))
-        }
+        let folder = pad.appendingPathComponent("A.sempere")
+        let report = try FolderTargetRun.run(vaultFolder: dir("A"), folder: folder, vault: try openVault("A"),
+                                             stateURL: tmp.appendingPathComponent("t0.json"), twoWay: true)
+        XCTAssertTrue(report.errors.isEmpty, "\(report.errors)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("vault.json").path))
     }
 
-    /// Re-check of #113: the path helpers compare `/private/var/…` and `/var/…` alike, and a target whose stored path
-    /// is below the folder its bookmark recorded, with no subfolder, is held (`isMisrecorded`).
-    func testMisrecordedTargetsAreToldFromTheirRecord() throws {
+    /// Re-check of #113: the path helpers compare `/private/var/…` and `/var/…` alike.
+    func testSubfolderComparesPrivateAndPlainPaths() throws {
         XCTAssertEqual(SyncTarget.subfolder(of: URL(fileURLWithPath: "/private/var/mobile/junk/W.sempere"),
                                             in: URL(fileURLWithPath: "/var/mobile/junk")), "W.sempere")
         XCTAssertNil(SyncTarget.subfolder(of: URL(fileURLWithPath: "/var/mobile/junkyard/x"), in: URL(fileURLWithPath: "/var/mobile/junk")))
-        #if canImport(Darwin)
-        let junk = tmp.appendingPathComponent("junk", isDirectory: true)
-        try FileManager.default.createDirectory(at: junk, withIntermediateDirectories: true)
-        let bookmark = try junk.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        XCTAssertTrue(SyncTarget.folder(junk.appendingPathComponent("W.sempere"), bookmark: bookmark).isMisrecorded)
-        XCTAssertFalse(SyncTarget.folder(junk.appendingPathComponent("W.sempere"), bookmark: bookmark, subfolder: "W.sempere").isMisrecorded)
-        XCTAssertFalse(SyncTarget.folder(junk, bookmark: bookmark).isMisrecorded)
-        #endif
-        XCTAssertFalse(SyncTarget.folder(tmp.appendingPathComponent("x")).isMisrecorded, "no bookmark: the CLI's own")
     }
 
     /// TestFlight 1.0.0 (9): a folder target that holds ANOTHER vault (an earlier test vault left in iCloud Drive)

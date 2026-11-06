@@ -63,8 +63,6 @@ transport handles ("Folder targets in providers"). So `Sources/` and the app rea
   stall after 90 s without progress), then copied in under one coordinated read (`StorageLocation`:
   provider storage that does not report ubiquitous files is coordinated too). A restore from a backup in
   iCloud Drive does the same.
-- **Recents of earlier builds** that opened a vault in place (a bookmark, no store id) copy that folder in
-  when chosen, as Open Vault… does; the folder is left as it was (Q5: no migration).
 - **A WebDAV join** opens a partial copy at once and fills it ("WebDAV vaults in the app" below).
 - **Background sync** is the sync targets' ("Sync targets in the app", "Background (iOS)").
 
@@ -732,19 +730,14 @@ maps each control to its command.
   `BackupLocation.subfolder`. Only a folder that is this vault's backup
   named "….sempere-backup" already, or an empty folder so named, takes the backup itself.
   A backup is a vault folder that Open Vault… on any device copies in once
-  (TestFlight 1.0.0 (8): backups written as plain "<vault> Backup" folders,
-  or poured into the picked folder on the iPad, could not be moved between
-  devices; (9): #108's "<vault>.sempere" backups looked like the sync folder).
   The type `io.github.anthonytw.sempere.backup` ("Sempere Backup", extension
   `sempere-backup`) is exported as `public.folder`, never a package, like the
   vault's ("Vaults are folders"). Back Up Now resolves the folder again at every run
   (`BackupLocation.runSubfolder`): the recorded subfolder is kept while
   `BackupDestination.folder` takes it as it is; a name another device's vault took
-  meanwhile moves on to the next free one; a backup an earlier build wrote straight into the
-  picked folder (the iPad) gets a "<vault>.sempere-backup" of its own inside it, its
-  files left as they are, and is continued there. A backup of this vault an earlier build
-  named "….sempere" or "… Backup", picked itself (an earlier bookmark, or `--into` it), is
-  continued where it is, never given a second full backup nested inside it (review of #109). That nested backup is the one
+  meanwhile moves on to the next free one; a backup written straight into the
+  picked folder (`sempere backup --to`) gets a "<vault>.sempere-backup" of its own inside it, its
+  files left as they are, and is continued there. That nested backup is the one
   folder inside a backup that `BackupDestination.folder` takes (this vault's own
   `.sempere-backup` inside this vault's older backup), so `sempere backup --into`
   on it agrees with the app; anything else inside a backup is refused. A vault, another vault's backup, a backup whose
@@ -761,12 +754,11 @@ maps each control to its command.
   folder holding `backup.json`, and any folder inside a vault or a backup
   (`BackupDestination.enclosingHolders`: a backup's `versions/<time>/` holds this vault's
   `vault.json`, which the engine's same-vault check takes; review of #109), for Add Folder…,
-  Choose Again…, Keep syncing, the CLI's `store target add` and `store import --keep-syncing`. A folder above
-  holding this same vault (a bare copy build 10 synced there) does not count. The app also refuses, by name, a
+  Choose Again…, Keep syncing, the CLI's `store target add` and `store import --keep-syncing`. The app also refuses, by name, a
   folder below a `….sempere` or `….sempere-backup` (on iOS it cannot read above a picked folder; an app's
   container, directly in `Library/Containers` or `Shared/AppGroup`, is not one). This is checked when a target is
   added only: `FolderTargetRun.check` looks at the folder itself (a backup is never synced), so a target that
-  worked before, under an earlier build's backup written straight into a plain folder, keeps syncing (review of #113). Add Folder… on the
+  worked before keeps syncing (review of #113). Add Folder… on the
   backup's parent folder uses the next free "<vault> N.sempere" when the backup has the
   sync folder's name (#108's). Open Vault…
   on a backup is a one-time import: the sheet is titled "Open Vault Backup", shows no "Keep
@@ -1608,7 +1600,7 @@ syncs with both ways.
 - **The store's place**: on an iPhone or iPad `<App Group>/Library/Application Support/Sempere/Vaults`
   (`VaultStoreRoot`, `completeUntilFirstUserAuthentication`), so voice notes reach the inbox from the
   Lock Screen; on a Mac `Application Support/Sempere/Vaults` in the app's container (no App Group
-  entitlement there). A store an earlier build left in Application Support moves over once.
+  entitlement there).
 - **Setting up.** New Vault's "Sync With" (none, or a folder: the place other devices open to join; a WebDAV
   server is added afterwards in Sync Targets, whose sheet needs the vault, and the footer says so; its
   separate "Back Up To" is a backup, above), "Open Vault…" (`OpenVaultSheet`:
@@ -1626,21 +1618,12 @@ syncs with both ways.
   device reaches (an app's container) gets no join steps but says a target both devices reach is needed; with no target it
   says one is needed first and opens Sync Targets. The copy's subfolder is recorded by comparing the picked
   folder and the copy's folder after the same normalization (`AppModel.subfolder(of:in:)`):
-  `standardizedFileURL` drops `/private` from `/private/var/…` only for a path that exists, so on an iPhone or
-  iPad build 10 recorded none and its runs wrote the vault into the picked folder itself. Such a target is
-  held (`FolderTargetAccess.isMisrecorded`, decided from its record alone: a stored path below the path its
-  bookmark recorded, and no subfolder): no run reads or writes anything, nothing is repaired or saved by itself,
-  and Sync Targets says "Set up wrong by an earlier build. Remove it and add the folder again." with Remove and
-  Choose Again… (a new start, a union, with the subfolder). Runs into the bare folder only ever wrote and deleted the vault's own names
-  (`vault.json`, `settings.age`, `notes/`, `notebooks/`, `epochs/`, `joins/`, `keys/`, `inbox/`, summaries,
-  `.sempere-lock`); `deleteExtraneous` is off for folder targets, so other files there were left alone. `AppModel.folderTargetLocation` (New Vault, Add Folder…, Choose Again…, Keep syncing) takes a picked
+  `standardizedFileURL` drops `/private` from `/private/var/…` only for a path that exists, so the comparison normalizes both. `AppModel.folderTargetLocation` (New Vault, Add Folder…, Choose Again…, Keep syncing) takes a picked
   `….sempere` folder itself when its `vault.json` names THIS vault (or is not downloaded yet) or it is empty (one
-  holding other files and no vault is refused); any other folder gets `<picked>/<name>.sempere`, never itself, even
-  when it holds this vault's bare copy from build 10 (re-check of #113; a held target's message says those leftover
-  files can be deleted once every device syncs the subfolder, and `store sync` holds such a target too); a picked
+  holding other files and no vault is refused); any other folder gets `<picked>/<name>.sempere`, never itself (re-check of #113); a picked
   folder holding another vault is refused
-  ("This folder holds another vault (Name)…", TestFlight 1.0.0 (9): an earlier test vault in iCloud Drive took
-  a new vault's target); a `vault.json` not downloaded yet (iCloud's stand-in) is taken as before. Any other
+  ("This folder holds another vault (Name)…", an earlier test vault in iCloud Drive took
+  a new vault's target); a `vault.json` not downloaded yet (iCloud's stand-in) is taken as a possible match. Any other
   folder gets the copy in `<picked>/<name>.sempere`, or the next free `<name> N.sempere` when that name holds
   a backup or another vault, made by the first run. The engine is the last guard: `checkSameVault` compares
   the two `vault.json` ids before every run and refuses another vault (`SyncError.vaultMismatch`, "The
@@ -1795,7 +1778,7 @@ syncs with both ways.
   or, for a server with no strong version token, after reading the file again and finding the same bytes.
   One the server refuses because its copy moved on is judged again in another round (three at most, then
   the next run); `settings.age` is not uploaded when `vault.json` from the same round did not land. A hung or slow server never blocks an edit (`WriteLockScopeTests`).
-- **Leftovers of "Download Again"** (earlier builds): at launch, before any session runs,
+- **Leftovers of "Download Again"**: at launch, before any session runs,
   `LocalCopy.recoverInterruptedRedownload` puts a copy back from `<copy>.old` when the copy is missing,
   removes an unfinished `<copy>.download` and its state, and removes `<copy>.old` only when the copy
   holds every revision, blob, inbox file and notebook record in it; otherwise it is kept and named in an
@@ -1836,9 +1819,7 @@ its sessions invalidate in `deinit` (`finishTasksAndInvalidate`). "Test Connecti
 **Model: a store vault with a WebDAV target, synced both ways.** The vault the app opens is a store
 vault (`<store>/<vault id>/<name>.sempere`) and the server one of its targets (`WebDAVLocationStore` is
 the WebDAV view of the target registry; sync state and quarantine in the target's own folder). The first
-download builds it in the store. WebDAV copies of earlier builds (`Application Support/Sempere/WebDAV/`,
-`webdav.json`) become store vaults at launch, before anything syncs (`LegacyWebDAV`,
-`AppModel.convertLegacyWebDAV`), and nothing an old copy holds is ever deleted. What an interrupted "Download
+download builds it in the store. What an interrupted "Download
 Again" left is recovered first. When the store does not hold the vault, the location's sync state, quarantine
 and transfers move to the target's folder first, then the copy into the store (`<folder>.*` leftovers next to
 it), so the first run neither uploads nor checks everything again; a marker in the target's folder lets a
@@ -1868,7 +1849,7 @@ and what other devices wrote arrives at the next unlock.
 - The password is stored only in the Keychain (generic password, service
   `io.github.anthonytw.sempere.webdav`, account the target id,
   `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` so background tasks can run while the device is locked;
-  items of earlier builds (`WhenUnlocked`) are moved over when next read; before the first unlock after a
+  before the first unlock after a
   restart a run says "waiting for unlock", with no backoff and no problem; never synchronizable), is
   never logged and never written to a file or `UserDefaults`. The rest of the
   target (URL, user, certificate pin) is in the store's target registry

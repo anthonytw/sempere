@@ -330,7 +330,6 @@ struct VaultReencrypt: ParsableCommand {
         switch t.kind {
         case .folder:
             guard let path = t.path else { throw SyncTargetError.io("target \(t.name) has no path") }
-            if t.isMisrecorded { throw SyncTargetError.misrecorded(path) }
             report = try FolderTargetRun.run(vaultFolder: vault.url, folder: URL(fileURLWithPath: path, isDirectory: true),
                                              vault: vault, stateURL: stateURL, twoWay: true, options: options)
         case .webdav:

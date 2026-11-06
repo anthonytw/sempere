@@ -491,7 +491,7 @@ extension AppModel {
         syncTargetsChanged()
     }
 
-    /// At launch, before any copy syncs: what an interrupted "Download Again" of an earlier build left in
+    /// At launch, before any copy syncs: what an interrupted "Download Again" left in
     /// each copy is recovered or removed (`LocalCopy.recoverInterruptedRedownload`). A previous copy that
     /// holds files the copy lacks is kept where it is and named in an alert, never deleted.
     func recoverWebDAVLeftovers() async {

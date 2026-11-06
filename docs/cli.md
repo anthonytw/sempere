@@ -1104,10 +1104,10 @@ for `--prune` and for a full `verify`.
   `Backup folder: PATH`; `--json`'s
   `destination` is it. A backup is never a sync target: `store target add
   --folder` and `store import --keep-syncing` refuse a folder holding
-  `backup.json`, or any folder inside a vault (other than this vault's own copy) or a backup (exit 1;
+  `backup.json`, or any folder inside a vault or a backup (exit 1;
   checked when the target is added, not at each sync), and `store sync`
-  does not run one. A backup of this vault an earlier build named `….sempere` or
-  `… Backup`, given itself as `FOLDER`, is continued where it is (no backup nested in it).
+  does not run one. A backup of this vault in a folder not named `….sempere-backup`, given itself as `FOLDER`, gets a
+  `….sempere-backup` inside it.
 - `backup V --archive FILE.tar` writes one uncompressed POSIX tar of the
   encrypted files under `<name>.sempere/` (refuses an existing file). It is
   written to a temporary file, read back and checked member by member, then

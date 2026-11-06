@@ -198,7 +198,7 @@ extension SyncEngine {
     }
 
     /// The base's listing, nil when the base is on its way: a provider's folder evicted whole (iCloud Drive holds a
-    /// vault folder of an earlier build as a package: its stand-in, or a dataless folder) or not downloaded yet. It is
+    /// vault folder as a package: its stand-in, or a dataless folder) or not downloaded yet. It is
     /// asked for and reported arriving, and the run ends without writing anything (`finishRun`); a later run syncs it.
     /// A base that is not there is made only when the transport allows it (`checkAbsentBase`: never a folder target
     /// synced before), so an evicted or deleted target is never made again empty beside the provider's copy.

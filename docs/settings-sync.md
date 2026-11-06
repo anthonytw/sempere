@@ -248,9 +248,7 @@ which devices use it. Any key may also appear in a type block.
 | `appearance.notePages` | General ▸ Appearance ▸ Note Pages (dark: on screen only) | `light`, `dark`, `matchApp` | `light` |
 
 Recognition and transcription still run on each device: one without the language model
-does what it can. (The `rewrap.*` keys of earlier builds are gone: under the key hierarchy adding
-a device rewraps no file, and removal is a new epoch, KH3. A file that still holds them keeps
-them as unknown keys.)
+does what it can.
 
 ### 5.2 Used by some device types
 

@@ -165,7 +165,7 @@ protocol WebDAVPasswordStore: Sendable {
 /// `WebDAVPasswordStore` on the Keychain: a generic-password item per
 /// location (service `KeychainWebDAVPasswordStore.service`, account the
 /// location id), `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (background tasks run while the device is
-/// locked, P8; an item saved by an earlier build as `WhenUnlocked` is moved over when it is next read), never
+/// locked, P8), never
 /// synchronizable, no access control (runs read it without a prompt). The
 /// password is never logged and never written anywhere but the Keychain.
 struct KeychainWebDAVPasswordStore: WebDAVPasswordStore {
@@ -179,26 +179,18 @@ struct KeychainWebDAVPasswordStore: WebDAVPasswordStore {
          kSecUseDataProtectionKeychain as String: true]
     }
 
-    /// The accessibility every item gets (and earlier builds' items are moved to).
+    /// The accessibility every item gets.
     static var accessible: CFString { kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
 
     func password(for location: UUID) throws -> String {
         var query = Self.baseQuery(location)
         query[kSecReturnData as String] = true
-        query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else { throw Self.error(status) }
-        guard let item = result as? [String: Any], let data = item[kSecValueData as String] as? Data,
-              let text = String(data: data, encoding: .utf8) else {
+        guard let data = result as? Data, let text = String(data: data, encoding: .utf8) else {
             throw WebDAVPasswordError.notFound
-        }
-        if let current = item[kSecAttrAccessible as String] as? String, current != Self.accessible as String {
-            // Saved by an earlier build (`WhenUnlocked`): readable after the first unlock from now on. Best
-            // effort: a failure leaves the item as it was, and the next read tries again.
-            _ = SecItemUpdate(Self.baseQuery(location) as CFDictionary,
-                              [kSecAttrAccessible as String: Self.accessible] as CFDictionary)
         }
         return text
     }

@@ -78,19 +78,9 @@ final class BackupTests: VaultTestCase {
         let vaultNamed = tmp.appendingPathComponent("Made.sempere")
         try fm.createDirectory(at: vaultNamed, withIntermediateDirectories: true)
         XCTAssertEqual(try dest(vaultNamed), "Made.sempere/My Notes.sempere-backup")
-        // Review of #109: this vault's backup under an earlier build's name, chosen itself, is continued where it is,
-        // not given a second full backup inside it.
-        for legacy in ["Old.sempere", "My Notes Backup"] {
-            let dir = tmp.appendingPathComponent("Legacy/\(legacy)")
-            _ = try Backup.run(source: vault, to: dir)
-            XCTAssertEqual(try dest(dir), "Legacy/\(legacy)")
-            XCTAssertThrowsError(try dest(dir, other)) { error in
-                guard case BackupDestination.Problem.otherVaultsBackup = error else { return XCTFail("\(error)") }
-            }
-        }
     }
 
-    /// Review of #108: a backup of this vault an earlier build wrote straight into a plain folder gets a
+    /// Review of #108: a backup of this vault written straight into a plain folder (`backup --to`) gets a
     /// `<name>.sempere-backup` inside it; hidden entries (iCloud stand-ins) and an unlistable folder are not empty; an
     /// unreadable `backup.json` and a folder inside a vault or backup are refused by name.
     func testDestinationEdgeCases() throws {
@@ -99,7 +89,7 @@ final class BackupTests: VaultTestCase {
             let url = try BackupDestination.folder(in: parent, vaultId: vault.vaultId, vaultName: "Notes")
             return url.standardizedFileURL.path.replacingOccurrences(of: tmp.standardizedFileURL.path + "/", with: "")
         }
-        // The iPad's old backup, straight in "Drive": a new "Notes.sempere-backup" inside, the old files untouched.
+        // A backup straight in "Drive": a new "Notes.sempere-backup" inside, the old files untouched.
         let old = tmp.appendingPathComponent("Drive")
         _ = try Backup.run(source: vault, to: old)
         let before = try fm.contentsOfDirectory(atPath: old.path).sorted()

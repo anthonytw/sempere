@@ -324,18 +324,10 @@ final class VaultLibrary {
     /// The in-app vault store's folder (docs/design/device-first-sync.md §2): on an iPhone or iPad
     /// `<App Group container>/Library/Application Support/Sempere/Vaults`, so quick capture and widgets
     /// reach the inbox; on a Mac (no App Group entitlement) `Application Support/Sempere/Vaults` in the
-    /// app's container. A store left in Application Support by an earlier build is moved over once
-    /// (`VaultStoreRoot.prepare`).
+    /// app's container (`VaultStoreRoot.prepare`).
     static let defaultVaultStoreRoot: URL = VaultStoreRoot.prepare(
         appGroup: Platform.isMac ? nil : FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: VaultStoreRoot.appGroup),
-        legacy: AppSupport.folder("Vaults"))
-
-    /// The app container's Documents folder, where earlier builds kept "On This Device" vaults (opened
-    /// in place). New vaults go into `vaultStore` instead.
-    static var onDeviceFolder: URL {
-        (try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-    }
+        fallback: AppSupport.folder("Vaults"))
 
     /// The `.sempere` folders (or those with the extension `ext`) directly inside `folder`, sorted by name.
     nonisolated static func vaults(in folder: URL, extension ext: String = "sempere") -> [URL] {

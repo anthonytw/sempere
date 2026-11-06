@@ -35,21 +35,18 @@ public enum BackupDestination {
 
     /// The extension of a backup folder (`<name>.sempere-backup`).
     public static let folderExtension = "sempere-backup"
-    /// The extension of a vault folder; earlier builds named backups with it too.
+    /// The extension of a vault folder.
     public static let vaultExtension = "sempere"
 
     /// The backup folder for the vault `vaultId` called `vaultName` when the user chose `parent`:
     /// - `parent` named `….sempere-backup` that is this vault's backup, or empty: `parent` itself;
     /// - otherwise `<vaultName>.sempere-backup` inside `parent`, or `<vaultName> 2.sempere-backup`, `… 3`, … when
     ///   that name holds something else than this vault's backup or an empty folder. An existing backup of this
-    ///   vault under such a name is continued. A backup of this vault an earlier build named `….sempere` or
-    ///   `… Backup`, chosen itself, is continued where it is (no second backup nested in it); one an earlier build
-    ///   wrote straight into a plain folder (the iPad's) and chosen itself gets its `<vaultName>.sempere-backup`
-    ///   inside, its own files left alone.
+    ///   vault under such a name is continued. A backup of this vault that is not named `….sempere-backup`
+    ///   and is chosen itself gets its `<vaultName>.sempere-backup` inside, its own files left alone.
     ///
     /// Inside a vault or a backup nothing is taken, with one exception that keeps the app and the CLI agreeing:
-    /// this vault's own `….sempere-backup` nested in this vault's earlier backup (the iPad case above, which the
-    /// app continues at every run) is continued, and only it.
+    /// this vault's own `….sempere-backup` nested in this vault's backup is continued, and only it.
     ///
     /// `vaultName` is a display name (`VaultStore.displayName`); a name that cannot be a folder name
     /// becomes "Notes". Reads `backup.json` files only (no key). "Empty" counts hidden entries (iCloud's
@@ -66,12 +63,7 @@ public enum BackupDestination {
             guard let owner = backupVaultId(parent) else { throw Problem.unreadableBackup(parent.path) }
             guard owner == id else { throw Problem.otherVaultsBackup(parent.path, owner) }
             if isBackupFolder(parent) { return parent }
-            // This vault's backup under an earlier build's name for it (`….sempere`, `… Backup`), chosen itself (an
-            // earlier build's bookmark, or `--into` it): continued where it is. A `.sempere-backup` inside it would
-            // start a second full backup nested in the first (review of #109). Its content says it is a backup, so it
-            // is never taken for a sync folder whatever its name.
-            if isLegacyBackupName(parent) { return parent }
-            // A backup written straight into a plain folder (the iPad's): a `.sempere-backup` folder inside it.
+            // A backup in a folder not named `.sempere-backup`: a `.sempere-backup` folder inside it.
         } else if isVault(parent, fm) {
             throw Problem.isVault(parent.path)
         } else if isBackupFolder(parent), isEmptyFolder(parent, fm) {
@@ -88,11 +80,6 @@ public enum BackupDestination {
             }
         }
         return parent.appendingPathComponent("\(base) \(UUID().uuidString.prefix(8)).\(folderExtension)", isDirectory: true)
-    }
-
-    /// Whether `dir` has a name earlier builds gave backups: `….sempere` (#108) or `… Backup`.
-    static func isLegacyBackupName(_ dir: URL) -> Bool {
-        dir.pathExtension.lowercased() == vaultExtension || dir.lastPathComponent.hasSuffix(" Backup")
     }
 
     /// Whether the entry `name` of a folder makes it non-empty for a backup: everything but Finder's

@@ -163,27 +163,6 @@ final class CLIStoreTargetTests: CLITestCase {
         XCTAssertEqual(noteFiles(v.path), notes)
     }
 
-    /// Re-check of #113: a target build 10 set up without its subfolder (its bookmark of the picked folder, its path
-    /// the copy's folder inside it, no subfolder) is held by `store sync` too: nothing is written.
-    func testAHeldTargetIsNotSynced() throws {
-        #if canImport(Darwin)
-        let v = try storeVault()
-        let junk = path("Drive/junk"), folder = junk + "/Notes.sempere"
-        try FileManager.default.createDirectory(atPath: junk, withIntermediateDirectories: true)
-        let added = try cli(["store", "target", "add", "Notes", "--folder", folder, "--store", store, "--json"])
-        XCTAssertEqual(added.status, 0, added.err)
-        let list = URL(fileURLWithPath: "\(store)/.sync/\(v.id)/targets.json")
-        var targets = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: list)) as? [[String: Any]])
-        targets[0]["bookmark"] = try URL(fileURLWithPath: junk, isDirectory: true)
-            .bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil).base64EncodedString()
-        try JSONSerialization.data(withJSONObject: targets).write(to: list)
-        let held = try sync(key: v.key)
-        XCTAssertEqual(held.status, 1, held.out + held.err)
-        XCTAssertTrue((held.out + held.err).contains("set up wrong by an earlier build"), held.out + held.err)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: junk), [], "nothing written")
-        #endif
-    }
-
     /// Removing a store vault removes its targets and their state, never the target folders.
     func testRemovingTheVaultRemovesItsTargets() throws {
         let v = try storeVault()

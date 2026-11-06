@@ -18195,17 +18195,6 @@
         }
       }
     },
-    "Set up wrong by an earlier build. Remove it and add the folder again." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configurado mal por una versión anterior. Quítalo y vuelve a añadir la carpeta."
-          }
-        }
-      }
-    },
     "Settings" : {
       "comment" : "Toolbar button",
       "extractionState" : "manual",
@@ -22086,18 +22075,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La lista de dispositivos de la bóveda cambió tanto en este dispositivo como en el servidor. Se conservaron ambas copias; las notas se siguen sincronizando."
-          }
-        }
-      }
-    },
-    "The vault's files left directly in “%@” are a copy an earlier build made there. Delete them once every device syncs the new “%@”." : {
-      "comment" : "Held sync target; first %@ is the old folder's name (junk), the second the vault's folder name (Wompa.sempere)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los archivos de la bóveda que quedaron directamente en «%1$@» son una copia que hizo allí una versión anterior. Bórralos cuando todos los dispositivos se sincronicen con la nueva «%2$@»."
           }
         }
       }

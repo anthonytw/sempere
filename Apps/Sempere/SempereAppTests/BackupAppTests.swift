@@ -115,7 +115,7 @@ struct BackupAppTests {
         #expect(why.contains("holds it") && why.contains("inside it"), "\(why)")
     }
 
-    /// Back Up Now resolves the folder at every run: a backup written straight into the picked folder (the iPad)
+    /// Back Up Now resolves the folder at every run: a backup written straight into the picked folder (`backup --to`)
     /// gets a "<name>.sempere-backup" inside it, its files untouched, and is continued there (the CLI's `--into`
     /// takes the same folder); a recorded name another vault's backup took moves on to " 2".
     @Test func backUpNowResolvesTheFolderAtEveryRun() throws {
@@ -128,7 +128,7 @@ struct BackupAppTests {
         func run(_ picked: URL, _ recorded: String?) throws -> String? {
             try BackupLocation.runSubfolder(in: picked, recorded: recorded, vaultId: id, vaultName: "Notes", openVault: nil)
         }
-        // The iPad's backup straight in the picked folder: a "<name>.sempere-backup" inside, nothing else touched,
+        // A backup straight in the picked folder: a "<name>.sempere-backup" inside, nothing else touched,
         // continued at the next run (the nested backup `BackupDestination.folder` takes, as `--into` does).
         let pad = try scratch.folder("Pad")
         _ = try Backup.run(source: vault, to: pad)

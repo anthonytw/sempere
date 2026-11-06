@@ -12,12 +12,11 @@ enum VaultStoreRoot {
     static let appGroup = "group.io.github.anthonytw.sempere"
 
     /// The store's folder: `<App Group>/Library/Application Support/Sempere/Vaults` when the App Group
-    /// container is there, else `legacy` (the Mac's).
-    /// There is no move of an earlier build's store (no pre-v1 compatibility). The folder
+    /// container is there, else `fallback` (the Mac's). The folder
     /// is `completeUntilFirstUserAuthentication` (quick capture writes from the Lock Screen; every file
     /// is age-encrypted anyway).
-    static func prepare(appGroup container: URL?, legacy: URL) -> URL {
-        guard let container else { return legacy }
+    static func prepare(appGroup container: URL?, fallback: URL) -> URL {
+        guard let container else { return fallback }
         let root = container.appendingPathComponent("Library/Application Support/Sempere/Vaults", isDirectory: true)
         let fm = FileManager.default
         try? fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -37,22 +36,13 @@ struct FolderTargetAccess {
     /// A fresh bookmark when the stored one was stale (the folder moved or was renamed): the caller saves it.
     var refreshedBookmark: Data?
 
-    /// Why a target set up wrong by an earlier build is held (`isMisrecorded`): never synced until it is chosen again
-    /// or removed.
-    struct Misrecorded: Error, Equatable, CustomStringConvertible {
-        let path: String
-        var description: String { "\(path): set up wrong by an earlier build; nothing was synced. Remove it and add the folder again" }
-    }
-
     /// - Parameter mount: may mount a share the bookmark names (a run the user started, Sync Now). Scheduled runs
     ///   pass false (`.withoutMounting`): the Mac would otherwise try to mount an absent share on every run.
     /// - Throws: `FolderTargetError.unavailable` when the bookmark does not resolve because the folder's drive or
     ///   share is not there now (an unplugged USB drive, an unmounted share: offline audit A-P2; shown as offline,
     ///   the next run tries again); `.missing` when it does not resolve otherwise (review of #72, G5: the user
     ///   chooses the folder again) or no path names the folder.
-    ///   `Misrecorded` for a target an earlier build set up wrong (`isMisrecorded`): nothing is read or written.
     static func open(_ target: SyncTarget, mount: Bool = false) throws -> FolderTargetAccess {
-        if isMisrecorded(target) { throw Misrecorded(path: target.path ?? target.name) }
         if let bookmark = target.bookmark {
             var stale = false
             let options: URL.BookmarkResolutionOptions = mount ? [] : [.withoutMounting]
@@ -82,14 +72,6 @@ struct FolderTargetAccess {
     func close() {
         scoped?.stopAccessingSecurityScopedResource()
     }
-
-    /// A target TestFlight build 10 recorded without its subfolder (`AppModel.subfolder(of:in:)`): its path names
-    /// `<picked>/<Name>.sempere`, but its bookmark is of `<picked>` and no subfolder is saved, so its runs wrote the
-    /// vault into the picked folder itself. Decided from the saved record alone (the path the bookmark recorded, the
-    /// stored path and subfolder), never from what the folder shows, so a provider's late listing cannot change it.
-    /// Such a target is held: it never syncs, nothing is moved, and Sync Targets says to remove it or choose the
-    /// folder again (review of #113: no automatic repair; only build 10's test setups have one).
-    static func isMisrecorded(_ target: SyncTarget) -> Bool { target.isMisrecorded }
 }
 
 /// Telling a folder whose drive or share is not there now from one that is gone (offline audit A-P2; review of #91, M2),
@@ -408,7 +390,7 @@ extension AppModel {
         guard store.entry(id: vaultID) != nil else { throw SyncTargetProblem.notAStoreVault }
         let scoped = scope.startAccessingSecurityScopedResource()
         defer { if scoped { scope.stopAccessingSecurityScopedResource() } }
-        try Self.checkFolderTarget(folder, in: store, vaultId: vaultID)
+        try Self.checkFolderTarget(folder, in: store)
         // Every run would fail to write there (build 12: "errno 13" for the demo vault another account made).
         guard Self.isWritableFolder(folder) else { throw SyncTargetProblem.notWritable(folder.lastPathComponent) }
         BundleBitRepair.clear(folder, .syncTarget)
@@ -504,12 +486,11 @@ extension AppModel {
     /// folder the user picked:
     /// - a picked `….sempere` folder (a vault's sync folder) is the target itself when its `vault.json` is THIS vault's
     ///   (or not downloaded yet) or it is empty; one holding another vault, or other files, is refused;
-    /// - any other folder gets `<picked>/<name>.sempere`, never the picked folder itself, even when it holds this
-    ///   vault's bare copy (build 10's lost subfolder; re-check of #113);
+    /// - any other folder gets `<picked>/<name>.sempere`, never the picked folder itself (re-check of #113);
     /// - a picked folder holding another vault is refused (`.otherVault`): an earlier test vault left in iCloud Drive
-    ///   took a new vault's copy in TestFlight 1.0.0 (9); a picked backup is refused (`.isBackup`);
+    ///   took a new vault's copy; a picked backup is refused (`.isBackup`);
     /// - otherwise `<picked>/<vault name>.sempere`, or the next free `<vault name> N.sempere` when that name holds a
-    ///   backup or another vault (a backup made into the same folder by an earlier build had that very name).
+    ///   backup or another vault (a backup made into the same folder).
     ///
     /// A `vault.json` that cannot be read here (iCloud's `.vault.json.icloud` stand-in, not downloaded yet) is
     /// taken as it was before: the engine compares the vault ids before every run and refuses another vault
@@ -519,7 +500,7 @@ extension AppModel {
         if BackupDestination.isBackup(picked, fileManager: fm) || BackupDestination.isBackupFolder(picked) {
             throw SyncTargetProblem.isBackup
         }
-        if let holder = enclosingHolder(of: picked, vaultId: vaultId, fileManager: fm) { throw SyncTargetProblem.insideVault(holder) }
+        if let holder = enclosingHolder(of: picked, fileManager: fm) { throw SyncTargetProblem.insideVault(holder) }
         if picked.pathExtension.lowercased() == BackupDestination.vaultExtension {
             // Not on this device as a folder (an iCloud Drive package not downloaded): never taken as an empty target.
             guard isFolder(picked, fm) else { throw SyncTargetProblem.notDownloaded(picked.lastPathComponent) }
@@ -535,8 +516,7 @@ extension AppModel {
                 return picked
             }
         }
-        // Any other folder gets the copy in a folder of its own, never the picked folder itself, even when it holds
-        // this vault's copy: build 10 synced there bare from an iPhone or iPad (re-check of #113).
+        // Any other folder gets the copy in a folder of its own, never the picked folder itself (re-check of #113).
         if holdsVault(picked, vaultId, fm) == .other { throw SyncTargetProblem.otherVault(VaultStore.displayName(of: picked)) }
         let base = VaultStore.displayName(of: URL(fileURLWithPath: vaultFolderName))
         for n in 1...100 {
@@ -554,18 +534,11 @@ extension AppModel {
     /// The name of the nearest folder above `folder` that is a vault or a backup (`BackupDestination.enclosingHolders`,
     /// by content), or, since the app may not read above a picked folder (its security scope covers the folder only),
     /// that is named like one (`….sempere`, `….sempere-backup`); nil when there is none.
-    nonisolated static func enclosingHolder(of folder: URL, vaultId: UUID? = nil,
-                                            fileManager fm: FileManager = .default) -> String? {
-        // This vault's own copy above (a bare copy an earlier build synced there) is no reason to refuse (review of #113).
-        func ownCopy(_ holder: URL) -> Bool {
-            guard let vaultId, !BackupDestination.isBackup(holder, fileManager: fm) else { return false }
-            return holdsVault(holder, vaultId, fm) == .this
-        }
-        if let holder = BackupDestination.enclosingHolders(of: folder, fileManager: fm).first(where: { !ownCopy($0) }) {
+    nonisolated static func enclosingHolder(of folder: URL, fileManager fm: FileManager = .default) -> String? {
+        if let holder = BackupDestination.enclosingHolders(of: folder, fileManager: fm).first {
             return holder.lastPathComponent
         }
-        guard let named = PickedFolderRules.enclosingNamedHolder(of: folder), !ownCopy(named) else { return nil }
-        return named.lastPathComponent
+        return PickedFolderRules.enclosingNamedHolder(of: folder)?.lastPathComponent
     }
 
     /// True when `url` is a directory on this device.
@@ -588,8 +561,8 @@ extension AppModel {
     }
 
     /// `VaultStore.checkFolderTarget`, its refusals worded for the app.
-    nonisolated static func checkFolderTarget(_ folder: URL, in store: VaultStore, vaultId: UUID? = nil) throws {
-        do { try store.checkFolderTarget(folder, vaultId: vaultId) } catch SyncTargetError.isBackup {
+    nonisolated static func checkFolderTarget(_ folder: URL, in store: VaultStore) throws {
+        do { try store.checkFolderTarget(folder) } catch SyncTargetError.isBackup {
             throw SyncTargetProblem.isBackup
         } catch SyncTargetError.insideVault(_, let holder) {
             throw SyncTargetProblem.insideVault(URL(fileURLWithPath: holder).lastPathComponent)
@@ -610,7 +583,7 @@ extension AppModel {
         defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
         let folder = try pickedTargetLocation(picked, vaultFolderName: entry.url.lastPathComponent, vaultId: vaultID)
         let isVault = Self.samePlace(folder, picked)
-        try Self.checkFolderTarget(folder, in: store, vaultId: vaultID)
+        try Self.checkFolderTarget(folder, in: store)
         // Every run would fail to write there (build 12: "errno 13" for the demo vault another account made).
         guard Self.isWritableFolder(folder) else { throw SyncTargetProblem.notWritable(folder.lastPathComponent) }
         let bookmark = try? picked.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)

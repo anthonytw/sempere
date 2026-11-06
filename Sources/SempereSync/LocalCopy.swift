@@ -399,7 +399,7 @@ extension LocalCopy {
     /// The previous copy a swap set aside (`swapIn`).
     public var oldFolder: URL { folder.appendingPathExtension("old") }
 
-    /// Recovers what an interrupted "Download Again" (`redownload`, `swapIn`) of an earlier build left:
+    /// Recovers what an interrupted "Download Again" (`redownload`, `swapIn`) left:
     ///
     /// - the copy missing and `<copy>.old` there (a crash between the two moves): it is put back;
     /// - `<copy>.download` and its sync state (a re-download that never replaced the copy): removed, the

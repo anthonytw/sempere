@@ -81,7 +81,7 @@ public struct SyncTarget: Codable, Sendable, Hashable, Identifiable {
 
     /// `url`'s standardized path with `/private` dropped before `var`, `tmp` and `etc` whether or not the path exists.
     /// `standardizedFileURL` drops it only for a path that exists, so on an iPhone or iPad a picked folder (there) and
-    /// the copy's folder inside it (not made yet) compared as unrelated and build 10 saved no subfolder.
+    /// the copy's folder inside it (not made yet) compared as unrelated and no subfolder was saved.
     public static func comparablePath(_ url: URL) -> String {
         var path = url.standardizedFileURL.path
         for top in ["var", "tmp", "etc"] where path == "/private/\(top)" || path.hasPrefix("/private/\(top)/") {
@@ -99,27 +99,6 @@ public struct SyncTarget: Codable, Sendable, Hashable, Identifiable {
         guard i != b else { return nil }
         let prefix = b == "/" ? "/" : b + "/"
         return i.hasPrefix(prefix) ? String(i.dropFirst(prefix.count)) : nil
-    }
-
-    /// The path the app's bookmark recorded for the picked folder, read without resolving it; nil without a bookmark
-    /// or where bookmarks cannot be read (Linux).
-    public var bookmarkedPath: String? {
-        #if canImport(Darwin)
-        guard let bookmark else { return nil }
-        return (try? URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: bookmark))?.path
-        #else
-        return nil
-        #endif
-    }
-
-    /// A folder target TestFlight build 10 set up wrong: its stored path is below the folder its bookmark recorded, but
-    /// no subfolder is saved, so its runs wrote the vault into the picked folder itself. Decided from the record alone,
-    /// never from what the folder shows. Such a target is held: neither the app nor `store sync` runs it (review of
-    /// #113); the user removes it or chooses the folder again.
-    public var isMisrecorded: Bool {
-        guard kind == .folder, subfolder == nil, let path, let recorded = bookmarkedPath else { return false }
-        return Self.subfolder(of: URL(fileURLWithPath: path, isDirectory: true),
-                              in: URL(fileURLWithPath: recorded, isDirectory: true)) != nil
     }
 
     /// True when `other` reaches the same place (one folder, or one server folder and user).
@@ -167,8 +146,6 @@ public enum SyncTargetError: Error, Equatable, Sendable, CustomStringConvertible
     /// The folder lies inside a vault or a backup (the folder path, then the nearest such folder): a sync would
     /// write into it (review of #109).
     case insideVault(String, String)
-    /// The target was set up wrong by an earlier build (`SyncTarget.isMisrecorded`): held, never synced.
-    case misrecorded(String)
     case io(String)
 
     public var description: String {
@@ -184,9 +161,6 @@ public enum SyncTargetError: Error, Equatable, Sendable, CustomStringConvertible
         case .insideVault(let p, let holder):
             return "\(p) is inside the vault or backup \(holder), never a sync target: a sync would write into it. "
                 + "Choose a folder outside it"
-        case .misrecorded(let p):
-            return "\(p): this target was set up wrong by an earlier build (its copy went into the folder above it); "
-                + "nothing was synced. Remove it and add the folder again"
         case .io(let m): return m
         }
     }
@@ -358,11 +332,9 @@ extension VaultStore {
     /// store, not holding it, not a file, not a backup (`backup.json`: a sync would write into it and
     /// pass note deletions and compactions on, the loss a backup is there to undo), and not inside a vault or a
     /// backup (`BackupDestination.enclosingHolders`: a backup's `versions/<time>/` holds a `vault.json` of the
-    /// same vault, which the engine's same-vault check takes; review of #109). A folder above holding the copy of
-    /// `vaultId` itself (a bare copy an earlier build synced there) does not count: the target next to it is this
-    /// vault's too. Checked when a target is added only; runs check the folder itself (`FolderTargetRun.check`). A
+    /// same vault, which the engine's same-vault check takes; review of #109). Checked when a target is added only; runs check the folder itself (`FolderTargetRun.check`). A
     /// missing folder is fine (the first run creates it).
-    public func checkFolderTarget(_ folder: URL, vaultId: UUID? = nil) throws {
+    public func checkFolderTarget(_ folder: URL) throws {
         let url = folder.standardizedFileURL
         if url.overlaps(root) { throw SyncTargetError.overlapsStore(url.path) }
         var isDir: ObjCBool = false
@@ -370,20 +342,11 @@ extension VaultStore {
             throw SyncTargetError.notAFolder(url.path)
         }
         if BackupDestination.isBackup(url) { throw SyncTargetError.isBackup(url.path) }
-        let own = vaultId?.uuidString.lowercased()
-        if let holder = BackupDestination.enclosingHolders(of: url).first(where: { holder in
-            BackupDestination.isBackup(holder) || own == nil || Self.manifestVaultId(holder) != own
-        }) {
+        if let holder = BackupDestination.enclosingHolders(of: url).first {
             throw SyncTargetError.insideVault(url.path, holder.path)
         }
     }
 
-    /// The vault id in `folder`'s `vault.json`, nil when it cannot be read.
-    static func manifestVaultId(_ folder: URL) -> String? {
-        guard let data = try? BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
-                                                   maxBytes: BoundedRead.maxManifestBytes) else { return nil }
-        return SyncEngine.manifestFields(data)?.vaultId
-    }
 }
 
 extension JSONEncoder {
@@ -433,8 +396,7 @@ public enum FolderTargetRun {
     /// back). A folder never synced yet may be missing: the first run creates it. A backup folder
     /// (`backup.json`) is never synced: a run would write into it and pass deletions on. What lies above the folder
     /// is not looked at here: a new target inside a vault or a backup is refused when it is added
-    /// (`VaultStore.checkFolderTarget`), and a target that worked before (under an earlier build's plain-folder
-    /// backup, or next to a bare copy) keeps working (review of #113).
+    /// (`VaultStore.checkFolderTarget`), and a target that worked before keeps working (review of #113).
     ///
     /// The rule for a folder that is not there is `FolderRemote.absentBase`, which the engine applies again at the
     /// moment it would make the folder (`SyncRemote.checkAbsentBase`), so `sempere sync folder` and a folder that went

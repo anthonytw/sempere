@@ -160,7 +160,7 @@ struct StoreImport: ParsableCommand {
         let store = location.open()
         let sourceURL = URL(fileURLWithPath: source, isDirectory: true).standardizedFileURL
         // A backup is never a sync target (a sync would write into it): refused before anything is copied.
-        if keepSyncing { try store.checkFolderTarget(sourceURL, vaultId: try? Vault.open(at: sourceURL).vaultId) }
+        if keepSyncing { try store.checkFolderTarget(sourceURL) }
         let entry = try store.importVault(from: sourceURL, options: options)
         if keepSyncing {
             // The source was a complete copy of this vault: the first sync finds both sides equal.
