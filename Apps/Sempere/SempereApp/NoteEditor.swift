@@ -386,7 +386,7 @@ final class NoteEditor {
         let reason = readOnlyReason(loaded)
         let session = EditingSession.newID()
         let writer = reason == nil ? NoteWriter(vault: vault, noteID: noteID, clock: clock, nextSeq: loaded.nextSeq,
-                                                coordinated: coordinated, session: session) : nil
+                                                session: session) : nil
         let editor = NoteEditor(noteID: noteID, state: loaded.state, writer: writer, readOnlyReason: reason,
                                 debounce: debounce, recognizer: recognizer, recognitionDelay: recognitionDelay)
         editor.editingSession = session
@@ -513,7 +513,7 @@ final class NoteEditor {
         pageIndex = shown.flatMap { id in pages.firstIndex { $0.id == id } } ?? min(pageIndex, max(pages.count - 1, 0))
         readOnlyReason = Self.readOnlyReason(loaded)
         writer = readOnlyReason == nil ? NoteWriter(vault: vault, noteID: noteID, clock: clock, nextSeq: loaded.nextSeq,
-                                                    coordinated: coordinated, session: editingSession) : nil
+                                                    session: editingSession) : nil
         cacheKey = loaded.failures == 0 ? DrawingCache.Key(note: noteID, revisions: loaded.names) : nil
         knownRevisionNames = Set(loaded.names)
         decodedRevisions = loaded.decoded

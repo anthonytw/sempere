@@ -101,20 +101,12 @@ struct RegisteredImportCommand<Tag: ImporterTag>: ParsableCommand {
         } else {
             let vault = try access.openVault(.required)
             try vault.requireWritable()   // format.md §7.3: exit 7, not a per-note failure
-            let stateURL = DeviceState.defaultURL()
-            var state = try DeviceState.loadOrCreate(at: stateURL)
-            var clock = state.clock
-            defer {
-                // Keep the clock even when the import throws half way.
-                state.clock = clock
-                try? state.save(to: stateURL)
-            }
-            result = try importer.run(request(vault, state.device), clock: &clock)
-            // Recognition writes through the device state file: save the import's clock first.
-            state.clock = clock
-            try state.save(to: stateURL)
+            // The clock is kept (saved) even when the import throws half way, and before recognition
+            // opens the state file again for its own deltas.
+            var file = try DeviceClockFile(url: DeviceState.defaultURL())
+            let device = file.device
+            result = try file.withClock(save: true) { clock in try importer.run(request(vault, device), clock: &clock) }
             recognizeImported(result, in: vault)
-            if let saved = try? DeviceState.loadOrCreate(at: stateURL) { state = saved; clock = saved.clock }
         }
         meter?.finish()   // the progress line ends before the report is printed
         let recognition: ImporterRecognition? = recognize == nil ? nil : ImporterRecognition(

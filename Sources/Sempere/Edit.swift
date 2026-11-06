@@ -202,18 +202,21 @@ extension Vault {
     /// Writes one delta of `ops` for a note as this device: the device id and
     /// clock come from the state file at `deviceState` (created on first use;
     /// saved before the revision is written, so the clock only ever moves
-    /// forward). The clock first observes every readable revision of the
-    /// note, so these ops win last-writer-wins races against what is already
-    /// there. Creates the note when it has no revisions yet.
+    /// forward). The clock first observes what a writer observes of the note
+    /// (`writeReadings`: every revision's header, no stroke geometry), so these
+    /// ops win last-writer-wins races against what is already there. Creates
+    /// the note when it has no revisions yet.
     ///
     /// - Throws: `VaultError.locked` / `.noIdentities` when the vault cannot
     ///   read, `.revision` for an unreadable snapshot, `VaultError.io` for the
-    ///   state file.
+    ///   state file (also when a live `DeviceClock` of this process holds it).
     @discardableResult
     public func apply(_ ops: [Op], to noteId: UUID, deviceState: URL, app: String,
                       wall: Date = Date()) throws -> Revision {
         guard canRead else { throw VaultError.locked }
-        return try writeDelta(ops, to: noteId, loaded: try loadNote(noteId), deviceState: deviceState, app: app, wall: wall)
+        var clock = try DeviceClockFile(url: deviceState)
+        let view = try writeReadings(of: noteId, device: clock.device, wall: wall)
+        return try writeDelta(ops, to: noteId, after: view, clock: &clock, app: app, wall: wall)
     }
 
     /// Writes `deltas` to `noteId` as consecutive revisions, one per element, reading the note
@@ -222,34 +225,53 @@ extension Vault {
     public func applyInOrder(_ deltas: [[Op]], to noteId: UUID, deviceState: URL, app: String,
                              wall: Date = Date()) throws -> [Revision] {
         guard canRead else { throw VaultError.locked }
-        var loaded = try loadNote(noteId)
+        var clock = try DeviceClockFile(url: deviceState)
+        var view = try writeReadings(of: noteId, device: clock.device, wall: wall)
         var written: [Revision] = []
         for ops in deltas where !ops.isEmpty {
-            let revision = try writeDelta(ops, to: noteId, loaded: loaded, deviceState: deviceState, app: app, wall: wall)
-            loaded.revisions.append(revision)
+            let revision = try writeDelta(ops, to: noteId, after: view, clock: &clock, app: app, wall: wall)
+            view = WriteReadings(readings: [], nextSeq: revision.seq + 1)   // the clock is past the readings already
             written.append(revision)
         }
         return written
     }
 
+    /// `writeDelta(_:to:after:clock:…)` with the state file at `deviceState`, observing `loaded` (the note
+    /// as the caller read it, in full or without stroke points).
     func writeDelta(_ ops: [Op], to noteId: UUID, loaded: LoadedNote, deviceState: URL, app: String,
                     wall: Date, checkpoint: Checkpoint? = nil) throws -> Revision {
-        var state = try DeviceState.loadOrCreate(at: deviceState)
-        // Revision names keep the machine's own id (its state file's), as before the key hierarchy: ids decide
-        // nothing (format.md §15.14 "Revision names").
-        let device = state.device
-        var clock = state.clock
-        for r in loaded.revisions { clock.observe(r.hlc, wall: wall) }
-        let hlc = clock.tick(wall: wall)
-        let seq = loaded.failures.isEmpty
-            ? Vault.nextSeq(from: loaded.revisions, device: device)
-            : try nextSeq(noteId: noteId, device: device)
-        state.clock = clock
-        try state.save(to: deviceState)
-        let revision = Revision(noteId: noteId, device: device, seq: seq, hlc: hlc, wall: wall, app: app,
-                                body: .delta(ops: ops), checkpoint: checkpoint)
-        try write(revision)
-        return revision
+        var clock = try DeviceClockFile(url: deviceState)
+        let view = try writeReadings(of: loaded, noteId: noteId, device: clock.device, wall: wall)
+        return try writeDelta(ops, to: noteId, after: view, clock: &clock, app: app, wall: wall, checkpoint: checkpoint)
+    }
+
+    /// The one revision writer (format.md §5): writes one delta of `ops` to `noteId` as `clock`'s device.
+    /// The clock observes `view.readings` (what the writer read of the note, `writeReadings`), ticks and is
+    /// saved before the revision is placed; `seq` is `view.nextSeq`. `write` then refuses a read-only vault
+    /// (§7.3) and a partial copy's incomplete note (§1.2) and records the file in the write ledger before
+    /// placing it (§15.14). When another writer of this device took that `seq` meanwhile, the `seq` is
+    /// re-read from disk and the write retried once with a new reading. Revision names keep the machine's
+    /// own id (its state file's): ids decide nothing (§15.14 "Revision names").
+    ///
+    /// `NoteWriter` (through `DeviceClock.writeDelta`) and `apply` both write through here.
+    public func writeDelta(_ ops: [Op], to noteId: UUID, after view: WriteReadings, clock: inout DeviceClockFile,
+                           app: String, wall: Date, session: String? = nil,
+                           checkpoint: Checkpoint? = nil) throws -> Revision {
+        clock.observe(view.readings, wall: wall)
+        var seq = view.nextSeq
+        var retried = false
+        while true {
+            let hlc = try clock.tick(wall: wall)
+            let revision = Revision(noteId: noteId, device: clock.device, seq: seq, hlc: hlc, wall: wall, app: app,
+                                    body: .delta(ops: ops), session: session, checkpoint: checkpoint)
+            do {
+                try write(revision)
+                return revision
+            } catch VaultError.seqInUse where !retried {
+                retried = true
+                seq = try nextSeq(noteId: noteId, device: clock.device)
+            }
+        }
     }
 }
 

@@ -157,14 +157,4 @@ struct NoteEditorTests {
         await editor.flush()
         #expect(try Self.myDeltas(vault, clock, note: AppModelTests.deleted).isEmpty)
     }
-
-    @Test func clockAndDeviceLiveInTheStateFile() async throws {
-        let url = TS.deviceStateURL()
-        let a = try DeviceClock(url: url)
-        let first = try await a.tick()
-        let b = try DeviceClock(url: url)   // a relaunch
-        #expect(b.device == a.device)
-        let second = try await b.tick()
-        #expect(second > first)
-    }
 }

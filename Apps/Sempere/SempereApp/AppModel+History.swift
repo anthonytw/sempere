@@ -233,8 +233,8 @@ extension AppModel {
             if let failure = windowed.saveError { throw ModelError.unsavedChanges(failure) }
         }
         var result: (name: RevisionName, summary: RestoreSummary)?
-        try await commit(ids: [id]) { vault, clock, cloud, verifier in
-            result = try await NoteWriter.restore(id, to: point, vault: vault, clock: clock, coordinated: cloud,
+        try await commit(ids: [id]) { vault, clock, verifier in
+            result = try await NoteWriter.restore(id, to: point, vault: vault, clock: clock,
                                                   verify: verifier(id))
         }
         guard let result else { return nil }
@@ -261,8 +261,8 @@ extension AppModel {
         }
         let checkpoint = Checkpoint(name: name)
         var written: RevisionName?
-        try await commit(ids: [id]) { vault, clock, cloud, verifier in
-            written = try await NoteWriter.append([], to: id, vault: vault, clock: clock, coordinated: cloud,
+        try await commit(ids: [id]) { vault, clock, verifier in
+            written = try await NoteWriter.append([], to: id, vault: vault, clock: clock,
                                                   checkpoint: checkpoint, verify: verifier(id))
         }
         guard let written else { throw ModelError.noVaultOpen }

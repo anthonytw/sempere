@@ -149,12 +149,12 @@ extension AppModel {
         // Refuse before anything is written.
         _ = try NoteOps.newPDFNote(title: name, blob: BlobRef(sha256: String(repeating: "0", count: 64), size: 1, type: "application/pdf"),
                                    pages, notebook: notebook)
-        try await commit(ids: [id], creating: [id]) { vault, clock, cloud, verifier in
+        try await commit(ids: [id], creating: [id]) { vault, clock, verifier in
             let ref = try await Task.detached(priority: .userInitiated) {
                 try vault.writeBlob(note: id, contentsOf: file, type: "application/pdf")
             }.value
             let ops = try NoteOps.newPDFNote(title: name, blob: ref, pages, notebook: notebook)
-            try await NoteWriter.append(ops, to: id, vault: vault, clock: clock, coordinated: cloud, verify: verifier(id))
+            try await NoteWriter.append(ops, to: id, vault: vault, clock: clock, verify: verifier(id))
         }
         selectNewNote(id, notebook: notebook)
         return id

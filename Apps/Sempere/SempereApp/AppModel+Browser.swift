@@ -224,9 +224,9 @@ extension AppModel {
     /// refuses to write otherwise.
     private func commit(_ edits: [(id: UUID, ops: [Op])], creating: Set<UUID> = []) async throws {
         let batch = edits
-        try await commit(ids: batch.map(\.id), creating: creating) { vault, clock, cloud, verifier in
+        try await commit(ids: batch.map(\.id), creating: creating) { vault, clock, verifier in
             for edit in batch {
-                try await NoteWriter.append(edit.ops, to: edit.id, vault: vault, clock: clock, coordinated: cloud,
+                try await NoteWriter.append(edit.ops, to: edit.id, vault: vault, clock: clock,
                                             verify: verifier(edit.id))
             }
         }
@@ -243,8 +243,8 @@ extension AppModel {
     /// tags, delete; `NoteWriter.append(to:detail:building:)`).
     func commit(_ id: UUID, detail: RevisionDetail = .full,
                 building build: @escaping @Sendable (NoteState?) -> [Op]) async throws {
-        try await commit(ids: [id]) { vault, clock, cloud, verifier in
-            try await NoteWriter.append(to: id, vault: vault, clock: clock, coordinated: cloud, detail: detail,
+        try await commit(ids: [id]) { vault, clock, verifier in
+            try await NoteWriter.append(to: id, vault: vault, clock: clock, detail: detail,
                                         verify: verifier(id), building: build)
         }
     }
@@ -255,7 +255,7 @@ extension AppModel {
     /// (`partialNoteVerifier`, review of #75; core refuses such a write too, format.md §1.2). A note in
     /// `creating` is new and is never marked incomplete, so the same check passes for it.
     func commit(ids: [UUID], creating: Set<UUID> = [],
-                        write: (Vault, DeviceClock, Bool, @Sendable (UUID) -> (@Sendable () throws -> Void)?) async throws -> Void)
+                        write: (Vault, DeviceClock, @Sendable (UUID) -> (@Sendable () throws -> Void)?) async throws -> Void)
         async throws {
         await editGate.acquire()
         defer { editGate.release() }
@@ -275,7 +275,7 @@ extension AppModel {
         }
         _ = creating
         do {
-            try await write(vault, clock, false, verifier)
+            try await write(vault, clock, verifier)
         } catch {
             try? await refresh(ids)   // some deltas may have landed
             throw error
@@ -357,9 +357,9 @@ extension AppModel {
         }
         guard !moving.isEmpty else { return nil }
         let batch = moving
-        try await commit(ids: batch) { vault, clock, cloud, verifier in
+        try await commit(ids: batch) { vault, clock, verifier in
             for id in batch {
-                try await NoteWriter.append(to: id, vault: vault, clock: clock, coordinated: cloud, detail: .withoutStrokePoints,
+                try await NoteWriter.append(to: id, vault: vault, clock: clock, detail: .withoutStrokePoints,
                                             verify: verifier(id)) { state in
                     state.map { NoteOps.move(toNotebook: target, state: $0) } ?? [.setMeta(.notebook(target))]
                 }
@@ -404,10 +404,10 @@ extension AppModel {
             try ensureCurrent(gen)
         }
         let previous = record.previous
-        try await commit(ids: batch) { vault, clock, cloud, verifier in
+        try await commit(ids: batch) { vault, clock, verifier in
             for id in batch {
                 let target = NotebookPath.canonical(previous[id] ?? nil)
-                try await NoteWriter.append(to: id, vault: vault, clock: clock, coordinated: cloud, detail: .withoutStrokePoints,
+                try await NoteWriter.append(to: id, vault: vault, clock: clock, detail: .withoutStrokePoints,
                                             verify: verifier(id)) { state in
                     state.map { NoteOps.move(toNotebook: target, state: $0) } ?? [.setMeta(.notebook(target))]
                 }

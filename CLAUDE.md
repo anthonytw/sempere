@@ -198,11 +198,18 @@ there. Commit messages:
 - A fresh Xcode install may fail every `xcodebuild` with "A required plugin
   failed to load": run `xcodebuild -runFirstLaunch`. It also ships without an
   iOS simulator runtime: `xcodebuild -downloadPlatform iOS` (about 8 GB).
-- App writes go through `NoteWriter` (`DeviceClock.swift`): canvas autosave and
-  browser edits (`NoteWriter.append`) alike, one delta each, with the one
-  `DeviceClock` the `AppModel` owns (device id and clock in Application Support).
-  Never write vault files from `Apps/` any other way, and never tick a second
-  clock on the same state file (`Vault.apply` is for the CLI and tests). Async
+- One revision writer (`Sources/Sempere/RevisionWriter.swift`, `Vault.writeDelta(_:to:after:clock:…)`): it
+  observes what the writer read of the note (`writeReadings`: unreadable files by name, capped at the wall
+  clock; unauthenticated ones not at all), ticks and saves the clock before placing the file, takes the next
+  `seq`, writes through `Vault.write` (read-only latch, partial-copy check, ledger first) and retries a taken
+  `seq` once. Its clock comes from one of two holders of the device state file: the `DeviceClock` actor (the app:
+  one per state file per process, the `AppModel`'s, in Application Support; `NoteWriter` writes through it,
+  canvas autosave and browser edits alike, one delta each) or `DeviceClockFile` (one synchronous call:
+  `Vault.apply` and the CLI, the machine's `DeviceState`), which refuses a file a live `DeviceClock` holds.
+  Never write vault files from `Apps/` any other way, and never open a second clock on a state file a
+  `DeviceClock` holds. Work that stamps revisions itself (an import, thinning, snapshots, restores) runs on the
+  clock in `withClock(save:)`, which keeps the ticks even when the body throws. The app adds only its state
+  file's place, `NoteWriter.appName` and its signposts (`AppPerfSink`, `DeviceClock.swift`). Async
   `AppModel` work re-checks the `generation` token (`ensureCurrent`) after
   every await before publishing. Security-scoped URLs from the picker need
   `startAccessingSecurityScopedResource()` for the whole time the vault is used;

@@ -240,8 +240,8 @@ extension AppModel {
                 transcriptRef = try await writer.addBlob(content, type: BlobRef.transcriptType)
             }
             let audio = audioRef, transcript = transcriptRef
-            try await commit(ids: [ids.note], creating: exists ? [] : [ids.note]) { vault, clock, cloud, verifier in
-                try await NoteWriter.append(to: ids.note, vault: vault, clock: clock, coordinated: cloud,
+            try await commit(ids: [ids.note], creating: exists ? [] : [ids.note]) { vault, clock, verifier in
+                try await NoteWriter.append(to: ids.note, vault: vault, clock: clock,
                                             verify: verifier(ids.note)) { state in
                     CaptureAdoption.ops(pending, audio: audio, transcript: transcript, current: state)
                 }

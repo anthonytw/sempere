@@ -47,6 +47,8 @@ extension Vault {
 public struct WriteReadings: Hashable, Sendable {
     public var readings: [HLC]
     public var nextSeq: Int
+
+    public init(readings: [HLC], nextSeq: Int) { self.readings = readings; self.nextSeq = nextSeq }
 }
 
 extension Vault {
@@ -60,9 +62,16 @@ extension Vault {
     /// - Throws: as `loadNoteConcurrently`, and as `nextSeq(noteId:device:)`
     ///   when a revision failed to read.
     public func writeReadings(of noteId: UUID, device: DeviceID, wall: Date = Date()) throws -> WriteReadings {
-        let loaded = try loadNoteConcurrently(noteId, detail: .withoutStrokePoints)
-        return WriteReadings(readings: Self.readings(of: loaded, wall: wall),
-                             nextSeq: try nextSeq(of: noteId, loaded: loaded, device: device))
+        try writeReadings(of: try loadNoteConcurrently(noteId, detail: .withoutStrokePoints), noteId: noteId,
+                          device: device, wall: wall)
+    }
+
+    /// What a writer of `device` observes from `loaded`, the note `noteId` already read in full or
+    /// without stroke points: `readings(of:wall:)` and `nextSeq(of:loaded:device:)`.
+    public func writeReadings(of loaded: LoadedNote, noteId: UUID, device: DeviceID,
+                              wall: Date = Date()) throws -> WriteReadings {
+        WriteReadings(readings: Self.readings(of: loaded, wall: wall),
+                      nextSeq: try nextSeq(of: noteId, loaded: loaded, device: device))
     }
 
     /// The readings a writer observes from `loaded` (format.md §5): every

@@ -183,14 +183,11 @@ struct NotesRestore: ParsableCommand {
         let vault = try access.openVault(.required)
         let id = try vault.resolveNote(note)
         let point = try NoteHistory.resolve(to, among: try vault.revisionNames(of: id))
-        let stateURL = DeviceState.defaultURL()
-        var device = try DeviceState.loadOrCreate(at: stateURL)
-        var clock = device.clock
-        let result = try vault.restore(note: id, toRevision: point, device: device.device, clock: &clock,
-                                       wall: Date(), app: appName, dryRun: dryRun)
-        if result.written {
-            device.clock = clock
-            try device.save(to: stateURL)
+        var file = try DeviceClockFile(url: DeviceState.defaultURL())
+        let device = file.device
+        let result = try file.withClock(save: !dryRun) { clock in
+            try vault.restore(note: id, toRevision: point, device: device, clock: &clock, wall: Date(), app: appName,
+                              dryRun: dryRun)
         }
         let noteName = id.uuidString.lowercased()
         if output.json {

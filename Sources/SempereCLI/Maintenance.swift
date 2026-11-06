@@ -174,13 +174,12 @@ struct CompactCommand: ParsableCommand {
 /// Writes a snapshot of an already-loaded note with this machine's device id
 /// and clock, and saves the clock. Returns the snapshot and the device state.
 func takeSnapshot(_ vault: Vault, loaded: LoadedNote) throws -> (Revision, DeviceState) {
-    let stateURL = DeviceState.defaultURL()
-    var state = try DeviceState.loadOrCreate(at: stateURL)
-    var clock = state.clock
-    let snap = try vault.snapshot(loaded: loaded, device: state.device, clock: &clock, wall: Date(), app: appName)
-    state.clock = clock
-    try state.save(to: stateURL)
-    return (snap, state)
+    var file = try DeviceClockFile(url: DeviceState.defaultURL())
+    let device = file.device
+    let snap = try file.withClock(save: true) { clock in
+        try vault.snapshot(loaded: loaded, device: device, clock: &clock, wall: Date(), app: appName)
+    }
+    return (snap, DeviceState(device: device, clock: file.clock))
 }
 
 struct SnapshotCommand: ParsableCommand {

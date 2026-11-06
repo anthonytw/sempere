@@ -173,10 +173,10 @@ struct JoinAppTests {
         let s = try await Self.setup()
         #expect(await TS.waitUntil { s.b.pendingNoteIDs.contains(s.big) })
         await #expect(throws: AppModel.ModelError.noteNotDownloadedFromServer("dav.example.org")) {
-            try await s.b.commit(ids: [s.big]) { _, _, _, verifier in try verifier(s.big)?() }
+            try await s.b.commit(ids: [s.big]) { _, _, verifier in try verifier(s.big)?() }
         }
         try await s.b.downloadNote(s.big)
-        try await s.b.commit(ids: [s.big]) { _, _, _, verifier in try verifier(s.big)?() }
+        try await s.b.commit(ids: [s.big]) { _, _, verifier in try verifier(s.big)?() }
         await Self.close(s)
     }
 
