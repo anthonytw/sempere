@@ -13,7 +13,9 @@
 #                                      ~/.swiftpm (the Static Linux SDK) is the volume sempere-linux-swiftpm.
 #
 # test: SEMPERE_REQUIRE_AGE_PQ, SEMPERE_REQUIRE_POPPLER and SEMPERE_REQUIRE_TOOLS make a missing tool fail its test
-# instead of skipping it. webdav: SEMPERE_WEBDAV_LARGE_MB defaults to 64 here.
+# instead of skipping it. webdav: SEMPERE_WEBDAV_LARGE_MB defaults to 64 here. SEMPERE_BUILD_JOBS=N caps the
+# build's and the tests' parallelism (the Orin runner's memory is shared with other CI, sysadmin
+# docs/fil-ci-runner.md §2.3).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -47,9 +49,9 @@ job_test() {
   # kit script), the UCD (BidiTest.txt), iproute2 (the offline guard), util-linux (setpriv)
   apt_install zlib1g-dev curl zbar-tools zip poppler-utils unicode-data jq iproute2 util-linux
   install_age
-  swift build --build-tests
+  swift build --build-tests ${SEMPERE_BUILD_JOBS:+-j "$SEMPERE_BUILD_JOBS"}
   SEMPERE_REQUIRE_AGE_PQ=1 SEMPERE_REQUIRE_POPPLER=1 SEMPERE_REQUIRE_TOOLS=zbar,zip,pdftotext,bidi CI=1 \
-    scripts/test-offline.sh --skip-build --parallel
+    scripts/test-offline.sh --skip-build --parallel ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
   scripts/check-portability.sh
   scripts/check-removable-importers.sh
 }
@@ -57,7 +59,7 @@ job_test() {
 job_webdav() {
   apt_install zlib1g-dev curl python3-venv
   [[ -x /opt/dav/bin/wsgidav ]] || { python3 -m venv /opt/dav && /opt/dav/bin/pip install --quiet -r scripts/webdav-server-requirements.txt; }
-  SEMPERE_WEBDAV_LARGE_MB=${SEMPERE_WEBDAV_LARGE_MB:-64} PATH=/opt/dav/bin:$PATH scripts/test-webdav.sh
+  SEMPERE_WEBDAV_LARGE_MB=${SEMPERE_WEBDAV_LARGE_MB:-64} PATH=/opt/dav/bin:$PATH scripts/test-webdav.sh ${SEMPERE_BUILD_JOBS:+-j "$SEMPERE_BUILD_JOBS"}
 }
 
 job_static() {

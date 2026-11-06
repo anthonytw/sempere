@@ -2,9 +2,10 @@
 
 Development and CI run on the LAN (docs/design/local-first.md): pull requests and commit statuses are on Gitea
 (`git.lab:awertz/sempere`), and GitHub runs nothing. The Linux jobs are one script, `scripts/ci-linux.sh`, which
-Gitea Actions will run on the lab's Linux runner and anyone can run in Docker (`just ci-linux test webdav static`).
+Gitea Actions runs on the lab's Linux runner (`.gitea/workflows/linux.yml`) and anyone can run in Docker
+(`just ci-linux test webdav static`).
 The Mac work runs on the Mac through `scripts/local-ci.sh`, with the agents sharing it through `xc-lock`; there is
-no Mac CI runner. Until the Gitea runner is set up, the Linux jobs run only locally.
+no Mac CI runner.
 
 ## Policy: what runs where
 
@@ -150,9 +151,11 @@ then say so.
 ## What runs when
 
 - **Every pull request** needs `local/app-tests` (`just ci` on its pushed head). The Linux jobs
-  (`scripts/ci-linux.sh test`, `webdav`) and the web viewer's checks (`cd web && npm ci && npm run lint &&
-  npm run typecheck && npm test`, and `web/scripts/golden.sh` when the CLI's export changes) are run by the
-  author for now and will run on the Gitea runner. The CI redesign (docs/design/thin-app.md, wave 7) decides the
+  (`scripts/ci-linux.sh test`, `webdav`) run on the Gitea runner (`.gitea/workflows/linux.yml`, label
+  `orin-aarch64-sempere`, sysadmin `docs/fil-ci-runner.md` §2) on every pull request and push to `main`, with
+  `SEMPERE_BUILD_JOBS=4`: the runner's memory is shared with other CI. The web viewer's checks (`cd web &&
+  npm ci && npm run lint && npm run typecheck && npm test`, and `web/scripts/golden.sh` when the CLI's export
+  changes) are run by the author for now. The CI redesign (docs/design/thin-app.md, wave 7) decides the
   lean gate, which targets run on which change, and the scheduled runs.
 - **The static (musl) Linux release build** is `scripts/ci-linux.sh static`; `release-build.sh` builds both
   architectures from the tag.
