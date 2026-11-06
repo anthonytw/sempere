@@ -22,9 +22,12 @@ those lines can move:
 - **`SempereLocalization`** is a package target. It holds `Localizable.xcstrings`, moved from
   `Apps/Sempere/Localization/`, and the extensions that map library values to localized text. The app
   and the widget link it. `InfoPlist.xcstrings` and `AppShortcuts.xcstrings` stay in the app target,
-  because the system reads them from the app bundle. Before relying on this target, check how a Linux
-  `swift build` treats an `.xcstrings` resource. If it can't, make the target Apple-only, with its
-  sources behind `#if canImport(Darwin)`.
+  because the system reads them from the app bundle. **It is Apple-only.** Checked 2026-11-06 in
+  `swift:6.4.2-noble`: SwiftPM on Linux has no rule for an `.xcstrings` resource (a warning, the file is
+  not compiled), and Linux Foundation has no `String(localized:bundle:)`. So `Package.swift` declares the
+  target only when not building for Linux (`#if !os(Linux)` around the target and its product). Nothing
+  on Linux needs it, because the CLI stays English. Each library value's Spanish text is still checked on
+  Linux, by `LocalizationCatalogTests` reading the catalog's JSON.
 - **Platform services become protocols that the library declares and the app implements.** Each comes
   with a memory or no-op version for tests and the CLI:
 
