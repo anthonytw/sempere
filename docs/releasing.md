@@ -411,7 +411,8 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    The workflow (`.github/workflows/release.yml`):
    - **prepare** fails unless the tag points at a commit on `main`, that commit passed the release
      sweep, itself or through a swept ancestor with only release-neutral changes since
-     (`scripts/release-sweep-check.sh`; a prerelease tag `vX.Y.Z-rc.N` only warns), the tag is
+     (`scripts/release-sweep-check.sh`; a CLI-only release, `--no-app`, needs the CLI's GitHub CI jobs green
+     instead, see C; a prerelease tag `vX.Y.Z-rc.N` only warns), the tag is
      `vMAJOR.MINOR.PATCH[-pre]` and equals `Version.swift`, and `CHANGELOG.md` has a non-empty
      `## [X.Y.Z] - YYYY-MM-DD` section with no `TODO(user)` (`scripts/changelog-section.sh`). `just release-ready`
      runs the same checks before anything is pushed.
@@ -473,7 +474,11 @@ has a tag with the same version, so a hotfix is a short release:
    for, as always. Merge.
 2. The release PR: `git switch -c release/1.0.1 origin/main && just release-prep 1.0.1`; **[you]** the date;
    `just release-check`; PR; `just ci`; merge (B.1). A CLI-only fix uses `just release-prep 1.0.1 --no-app`,
-   which leaves the app's version alone; skip steps 4 to 6 below for it.
+   which leaves the app's version alone: skip steps 3 to 5 below for it (no sweep, no App Store build). Its tag
+   needs green GitHub CI on the merge commit instead: the CLI's jobs `Linux (swift:6.4-noble)`, `macOS`, the
+   WebDAV tests and `Linux static release build (musl)` (`scripts/release-sweep-check.sh` tells the two kinds
+   apart: `Version.swift` differs from the app's `MARKETING_VERSION`). Wait for them, then step 6 without
+   Release This Version.
 3. `just ci-release` on the merge commit, keeping `$sha` (B.2).
 4. `just testflight both "$sha"` (B.3).
 5. **[you]** App Store Connect: a new version `1.0.1` on each platform (exactly the `MARKETING_VERSION`), pick
