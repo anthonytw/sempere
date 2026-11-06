@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Tag a release and push the tag (docs/releasing.md, "B. The release"). Pushing `vX.Y.Z` starts
-# .github/workflows/release.yml, which publishes the GitHub Release: the push is asked for separately.
+# Tag a release on Gitea and push the tag (docs/releasing.md, "B. The release"; docs/design/local-first.md).
+# Gitea is where release tags live. The push is asked for separately; after it come `just release-build`
+# (the binaries, built here) and `just release-github` (the one squashed commit for GitHub, pushed by the owner).
 #
 #   scripts/release-tag.sh VERSION [REF]          checks, then a signed tag on REF (default origin/main),
 #                                                 then asks before pushing it
 #   scripts/release-tag.sh --check VERSION [REF]  the checks only: no tag, no push
 #   scripts/release-tag.sh --push VERSION         push an existing local tag (asks first); it re-checks only that
-#                                                 the tag is on origin/main: release.yml's prepare job checks the rest
+#                                                 the tag is on origin/main (scripts/release-build.sh checks the rest)
 #
-# The checks are release.yml's `prepare` job, run before anything is published: the commit is on
+# The checks, run before anything is published: the commit is on
 # origin/main, Version.swift there says VERSION, CHANGELOG.md there has a dated section for VERSION with no
 # TODO(user) (scripts/changelog-section.sh), and the commit passed the release sweep (`just ci-release`): itself, or
 # a swept ancestor with only release-neutral changes since (scripts/release-sweep-check.sh; a prerelease only warns). The tag is signed with your git signing key (`git tag -s`).
@@ -26,7 +27,6 @@ esac
 version=${1#v}
 ref=${2:-origin/main}
 tag=v$version
-gh_repo=${SEMPERE_GH_REPO:-anthonytw/sempere}
 die() { echo "error: $*" >&2; exit 1; }
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || die "'$1' is not X.Y.Z or X.Y.Z-prerelease"
 prerelease=false
@@ -34,13 +34,12 @@ prerelease=false
 
 confirm_push() {
   echo
-  echo "Pushing $tag starts the release workflow, which publishes a GitHub Release and its binaries."
+  echo "Pushing $tag to origin (Gitea) makes it the release. Nothing is published to GitHub yet."
   local answer=""
   if [[ -t 0 ]]; then read -r -p "Type the version ($version) to push $tag to origin, anything else to stop: " answer; fi
   if [[ $answer == "$version" ]]; then
     git push origin "refs/tags/$tag"
-    echo "pushed $tag. Watch it: gh run watch --repo $gh_repo \$(gh run list --repo $gh_repo --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
-    echo "Then: just release-verify $version"
+    echo "pushed $tag. Next: just release-build $version, then just release-github $version"
   else
     echo "Not pushed. Push later with: just release-push $version   (or delete the local tag: git tag -d $tag)"
   fi
@@ -80,7 +79,7 @@ changelog() {
 }
 sweep() {
   local line
-  if line=$(scripts/release-sweep-check.sh "$sha" "$gh_repo"); then echo "$line"; return 0; fi
+  if line=$(scripts/release-sweep-check.sh "$sha"); then echo "$line"; return 0; fi
   if [[ $prerelease == true ]]; then echo "warn  ${line#FAIL  } (a prerelease only warns)"; return 0; fi
   echo "$line"; return 1
 }

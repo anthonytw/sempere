@@ -2,7 +2,7 @@
 
 `sempere.rb` is a template for `Formula/sempere.rb` in a **separate** tap
 repository, `anthonytw/homebrew-tap` (users run `brew install anthonytw/tap/sempere`).
-It installs the release tarballs built by `.github/workflows/release.yml`; nothing is
+It installs the release tarballs built by `scripts/release-build.sh` and published on GitHub Releases; nothing is
 compiled on the user's machine. The tap repo is not created by this project's tooling.
 
 ## The tap

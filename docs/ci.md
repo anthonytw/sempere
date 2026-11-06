@@ -1,20 +1,24 @@
 # Continuous integration
 
-CI is `.github/workflows/ci.yml`. It is gated so that scarce macOS runners are not wasted.
+Development and CI run on the LAN (docs/design/local-first.md): pull requests and commit statuses are on Gitea
+(`git.lab:awertz/sempere`), and GitHub runs nothing. The Linux jobs are one script, `scripts/ci-linux.sh`, which
+Gitea Actions will run on the lab's Linux runner and anyone can run in Docker (`just ci-linux test webdav static`).
+The Mac work runs on the Mac through `scripts/local-ci.sh`, with the agents sharing it through `xc-lock`; there is
+no Mac CI runner. Until the Gitea runner is set up, the Linux jobs run only locally.
 
 ## Policy: what runs where
 
-The hosted macOS runner is a 3-CPU VM that needs over an hour for the app's suites, so the app is
-tested on a developer's Mac by `scripts/local-ci.sh`, in three layers. Each layer posts a commit
-status for the exact commit it ran on (a clean checkout of a commit GitHub has; a status is posted
-only after every step passed), and something enforces each one:
+The app is tested on a developer's Mac by `scripts/local-ci.sh`, in layers. Each layer posts a commit status on
+Gitea for the exact commit it ran on (a clean checkout of a commit Gitea has; a status is posted only after every
+step passed; `scripts/forge.sh`), and something enforces each one:
 
 | Layer | Command | Runs | Status | Enforced by |
 |---|---|---|---|---|
-| PR gate | `scripts/local-ci.sh` | the tooltip lint (`scripts/check-help.py`), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run), Mac Catalyst unit tests (`scripts/app.sh test-mac`, the pseudo-language layout check `PseudoLanguageLayoutTests` among them), package tests (`swift build --build-tests && swift test --parallel`) | `local/app-tests` | the `main` ruleset (required) |
-| Author's targeted tests | whatever the change calls for | e.g. `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacItemUITests` | the PR's `## Tests run` section | the `PR lists tests run` job (`.github/workflows/pr-description.yml`) |
+| PR gate | `scripts/local-ci.sh` | the tooltip lint (`scripts/check-help.py`), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run), Mac Catalyst unit tests (`scripts/app.sh test-mac`, the pseudo-language layout check `PseudoLanguageLayoutTests` among them), package tests (`swift build --build-tests && swift test --parallel`) | `local/app-tests` | merging (required) |
+| Author's targeted tests | whatever the change calls for | e.g. `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacItemUITests` | the PR's `## Tests run` section | review (the PR template has the section) |
 | Pre-TestFlight | `scripts/local-ci.sh --testflight` | the gate, then the dense-note performance suite (`test-mac-perf`, [Performance tests](#performance-tests)), the Mac unit tests with no network ([Offline mode](#offline-mode)), the Mac launch smoke tests (`test-mac-smoke`) and every Mac UI test (`test-mac-ui`) | `local/testflight-suite` | `scripts/testflight.sh` (`just testflight`) checks it on the commit it builds (`local/release-sweep` also counts) |
-| Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, with the iPad unit suite (`test`), the iPhone suites (`test-phone`) and the pseudo-language UI test on the iPad (`pseudo`) before the Mac UI tests, then the iPad UI tests (`test-ui`) and the iPhone canvas UI tests (`test-phone-ui`: tap selects, hold menu, finger draws, reading mode) | `local/release-sweep` | the App Store submission; then `release.yml`'s `prepare` job: a `vX.Y.Z` tag needs it on the commit or on a swept ancestor with only release-neutral changes since (`scripts/release-sweep-check.sh`; a CLI-only release needs the CLI's CI jobs instead; a `-rc` prerelease only warns) |
+| Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, with the iPad unit suite (`test`), the iPhone suites (`test-phone`) and the pseudo-language UI test on the iPad (`pseudo`) before the Mac UI tests, then the iPad UI tests (`test-ui`) and the iPhone canvas UI tests (`test-phone-ui`: tap selects, hold menu, finger draws, reading mode) | `local/release-sweep` | the App Store submission; then the release checks (`release-tag.sh`, `release-build.sh`): a `vX.Y.Z` tag needs it on the commit or on a swept ancestor with only release-neutral changes since (`scripts/release-sweep-check.sh`; a `-rc` prerelease only warns) |
+| CLI-only release | `scripts/local-ci.sh --cli` | the package tests on the Mac, then in Docker the Linux tests (`scripts/ci-linux.sh test`), the WebDAV integration tests (`webdav`) and the static release build (`static`) | `local/cli-suite` | the release checks for a tag whose `Version.swift` differs from the app's `MARKETING_VERSION` |
 
 - **The gate never needs the screen** and runs no simulator, so it can run on a Mac someone is
   using. It takes about ten minutes on an Apple silicon Mac with warm build caches. The
@@ -26,24 +30,18 @@ only after every step passed), and something enforces each one:
   `test-phone` for an iPhone layout, …), runs them with
   `-only-testing:` where that narrows them, and lists each with its result under `## Tests run`
   in the PR description (`.github/pull_request_template.md`), or writes "None beyond the gate:
-  <why>". The check fails while the section is missing or empty and re-runs when the description
-  is edited.
-- `just ci`, `just ci-testflight` and `just ci-release` run the three layers (extra arguments pass through,
+  <why>".
+- `just ci`, `just ci-testflight`, `just ci-release` and `just ci-cli` run the layers (extra arguments pass through,
   e.g. `just ci --list`); [releasing.md](releasing.md) is the runbook around them.
 - `scripts/local-ci.sh --list` (with any mode) prints the steps and the status a mode posts;
   `--no-status` runs without posting. Logs: `build/local-ci/<step>.log`. The script runs under
   `caffeinate -dimsu` (it re-runs itself that way) so the Mac does not sleep mid-run.
-- A new push needs a new gate run. A change that cannot affect the app (docs, `web/`, CLI-only
-  sources: the `app` rule of the `changes` job) gets `local/app-tests` from CI's first job instead.
-- **Hosted app job on a pull request:** build only (`scripts/app.sh build-ios`, plus the tooltip,
-  simulator-choice and SwiftMath checks); it runs no simulator tests. On `main` and on dispatch it
-  runs the iPad and iPhone suites, the iPad UI tests, the pseudo-language check and the Mac
-  Catalyst suites.
+- A new push needs a new gate run.
 - **Layouts in other languages** need no UI test on the Mac: `PseudoLanguageLayoutTests`, a hosted
   unit test, lays out the main screens in the double-length, right-to-left and Spanish
   pseudo-languages in every gate run, so `--testflight` no longer runs `pseudo-mac`
   (docs/localization.md "Checking layouts"). The iPad's layouts are still checked by the UI test
-  (`pseudo`, in `--release` and CI's `app` job on `main`): the in-process check is Mac-only for now.
+  (`pseudo`, in `--release`): the in-process check is Mac-only for now.
 - **Fail fast, then rerun** ([Fail fast](#fail-fast)): steps run cheapest first and the run stops at the first
   failed step; inside a step the tests stop at the first failed test, which then runs twice on its own and is
   reported as `FAILING` or `FLAKY`. A flaky test fails the step too: nothing retries silently.
@@ -151,28 +149,19 @@ then say so.
 
 ## What runs when
 
-- **Draft pull requests run nothing.** Mark a pull request ready (`gh pr ready`) to run CI;
-  later pushes run it again, and a newer push cancels the older run.
-- **Only affected jobs run.** Docs-only changes run nothing. CLI-only changes skip the app
-  job; a change to any `Sources/` target the app links (`scripts/release-check.sh
-  --app-sources`) runs the app and release jobs. App-only changes skip Linux and macOS.
-  `main` always runs everything. `gh workflow run CI --ref <branch>` runs everything on any
-  branch.
-- **Web viewer:** `web/` changes run the `web` job (lint, typecheck, tests, build) and
-  `web-golden` (the Swift CLI's exports of the fixture vaults compared with
-  `web/test/golden`). A Swift change that moves the goldens shows up on `main`; regenerate
-  them with `web/scripts/golden.sh` ([web-viewer.md](web-viewer.md)).
-- **Shipping-only steps** run on `main`: the static (musl) Linux release build (`linux-static`,
-  `scripts/build-linux-static.sh`), the app's simulator
-  suites and the Mac Catalyst suites (`scripts/app.sh test-mac`, `test-mac-ui`, ad-hoc signed
-  and sandboxed). When the app job fails, its "Summary of failures" step prints the failing tests and UI-test window
-  dumps.
-- **Extra jobs:** changes to the package run `webdav` (`scripts/test-webdav.sh` against
-  wsgidav, pinned in `scripts/webdav-server-requirements.txt`, and the fault proxy in front of it
-  for `SyncFaultProxyTests` ([Sync stress](#sync-stress)); a skip fails it); changes the
-  web viewer reads run `web-smoke` (`web/scripts/smoke-all.sh`, browser smoke tests in
-  Chromium, including the large-note stress run, the scroll-anchor check and the pixel diff against
-  the CLI's SVG export; the heavy sizes and WebKit are run by hand, `web-viewer.md` "Stress tests").
+- **Every pull request** needs `local/app-tests` (`just ci` on its pushed head). The Linux jobs
+  (`scripts/ci-linux.sh test`, `webdav`) and the web viewer's checks (`cd web && npm ci && npm run lint &&
+  npm run typecheck && npm test`, and `web/scripts/golden.sh` when the CLI's export changes) are run by the
+  author for now and will run on the Gitea runner. The CI redesign (docs/design/thin-app.md, wave 7) decides the
+  lean gate, which targets run on which change, and the scheduled runs.
+- **The static (musl) Linux release build** is `scripts/ci-linux.sh static`; `release-build.sh` builds both
+  architectures from the tag.
+- **WebDAV integration tests:** `scripts/ci-linux.sh webdav` runs `scripts/test-webdav.sh` against wsgidav
+  (pinned in `scripts/webdav-server-requirements.txt`) with the fault proxy in front of it for
+  `SyncFaultProxyTests` ([Sync stress](#sync-stress)); a skip fails it.
+- **Web viewer smoke tests** (`web/scripts/smoke-all.sh`, browser smoke tests in Chromium, including the
+  large-note stress run, the scroll-anchor check and the pixel diff against the CLI's SVG export; the heavy
+  sizes and WebKit are run by hand, `web-viewer.md` "Stress tests").
 
 ## Offline guard
 
@@ -269,10 +258,9 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
   (`AppModelEnvironment.swift`).
 - **Age is compiled with `-O` even in debug builds** (`Package.swift`): unoptimized scrypt
   makes the passphrase tests take minutes.
-- **Build caches:** each job restores `.build` (`.build/xcode.noindex` for the app) from the newest
-  cache a `main` run saved; pull requests never save. The key is the checkout path, the
-  toolchain version and `Package.resolved`, so changing any of them starts a fresh cache. If a
-  build fails in a way a clean build would not, run `gh cache delete --all` and re-run.
+- **Build caches:** `scripts/ci-linux.sh docker` keeps the Linux `.build` in a Docker volume per image
+  (`sempere-linux-build-…`) and the Static Linux SDK in `sempere-linux-swiftpm`. If a Linux build fails in a
+  way a clean build would not, `docker volume rm` the volume and re-run.
 
 ## Temp-folder guard
 

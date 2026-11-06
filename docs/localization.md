@@ -205,7 +205,7 @@ tooling. The differences from the app:
 - The UI test **`PseudoLanguageUITests`** checks the same screens in the real app, relaunched once
   per language with `-NSDoubleLocalizedStrings YES`, `-AppleTextDirection YES
   -NSForceRightToLeftWritingDirection YES` or `-AppleLanguages (es)`, and attaches a screenshot of
-  every screen: `scripts/app.sh pseudo` on an iPad simulator (CI's `app` job on `main` and
+  every screen: `scripts/app.sh pseudo` on an iPad simulator (in
   `scripts/local-ci.sh --release`: the iPad's layouts are checked only here;
   `SEMPERE_PSEUDO_DEVICE=iPhone` runs it at phone width), `scripts/app.sh pseudo-mac` as the Mac
   Catalyst app at every window size in `SEMPERE_PSEUDO_MAC_WINDOWS` (default `700x800,1280x800`,

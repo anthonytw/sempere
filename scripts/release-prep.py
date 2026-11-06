@@ -10,7 +10,7 @@
   4. set MARKETING_VERSION of every app target (X.Y.Z without a prerelease suffix) unless --no-app;
      it never lowers it (the App Store refuses a version below one it has).
 
-The release date stays `TODO(user)`: the maintainer fills it in, and release.yml refuses a section that
+The release date stays `TODO(user)`: the maintainer fills it in, and the release scripts refuse a section that
 still holds one. Nothing is committed. Stdlib only:
 
   python3 -I scripts/release-prep.py X.Y.Z [--no-app] [--dry-run] [--root DIR]
@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 SECTIONS = ("Added", "Changed", "Fixed", "Removed")
-VERSION_RE = re.compile(r"^(\d+\.\d+\.\d+)(-[0-9A-Za-z.]+)?$")  # release.yml's tag rule, without the v
+VERSION_RE = re.compile(r"^(\d+\.\d+\.\d+)(-[0-9A-Za-z.]+)?$")  # release-tag.sh's tag rule, without the v
 REPO_URL = "https://github.com/anthonytw/sempere"
 DATE_TODO = "TODO(user): release date (YYYY-MM-DD)"
 

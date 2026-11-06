@@ -34,7 +34,7 @@ want="$(printf '%s\n' "# Changelog" "" "## [Unreleased]" "" "## [1.1.0] - TODO(u
 grep -q 'let sempereVersion = "1.1.0"' "$tmp/r/Sources/SempereCLI/Version.swift" || fail "Version.swift bumped"
 grep -q '"sempere 1.1.0")' "$tmp/r/Tests/CLITests/CLICommandTests.swift" || fail "--version assertion bumped"
 [ "$(grep -c 'MARKETING_VERSION = 1.1.0;' "$tmp/r/Apps/Sempere/Sempere.xcodeproj/project.pbxproj")" = 2 ] || fail "MARKETING_VERSION bumped"
-# release.yml's guard must still refuse the section until the maintainer dates it.
+# The release scripts' guard must still refuse the section until the maintainer dates it.
 if "$here/scripts/changelog-section.sh" --file "$tmp/r/CHANGELOG.md" 1.1.0 >/dev/null 2>&1; then fail "TODO(user) date accepted"; fi
 # Dating it by hand makes it releasable.
 sed -i.bak 's/TODO(user): release date (YYYY-MM-DD)/2026-11-01/' "$tmp/r/CHANGELOG.md"

@@ -8,7 +8,7 @@
 unit tests, iOS compile check) and their results, one per line, for example:
 - `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacWindowUITests`: passed
 - `scripts/app.sh test-phone`: passed
-or "None beyond the gate: <why>". The "PR lists tests run" check fails while this section is empty. -->
+or "None beyond the gate: <why>". -->
 
 ## Checks
 

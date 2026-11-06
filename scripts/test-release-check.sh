@@ -202,42 +202,11 @@ fresh; rm -rf "$tmp/co" && mkdir -p "$tmp/co"
 expect "no SwiftMath checkout" fail "no SwiftMath checkout"
 extra=()
 
-# CI's path filter (the `changes` job in .github/workflows/ci.yml): a change to any Sources/ target
-# the app links (PRODUCT_SOURCES, printed by --app-sources) runs the app job and the release checks.
-classify() {
-  python3 -I - "$here/.github/workflows/ci.yml" "$tmp/classify.sh" <<'PY'
-import re, sys
-text = open(sys.argv[1]).read()
-m = re.search(r"- id: f\n.*?run: \|\n(.*?)\n\n", text, re.S)
-script = "\n".join(line[10:] for line in m.group(1).splitlines())
-script = script.replace('${{ github.event_name }}', 'pull_request')
-script = re.sub(r'files="\$\(git diff [^\n]*', 'files="$CHANGED"', script)
-open(sys.argv[2], "w").write(script)
-PY
-  (cd "$here" && CHANGED="$1" GITHUB_OUTPUT="$tmp/classified" bash "$tmp/classify.sh" >/dev/null)
-}
+# --app-sources prints the Sources/ targets the app links (PRODUCT_SOURCES).
 app_sources="$("$check" --app-sources 2>/dev/null || true)"
 case "|$app_sources|" in
   *"|SempereWebDAV|"*) pass=$((pass + 1)); echo "ok   --app-sources lists SempereWebDAV" ;;
   *) fail=$((fail + 1)); echo "FAIL --app-sources lists SempereWebDAV (got: $app_sources)" ;;
 esac
-# The three the hand-written filter once missed are named, whatever --app-sources says.
-for t in $( (tr '|' '\n' <<<"$app_sources"; printf '%s\n' SempereWebDAV SempereNotability SempereImport) | sort -u); do
-  : > "$tmp/classified"
-  classify "Sources/$t/Example.swift"
-  if grep -qx 'app=true' "$tmp/classified" && grep -qx 'release=true' "$tmp/classified"; then
-    pass=$((pass + 1)); echo "ok   a change in Sources/$t runs the app and release jobs"
-  else
-    fail=$((fail + 1)); echo "FAIL a change in Sources/$t runs the app and release jobs"; sed 's/^/     /' "$tmp/classified"
-  fi
-done
-: > "$tmp/classified"
-classify "Sources/SempereCLI/Example.swift"
-if grep -qx 'app=false' "$tmp/classified" && grep -qx 'release=false' "$tmp/classified"; then
-  pass=$((pass + 1)); echo "ok   a CLI-only change skips the app and release jobs"
-else
-  fail=$((fail + 1)); echo "FAIL a CLI-only change skips the app and release jobs"; sed 's/^/     /' "$tmp/classified"
-fi
-
 echo "release-check tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -1041,12 +1041,11 @@ STRESS_ONLY=anchor node scripts/smoke-stress.mjs ...   # pages | pageless | dens
 PIXEL_DUMP=/tmp/pix node scripts/smoke-pixels.mjs test/fixtures/render.sempere ../Tests/SempereTests/Fixtures/sample.key test/golden/render
 ```
 
-CI (`.github/workflows/ci.yml`): the `changes` job runs the `web` job (lint,
-typecheck, tests, build) only when `web/` (or the workflow) changes, and the
-`web-golden` job (Swift CLI goldens) also when the Swift code that writes them
-changes (`Sources/` of the reducer, renderer and CLI, the fixture vault,
-`Package.*`): a PR that moves the CLI's export must update `web/` with it.
-`main` runs both always.
+CI (docs/ci.md): the web checks (lint, typecheck, tests, build) and the
+Swift CLI goldens (`web/scripts/golden.sh`) run whenever `web/` or the Swift
+code that writes the goldens changes (`Sources/` of the reducer, renderer and
+CLI, the fixture vault, `Package.*`): a PR that moves the CLI's export must
+update `web/` with it.
 
 Dependencies are pinned exactly in `web/package.json` and
 `web/package-lock.json`. Runtime: `age-encryption` (typage, BSD-3-Clause) with

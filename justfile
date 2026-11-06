@@ -48,6 +48,14 @@ ci-testflight *ARGS:
 ci-release *ARGS:
     scripts/local-ci.sh --release {{ARGS}}
 
+# A CLI-only release's checks: package tests here, Linux + WebDAV + static build in Docker; posts local/cli-suite
+ci-cli *ARGS:
+    scripts/local-ci.sh --cli {{ARGS}}
+
+# A Linux CI job in Docker, exactly as Gitea Actions runs it: test, webdav, static (scripts/ci-linux.sh)
+ci-linux *JOBS="test":
+    scripts/ci-linux.sh docker {{JOBS}}
+
 # Fold changelog.d/ fragments into CHANGELOG.md [Unreleased] (before a TestFlight build; edits the tree)
 changelog *ARGS:
     python3 -I scripts/changelog-collect.py {{ARGS}}
@@ -71,7 +79,7 @@ release-prep VERSION *FLAGS:
 release-check *ARGS:
     scripts/release-check.sh {{ARGS}}
 
-# Is REF (default origin/main) ready to tag? release.yml's checks, run locally; tags nothing
+# Is REF (default origin/main) ready to tag? The release checks; tags nothing
 release-ready VERSION ref="origin/main":
     scripts/release-tag.sh --check {{VERSION}} {{ref}}
 
@@ -79,27 +87,40 @@ release-ready VERSION ref="origin/main":
 release-tag VERSION ref="origin/main":
     scripts/release-tag.sh {{VERSION}} {{ref}}
 
-# Push an existing local tag vVERSION (starts the release workflow; asks first)
+# Push an existing local tag vVERSION to Gitea (asks first)
 release-push VERSION:
     scripts/release-tag.sh --push {{VERSION}}
 
-# Check a published release: workflow run, assets, SHA256SUMS, provenance, the macOS binary's version
+# Build the release binaries here from the tag (Linux in Docker, macOS universal); into build/release/vVERSION
+release-build VERSION:
+    scripts/release-build.sh {{VERSION}}
+
+# The one squashed GitHub commit for vVERSION, and the owner's push / gh release / formula commands (pushes nothing)
+release-github VERSION:
+    scripts/release-github.sh {{VERSION}}
+
+# Check a published GitHub release: its tree is the Gitea tag's, the assets match SHA256SUMS (and the local build)
 release-verify VERSION:
     #!/usr/bin/env bash
     set -euo pipefail
-    v="{{trim_start_match(VERSION, 'v')}}"; repo=anthonytw/sempere
-    gh run list --repo "$repo" --workflow release.yml --limit 3
-    gh release view "v$v" --repo "$repo" --json tagName,isPrerelease,publishedAt,assets --jq '"\(.tagName) prerelease=\(.isPrerelease) published=\(.publishedAt)", (.assets[].name)'
+    v="{{trim_start_match(VERSION, 'v')}}"; url=https://github.com/anthonytw/sempere
+    git fetch -q --no-tags "$url.git" "refs/tags/v$v"
+    if [ "$(git rev-parse 'FETCH_HEAD^{tree}')" = "$(git rev-parse "v$v^{tree}")" ]; then echo "ok    GitHub's v$v has the Gitea tag's tree"
+    else echo "FAIL  GitHub's v$v tree differs from the Gitea tag's"; exit 1; fi
     d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
-    gh release download "v$v" --repo "$repo" --dir "$d"
+    curl -fsSL -o "$d/SHA256SUMS" "$url/releases/download/v$v/SHA256SUMS"
+    for f in $(awk '{print $2}' "$d/SHA256SUMS"); do curl -fsSL -o "$d/$f" "$url/releases/download/v$v/$f"; done
     (cd "$d" && shasum -a 256 -c SHA256SUMS)
-    for f in "$d"/*.tar.gz; do gh attestation verify "$f" --repo "$repo" >/dev/null && echo "attested: ${f##*/}"; done
+    sums="build/release/v$v/SHA256SUMS"
+    if [ -f "$sums" ]; then
+      if cmp -s "$sums" "$d/SHA256SUMS"; then echo "ok    the same files as the local build"; else echo "FAIL  the published files differ from $sums"; exit 1; fi
+    fi
     if [ "$(uname)" = Darwin ]; then
       tar -xzf "$d/sempere-$v-macos-universal.tar.gz" -C "$d"
       "$d/sempere-$v-macos-universal/sempere" --version | head -1
     fi
 
-# Homebrew formula for a published release: to stdout, or into TAP/Formula/sempere.rb and audited (no push)
+# Homebrew formula for a release (the local build's checksums, else the published ones): to stdout, or into TAP/Formula/sempere.rb and audited (no push)
 formula VERSION TAP="":
     #!/usr/bin/env bash
     set -euo pipefail

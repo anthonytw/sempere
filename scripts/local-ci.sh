@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# The app suites, run on a developer's Mac and recorded on GitHub as commit statuses (docs/ci.md).
+# The app suites, run on a developer's Mac and recorded on Gitea as commit statuses (docs/ci.md).
 #
 #   scripts/local-ci.sh               # the PR gate: iOS compile check, Mac Catalyst unit tests (the
 #                                     # pseudo-language layout check among them), package tests;
-#                                     # posts `local/app-tests` (the `main` ruleset requires it)
+#                                     # posts `local/app-tests` (merging needs it)
 #   scripts/local-ci.sh --testflight  # the gate, then the dense-note performance suite, the Mac unit tests with no network,
 #                                     # the Mac launch smoke tests and every Mac UI test;
 #                                     # posts `local/testflight-suite`
 #   scripts/local-ci.sh --release     # all of --testflight, with the iPad and iPhone suites and the pseudo-language UI test on
 #                                     # the iPad before the Mac UI tests, then the iPad UI tests and the iPhone canvas UI tests;
 #                                     # posts `local/release-sweep`
-#   scripts/local-ci.sh --no-status   # with any mode: run, but post nothing to GitHub
+#   scripts/local-ci.sh --cli         # a CLI-only release's checks, no app: the package tests on this Mac, then in
+#                                     # Docker the Linux tests, the WebDAV integration tests and the static
+#                                     # release build (scripts/ci-linux.sh); posts `local/cli-suite`
+#   scripts/local-ci.sh --no-status   # with any mode: run, but post nothing to Gitea
 #   scripts/local-ci.sh --list        # with any mode: print its steps and status, run nothing
 #
 # The gate never needs the screen and runs no simulator: a Mac someone is using can run it. The
@@ -23,7 +26,7 @@
 # (scripts/test-runner.py, docs/ci.md "Fail fast"); a flaky test fails the step too. SEMPERE_FAIL_FAST=0 runs every
 # test of a step.
 #
-# A status is posted only for a clean checkout of a commit GitHub has, after every step passed, so
+# A status is posted only for a clean checkout of a commit Gitea has, after every step passed, so
 # it names exactly what was tested. The script holds a caffeinate assertion (it re-runs itself
 # under `caffeinate -dimsu`) so the Mac cannot sleep in the middle of a run.
 #
@@ -31,16 +34,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-repo=anthonytw/sempere
+source scripts/forge.sh
 gate_context=local/app-tests
 mode=gate
 post=true
 list=false
-usage="usage: $0 [--testflight | --release] [--no-status] [--list]"
+usage="usage: $0 [--testflight | --release | --cli] [--no-status] [--list]"
 for arg in "$@"; do
   case "$arg" in
     --testflight) mode=testflight ;;
     --release) mode=release ;;
+    --cli) mode=cli ;;
     --no-status) post=false ;;
     --list) list=true ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
@@ -55,6 +59,7 @@ case "$mode" in
   gate)       context=$gate_context ;;
   testflight) context=local/testflight-suite; steps+=(mac-perf mac-offline mac-smoke mac-ui) ;;
   release)    context=local/release-sweep;    steps+=(mac-perf mac-offline mac-smoke ipad iphone pseudo mac-ui ipad-ui iphone-ui) ;;
+  cli)        context=local/cli-suite; gate_steps=(); steps=(package linux webdav static) ;;
 esac
 
 describe() {   # step: what it runs
@@ -72,11 +77,14 @@ describe() {   # step: what it runs
     iphone-ui)  echo "scripts/app.sh test-phone-ui   (iPhone simulator canvas UI tests: tap, hold, draw)" ;;
     ipad-ui)    echo "scripts/app.sh test-ui         (iPad simulator UI tests)" ;;
     pseudo)     echo "scripts/app.sh pseudo          (pseudo-languages on the iPad simulator)" ;;
+    linux)      echo "scripts/ci-linux.sh docker test   (Linux package tests offline, portability, removable importers)" ;;
+    webdav)     echo "scripts/ci-linux.sh docker webdav (WebDAV integration tests against wsgidav)" ;;
+    static)     echo "scripts/ci-linux.sh docker static (the fully static Linux release binary)" ;;
   esac
 }
 
 if [[ $list == true ]]; then
-  echo "local-ci $mode: posts $context$([[ $context != "$gate_context" ]] && echo " (and $gate_context after the gate)")"
+  echo "local-ci $mode: posts $context$([[ $context != "$gate_context" && ${#gate_steps[@]} -gt 0 ]] && echo " (and $gate_context after the gate)")"
   for step in "${steps[@]}"; do printf '  %-11s %s\n' "$step" "$(describe "$step")"; done
   exit 0
 fi
@@ -97,15 +105,14 @@ if [[ -n "$(git status --porcelain)" ]]; then
   if [[ $post == true ]]; then exit 1; fi
 fi
 sha=$(git rev-parse HEAD)
-if [[ $post == true ]] && ! gh api "repos/$repo/commits/$sha" --silent 2>/dev/null; then
-  echo "local-ci: GitHub does not have $sha yet; push it first" >&2
+if [[ $post == true ]] && ! forge_has_commit "$sha"; then
+  echo "local-ci: Gitea does not have $sha yet; push it first" >&2
   exit 1
 fi
 
 status() {   # context, state, description
   [[ $post == true ]] || return 0
-  gh api -X POST "repos/$repo/statuses/$sha" -f state="$2" -f context="$1" \
-    -f description="${3:0:140}" --silent
+  forge_post_status "$sha" "$1" "$2" "$3"
 }
 
 run_step() {
@@ -123,6 +130,9 @@ run_step() {
     iphone-ui)  scripts/app.sh test-phone-ui ;;
     ipad-ui)    scripts/app.sh test-ui ;;
     pseudo)     scripts/app.sh pseudo ;;
+    linux)      scripts/ci-linux.sh docker test ;;
+    webdav)     scripts/ci-linux.sh docker webdav ;;
+    static)     scripts/ci-linux.sh docker static ;;
   esac
 }
 
@@ -148,12 +158,12 @@ for i in "${!steps[@]}"; do
     # One line per failed test: FAILING (failed its reruns too) or FLAKY (passed both reruns; still a failure).
     grep -E "^TEST-RESULT " "build/local-ci/$step.log" | sed "s/^TEST-RESULT /local-ci: $step: /" || true
     status "$context" failure "$step failed on $host"
-    if [[ $gate_done == false && $context != "$gate_context" ]]; then
+    if [[ $gate_done == false && $context != "$gate_context" && ${#gate_steps[@]} -gt 0 ]]; then
       status "$gate_context" failure "$step failed on $host ($mode run)"
     fi
     exit 1
   fi
-  if [[ $gate_done == false && $i -eq $(( ${#gate_steps[@]} - 1 )) ]]; then
+  if [[ $gate_done == false && ${#gate_steps[@]} -gt 0 && $i -eq $(( ${#gate_steps[@]} - 1 )) ]]; then
     gate_done=true
     gate_minutes=$(( ($(date +%s) - start + 59) / 60 ))
     if [[ $context != "$gate_context" ]]; then

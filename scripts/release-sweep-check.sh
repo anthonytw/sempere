@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Has SHA passed the release sweep (`just ci-release`, commit status `local/release-sweep`)?
 #
-#   scripts/release-sweep-check.sh SHA [REPO]
+#   scripts/release-sweep-check.sh SHA
 #
 # Yes if SHA itself has a successful `local/release-sweep`, or if the nearest first-parent ancestor
 # that has one differs from SHA only in release-neutral files: the changelog, docs, CI config,
@@ -11,48 +11,41 @@
 #
 # A CLI-only release (`just release-prep X.Y.Z --no-app`: Version.swift differs from the app's
 # MARKETING_VERSION, so no App Store build goes with it) needs no sweep: the sweep gates App Store
-# submissions. Instead SHA must have passed the CLI's GitHub CI jobs on main (CLI_JOBS below). The
-# app's simulator job is not one of them.
+# submissions. Instead SHA itself must have passed the CLI's checks: `local/cli-suite`
+# (`just ci-cli`: the package tests on a Mac, then the Linux, WebDAV and static-build jobs in Docker).
 #
-# Prints one "ok"/"FAIL" line; exit 0 = swept, 1 = not, 2 = usage. Used by scripts/release-tag.sh
-# and .github/workflows/release.yml (prepare). Needs `gh` (GH_TOKEN in CI) and the git history.
+# The statuses are read from Gitea (scripts/forge.sh). Prints one "ok"/"FAIL" line; exit 0 = swept,
+# 1 = not, 2 = usage. Used by scripts/release-tag.sh and scripts/release-build.sh.
 set -euo pipefail
 
-sha=${1:?usage: $0 SHA [REPO]}
-repo=${2:-${SEMPERE_GH_REPO:-anthonytw/sempere}}
+sha=${1:?usage: $0 SHA}
+cd "$(dirname "$0")/.."
+source scripts/forge.sh
 max_back=${SEMPERE_SWEEP_LOOKBACK:-50}
 
 # Paths that do not reach the built app or CLI. Keep this list small and boring.
-neutral='^(CHANGELOG\.md|changelog\.d/.*|docs/.*|\.github/.*|[^/]+\.md|justfile|packaging/homebrew/.*|scripts/(release-[^/]*|changelog-[^/]*|update-formula)\.(sh|py))$'
+neutral='^(CHANGELOG\.md|changelog\.d/.*|docs/.*|\.github/.*|\.gitea/.*|[^/]+\.md|justfile|packaging/homebrew/.*|scripts/(release-[^/]*|changelog-[^/]*|update-formula|forge|ci-linux|local-ci)\.(sh|py))$'
 
-swept() {
-  local state
-  state=$(gh api "repos/$repo/commits/$1/status" \
-    --jq '[.statuses[] | select(.context == "local/release-sweep")][0].state // "missing"' 2>/dev/null) || state="unknown"
-  [[ $state == success ]]
+status_of() {   # sha context -> state, "missing", or "unknown" when Gitea cannot be asked
+  local out
+  out=$(forge_statuses "$1" 2>/dev/null) || { echo unknown; return; }
+  awk -F'\t' -v c="$2" '$1 == c { print $2; found = 1; exit } END { if (!found) print "missing" }' <<<"$out"
 }
+swept() { [[ $(status_of "$1" local/release-sweep) == success ]]; }
 
 sha=$(git rev-parse "$sha^{commit}")
 
-# CLI-only release: the CLI's CI jobs instead of the sweep.
-CLI_JOBS=("Linux (swift:6.4-noble)" "macOS" "WebDAV integration tests (wsgidav)" "Linux static release build (musl)")
+# CLI-only release: the CLI's checks instead of the sweep.
 cli=$(git show "$sha:Sources/SempereCLI/Version.swift" | sed -n 's/^let sempereVersion = "\(.*\)"$/\1/p')
 app=$(git show "$sha:Apps/Sempere/Sempere.xcodeproj/project.pbxproj" | sed -n 's/.*MARKETING_VERSION = \([^;]*\);.*/\1/p' | sort -u | tr '\n' ' ')
 app=${app% }
 if [[ -n $cli && -n $app && $app != "${cli%%-*}" ]]; then
-  runs=$(gh api "repos/$repo/commits/$sha/check-runs?per_page=100" \
-    --jq '.check_runs[] | select(.app.slug == "github-actions") | "\(.name)\t\(.conclusion // .status)"' 2>/dev/null) || runs=""
-  bad=()
-  for job in "${CLI_JOBS[@]}"; do
-    state=$(awk -F'\t' -v n="$job" '$1 == n { print $2; exit }' <<<"$runs")
-    [[ $state == success ]] || bad+=("$job: ${state:-missing}")
-  done
-  if (( ${#bad[@]} )); then
-    printf 'FAIL  CLI-only release (CLI %s, app %s): CI on %s is not green:' "$cli" "$app" "${sha:0:8}"
-    printf ' [%s]' "${bad[@]}"; echo " (wait for CI on main, or re-run it)"
+  state=$(status_of "$sha" local/cli-suite)
+  if [[ $state != success ]]; then
+    echo "FAIL  CLI-only release (CLI $cli, app $app): local/cli-suite is $state on ${sha:0:8} (run 'just ci-cli' on it)"
     exit 1
   fi
-  echo "ok    CLI-only release (CLI $cli, app $app): no sweep needed; CI passed on ${sha:0:8} (${#CLI_JOBS[@]} CLI jobs)"
+  echo "ok    CLI-only release (CLI $cli, app $app): no sweep needed; local/cli-suite passed on ${sha:0:8}"
   exit 0
 fi
 

@@ -12,9 +12,7 @@ scripts/screenshots.sh         # all three
 ```
 
 It needs Xcode with an iOS 27+ runtime and an "iPad Pro 13-inch" simulator (`SEMPERE_SIM_ID` picks
-another; `SEMPERE_SHOTS_OUT` changes the output folder). In CI, run the **CI** workflow by hand with
-`screenshots` ticked (`gh workflow run CI --ref <branch> -f screenshots=true`) and download the
-`appstore-screenshots` artifact. That run builds only the screenshots job.
+another; `SEMPERE_SHOTS_OUT` changes the output folder). It is a tool run by hand, never part of CI.
 
 ## Sizes
 

@@ -21,10 +21,13 @@ site are each their own recipe; an upload asks `[y/N]` and a tag push asks you t
 | `just testflight [ios\|mac\|both] [REF]` | archive REF from a temporary worktree and upload, after a `[y/N]` (`--yes` skips it) | **uploads to TestFlight** |
 | `just release-prep X.Y.Z` | fold fragments, make the version's section (date left `TODO(user)`), bump versions | no (edits the tree) |
 | `just release-check` | App Store checks (versions, no team ID, privacy manifests, entitlements, networking) | no |
-| `just release-ready X.Y.Z [REF]` | `release.yml`'s checks on REF (default `origin/main`), locally | no |
-| `just release-tag X.Y.Z [REF]` | the checks, a signed tag, then asks before pushing it | **pushes the tag** (after you type the version) |
-| `just release-push X.Y.Z` | push a tag made earlier (asks first) | **pushes the tag** |
-| `just release-verify X.Y.Z` | the release's workflow run, assets, checksums, provenance, binary version | no |
+| `just ci-cli` | a CLI-only release's checks: package tests here, Linux + WebDAV + static build in Docker; posts `local/cli-suite` | a commit status |
+| `just release-ready X.Y.Z [REF]` | the release checks on REF (default `origin/main`) | no |
+| `just release-tag X.Y.Z [REF]` | the checks, a signed tag, then asks before pushing it to Gitea | **pushes the tag to Gitea** (after you type the version) |
+| `just release-push X.Y.Z` | push a tag made earlier to Gitea (asks first) | **pushes the tag to Gitea** |
+| `just release-build X.Y.Z` | the CLI binaries from the tag, built here: Linux static in Docker, macOS universal, smoke tests, `SHA256SUMS` | no |
+| `just release-github X.Y.Z` | the one squashed GitHub commit for the release, and the commands to publish it | no (you push) |
+| `just release-verify X.Y.Z` | the published GitHub release: tree = the Gitea tag's, assets match `SHA256SUMS` and the local build | no |
 | `just formula X.Y.Z [TAP]` | the Homebrew formula, to stdout or into a tap clone, then `brew audit` | no (you push the tap) |
 | `just screenshots [ipad\|iphone\|mac]` | App Store screenshots into `build/screenshots/` | no |
 | `just site-sync` | copy the privacy policy and CHANGELOG into the `sempere-site` checkout | no (edits that tree) |
@@ -51,20 +54,24 @@ Merge these two PRs once; B.4 and B.7 depend on them:
    xcodebuild -runFirstLaunch
    xcodebuild -downloadPlatform iOS          # the iOS simulator runtime, about 8 GB (ci-release needs it)
    ```
-2. **Command-line tools:** `brew install just gh pnpm node` (Python 3 comes with Xcode's tools).
-3. **GitHub CLI:** `gh auth login` (HTTPS or SSH, scopes `repo` and `workflow`). The suites post commit statuses
-   with it, and the TestFlight and tag checks read them.
+2. **Command-line tools:** `brew install just tea gh pnpm node`, and **Docker Desktop** (the Linux builds and
+   tests). Python 3 comes with Xcode's tools.
+3. **Gitea:** `tea login add --url https://git.lab.gulwertz.net` with a token that can write commit statuses.
+   The suites post commit statuses with it, and the TestFlight and tag checks read them (`scripts/forge.sh`;
+   `SEMPERE_FORGE_TOKEN` instead of tea works too). **GitHub CLI** (`gh auth login`) is needed only for the
+   GitHub Release in B.6.
 4. **Signed tags:** `git tag -s` uses your git signing key. With an SSH key:
    ```bash
    git config --global gpg.format ssh
    git config --global user.signingkey ~/.ssh/id_ed25519.pub
    ```
-   Add the same public key on GitHub as a **signing** key (Settings ▸ SSH and GPG keys) so the tag shows
-   Verified. To let `git tag -v` check it locally too, list it in `gpg.ssh.allowedSignersFile`.
+   Add the same public key on GitHub as a **signing** key (Settings ▸ SSH and GPG keys) so the GitHub release
+   commit shows Verified. To let `git tag -v` check it locally too, list it in `gpg.ssh.allowedSignersFile`.
 5. **Checkouts** (the website recipes assume this layout; `SEMPERE_SITE` overrides it):
    ```bash
    mkdir -p ~/dev/website && cd ~/dev
-   git clone git@github.com:anthonytw/sempere.git
+   git clone git@git-ssh.lab.gulwertz.net:awertz/sempere.git    # development happens here (origin)
+   git -C sempere remote add github git@github.com:anthonytw/sempere.git   # public, one commit per release
    git clone git@git-ssh.lab.gulwertz.net:awertz/sempere-site.git website/sempere-site   # private, branch first-version
    git clone git@git-ssh.lab.gulwertz.net:awertz/astro-site.git website/astro-site       # the blog
    ```
@@ -219,8 +226,9 @@ It prints a large warning and waits ten seconds. Prefer running the suite.
 
 ## B. A release (v1.0.0, or any vX.Y.Z)
 
-A release is one commit on `main` that is the App Store build, the CLI's GitHub Release (`release.yml`, from the
-tag `vX.Y.Z`), the Homebrew formula, the website's changelog and, for v1, the blog post. The order matters: the
+A release is one commit on Gitea's `main`, tagged `vX.Y.Z` there. It is the App Store build, the CLI binaries
+built from the tag on this Mac, one squashed commit on GitHub with the GitHub Release, the Homebrew formula, the
+website's changelog and, for v1, the blog post (`docs/design/local-first.md`). The order matters: the
 website must be live before App Review looks at it (B.4), and nothing public about the version (tag, GitHub
 Release, formula, blog) goes out until Apple has approved the app (B.6), so all of it lands on one day.
 
@@ -231,7 +239,7 @@ Release, formula, blog) goes out until Apple has approved the app (B.6), so all 
 | B.3 | App Store build of that SHA | you approve the upload |
 | B.4 | website live with `/privacy` and `/support` | you approve the deploy |
 | B.5 | App Store submission, manual release | **[you]** |
-| B.6 | launch day, after approval: tag, GitHub Release, Homebrew, Release This Version, site, blog | you |
+| B.6 | launch day, after approval: tag, local build, GitHub commit and Release, Homebrew, Release This Version, site, blog | you |
 
 ### B.1 The release PR
 
@@ -265,7 +273,7 @@ CLI-only release) leaves the app alone. A prerelease such as `1.1.0-rc.1` sets t
    user-visible entries into the tour's headings and drop the pre-release fixes and removals. From 1.0.1 on,
    the generated section is normally fine as it is.
 2. **[you] The release date.** Replace the `TODO(user)` in the version's heading with the day you plan to launch
-   (B.6), as `## [1.0.0] - 2026-11-03`; allow a few days for App Review. `release.yml` refuses a section that
+   (B.6), as `## [1.0.0] - 2026-11-03`; allow a few days for App Review. The release scripts refuse a section that
    still has a `TODO(user)` anywhere. If launch day later moves, see "If the date slips" in B.6.
 3. `just release-check` (expected: `release-check: ok (version 1.0.0, build 1)`) and
    `just test --filter CLICommandTests` (the `--version` assertion).
@@ -273,10 +281,10 @@ CLI-only release) leaves the app alone. A prerelease such as `1.1.0-rc.1` sets t
    ```bash
    git add -A && git commit -s -m "release: 1.0.0"
    git push -u origin release/1.0.0
-   gh pr create --fill
+   tea pr create --title "release: 1.0.0" --description "…"
    ```
    In the PR's `## Tests run`: `just release-check`: passed; `swift test --filter CLICommandTests`: passed.
-5. `just ci` on the branch (the PR gate, `local/app-tests`), CI green, then squash-merge.
+5. `just ci` on the branch (the PR gate, `local/app-tests`), CI green, then squash-merge on Gitea.
 
 ### B.2 The release sweep, and the release SHA
 
@@ -288,7 +296,7 @@ just ci-release
 
 Every suite, iPad and iPhone simulators included; it takes over the screen for a long time. Expected end:
 `local-ci: all passed in N min; local/release-sweep posted for 1a2b3c4d`. The sweep gates the App Store
-submission: it runs once, here, before B.3. At tag time (B.6) `release.yml` only checks that the tagged commit
+submission: it runs once, here, before B.3. At tag time (B.6) the release checks only ask that the tagged commit
 builds the same thing: it has this status, or it is a later commit on `main` whose changes since a swept one are
 all release-neutral (`scripts/release-sweep-check.sh`: the changelog, docs, CI config, release tooling, root
 Markdown). The sweep also satisfies the TestFlight gate, so there is no need
@@ -384,7 +392,7 @@ purchase); each platform has its own version page.
 
 Approval with manual release leaves the version "Pending Developer Release". On the CHANGELOG date:
 
-1. **Tag and GitHub Release.**
+1. **Tag on Gitea.**
    ```bash
    cd ~/dev/sempere
    just release-ready 1.0.0 "$sha"      # checks only
@@ -400,41 +408,43 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    ok    v1.0.0 is free
    created signed tag v1.0.0 on 1a2b3c4d (local only)
 
-   Pushing v1.0.0 starts the release workflow, which publishes a GitHub Release and its binaries.
+   Pushing v1.0.0 to origin (Gitea) makes it the release. Nothing is published to GitHub yet.
    Type the version (1.0.0) to push v1.0.0 to origin, anything else to stop: 1.0.0
-   pushed v1.0.0. Watch it: gh run watch …
+   pushed v1.0.0. Next: just release-build 1.0.0, then just release-github 1.0.0
    ```
    **[you]** typing the version is the approval. Anything else leaves the tag local: push it later with
-   `just release-push 1.0.0` (it re-checks only that the tag is on `main`; the workflow checks the rest), or drop
-   it with `git tag -d v1.0.0`.
+   `just release-push 1.0.0`, or drop it with `git tag -d v1.0.0`. The checks: the tag's commit is on `main`, it
+   passed the release sweep, itself or through a swept ancestor with only release-neutral changes since
+   (`scripts/release-sweep-check.sh`; a CLI-only release, `--no-app`, needs `local/cli-suite` instead, see C; a
+   prerelease tag `vX.Y.Z-rc.N` only warns), the tag is `vMAJOR.MINOR.PATCH[-pre]` and equals `Version.swift`, and
+   `CHANGELOG.md` has a non-empty `## [X.Y.Z] - YYYY-MM-DD` section with no `TODO(user)`
+   (`scripts/changelog-section.sh`).
+2. **Build the binaries here.** `just release-build 1.0.0` (about 20 minutes, Docker running). From a clean
+   worktree of the tag it re-runs the checks, builds the fully static Linux binaries for x86_64 and aarch64
+   (Static Linux SDK in `swift:6.4.2-noble`, `scripts/build-linux-static.sh`) and the macOS universal binary,
+   checks each prints the tag's version, packages `sempere-X.Y.Z-<platform>.tar.gz` (binary, LICENSE,
+   LICENSE-EXCEPTION, README, CHANGELOG, `docs/cli.md`, `fonts/`; `scripts/package-cli.sh`), installs and runs the
+   Linux tarballs in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20 (`scripts/smoke-linux-cli.sh`;
+   the architecture Docker emulates only warns), and writes `SHA256SUMS` and `notes.md` (the CHANGELOG section)
+   into `build/release/v1.0.0/`. Nothing leaves the Mac. Not included: a man page (`sempere --help` and
+   `docs/cli.md` ship instead) and Apple notarization of the macOS CLI binary.
+3. **The GitHub commit and Release.** `just release-github 1.0.0` makes one commit whose tree is the tag's and
+   whose parent is GitHub's `main` (read anonymously), signed by you, kept as `refs/github-release/v1.0.0`, and
+   prints the commands. **[you]** run them:
+   ```bash
+   git push git@github.com:anthonytw/sempere.git <commit>:refs/heads/main <commit>:refs/tags/v1.0.0
+   gh release create v1.0.0 --repo anthonytw/sempere --verify-tag --title "Sempere CLI v1.0.0" \
+      --notes-file build/release/v1.0.0/notes.md build/release/v1.0.0/*.tar.gz build/release/v1.0.0/SHA256SUMS
+   ```
+   GitHub runs no workflows. Then `just release-verify 1.0.0`. Expected: `ok    GitHub's v1.0.0 has the Gitea tag's
+   tree`, `OK` for each tarball in `SHA256SUMS`, `ok    the same files as the local build`, and `sempere 1.0.0`
+   from the macOS binary.
 
-   The workflow (`.github/workflows/release.yml`):
-   - **prepare** fails unless the tag points at a commit on `main`, that commit passed the release
-     sweep, itself or through a swept ancestor with only release-neutral changes since
-     (`scripts/release-sweep-check.sh`; a CLI-only release, `--no-app`, needs the CLI's GitHub CI jobs green
-     instead, see C; a prerelease tag `vX.Y.Z-rc.N` only warns), the tag is
-     `vMAJOR.MINOR.PATCH[-pre]` and equals `Version.swift`, and `CHANGELOG.md` has a non-empty
-     `## [X.Y.Z] - YYYY-MM-DD` section with no `TODO(user)` (`scripts/changelog-section.sh`). `just release-ready`
-     runs the same checks before anything is pushed.
-   - **linux** (fully static with the Static Linux SDK, x86_64 and aarch64, `scripts/build-linux-static.sh` in
-     `swift:6.4.2-noble`) and **macos** (universal) build, check that the binary is static or universal and prints the tag's version, and package `sempere-X.Y.Z-<platform>.tar.gz`
-     (binary, LICENSE, LICENSE-EXCEPTION, README, CHANGELOG, `docs/cli.md`, `fonts/`; `scripts/package-cli.sh`).
-   - **linux-distros** installs each Linux tarball as the docs say and runs it (version, a new vault,
-     HTTPS with certificate checks) in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20
-     (`scripts/smoke-linux-cli.sh`); **publish** waits for it.
-   - **publish** writes `SHA256SUMS`, attests build provenance for the tarballs and `SHA256SUMS`, and runs
-     `gh release create` with the CHANGELOG section as notes (a `-suffix` tag is a prerelease).
-
-   When it is green: `just release-verify 1.0.0`. Expected: the last runs of the workflow,
-   `v1.0.0 prerelease=false published=…` and the five assets, `OK` for each tarball in `SHA256SUMS`,
-   `attested: …` for each tarball, and `sempere 1.0.0` from the macOS binary.
-
-   If **prepare** fails, nothing was published: fix the cause on `main` (a commit that changes built files needs a new sweep; a
-   changelog, docs or release-tooling fix does not), delete
-   the tag (`git push origin :refs/tags/v1.0.0 && git tag -d v1.0.0`) and tag again. To try the workflow without
-   a release, prepare and tag a prerelease (`just release-prep 1.0.1-rc.1`, …). Not included: a man page
-   (`sempere --help` and `docs/cli.md` ship instead) and Apple notarization of the macOS CLI binary.
-2. **Homebrew tap.** One-time **[you]**: create the public repo `anthonytw/homebrew-tap` (the `homebrew-` prefix
+   If a check fails before anything is published, fix the cause on `main` (a commit that changes built files needs
+   a new sweep; a changelog, docs or release-tooling fix does not), delete the tag
+   (`git push origin :refs/tags/v1.0.0 && git tag -d v1.0.0`) and tag again. To try the whole path without a
+   release, prepare and tag a prerelease (`just release-prep 1.0.1-rc.1`, …) and stop before the GitHub push.
+4. **Homebrew tap.** One-time **[you]**: create the public repo `anthonytw/homebrew-tap` (the `homebrew-` prefix
    is required) with a `Formula/` folder (`packaging/homebrew/README.md`). Then:
    ```bash
    git clone git@github.com:anthonytw/homebrew-tap.git ~/dev/homebrew-tap    # once
@@ -443,12 +453,13 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    brew install --build-from-source ./Formula/sempere.rb && brew test sempere && sempere --version
    git add Formula/sempere.rb && git commit -m "sempere 1.0.0" && git push       # [you]
    ```
-   `just formula 1.0.0` alone prints the formula. It fails if the release's `SHA256SUMS` lacks a platform.
-3. **[you] Release the app:** App Store Connect ▸ each platform's version ▸ **Release This Version**. It reaches
+   `just formula 1.0.0` alone prints the formula, from the local build's `SHA256SUMS` (else the published one). It
+   fails if `SHA256SUMS` lacks a platform.
+5. **[you] Release the app:** App Store Connect ▸ each platform's version ▸ **Release This Version**. It reaches
    the store within a few hours.
-4. **Website.** If the changelog changed since B.4 (a date fix, a curated section), repeat B.4's `just sync-docs`,
+6. **Website.** If the changelog changed since B.4 (a date fix, a curated section), repeat B.4's `just sync-docs`,
    PR and `just deploy`; otherwise nothing to do.
-5. **Blog post (astro-site, v1 only).** The post is `src/content/blog/sempere/index.mdx` on the astro-site branch
+7. **Blog post (astro-site, v1 only).** The post is `src/content/blog/sempere/index.mdx` on the astro-site branch
    `blog/sempere` (PR #14 there). **[you]** set its `date:` to the launch day, keep `draft: false`, review, merge.
    Then **[you] deploy** (pushes the whole site to `anthonytw.github.io`):
    ```bash
@@ -467,7 +478,7 @@ then differs from the tagged commit only in `CHANGELOG.md`; that is fine, and th
 
 ## C. A hotfix
 
-Every release comes from `main` (`release.yml` refuses a tag that is not on `main`), and every App Store version
+Every release comes from `main` (the release checks refuse a tag that is not on `main`), and every App Store version
 has a tag with the same version, so a hotfix is a short release:
 
 1. The fix: a PR to `main` with a `changelog.d/` fragment, the gate (`just ci`) and the targeted tests it calls
@@ -475,20 +486,23 @@ has a tag with the same version, so a hotfix is a short release:
 2. The release PR: `git switch -c release/1.0.1 origin/main && just release-prep 1.0.1`; **[you]** the date;
    `just release-check`; PR; `just ci`; merge (B.1). A CLI-only fix uses `just release-prep 1.0.1 --no-app`,
    which leaves the app's version alone: skip steps 3 to 5 below for it (no sweep, no App Store build). Its tag
-   needs green GitHub CI on the merge commit instead: the CLI's jobs `Linux (swift:6.4-noble)`, `macOS`, the
-   WebDAV tests and `Linux static release build (musl)` (`scripts/release-sweep-check.sh` tells the two kinds
-   apart: `Version.swift` differs from the app's `MARKETING_VERSION`). Wait for them, then step 6 without
-   Release This Version.
+   needs `local/cli-suite` on the merge commit instead: `just ci-cli` there (the package tests on this Mac, then
+   the Linux tests, the WebDAV tests and the static build in Docker; `scripts/release-sweep-check.sh` tells the
+   two kinds apart: `Version.swift` differs from the app's `MARKETING_VERSION`). Then step 6 without Release
+   This Version.
 3. `just ci-release` on the merge commit, keeping `$sha` (B.2).
 4. `just testflight both "$sha"` (B.3).
 5. **[you]** App Store Connect: a new version `1.0.1` on each platform (exactly the `MARKETING_VERSION`), pick
    the build, "What's New" from the CHANGELOG section, manual release, submit (B.5). For an urgent fix, ask for
    an expedited review on the submission form.
-6. On approval: `just release-tag 1.0.1 "$sha"`, the workflow, `just release-verify 1.0.1`,
+6. On approval: `just release-tag 1.0.1 "$sha"`, `just release-build 1.0.1`, `just release-github 1.0.1` and
+   **[you]** its push and `gh release create`, `just release-verify 1.0.1`,
    `just formula 1.0.1 ~/dev/homebrew-tap`, **[you]** Release This Version, and `just site-sync` + PR +
    **[you]** `just deploy` in sempere-site for the changelog (B.6).
 
 ## Verify a download
 
-`sha256sum -c SHA256SUMS` (or `shasum -a 256 -c SHA256SUMS` on a Mac) and
-`gh attestation verify FILE --repo anthonytw/sempere`; `just release-verify X.Y.Z` does both.
+`sha256sum -c SHA256SUMS` (or `shasum -a 256 -c SHA256SUMS` on a Mac). Releases from v1.0.2 on are built on the
+maintainer's Mac, so they carry no GitHub build-provenance attestation (v1.0.0 and v1.0.1 do:
+`gh attestation verify FILE --repo anthonytw/sempere`). `just release-verify X.Y.Z` checks the published files
+against `SHA256SUMS` and the local build.

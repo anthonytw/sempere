@@ -96,7 +96,9 @@ the CLI).
 
 ## Workflow
 
-Branch per task, PR to `main`, squash merge, CI green. Commit messages:
+Branch per task, PR to `main` on Gitea (`origin`, `tea pr create`), squash merge, CI green. GitHub is only the
+public mirror: one squashed commit per release, pushed by the owner (docs/design/local-first.md); never push
+there. Commit messages:
 `area: imperative summary`. Co-author line as the harness instructs. Testing layers (docs/ci.md):
 
 - **PR gate**: `scripts/local-ci.sh` (a Mac with Xcode) runs the package tests, the Mac Catalyst
@@ -105,7 +107,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `--list` prints the steps.
 - **Your targeted tests**: the gate runs no UI test and nothing on a simulator. Pick the tests
   your change calls for, run them, and list each with its result under `## Tests run` in the PR
-  description (the template has the section; the `PR lists tests run` check fails without it).
+  description (the template has the section).
   For example a window or menu change: `scripts/app.sh test-mac-ui
   -only-testing:SempereAppUITests/MacWindowUITests`; an iPad drag: `scripts/app.sh test-ui
   -only-testing:SempereAppUITests/SidebarDropUITests`; an iPhone layout: `scripts/app.sh
@@ -115,9 +117,12 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 - **Before TestFlight**: `scripts/local-ci.sh --testflight` (the gate plus the Mac unit tests with no network,
   `test-mac-offline`, every Mac UI test and the Mac launch smoke tests; posts `local/testflight-suite`).
 - **Before a release**: `scripts/local-ci.sh --release` (everything, iPad and iPhone simulators
-  included; posts `local/release-sweep`; it gates the App Store submission, and `release.yml` accepts a tag on that commit
-  or on a later one whose changes since are release-neutral, `scripts/release-sweep-check.sh`). A CLI-only
-  release (`release-prep --no-app`) needs no sweep, only the CLI's GitHub CI jobs green on the tagged commit).
+  included; posts `local/release-sweep`; it gates the App Store submission, and the release checks accept a tag on
+  that commit or on a later one whose changes since are release-neutral, `scripts/release-sweep-check.sh`). A
+  CLI-only release (`release-prep --no-app`) needs no sweep, only `local/cli-suite` on the tagged commit
+  (`scripts/local-ci.sh --cli`).
+- **Linux jobs**: `scripts/ci-linux.sh` (`test`, `webdav`, `static`), the same script for the Gitea runner and
+  for `scripts/ci-linux.sh docker JOB` on a Mac.
 
 ### Parallel agents
 
@@ -167,7 +172,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `URLSession` in `FoundationNetworking`. Guard the import with
   `#if canImport(FoundationXML)`; macOS has them in Foundation.
 - The Linux release binary is fully static: built with Swift's Static Linux SDK (musl) by
-  `scripts/build-linux-static.sh` (release.yml, and ci.yml `linux-static` on `main`), which pins the SDK to
+  `scripts/build-linux-static.sh` (`scripts/ci-linux.sh static`, `scripts/release-build.sh`), which pins the SDK to
   an exact Swift version and refuses a binary with any shared library. `Sources/` must therefore build
   against musl too: import with `#if canImport(Glibc)` / `#elseif canImport(Musl)`, never `#if os(Linux)`
   for libc types (glibc wraps `RLIMIT_*` in an enum; musl has plain `Int32`), and avoid overloads that
@@ -205,7 +210,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 - The app's non-UI logic (`AppModel*.swift`, `VaultLibrary.swift`, their tests)
   can be typechecked and run on Linux with a scratch package that symlinks the
   files and shims the Apple-only URL bookmark and scoped-resource APIs; SwiftUI
-  views cannot, only the CI `app` job builds them.
+  views cannot, only the app build does (`scripts/app.sh build-ios`, in the PR gate).
 - Notebook names are `/`-separated display paths (`format.md` §5.4): use
   `NotebookPath` / `NotebookNode` (`Sources/Sempere/Notebooks.swift`), never
   `==` on raw names (`" A//B "` and `A/B` are the same notebook; `A/Bc` is not
@@ -286,7 +291,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   logic) and opens it; `SEMPERE_DEMO_*` pick note, sidebar, locked state and
   the paper picker. The `SempereScreenshots` scheme runs `SempereAppUITests`
   (not part of `SempereApp`'s test action, so `scripts/app.sh test` never
-  builds it); CI runs it only by dispatch (`-f screenshots=true`). Never put
+  builds it); run it with `scripts/screenshots.sh` (`just screenshots`). Never put
   real notes in a demo.
 - `PKCanvasView` inverts ink colors in dark mode; the canvas forces
   `.light` because ink colors are stored as drawn on (light) paper. Only Settings ▸ Appearance ▸
@@ -399,7 +404,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   "Recently Recognized" (7 days) and recent searches; `activityNow` is the test clock.
 - Timing: wrap new slow phases in `Perf` (os_signpost in every build; debug log
   `Library/Logs/SemperePerf.log`), counts and 8-hex id prefixes only.
-  `PerformanceReportTests` prints `PERF-REPORT` lines in the CI `app` log.
+  `PerformanceReportTests` prints `PERF-REPORT` lines in the app test log.
 - Infinite pages scroll one screen beyond both their ink and their stored
   height (`PageExtent.scrollHeight`). Their paper is drawn in bands near the screen
   (`PaperView.setVisible`, fed by the canvas's scroll): never one layer the height of the note.
@@ -562,7 +567,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   is always on screen (the note list is not when the columns are hidden).
   Gate Mac-only behavior on `Platform.isMac` (compiles on the iPad, so the
   iOS compile check covers it) rather than `#if targetEnvironment(macCatalyst)`:
-  the hosted Catalyst build runs on `main` only (or `gh workflow run CI --ref <branch>`).
+  the Catalyst suites run in `local-ci.sh --testflight` and `--release`.
   Only the `.commands` line and the entitlements/scene build settings are
   Catalyst-only.
 - Every `WindowGroup` gets `appEnvironment(model:library:keys:)` and every
@@ -602,7 +607,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   its `components` and the app's `ThirdPartyNotices.txt` (`AboutTests` checks both). Wording: describe
   the design and its limits, never promise outcomes.
 - Every icon-only control in the app has `.help("…")` (Mac tooltips);
-  `scripts/check-help.py` fails the `app` CI job otherwise (`docs/mac.md`
+  `scripts/check-help.py` fails the PR gate (`local-ci.sh`'s `help` step) otherwise (`docs/mac.md`
   "Tooltips"). Menu-only view builders are marked `// help-lint: titled`.
 - PDFs opened with the app (`onOpenURL`) are imported as new notes, never
   opened as vaults (`AppModel+OpenedFiles`, `OpenedFile.kind`). The app's

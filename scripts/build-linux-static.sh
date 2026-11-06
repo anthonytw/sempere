@@ -5,7 +5,7 @@
 #   scripts/build-linux-static.sh ARCH [OUT]     ARCH: x86_64 or aarch64; prints the binary's path
 #                                                (copied to OUT if given)
 #
-# Runs in the `swift:$SWIFT_VERSION-noble` image (release.yml, ci.yml `linux-static`): the SDK must
+# Runs in the `swift:$SWIFT_VERSION-noble` image (scripts/ci-linux.sh static, scripts/release-build.sh): the SDK must
 # be exactly the compiler's version, so both pins live here. Bump them together: the checksum is the
 # "Static SDK" entry for that release in https://www.swift.org/api/v1/install/releases.json.
 # The binary is stripped (-Xlinker -s): about 80 MB instead of 240 MB.

@@ -15,7 +15,7 @@ final class AboutTests: XCTestCase {
                        "This program comes with ABSOLUTELY NO WARRANTY. This is free software, and you are welcome to redistribute it under the terms of the GNU GPL v3 or later.")
         let text = SempereAbout.versionText(program: "sempere", version: "1.2.3")
         let lines = text.split(separator: "\n").map(String.init)
-        XCTAssertEqual(lines.first, "sempere 1.2.3", "release.yml and the Homebrew test read the first line")
+        XCTAssertEqual(lines.first, "sempere 1.2.3", "the release build and the Homebrew test read the first line")
         XCTAssertTrue(text.contains(SempereAbout.licenseURL.absoluteString))
         XCTAssertTrue(text.contains(SempereAbout.securityPolicyURL.absoluteString))
     }

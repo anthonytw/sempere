@@ -6,7 +6,7 @@
 #
 #   ios    the iPad and iPhone app (generic/platform=iOS)
 #   mac    the Mac Catalyst app (generic/platform=macOS,variant=Mac Catalyst)
-#   REF    a branch, tag or commit GitHub has; a branch name means origin/<branch> after a fetch
+#   REF    a branch, tag or commit Gitea (origin) has; a branch name means origin/<branch> after a fetch
 #
 # Options:
 #   --dry-run           check the configuration, the ref and the suite status, write the export options,
@@ -114,7 +114,7 @@ profile_widgets=${SEMPERE_PROFILE_WIDGETS_IOS:-Sempere Widgets iOS App Store}
 profile_mac=${SEMPERE_PROFILE_MAC:-Sempere Mac App Store}
 dist_cert=${SEMPERE_DIST_CERT:-Apple Distribution}
 installer_cert=${SEMPERE_INSTALLER_CERT:-3rd Party Mac Developer Installer}
-gh_repo=${SEMPERE_GH_REPO:-anthonytw/sempere}
+source "$(dirname "$0")/forge.sh"
 
 out=${SEMPERE_TF_OUT:-${TMPDIR:-/tmp}/sempere-testflight}
 out=${out%/}
@@ -173,14 +173,12 @@ fi
 echo "commit:  $(git -C "$repo_root" log --oneline -1 "$sha")"
 
 # --- The pre-TestFlight suite gate ---------------------------------------------------------------
-command -v gh >/dev/null || die "gh (GitHub CLI) is needed for the local/testflight-suite check: brew install gh, gh auth login"
 # The release sweep (`just ci-release`, local/release-sweep) runs everything --testflight runs, so it counts too.
-statuses=$(gh api "repos/$gh_repo/commits/$sha/status" \
-  --jq '.statuses[] | select(.context == "local/testflight-suite" or .context == "local/release-sweep") | "\(.context)=\(.state)"' \
-  2>/dev/null) || statuses="gh-api-failed"
+statuses=$(forge_statuses "$sha" 2>/dev/null | awk -F'\t' '$1 == "local/testflight-suite" || $1 == "local/release-sweep" { print $1 "=" $2 }') \
+  || statuses="gh-api-failed"
 state=$(sed -n 's|^local/testflight-suite=||p' <<<"$statuses" | head -1)
 sweep=$(sed -n 's|^local/release-sweep=||p' <<<"$statuses" | head -1)
-[[ $statuses == gh-api-failed ]] && state="unknown (gh api failed)"
+[[ $statuses == gh-api-failed ]] && state="unknown (the Gitea API failed)"
 state=${state:-missing}
 if [[ $state == success || $sweep == success ]]; then
   if [[ $state == success ]]; then echo "local/testflight-suite: success"; else echo "local/release-sweep: success (covers the TestFlight suite)"; fi

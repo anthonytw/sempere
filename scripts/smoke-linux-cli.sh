@@ -4,7 +4,7 @@
 #
 #   scripts/smoke-linux-cli.sh TARBALL VERSION     POSIX sh (Alpine has no bash); needs network
 #
-# release.yml's `linux-distros` job runs it in several distribution images before publishing.
+# scripts/release-build.sh runs it in several distribution images before publishing.
 set -eu
 tarball=$1 version=$2
 work=$(mktemp -d)

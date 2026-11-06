@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Fill packaging/homebrew/sempere.rb from a published release's SHA256SUMS.
+# Fill packaging/homebrew/sempere.rb from a release's SHA256SUMS (the local build's, else the published one).
 #   scripts/update-formula.sh 0.5.0 > /path/to/homebrew-tap/Formula/sempere.rb
 set -euo pipefail
 cd "$(dirname "$0")/.."
 version="${1:?usage: update-formula.sh VERSION}"; version="${version#v}"
-sums="$(curl -fsSL "https://github.com/anthonytw/sempere/releases/download/v${version}/SHA256SUMS")"
+# The local build's SHA256SUMS (scripts/release-build.sh) if it is here, else the published release's.
+local_sums="build/release/v${version}/SHA256SUMS"
+if [ -f "$local_sums" ]; then sums="$(cat "$local_sums")"
+else sums="$(curl -fsSL "https://github.com/anthonytw/sempere/releases/download/v${version}/SHA256SUMS")"; fi
 sum() { printf '%s\n' "$sums" | awk -v f="sempere-${version}-$1.tar.gz" '$2 == f { print $1 }' | grep .; }
 # Assignments, not $(...) inside sed's arguments: a missing checksum must stop the script
 # (set -e ignores a failing command substitution used as an argument), never write an empty sha256.
