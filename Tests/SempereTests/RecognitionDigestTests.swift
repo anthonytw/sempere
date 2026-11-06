@@ -47,17 +47,4 @@ final class RecognitionDigestTests: XCTestCase {
         }
     }
 
-    /// `SEMPERE_BENCH_DIGEST_IDS=600000` times the digest of a large note.
-    func testDigestTiming() {
-        let n = Int(ProcessInfo.processInfo.environment["SEMPERE_BENCH_DIGEST_IDS"] ?? "") ?? 2_000
-        let ids = (0..<n).map { _ in UUID() }
-        var start = Date()
-        let old = Self.reference(ids)
-        let oldMs = Date().timeIntervalSince(start) * 1000
-        start = Date()
-        let new = RecognitionBasis.digest(of: ids)
-        let newMs = Date().timeIntervalSince(start) * 1000
-        XCTAssertEqual(old, new)
-        print("DigestBench ids=\(n): strings \(String(format: "%.1f", oldMs)) ms, bytes \(String(format: "%.1f", newMs)) ms")
-    }
 }

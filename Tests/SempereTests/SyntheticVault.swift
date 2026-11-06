@@ -193,3 +193,28 @@ extension SyntheticVault {
         return [first, again]
     }
 }
+
+extension SyntheticVault {
+    /// One note as a long-lived notebook leaves it: page adds, then many
+    /// autosaves of ink spread over the pages, a few checkpoints.
+    static func longNote(revisions: Int, pages: Int, strokesPerRevision: Int, points: Int) -> [Revision] {
+        var rng = SeededRNG(42)
+        var log = LogBuilder()
+        var revs: [Revision] = []
+        let pageIDs = (0..<pages).map { _ in UUID.random(&rng) }
+        revs.append(log.delta(devA, 0, [.setMeta(.title("Bench"))]
+                              + pageIDs.enumerated().map { .addPage(Page(id: $1, order: "a\($0)")) }))
+        for i in 1..<revisions {
+            var ops: [Op] = []
+            for s in 0..<strokesPerRevision {
+                ops.append(.addStroke(page: pageIDs[(i * strokesPerRevision + s) % pages],
+                                      stroke: SyntheticVault.stroke(&rng, points: points)))
+            }
+            var r = log.delta(i % 7 == 0 ? devB : devA, Int64(i) * 20_000, ops)
+            r.session = "s\(i / 25)"
+            if i % 50 == 0 { r.checkpoint = Checkpoint(name: "v\(i)") }
+            revs.append(r)
+        }
+        return revs
+    }
+}

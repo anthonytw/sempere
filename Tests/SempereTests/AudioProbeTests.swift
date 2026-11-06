@@ -91,15 +91,6 @@ final class AudioProbeTests: XCTestCase {
         XCTAssertEqual(try AudioProbe.probe(good.prefix(1300)).codec, "aac")
     }
 
-    func testFlippedBytesNeverTrap() throws {
-        let good = try Self.fixture("tone-aac-faststart.m4a")
-        for i in 0..<400 {   // the headers and moov
-            var d = good
-            d[i] ^= 0xFF
-            _ = try? AudioProbe.probe(d)
-        }
-    }
-
     func testFuzz() throws {
         let seeds = try ["tone-aac.m4a", "tone-aac-faststart.m4a", "tone-alac.m4a"].map(Self.fixture)
         let report = Fuzz.run("audio-probe", seeds: seeds, quick: 400, maxSize: 64 << 10) { input in

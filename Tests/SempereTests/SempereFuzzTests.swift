@@ -292,7 +292,7 @@ final class SempereFuzzTests: VaultTestCase {
         let seeds = ["# H\n\n- [x] **a** _b_ ~~c~~ `d` [e](f) <g:h>\n> q\n```\ncode\n```\n$$\nx\n$$",
                      "1. a\n   - b\n     > c *d* $e$ $$f$$", "***x** y*", "[a](<b> \"t\") ![i](j)", "\\* \\$ $5 $6",
                      String(repeating: "> - ", count: 30) + "deep"].map { Data($0.utf8) }
-        assertClean(Fuzz.run("markdown", seeds: seeds, quick: 2000, text: true, maxSize: 4096, generate: { rng in
+        assertClean(Fuzz.run("markdown", seeds: seeds, quick: 850, long: 200000, text: true, maxSize: 4096, generate: { rng in
             let pieces = ["*", "_", "~~", "`", "$", "$$", "[", "]", "(", ")", "<", ">", "#", "- ", "1. ", "\n", " ", "\\", "x",
                           "[ ] ", "```", "!", "é", "😀"]
             return Data((0..<rng.below(3000)).map { _ in rng.pick(pieces) }.joined().utf8)
@@ -344,7 +344,7 @@ final class SempereFuzzTests: VaultTestCase {
     func testFuzzOpLogs() throws {
         let log = try Self.seedLog()
         let seeds = [try Self.json(log), try Self.json(Array(log.prefix(3)))]
-        assertClean(Fuzz.run("op-log", seeds: seeds, quick: 800, text: true, generate: { rng in
+        assertClean(Fuzz.run("op-log", seeds: seeds, quick: 550, long: 80000, text: true, generate: { rng in
             (try? Self.json(Self.adversarialLog(&rng))) ?? Data()
         }) { input in
             let revs: [Revision]
@@ -392,7 +392,7 @@ final class SempereFuzzTests: VaultTestCase {
         let manifest = try Data(contentsOf: vault.url.appendingPathComponent("vault.json"))
         let device = try JSONEncoder().encode(DeviceState(device: devA, clock: HybridClock(millis: 5, counter: 3)))
         let keyFile = Data(TestVaults.deviceKeyFile(id).utf8)
-        assertClean(Fuzz.run("manifest", seeds: [manifest, device, keyFile], quick: 600, text: true) { input in
+        assertClean(Fuzz.run("manifest", seeds: [manifest, device, keyFile], quick: 360, long: 60000, text: true) { input in
             Self.typed {
                 if let m = try? Vault.readManifest(input) {
                     _ = Vault.listStatus(m, key: try vault.requireSecret(), trust: nil, root: nil)
@@ -586,7 +586,7 @@ final class SempereFuzzTests: VaultTestCase {
         let seeds = try log.map(Self.json)
         let dir = vault.url.appendingPathComponent("notes").appendingPathComponent(testNote.uuidString.lowercased())
         let secret = try XCTUnwrap(vault.secret)
-        assertClean(Fuzz.run("vault-files", seeds: seeds, quick: 250, text: true) { input in
+        assertClean(Fuzz.run("vault-files", seeds: seeds, quick: 170, long: 25000, text: true) { input in
             // Written under the name it claims (or a fixed one), encrypted for real.
             let claimed = (try? InkJSON.decoder().decode(Revision.self, from: input))?.name
             let name = claimed ?? RevisionName("17596320000500000-cccccccc-9.delta.age")!

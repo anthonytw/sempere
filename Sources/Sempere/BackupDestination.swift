@@ -90,34 +90,6 @@ public enum BackupDestination {
         return parent.appendingPathComponent("\(base) \(UUID().uuidString.prefix(8)).\(folderExtension)", isDirectory: true)
     }
 
-    /// A backup of this vault an earlier build made in `parent`, renamed to `<vaultName>.sempere-backup`: the
-    /// folders named `extra` (the app's recorded subfolder), `<vaultName> Backup` and `<vaultName>.sempere`, in
-    /// that order, when `backup.json` proves it is this vault's backup. One rename in the same folder, only when
-    /// the new name is free and `parent` is no vault and lies inside none, nor in a backup; no file inside is touched. Returns the
-    /// old and new names, nil when nothing was renamed (nothing to rename, the name taken, the rename failed).
-    @discardableResult
-    public static func renameLegacy(in parent: URL, vaultId: UUID, vaultName: String, also extra: [String] = [],
-                                    fileManager fm: FileManager = .default) -> (from: String, to: String)? {
-        let id = vaultId.uuidString.lowercased()
-        let base = baseName(vaultName)
-        let newName = candidateName(base, 1)
-        let target = parent.appendingPathComponent(newName, isDirectory: true)
-        guard !fm.fileExists(atPath: target.path), enclosingHolders(of: parent, fm).isEmpty else { return nil }
-        // Never inside a vault, or inside another vault's backup (`folder(in:…)` refuses both anyway).
-        if isBackup(parent, fm) ? backupVaultId(parent) != id : isVault(parent, fm) { return nil }
-        var seen: Set<String> = []
-        for name in extra + ["\(base) Backup", "\(base).\(vaultExtension)"] where seen.insert(name).inserted {
-            guard !name.isEmpty, !name.contains("/"), name != "." && name != "..", name != newName else { continue }
-            let dir = parent.appendingPathComponent(name, isDirectory: true)
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue, !isBackupFolder(dir),
-                  backupVaultId(dir) == id else { continue }
-            guard (try? fm.moveItem(at: dir, to: target)) != nil else { return nil }
-            return (name, newName)
-        }
-        return nil
-    }
-
     /// Whether `dir` has a name earlier builds gave backups: `….sempere` (#108) or `… Backup`.
     static func isLegacyBackupName(_ dir: URL) -> Bool {
         dir.pathExtension.lowercased() == vaultExtension || dir.lastPathComponent.hasSuffix(" Backup")

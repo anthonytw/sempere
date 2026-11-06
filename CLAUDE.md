@@ -8,8 +8,9 @@ before touching `Sources/`.
 
 ```bash
 swift build                 # macOS or Linux
-swift test                  # all targets
+swift test --skip 'Benchmarks\.'   # every target but the benchmarks (`just test`); a gate never runs them
 swift test --filter AgeTests
+scripts/bench.sh [MODULE]   # the benchmark targets (`just bench`; docs/ci.md "Benchmarks"): on a schedule and before a release
 scripts/test-linux.sh       # on a Mac with Docker, or in a cloud VM: run tests in swift:6.4-noble
 scripts/app.sh test         # iPad app: xcodebuild test on the newest iPadOS 27+ simulator
 scripts/app.sh test -only-testing:SempereAppTests/FooTests   # one suite (any test-* subcommand)
@@ -154,8 +155,8 @@ there. Commit messages:
   (`seq + 1`, count × size, `Int(someDouble)`), and bound work by input size,
   not by the extents or counts the input claims.
 - Fuzzing: `Tests/FuzzSupport` is a seeded mutation fuzzer used by a
-  `*FuzzTests` class in each test target (quick mode, at most 3 s per target, in
-  every `swift test`). `SEMPERE_FUZZ_DUMP=dir` keeps the input being run as
+  `*FuzzTests` class in each test target (quick mode: a fixed case count per target,
+  the same cases on every machine, in every `swift test`). `SEMPERE_FUZZ_DUMP=dir` keeps the input being run as
   `dir/<target>.last` (a trap kills the process, so that file is the culprit);
   `SEMPERE_FUZZ_REPRO=dir/<target>.last` replays just it. A new parser of
   untrusted bytes gets a fuzz target; each fixed crash gets a regression test

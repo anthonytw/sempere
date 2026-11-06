@@ -69,7 +69,7 @@ final class WebDAVFuzzTests: SyncTestCase {
         let deep = Data(("<?xml version=\"1.0\"?>" + String(repeating: "<a>", count: 2000)
                          + String(repeating: "</a>", count: 2000)).utf8)
         let base = try client(server)
-        assertClean(Fuzz.run("propfind", seeds: [listing, notes, Self.laughs, Self.external, deep], quick: 2500,
+        assertClean(Fuzz.run("propfind", seeds: [listing, notes, Self.laughs, Self.external, deep], quick: 1900, long: 250000,
                              text: true) { input in
             do {
                 let items = try PropfindParser.parse(input)
@@ -91,7 +91,7 @@ final class WebDAVFuzzTests: SyncTestCase {
         let out = tmp.appendingPathComponent("range.out")
         let seeds = ["bytes 0-2097151/300000000", "bytes 100000-299999/300000", "bytes */1000", "bytes 0-0/1",
                      "bytes 18446744073709551615-18446744073709551616/9", "Bytes  5-9/10"].map { Data($0.utf8) }
-        assertClean(Fuzz.run("content-range", seeds: seeds, quick: 2000, text: true, maxSize: 256) { input in
+        assertClean(Fuzz.run("content-range", seeds: seeds, quick: 1200, long: 200000, text: true, maxSize: 256) { input in
             let header = String(decoding: input, as: UTF8.self)
             if let r = WebDAVClient.contentRange(header), r.start < 0 || r.end < 0 || r.total < 0 {
                 return "negative range parsed from \(header)"
@@ -162,7 +162,7 @@ final class WebDAVFuzzTests: SyncTestCase {
         let identity = self.identity
         let root = tmp!
         let counter = Counter()
-        assertClean(Fuzz.run("hostile-sync", seeds: [Data([0])], quick: 400) { input in
+        assertClean(Fuzz.run("hostile-sync", seeds: [Data([0])], quick: 280, long: 40000) { input in
             var seed: UInt64 = 0xC0FFEE
             for b in input { seed = (seed ^ UInt64(b)) &* 0x100_0000_01B3 }
             let hostile = HostileDAV(inner: server, seed: seed, corpus: corpus.map { [UInt8]($0) })

@@ -24,8 +24,8 @@ final class CountingIdentity: AgeIdentity, @unchecked Sendable {
 /// `seq` from revision file names, metadata-only edits and the history list
 /// read revisions without stroke geometry, and a history preview reads in
 /// full only what its point merges. These tests pin that each cheap path
-/// gives exactly what the full read gave, and print what each costs on a
-/// long-lived inked note (`SEMPERE_BENCH_REVISIONS`, default 200).
+/// gives exactly what the full read gave, and (in `HistoryReadBenchmarks`) print what each costs on a
+/// long-lived inked note.
 final class HistoryReadPerfTests: VaultTestCase {
     /// `loadNoteConcurrently` gives exactly `loadNote`'s result (revisions,
     /// failures by kind) on random logs with compaction gaps, positioned
@@ -143,97 +143,48 @@ final class HistoryReadPerfTests: VaultTestCase {
         XCTAssertThrowsError(try fresh.apply([.setMeta(.title("x"))], to: testNote, deviceState: device, app: "t"))
     }
 
-    // MARK: - Benchmark
+    // MARK: - Decrypt counts
 
-    /// One note as a long-lived notebook leaves it: page adds, then many
-    /// autosaves of ink spread over the pages, a few checkpoints.
-    func longNote(revisions: Int, pages: Int, strokesPerRevision: Int, points: Int) -> [Revision] {
-        var rng = SeededRNG(42)
-        var log = LogBuilder()
-        var revs: [Revision] = []
-        let pageIDs = (0..<pages).map { _ in UUID.random(&rng) }
-        revs.append(log.delta(devA, 0, [.setMeta(.title("Bench"))]
-                              + pageIDs.enumerated().map { .addPage(Page(id: $1, order: "a\($0)")) }))
-        for i in 1..<revisions {
-            var ops: [Op] = []
-            for s in 0..<strokesPerRevision {
-                ops.append(.addStroke(page: pageIDs[(i * strokesPerRevision + s) % pages],
-                                      stroke: SyntheticVault.stroke(&rng, points: points)))
-            }
-            var r = log.delta(i % 7 == 0 ? devB : devA, Int64(i) * 20_000, ops)
-            r.session = "s\(i / 25)"
-            if i % 50 == 0 { r.checkpoint = Checkpoint(name: "v\(i)") }
-            revs.append(r)
-        }
-        return revs
-    }
-
-    func testCostOnALongInkedNote() throws {
-        let env = ProcessInfo.processInfo.environment
-        let n = Int(env["SEMPERE_BENCH_REVISIONS"] ?? "") ?? 200
-        let revs = longNote(revisions: n, pages: 300, strokesPerRevision: 30, points: 60)
+    /// P50: the full read decrypts every revision, and `writeReadings` (what `NoteWriter.append` reads before
+    /// writing) checks every header too (newer content, §7.3) and agrees with it; the cheap read without stroke
+    /// points and the concurrent read give the full read's metadata and history. Counts, not time: a path that
+    /// started decrypting a revision twice, or skipped a header, fails here at any size. The timings are
+    /// `HistoryReadBenchmarks`.
+    func testWriteReadingsDecryptEveryHeaderOnceAtAnySize() throws {
+        let n = 20
+        let revs = SyntheticVault.longNote(revisions: n, pages: 30, strokesPerRevision: 5, points: 20)
         let identity = pqIdentity()
         try makeVault(identity).writeAll(revs)
         // Files are encrypted to the vault identity (format.md §15.2): the vault counts its revision decrypts.
         let vault = try Vault.open(at: vaultURL(), identities: [identity])
-        let bytes = try vault.revisionNames(of: testNote).reduce(0) {
-            $0 + ((try? FileManager.default.attributesOfItem(atPath: fileURL(vault, testNote, $1).path)[.size] as? Int) ?? 0)
-        }
-        print("perf: P50/P53 note: \(n) revisions, 300 pages, \(30 * (n - 1)) strokes × 60 points, \(bytes >> 10) KiB on disk")
-
-        func measure<T>(_ label: String, _ body: () throws -> T) rethrows -> (T, Int, Double) {
+        func decrypts<T>(_ body: () throws -> T) rethrows -> (T, Int) {
             let before = vault.revisionDecrypts.value
-            let t = Date()
             let out = try body()
-            let ms = Date().timeIntervalSince(t) * 1000
-            print("perf: \(label): \(vault.revisionDecrypts.value - before) decrypts, \(String(format: "%.1f", ms)) ms")
-            return (out, vault.revisionDecrypts.value - before, ms)
+            return (out, vault.revisionDecrypts.value - before)
         }
-
-        // P50: what NoteWriter.append(_:to:) reads before writing.
-        let (old, oldDecrypts, _) = try measure("P50 append, before (loadNote full)") { () -> ([HLC], Int) in
+        let (old, oldDecrypts) = try decrypts { () -> ([HLC], Int) in
             let l = try vault.loadNote(testNote)
             return (l.revisions.map(\.hlc), Vault.nextSeq(from: l.revisions, device: devA))
         }
-        let (new, newDecrypts, _) = try measure("P50 append, after (writeReadings: concurrent, no stroke points)") {
-            try vault.writeReadings(of: testNote, device: devA)
-        }
+        let (new, newDecrypts) = try decrypts { try vault.writeReadings(of: testNote, device: devA) }
         XCTAssertEqual(Set(old.0), Set(new.readings))
         XCTAssertEqual(old.1, new.nextSeq)
         XCTAssertEqual(oldDecrypts, n)
-        XCTAssertEqual(newDecrypts, n)   // every header is checked (newer content, §7.3)
+        XCTAssertEqual(newDecrypts, n)
 
-        // P50: a metadata edit's builder (tag, move, rename) gets the merged state.
-        let (fullState, _, _) = try measure("P50 tag edit build, before (loadNote full + reconstruct)") {
-            try NoteReducer.reconstruct(try vault.loadNote(testNote).revisions)
-        }
-        let (liteState, _, _) = try measure("P50 tag edit build, after (concurrent, no stroke points + reconstruct)") {
-            try NoteReducer.reconstruct(try vault.loadNoteConcurrently(testNote, detail: .withoutStrokePoints).revisions)
-        }
+        // A metadata edit's builder (tag, move, rename) gets the merged state without the stroke points.
+        let fullState = try NoteReducer.reconstruct(try vault.loadNote(testNote).revisions)
+        let liteState = try NoteReducer.reconstruct(try vault.loadNoteConcurrently(testNote, detail: .withoutStrokePoints).revisions)
         XCTAssertEqual(liteState.meta, fullState.meta)
         XCTAssertEqual(liteState.tagSet, fullState.tagSet)
         XCTAssertEqual(liteState.deleted, fullState.deleted)
 
-        // P53: opening Version History (every revision, then the restore points).
-        let (plain, _, _) = try measure("P53 open history, before (loadNote + points)") { () -> LoadedNote in
-            let l = try vault.loadNote(testNote)
-            _ = NoteHistory.restorePoints(l.revisions)
-            return l
-        }
-        let (concurrent, _, _) = try measure("P53 open history, after (loadNoteConcurrently + points)") { () -> LoadedNote in
-            let l = try vault.loadNoteConcurrently(testNote)
-            _ = NoteHistory.restorePoints(l.revisions)
-            return l
-        }
+        // P53: opening Version History reads every revision once, concurrently or not, to the same result.
+        let plain = try vault.loadNote(testNote)
+        let (concurrent, concurrentDecrypts) = try decrypts { try vault.loadNoteConcurrently(testNote) }
         XCTAssertEqual(concurrent, plain)
-        // What a preview costs (one replay from the first revision), and the decode share of a read.
-        let newest = NoteHistory.restorePoints(plain.revisions).suffix(5).map(\.name)
-        _ = try measure("P53 5 adjacent previews (replay each from revision 0)") {
-            for p in newest { _ = try NoteHistory.state(plain.revisions, at: p) }
-        }
-        _ = try measure("P53 read without stroke points, one thread (decode share)") {
-            try vault.loadNote(testNote, detail: .withoutStrokePoints)
-        }
+        XCTAssertEqual(concurrentDecrypts, n)
+        XCTAssertEqual(NoteHistory.restorePoints(concurrent.revisions), NoteHistory.restorePoints(plain.revisions))
     }
 }
 

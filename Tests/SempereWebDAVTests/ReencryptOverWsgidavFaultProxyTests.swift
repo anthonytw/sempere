@@ -11,7 +11,7 @@ import VaultTestSupport
 /// re-encrypted file (the conditional PUT that replaces the old copy). The target then holds the old copy or the new
 /// one, whole, never a mix; the next runs finish the replacement and the re-encryption. Skipped unless
 /// `SEMPERE_WEBDAV_PROXY_URL` is set (`scripts/test-webdav.sh`; CI's `webdav` job).
-final class ReencryptOverFaultProxyTests: SyncTestCase {
+final class ReencryptOverWsgidavFaultProxyTests: SyncTestCase {
     private var proxy: FaultProxy!
     private var path = ""
 
@@ -31,7 +31,10 @@ final class ReencryptOverFaultProxyTests: SyncTestCase {
     func testACutUploadOfAReencryptedFileLeavesTheOldOrTheNewCopyNeverAMix() throws {
         let target = EpochTarget("T1")
         let proxy = self.proxy!, path = self.path
-        target.reach = { _ in WebDAVSyncRemote(try! proxy.client(path)) }
+        // A short idle timeout: a reset upload is meant to fail at once, but on Linux the client of a cut upload can sit
+        // until its idle timeout (the default 60 s: six of them took this test 370 s there, 2 s on macOS), and the cut
+        // is what the test is about, not how long the client takes to notice it.
+        target.reach = { _ in WebDAVSyncRemote(try! proxy.client(path, transport: URLSessionTransport(timeout: 5))) }
         target.inspector = WebDAVSyncRemote(try proxy.client(path))
         let w = try EpochSyncWorld(in: tmp, names: ["A", "B"], made: [target])
         var titles: [UUID: String] = [:]

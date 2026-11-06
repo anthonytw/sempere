@@ -7,7 +7,7 @@ import XCTest
 /// written every time): the app now saves at most once per
 /// `summaryCacheSaveInterval` after edits instead of after each one.
 /// `SEMPERE_BENCH_CACHE=1`: 5,000 notes x 200 revisions.
-final class SummaryCacheSaveBenchmarkTests: VaultTestCase {
+final class SummaryCacheSaveBenchmarks: VaultTestCase {
     func testSaveCostAtVaultSize() throws {
         let bench = ProcessInfo.processInfo.environment["SEMPERE_BENCH_CACHE"] != nil
         let (notes, revisions) = bench ? (5_000, 200) : (50, 20)

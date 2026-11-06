@@ -486,13 +486,13 @@ final class StreamingTests: TempDirTestCase {
 
     // MARK: - Large files
 
-    /// 300 MB through every streaming path with bounded memory: encrypt
+    /// 64 MB through every streaming path with bounded memory: encrypt
     /// from a lazily generated chunk sequence, decrypt chunk by chunk,
     /// header-only rewrap, full re-encryption, decrypt to a file. Peak RSS
     /// must not grow by anything near the file size (whole-file `Data`
-    /// would add at least 300 MB).
-    func testLarge300MBRoundTripInBoundedMemory() throws {
-        let total = 300 * 1_000_000
+    /// would add at least 64 MB, over the limit below).
+    func testLargeRoundTripInBoundedMemory() throws {
+        let total = 64 * 1_000_000
         let pieceSize = 1 << 20
         let a = X25519Identity(), b = X25519Identity()
         var base = Self.bytes(pieceSize, seed: 42)
@@ -540,8 +540,9 @@ final class StreamingTests: TempDirTestCase {
         // RSS (Linux) catches those.
         let growth = peakResidentBytes() - baseline
         let sampled = sampler.stop()
-        print("300 MB streaming: peak RSS grew by \(growth >> 20) MiB; sampled RSS range \(sampled.map { "\($0 >> 20) MiB" } ?? "n/a")")
-        XCTAssertLessThan(growth, 64 << 20, "peak RSS grew by \(growth) bytes")
-        if let sampled { XCTAssertLessThan(sampled, 64 << 20, "resident set grew by \(sampled) bytes while streaming") }
+        print("64 MB streaming: peak RSS grew by \(growth >> 20) MiB; sampled RSS range \(sampled.map { "\($0 >> 20) MiB" } ?? "n/a")")
+        let limit = (32 << 20) + total / 4
+        XCTAssertLessThan(growth, limit, "peak RSS grew by \(growth) bytes")
+        if let sampled { XCTAssertLessThan(sampled, limit, "resident set grew by \(sampled) bytes while streaming") }
     }
 }

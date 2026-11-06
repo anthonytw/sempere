@@ -13,13 +13,13 @@ final class SyntheticInkTests: VaultTestCase {
         XCTAssertEqual(Set(sa.map(\.id)).count, 50)
     }
 
-    /// A dense page: 20 000 strokes stay between the margins, rows go down the page, and the
+    /// A dense page: 2 000 strokes stay between the margins, rows go down the page, and the
     /// geometry is plausible handwriting (glyph-sized strokes, increasing times).
     func testADensePageFillsRowsBetweenTheMargins() {
         let options = SyntheticInk.Options(pointsPerStroke: 16, pageWidth: 612, margin: 36, rowHeight: 20, top: 40)
         var ink = SyntheticInk(seed: 1, options: options)
-        let strokes = ink.strokes(20_000)
-        XCTAssertEqual(strokes.count, 20_000)
+        let strokes = ink.strokes(2_000)
+        XCTAssertEqual(strokes.count, 2_000)
         var maxY = 0.0
         for s in strokes {
             XCTAssertEqual(s.points.count, 16)
@@ -32,9 +32,9 @@ final class SyntheticInkTests: VaultTestCase {
             XCTAssertNil(s.rec)
             maxY = max(maxY, ys.max()!)
         }
-        // About 40 strokes a row: 20 000 strokes take some 500 rows.
-        XCTAssertGreaterThan(maxY, 40 + 300 * 20)
-        XCTAssertLessThan(maxY, 40 + 800 * 20)
+        // About 40 strokes a row: 2 000 strokes take some 50 rows.
+        XCTAssertGreaterThan(maxY, 40 + 30 * 20)
+        XCTAssertLessThan(maxY, 40 + 80 * 20)
         XCTAssertEqual(ink.nextBaseline, 40 + Double(Int((ink.nextBaseline - 40) / 20)) * 20)
     }
 

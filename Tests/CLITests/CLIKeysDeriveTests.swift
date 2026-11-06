@@ -21,7 +21,8 @@ final class CLIKeysDeriveTests: CLITestCase {
         let vaultId = try XCTUnwrap(v["vaultId"] as? String)
         let capture = try XCTUnwrap((v["device"] as? [String: Any])?["captureFingerprint"] as? String)
         let epochs = try XCTUnwrap(v["epochs"] as? [[String: Any]])
-        for e in epochs {
+        // The derivation itself is `EpochKeysTests` over every epoch; here the CLI's wiring: the first epoch and the last.
+        for e in epochs.count > 1 ? [epochs[0], epochs[epochs.count - 1]] : epochs {
             let n = try XCTUnwrap(e["epoch"] as? Int)
             let keyFile = path("k\(n).hex")
             try "\(try XCTUnwrap(e["key"] as? String))\n".write(toFile: keyFile, atomically: true, encoding: .utf8)

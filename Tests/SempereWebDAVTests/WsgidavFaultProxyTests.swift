@@ -14,7 +14,7 @@ import XCTest
 /// (`scripts/test-webdav.sh` sets it, and CI's `webdav` job runs it). The
 /// proxy's configuration is global: these tests must not run in parallel
 /// with each other (`swift test --parallel` never has the variable set).
-final class SyncFaultProxyTests: TempDirTestCase {
+final class WsgidavFaultProxyTests: TempDirTestCase {
     private var proxy: FaultProxy!
     private var path = ""
 

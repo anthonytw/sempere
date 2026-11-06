@@ -164,55 +164,6 @@ final class BackupTests: VaultTestCase {
         }
     }
 
-    /// A backup of this vault an earlier build named "<name> Backup" or "<name>.sempere" is renamed in place to
-    /// "<name>.sempere-backup", only when that name is free, and only when `backup.json` proves it is this vault's;
-    /// nothing inside is touched, and a sync folder of the same name (no `backup.json`) is never renamed.
-    func testLegacyBackupFoldersAreRenamedInPlace() throws {
-        let fm = FileManager.default
-        func listing(_ dir: URL) throws -> [String] {
-            ((fm.enumerator(atPath: dir.path)?.allObjects as? [String]) ?? []).sorted()
-        }
-        // "<name> Backup": renamed; its content is the same, and the backup still verifies.
-        let mac = tmp.appendingPathComponent("Mac")
-        _ = try Backup.run(source: vault, to: mac.appendingPathComponent("Notes Backup"))
-        let inside = try listing(mac.appendingPathComponent("Notes Backup"))
-        let renamed = BackupDestination.renameLegacy(in: mac, vaultId: vault.vaultId, vaultName: "Notes")
-        XCTAssertEqual(renamed?.from, "Notes Backup")
-        XCTAssertEqual(renamed?.to, "Notes.sempere-backup")
-        XCTAssertEqual(try fm.contentsOfDirectory(atPath: mac.path), ["Notes.sempere-backup"])
-        XCTAssertEqual(try listing(mac.appendingPathComponent("Notes.sempere-backup")), inside)
-        XCTAssertTrue(Backup.verify(at: mac.appendingPathComponent("Notes.sempere-backup")).isHealthy)
-        XCTAssertEqual(try BackupDestination.folder(in: mac, vaultId: vault.vaultId, vaultName: "Notes").lastPathComponent,
-                       "Notes.sempere-backup", "continued from then on")
-        XCTAssertNil(BackupDestination.renameLegacy(in: mac, vaultId: vault.vaultId, vaultName: "Notes"), "nothing left")
-        // "<name>.sempere" (#108's name): renamed too.
-        let pad = tmp.appendingPathComponent("Pad")
-        _ = try Backup.run(source: vault, to: pad.appendingPathComponent("Notes.sempere"))
-        XCTAssertEqual(BackupDestination.renameLegacy(in: pad, vaultId: vault.vaultId, vaultName: "Notes")?.from, "Notes.sempere")
-        XCTAssertEqual(try fm.contentsOfDirectory(atPath: pad.path), ["Notes.sempere-backup"])
-        // Another vault's backup, a sync folder (a vault, no backup.json), or a taken new name: left alone.
-        let shared = tmp.appendingPathComponent("Shared")
-        _ = try Backup.run(source: vault, to: shared.appendingPathComponent("Notes Backup"))
-        XCTAssertNil(BackupDestination.renameLegacy(in: shared, vaultId: UUID(), vaultName: "Notes"))
-        try fm.copyItem(at: vault.url, to: shared.appendingPathComponent("Notes.sempere"))
-        try fm.createDirectory(at: shared.appendingPathComponent("Notes.sempere-backup"), withIntermediateDirectories: true)
-        XCTAssertNil(BackupDestination.renameLegacy(in: shared, vaultId: vault.vaultId, vaultName: "Notes"))
-        try fm.removeItem(at: shared.appendingPathComponent("Notes.sempere-backup"))
-        XCTAssertEqual(BackupDestination.renameLegacy(in: shared, vaultId: vault.vaultId, vaultName: "Notes")?.from, "Notes Backup")
-        XCTAssertTrue(fm.fileExists(atPath: shared.appendingPathComponent("Notes.sempere/vault.json").path), "the vault stays")
-        // A recorded name (the app's) comes first.
-        let rec = tmp.appendingPathComponent("Rec")
-        _ = try Backup.run(source: vault, to: rec.appendingPathComponent("Notes 2.sempere"))
-        XCTAssertEqual(BackupDestination.renameLegacy(in: rec, vaultId: vault.vaultId, vaultName: "Notes",
-                                                      also: ["Notes 2.sempere"])?.from, "Notes 2.sempere")
-        // Never inside a vault.
-        let inVault = vault.url.appendingPathComponent("Notes Backup")
-        try fm.createDirectory(at: inVault, withIntermediateDirectories: true)
-        try fm.copyItem(at: mac.appendingPathComponent("Notes.sempere-backup/backup.json"), to: inVault.appendingPathComponent("backup.json"))
-        XCTAssertNil(BackupDestination.renameLegacy(in: vault.url, vaultId: vault.vaultId, vaultName: "Notes"))
-        try fm.removeItem(at: inVault)
-    }
-
     // MARK: - Incremental
 
     func testFirstRunCopiesEverythingThenOnlyWhatIsNew() throws {

@@ -4,58 +4,48 @@ import Sempere
 import XCTest
 
 final class CLIWebDAVTests: CLITestCase {
-    func testRefusesPlainHTTPToARemoteHost() throws {
+    /// Every usage error `sync webdav` gives before it sends a request (docs/cli.md): exit 2, and where the row names
+    /// what is wrong, the error names it too. Security review 2026-10 (W5): the run bounds are validated.
+    func testSyncWebDAVUsageErrorsAreRefusedBeforeAnyRequest() throws {
         let vault = try copyFixtureVault()
-        let r = try cli(["sync", "webdav", "http://dav.example.com/vault/", "--vault", vault, "--dry-run"])
-        XCTAssertEqual(r.status, 2, r.err)
-        XCTAssertTrue(r.err.contains("refusing plain http"), r.err)
-    }
-
-    func testUserNeedsItsPasswordVariable() throws {
-        let vault = try copyFixtureVault()
-        let r = try cli(["sync", "webdav", "https://dav.example.com/v/", "--vault", vault, "--user", "me",
-                         "--password-env", "NOPE_NOT_SET"])
-        XCTAssertEqual(r.status, 2, r.err)
-        XCTAssertTrue(r.err.contains("NOPE_NOT_SET"), r.err)
-        XCTAssertFalse(r.err.contains("secret"))
-        let lone = try cli(["sync", "webdav", "https://dav.example.com/v/", "--vault", vault, "--password-env", "X"])
-        XCTAssertEqual(lone.status, 2, lone.err)
-    }
-
-    func testMaxBlobSizeIsValidated() throws {
-        let vault = try copyFixtureVault()
-        for bad in ["0", "-3", "1048577"] {
-            let r = try cli(["sync", "webdav", "https://dav.example.com/v/", "--vault", vault, "--max-blob-mib", bad])
-            XCTAssertEqual(r.status, 2, "\(bad): \(r.err)")
-            XCTAssertTrue(r.err.contains("max-blob-mib") || r.err.contains("Missing value"), r.err)
+        let url = "https://dav.example.com/v/"
+        let sync = ["sync", "webdav", url, "--vault", vault]
+        var rows: [(args: [String], names: String?)] = [
+            (["sync", "webdav", "http://dav.example.com/vault/", "--vault", vault, "--dry-run"], "refusing plain http"),
+            (sync + ["--user", "me", "--password-env", "NOPE_NOT_SET"], "NOPE_NOT_SET"),   // and never a password
+            (sync + ["--password-env", "X"], nil),                                          // a password without a user
+            (sync + ["--keep-server-changes"], "--keep-server-changes needs --push-only"),
+            (sync + ["--metadata-only", "--fetch"], "separate steps"),
+            (sync + ["--metadata-only", "--no-blobs"], "--no-blobs"),
+            (sync + ["--note", "1111"], "--note needs --fetch"),
+            (sync + ["--fetch", "--push-only"], "--push-only does not go with a partial pull"),
+            (sync + ["--fetch", "--dry-run"], "--dry-run does not go with a partial pull"),
+            (sync + ["--metadata-only"], "holds a complete vault"),
+        ]
+        rows += ["0", "-3", "1048577"].map { (sync + ["--max-blob-mib", $0], nil) }
+        rows += [("--max-notes", "0"), ("--max-entries", "-1"), ("--max-download-mib", "0"), ("--max-minutes", "525601")]
+            .map { (sync + [$0.0, $0.1], nil) }
+        rows += ["0", "17", "-1"].map { (sync + ["--jobs", $0], nil) }
+        for row in rows {
+            let r = try cli(row.args)
+            XCTAssertEqual(r.status, 2, "\(row.args.dropFirst(4)): \(r.err)")
+            if let names = row.names { XCTAssertTrue(r.err.contains(names), "\(row.args.dropFirst(4)): \(r.err)") }
+            XCTAssertFalse(r.err.contains("secret"))
         }
     }
 
-    /// Security review 2026-10 (W5): the run bounds are validated.
-    func testRunLimitsAreValidated() throws {
+    /// Flags that are valid are not usage errors (here they reach a port nothing listens on).
+    func testValidFlagsAreNotUsageErrors() throws {
         let vault = try copyFixtureVault()
-        for (flag, bad) in [("--max-notes", "0"), ("--max-entries", "-1"), ("--max-download-mib", "0"),
-                            ("--max-minutes", "525601")] {
-            let r = try cli(["sync", "webdav", "https://dav.example.com/v/", "--vault", vault, flag, bad])
-            XCTAssertEqual(r.status, 2, "\(flag) \(bad): \(r.err)")
-            XCTAssertTrue(r.err.contains(String(flag.dropFirst(2))) || r.err.contains("Missing value"), r.err)
+        for extra in [["--jobs", "16"], ["--skip-unchanged"]] {
+            let r = try cli(["sync", "webdav", "http://127.0.0.1:9/vault/", "--vault", vault, "--push-only"] + extra)
+            XCTAssertNotEqual(r.status, 2, "\(extra): not a usage error: \(r.err)")
         }
-    }
-
-    func testJobsIsValidated() throws {
-        let vault = try copyFixtureVault()
-        for bad in ["0", "17", "-1"] {
-            let r = try cli(["sync", "webdav", "https://dav.example.com/v/", "--vault", vault, "--jobs", bad])
-            XCTAssertEqual(r.status, 2, "\(bad): \(r.err)")
-            XCTAssertTrue(r.err.contains("jobs") || r.err.contains("Missing value"), r.err)
-        }
-        let ok = try cli(["sync", "webdav", "http://127.0.0.1:9/vault/", "--vault", vault, "--jobs", "16", "--push-only"])
-        XCTAssertNotEqual(ok.status, 2, "not a usage error: \(ok.err)")
     }
 
     /// Needs a live server (scripts/test-webdav.sh): a first pull with --jobs reports its progress,
     /// on stderr while it runs and as the JSON report's summary.
-    func testDownloadProgressAgainstRealServer() throws {
+    func testDownloadProgressAgainstWsgidav() throws {
         let env = ProcessInfo.processInfo.environment
         guard let base = env["SEMPERE_WEBDAV_TEST_URL"], let user = env["SEMPERE_WEBDAV_TEST_USER"],
               let password = env["SEMPERE_WEBDAV_TEST_PASSWORD"] else { throw XCTSkip("no WebDAV test server") }
@@ -88,13 +78,6 @@ final class CLIWebDAVTests: CLITestCase {
         XCTAssertFalse(quiet.err.contains("downloading"), "not a terminal: no progress: \(quiet.err)")
     }
 
-    func testSkipUnchangedFlagIsAccepted() throws {
-        let vault = try copyFixtureVault()
-        let r = try cli(["sync", "webdav", "http://127.0.0.1:9/vault/", "--vault", vault, "--skip-unchanged", "--push-only"])
-        XCTAssertNotEqual(r.status, 2, "not a usage error: \(r.err)")
-        XCTAssertFalse(r.err.contains("skip-unchanged"), r.err)
-    }
-
     func testPushOnlyFlagRules() throws {
         let vault = try copyFixtureVault()
         let lone = try cli(["sync", "webdav", "https://dav.example.com/v/", "--vault", vault, "--delete-extraneous"])
@@ -110,7 +93,7 @@ final class CLIWebDAVTests: CLITestCase {
     }
 
     /// Needs a live server (scripts/test-webdav.sh): a mirror never changes the vault.
-    func testPushOnlyAgainstRealServer() throws {
+    func testPushOnlyAgainstWsgidav() throws {
         let env = ProcessInfo.processInfo.environment
         guard let base = env["SEMPERE_WEBDAV_TEST_URL"], let user = env["SEMPERE_WEBDAV_TEST_USER"],
               let password = env["SEMPERE_WEBDAV_TEST_PASSWORD"] else { throw XCTSkip("no WebDAV test server") }
@@ -133,7 +116,7 @@ final class CLIWebDAVTests: CLITestCase {
     }
 
     /// Needs a live server: set by scripts/test-webdav.sh, skipped otherwise.
-    func testSyncAgainstRealServer() throws {
+    func testSyncAgainstWsgidav() throws {
         let env = ProcessInfo.processInfo.environment
         guard let base = env["SEMPERE_WEBDAV_TEST_URL"], let user = env["SEMPERE_WEBDAV_TEST_USER"],
               let password = env["SEMPERE_WEBDAV_TEST_PASSWORD"] else { throw XCTSkip("no WebDAV test server") }
@@ -178,21 +161,6 @@ final class CLIWebDAVTests: CLITestCase {
 
     // MARK: - Partial copies (format.md §1.2)
 
-    func testPartialPullFlagRules() throws {
-        let vault = try copyFixtureVault()
-        let url = "https://dav.example.com/v/"
-        for (args, expect) in [(["--metadata-only", "--fetch"], "separate steps"),
-                               (["--metadata-only", "--no-blobs"], "--no-blobs"),
-                               (["--note", "1111"], "--note needs --fetch"),
-                               (["--fetch", "--push-only"], "--push-only does not go with a partial pull"),
-                               (["--fetch", "--dry-run"], "--dry-run does not go with a partial pull"),
-                               (["--metadata-only"], "holds a complete vault")] {
-            let r = try cli(["sync", "webdav", url, "--vault", vault] + args)
-            XCTAssertEqual(r.status, 2, "\(args): \(r.err)")
-            XCTAssertTrue(r.err.contains(expect), "\(args): \(r.err)")
-        }
-    }
-
     /// The fixture vault turned into a partial copy by hand: note 2222… not
     /// downloaded yet, one blob of 1111… pending.
     private func partialFixture() throws -> String {
@@ -230,7 +198,7 @@ final class CLIWebDAVTests: CLITestCase {
 
     /// Needs a live server (scripts/test-webdav.sh): metadata, a push that
     /// deletes nothing, one note fetched, then the rest; and `--no-blobs` alone.
-    func testPartialCopyAgainstRealServer() throws {
+    func testPartialCopyAgainstWsgidav() throws {
         let env = ProcessInfo.processInfo.environment
         guard let base = env["SEMPERE_WEBDAV_TEST_URL"], let user = env["SEMPERE_WEBDAV_TEST_USER"],
               let password = env["SEMPERE_WEBDAV_TEST_PASSWORD"] else { throw XCTSkip("no WebDAV test server") }
@@ -290,13 +258,6 @@ final class CLIWebDAVTests: CLITestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: lean + "/.sempere-partial"))
     }
 
-    func testKeepServerChangesNeedsPushOnly() throws {
-        let vault = try copyFixtureVault()
-        let r = try cli(["sync", "webdav", "https://dav.example.com/v/", "--vault", vault, "--keep-server-changes"])
-        XCTAssertEqual(r.status, 2, r.err)
-        XCTAssertTrue(r.err.contains("--keep-server-changes needs --push-only"), r.err)
-    }
-
     func testCheckRefusesInsecureURLsAndMissingPasswords() throws {
         let plain = try cli(["webdav", "check", "http://dav.example.com/v/"])
         XCTAssertEqual(plain.status, 2, plain.err)
@@ -324,7 +285,7 @@ final class CLIWebDAVTests: CLITestCase {
 
     /// Needs a live server (scripts/test-webdav.sh): `webdav check` finds what `sync webdav` put there,
     /// and `--keep-server-changes` keeps a manifest someone else changed.
-    func testCheckAndKeepServerChangesAgainstRealServer() throws {
+    func testCheckAndKeepServerChangesAgainstWsgidav() throws {
         let env = ProcessInfo.processInfo.environment
         guard let base = env["SEMPERE_WEBDAV_TEST_URL"], let user = env["SEMPERE_WEBDAV_TEST_USER"],
               let password = env["SEMPERE_WEBDAV_TEST_PASSWORD"] else { throw XCTSkip("no WebDAV test server") }
@@ -375,7 +336,7 @@ final class CLIWebDAVTests: CLITestCase {
     /// GA-60: `--retry-quarantined` through the command. A revision that is not an age file is
     /// quarantined at the first pull; the next pull skips it (unchanged on the server) and says so;
     /// `--retry-quarantined` fetches and checks it again.
-    func testRetryQuarantinedAgainstRealServer() throws {
+    func testRetryQuarantinedAgainstWsgidav() throws {
         let env = ProcessInfo.processInfo.environment
         guard let base = env["SEMPERE_WEBDAV_TEST_URL"], let user = env["SEMPERE_WEBDAV_TEST_USER"],
               let password = env["SEMPERE_WEBDAV_TEST_PASSWORD"] else { throw XCTSkip("no WebDAV test server") }
@@ -409,7 +370,7 @@ final class CLIWebDAVTests: CLITestCase {
     }
 
     /// GA-60 / GA-66: `--device` names this machine in the conflict copy of `vault.json`.
-    func testDeviceNamesTheConflictFileAgainstRealServer() throws {
+    func testDeviceNamesTheConflictFileAgainstWsgidav() throws {
         let env = ProcessInfo.processInfo.environment
         guard let base = env["SEMPERE_WEBDAV_TEST_URL"], let user = env["SEMPERE_WEBDAV_TEST_USER"],
               let password = env["SEMPERE_WEBDAV_TEST_PASSWORD"] else { throw XCTSkip("no WebDAV test server") }

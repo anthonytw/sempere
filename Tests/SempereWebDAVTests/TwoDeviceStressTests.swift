@@ -8,7 +8,7 @@ import XCTest
 /// own keys, clocks and sync state on one in-memory server, each through its
 /// own `FaultyTransport`, interleaving writes and runs (some at the same
 /// time). Seeded, so a failing seed replays. The same scenarios against
-/// wsgidav behind `scripts/dav-fault-proxy.py` are `SyncFaultProxyTests`
+/// wsgidav behind `scripts/dav-fault-proxy.py` are `WsgidavFaultProxyTests`
 /// (fast, in `scripts/test-webdav.sh`) and `SyncStressTests` (640 notes,
 /// `scripts/sync-stress.sh`).
 final class TwoDeviceStressTests: SyncTestCase {

@@ -125,7 +125,7 @@ struct BackupAppTests {
         let vault = try Vault.open(at: fixture)
         let id = vault.vaultId
         let fm = FileManager.default
-        func run(_ picked: URL, _ recorded: String?) throws -> (subfolder: String?, renamed: String?) {
+        func run(_ picked: URL, _ recorded: String?) throws -> String? {
             try BackupLocation.runSubfolder(in: picked, recorded: recorded, vaultId: id, vaultName: "Notes", openVault: nil)
         }
         // The iPad's backup straight in the picked folder: a "<name>.sempere-backup" inside, nothing else touched,
@@ -133,16 +133,16 @@ struct BackupAppTests {
         let pad = try scratch.folder("Pad")
         _ = try Backup.run(source: vault, to: pad)
         let before = try fm.contentsOfDirectory(atPath: pad.path).sorted()
-        #expect(try run(pad, nil).subfolder == "Notes.sempere-backup")
+        #expect(try run(pad, nil) == "Notes.sempere-backup")
         #expect(try fm.contentsOfDirectory(atPath: pad.path).sorted() == before)
         _ = try Backup.run(source: vault, to: pad.appendingPathComponent("Notes.sempere-backup"))
-        #expect(try run(pad, "Notes.sempere-backup").subfolder == "Notes.sempere-backup")
+        #expect(try run(pad, "Notes.sempere-backup") == "Notes.sempere-backup")
         // A recorded name another device's vault took before this one ran: the next free name.
         let shared = try scratch.folder("Shared")
         let other = shared.appendingPathComponent("Notes.sempere-backup")
         try fm.createDirectory(at: other, withIntermediateDirectories: true)
         try Data("x".utf8).write(to: other.appendingPathComponent("vault.json"))
-        #expect(try run(shared, "Notes.sempere-backup").subfolder == "Notes 2.sempere-backup")
+        #expect(try run(shared, "Notes.sempere-backup") == "Notes 2.sempere-backup")
     }
 
     /// Review of #108: a backup never becomes a sync target. Opening one is a one-time import (keep-syncing off,

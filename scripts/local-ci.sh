@@ -65,7 +65,7 @@ esac
 describe() {   # step: what it runs
   case "$1" in
     help)       echo "scripts/check-help.py          (every toolbar and icon-only control has a .help tooltip; tests use TestDefaults; every UI test class is in one of app.sh's device lists)" ;;
-    package)    echo "swift build --build-tests && swift test --parallel (through scripts/test-runner.py)" ;;
+    package)    echo "swift build --build-tests && swift test --parallel --skip Benchmarks (through scripts/test-runner.py; benchmarks are scripts/bench.sh)" ;;
     mac)        echo "scripts/app.sh test-mac        (Mac Catalyst unit tests, pseudo-language layouts included)" ;;
     ios-build)  echo "scripts/app.sh build-ios       (iOS simulator compile check, no tests)" ;;
     mac-offline) echo "scripts/app.sh test-mac-offline (Mac Catalyst unit tests with the network refused, OfflineModeTests)" ;;
@@ -118,7 +118,7 @@ status() {   # context, state, description
 run_step() {
   case "$1" in
     help)       scripts/check-help.py --self-test && scripts/check-help.py && scripts/check-test-defaults.sh && scripts/check-ui-tests.sh && /usr/bin/python3 -I scripts/test-runner.py --self-test ;;
-    package)    swift build --build-tests && /usr/bin/python3 -I scripts/test-runner.py --kind swiftpm -- swift test --parallel ;;
+    package)    swift build --build-tests && /usr/bin/python3 -I scripts/test-runner.py --kind swiftpm -- swift test --parallel --skip 'Benchmarks\.' ;;
     mac)        scripts/app.sh test-mac ;;
     ios-build)  scripts/app.sh build-ios ;;
     mac-offline) scripts/app.sh test-mac-offline ;;

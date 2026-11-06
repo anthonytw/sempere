@@ -54,7 +54,7 @@ final class BulkLoadAheadTests: XCTestCase {
             ahead.schedule(after: k)
             // Rendering job k: the read of k + 1 gets going meanwhile.
             if k + 1 < count {
-                let deadline = Date().addingTimeInterval(5)
+                let deadline = Date().addingTimeInterval(60)   // an event wait: only a hang reaches this
                 while !log.startedNow.contains(k + 1), Date() < deadline { try? await Task.sleep(nanoseconds: 1_000_000) }
                 XCTAssertTrue(log.startedNow.contains(k + 1), "read of \(k + 1) started during the render of \(k)")
             }
@@ -157,9 +157,7 @@ final class BulkLoadAheadTests: XCTestCase {
         }
         ahead.schedule(after: -1)
         while log.startedNow.isEmpty { try? await Task.sleep(nanoseconds: 1_000_000) }
-        let t0 = Date()
         await ahead.cancelAndWait()
-        XCTAssertLessThan(Date().timeIntervalSince(t0), 2)
         XCTAssertEqual(log.finished.count, log.startedNow.count, "nothing left running")
     }
 
@@ -190,8 +188,20 @@ final class BulkLoadAheadTests: XCTestCase {
         _ = try zip.finish(cancelled: true)
     }
 
-    /// `wouldSkip` from other threads while `export` mutates the manifest.
+    /// `wouldSkip` from other threads while `export` mutates the manifest: the manifest only gains entries, so
+    /// once a probe has seen a job as done it must see it as done on every later look (a torn read, or a lookup
+    /// that raced the insert, would flip back to false or trap). The probes sweep all jobs, yielding the CPU between
+    /// sweeps, until the export has finished; the export is run on another thread so the two overlap.
     func testWouldSkipWhileExporting() throws {
+        final class Flag: @unchecked Sendable {
+            private let lock = NSLock()
+            private var set = false
+            private var notes: [String] = []
+            var isSet: Bool { lock.lock(); defer { lock.unlock() }; return set }
+            func raise() { lock.lock(); set = true; lock.unlock() }
+            func note(_ s: String) { lock.lock(); notes.append(s); lock.unlock() }
+            var flips: [String] { lock.lock(); defer { lock.unlock() }; return notes }
+        }
         let root = try makeScratch("wouldskip-race")
         let t = helpers()
         let notes = (1...30).map { t.summary($0, "Note \($0)") }
@@ -199,78 +209,33 @@ final class BulkLoadAheadTests: XCTestCase {
         let options = BulkExportOptions(format: .pdf, layout: .flat)
         let session = try BulkExportSession(destination: .folder(root), options: options, jobs: jobs)
         let states = jobs.map { t.state($0.title) }
-        let done = expectation(description: "export")
-        let stop = Log()
+        let finished = Flag(), flips = Flag()
+        let probes = DispatchGroup()
         let queue = DispatchQueue(label: "probe", attributes: .concurrent)
-        for _ in 0..<4 {
-            queue.async {
-                while stop.startedNow.isEmpty {
-                    for j in jobs { _ = session.wouldSkip(j, version: "v1") }
+        for p in 0..<3 {
+            queue.async(group: probes) {
+                var seen = Set<Int>()
+                while !finished.isSet {
+                    for (n, job) in jobs.enumerated() {
+                        if session.wouldSkip(job, version: "v1") { seen.insert(n) } else if seen.contains(n) {
+                            flips.note("probe \(p): job \(n) was done, then not")
+                        }
+                    }
+                    usleep(200)
                 }
             }
         }
-        DispatchQueue.global().async {
+        let exported = DispatchGroup()
+        DispatchQueue.global().async(group: exported) {
             for (j, state) in zip(jobs, states) { _ = try? session.export(j, state: state, version: "v1", blobs: nil) }
-            stop.start(0)
-            done.fulfill()
+            finished.raise()
         }
-        wait(for: [done], timeout: 120)
+        XCTAssertEqual(exported.wait(timeout: .now() + 120), .success)
+        XCTAssertEqual(probes.wait(timeout: .now() + 60), .success)
+        XCTAssertEqual(flips.flips, [])
         let result = try session.finish(cancelled: false)
         XCTAssertEqual(result.exported.count, 30)
         XCTAssertTrue(jobs.allSatisfy { session.wouldSkip($0, version: "v1") })
-    }
-}
-
-/// Wall time of a real vault's bulk PDF export, one note at a time against reading ahead while
-/// rendering (the app's pipeline). Skipped unless `SEMPERE_BENCH_VAULT` and `SEMPERE_BENCH_KEY`
-/// name a vault and its identity file; prints both times.
-final class BulkLoadAheadBenchTests: XCTestCase {
-    func testSerialAgainstReadAhead() async throws {
-        let env = ProcessInfo.processInfo.environment
-        guard let vaultPath = env["SEMPERE_BENCH_VAULT"], let keyPath = env["SEMPERE_BENCH_KEY"] else {
-            throw XCTSkip("set SEMPERE_BENCH_VAULT and SEMPERE_BENCH_KEY")
-        }
-        let identity = try IdentityFile.parse(String(contentsOfFile: keyPath, encoding: .utf8))
-        let vault = try Vault.open(at: URL(fileURLWithPath: vaultPath), identities: [identity])
-        let jobs = BulkExportPlan.jobs(for: .vault, from: try vault.summaries(), format: .pdf, layout: .flat)
-        let options = BulkExportOptions(format: .pdf, layout: .flat)
-        @Sendable func load(_ id: UUID) throws -> NoteState { try vault.reconstruct(try vault.loadNote(id)) }
-
-        func scratch(_ name: String) throws -> URL {
-            let dir = TestTemp.root.appendingPathComponent("bulk-bench-\(name)-\(UUID().uuidString)")
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            return dir
-        }
-        let a = try scratch("serial"), b = try scratch("ahead")
-        defer { try? FileManager.default.removeItem(at: a); try? FileManager.default.removeItem(at: b) }
-
-        let t0 = Date()
-        let serial = try BulkExportSession(destination: .folder(a), options: options, jobs: jobs)
-        for job in jobs {
-            let state = try load(job.noteId)
-            try serial.export(job, state: state, version: "v", blobs: vault.blobSource(note: job.noteId))
-        }
-        _ = try serial.finish(cancelled: false)
-        let serialTime = Date().timeIntervalSince(t0)
-
-        let t1 = Date()
-        let session = try BulkExportSession(destination: .folder(b), options: options, jobs: jobs)
-        let ahead = LoadAhead<NoteState>(count: jobs.count, depth: 2) { i in
-            let state = try? await Task.detached { try load(jobs[i].noteId) }.value
-            return state.map { .ready($0, bytes: 0) } ?? .declined
-        }
-        ahead.schedule(after: -1)
-        for (i, job) in jobs.enumerated() {
-            var state: NoteState?
-            if case .ready(let s, _)? = await ahead.take(i) { state = s }
-            let note = try state ?? load(job.noteId)
-            ahead.schedule(after: i)
-            try await Task.detached { try session.export(job, state: note, version: "v", blobs: vault.blobSource(note: job.noteId)) }.value
-        }
-        _ = try session.finish(cancelled: false)
-        await ahead.cancelAndWait()
-        let aheadTime = Date().timeIntervalSince(t1)
-        print("BULK-BENCH notes=\(jobs.count) serial=\(String(format: "%.2f", serialTime))s readAhead=\(String(format: "%.2f", aheadTime))s")
     }
 }
 

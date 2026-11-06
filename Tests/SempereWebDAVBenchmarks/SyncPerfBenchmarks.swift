@@ -10,20 +10,14 @@ import XCTest
 @testable import SempereSync
 @testable import SempereWebDAV
 
-/// Timings of a sync run at a realistic size. Skipped unless `SEMPERE_PERF=1`
-/// (they take tens of seconds); `SEMPERE_PERF_NOTES` and
+/// Timings of a sync run at a realistic size (tens of seconds; `scripts/bench.sh webdav`). `SEMPERE_PERF_NOTES` and
 /// `SEMPERE_PERF_RECORDS` change the vault size and the extra sync-state
 /// records. They print timings and request counts and assert only that the
 /// runs stay correct.
-final class SyncPerfTests: BlobSyncTestCase {
+final class SyncPerfBenchmarks: BlobSyncTestCase {
     var env: [String: String] { ProcessInfo.processInfo.environment }
     var notes: Int { Int(env["SEMPERE_PERF_NOTES"] ?? "") ?? 300 }
     var records: Int { Int(env["SEMPERE_PERF_RECORDS"] ?? "") ?? 200_000 }
-
-    override func setUpWithError() throws {
-        try super.setUpWithError()
-        try XCTSkipUnless(env["SEMPERE_PERF"] == "1", "set SEMPERE_PERF=1 to run the sync timings")
-    }
 
     /// The process's peak resident size so far, in MiB. Run one test per
     /// process to read a run's peak.

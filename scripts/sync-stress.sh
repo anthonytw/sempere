@@ -6,9 +6,9 @@
 # (both started by scripts/test-webdav.sh, which also checks that nothing skipped):
 #   SyncStressTests       the vault between two devices: upload and pull through resets and 5xx,
 #                         concurrent edits, idle request counts, canceled pulls, merge-copy round trip
-#   SyncTimingTests       wall time, requests and connections of a first upload, a first pull, idle runs and
+#   SyncTimingBenchmarks       wall time, requests and connections of a first upload, a first pull, idle runs and
 #                         a push, without faults, at SEMPERE_STRESS_LATENCIES ms per request (0,20)
-#   SyncFaultProxyTests   the fast proxy scenarios (also in the CI webdav job)
+#   WsgidavFaultProxyTests   the fast proxy scenarios (also in the CI webdav job)
 #   TwoDeviceStressTests  the in-memory random interleavings, with SEMPERE_STRESS_SEEDS seeds
 #   NDeviceStressTests    3 to 5 devices on one or two remotes (MemoryRemote, FolderRemote, the WebDAV mock) through
 #                         transport and hostile-server faults, several bridges (SEMPERE_SYNC_STRESS_BRIDGES=one:
@@ -21,7 +21,7 @@
 #                         clock jumping 7-200 days; offline audit) and on short connection windows (=window), over
 #                         memory targets, the WebDAV mock and wsgidav (whose whole-second version tags once hid a
 #                         replaced copy from a device: J1, key-hierarchy design §16.13; SecondStampTests)
-#   ReencryptOverFaultProxyTests  a re-encrypted file's upload cut mid-body over wsgidav (F11, KH6)
+#   ReencryptOverWsgidavFaultProxyTests  a re-encrypted file's upload cut mid-body over wsgidav (F11, KH6)
 # Environment: SEMPERE_STRESS_SEED (1), SEMPERE_STRESS_NOTES (640), SEMPERE_STRESS_SEEDS (60),
 # SEMPERE_SYNC_STRESS_SEEDS (60).
 # Needs wsgidav (scripts/webdav-server-requirements.txt) and python3. About five minutes on a laptop.
@@ -36,7 +36,7 @@ export SEMPERE_STRESS_VAULT="$PWD/$out"
 export SEMPERE_STRESS_SEEDS="${SEMPERE_STRESS_SEEDS:-60}"
 export SEMPERE_SYNC_STRESS_LONG=1
 export SEMPERE_SYNC_STRESS_SEEDS="${SEMPERE_SYNC_STRESS_SEEDS:-60}"
-export SEMPERE_WEBDAV_TESTS='SyncStressTests|SyncTimingTests|SyncFaultProxyTests|TwoDeviceStressTests|NDeviceStressTests|WsgidavConformanceTests|EngineOverWsgidavTests|EpochInterleavingTests|ReencryptOverFaultProxyTests'
+export SEMPERE_WEBDAV_TESTS='Wsgidav|SyncStressTests|SyncTimingBenchmarks|TwoDeviceStressTests|NDeviceStressTests|EpochInterleavingTests'
 scripts/test-webdav.sh --skip-build "$@"
 # Removals, devices away for weeks or months, short connection windows (offline audit): the interleavings lean on each,
 # over every transport, wsgidav included.

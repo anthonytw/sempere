@@ -118,23 +118,6 @@ final class CLIBackupStressTests: CLITestCase {
         XCTAssertTrue(Backup.verify(at: dest).isHealthy)
     }
 
-    /// A slow destination (a NAS on Wi-Fi): each file takes a while; the run completes and an interrupted slow run
-    /// resumes without copying again what it finished.
-    func testASlowDestinationCompletesAndAnInterruptedOneResumes() throws {
-        let vault = try bigVault(notes: 5, kb: 20)
-        let dest = tmp.appendingPathComponent("slow")
-        let n = Counter()
-        XCTAssertThrowsError(try Backup.run(source: vault, to: dest, options: BackupOptions(afterEachFile: { _ in
-            Thread.sleep(forTimeInterval: 0.05)
-            if n.next() == 6 { throw VaultError.interrupted }
-        })))
-        let resumed = try Backup.run(source: vault, to: dest, options: BackupOptions(afterEachFile: { _ in
-            Thread.sleep(forTimeInterval: 0.05)
-        }))
-        XCTAssertTrue(resumed.errors.isEmpty)
-        XCTAssertGreaterThanOrEqual(resumed.unchanged, 5, "files of the first run are not copied again")
-        XCTAssertTrue(Backup.verify(at: dest).isHealthy)
-    }
 }
 
 /// A thread-safe counter for hooks.

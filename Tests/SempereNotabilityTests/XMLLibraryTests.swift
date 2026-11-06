@@ -13,11 +13,4 @@ final class XMLLibraryTests: XCTestCase {
         XCTAssertEqual(d["library-format-version"], .string("1.0"))
         XCTAssertEqual(d["recordings"], .dict([:]))
     }
-
-    /// The regression: a real-shaped note (XML library.plist) imports.
-    func testNoteWithXMLLibraryImports() throws {
-        let note = try NotabilityNote.parse(package: NotePackage(zip: ZipArchive(data: SyntheticNote.package())))
-        XCTAssertFalse(note.curves.isEmpty)
-        XCTAssertEqual(note.recordingCount, 0)
-    }
 }

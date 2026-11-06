@@ -354,9 +354,8 @@ final class CLINoteEditTests: CLITestCase {
     /// and `--favorites-first` puts favorites ahead under any order (the app's note list rules, `NoteOrder`).
     func testListSortsByTitleDatesAndFavoritesFirst() throws {
         func newNote(_ title: String) throws -> String {
-            let id = try XCTUnwrap(try note(try json(["notes", "new", title, "--notebook", "Sorted"]))["id"] as? String)
-            Thread.sleep(forTimeInterval: 0.02)   // distinct creation times
-            return id
+            // Each call is a process of its own (tens of milliseconds at least), so the creation times differ.
+            try XCTUnwrap(try note(try json(["notes", "new", title, "--notebook", "Sorted"]))["id"] as? String)
         }
         let b = try newNote("Note 10"), a = try newNote("Note 2"), c = try newNote("Alpha")
         // The first one changes last: newest by modification, oldest by creation.

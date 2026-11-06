@@ -125,8 +125,13 @@ final class CLIExportTreeTests: CLITestCase {
                 return (rel, d)
             })
         }
+        // Every file gets an old modification time, so a rewrite shows whatever the file system's resolution.
+        let past = Date(timeIntervalSinceNow: -3_600)
+        for (rel, _) in try stamps() {
+            try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: out + "/" + rel)
+        }
         let before = try stamps()
-        Thread.sleep(forTimeInterval: 1.1)
+        XCTAssertTrue(before.values.allSatisfy { abs($0.timeIntervalSince(past)) < 1 })
         let again = try export(args, out: out)
         XCTAssertEqual(again.status, 0, again.err)
         XCTAssertEqual(try stamps(), before, "an unchanged re-export rewrites nothing")

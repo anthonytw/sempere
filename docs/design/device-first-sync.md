@@ -708,7 +708,7 @@ The menu has Sync Now, Show Details (per target: the last report), Sync Targetsâ
 | New rules | rewrap-replace, inbox deletes, `keys/` and `summaries/`, and fuzz targets for the new readers | `swift test` |
 | Key changes | Â§6.4: `RewrapFaults`, `KeyChangeScenarioTests` (F1 to F19), `KeyChangeInterleavingTests` | `swift test`, sync-stress |
 | Multi-device | `TwoDeviceStressTests` generalized to N devices and mixed and multiple targets (bridges included) | `swift test`, `scripts/sync-stress.sh` |
-| Real server | wsgidav + `dav-fault-proxy.py`, `SyncFaultProxyTests`, `SyncTimingTests`, two-way app-shaped runs | CI `webdav` job, sync-stress |
+| Real server | wsgidav + `dav-fault-proxy.py`, `WsgidavFaultProxyTests`, `SyncTimingBenchmarks`, two-way app-shaped runs | CI `webdav` job, sync-stress |
 | App | `SyncSession` scheduling with a fake clock; RemoteMerge fed by engine reports; two working copies through one remote; the outgoing-identity guard (F4) | Mac Catalyst unit tests (PR gate) |
 | Several vaults | `MultiVaultSyncTests`: two vaults with different targets (folder and WebDAV mock) synced in one background run; one vault's failing target (a 503 loop, a wrong password, a hung server bounded by `maxDuration`) does not delay or fail the other; budget fairness over N vaults (no starvation across rotating tasks); credentials and pins never cross vaults; locked staging per vault, placed only at that vault's unlock; per-vault status. Arrival reports reach only the open vault's model | Mac Catalyst unit tests, plus the coordinator logic on Linux |
 | Darwin hooks | `UbiquitousFolderHooks` on a local folder (coordination as a no-op) and `NSFileVersion` on a local file | `swift test` on macOS |

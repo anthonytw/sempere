@@ -1808,12 +1808,24 @@ final class SyncRunLock: @unchecked Sendable {
     static let shared = SyncRunLock()
     private let condition = NSCondition()
     private var held = Set<String>()
+    private var waiting = 0
+
+    /// How many runs wait for a state file another run holds (a test's signal that a second run is blocked).
+    var waitingCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return waiting
+    }
 
     /// Runs `body` once no other holder has `stateURL`, holding it meanwhile.
     func withLock<T>(_ stateURL: URL, _ body: () throws -> T) rethrows -> T {
         let key = stateURL.standardizedFileURL.resolvingSymlinksInPath().path
         condition.lock()
-        while held.contains(key) { condition.wait() }
+        while held.contains(key) {
+            waiting += 1
+            condition.wait()
+            waiting -= 1
+        }
         held.insert(key)
         condition.unlock()
         defer {

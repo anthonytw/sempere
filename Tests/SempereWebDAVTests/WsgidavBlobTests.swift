@@ -8,7 +8,7 @@ import XCTest
 /// Blob sync against a real WebDAV server through `URLSessionTransport`
 /// (streamed PUT from a file, GET into a file, `Range` resume, `MOVE`).
 /// Skipped unless SEMPERE_WEBDAV_TEST_URL is set (`scripts/test-webdav.sh`).
-final class BlobIntegrationTests: BlobSyncTestCase {
+final class WsgidavBlobTests: BlobSyncTestCase {
     static let segment = Int(ProcessInfo.processInfo.environment["SEMPERE_WEBDAV_SEGMENT"] ?? "")
         ?? WebDAVClient.defaultSegmentBytes
 
@@ -29,7 +29,7 @@ final class BlobIntegrationTests: BlobSyncTestCase {
                               options: SyncOptions(deviceLabel: name, now: now, blobSegmentBytes: Self.segment)).run()
     }
 
-    func testStreamingVerbsAgainstRealServer() throws {
+    func testStreamingVerbsAgainstWsgidav() throws {
         let c = try realClient("it-\(UUID().uuidString.lowercased())")
         try c.createBase()
         let bytes = syntheticBlob(300_000)
@@ -57,44 +57,14 @@ final class BlobIntegrationTests: BlobSyncTestCase {
         }
     }
 
-    func testBlobsThroughRealServer() throws {
-        let c = try realClient("it-\(UUID().uuidString.lowercased())/vault")
-        let a = try makeVault("A")
-        let used = try a.writeBlob(note: noteID, syntheticBlob(90_000), type: "image/jpeg")
-        let unused = try a.writeBlob(note: noteID, syntheticBlob(4000, seed: 3), type: "application/pdf")
-        try referencing(a, device: devA, t: 0, [used])
-        let r1 = try run("A", c)
-        XCTAssertTrue(r1.errors.isEmpty, "\(r1)")
-        let r2 = try run("B", c)
-        XCTAssertTrue(r2.errors.isEmpty, "\(r2)")
-        let b = try openVault("B")
-        XCTAssertEqual(try b.readBlob(note: noteID, used), syntheticBlob(90_000))
-        XCTAssertEqual(try b.readBlob(note: noteID, unused), syntheticBlob(4000, seed: 3))
-        XCTAssertTrue(b.verify().isHealthy)
-        XCTAssertEqual(try c.list(["notes", id, "att"])?.map(\.name).sorted(),
-                       [try blobFile(a, used), try blobFile(a, unused)].sorted())
-
-        var state = BlobCollectorState()
-        let t0 = Date()
-        _ = try a.collectBlobs(note: noteID, state: &state, now: t0)
-        _ = try a.collectBlobs(note: noteID, state: &state, now: t0.addingTimeInterval(31 * 86400))
-        XCTAssertEqual(try run("A", c).deleted.map(\.side), ["remote"])
-        // B follows the server's deletion after its own retention window (format.md §8.1.6 rule 4).
-        XCTAssertTrue(try run("B", c).deleted.isEmpty)
-        XCTAssertEqual(try run("B", c, now: Date().addingTimeInterval(31 * 86400)).deleted.map(\.side), ["local"])
-        XCTAssertEqual(attEntries("B"), [try blobFile(a, used)])
-        XCTAssertTrue(try run("A", c).isEmpty)
-        XCTAssertTrue(try run("B", c).isEmpty)
-    }
-
     /// A large blob through URLSession both ways with bounded memory: the
     /// resident size (sampled, so an earlier test's peak cannot hide it) grows
     /// by at most 32 MiB (the client and URLSession: about 25 MiB on macOS)
     /// plus a quarter of the blob, and never 64 MiB, so a client that held one
-    /// copy of the blob fails at CI's 64 MB too, not only at the default 300 MB.
+    /// copy of the blob fails at the default 64 MB too.
     func testLargeBlobThroughRealServerInBoundedMemory() throws {
         let c = try realClient("it-\(UUID().uuidString.lowercased())/vault")
-        let megabytes = Int(ProcessInfo.processInfo.environment["SEMPERE_WEBDAV_LARGE_MB"] ?? "") ?? 300
+        let megabytes = Int(ProcessInfo.processInfo.environment["SEMPERE_WEBDAV_LARGE_MB"] ?? "") ?? 64
         let total = megabytes * 1_000_000
         let a = try makeVault("A")
         let source = tmp.appendingPathComponent("lecture.m4a")

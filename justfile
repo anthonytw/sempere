@@ -11,9 +11,13 @@ default:
 build:
     swift build --build-tests
 
-# Run the whole test suite
+# Run the whole test suite (not the benchmarks: `just bench`)
 test *ARGS:
-    swift test {{ARGS}}
+    swift test --skip 'Benchmarks\.' {{ARGS}}
+
+# Run the benchmarks (print-only timings; MODULES: sempere render webdav pdf age, default all; docs/ci.md "Benchmarks")
+bench *MODULES:
+    scripts/bench.sh {{MODULES}}
 
 # Run tests the way Linux CI does (Docker on macOS)
 test-linux *ARGS:

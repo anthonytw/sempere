@@ -67,7 +67,7 @@ final class BlobFuzzTests: VaultTestCase {
         try vault.write(referencingDelta(&log, 0, refs: [ref]))
         let url = try blobURL(vault, testNote, ref)
         let recipients = try vault.ageRecipients()
-        let report = Fuzz.run("blob-files", seeds: Self.seeds() + [try decryptBlob(url, id)], quick: 120,
+        let report = Fuzz.run("blob-files", seeds: Self.seeds() + [try decryptBlob(url, id)], quick: 120, long: 12000,
                               maxSize: 128 << 10) { input in
             Self.typed {
                 try Vault.encrypt(input, to: recipients).write(to: url)

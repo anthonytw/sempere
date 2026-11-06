@@ -3,46 +3,25 @@ import Foundation
 import Sempere
 import XCTest
 
-/// `sempere --version` and `sempere about`: the GPL notice and the links.
+/// `sempere --version` and `sempere about`: the notice and the links.
 final class CLIAboutTests: CLITestCase {
+    /// `--version` is `sempere X.Y.Z` (release checks compare that line with the tag) and then the notice
+    /// `SempereAbout` holds; `about --version` and `about -q` print the same; `about` starts with the version and
+    /// `-v` adds each component's note. The notice's wording is `SempereAbout`'s (and `AboutTests`'): no literal copy here.
     func testVersionPrintsVersionLineThenNotice() throws {
         let r = try cli(["--version"])
         XCTAssertEqual(r.status, 0, r.err)
         let lines = r.out.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        // Release checks compare the first line with `sempere <tag>`.
-        XCTAssertTrue(lines[0].hasPrefix("sempere "), lines[0])
         XCTAssertNotNil(lines[0].range(of: #"^sempere \d+\.\d+\.\d+$"#, options: .regularExpression), lines[0])
-        XCTAssertTrue(r.out.contains("Copyright (C) 2026 Anthony Wertz."))
-        XCTAssertTrue(r.out.contains("This program comes with ABSOLUTELY NO WARRANTY. This is free software, and you are welcome to redistribute it under the terms of the GNU GPL v3 or later."))
-        XCTAssertTrue(r.out.contains("https://www.gnu.org/licenses/gpl-3.0.html"))
-        XCTAssertTrue(r.out.contains("https://github.com/anthonytw/sempere/blob/main/SECURITY.md"))
-    }
-
-    func testSubcommandVersionIsTheSame() throws {
-        let root = try cli(["--version"])
-        let sub = try cli(["about", "--version"])
-        XCTAssertEqual(sub.status, 0, sub.err)
-        XCTAssertEqual(sub.out, root.out)
-    }
-
-    func testAboutText() throws {
-        let r = try cli(["about"])
-        XCTAssertEqual(r.status, 0, r.err)
-        XCTAssertTrue(r.out.hasPrefix("sempere "))
-        XCTAssertTrue(r.out.contains("ABSOLUTELY NO WARRANTY"))
-        XCTAssertTrue(r.out.contains("Report a vulnerability: https://github.com/anthonytw/sempere/security/advisories/new"))
-        XCTAssertTrue(r.out.contains("Source: https://github.com/anthonytw/sempere"))
-        XCTAssertTrue(r.out.contains("swift-crypto (Apache-2.0)"))
-        XCTAssertTrue(r.out.contains("swift-argument-parser (Apache-2.0)"))
-        // SwiftMath is in the app only.
-        XCTAssertFalse(r.out.contains("SwiftMath"))
-        // -v adds each component's note.
+        XCTAssertTrue(r.out.contains(SempereAbout.notice), r.out)
+        XCTAssertEqual(try cli(["about", "--version"]).out, r.out)
+        XCTAssertEqual(try cli(["about", "-q"]).out, r.out)
+        let about = try cli(["about"])
+        XCTAssertEqual(about.status, 0, about.err)
+        XCTAssertTrue(about.out.hasPrefix("sempere "))
+        XCTAssertFalse(about.out.contains("SwiftMath"), "SwiftMath is in the app only")
         let v = try cli(["about", "-v"])
-        XCTAssertTrue(v.out.contains("BoringSSL"))
-        // -q keeps only the version and the notice.
-        let q = try cli(["about", "-q"])
-        XCTAssertEqual(q.status, 0, q.err)
-        XCTAssertEqual(q.out, try cli(["--version"]).out)
+        XCTAssertTrue(v.out.contains("BoringSSL"), "-v adds each component's note")
     }
 
     func testAboutJSON() throws {

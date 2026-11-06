@@ -232,7 +232,7 @@ final class ConcurrentUploadTests: BlobSyncTestCase {
     }
 
     /// One MKCOL per collection at a time: two at once make wsgidav answer 500
-    /// (seen in `SyncTimingTests`). Here the server fails any MKCOL that
+    /// (seen in `SyncTimingBenchmarks`). Here the server fails any MKCOL that
     /// overlaps another of the same path, on a fresh server (every note folder,
     /// `att/` and `notes/` itself made by the uploads) and on one that has `notes/`.
     func testCollectionsAreMadeOnceAtATime() throws {

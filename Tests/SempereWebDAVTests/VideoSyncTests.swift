@@ -14,7 +14,7 @@ final class VideoSyncTests: BlobSyncTestCase {
         .appendingPathComponent("SempereTests/Fixtures/video")
 
     func testLargeVideoAndPosterSyncInBoundedMemory() throws {
-        let megabytes = Int(ProcessInfo.processInfo.environment["SEMPERE_LARGE_BLOB_MB"] ?? "") ?? 150
+        let megabytes = Int(ProcessInfo.processInfo.environment["SEMPERE_LARGE_BLOB_MB"] ?? "") ?? 64
         let total = megabytes * 1_000_000
         let storage = tmp.appendingPathComponent("server")
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
@@ -51,8 +51,9 @@ final class VideoSyncTests: BlobSyncTestCase {
         let growth = peakResidentBytes() - baseline
         let sampled = sampler.stop()
         print("\(megabytes) MB video sync: peak RSS grew by \(growth >> 20) MiB; sampled \(sampled.map { "\($0 >> 20) MiB" } ?? "n/a")")
-        XCTAssertLessThan(growth, 64 << 20, "peak RSS grew by \(growth) bytes")
-        if let sampled { XCTAssertLessThan(sampled, 64 << 20, "resident set grew by \(sampled) bytes") }
+        let limit = min(64 << 20, (32 << 20) + total / 4)   // under the blob itself, so holding it once fails
+        XCTAssertLessThan(growth, limit, "peak RSS grew by \(growth) bytes")
+        if let sampled { XCTAssertLessThan(sampled, limit, "resident set grew by \(sampled) bytes") }
 
         let b = try openVault("B")
         XCTAssertEqual(Set(attEntries("B")), Set(attEntries("A")))

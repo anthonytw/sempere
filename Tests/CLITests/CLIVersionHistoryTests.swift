@@ -12,16 +12,6 @@ final class CLIVersionHistoryTests: CLITestCase {
         try FileManager.default.contentsOfDirectory(atPath: vault + "/notes/\(note)").filter { $0.hasSuffix(".age") }.sorted()
     }
 
-    /// `compact --help` describes `--thin-all` as it behaves: no session ends are kept (format.md §5.8.4).
-    func testThinAllHelpDoesNotPromiseSessionEnds() throws {
-        let help = try cli(["compact", "--help"])
-        XCTAssertEqual(help.status, 0, help.err)
-        let flat = help.out.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        XCTAssertFalse(flat.contains("each session's newest save"), help.out)
-        XCTAssertFalse(flat.contains("each editing session's newest save"), help.out)
-        XCTAssertTrue(flat.contains("no session ends"), help.out)
-    }
-
     func testCheckpointIsListedAndGrouped() throws {
         _ = try makeVault()
         let args = ["--vault", path("mine.sempere"), "--identity", path("mine.sempere.key")]

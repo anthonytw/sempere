@@ -15,7 +15,7 @@ import VaultTestSupport
 /// times) the invariants are checked; J5a, J5b and J6 also after every step.
 ///
 /// Each test-only mutation (`EpochMutation`, `SyncEpochMutation`, `PrecedenceMutation`) must break ITS invariant
-/// on a seed whose unmutated run is clean, so none is vacuous. Quick mode: 3 seeds over the memory transport and
+/// on a seed whose unmutated run is clean, so none is vacuous. Quick mode: 2 seeds over the memory transport and
 /// the WebDAV mock in every `swift test`; `SEMPERE_SYNC_STRESS_LONG=1` runs `SEMPERE_SYNC_STRESS_SEEDS` (60)
 /// seeds of 120 steps with five devices, also over wsgidav (`scripts/sync-stress.sh`); `SEMPERE_EPOCH_SEED=N`
 /// replays one seed.
@@ -46,7 +46,7 @@ final class EpochInterleavingTests: SyncTestCase {
     static var mode: Mode {
         let env = ProcessInfo.processInfo.environment
         let long = env["SEMPERE_SYNC_STRESS_LONG"] == "1"
-        var seeds: [UInt64] = long ? Array(1...max(env["SEMPERE_SYNC_STRESS_SEEDS"].flatMap(UInt64.init) ?? 60, 1)) : [1, 2, 3]
+        var seeds: [UInt64] = long ? Array(1...max(env["SEMPERE_SYNC_STRESS_SEEDS"].flatMap(UInt64.init) ?? 60, 1)) : [1, 2]
         if let one = env["SEMPERE_EPOCH_SEED"].flatMap(UInt64.init) { seeds = [one] }
         var mode = long ? Mode(seeds: seeds, steps: 120, devices: 5) : Mode(seeds: seeds, steps: 36, devices: 4)
         if let steps = env["SEMPERE_EPOCH_STEPS"].flatMap(Int.init) { mode.steps = steps }
@@ -152,6 +152,19 @@ final class EpochInterleavingTests: SyncTestCase {
             }
         }
 
+        /// The seed in 100..<124 on which this mutation first breaks its invariant (found by scanning from 100).
+        var knownSeed: UInt64 {
+            switch self {
+            case .acceptUnsealed: return 109
+            case .recordByNameOnly, .uploadWhileWaiting: return 108
+            case .keepUnacceptedOnTargets: return 112
+            case .sightingsNeverLapse: return 103
+            case .nonHomeSignerAccepted: return 102
+            case .syncSettingsWhileHeld, .takeoverByArrival, .takeoverIgnored: return 101
+            default: return 100
+            }
+        }
+
         /// Ops the run leans on for this mutation (more of them, so few seeds are needed).
         var emphasis: Op? {
             switch self {
@@ -204,7 +217,9 @@ final class EpochInterleavingTests: SyncTestCase {
         if let only = ProcessInfo.processInfo.environment["SEMPERE_EPOCH_MUTATION"], only != "\(m)" {
             throw XCTSkip("SEMPERE_EPOCH_MUTATION=\(only)")
         }
-        for seed in UInt64(100)..<UInt64(124) {
+        // Each seed is a whole multi-device run, and a mutation breaks its invariant on one of the first few: the scan
+        // starts at the seed it was found on (`knownSeed`) and goes through the rest only if that one stops breaking.
+        for seed in [m.knownSeed] + (UInt64(100)..<UInt64(124)).filter({ $0 != m.knownSeed }) {
             let mutated = try run(seed: seed, steps: 26, devices: 4, kind: .memory, mutation: m)
                 .filter { v in m.breaks.contains { v.hasPrefix($0 + ":") || v.hasPrefix($0 + " ") } }
             guard !mutated.isEmpty else { continue }

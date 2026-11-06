@@ -89,10 +89,8 @@ final class CLIPDFBackgroundTests: CLITestCase {
 
     /// A renderer that never finishes is stopped at the timeout.
     func testHungRendererTimesOut() throws {
-        let start = Date()
-        let (r, _) = try rasterize(timeout: 1, tool: try fakePoppler("exec sleep 60"))
+        let (r, _) = try rasterize(timeout: 1, tool: try fakePoppler("exec sleep 60"))   // 60 s unless the timeout stops it
         XCTAssertEqual(r.status, 1)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 20)
         XCTAssertTrue(r.err.contains("pdftoppm timed out after 1 s"), r.err)
         // A busy loop is stopped too (by the timeout or the CPU limit).
         let (busy, _) = try rasterize(timeout: 1, tool: try fakePoppler("while :; do :; done"))

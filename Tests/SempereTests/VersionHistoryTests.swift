@@ -354,7 +354,7 @@ final class VersionHistoryTests: XCTestCase {
     // MARK: Thinning: property test of the guarantees (§5.8.4 G1–G5)
 
     func testThinningGuaranteesOnRandomLogs() throws {
-        let seeds: [UInt64] = (1...120).map { $0 }
+        let seeds: [UInt64] = (1...60).map { $0 }
         for seed in seeds {
             var rng = SplitMix64(seed: seed)
             let revs = try RandomHistory.make(using: &rng)

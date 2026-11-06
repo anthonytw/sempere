@@ -55,7 +55,7 @@ final class CLIFolderSyncTests: CLITestCase {
         let a = try copyFixtureVault(as: "a.sempere"), b = path("b.sempere"), folder = path("Drive/Notes.sempere")
         XCTAssertEqual(try cli(["sync", "folder", folder, "--vault", a], env: e).status, 0)
         XCTAssertEqual(try cli(["sync", "folder", folder, "--vault", b], env: e).status, 0)
-        // vault.json changed on both sides (as in CLIWebDAVTests.testDeviceNamesTheConflictFileAgainstRealServer).
+        // vault.json changed on both sides (as in CLIWebDAVTests.testDeviceNamesTheConflictFileAgainstWsgidav).
         for (vault, name) in [(a, "one"), (b, "two")] {
             let r = try cli(["devices", "rename", "e6f8004e", name, "--vault", vault, "--identity", Self.fixtureKey], env: e)
             XCTAssertEqual(r.status, 0, r.err)

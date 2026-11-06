@@ -154,31 +154,24 @@ enum BackupLocation {
     }
 
     /// The backup folder inside `picked` for this run (Back Up Now resolves it at every run, not once when
-    /// the folder was chosen), as a subfolder name (nil: `picked` itself), and the legacy folder it renamed:
-    /// - a backup of this vault an earlier build named "<vault> Backup" or "<vault>.sempere" (or the recorded
-    ///   subfolder, whatever its name) is renamed to "<vault>.sempere-backup" when that name is free
-    ///   (`BackupDestination.renameLegacy`: one rename in the same folder; no file inside is touched), else
-    ///   left alone and a new backup starts;
+    /// the folder was chosen), as a subfolder name (nil: `picked` itself):
     /// - `recorded` (the subfolder saved for `picked`) is kept while `BackupDestination.folder` takes it as it
     ///   is, the very rule `sempere backup --into` applies to it;
     /// - otherwise `subfolder(in:…)`: so a name another device's vault took meanwhile moves on to the next
     ///   free "<vault> N.sempere-backup", and a backup an earlier build wrote straight into `picked` (the iPad)
     ///   gets a new "<vault>.sempere-backup" inside it, its old files left as they are.
     static func runSubfolder(in picked: URL, recorded: String?, vaultId: UUID, vaultName: String, openVault: URL?,
-                             fileManager fm: FileManager = .default) throws -> (subfolder: String?, renamed: String?) {
+                             fileManager fm: FileManager = .default) throws -> String? {
         if let openVault, picked.overlaps(openVault) { throw Problem.insideOpenVault }
-        let renamed = BackupDestination.renameLegacy(in: picked, vaultId: vaultId, vaultName: vaultName,
-                                                     also: recorded.map { [$0] } ?? [], fileManager: fm)
-        if let recorded, renamed?.from != recorded {
+        if let recorded {
             let dir = picked.appendingPathComponent(recorded, isDirectory: true)
             if BackupDestination.isBackupFolder(dir),
                let kept = try? BackupDestination.folder(in: dir, vaultId: vaultId, vaultName: vaultName, fileManager: fm),
                kept.standardizedFileURL.path == dir.standardizedFileURL.path {
-                return (recorded, renamed?.from)
+                return recorded
             }
         }
-        return (try subfolder(in: picked, vaultId: vaultId, vaultName: vaultName, openVault: openVault, fileManager: fm),
-                renamed?.from)
+        return try subfolder(in: picked, vaultId: vaultId, vaultName: vaultName, openVault: openVault, fileManager: fm)
     }
 
     /// The folder a restore reads for the pick: `picked` when it holds

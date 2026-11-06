@@ -95,6 +95,17 @@ let package = Package(
                 path: "Tests/CLITestSupport"),
         // Plist, keyed-archive and zip writers for the importers' tests (Foundation and zlib only).
         .target(name: "ImportTestSupport", dependencies: ["CZlib"], path: "Tests/ImportTestSupport"),
+        // Benchmarks: print-only timings, one test target per module measured. They never gate anything:
+        // `scripts/bench.sh` runs them, the gates skip them (`--skip 'Benchmarks\.'`, docs/ci.md "Benchmarks").
+        // Helpers shared with the module's tests are symlinks to the test target's own files.
+        .testTarget(name: "SempereBenchmarks", dependencies: ["Sempere", "Age", "FuzzSupport", "TempDirSupport", "VaultTestSupport",
+                                                              .product(name: "Crypto", package: "swift-crypto")]),
+        .testTarget(name: "SempereRenderBenchmarks", dependencies: ["SempereRender", "SempereFonts", "Sempere", "Age", "FuzzSupport",
+                                                                    "TempDirSupport", "VaultTestSupport"]),
+        .testTarget(name: "SempereWebDAVBenchmarks", dependencies: ["SempereWebDAV", "SempereSync", "Sempere", "Age", "FuzzSupport",
+                                                                    "TempDirSupport", "VaultTestSupport"]),
+        .testTarget(name: "SemperePDFBenchmarks", dependencies: ["SemperePDF", "FuzzSupport"]),
+        .testTarget(name: "AgeBenchmarks", dependencies: ["Age"]),
         .testTarget(name: "AgeTests", dependencies: ["Age", "CZlib", "FuzzSupport", "TempDirSupport"],
                     resources: [.copy("Vectors")]),
         .testTarget(name: "SempereTests",

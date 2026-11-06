@@ -10,7 +10,7 @@ import VaultTestSupport
 /// `swift test -c release -Xswiftc -enable-testing --filter SummaryBenchmark`.
 /// `SEMPERE_BENCH_KEEP=<dir>` keeps the vault and its key there (for timing
 /// the CLI on it).
-final class SummaryBenchmarkTests: VaultTestCase {
+final class SummaryBenchmarks: VaultTestCase {
     func testListingTimings() throws {
         let env = ProcessInfo.processInfo.environment
         let notes = Int(env["SEMPERE_BENCH_NOTES"] ?? "") ?? 12

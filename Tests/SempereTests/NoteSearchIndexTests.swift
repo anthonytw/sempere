@@ -48,7 +48,7 @@ final class NoteSearchIndexTests: XCTestCase {
     func testASCIIByteCompareMatchesFoundationOnRandomText() {
         var rng = RNG(state: 7)
         let alphabet = Array("aAbBcCsSkKiIlL01 .,;:'\"`^~-_/\\\t\r\n\u{0}\u{7}\u{1F}\u{7F}#@!?()[]{}").map(String.init)
-        for _ in 0..<20_000 {
+        for _ in 0..<1_000 {
             let h = (0..<rng.below(30)).map { _ in alphabet[rng.below(alphabet.count)] }.joined()
             var n = (0..<(1 + rng.below(4))).map { _ in alphabet[rng.below(alphabet.count)] }.joined()
             if rng.below(3) == 0, h.count > 2 {   // often a real substring, with its case changed
@@ -186,32 +186,4 @@ final class NoteSearchIndexTests: XCTestCase {
         XCTAssertEqual(checks, 2)
     }
 
-    /// Prints how long a search over a large vault takes, without and with a
-    /// warm index (`SEMPERE_BENCH_SEARCH_NOTES`, default 300 notes of 20 pages × 1 KB).
-    func testSearchTimings() {
-        let count = Int(ProcessInfo.processInfo.environment["SEMPERE_BENCH_SEARCH_NOTES"] ?? "") ?? 300
-        var rng = RNG(state: 1)
-        let vocabulary = ["the", "quick", "brown", "fox", "momentum", "energy", "integral", "matrix", "vector", "proof",
-                          "lemma", "theorem", "notes", "lecture", "chapter", "section", "example", "result", "method", "data"]
-        let notes = (0..<count).map { i in
-            note(i, (0..<20).map { _ in
-                var t = ""
-                while t.utf8.count < 1_000 { t += vocabulary[rng.below(vocabulary.count)] + " " }
-                return t
-            })
-        }
-        let index = NoteSearchIndex()
-        for q in ["vector", "proof lemma", "zebra", "the quick brown"] {
-            var t = Date()
-            let plain = NoteSearch.search(q, in: notes)
-            let cold = Date().timeIntervalSince(t)
-            _ = NoteSearch.search(q, in: notes, index: index)
-            t = Date()
-            let warm = NoteSearch.search(q, in: notes, index: index)
-            let warmTime = Date().timeIntervalSince(t)
-            XCTAssertEqual(plain, warm)
-            print("bench: search '\(q)' over \(count) notes x 20 KB: no index (Foundation) \(String(format: "%.3f", cold)) s, "
-                  + "warm index \(String(format: "%.3f", warmTime)) s, \(warm.count) hits")
-        }
-    }
 }

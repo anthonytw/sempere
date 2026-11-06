@@ -390,27 +390,20 @@ final class SearchMatchCursorTests: XCTestCase {
         XCTAssertEqual(r.current.box.y, 0)
     }
 
-    /// Measures the work per step on a big note: before the change a step searched every page
-    /// (P43: 300 pages x 20 words here, `pagesComputed` 300); now none.
+    /// The work per step on a big note: before the change a step searched every page (P43, 300 pages here,
+    /// `pagesComputed` 300); now none. Counts, not time.
     func testStepOnABigNoteSearchesNothing() throws {
         let pages = (0..<300).map { _ in page(words(30)) }
         var c = try XCTUnwrap(SearchMatchCursor(query: "cat", pages: pages))
         XCTAssertEqual(c.count, 300 * 15)
-        let start = Date()
         var computed = 0
-        for _ in 0..<200 {
+        for _ in 0..<50 {
             var next = try XCTUnwrap(c.refreshed(pages: pages))
             computed += next.pagesComputed
             next.step(1)
             c = next
         }
-        let per = Date().timeIntervalSince(start) / 200
-        // The old step: the whole list searched again.
-        let oldStart = Date()
-        for _ in 0..<20 { XCTAssertEqual(SearchMatches.matches(words: ["cat"], in: pages).count, c.count) }
-        let old = Date().timeIntervalSince(oldStart) / 20
-        print("P43 old step (full rescan, \(pages.count) pages computed): \(old * 1000) ms")
-        print("P43 step: pagesComputed total \(computed), \(per * 1000) ms per step, matches \(c.count)")
+        XCTAssertEqual(SearchMatches.matches(words: ["cat"], in: pages).count, c.count)
         XCTAssertEqual(computed, 0)
     }
 }

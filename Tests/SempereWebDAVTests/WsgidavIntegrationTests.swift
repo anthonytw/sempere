@@ -8,7 +8,7 @@ import VaultTestSupport
 /// Runs against a real WebDAV server. Skipped unless SEMPERE_WEBDAV_TEST_URL
 /// is set; `scripts/test-webdav.sh` starts a local wsgidav and sets it.
 /// Also uses SEMPERE_WEBDAV_TEST_USER / SEMPERE_WEBDAV_TEST_PASSWORD.
-final class WebDAVIntegrationTests: SyncTestCase {
+final class WsgidavIntegrationTests: SyncTestCase {
     private func realClient(path: String) throws -> WebDAVClient {
         guard let base = ProcessInfo.processInfo.environment["SEMPERE_WEBDAV_TEST_URL"] else {
             throw XCTSkip("SEMPERE_WEBDAV_TEST_URL not set")

@@ -62,8 +62,12 @@ final class FolderRemoteTests: TempDirTestCase {
         let r = try plain()
         _ = try r.makeCollection(["notes"])
         _ = try r.makeCollection(["notes", "n1"])
+        // Old modification times, so the write below changes them whatever the file system's resolution.
+        let past = Date(timeIntervalSinceNow: -3_600)
+        for p in ["remote/notes/n1", "remote/notes"] {
+            try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: tmp.appendingPathComponent(p).path)
+        }
         let before = try XCTUnwrap(try r.list(["notes"])?.first?.etag)
-        Thread.sleep(forTimeInterval: 0.01)
         try r.write(["notes", "n1", "r.age"], .data(bytes(10, 1)), condition: .create)
         XCTAssertNotEqual(try r.list(["notes"])?.first?.etag, before)
     }
@@ -255,7 +259,7 @@ final class FolderRemoteTests: TempDirTestCase {
             for await c in stream { return c }
             return nil
         }
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // `changes()` registered the stream already and an `AsyncStream` buffers: no need to wait for the consumer.
         p.announce(.paths([["notes", "n1"]]))
         let first = await got.value
         XCTAssertEqual(first, .paths([["notes", "n1"]]))
@@ -292,6 +296,7 @@ final class FolderRemoteTests: TempDirTestCase {
             for await c in stream { return c }
             return nil
         }
+        // Kept: the system registers a file presenter asynchronously and gives no signal when it is done.
         try await Task.sleep(nanoseconds: 300_000_000)
         try r.write(["vault.json"], .data(bytes(40, 1)), condition: .create)
         XCTAssertEqual(try r.read(["vault.json"], maxBytes: 100).data, bytes(40, 1))

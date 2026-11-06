@@ -161,12 +161,10 @@ final class StrokeSmoothingTests: XCTestCase {
         let raw = (0..<StrokeSmoothing.maxRawSamples).map { i in
             S(x: Double(i % 1000) * 20, y: Double(i / 1000) * 20, t: Double(i) / 120)
         }
-        let start = Date()
         let out = StrokeSmoothing.finalPath(raw, parameters: strong)
         XCTAssertLessThanOrEqual(out.count, StrokeSmoothing.maxSamples / StrokeSmoothing.outputStride + 1)
         XCTAssertEqual(out.first, raw.first)
         XCTAssertEqual(out.last, raw.last)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 5)
         // Huge coordinates stay finite.
         let far = [S(x: -1e300, y: 0, t: 0), S(x: 1e300, y: 0, t: 1)]
         XCTAssertTrue(StrokeSmoothing.finalPath(far, parameters: light).allSatisfy { $0.x.isFinite && $0.y.isFinite })

@@ -216,20 +216,13 @@ final class CLIBackupTests: CLITestCase {
         XCTAssertEqual((listed.json as? [Any])?.count, 0, "nothing was copied: \(listed.out)")
     }
 
-    /// `backup --into` renames this vault's backup an earlier version made ("<name> Backup", "<name>.sempere") to
-    /// "<name>.sempere-backup" and continues it; and it agrees with the app on the iPad's nested backup: this vault's
-    /// "<name>.sempere-backup" inside this vault's older backup is taken, any other folder inside a backup is not.
-    func testBackupIntoRenamesLegacyAndAgreesWithTheApp() throws {
+    /// `--into` agrees with the app: a backup written straight into a folder (the iPad's) gets a
+    /// `<name>.sempere-backup` of its own inside it, that folder is continued at every run, and a folder inside
+    /// neither is refused.
+    func testBackupIntoAgreesWithTheApp() throws {
         let vault = try copyFixtureVault()
         let name = URL(fileURLWithPath: vault).deletingPathExtension().lastPathComponent
         let fm = FileManager.default
-        let drive = path("Drive")
-        XCTAssertEqual(try cli(["backup", vault, "--to", drive + "/\(name) Backup", "-q"]).status, 0)
-        let run = try cli(["backup", vault, "--into", drive])
-        XCTAssertEqual(run.status, 0, run.err)
-        XCTAssertTrue(run.out.contains("Renamed \(name) Backup to \(name).sempere-backup"), run.out)
-        XCTAssertTrue(run.out.contains("0 copied"), "continued, not started over: \(run.out)")
-        XCTAssertEqual(try fm.contentsOfDirectory(atPath: drive), ["\(name).sempere-backup"])
 
         let pad = path("Pad")
         XCTAssertEqual(try cli(["backup", vault, "--to", pad, "-q"]).status, 0)   // the iPad's: straight into the folder

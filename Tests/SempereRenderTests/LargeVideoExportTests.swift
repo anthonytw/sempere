@@ -18,7 +18,7 @@ final class LargeVideoExportTests: XCTestCase {
         .appendingPathComponent("SempereTests/Fixtures/video")
 
     func testLargeClipStreamsThroughEveryExport() throws {
-        let megabytes = Int(ProcessInfo.processInfo.environment["SEMPERE_LARGE_BLOB_MB"] ?? "") ?? 200
+        let megabytes = Int(ProcessInfo.processInfo.environment["SEMPERE_LARGE_BLOB_MB"] ?? "") ?? 64
         let total = megabytes * 1_000_000
         let dir = TestTemp.root.appendingPathComponent("sempere-large-video-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -64,8 +64,9 @@ final class LargeVideoExportTests: XCTestCase {
         let growth = peakResidentBytes() - baseline
         let sampled = sampler.stop()
         print("\(megabytes) MB clip export: peak RSS grew by \(growth >> 20) MiB; sampled \(sampled.map { "\($0 >> 20) MiB" } ?? "n/a")")
-        XCTAssertLessThan(growth, 64 << 20, "peak RSS grew by \(growth) bytes")
-        if let sampled { XCTAssertLessThan(sampled, 64 << 20, "resident set grew by \(sampled) bytes") }
+        let limit = min(64 << 20, (32 << 20) + total / 4)   // under the clip itself, so holding it once fails
+        XCTAssertLessThan(growth, limit, "peak RSS grew by \(growth) bytes")
+        if let sampled { XCTAssertLessThan(sampled, limit, "resident set grew by \(sampled) bytes") }
 
         // The Markdown copy is the stored clip (its metadata went at ingest), and so is the PDF's attachment.
         XCTAssertEqual(try Vault.blobRef(contentsOf: out, type: ref.type), ref)

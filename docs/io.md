@@ -738,12 +738,7 @@ maps each control to its command.
   The type `io.github.anthonytw.sempere.backup` ("Sempere Backup", extension
   `sempere-backup`) is exported as `public.folder`, never a package, like the
   vault's ("Vaults are folders"). Back Up Now resolves the folder again at every run
-  (`BackupLocation.runSubfolder`): a backup of this vault an earlier build
-  named "<vault> Backup" or "<vault>.sempere" (or the recorded subfolder) is renamed
-  in place to "<vault>.sempere-backup" when that name is free and `backup.json`
-  proves it is this vault's (`BackupDestination.renameLegacy`, shared with
-  `--into`: one rename, no file inside touched; else it is left alone and a new
-  backup starts next to it); the recorded subfolder is kept while
+  (`BackupLocation.runSubfolder`): the recorded subfolder is kept while
   `BackupDestination.folder` takes it as it is; a name another device's vault took
   meanwhile moves on to the next free one; a backup an earlier build wrote straight into the
   picked folder (the iPad) gets a "<vault>.sempere-backup" of its own inside it, its
@@ -1559,7 +1554,7 @@ collection runs where files are missing. The guarantee is property-tested
 (`PartialCopyTests.testRandomInterleavingsNeverLoseAServerFile`: fetches of
 random scopes, pushes, local edits, another device writing and injected
 request failures, in random order; the server never loses a file) and run
-against wsgidav (`testPartialCopyLifecycle`, `CLIWebDAVTests.testPartialCopyAgainstRealServer`).
+against wsgidav (`testPartialCopyLifecycle`, `CLIWebDAVTests.testPartialCopyAgainstWsgidav`).
 
 *Interruptions.* A metadata pull cut off leaves the copy unusable; the next
 one continues. A fetch cut off leaves the notes it had not finished marked

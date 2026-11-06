@@ -17,7 +17,7 @@ import Darwin
 // SEMPERE_FUZZ_DUMP=<dir> to keep the input being run in `<dir>/<target>.last`.
 //
 // Environment:
-//   SEMPERE_FUZZ_LONG=1          100× the iterations, no per-target time cap
+//   SEMPERE_FUZZ_LONG=1          the long run: 100× the quick cases (or the target's own `long:` count)
 //   SEMPERE_FUZZ_ITERATIONS=N    exactly N cases per target
 //   SEMPERE_FUZZ_SEED=S          base seed (default 0); each target mixes in its name
 //   SEMPERE_FUZZ_DUMP=dir        write each input to dir/<target>.last before running it
@@ -57,7 +57,8 @@ public struct FuzzConfig: Sendable {
     public var verbose: Bool
     /// One case running longer than this fails the target (watchdog).
     public var caseTimeout: TimeInterval
-    /// Quick mode stops a target after this long (its cases are a prefix of the long run).
+    /// Stops a target after this long. Never set by the environment: quick mode runs a fixed number of cases, so
+    /// what a run covers does not depend on the machine's speed (a case that hangs is the watchdog's, `caseTimeout`).
     public var targetSeconds: TimeInterval?
     /// Growth of the process's peak resident memory allowed while one target runs.
     public var memoryBudget: Int
@@ -71,14 +72,15 @@ public struct FuzzConfig: Sendable {
                           dump: env["SEMPERE_FUZZ_DUMP"].map { URL(fileURLWithPath: $0, isDirectory: true) },
                           verbose: env["SEMPERE_FUZZ_VERBOSE"] == "1",
                           caseTimeout: long ? 60 : 10,
-                          targetSeconds: long ? nil : 3,
+                          targetSeconds: nil,
                           memoryBudget: 768 << 20)
     }
 
-    /// Cases for a target whose quick run is `quick` cases.
-    public func iterations(quick: Int) -> Int {
+    /// Cases for a target whose quick run is `quick` cases (a fixed count: the same cases on every machine) and
+    /// whose long run is `long` cases (default: 100 times `quick`).
+    public func iterations(quick: Int, long longRun: Int? = nil) -> Int {
         if let fixedIterations { return fixedIterations }
-        return long ? quick * 100 : quick
+        return long ? (longRun ?? quick * 100) : quick
     }
 }
 
@@ -353,7 +355,7 @@ public enum Fuzz {
         return h
     }
 
-    /// Runs `quick` mutation cases (scaled by the environment) against `body`.
+    /// Runs `quick` mutation cases (a fixed count; `long` of them with `SEMPERE_FUZZ_LONG=1`, default 100×) against `body`.
     ///
     /// - Parameters:
     ///   - seeds: valid inputs to mutate; every seed is also run unmutated first.
@@ -363,7 +365,7 @@ public enum Fuzz {
     ///     for every fourth case with that case's generator.
     ///   - body: parses one input. Throwing is fine (expected for most inputs);
     ///     return a non-nil string to report a broken invariant.
-    public static func run(_ target: String, seeds: [Data], quick: Int, text: Bool = false, maxSize: Int = 1 << 20,
+    public static func run(_ target: String, seeds: [Data], quick: Int, long: Int? = nil, text: Bool = false, maxSize: Int = 1 << 20,
                            config: FuzzConfig = .current,
                            generate: ((inout FuzzRNG) -> Data)? = nil,
                            body: @escaping @Sendable (Data) -> String?) -> FuzzReport {
@@ -383,7 +385,7 @@ public enum Fuzz {
         }
         let corpus = seeds.map { [UInt8]($0) }
         var rng = FuzzRNG(seed: config.seed ^ hash(target))
-        let total = config.iterations(quick: quick)
+        let total = config.iterations(quick: quick, long: long)
         let worker = FuzzWorker()
         defer { worker.stop() }
         let started = Date()

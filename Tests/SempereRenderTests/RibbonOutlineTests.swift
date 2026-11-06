@@ -222,7 +222,7 @@ final class RibbonOutlineTests: XCTestCase {
     /// wherever the width changed between samples).
     func testFixtureAndDenseInkKeepTheirPixelsWithFewerPoints() throws {
         let fixture = try T.loadSampleNote().pages.flatMap(\.strokes)
-        let dense = RenderBenchmarkTests.denseNote(strokes: Self.full ? 300 : 60, points: 60).pages[0].strokes
+        let dense = DenseNote.make(strokes: Self.full ? 300 : 60, points: 60).pages[0].strokes
         for (name, strokes) in [("fixture", fixture), ("dense", dense)] {
             let t = Self.tally(strokes, scales: name == "fixture" || Self.full ? [2, 300.0 / 72] : [2])
             print(Self.report(name, t))

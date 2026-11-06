@@ -36,23 +36,4 @@ final class BlobCollectionShortcutTests: VaultTestCase {
         XCTAssertNotNil(try vault.collectBlobs(note: testNote, records: &records).blocked, "rule 1 applies again")
     }
 
-    /// Prints the time `blobs gc` spends on notes without attachments: the
-    /// full inventory each used to read, and the shortcut.
-    func testCollectionTimingOnNotesWithoutBlobs() throws {
-        let bench = ProcessInfo.processInfo.environment["SEMPERE_BENCH_BLOBGC"] != nil
-        let vault = try makeVault(pqIdentity())
-        try SyntheticVault.populate(vault, notes: bench ? 300 : 20, strokes: bench ? 350 : 40, points: 40)
-        let ids = try vault.noteIDs()
-        var t = Date()
-        for id in ids { XCTAssertTrue(try vault.blobInventory(note: id).isComplete) }
-        let before = Date().timeIntervalSince(t)
-        t = Date()
-        for id in ids {
-            var records: [String: Date] = [:]
-            XCTAssertNil(try vault.collectBlobs(note: id, records: &records).blocked)
-        }
-        let after = Date().timeIntervalSince(t)
-        print(String(format: "bench: blobs gc over %d notes without attachments: inventory %.3f s, collect %.3f s",
-                     ids.count, before, after))
-    }
 }

@@ -8,7 +8,7 @@ import XCTest
 /// Interrupted blob transfers and runs (docs/attachments.md §14 B3): a cut
 /// download continues from where it stopped, a cut upload never leaves a
 /// partial blob under its name, and a run killed midway is finished by the
-/// next one. Plus a 300 MB blob through the sync in bounded memory.
+/// next one. Plus a 64 MB blob through the sync in bounded memory.
 final class BlobResumeTests: BlobSyncTestCase {
     /// A pushes one blob of `size` bytes to the server; returns its file name.
     private func serverWithBlob(_ server: MockDAV, size: Int = 300_000) throws -> (Vault, BlobRef, String) {
@@ -273,11 +273,11 @@ final class BlobResumeTests: BlobSyncTestCase {
 
     // MARK: Large blobs
 
-    /// A 300 MB blob syncs up and down with bounded memory: the client never
+    /// A 64 MB blob syncs up and down with bounded memory: the client never
     /// holds the blob (the test server keeps files on disk and copies them
     /// in 1 MiB pieces).
     func testLargeBlobSyncsInBoundedMemory() throws {
-        let megabytes = Int(ProcessInfo.processInfo.environment["SEMPERE_LARGE_BLOB_MB"] ?? "") ?? 300
+        let megabytes = Int(ProcessInfo.processInfo.environment["SEMPERE_LARGE_BLOB_MB"] ?? "") ?? 64
         let total = megabytes * 1_000_000
         let storage = tmp.appendingPathComponent("server")
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
@@ -315,8 +315,9 @@ final class BlobResumeTests: BlobSyncTestCase {
         let growth = peakResidentBytes() - baseline
         let sampled = sampler.stop()
         print("\(megabytes) MB blob sync: peak RSS grew by \(growth >> 20) MiB; sampled RSS range \(sampled.map { "\($0 >> 20) MiB" } ?? "n/a")")
-        XCTAssertLessThan(growth, 64 << 20, "peak RSS grew by \(growth) bytes")
-        if let sampled { XCTAssertLessThan(sampled, 64 << 20, "resident set grew by \(sampled) bytes") }
+        let limit = min(64 << 20, (32 << 20) + total / 4)   // below the blob itself at the default 64 MB too
+        XCTAssertLessThan(growth, limit, "peak RSS grew by \(growth) bytes")
+        if let sampled { XCTAssertLessThan(sampled, limit, "resident set grew by \(sampled) bytes") }
 
         let b = try openVault("B")
         var count: Int64 = 0

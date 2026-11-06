@@ -53,25 +53,4 @@ final class InkLassoEquivalenceTests: XCTestCase {
         }
     }
 
-    /// `SEMPERE_BENCH_LASSO_STROKES=20000` times a large lasso over dense ink.
-    func testLassoTiming() {
-        let n = Int(ProcessInfo.processInfo.environment["SEMPERE_BENCH_LASSO_STROKES"] ?? "") ?? 40
-        let strokes = (0..<n).map { i in
-            Stroke(ink: Ink(tool: .pen, color: Color(r: 0, g: 0, b: 0), width: 2),
-                   points: (0..<200).map { k in StrokePoint(x: Double(i % 40) * 15 + Double(k) * 0.07, y: Double(i / 40) * 12 + sin(Double(k)), w: 2, h: 2) })
-        }
-        let loop = (0..<4000).map { k -> InkLasso.Point in
-            let a = Double(k) / 4000 * 2 * .pi
-            return InkLasso.Point(x: 300 + 280 * cos(a), y: 300 + 280 * sin(a))
-        }
-        let polygon = InkLasso.polygon(loop) ?? []
-        var start = Date()
-        let old = strokes.filter { Self.previous($0, polygon) }.map(\.id)
-        let oldMs = Date().timeIntervalSince(start) * 1000
-        start = Date()
-        let new = InkLasso.select(strokes, lasso: loop)
-        let newMs = Date().timeIntervalSince(start) * 1000
-        XCTAssertEqual(old, new)
-        print("LassoBench strokes=\(n): before \(String(format: "%.1f", oldMs)) ms, select \(String(format: "%.1f", newMs)) ms")
-    }
 }

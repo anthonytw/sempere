@@ -79,7 +79,7 @@ final class TransportChallengeTests: XCTestCase {
     /// A request in flight stops when its `interrupt` says so, long before the
     /// idle timeout (a server that trickles bytes never reaches that one), and
     /// throws what `interrupt` returned: the sync's run bound and cancellation
-    /// reach a request that is already waiting (`SyncFaultProxyTests.testDripFeedIsBoundedByTheRunLimit`).
+    /// reach a request that is already waiting (`WsgidavFaultProxyTests.testDripFeedIsBoundedByTheRunLimit`).
     func testInterruptStopsARequestInFlight() throws {
         let server = try SlowHTTPServer(bytesPerSecond: 0)
         defer { server.stop() }

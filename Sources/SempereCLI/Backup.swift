@@ -93,9 +93,6 @@ struct BackupRun: ParsableCommand {
         let dest: URL
         if let into {
             let folder = URL(fileURLWithPath: into), name = VaultStore.displayName(of: vault.url.standardizedFileURL)
-            if let renamed = BackupDestination.renameLegacy(in: folder, vaultId: vault.vaultId, vaultName: name) {
-                output.info("Renamed \(renamed.from) to \(renamed.to) (this vault's earlier backup)")
-            }
             dest = try BackupDestination.folder(in: folder, vaultId: vault.vaultId, vaultName: name)
         } else {
             dest = URL(fileURLWithPath: to ?? "")

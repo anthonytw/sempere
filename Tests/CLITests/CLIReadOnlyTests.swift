@@ -72,7 +72,7 @@ final class CLIReadOnlyTests: CLITestCase {
         XCTAssertEqual((v["counts"] as? [String: Int])?["newer"], 3)
     }
 
-    func testWritesExitSixAndChangeNothing() throws {
+    func testWritesExitSevenAndChangeNothing() throws {
         let vault = try copyNewerVault()
         let key = ["--vault", vault, "--identity", Self.fixtureKey]
         let before = try files(vault)

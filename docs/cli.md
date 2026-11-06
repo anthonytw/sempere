@@ -1096,11 +1096,7 @@ for `--prune` and for a full `verify`.
   poured into the folder, a `*.sempere` of an earlier version) chosen itself gets its
   `<name>.sempere-backup` inside it, its own files left alone. When
   `<name>.sempere-backup` holds something else than this vault's backup or an
-  empty folder, the next free `<name> N.sempere-backup`. Before that, a backup of
-  this vault an earlier version named `<name> Backup` or `<name>.sempere` in `FOLDER`
-  (its `backup.json` names this vault) is renamed in place to `<name>.sempere-backup`
-  when that name is free (one rename, no file inside touched; the text output says
-  `Renamed …`). A vault, another vault's backup, a backup whose `backup.json` cannot be
+  empty folder, the next free `<name> N.sempere-backup`. A vault, another vault's backup, a backup whose `backup.json` cannot be
   read, or a folder inside a vault or a backup as `FOLDER` is refused
   (exit 1), with one exception the app shares: this vault's own
   `*.sempere-backup` inside this vault's older backup (the app continues

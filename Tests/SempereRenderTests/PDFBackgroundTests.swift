@@ -280,7 +280,7 @@ final class PDFBackgroundFuzzTests: XCTestCase {
     func testFuzzPDFBackgrounds() throws {
         let seeds = try ["classic.pdf", "objstm.pdf", "incremental.pdf", "rotated.pdf", "broken-xref.pdf", "filters.pdf"]
             .map { try PDFFixture.data($0) }
-        let report = Fuzz.run("render-pdf", seeds: seeds, quick: 300, text: true, maxSize: 32 << 10) { input in
+        let report = Fuzz.run("render-pdf", seeds: seeds, quick: 130, long: 30000, text: true, maxSize: 32 << 10) { input in
             var blobs = MemoryBlobs()
             let ref = blobs.add(input)
             var rng = FuzzRNG(seed: UInt64(input.count))

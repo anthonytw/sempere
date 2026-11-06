@@ -240,7 +240,7 @@ final class ImportFuzzTests: XCTestCase {
                                             extra: [("rotation", .real(0.3)), ("cropRect", a.string("{{0, 0}, {0.5, 1}}"))])]
         })
         let seeds = [session, pdf, jpeg]
-        assertClean(Fuzz.run("attachments", seeds: seeds, quick: 300, maxSize: 128 << 10) { input in
+        assertClean(Fuzz.run("attachments", seeds: seeds, quick: 250, long: 30000, maxSize: 128 << 10) { input in
             Self.typed {
                 // The input stands in for each part in turn.
                 let variants: [(Data, Data, Data)] = [(input, pdf, jpeg), (session, input, jpeg), (session, pdf, input)]

@@ -2,7 +2,8 @@
 # The Linux CI jobs as one script, so Gitea Actions and a local run do exactly the same thing
 # (docs/design/local-first.md). Each JOB runs inside the swift:6.4-noble image and installs what it needs.
 #
-#   scripts/ci-linux.sh test           build, then the package tests with no network (scripts/test-offline.sh),
+#   scripts/ci-linux.sh test           build, then the package tests with no network (scripts/test-offline.sh; the benchmark
+#                                      targets are skipped, scripts/bench.sh runs them),
 #                                      the portability guard and the removable-importers check
 #   scripts/ci-linux.sh webdav         the WebDAV integration tests against wsgidav (scripts/test-webdav.sh)
 #   scripts/ci-linux.sh static [ARCH]  the fully static release binary (scripts/build-linux-static.sh; Swift 6.4.2
@@ -51,7 +52,7 @@ job_test() {
   install_age
   swift build --build-tests ${SEMPERE_BUILD_JOBS:+-j "$SEMPERE_BUILD_JOBS"}
   SEMPERE_REQUIRE_AGE_PQ=1 SEMPERE_REQUIRE_POPPLER=1 SEMPERE_REQUIRE_TOOLS=zbar,zip,pdftotext,bidi CI=1 \
-    scripts/test-offline.sh --skip-build --parallel ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
+    scripts/test-offline.sh --skip-build --parallel --skip 'Benchmarks\.' ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
   scripts/check-portability.sh
   scripts/check-removable-importers.sh
 }
@@ -75,7 +76,7 @@ in_docker() {   # JOB or JOB:ARG (static:x86_64)
   [[ $1 == *:* ]] && arg=${1#*:}
   [[ $job == static ]] && image=$STATIC_IMAGE
   [[ $job == test ]] && caps=(--cap-add=SYS_ADMIN --cap-add=NET_ADMIN)   # test-offline's network namespace
-  local volume="sempere-linux-build-${image//[:.]/-}"
+  local volume="${SEMPERE_LINUX_BUILD_VOLUME:-sempere-linux-build-${image//[:.]/-}}"   # a name of your own when another run shares the Docker host
   local tty=(); [[ -t 1 ]] && tty=(-t)
   docker run --rm ${tty[@]+"${tty[@]}"} ${caps[@]+"${caps[@]}"} -v "$PWD:/src" -v "$volume:/src/.build" -v sempere-linux-swiftpm:/root/.swiftpm -w /src "$image" \
     scripts/ci-linux.sh "$job" ${arg:+"$arg"}

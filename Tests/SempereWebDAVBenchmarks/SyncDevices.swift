@@ -1,0 +1,1 @@
+../SempereWebDAVTests/SyncDevices.swift

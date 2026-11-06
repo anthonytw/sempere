@@ -59,7 +59,7 @@ step passed; `scripts/forge.sh`), and something enforces each one:
 
 ## Fail fast
 
-Every test step (`scripts/app.sh`'s `xcodebuild` runs and the gate's `swift test --parallel`) goes through
+Every test step (`scripts/app.sh`'s `xcodebuild` runs and the gate's `swift test --parallel --skip 'Benchmarks\.'`) goes through
 `scripts/test-runner.py`, which passes the output through and watches it (`--self-test` checks its parsing; the
 gate's `help` step runs it):
 
@@ -161,7 +161,12 @@ then say so.
   architectures from the tag.
 - **WebDAV integration tests:** `scripts/ci-linux.sh webdav` runs `scripts/test-webdav.sh` against wsgidav
   (pinned in `scripts/webdav-server-requirements.txt`) with the fault proxy in front of it for
-  `SyncFaultProxyTests` ([Sync stress](#sync-stress)); a skip fails it.
+  `WsgidavFaultProxyTests` ([Sync stress](#sync-stress)); a skip fails it. **The selection is by name:** the job runs
+  every test whose identifier (`Target.Class/testName`) contains `Wsgidav` (`WsgidavIntegrationTests`,
+  `EngineOverWsgidavTests`, `testInvariantsHoldOverWsgidav`, `CLIWebDAVTests.testSyncAgainstWsgidav`, …), and a plain
+  `swift test` skips them for want of the server. A test that reaches the server without the word would run nowhere:
+  `WebDAVJobSelectionTests`, in every plain `swift test`, reads the test sources of `SempereWebDAVTests` and `CLITests`
+  and fails for it, so a new server test is picked up by being named for the job, with no regex to update.
 - **Web viewer smoke tests** (`web/scripts/smoke-all.sh`, browser smoke tests in Chromium, including the
   large-note stress run, the scroll-anchor check and the pixel diff against the CLI's SVG export; the heavy
   sizes and WebKit are run by hand, `web-viewer.md` "Stress tests").
@@ -190,11 +195,11 @@ flight, every device reads the same notes).
 | --- | --- | --- |
 | `TwoDeviceStressTests` | every `swift test` (6 seeds; `SEMPERE_STRESS_SEEDS=N` for more) | devices on the in-memory `MockDAV`, each through a `FaultyTransport` (seeded: requests dropped, answered 503, applied with the answer lost, downloads cut midway), interleaving notes, renames, tags, blobs, shared settings, two-way runs, pushes and simultaneous runs; request counts of idle and catching-up runs; label-only `vault.json` changes; per-device summaries; merge-copy round trips |
 | `NDeviceStressTests` | every `swift test` (quick: 3 seeds of 90 steps, 3 devices, a few seconds); `SEMPERE_SYNC_STRESS_LONG=1` (60 seeds of 300 steps, 3 to 5 devices, simultaneous runs; `SEMPERE_SYNC_STRESS_SEEDS=N`; `scripts/sync-stress.sh`) | devices on one or two remotes (a `MemoryRemote`, or every fourth seed a `FolderRemote` on a plain folder through `FaultyRemote`, plus a second in-memory one or the WebDAV mock, by seed), the first bridging both, each other one a random non-empty subset, so two or more devices often bridge the same two remotes (`SEMPERE_SYNC_STRESS_BRIDGES=one`: one remote each); new notes, renames, tags, attachments, deletes, thinning, shared settings, voice notes recorded into the inbox, adoptions of the inbox and each device's published summaries, synced in random order through transport faults and, on in-memory remotes, a hostile server on note files, `vault.json`, `inbox/` and `summaries/` (wrong bytes, listings that drop or invent entries or misreport sizes, version tokens changing underneath). Checks as it goes and at the end: no note file on any device or remote differs from what its writer wrote or appears unwritten; every attachment and revision is everywhere, or (thinned) the note reads the same with all of them put back; every file that appeared in a quarantine folder is still there with the same bytes; with faults off, a few rounds (retrying quarantined files, as Repair does) converge every device and remote with no conflict copy and nothing in flight, the same inbox and the same per-device summaries everywhere (each device's own file the one it wrote), and every voice note still in the inbox or adopted. `SEMPERE_SYNC_STRESS_SEED=N` replays one seed; prints `NDEVICE` lines |
-| `EpochInterleavingTests` | every `swift test` (quick: 3 seeds of 36 steps, 4 devices, over memory targets and the WebDAV mock, and the mutation tests: each `EpochMutation`, `SyncEpochMutation` or `PrecedenceMutation` must break its own invariant on a seed whose unmutated run is clean, one test per mutation (`testMutation…`, so `swift test --parallel` runs them side by side: as one test they took four and a half minutes, the gate's longest; `testEveryMutationHasItsTest` fails when one is missing), as `EpochInvariantTests` does for its mutations); the wsgidav run in the CI `webdav` job; `SEMPERE_SYNC_STRESS_LONG=1` (60 seeds of 120 steps, 5 devices, each transport; `scripts/sync-stress.sh`) | key hierarchy design §11.2: devices on two targets (two bridges), transport faults, writes, two-way runs, removals by home after its best-effort pull, one or two takeovers at once, lost epoch records, removed devices that keep writing and plant files, or forge an epoch; checks J5a, J5b, J6 and J8 after every write and run, and J1–J4, J8–J10 at quiescence. `SEMPERE_EPOCH_SEED=N` replays one seed, `SEMPERE_EPOCH_EMPHASIS=OP` leans on one op, `SEMPERE_EPOCH_MUTATION=NAME` runs one mutation, `SEMPERE_EPOCH_TRACE=1` prints a failing run's ops; prints `EPOCH-INTERLEAVING` lines. Two ops are chosen only when leaned on (so other seeds replay unchanged): `away` (a device skips its syncs for 5 to 20 steps while it writes, and the clock jumps 7 to 200 days) and `window` (a run over a short connection window, `WindowRemote`); `testInvariantsHoldWithDevicesAway` and `testInvariantsHoldOverShortWindows` lean on them in every `swift test`, and `scripts/sync-stress.sh` runs the long mode again with `SEMPERE_EPOCH_EMPHASIS=remove`, `=away` and `=window`, over memory targets, the mock and wsgidav. Over wsgidav those leaning runs once failed J1 on a few seeds in 60: its whole-second version tags hid an accepted copy that replaced a refused one within the second (key-hierarchy design §16.13 "Whole-second version tags"; `SecondStampTests` pins it on the mock with `MockDAV.secondETagClock`) |
+| `EpochInterleavingTests` | every `swift test` (quick: 2 seeds of 36 steps, 4 devices, over memory targets and the WebDAV mock, and the mutation tests: each `EpochMutation`, `SyncEpochMutation` or `PrecedenceMutation` must break its own invariant on a seed whose unmutated run is clean, one test per mutation (`testMutation…`, so `swift test --parallel` runs them side by side: as one test they took four and a half minutes, the gate's longest; `testEveryMutationHasItsTest` fails when one is missing), as `EpochInvariantTests` does for its mutations; the scan starts at the seed each mutation first broke its invariant on, `Mutation.knownSeed`, and goes through the others only if that one stops breaking, so a mutation costs two runs, not a dozen); the wsgidav run in the CI `webdav` job; `SEMPERE_SYNC_STRESS_LONG=1` (60 seeds of 120 steps, 5 devices, each transport; `scripts/sync-stress.sh`) | key hierarchy design §11.2: devices on two targets (two bridges), transport faults, writes, two-way runs, removals by home after its best-effort pull, one or two takeovers at once, lost epoch records, removed devices that keep writing and plant files, or forge an epoch; checks J5a, J5b, J6 and J8 after every write and run, and J1–J4, J8–J10 at quiescence. `SEMPERE_EPOCH_SEED=N` replays one seed, `SEMPERE_EPOCH_EMPHASIS=OP` leans on one op, `SEMPERE_EPOCH_MUTATION=NAME` runs one mutation, `SEMPERE_EPOCH_TRACE=1` prints a failing run's ops; prints `EPOCH-INTERLEAVING` lines. Two ops are chosen only when leaned on (so other seeds replay unchanged): `away` (a device skips its syncs for 5 to 20 steps while it writes, and the clock jumps 7 to 200 days) and `window` (a run over a short connection window, `WindowRemote`); `testInvariantsHoldWithDevicesAway` and `testInvariantsHoldOverShortWindows` lean on them in every `swift test`, and `scripts/sync-stress.sh` runs the long mode again with `SEMPERE_EPOCH_EMPHASIS=remove`, `=away` and `=window`, over memory targets, the mock and wsgidav. Over wsgidav those leaning runs once failed J1 on a few seeds in 60: its whole-second version tags hid an accepted copy that replaced a refused one within the second (key-hierarchy design §16.13 "Whole-second version tags"; `SecondStampTests` pins it on the mock with `MockDAV.secondETagClock`) |
 | `ShortWindowTests`, `LongOfflineTests` | every `swift test` | offline audit (infrequent connectivity): uploads and pulls over windows of K requests converge with progress in every window; a dead link stops the run after three network failures in a row (`LinkBreaker`); a cut run that moved something is a success, not a failure with backoff (`SyncReport.outcome`); the inbox and this device's own summaries go before the notes backlog, and its newest writing first. A device back after six months across five epochs converges; a join request waits for an offline home and a joiner's clock 8 days behind; summaries signed ahead of a clock are left in place; a removal a takeover undid is named. Big-blob starvation (P3) and resumable listings (P7) are skipped `TODO`s pending the owner; prints `WINDOW` lines |
-| `SyncFaultProxyTests` | `scripts/test-webdav.sh` (CI's `webdav` job) | real sockets: wsgidav behind `scripts/dav-fault-proxy.py`; a reset mid-download resumes with `Range`, a reset mid-upload leaves no partial blob, random 5xx and resets converge, a stalled request ends at the idle timeout, a dripping download ends at the run's time bound, request counts over latency and a bandwidth cap |
+| `WsgidavFaultProxyTests` | `scripts/test-webdav.sh` (CI's `webdav` job) | real sockets: wsgidav behind `scripts/dav-fault-proxy.py`; a reset mid-download resumes with `Range`, a reset mid-upload leaves no partial blob, random 5xx and resets converge, a stalled request ends at the idle timeout, a dripping download ends at the run's time bound, request counts over latency and a bandwidth cap |
 | `SyncStressTests` | `scripts/sync-stress.sh` only (about five minutes) | the seeded 640-note vault the CLI builds (`scripts/make-stress-vault.sh`: notebooks, tags, text boxes, edits from a second device, small and 3 MB images), uploaded and pulled through faults, 240 concurrent edits from both devices, idle request counts, a fresh pull canceled at random points, a merge-copy round trip; prints `STRESS` lines (times, requests by method, faults) |
-| `SyncTimingTests` | `scripts/sync-stress.sh` only | the same vault without faults at `SEMPERE_STRESS_LATENCIES` ms per request (default `0,20`): first upload, first pull, two idle runs (the first checks the deep listing, the second uses it), the app's push after one edit; prints `TIMING` lines (wall time, requests by method, client connections) for before/after numbers in performance PRs |
+| `SyncTimingBenchmarks` | `scripts/sync-stress.sh` only | the same vault without faults at `SEMPERE_STRESS_LATENCIES` ms per request (default `0,20`): first upload, first pull, two idle runs (the first checks the deep listing, the second uses it), the app's push after one edit; prints `TIMING` lines (wall time, requests by method, client connections) for before/after numbers in performance PRs |
 
 **Two bridges.** With two devices that both sync the same two remotes, a delta that thinning made
 deletable used to circle for ever: one bridge deleted it from a remote (explained by the snapshot
@@ -326,6 +331,41 @@ generator behind `sempere pages scribble` (`InkFixture`). Timing bounds are gene
 catch a return to the whole-drawing paths, not device speed) and the measured numbers print as
 `PERF-REPORT` lines; the `ink.change` and `index.save` signposts give the same phases on a
 device.
+
+## Benchmarks
+
+The print-only timing tests (how long a vault listing, a thinning pass, a PDF export, a sync run takes, with the
+old way next to the new one) are **benchmarks**, and a benchmark never gates anything. Each module measured has a
+test target of its own, named `<Module>Benchmarks`, so it is obvious what a test is and what it measures:
+
+| Target | Measures |
+| --- | --- |
+| `SempereBenchmarks` | vault reads and scans (summaries, history, thinning, blob GC, backup index, search, lasso, digests) |
+| `SempereRenderBenchmarks` | PDF, SVG and PNG writers, the rasterizer, text shaping, bulk export |
+| `SempereWebDAVBenchmarks` | a sync run at a realistic size (`SyncPerfBenchmarks`; `SyncTimingBenchmarks` is `scripts/sync-stress.sh`'s) |
+| `SemperePDFBenchmarks` | text extraction from a long PDF |
+| `AgeBenchmarks` | scrypt at the default work factor |
+
+- **Never in the gate.** The PR gate (`scripts/local-ci.sh`'s `package` step), the Linux jobs (`scripts/ci-linux.sh test`),
+  `just test` and `scripts/test-linux.sh` all pass `--skip 'Benchmarks\.'`: `swift test --list-tests` names a test
+  `Target.Class/testName`, and the regex matches the target part only. A plain `swift test` runs them (they are quick
+  at their default sizes), so use the same `--skip` for a package run without them.
+- **`scripts/bench.sh [sempere|render|webdav|pdf|age ...]`** (`just bench`) builds in release mode
+  (`-c release -Xswiftc -enable-testing`, which the tests' `@testable` imports need) and runs each module in a
+  process of its own, so a run's peak memory is its own. `SEMPERE_BENCH_DEBUG=1` runs unoptimized; arguments after
+  `--` go to `swift test` (`just bench sempere -- --filter SummaryBenchmarks`). Sizes grow with environment variables
+  named in each test's doc comment (`SEMPERE_BENCH_NOTES=600`, `SEMPERE_BENCH_STROKES`, `SEMPERE_BENCH_REVISIONS`, …).
+- **When:** on a schedule and before a release, never to decide a merge. They assert only what must stay true (the
+  results of the old and the new way agree); the work-counting guards that fail on a regression (decrypt counts, read
+  counts, save cadence) are ordinary tests in the module's own target (`HistoryReadPerfTests`, `IncrementalSummaryTests`,
+  `BackupTests.testIndexSavesGrowLogarithmically`).
+- Helpers a benchmark shares with its module's tests (`SyntheticVault`, `VaultTestCase`, `DenseNote`, `PDFBuild`, the sync
+  test cases) are symlinks to the test target's own files (the internal types they use are reached through
+  `@testable`, which a separate support library could not do in a release build).
+- **Fixture tools** are in the same place: `FixtureRegeneration` (`SempereBenchmarks`) rewrites the committed fixture
+  vaults when `SEMPERE_REGENERATE_FIXTURE=1` (and the variants named in `Tests/SempereTests/Fixtures/README.md`) is set,
+  and `ExportBenchVault` (`SempereRenderBenchmarks`) writes a large vault for measuring `sempere export` by hand
+  (`SEMPERE_BENCH_VAULT=DIR`). Neither shows as a skipped test in the gate any more.
 
 ## Performance tests
 

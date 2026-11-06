@@ -1716,5 +1716,5 @@ the pass, an unaccepted file never laundered, a stripped or replayed binding), `
 `ReencryptSyncTests` (through a bridge, an offline device back after the finish, a refused claim, a withheld journal, a
 new home finishing it), `EpochInterleavingTests` (J7 and J9 at quiescence; re-encryptions started and advanced among
 removals, takeovers and storage attacks; mutations `reencryptSkipInverted` (J9), `keepOldBlobNames` and
-`keepOldRecords` (J7)), the F11 cut-upload over wsgidav behind the fault proxy (`ReencryptOverFaultProxyTests`), and
+`keepOldRecords` (J7)), the F11 cut-upload over wsgidav behind the fault proxy (`ReencryptOverWsgidavFaultProxyTests`), and
 `CLIReencryptTests`.

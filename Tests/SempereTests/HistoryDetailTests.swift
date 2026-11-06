@@ -28,24 +28,4 @@ final class HistoryDetailTests: VaultTestCase {
         }
     }
 
-    /// Prints the time to list a stroke-heavy note's restore points with
-    /// and without geometry (`SEMPERE_BENCH_HISTORY=1`: 20,000 strokes).
-    func testRestorePointTiming() throws {
-        let strokes = ProcessInfo.processInfo.environment["SEMPERE_BENCH_HISTORY"] != nil ? 20_000 : 300
-        let vault = try makeVault(pqIdentity())
-        try SyntheticVault.populate(vault, notes: 1, strokes: strokes, points: 60)
-        let id = try XCTUnwrap(try vault.noteIDs().first)
-        var clock = HybridClock()
-        _ = try vault.snapshot(noteId: id, device: devC, clock: &clock, wall: Date(), app: "test/0")
-        var t = Date()
-        let before = try vault.loadNote(id).restorePoints
-        let full = Date().timeIntervalSince(t)
-        t = Date()
-        let after = try vault.restorePoints(noteId: id)
-        let lite = Date().timeIntervalSince(t)
-        XCTAssertEqual(before, after)
-        XCTAssertEqual(try vault.history(noteId: id).map(\.wall), try vault.loadNote(id).revisions.map(\.wall))
-        print(String(format: "bench: restore points, %d strokes x 60 points (delta + snapshot): full %.3f s, "
-                     + "without geometry %.3f s", strokes, full, lite))
-    }
 }

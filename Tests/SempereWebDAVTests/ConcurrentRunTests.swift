@@ -32,8 +32,11 @@ final class ConcurrentRunTests: BlobSyncTestCase {
         XCTAssertEqual(entered.wait(timeout: .now() + 30), .success)
         let before = server.requestLog.count
         DispatchQueue.global().async(group: done) { second.value = try? test.sync("A", server) }
-        Thread.sleep(forTimeInterval: 0.5)
-        XCTAssertEqual(server.requestLog.count, before, "the second run waits for the first")
+        // The second run is blocked on the state file (`SyncRunLock`), not merely late: wait for that, then it has asked for nothing.
+        let blockedBy = Date().addingTimeInterval(30)
+        while SyncRunLock.shared.waitingCount < 1, Date() < blockedBy { Thread.sleep(forTimeInterval: 0.005) }
+        XCTAssertEqual(SyncRunLock.shared.waitingCount, 1, "the second run waits for the first")
+        XCTAssertEqual(server.requestLog.count, before, "and sent nothing meanwhile")
         release.signal()
         XCTAssertEqual(done.wait(timeout: .now() + 60), .success)
         XCTAssertEqual(first.value?.errors.isEmpty, true, "\(String(describing: first.value))")

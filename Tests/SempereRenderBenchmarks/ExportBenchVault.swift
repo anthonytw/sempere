@@ -10,11 +10,11 @@ import XCTest
 /// command line. Runs only when `SEMPERE_BENCH_VAULT` names a directory that
 /// does not exist yet; `SEMPERE_BENCH_PAGES` (default 300), `SEMPERE_BENCH_STROKES`
 /// (per page, default 150) and `SEMPERE_BENCH_POINTS` (default 60) size it.
-/// Every page has dense random-walk ink (`RenderBenchmarkTests.denseNote`) and,
+/// Every page has dense random-walk ink (`DenseNote.make`) and,
 /// unless `SEMPERE_BENCH_IMAGES=0`, its own 640x480 noise image, so each PDF
 /// page carries a large image object.
 /// The identity is written next to the vault as `<vault>.key`.
-final class ExportBenchVaultTests: XCTestCase {
+final class ExportBenchVault: XCTestCase {
     func testWriteBenchVault() throws {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["SEMPERE_BENCH_VAULT"] else { throw XCTSkip("set SEMPERE_BENCH_VAULT to write the vault") }
@@ -28,7 +28,7 @@ final class ExportBenchVaultTests: XCTestCase {
             .write(toFile: path + ".key", atomically: true, encoding: .utf8)
         let vault = try TestVaults.create(at: url, identities: [id], names: ["bench"])
         let note = UUID(uuidString: "bbbbbbbb-0000-4000-8000-000000000001")!
-        let dense = RenderBenchmarkTests.denseNote(strokes: strokes, points: points).pages[0].strokes
+        let dense = DenseNote.make(strokes: strokes, points: points).pages[0].strokes
         var seed: UInt64 = 7
         let firstPage = UUID()
         var ops = NoteOps.newNote(title: "Bench", paper: .ruled, pageSize: PageSize(width: 612, height: 792), pageId: firstPage)

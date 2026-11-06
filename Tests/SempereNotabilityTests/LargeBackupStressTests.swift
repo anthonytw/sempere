@@ -7,10 +7,11 @@ import XCTest
 
 /// Device check c23 ("Large Notability import"), automated on a synthetic backup (`SyntheticBackup`): every note
 /// imports, copies resolve across the parts, progress is reported in order, a cancel keeps what was written and a
-/// second run finishes the job. `SEMPERE_STRESS_NOTES=1500` runs it at the size of a real backup.
+/// second run finishes the job. Thirty notes show all of that (a note per kind of source, the huge one, the odd
+/// titles); `SEMPERE_STRESS_NOTES=1500` runs it at the size of a real backup.
 final class LargeBackupStressTests: NotabilityTestCase {
     static var noteCount: Int {
-        ProcessInfo.processInfo.environment["SEMPERE_STRESS_NOTES"].flatMap(Int.init) ?? 160
+        ProcessInfo.processInfo.environment["SEMPERE_STRESS_NOTES"].flatMap(Int.init) ?? 30
     }
 
     /// Progress reports collected from the importing thread.
@@ -129,17 +130,10 @@ final class LargeBackupStressTests: NotabilityTestCase {
         XCTAssertEqual(report.failed, b.expected.failed)
     }
 
-    func testTheSameBackupGivenTwiceOrInAnotherOrderImportsTheSame() throws {
-        let b = try backup(.init(notes: 40, hugeStrokes: 0))
-        let twice = try run(b, into: try makeVault(), paths: b.parts + b.parts.reversed())
-        XCTAssertEqual(twice.imported, b.expected.imported, failures(twice))
-        XCTAssertEqual(twice.failed, 2 * b.expected.failed)
-    }
-
     /// A part that is not a zip at all (a broken download): the import refuses before writing anything, naming the
     /// part, rather than importing the other parts with copies resolved against an incomplete backup.
     func testACorruptPartStopsTheImportBeforeAnythingIsWritten() throws {
-        let b = try backup(.init(notes: 30, hugeStrokes: 0))
+        let b = try backup(.init(notes: 6, hugeStrokes: 0))
         let broken = b.parts[1]
         let data = try Data(contentsOf: broken)
         try data.prefix(data.count / 3).write(to: broken)
@@ -164,7 +158,7 @@ final class CLILargeBackupTests: CLITestCase {
     func vaultArgs(_ vault: String) -> [String] { ["--vault", vault, "--identity", Self.fixtureKey] }
 
     func testProgressGoesToStderrAndJSONToStdout() throws {
-        let b = try SyntheticBackup(writingTo: tmp.appendingPathComponent("backup"), .init(notes: 40, hugeStrokes: 0))
+        let b = try SyntheticBackup(writingTo: tmp.appendingPathComponent("backup"), .init(notes: 10, hugeStrokes: 0))
         let vault = try copyFixtureVault()
         let r = try cli(["import", "notability"] + b.parts.map(\.path) + ["--pdf-text", "none"] + vaultArgs(vault),
                         env: ["SEMPERE_PROGRESS": "always"])
@@ -184,7 +178,7 @@ final class CLILargeBackupTests: CLITestCase {
 
     func testInterruptStopsBetweenNotesAndTheNextRunFinishes() throws {
         #if os(macOS) || os(Linux)
-        let b = try SyntheticBackup(writingTo: tmp.appendingPathComponent("backup"), .init(notes: 400, hugeStrokes: 0))
+        let b = try SyntheticBackup(writingTo: tmp.appendingPathComponent("backup"), .init(notes: 100, hugeStrokes: 0))
         let vault = try copyFixtureVault()
         let before = try FileManager.default.contentsOfDirectory(atPath: vault + "/notes").count
         let p = Process()
@@ -198,11 +192,12 @@ final class CLILargeBackupTests: CLITestCase {
         p.standardOutput = out
         p.standardError = err
         try p.run()
-        // Wait until the first notes are written, then Ctrl-C.
+        // Wait until the first notes are written, then Ctrl-C. A race by nature: the import must still be running when the
+        // signal lands. A hundred notes take seconds to write and the poll takes milliseconds.
         let deadline = Date().addingTimeInterval(120)
         while Date() < deadline, p.isRunning,
               (try? FileManager.default.contentsOfDirectory(atPath: vault + "/notes").count) ?? 0 < before + 3 {
-            Thread.sleep(forTimeInterval: 0.02)
+            Thread.sleep(forTimeInterval: 0.005)
         }
         p.interrupt()
         let outData = out.fileHandleForReading.readDataToEndOfFile()

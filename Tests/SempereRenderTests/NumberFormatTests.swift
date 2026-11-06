@@ -74,18 +74,4 @@ final class NumberFormatTests: XCTestCase {
         }
     }
 
-    /// Prints printf's and the fast path's time for the same values.
-    func testFormatTimings() {
-        let values = (0..<200_000).map { Double($0) * 0.73519 - 50_000 }
-        var t = Date()
-        var bytes = 0
-        for v in values { bytes += printfTrimmed(v, decimals: 3).utf8.count }
-        let before = Date().timeIntervalSince(t)
-        t = Date()
-        var bytes2 = 0
-        for v in values { bytes2 += trimmed(v, decimals: 3).utf8.count }
-        let after = Date().timeIntervalSince(t)
-        XCTAssertEqual(bytes, bytes2)
-        print("bench: format 200k numbers: printf \(String(format: "%.3f", before)) s, fast \(String(format: "%.3f", after)) s")
-    }
 }

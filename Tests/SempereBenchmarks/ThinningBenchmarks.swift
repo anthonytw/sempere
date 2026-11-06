@@ -6,7 +6,7 @@ import XCTest
 /// Prints how long thinning a mass re-imported vault takes (every note: an
 /// import, then an `--overwrite` re-import, both dated by the note's creation).
 /// Quick mode uses 12 notes; `SEMPERE_BENCH_NOTES=640` is the maintainer's vault.
-final class ThinningBenchmarkTests: VaultTestCase {
+final class ThinningBenchmarks: VaultTestCase {
     func testThinningTimings() throws {
         let env = ProcessInfo.processInfo.environment
         let notes = Int(env["SEMPERE_BENCH_NOTES"] ?? "") ?? 12
