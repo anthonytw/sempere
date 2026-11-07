@@ -37,13 +37,12 @@ final class PhoneCanvasUITests: XCTestCase {
     @MainActor
     private func canvas(_ app: XCUIApplication, holding kind: String = "image") -> XCUIElement? {
         let canvases = app.descendants(matching: .any).matching(identifier: "pageCanvas")
-        for _ in 0..<60 {
-            for element in canvases.allElementsBoundByIndex {
-                if let r = report(element), r.frame(kind) != nil { return element }
-            }
-            Thread.sleep(forTimeInterval: 1)
+        var found: XCUIElement?
+        UIWait.until(60, interval: 0.5) {
+            found = canvases.allElementsBoundByIndex.first { report($0)?.frame(kind) != nil }
+            return found != nil
         }
-        return nil
+        return found
     }
 
     @MainActor
@@ -70,13 +69,12 @@ final class PhoneCanvasUITests: XCTestCase {
     @discardableResult
     private func waitReport(_ canvas: XCUIElement, _ what: String, timeout: TimeInterval = 6,
                             _ ok: (Report) -> Bool) -> Report? {
-        let end = Date().addingTimeInterval(timeout)
         var last: Report?
-        while Date() < end {
+        UIWait.until(timeout, interval: 0.2) {
             last = report(canvas)
-            if let r = last, ok(r) { return r }
-            Thread.sleep(forTimeInterval: 0.2)
+            return last.map(ok) ?? false
         }
+        if let r = last, ok(r) { return r }
         XCTFail("\(what): canvas reports \(String(describing: canvas.value))")
         return nil
     }
@@ -95,8 +93,11 @@ final class PhoneCanvasUITests: XCTestCase {
     private func annotate(_ app: XCUIApplication) {
         let candidates = [app.buttons["Annotate"], app.switches["Annotate"], app.toggles["Annotate"]]
         for c in candidates where c.firstMatch.waitForExistence(timeout: 5) {
+            let palette = app.descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch
+            let before = palette.exists
             c.firstMatch.tap()
-            Thread.sleep(forTimeInterval: 1.5)
+            // The palette comes up with Annotate on and goes down with it off.
+            XCTAssertTrue(UIWait.until(5) { palette.exists != before }, "Annotate changed nothing")
             return
         }
         XCTFail("no Annotate button: \(app.debugDescription.prefix(2000))")
@@ -107,8 +108,9 @@ final class PhoneCanvasUITests: XCTestCase {
     private func tapHand(_ app: XCUIApplication) {
         let hand = app.descendants(matching: .any).matching(identifier: "handButton").firstMatch
         XCTAssertTrue(hand.waitForExistence(timeout: 10), "no Hand button in the top bar: \(app.debugDescription.prefix(2000))")
+        let before = hand.isSelected || (hand.value as? String) == "1"
         hand.tap()
-        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(UIWait.until(5) { (hand.isSelected || (hand.value as? String) == "1") != before }, "the Hand did not change")
     }
 
     /// An empty spot of the page, left of the equation and under the text box.
@@ -133,10 +135,10 @@ final class PhoneCanvasUITests: XCTestCase {
         guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
 
         // 0. As the note opens (reading): a tap on the picture selects nothing.
-        Thread.sleep(forTimeInterval: 1)
+        UIWait.settled(5, steady: 2) { canvas.value as? String }   // the ink and the layout are at rest
         guard let opened = middle(of: "image", on: canvas, app: app) else { return XCTFail("no image") }
         opened.tap()
-        Thread.sleep(forTimeInterval: 1)
+        UIWait.pause(1)   // kept: a tap that selects nothing raises no event to wait for
         guard let r00 = report(canvas) else { return XCTFail("no canvas report after the tap: \(String(describing: canvas.value))") }
         XCTAssertEqual(r00.selected, "none", "reading, as the note opens: a tap selects nothing")
 
@@ -145,7 +147,7 @@ final class PhoneCanvasUITests: XCTestCase {
         guard let before = report(canvas), let image = middle(of: "image", on: canvas, app: app) else { return XCTFail("no image") }
         image.tap()
         let selected = waitReport(canvas, "a tap selects the picture") { $0.selected == "image" && $0.bar }
-        Thread.sleep(forTimeInterval: 0.8)
+        UIWait.pause(0.8)   // kept: the check is that no menu comes up, which shows nothing to wait for
         XCTAssertEqual(report(canvas)?.menu, false, "a tap shows no menu")
         XCTAssertEqual(selected?.strokes, before.strokes, "the tap left no dot")
         point(Self.emptySpot, on: canvas, before, app: app).tap()
@@ -173,7 +175,7 @@ final class PhoneCanvasUITests: XCTestCase {
         for _ in 0..<3 {
             guard let r = report(canvas), r.selected != "none" || r.menu else { break }
             point(Self.emptySpot, on: canvas, r, app: app).tap()
-            Thread.sleep(forTimeInterval: 1)
+            UIWait.until(3) { report(canvas).map { $0.selected == "none" && !$0.menu } ?? false }
         }
         waitReport(canvas, "the menu and the selection are gone") { $0.selected == "none" && !$0.menu }
 
@@ -198,15 +200,15 @@ final class PhoneCanvasUITests: XCTestCase {
         // 6. Reading again (Annotate off): a tap selects nothing, and a finger drags the page (a vertical drag:
         // a sideways one can take the phone's stack back to the list) and draws nothing.
         annotate(app)
-        Thread.sleep(forTimeInterval: 3)   // PencilKit's recount after the palette hides
+        UIWait.pause(3)   // kept: PencilKit's recount after the palette hides shows nothing to observe
         guard let r0 = report(canvas), let image0 = middle(of: "image", on: canvas, app: app) else { return XCTFail("no image") }
         image0.tap()
-        Thread.sleep(forTimeInterval: 1)
+        UIWait.pause(1)   // kept: a tap that selects nothing raises no event to wait for
         guard let tapped = report(canvas) else { return XCTFail("no canvas report after the reading tap: \(String(describing: canvas.value))") }
         XCTAssertEqual(tapped.selected, "none", "reading: a tap selects nothing")
         point(Self.emptySpot, on: canvas, r0, app: app)
             .press(forDuration: 0.05, thenDragTo: point(CGPoint(x: Self.emptySpot.x, y: Self.emptySpot.y - 80), on: canvas, r0, app: app))
-        Thread.sleep(forTimeInterval: 1)
+        UIWait.pause(1)   // kept: the drag must draw and select nothing, which shows nothing to wait for
         guard let dragged = report(canvas) else { return XCTFail("no canvas report after the reading drag: \(String(describing: canvas.value))") }
         XCTAssertEqual(dragged.strokes, r0.strokes, "reading: a finger draws nothing")
         XCTAssertEqual(dragged.selected, "none", "reading: the drag selects nothing")
@@ -223,15 +225,15 @@ final class PhoneCanvasUITests: XCTestCase {
         defer { app.terminate() }
         let canvases = app.descendants(matching: .any).matching(identifier: "pageCanvas")
         XCTAssertTrue(canvases.firstMatch.waitForExistence(timeout: 60))
-        Thread.sleep(forTimeInterval: 1.5)
-        tapHand(app)
         let top: () -> CGFloat? = { canvases.allElementsBoundByIndex.map(\.frame.minY).min() }
+        UIWait.settled { top() }   // the pages are laid out
+        tapHand(app)
         guard let top0 = top() else { return XCTFail("no page canvas") }
         let window = app.windows.firstMatch
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
             .press(forDuration: 0.1, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)),
                    withVelocity: .slow, thenHoldForDuration: 0.3)
-        Thread.sleep(forTimeInterval: 1)
+        UIWait.until(3) { (top() ?? top0) < top0 - 40 }   // the pages scroll
         guard let top1 = top() else { return XCTFail("no page canvas after the drag") }
         XCTAssertLessThan(top1, top0 - 40, "one finger scrolls with the Hand (top \(top0) -> \(top1))")
     }

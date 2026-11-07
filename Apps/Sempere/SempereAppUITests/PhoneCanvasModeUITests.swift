@@ -54,8 +54,7 @@ final class PhoneCanvasModeUITests: XCTestCase {
         // 5 s wait for the bar's on every iPhone run.
         let pages = app.buttons["Pages"].firstMatch
         let more = app.buttons["More"].firstMatch
-        let end = Date().addingTimeInterval(10)
-        while !pages.exists, !more.exists, Date() < end { Thread.sleep(forTimeInterval: 0.3) }
+        UIWait.until(10, interval: 0.3) { pages.exists || more.exists }
         if !pages.exists {
             XCTAssertTrue(more.exists, "the overflow menu: \(app.debugDescription.prefix(3000))")
             more.tap()
@@ -68,15 +67,10 @@ final class PhoneCanvasModeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "pageStack").firstMatch.waitForNonExistence(timeout: 30),
                       "the note is pageless")
         let canvas = app.descendants(matching: .any).matching(identifier: "pageCanvas").firstMatch
-        for _ in 0..<60 {
-            if let r = report(canvas), r.frame("image") != nil {
-                Thread.sleep(forTimeInterval: 1)
-                if let r = report(canvas), let y = inkY(canvas) { inkAnchor = y + r.offset.y }
-                return canvas
-            }
-            Thread.sleep(forTimeInterval: 1)
-        }
-        return nil
+        guard UIWait.until(60, interval: 1, { report(canvas)?.frame("image") != nil }) else { return nil }
+        XCTAssertTrue(UIWait.until(10) { inkY(canvas) != nil }, "the page's ink is not listed")   // listed once drawn
+        if let r = report(canvas), let y = inkY(canvas) { inkAnchor = y + r.offset.y }
+        return canvas
     }
 
     // MARK: Reading the canvas
@@ -118,13 +112,12 @@ final class PhoneCanvasModeUITests: XCTestCase {
     @discardableResult
     private func waitReport(_ canvas: XCUIElement, _ what: String, timeout: TimeInterval = 6,
                             _ ok: (Report) -> Bool) -> Report? {
-        let end = Date().addingTimeInterval(timeout)
         var last: Report?
-        while Date() < end {
+        UIWait.until(timeout, interval: 0.2) {
             last = report(canvas)
-            if let r = last, ok(r) { return r }
-            Thread.sleep(forTimeInterval: 0.2)
+            return last.map(ok) ?? false
         }
+        if let r = last, ok(r) { return r }
         XCTFail("\(what): canvas reports \(raw(canvas))")
         return nil
     }
@@ -158,8 +151,19 @@ final class PhoneCanvasModeUITests: XCTestCase {
     @MainActor
     private func tap(_ button: XCUIElement) {
         XCTAssertTrue(button.waitForExistence(timeout: 10), "no \(button)")
+        let palette = XCUIApplication().descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch
+        let isHand = button.identifier == "handButton"
+        let before = isHand ? lit(button) : palette.exists
         button.tap()
-        Thread.sleep(forTimeInterval: 1.5)
+        // The Hand lights or goes dark; the pencil brings the palette up or takes it down (the iPad's pencil does not
+        // show its on state to XCTest).
+        XCTAssertTrue(UIWait.until(5) { (isHand ? lit(button) : palette.exists) != before }, "\(button.identifier) changed nothing")
+    }
+
+    @MainActor
+    private func waitPaletteGone(_ app: XCUIApplication) {
+        let palette = app.descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch
+        XCTAssertTrue(palette.waitForNonExistence(timeout: 10), "the palette is still up")
     }
 
     // MARK: What the canvas does
@@ -187,14 +191,8 @@ final class PhoneCanvasModeUITests: XCTestCase {
     /// The canvas's report once its scroll has come to rest (no bounce or deceleration under way).
     @MainActor
     private func settled(_ canvas: XCUIElement) -> Report? {
-        var last = report(canvas)
-        for _ in 0..<20 {
-            Thread.sleep(forTimeInterval: 0.4)
-            let now = report(canvas)
-            if let a = last, let b = now, a.offset == b.offset { return b }
-            last = now
-        }
-        return last
+        UIWait.settled(8, interval: 0.4, steady: 2) { report(canvas)?.offset }
+        return report(canvas)
     }
 
     /// A one-finger drag on the empty page, finger up: it scrolls (and draws nothing), or draws one stroke. The
@@ -217,7 +215,7 @@ final class PhoneCanvasModeUITests: XCTestCase {
             return
         }
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
-        Thread.sleep(forTimeInterval: 1)
+        UIWait.until(3) { report(canvas).map { aimed(canvas, $0).offset.y > r0.offset.y + 40 } ?? false }   // the scroll under way
         guard let r1 = settled(canvas).map({ aimed(canvas, $0) }) else { return }
         XCTAssertGreaterThan(r1.offset.y, r0.offset.y + 40, "\(what): one finger scrolls (offset \(r0.offset.y) -> \(r1.offset.y)): \(raw(canvas))")
         XCTAssertEqual(r1.strokes, r0.strokes, "\(what): the drag drew nothing")
@@ -231,7 +229,7 @@ final class PhoneCanvasModeUITests: XCTestCase {
                 .press(forDuration: 0.1, thenDragTo: point(CGPoint(x: x, y: top + down), on: canvas, r, app: app),
                        withVelocity: .slow, thenHoldForDuration: 0.3)
         }
-        Thread.sleep(forTimeInterval: 1)
+        _ = settled(canvas)   // the deceleration ends
     }
 
     /// A tap on the picture selects it (then a tap on the empty page drops it) or selects nothing.
@@ -246,7 +244,7 @@ final class PhoneCanvasModeUITests: XCTestCase {
             waitReport(canvas, "\(what): a tap beside it drops it") { $0.selected == "none" }
             XCTAssertEqual(report(canvas)?.strokes, r0.strokes, "\(what): the taps drew nothing")
         } else {
-            Thread.sleep(forTimeInterval: 1)
+            UIWait.pause(1)   // kept: a tap that selects nothing raises no event to wait for
             XCTAssertEqual(report(canvas)?.selected, "none", "\(what): a tap selects nothing")
             XCTAssertEqual(report(canvas)?.strokes, r0.strokes, "\(what): the tap drew nothing")
         }
@@ -262,8 +260,10 @@ final class PhoneCanvasModeUITests: XCTestCase {
         XCTAssertTrue(palette.waitForExistence(timeout: 5), "the palette")
         let item = palette.buttons[tool].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 5) && item.isHittable, "the palette's \(tool): \(palette.debugDescription.prefix(3000))")
-        if !item.isSelected { item.tap() }
-        Thread.sleep(forTimeInterval: 1.5)
+        if !item.isSelected {
+            item.tap()
+            XCTAssertTrue(UIWait.until(5) { item.isSelected }, "the palette's \(tool) is not picked")
+        }
     }
 
     /// Every transition between the three modes, each way, on a pageless note: what the buttons show is what the
@@ -284,7 +284,8 @@ final class PhoneCanvasModeUITests: XCTestCase {
         XCTAssertFalse(palette.buttons["Hand"].exists, "no Hand in the palette: \(palette.debugDescription.prefix(2000))")
         expect(.annotating, app, canvas, after: "reading, pencil")
         tap(annotateButton(app))
-        Thread.sleep(forTimeInterval: 3)   // PencilKit's recount comes with the palette's hide animation
+        waitPaletteGone(app)
+        UIWait.pause(3)   // kept: PencilKit's recount after the palette's hide animation shows nothing to observe
         expect(.reading, app, canvas, after: "annotating, pencil, 3 s")
         tap(handButton(app))
         expect(.hand, app, canvas, after: "reading, Hand")
@@ -298,7 +299,8 @@ final class PhoneCanvasModeUITests: XCTestCase {
         tap(handButton(app))
         tap(annotateButton(app))
         tap(annotateButton(app))
-        Thread.sleep(forTimeInterval: 3)
+        waitPaletteGone(app)
+        UIWait.pause(3)   // kept: PencilKit's recount, as above
         expect(.reading, app, canvas, after: "hand, pencil, pencil, 3 s")
     }
 
@@ -316,7 +318,8 @@ final class PhoneCanvasModeUITests: XCTestCase {
             tap(annotateButton(app))
             pick(tool, app)
             tap(annotateButton(app))
-            Thread.sleep(forTimeInterval: 3)
+            waitPaletteGone(app)
+            UIWait.pause(3)   // kept: PencilKit's recount, and the eraser and lasso restoring their counts
             oneFingerDrag(scrolls: true, app, canvas, "annotating with the \(tool), pencil, 3 s")
         }
     }
@@ -328,17 +331,18 @@ final class PhoneCanvasModeUITests: XCTestCase {
         defer { app.terminate() }
         let canvases = app.descendants(matching: .any).matching(identifier: "pageCanvas")
         XCTAssertTrue(canvases.firstMatch.waitForExistence(timeout: 60))
-        Thread.sleep(forTimeInterval: 1.5)
+        UIWait.settled { canvases.allElementsBoundByIndex.map(\.frame.minY).min() }   // the pages are laid out
         tap(annotateButton(app))
         tap(annotateButton(app))
-        Thread.sleep(forTimeInterval: 3)
+        waitPaletteGone(app)
+        UIWait.pause(3)   // kept: PencilKit's recount, as above
         let top: () -> CGFloat? = { canvases.allElementsBoundByIndex.map(\.frame.minY).min() }
         guard let top0 = top() else { return XCTFail("no page canvas") }
         let stack = app.descendants(matching: .any).matching(identifier: "pageStack").firstMatch
         stack.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
             .press(forDuration: 0.1, thenDragTo: stack.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)),
                    withVelocity: .slow, thenHoldForDuration: 0.3)
-        Thread.sleep(forTimeInterval: 1)
+        UIWait.until(3) { (top() ?? top0) < top0 - 40 }   // the pages scroll
         guard let top1 = top() else { return XCTFail("no page canvas after the drag") }
         XCTAssertLessThan(top1, top0 - 40, "one finger scrolls the pages after Annotate went off (top \(top0) -> \(top1))")
     }

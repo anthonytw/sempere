@@ -34,6 +34,8 @@ final class IPadCanvasUITests: XCTestCase {
         /// How many strokes the page's ink has.
         var strokes = 0
         var typing: String?
+        /// The text tool is on (`text=1`).
+        var textTool = false
         var items: [(kind: String, frame: CGRect)] = []
 
         init?(_ value: String) {
@@ -61,6 +63,7 @@ final class IPadCanvasUITests: XCTestCase {
                     let c = v.split(separator: ",").compactMap { Double($0) }
                     if c.count == 4 { barFrame = CGRect(x: c[0], y: c[1], width: c[2], height: c[3]) }
                 case "palette": palette = v == "1"
+                case "text": textTool = v == "1"
                 case "strokes": strokes = Int(v) ?? 0
                 case "items":
                     items = v.split(separator: "|").compactMap { entry in
@@ -100,13 +103,12 @@ final class IPadCanvasUITests: XCTestCase {
     @MainActor
     private func canvas(_ app: XCUIApplication, holding kind: String = "image") -> XCUIElement? {
         let canvases = app.descendants(matching: .any).matching(identifier: "pageCanvas")
-        for _ in 0..<60 {
-            for element in canvases.allElementsBoundByIndex {
-                if let r = report(element), r.frame(kind) != nil { return element }
-            }
-            Thread.sleep(forTimeInterval: 1)
+        var found: XCUIElement?
+        UIWait.until(60, interval: 1) {
+            found = canvases.allElementsBoundByIndex.first { report($0)?.frame(kind) != nil }
+            return found != nil
         }
-        return nil
+        return found
     }
 
     @MainActor
@@ -141,13 +143,12 @@ final class IPadCanvasUITests: XCTestCase {
     @discardableResult
     private func waitReport(_ canvas: XCUIElement, _ what: String, timeout: TimeInterval = 6,
                             _ ok: (Report) -> Bool) -> Report? {
-        let end = Date().addingTimeInterval(timeout)
         var last: Report?
-        while Date() < end {
+        UIWait.until(timeout, interval: 0.2) {
             last = report(canvas)
-            if let r = last, ok(r) { return r }
-            Thread.sleep(forTimeInterval: 0.2)
+            return last.map(ok) ?? false
         }
+        if let r = last, ok(r) { return r }
         XCTFail("\(what): canvas reports \(String(describing: canvas.value))")
         return nil
     }
@@ -186,17 +187,26 @@ final class IPadCanvasUITests: XCTestCase {
 
     /// Selection mode (the Hand): a tap selects with no menu and shows the bar; a held finger shows the
     /// item's menu (with Delete) and not PencilKit's; a tap on the empty page dismisses it.
+    /// Taps the Hand and waits for it to light up (it goes dark again on a second tap).
+    @MainActor
+    private func tapHand(_ app: XCUIApplication) {
+        let hand = handButton(app)
+        let lit = { hand.isSelected || (hand.value as? String) == "1" }
+        let before = lit()
+        hand.tap()
+        XCTAssertTrue(UIWait.until(5) { lit() != before }, "the Hand did not change")
+    }
+
     @MainActor
     func testATapSelectsAndAHoldShowsTheItemMenu() throws {
         let app = launch()
         defer { app.terminate() }
         guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
-        handButton(app).tap()
-        Thread.sleep(forTimeInterval: 1)
+        tapHand(app)
         guard let image = middle(of: "image", on: canvas, app: app) else { return XCTFail("no image") }
         image.tap()
         waitReport(canvas, "a tap selects without a menu") { $0.selected == "image" && $0.bar }
-        Thread.sleep(forTimeInterval: 0.8)
+        UIWait.pause(0.8)   // kept: the check is that no menu comes up, which shows nothing to wait for
         XCTAssertEqual(report(canvas)?.menu, false, "a tap shows no menu")
         XCTAssertGreaterThan(report(canvas)?.barFrame.width ?? 0, 0, "the selection bar is up")
 
@@ -228,7 +238,7 @@ final class IPadCanvasUITests: XCTestCase {
         guard let card = middle(of: "audio", on: canvas, app: app) else { return XCTFail("no audio card") }
         card.tap()
         waitReport(canvas, "a tap selects the card") { $0.selected == "audio" }
-        Thread.sleep(forTimeInterval: 0.8)
+        UIWait.pause(0.8)   // kept: no menu must come up, which shows nothing to wait for
         XCTAssertEqual(report(canvas)?.menu, false, "no menu on a tap")
         XCTAssertFalse(app.descendants(matching: .any)["playerBar"].exists, "a tap does not play")
     }
@@ -239,8 +249,7 @@ final class IPadCanvasUITests: XCTestCase {
         let app = launch()
         defer { app.terminate() }
         guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
-        handButton(app).tap()
-        Thread.sleep(forTimeInterval: 1)
+        tapHand(app)
         middle(of: "math", on: canvas, app: app)?.tap()
         guard let r1 = waitReport(canvas, "the equation is selected", { $0.selected == "math" && $0.bar }) else { return }
         // The bar is inside the canvas, which lists only its strokes to accessibility: aim at its Delete (the right half).
@@ -260,7 +269,7 @@ final class IPadCanvasUITests: XCTestCase {
         guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
         let textBoxes = report(canvas)?.items.filter { $0.kind == "text" }.count ?? 0
         toolbarToggle(app, "Text").tap()
-        Thread.sleep(forTimeInterval: 1)
+        waitReport(canvas, "the text tool is on") { $0.textTool }
         guard let r0 = report(canvas) else { return }
         point(Self.emptySpot, on: canvas, r0, app: app).tap()
         waitReport(canvas, "a new box is being typed in") { $0.typing != nil }
@@ -270,10 +279,10 @@ final class IPadCanvasUITests: XCTestCase {
         point(CGPoint(x: 500, y: 110), on: canvas, r0, app: app).tap()
         waitReport(canvas, "the box's edit ended", timeout: 10) { $0.typing == nil }
         XCTAssertEqual(report(canvas)?.items.filter { $0.kind == "text" }.count, textBoxes, "an empty box writes nothing")
-        Thread.sleep(forTimeInterval: 1)
+        UIWait.pause(1)   // kept: the canvas lays out again after the box ends; nothing reports it
         guard let r1 = report(canvas) else { return }
         point(CGPoint(x: 520, y: 170), on: canvas, r1, app: app).tap()
-        Thread.sleep(forTimeInterval: 1.5)
+        UIWait.pause(1.5)   // kept: no second box must appear, which shows nothing to wait for
         XCTAssertNil(report(canvas)?.typing, "the text tool was one-shot: no second box")
     }
 
@@ -291,7 +300,7 @@ final class IPadCanvasUITests: XCTestCase {
         for _ in 0..<6 where !(row.exists && row.isHittable) { list.swipeUp() }
         XCTAssertTrue(row.exists && row.isHittable, "the Quick thoughts row is on screen")
         row.tap()
-        Thread.sleep(forTimeInterval: 1.5)
+        UIWait.pause(1.5)   // kept: the palette must stay as it was after the list took the tap; nothing reports it
         print("PALETTE after the list took the tap: \(String(describing: report(canvas)?.palette))")
         guard let r = report(canvas) else { return }
         point(CGPoint(x: 120, y: 160), on: canvas, r, app: app).tap()

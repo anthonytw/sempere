@@ -42,7 +42,7 @@ final class PhoneReadingScrollUITests: XCTestCase {
         let stack = app.descendants(matching: .any).matching(identifier: "pageStack").firstMatch
         XCTAssertTrue(stack.waitForExistence(timeout: 60), "the page stack: \(app.debugDescription.prefix(3000))")
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "pageCanvas").firstMatch.waitForExistence(timeout: 30))
-        Thread.sleep(forTimeInterval: 1.5)   // the pages' ink and the first layout settle
+        UIWait.settled { topOfPages(app) }   // the pages' ink and the first layout settle
         return stack
     }
 
@@ -66,7 +66,8 @@ final class PhoneReadingScrollUITests: XCTestCase {
         element.coordinate(withNormalizedOffset: from)
             .press(forDuration: 0.1, thenDragTo: element.coordinate(withNormalizedOffset: to),
                    withVelocity: .slow, thenHoldForDuration: 0.3)
-        Thread.sleep(forTimeInterval: 1)
+        // The deceleration ends: the pages stop moving.
+        UIWait.settled(5, interval: 0.25, steady: 3) { topOfPages(XCUIApplication()) }
     }
 
     /// One finger drags a two-page note at the fitted width: the pages move up. Then the same once zoomed in (a
@@ -85,7 +86,8 @@ final class PhoneReadingScrollUITests: XCTestCase {
         #if !targetEnvironment(macCatalyst)   // no pinch in Catalyst's XCTest (the test skips on a Mac anyway)
         stack.pinch(withScale: 2, velocity: 1)
         #endif
-        Thread.sleep(forTimeInterval: 1.5)   // the pinch ends and the scale is baked in
+        // The scale is baked in as the pinch ends (`PageStackHost.bake`, a few frames), well inside the first poll.
+        UIWait.settled(5, steady: 4) { topOfPages(app) }   // the pages rest at the new scale
         guard let zoomedBefore = topOfPages(app) else { return XCTFail("no page canvas once zoomed") }
         slowDrag(stack, from: CGVector(dx: 0.5, dy: 0.75), to: CGVector(dx: 0.5, dy: 0.3))
         guard let zoomedAfter = topOfPages(app) else { return XCTFail("no page canvas after the zoomed drag") }

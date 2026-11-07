@@ -46,7 +46,8 @@ final class SearchHighlightUITests: XCTestCase {
         #else
         stack.pinch(withScale: 2.5, velocity: 1.5)
         #endif
-        Thread.sleep(forTimeInterval: 1.5)
+        let canvases = app.descendants(matching: .any).matching(identifier: "pageCanvas")
+        UIWait.settled { canvases.allElementsBoundByIndex.map(\.frame) }   // the pinch ends and the layout rests
         try walk(app, count: 5, checkFirst: false)
     }
 
@@ -69,8 +70,7 @@ final class SearchHighlightUITests: XCTestCase {
         if isPhone {
             // The phone's stack starts at the sidebar: whichever shows first (not a 5 s wait for the field).
             let notebook = app.descendants(matching: .any).matching(identifier: "sidebar-notebook-Search").firstMatch
-            let end = Date().addingTimeInterval(30)
-            while !field.exists, !notebook.exists, Date() < end { Thread.sleep(forTimeInterval: 0.3) }
+            UIWait.until(30, interval: 0.3) { field.exists || notebook.exists }
             if !field.exists {
                 require(notebook, "the sidebar's Search notebook", in: app)
                 notebook.tap()
@@ -97,8 +97,11 @@ final class SearchHighlightUITests: XCTestCase {
             let other = app.buttons.containing(NSPredicate(format: "label CONTAINS %@ AND NOT label CONTAINS %@",
                                                            "Wombat", title)).firstMatch
             require(other, "the other search hit", in: app)
+            let canvas = app.descendants(matching: .any).matching(identifier: "pageCanvas").firstMatch
+            let before = canvas.value as? String
             other.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).tap()
-            Thread.sleep(forTimeInterval: 2)
+            XCTAssertTrue(UIWait.until(10) { (canvas.value as? String) != before }, "the other note did not open")
+            UIWait.settled(5, steady: 3) { canvas.value as? String }   // and its highlights are at rest
         }
         let hit = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
         require(hit, "the search hit of \(title) again", in: app)
@@ -147,9 +150,9 @@ final class SearchHighlightUITests: XCTestCase {
     @MainActor
     private func currentMatch(_ app: XCUIApplication, _ what: String,
                               file: StaticString = #filePath, line: UInt = #line) throws -> CGRect {
-        let end = Date().addingTimeInterval(10)
         var last = "no canvas"
-        while Date() < end {
+        var match: CGRect?
+        UIWait.until(10, interval: 0.3) {
             let visible = visibleArea(app)
             var found: [CGRect] = []
             var reports: [String] = []
@@ -159,9 +162,10 @@ final class SearchHighlightUITests: XCTestCase {
                 if r.current, let rect = r.rect { found.append(rect) }
             }
             last = "visible \(visible), canvases \(reports)"
-            if found.count == 1, let rect = found.first, visible.contains(rect) { return rect }
-            Thread.sleep(forTimeInterval: 0.3)
+            if found.count == 1, let rect = found.first, visible.contains(rect) { match = rect }
+            return match != nil
         }
+        if let match { return match }
         print("SEARCHDEBUG \(what):\n\(app.debugDescription.prefix(12000))")
         XCTFail("\(what) is not highlighted on screen: \(last)", file: file, line: line)
         throw XCTSkip("failed")

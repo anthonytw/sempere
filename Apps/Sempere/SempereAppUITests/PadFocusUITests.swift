@@ -29,8 +29,10 @@ final class PadFocusUITests: XCTestCase {
     @MainActor
     private func ready(_ app: XCUIApplication) {
         XCTAssertTrue(app.staticTexts["Cellular Respiration"].firstMatch.waitForExistence(timeout: 90))
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "pageCanvas").firstMatch.waitForExistence(timeout: 30))
-        Thread.sleep(forTimeInterval: 2)   // the note's ink and the list settle
+        let canvas = app.descendants(matching: .any).matching(identifier: "pageCanvas").firstMatch
+        XCTAssertTrue(canvas.waitForExistence(timeout: 30))
+        // The canvas reports nothing here (its report needs the demo items), so nothing shows the ink and the list at rest.
+        UIWait.pause(2)   // kept: the note's ink and the list settle
     }
 
     /// Types `text` one key at a time with a pause, so the search, the list and the canvas update between keys.
@@ -38,7 +40,7 @@ final class PadFocusUITests: XCTestCase {
     private func typeSlowly(_ field: XCUIElement, _ text: String) {
         for ch in text {
             field.typeText(String(ch))
-            Thread.sleep(forTimeInterval: 0.6)
+            UIWait.pause(0.6)   // kept: the cadence is the test, the search, list and canvas update between keys
         }
     }
 
@@ -55,9 +57,9 @@ final class PadFocusUITests: XCTestCase {
         if !field.waitForExistence(timeout: 10) { dump(app, tag) }
         XCTAssertTrue(field.exists, "the search field")
         field.tap()
-        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(UIWait.until(5) { (field.value(forKey: "hasKeyboardFocus") as? Bool) == true }, "the search field has the keyboard")
         typeSlowly(field, "cell")
-        Thread.sleep(forTimeInterval: 1.5)   // results land, the canvas lays out again
+        UIWait.pause(1.5)   // kept: a race with the results landing and the canvas laying out again, timing is the test
         typeSlowly(field, "ular")
         let value = field.value as? String ?? ""
         if value != "cellular" { dump(app, "\(tag)-value") }
@@ -74,7 +76,9 @@ final class PadFocusUITests: XCTestCase {
         let all = app.cells.containing(NSPredicate(format: "label == %@", "All Notes")).firstMatch
         if all.waitForExistence(timeout: 10) {
             all.tap()
-            Thread.sleep(forTimeInterval: 1.5)
+            XCTAssertTrue(UIWait.until(5) { all.isSelected }, "All Notes is selected")
+            // The canvas reports nothing here, so the relayout shows nothing to wait on.
+            UIWait.pause(1.5)   // kept: the list and the canvas lay out again
         }
         searchAndType(app, tag: "sidebar-search")
     }
