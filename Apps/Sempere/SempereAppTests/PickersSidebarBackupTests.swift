@@ -196,15 +196,7 @@ struct PickersSidebarBackupTests {
         #expect(mac.contains("without going into it"), "\(mac)")
         #expect(PickedFolderRules.problem(backup, for: .syncFolder)?.contains("is a backup") == true)
         #expect(PickedFolderRules.problem(plain, for: .syncFolder) == nil)
-        // The Mac app's own container is named like a vault: not one (by its place, not its name's shape).
-        #expect(PickedFolderRules.enclosingNamedHolder(of: URL(fileURLWithPath:
-            "/Users/me/Library/Containers/io.github.anthonytw.sempere/Data/tmp/junk")) == nil)
-        #expect(PickedFolderRules.enclosingNamedHolder(of: URL(fileURLWithPath: "/Users/me/v1.2 notes.sempere/x"))?
-            .lastPathComponent == "v1.2 notes.sempere")
-        #expect(PickedFolderRules.enclosingNamedHolder(of: URL(fileURLWithPath: "/Users/me/Notes.2026.sempere/x"))?
-            .lastPathComponent == "Notes.2026.sempere")
-        #expect(PickedFolderRules.enclosingNamedHolder(of: URL(fileURLWithPath: "/Users/me/My.Work.sempere-backup/versions"))?
-            .lastPathComponent == "My.Work.sempere-backup")
+        // What lies above a pick by name (the app container, dotted names): `FolderTargetPlacementTests` (Linux).
         // Packages are never chosen as folders (review of #113): a bundle on disk, and the rule itself.
         let bundle = root.appendingPathComponent("Foo.app", isDirectory: true)
         try fm.createDirectory(at: bundle.appendingPathComponent("Contents"), withIntermediateDirectories: true)

@@ -1,5 +1,6 @@
 import Foundation
 import SempereImport
+import SempereImporters
 
 /// Every command of the Mac menu bar, in one type. Menus (`AppCommands`),
 /// shortcuts and enabling all derive from this list, so a feature that adds a
@@ -135,7 +136,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .importPDF: return String(localized: "Import PDF as New Note…")
         case .importFromApp:
             // The registered importer's name ("Import from Notability…"); a build without importers has no such entry.
-            return AppImporters.primary.map { String(localized: "Import from \($0.displayName)…", comment: "File menu: import notes from another app (its name)") }
+            return BuiltInImporters.primary.map { String(localized: "Import from \($0.displayName)…", comment: "File menu: import notes from another app (its name)") }
                 ?? String(localized: "Import from Other App…")
         case .lastImportReport: return String(localized: "Last Import Report…", comment: "File menu: show (and save) the report of the last import")
         case .insertPDFPages: return String(localized: "Insert PDF Pages…")
@@ -354,7 +355,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .restoreNote: return unlocked && context.hasNote && context.noteDeleted
         // The importers and their sheets are per window (`WindowSheets`): any window with a vault.
         case .importPDF: return unlocked && !context.vaultReadOnly && context.window != .other
-        case .importFromApp: return AppImporters.primary != nil && unlocked && !context.vaultReadOnly && context.window != .other
+        case .importFromApp: return BuiltInImporters.primary != nil && unlocked && !context.vaultReadOnly && context.window != .other
         case .lastImportReport: return unlocked && context.hasImportReport && context.window != .other
         // The Insert menu's own rule (`InsertMenu`): an editable note with a page. On a pageless note
         // Insert PDF Pages… switches it to pages once a PDF is picked (`InsertOptions.pdfImport`).
@@ -403,8 +404,8 @@ enum MenuLayout {
     static let file: [[MenuCommand]] = [
         [.newNote, .newNotebook, .openNoteInWindow],
         [.newVault, .openVault, .reopenVault, .closeVault],
-        // Import from another app only when the build has an importer (`AppImporters`).
-        [.importPDF] + (AppImporters.primary == nil ? [] : [.importFromApp, .lastImportReport]),
+        // Import from another app only when the build has an importer (`BuiltInImporters`).
+        [.importPDF] + (BuiltInImporters.primary == nil ? [] : [.importFromApp, .lastImportReport]),
         [.insertPDFPages, .insertPhoto],
         [.exportNotes, .bulkExport],
         [.syncTargets, .reloadVault],

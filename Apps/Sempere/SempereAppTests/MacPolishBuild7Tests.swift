@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereImporters
 import Testing
 import UIKit
 import UniformTypeIdentifiers
@@ -23,7 +24,7 @@ struct MacPolishBuild7Tests {
         }
         #expect(MenuCommand.importPDF.title == "Import PDF as New Note…")
         // The registered importer's name, or the generic one when the build has none.
-        #expect(MenuCommand.importFromApp.title == (AppImporters.primary.map { "Import from \($0.displayName)…" } ?? "Import from Other App…"))
+        #expect(MenuCommand.importFromApp.title == (BuiltInImporters.primary.map { "Import from \($0.displayName)…" } ?? "Import from Other App…"))
         #expect(MenuCommand.insertPDFPages.title == "Insert PDF Pages…")
         #expect(MenuCommand.insertPhoto.title == "Insert Photo…")
         #expect(MenuCommand.exportNotes.title == "Export…")
@@ -240,11 +241,11 @@ struct MacPolishBuild7Tests {
         return copy
     }
 
-    @Test(.enabled(if: AppImporters.primary != nil)) func notesImportOnceThroughTheSharedImporter() async throws {
+    @Test(.enabled(if: BuiltInImporters.primary != nil)) func notesImportOnceThroughTheSharedImporter() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
         let note = try Self.syntheticNote()
         defer { try? FileManager.default.removeItem(at: note.deletingLastPathComponent()) }
-        try await model.importFromApp(try #require(AppImporters.primary), urls: [note], notebook: "Imported")
+        try await model.importFromApp(try #require(BuiltInImporters.primary), urls: [note], notebook: "Imported")
         let summary = try #require(model.importSummary)
         #expect(summary.imported == 1 && summary.skipped == 0 && summary.failed == 0)
         #expect(!model.isImporting)
@@ -255,27 +256,27 @@ struct MacPolishBuild7Tests {
 
         // Again: already in the vault, skipped (never overwritten).
         model.importSummary = nil
-        try await model.importFromApp(try #require(AppImporters.primary), urls: [note], notebook: nil)
+        try await model.importFromApp(try #require(BuiltInImporters.primary), urls: [note], notebook: nil)
         #expect(model.importSummary?.imported == 0)
         #expect(model.importSummary?.skipped == 1)
         #expect(model.notes.filter { $0.title == "Synthetic note" }.count == 1)
         model.close()
     }
 
-    @Test(.enabled(if: AppImporters.primary != nil)) func aFolderWithoutNotesSaysSo() async throws {
+    @Test(.enabled(if: BuiltInImporters.primary != nil)) func aFolderWithoutNotesSaysSo() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
         let empty = TestTemp.root.appendingPathComponent("empty-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: empty) }
-        try await model.importFromApp(try #require(AppImporters.primary), urls: [empty], notebook: nil)
+        try await model.importFromApp(try #require(BuiltInImporters.primary), urls: [empty], notebook: nil)
         #expect(model.importSummary?.nothingFound == true)
         #expect(model.importSummary?.message.contains("No notes from") == true)
         model.close()
     }
 
-    @Test(.enabled(if: AppImporters.primary != nil)) func importingNeedsAnUnlockedVault() async throws {
+    @Test(.enabled(if: BuiltInImporters.primary != nil)) func importingNeedsAnUnlockedVault() async throws {
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        let importer = try #require(AppImporters.primary)
+        let importer = try #require(BuiltInImporters.primary)
         await #expect(throws: AppModel.ModelError.noVaultOpen) {
             try await model.importFromApp(importer, urls: [URL(fileURLWithPath: "/tmp/x.note")], notebook: nil)
         }
@@ -313,8 +314,8 @@ struct MacPolishBuild7Tests {
         #expect(!summary.message.contains("/a/b"), "no folder paths")
     }
 
-    @Test(.enabled(if: AppImporters.primary != nil)) func thePickerOffersNotesBundlesFoldersAndZips() throws {
-        let types = AppModel.importTypes(for: try #require(AppImporters.primary))
+    @Test(.enabled(if: BuiltInImporters.primary != nil)) func thePickerOffersNotesBundlesFoldersAndZips() throws {
+        let types = AppModel.importTypes(for: try #require(BuiltInImporters.primary))
         #expect(types.contains(.zip))
         #expect(types.contains(.folder))
         #expect(types.contains { $0.preferredFilenameExtension == "note" || $0.tags[.filenameExtension]?.contains("note") == true })

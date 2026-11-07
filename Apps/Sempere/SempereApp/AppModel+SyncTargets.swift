@@ -482,82 +482,23 @@ extension AppModel {
         }
     }
 
-    /// Where New Vault's "Sync With", "Add Folder…" and "Choose Again…" put the copy of the vault `vaultId` for the
-    /// folder the user picked:
-    /// - a picked `….sempere` folder (a vault's sync folder) is the target itself when its `vault.json` is THIS vault's
-    ///   (or not downloaded yet) or it is empty; one holding another vault, or other files, is refused;
-    /// - any other folder gets `<picked>/<name>.sempere`, never the picked folder itself (re-check of #113);
-    /// - a picked folder holding another vault is refused (`.otherVault`): an earlier test vault left in iCloud Drive
-    ///   took a new vault's copy; a picked backup is refused (`.isBackup`);
-    /// - otherwise `<picked>/<vault name>.sempere`, or the next free `<vault name> N.sempere` when that name holds a
-    ///   backup or another vault (a backup made into the same folder).
-    ///
-    /// A `vault.json` that cannot be read here (iCloud's `.vault.json.icloud` stand-in, not downloaded yet) is
-    /// taken as it was before: the engine compares the vault ids before every run and refuses another vault
-    /// (`SyncError.vaultMismatch`) without writing anything, waiting for the file first.
+    /// Where New Vault's "Sync With", "Add Folder…", "Choose Again…" and "Keep syncing with this folder" put the copy
+    /// of the vault `vaultId` for the folder the user picked: `FolderTargetPlacement.location` (SempereSync, the rule
+    /// `sempere store target add --folder` follows too), its refusals worded for the app.
     nonisolated static func folderTargetLocation(picked: URL, vaultFolderName: String, vaultId: UUID,
                                                  fileManager fm: FileManager = .default) throws -> URL {
-        if BackupDestination.isBackup(picked, fileManager: fm) || BackupDestination.isBackupFolder(picked) {
-            throw SyncTargetProblem.isBackup
-        }
-        if let holder = enclosingHolder(of: picked, fileManager: fm) { throw SyncTargetProblem.insideVault(holder) }
-        if picked.pathExtension.lowercased() == BackupDestination.vaultExtension {
-            // Not on this device as a folder (an iCloud Drive package not downloaded): never taken as an empty target.
-            guard isFolder(picked, fm) else { throw SyncTargetProblem.notDownloaded(picked.lastPathComponent) }
-            // A vault's sync folder picked itself: the target when it is this vault's (or not downloaded yet), or empty.
-            switch holdsVault(picked, vaultId, fm) {
-            case .this, .unknown: return picked
-            case .other: throw SyncTargetProblem.otherVault(VaultStore.displayName(of: picked))
-            case .none:
-                let names = (try? fm.contentsOfDirectory(atPath: picked.path)) ?? []
-                if fm.fileExists(atPath: picked.path), names.contains(where: BackupDestination.countsAsContent) {
-                    throw SyncTargetProblem.notAVault(picked.lastPathComponent)
-                }
-                return picked
+        do {
+            return try FolderTargetPlacement.location(picked: picked, vaultFolderName: vaultFolderName, vaultId: vaultId,
+                                                      fileManager: fm)
+        } catch let problem as FolderPlacementProblem {
+            switch problem {
+            case .isBackup: throw SyncTargetProblem.isBackup
+            case .insideVault(let name): throw SyncTargetProblem.insideVault(name)
+            case .otherVault(let name): throw SyncTargetProblem.otherVault(name)
+            case .notAVault(let name): throw SyncTargetProblem.notAVault(name)
+            case .notDownloaded(let name): throw SyncTargetProblem.notDownloaded(name)
             }
         }
-        // Any other folder gets the copy in a folder of its own, never the picked folder itself (re-check of #113).
-        if holdsVault(picked, vaultId, fm) == .other { throw SyncTargetProblem.otherVault(VaultStore.displayName(of: picked)) }
-        let base = VaultStore.displayName(of: URL(fileURLWithPath: vaultFolderName))
-        for n in 1...100 {
-            let name = n == 1 ? vaultFolderName : "\(base) \(n).sempere"
-            let folder = picked.appendingPathComponent(name, isDirectory: true)
-            // Listed only as iCloud's stand-in (a package not downloaded): never a new folder over it.
-            if !isFolder(folder, fm), fm.fileExists(atPath: picked.appendingPathComponent(".\(name).icloud").path) {
-                throw SyncTargetProblem.notDownloaded(name)
-            }
-            if !BackupDestination.isBackup(folder, fileManager: fm), holdsVault(folder, vaultId, fm) != .other { return folder }
-        }
-        throw SyncTargetProblem.isBackup
-    }
-
-    /// The name of the nearest folder above `folder` that is a vault or a backup (`BackupDestination.enclosingHolders`,
-    /// by content), or, since the app may not read above a picked folder (its security scope covers the folder only),
-    /// that is named like one (`….sempere`, `….sempere-backup`); nil when there is none.
-    nonisolated static func enclosingHolder(of folder: URL, fileManager fm: FileManager = .default) -> String? {
-        if let holder = BackupDestination.enclosingHolders(of: folder, fileManager: fm).first {
-            return holder.lastPathComponent
-        }
-        return PickedFolderRules.enclosingNamedHolder(of: folder)?.lastPathComponent
-    }
-
-    /// True when `url` is a directory on this device.
-    nonisolated static func isFolder(_ url: URL, _ fm: FileManager) -> Bool {
-        var isDirectory: ObjCBool = false
-        return fm.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
-    }
-
-    /// Whose vault a folder holds, by the id in its `vault.json`.
-    enum FolderVault: Equatable { case none, this, other, unknown }
-
-    nonisolated static func holdsVault(_ folder: URL, _ vaultId: UUID, _ fm: FileManager) -> FolderVault {
-        let manifest = folder.appendingPathComponent("vault.json")
-        guard fm.fileExists(atPath: manifest.path) else {
-            return fm.fileExists(atPath: folder.appendingPathComponent(".vault.json.icloud").path) ? .unknown : .none
-        }
-        guard let data = try? BoundedRead.contents(of: manifest, maxBytes: BoundedRead.maxManifestBytes),
-              let fields = SyncEngine.manifestFields(data) else { return .unknown }
-        return fields.vaultId == vaultId.uuidString.lowercased() ? .this : .other
     }
 
     /// `VaultStore.checkFolderTarget`, its refusals worded for the app.

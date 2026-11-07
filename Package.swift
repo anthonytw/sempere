@@ -15,12 +15,13 @@ let package = Package(
         .library(name: "Sempere", targets: ["Sempere"]),
         .library(name: "SempereRender", targets: ["SempereRender"]),
         .library(name: "SempereImport", targets: ["SempereImport"]),
+        .library(name: "SempereImporters", targets: ["SempereImporters"]),
         .library(name: "SemperePDF", targets: ["SemperePDF"]),
         .library(name: "SempereSync", targets: ["SempereSync"]),
         .library(name: "SempereWebDAV", targets: ["SempereWebDAV"]),
         .library(name: "SempereSpeech", targets: ["SempereSpeech"]),
         .executable(name: "sempere", targets: ["SempereCLI"]),
-    ] + (hasNotability ? [.library(name: "SempereNotability", targets: ["SempereNotability"])] : []),
+    ],
     dependencies: [
         // 4.0 adds X-Wing (ML-KEM-768 + X25519) and HPKE with it, for the
         // post-quantum age recipient (Sources/Age/MLKEM768X25519.swift).
@@ -62,6 +63,13 @@ let package = Package(
             name: "SempereImport",
             dependencies: ["Sempere", "SemperePDF", "SempereRender", "CZlib", .product(name: "Crypto", package: "swift-crypto")]
         ),
+        // The importers this build has, in one list the app and the CLI share (`BuiltInImporters`). The only
+        // target that depends on an importer module, and the only file that names one (CLAUDE.md "Optional
+        // importers"): without `Sources/SempereNotability` it builds with an empty list.
+        .target(
+            name: "SempereImporters",
+            dependencies: ["SempereImport"] + (hasNotability ? ["SempereNotability"] : [])
+        ),
         // The two-way sync engine over the `SyncRemote` protocol (docs/io.md "Sync engine and
         // transports"): Foundation and swift-crypto only, no network code; transports live elsewhere.
         .target(
@@ -80,9 +88,9 @@ let package = Package(
         .executableTarget(
             name: "SempereCLI",
             dependencies: [
-                "Age", "Sempere", "SemperePDF", "SempereRender", "SempereImport", "SempereSync", "SempereWebDAV", "SempereFonts", "SempereSpeech",
-                .product(name: "ArgumentParser", package: "swift-argument-parser"),
-            ] + (hasNotability ? ["SempereNotability"] : [])
+                "Age", "Sempere", "SemperePDF", "SempereRender", "SempereImport", "SempereImporters", "SempereSync", "SempereWebDAV", "SempereFonts",
+                "SempereSpeech", .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]
         ),
         // Seeded mutation fuzzer shared by the test targets (Foundation only).
         .target(name: "FuzzSupport", path: "Tests/FuzzSupport"),
@@ -119,7 +127,7 @@ let package = Package(
         .testTarget(name: "SemperePDFTests", dependencies: ["SemperePDF", "FuzzSupport"],
                     exclude: ["generate_fixtures.py"], resources: [.copy("Fixtures")]),
         .testTarget(name: "SempereImportTests",
-                    dependencies: ["SempereImport", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport", "TempDirSupport",
+                    dependencies: ["SempereImport", "SempereImporters", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport", "TempDirSupport",
                                    "ImportTestSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "SempereSync", "Sempere", "Age", "FuzzSupport",
                                                        "TempDirSupport", "VaultTestSupport"]),

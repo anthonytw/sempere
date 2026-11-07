@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import Sempere
+import SempereImporters
 import SempereRender
 import Testing
 import UIKit
@@ -58,7 +59,7 @@ struct PortraitHEICAppTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let copy = dir.appendingPathComponent("Portrait photo.note")
         try FileManager.default.copyItem(at: fixture, to: copy)
-        try await model.importFromApp(try #require(AppImporters.primary), urls: [copy], notebook: nil)
+        try await model.importFromApp(try #require(BuiltInImporters.primary), urls: [copy], notebook: nil)
         #expect(model.importSummary?.imported == 1, "\(model.importSummary?.failures ?? [])")
         return model
     }
@@ -67,7 +68,7 @@ struct PortraitHEICAppTests {
         try #require(model.notes.first { $0.title == "Portrait photo" }).id
     }
 
-    @Test(.enabled(if: AppImporters.primary != nil)) func thePhotoIsUprightInAPNGExport() async throws {
+    @Test(.enabled(if: BuiltInImporters.primary != nil)) func thePhotoIsUprightInAPNGExport() async throws {
         let model = try await Self.importPortrait()
         let dir = TestTemp.root.appendingPathComponent("heic-png-\(UUID().uuidString)")
         let r = try await model.exportNotes([try Self.portraitID(model)], options: ShareOptions(format: .png, paper: false, dpi: 72),
@@ -78,7 +79,7 @@ struct PortraitHEICAppTests {
         model.close()
     }
 
-    @Test(.enabled(if: AppImporters.primary != nil)) func thePhotoIsUprightInAPDFExport() async throws {
+    @Test(.enabled(if: BuiltInImporters.primary != nil)) func thePhotoIsUprightInAPDFExport() async throws {
         let model = try await Self.importPortrait()
         let dir = TestTemp.root.appendingPathComponent("heic-pdf-\(UUID().uuidString)")
         let r = try await model.exportNotes([try Self.portraitID(model)], options: ShareOptions(format: .pdf, paper: false),
@@ -97,7 +98,7 @@ struct PortraitHEICAppTests {
         model.close()
     }
 
-    @Test(.enabled(if: AppImporters.primary != nil)) func thePhotoIsUprightInABulkPNGExport() async throws {
+    @Test(.enabled(if: BuiltInImporters.primary != nil)) func thePhotoIsUprightInABulkPNGExport() async throws {
         let model = try await Self.importPortrait()
         let dir = TestTemp.root.appendingPathComponent("heic-bulk-\(UUID().uuidString)")
         // Through Export to Folder's own run (`BulkExportRun`), which picks the renderers.

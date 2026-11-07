@@ -122,10 +122,11 @@ PRODUCT_SOURCES = {
     "Sempere": ["Sempere", "Age", "CZlib"],
     "SempereRender": ["SempereRender", "Sempere", "SemperePDF", "Age", "CZlib"],
     "SempereSpeech": ["SempereSpeech", "Sempere", "Age", "CZlib"],
-    # The app's import from other apps (`AppModel+Import`): the generic readers, and the Notability
-    # importer (optional: docs/import-notability.md "Structure").
+    # The app's import from other apps (`AppModel+Import`): the generic readers, and the importers of the build
+    # (`BuiltInImporters`), which link the Notability importer when it is there (docs/import-notability.md "Structure").
     "SempereImport": ["SempereImport", "Sempere", "SemperePDF", "SempereRender", "Age", "CZlib"],
-    "SempereNotability": ["SempereNotability", "SempereImport", "Sempere", "SemperePDF", "SempereRender", "Age", "CZlib"],
+    "SempereImporters": ["SempereImporters", "SempereNotability", "SempereImport", "Sempere", "SemperePDF", "SempereRender",
+                         "Age", "CZlib"],
     # WebDAV vaults (`AppModel+WebDAV`, docs/io.md "WebDAV vaults in the app").
     "SempereWebDAV": ["SempereWebDAV", "SempereSync", "Sempere", "Age", "CZlib"],
     # The sync engine (docs/io.md "Sync engine and transports"), linked by the app directly too.

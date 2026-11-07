@@ -109,8 +109,63 @@ final class CLIStoreTargetTests: CLITestCase {
         XCTAssertTrue(titles.contains("Elsewhere") && titles.contains("Here"), titles)
     }
 
+    /// The app's placement rule (`FolderTargetPlacement`, the app's Add Folder…): `--folder` on a folder not named
+    /// `….sempere` puts the copy in `<folder>/<name>.sempere`, never the folder itself, so a user's files there stay
+    /// apart; a name another vault took moves on to the next free one. A source already holding this vault (1.0.0's
+    /// bare layout) is the copy itself.
+    func testAPlainFolderGetsTheVaultsOwnSubfolder() throws {
+        let v = try storeVault()
+        let drive = path("Drive")
+        try FileManager.default.createDirectory(atPath: drive, withIntermediateDirectories: true)
+        try Data("mine".utf8).write(to: URL(fileURLWithPath: "\(drive)/keep.txt"))
+        let added = try cli(["store", "target", "add", "Notes", "--folder", drive, "--store", store, "--json"])
+        XCTAssertEqual(added.status, 0, added.err)
+        let copy = URL(fileURLWithPath: "\(drive)/Notes.sempere").standardizedFileURL.path
+        XCTAssertEqual((added.json as? [String: Any])?["path"] as? String, copy)
+        XCTAssertEqual(try sync(key: v.key).status, 0)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: drive).filter { $0 != ".DS_Store" }.sorted(),
+                       ["Notes.sempere", "keep.txt"])
+        XCTAssertEqual(noteFiles(copy), noteFiles(v.path))
+
+        // Another vault in a store of its own, same name, same folder: the next free name.
+        let other = path("other-store")
+        let (_, _, _) = try makeVault(named: "b.sempere")
+        XCTAssertEqual(try cli(["store", "import", path("b.sempere"), "--name", "Notes", "--store", other]).status, 0)
+        let second = try cli(["store", "target", "add", "Notes", "--folder", drive, "--store", other, "--json"])
+        XCTAssertEqual(second.status, 0, second.err)
+        XCTAssertEqual(((second.json as? [String: Any])?["path"] as? String).map { URL(fileURLWithPath: $0).lastPathComponent },
+                       "Notes 2.sempere")
+
+        // A bare vault folder (not `….sempere`, as 1.0.0 synced targets) kept syncing: the source itself.
+        let bare = path("Bare")
+        try FileManager.default.copyItem(atPath: path("b.sempere"), toPath: bare)
+        let keep = try cli(["store", "import", bare, "--keep-syncing", "--store", path("store3")])
+        XCTAssertEqual(keep.status, 0, keep.out + keep.err)
+        let kept = try XCTUnwrap(try cli(["store", "target", "list", "Bare", "--store", path("store3"), "--json"]).json
+            as? [[String: Any]])
+        XCTAssertEqual(kept.first?["path"] as? String, URL(fileURLWithPath: bare).standardizedFileURL.path)
+    }
+
+    /// Review of #12: a 1.0.0 CLI target was the folder itself, the vault's files straight in it. Re-adding that folder
+    /// (another machine, or after `target remove`) joins the copy there, never `<folder>/<name>.sempere` (which
+    /// `checkFolderTarget` would refuse as inside a vault).
+    func testReAddingA100LayoutFolderJoinsItsCopy() throws {
+        let v = try storeVault()
+        let notes = path("Dropbox/notes")
+        XCTAssertEqual(try cli(["sync", "folder", notes, "--vault", v.source, "--identity", v.key]).status, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: notes + "/vault.json"), "a 1.0.0-layout target")
+        let added = try cli(["store", "target", "add", "Notes", "--folder", notes, "--store", store, "--json"])
+        XCTAssertEqual(added.status, 0, added.err)
+        XCTAssertEqual((added.json as? [String: Any])?["path"] as? String, URL(fileURLWithPath: notes).standardizedFileURL.path)
+        XCTAssertEqual(try cli(["notes", "new", "Here", "--vault", v.path, "--identity", v.key]).status, 0)
+        let r = try sync(key: v.key)
+        XCTAssertEqual(r.status, 0, r.err + r.out)
+        XCTAssertEqual(noteFiles(notes), noteFiles(v.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: notes + "/Notes.sempere"), "no copy nested inside")
+    }
+
     /// Two targets that disagree: each brings notes the other lacks (the device bridges them), and a third
-    /// holds another vault (refused, while the others still sync).
+    /// holds another vault (refused when it is added, as in the app; a run refuses one too: it would mix two vaults).
     func testTwoTargetsDisagreeing() throws {
         let v = try storeVault()
         let one = path("One/Notes.sempere"), two = path("Two/Notes.sempere"), other = path("Other/Notes.sempere")
@@ -121,9 +176,20 @@ final class CLIStoreTargetTests: CLITestCase {
         XCTAssertEqual(try cli(["notes", "new", "Only in two", "--vault", two, "--identity", v.key]).status, 0)
         let stranger = try makeVault(named: "stranger.sempere").keyPath
         XCTAssertEqual(try cli(["sync", "folder", other, "--vault", path("stranger.sempere"), "--identity", stranger]).status, 0)
-        for f in [one, two, other] {
+        for f in [one, two] {
             XCTAssertEqual(try cli(["store", "target", "add", "Notes", "--folder", f, "--store", store]).status, 0)
         }
+        let refused = try cli(["store", "target", "add", "Notes", "--folder", other, "--store", store])
+        XCTAssertEqual(refused.status, 1, refused.out + refused.err)
+        XCTAssertTrue(refused.err.contains("another vault (Notes)"), refused.err)
+        // Added by hand anyway (the registry the app shares): the run refuses it, the others still sync.
+        let registry = URL(fileURLWithPath: "\(store)/.sync/\(v.id)/targets.json")
+        var rows = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: registry)) as? [[String: Any]])
+        var stray = rows[0]
+        stray["id"] = UUID().uuidString
+        stray["path"] = URL(fileURLWithPath: other).standardizedFileURL.path
+        rows.append(stray)
+        try JSONSerialization.data(withJSONObject: rows).write(to: registry)
         let first = try sync(key: v.key)
         XCTAssertEqual(first.status, 1, first.out)
         let outcomes = try XCTUnwrap(first.json as? [[String: Any]])

@@ -1,4 +1,5 @@
 import Sempere
+import SempereImporters
 import SwiftUI
 import UniformTypeIdentifiers
 import SempereImport
@@ -34,9 +35,9 @@ struct WindowSheets: ViewModifier {
             }
             .background {
                 SwiftUI.Color.clear.fileImporter(isPresented: $ui.importingFromApp,
-                                                 allowedContentTypes: AppImporters.primary.map { AppModel.importTypes(for: $0) } ?? [],
+                                                 allowedContentTypes: BuiltInImporters.primary.map { AppModel.importTypes(for: $0) } ?? [],
                                                  allowsMultipleSelection: true) { result in
-                    guard case .success(let urls) = result, !urls.isEmpty, let importer = AppImporters.primary else { return }
+                    guard case .success(let urls) = result, !urls.isEmpty, let importer = BuiltInImporters.primary else { return }
                     // The options come next (`ImportOptionsSheet`); nothing is read before they are chosen.
                     ui.importPick = ImportPick(importer: importer.id, urls: urls, notebook: model.sidebarNotebook)
                 }
@@ -49,7 +50,7 @@ struct WindowSheets: ViewModifier {
             }
             .overlay {
                 if model.isImporting {
-                    ImportProgressOverlay(source: AppImporters.primary?.displayName ?? "")
+                    ImportProgressOverlay(source: BuiltInImporters.primary?.displayName ?? "")
                 }
             }
             .alert(model.importSummary?.title ?? "", isPresented: Binding(get: { model.importSummary != nil && isFront },

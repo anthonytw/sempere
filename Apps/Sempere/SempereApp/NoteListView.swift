@@ -1,4 +1,5 @@
 import Sempere
+import SempereImporters
 import SwiftUI
 import UniformTypeIdentifiers
 import SempereImport
@@ -114,7 +115,7 @@ struct NoteListView: View {
                     .help("Make a note from a PDF: one page per PDF page, to write on")
             }
             // The iPad has no File menu: the importer from another app is here too (the Mac's File menu has it as well).
-            if let importer = AppImporters.primary {
+            if let importer = BuiltInImporters.primary {
                 ToolbarItem(placement: secondary) {
                     Button(String(localized: "Import from \(importer.displayName)…", comment: "Toolbar: import notes from another app (its name)"),
                            systemImage: "square.and.arrow.down.on.square") {

@@ -1,4 +1,5 @@
 import Foundation
+import SempereImporters
 import Testing
 @testable import SempereApp
 
@@ -37,7 +38,7 @@ struct LocalizationTests {
         let es = try #require(Self.spanish)
         let missing = "\u{1}missing"
         // The import entry's title is built from the importer's name: its catalog key has a placeholder.
-        let keys = MenuCommand.allCases.map { $0 == .importFromApp && AppImporters.primary != nil ? "Import from %@…" : $0.title }
+        let keys = MenuCommand.allCases.map { $0 == .importFromApp && BuiltInImporters.primary != nil ? "Import from %@…" : $0.title }
         let untranslated = keys.filter { key in
             es.localizedString(forKey: key, value: missing, table: nil) == missing
         }

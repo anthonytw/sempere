@@ -159,16 +159,40 @@ struct StoreImport: ParsableCommand {
         }
         let store = location.open()
         let sourceURL = URL(fileURLWithPath: source, isDirectory: true).standardizedFileURL
-        // A backup is never a sync target (a sync would write into it): refused before anything is copied.
-        if keepSyncing { try store.checkFolderTarget(sourceURL) }
+        // Where the copy keeps syncing (`FolderTargetPlacement`, as `target add`): the source itself, which holds this
+        // vault (named `….sempere` or, as 1.0.0 synced them, bare). Checked before anything is copied: a backup is never
+        // a sync target (a sync would write into it).
+        func keepSyncingFolder(_ id: UUID, folderName: String) throws -> URL {
+            let folder = try FolderTargetPlacement.location(picked: sourceURL, vaultFolderName: folderName, vaultId: id,
+                                                            missingIsNew: true)
+            try store.checkFolderTarget(folder)
+            return folder
+        }
+        if keepSyncing {
+            try store.checkFolderTarget(sourceURL)
+            if let id = Self.vaultId(of: sourceURL) {
+                let folderName = (try? VaultStore.folderName(for: name ?? VaultStore.displayName(of: sourceURL)))
+                    ?? sourceURL.lastPathComponent
+                _ = try keepSyncingFolder(id, folderName: folderName)
+            }
+        }
         let entry = try store.importVault(from: sourceURL, options: options)
         if keepSyncing {
             // The source was a complete copy of this vault: the first sync finds both sides equal.
-            try store.targets.add(.folder(sourceURL), to: entry.vaultId)
+            try store.targets.add(.folder(try keepSyncingFolder(entry.vaultId, folderName: entry.url.lastPathComponent)),
+                                  to: entry.vaultId)
         }
         if output.json { return try output.emitJSON(entry) }
         output.info("Copied into the store as “\(entry.name)” (\(entry.vaultId.uuidString.lowercased()))")
         if output.quiet { print(entry.url.path) } else { output.info("Path: \(entry.url.path)") }
+    }
+
+    /// The vault id in `folder`'s `vault.json`, nil when it cannot be read (the import then says why).
+    static func vaultId(of folder: URL) -> UUID? {
+        guard let data = try? BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
+                                                   maxBytes: BoundedRead.maxManifestBytes),
+              let id = SyncEngine.manifestFields(data)?.vaultId else { return nil }
+        return UUID(uuidString: id)
     }
 }
 

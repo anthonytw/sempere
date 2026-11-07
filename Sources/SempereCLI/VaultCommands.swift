@@ -148,7 +148,7 @@ struct VaultInitOptions: ParsableArguments {
         let vaultId = UUID()
         var wroteRecovery = false
         do {
-            let keyPath = try DeviceKeyStore.save(device, vaultId: vaultId, passphrase: prepared.deviceKeyPassphrase)
+            let keyPath = try CLIDeviceKeyFiles.save(device, vaultId: vaultId, passphrase: prepared.deviceKeyPassphrase)
             if let recoveryOut {
                 try writeNewSecretFile(IdentityFile.render(.mlkem768x25519(prepared.recovery), created: Date()),
                                        to: recoveryOut)
@@ -162,7 +162,7 @@ struct VaultInitOptions: ParsableArguments {
                            passphraseCopy: vault.passphraseCopyNames().first.map { "keys/\($0)" },
                            generatedPassphrase: prepared.generatedPassphrase)
         } catch {
-            try? FileManager.default.removeItem(at: DeviceKeyStore.directory(vaultId: vaultId))
+            try? FileManager.default.removeItem(at: CLIDeviceKeyFiles.directory(vaultId: vaultId))
             if wroteRecovery, let recoveryOut { try? FileManager.default.removeItem(atPath: recoveryOut) }
             throw error
         }

@@ -186,7 +186,7 @@ struct ImportSummary: Equatable, Sendable {
     }
 }
 
-/// Notes from other apps into the open vault: the registered importers (`AppImporters`, the CLI runs the same
+/// Notes from other apps into the open vault: the registered importers (`BuiltInImporters`, the CLI runs the same
 /// ones with `sempere import <id>`) with their options (`ImportOptions`, asked in `ImportOptionsSheet`), the PDF
 /// page text from PDFKit; the result is the alert's summary and the full report (`ImportDetails`).
 extension AppModel {

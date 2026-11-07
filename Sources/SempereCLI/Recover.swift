@@ -50,7 +50,7 @@ struct RecoverCommand: ParsableCommand {
         let vaultURL = access.vault.map { URL(fileURLWithPath: $0) } ?? findVault(above: url)
             ?? Env.vars["SEMPERE_VAULT"].map { URL(fileURLWithPath: $0) }
         if ids.isEmpty, let vaultURL, let locked = try? Vault.open(at: vaultURL),
-           let device = try DeviceKeyStore.load(vaultId: locked.vaultId, passphraseEnv: access.passphraseEnv) {
+           let device = try CLIDeviceKeyFiles.load(vaultId: locked.vaultId, passphraseEnv: access.passphraseEnv) {
             ids = [device.nativeIdentity]
         }
         guard !ids.isEmpty else { throw CLIError.cannotDecrypt("no key: pass --identity FILE or --recovery-key FILE") }

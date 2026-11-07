@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # The Notability importer is a removable module (docs/import-notability.md "Structure"): outside
 # Sources/SempereNotability and Tests/SempereNotabilityTests, no code may name one of its types or import
-# its module, except the two registries (the CLI's and the app's), which are gated by
-# `#if canImport(SempereNotability)`. Comments and help text may say "Notability"; identifiers may not.
+# its module, except the one list of importers the CLI and the app share (`BuiltInImporters`, target
+# SempereImporters), which is gated by `#if canImport(SempereNotability)`. Comments and help text may say
+# "Notability"; identifiers may not.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 allowed=(
-  "Sources/SempereCLI/ImportRegistry.swift"
-  "Apps/Sempere/SempereApp/AppImporters.swift"
+  "Sources/SempereImporters/BuiltInImporters.swift"
 )
 
 # Swift identifiers that begin with Notability (NotabilityNote, NotabilityImporter, NotabilityVaultImporter, ...),
@@ -24,7 +24,7 @@ while IFS= read -r file; do
   # comment is still reported when the identifier is spelled out, so write "the Notability importer" in prose.
   hits="$(grep -nE "$pattern" "$file" | grep -vE '^[0-9]+:[[:space:]]*(//|\*|/\*)' || true)"
   if [ -n "$hits" ]; then
-    echo "error: $file names the Notability module (only the registries may):" >&2
+    echo "error: $file names the Notability module (only BuiltInImporters.swift may):" >&2
     echo "$hits" | sed 's/^/  /' >&2
     fail=1
   fi

@@ -375,15 +375,15 @@ final class CLIEpochTests: CLITestCase {
         XCTAssertEqual(try cli(["store", "import", vault, "--name", "Synced", "--store", store], env: machine("home")).status, 0)
         let copy = try cli(["store", "path", "Synced", "--store", store], env: machine("home")).out
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        try FileManager.default.createDirectory(atPath: path("target"), withIntermediateDirectories: true)
-        let added = try cli(["store", "target", "add", "Synced", "--folder", path("target"), "--no-check", "--store", store],
+        try FileManager.default.createDirectory(atPath: path("target.sempere"), withIntermediateDirectories: true)
+        let added = try cli(["store", "target", "add", "Synced", "--folder", path("target.sempere"), "--no-check", "--store", store],
                             env: machine("home"))
         XCTAssertEqual(added.status, 0, added.err)
         let removed = try cli(["devices", "remove", laptop, "--json", "--vault", copy], env: machine("home"))
         XCTAssertEqual(removed.status, 0, removed.err)
         XCTAssertNotNil((removed.json as? [String: Any])?["pulled"], "it pulled from the target first")
         XCTAssertEqual(try cli(["store", "sync", "Synced", "--store", store], env: machine("home")).status, 0)
-        let records = try FileManager.default.contentsOfDirectory(atPath: path("target/epochs"))
+        let records = try FileManager.default.contentsOfDirectory(atPath: path("target.sempere/epochs"))
         XCTAssertTrue(records.contains { $0.hasPrefix("2-") }, "\(records)")
     }
 

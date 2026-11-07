@@ -18,7 +18,7 @@ import Sempere
 ///
 /// The rules here go by name only: the panel and the picker hand over items the app may not read yet (its access
 /// starts with the pick), and what lies above a picked folder stays out of reach on iOS. The model's own checks
-/// (`AppModel.folderTargetLocation`, `BackupDestination`) also go by content.
+/// (`FolderTargetPlacement`, `BackupDestination`) also go by content.
 enum PickedFolderRules {
     /// What the pick is for.
     enum Purpose: Sendable, Equatable {
@@ -34,33 +34,8 @@ enum PickedFolderRules {
         case exportFolder
     }
 
-    /// Whether `url` is named like a vault or a backup folder.
-    static func isHolderName(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        return ext == BackupDestination.vaultExtension || ext == BackupDestination.folderExtension
-    }
-
-    /// The nearest folder above `url` (never `url` itself) named like a vault or a backup, nil when there is none.
-    /// An app's container is not a vault, whatever its name: the Mac app's own is
-    /// `~/Library/Containers/io.github.anthonytw.sempere` (`isAppContainer`).
-    static func enclosingNamedHolder(of url: URL) -> URL? {
-        let parts = url.standardizedFileURL.path.split(separator: "/", omittingEmptySubsequences: true)
-        guard parts.count > 1 else { return nil }
-        for n in stride(from: parts.count - 1, through: 1, by: -1) {
-            let candidate = URL(fileURLWithPath: "/" + parts.prefix(n).joined(separator: "/"), isDirectory: true)
-            if isHolderName(candidate), !isAppContainer(candidate) { return candidate }
-        }
-        return nil
-    }
-
-    /// A folder directly in `…/Library/Containers/` or `…/Shared/AppGroup/` (an app's or an App Group's container,
-    /// named by its identifier). Decided by place, never by the name's shape: `Notes.2026.sempere` is a vault.
-    static func isAppContainer(_ url: URL) -> Bool {
-        let parts = url.standardizedFileURL.pathComponents
-        guard parts.count >= 3 else { return false }
-        let parent = parts[parts.count - 2], grand = parts[parts.count - 3]
-        return (parent == "Containers" && grand == "Library") || (parent == "AppGroup" && grand == "Shared")
-    }
+    // By name: `BackupDestination.isHolderName`, `enclosingNamedHolder` and `isAppContainer` (Sempere), which
+    // `FolderTargetPlacement` uses for what lies above a pick too.
 
     /// What an item in the Mac's panel is, as far as a folder pick cares.
     enum ItemKind: Sendable, Equatable {
@@ -82,7 +57,7 @@ enum PickedFolderRules {
     /// "Wompa.sempere" as a file it greyed out, and the iPhone's picker greyed it out (owner's test of build 11). The app
     /// reads and writes inside such a folder as inside any other.
     static func isFolderLike(_ url: URL, kind: ItemKind) -> Bool {
-        kind == .folder || (kind == .package && isHolderName(url))
+        kind == .folder || (kind == .package && BackupDestination.isHolderName(url))
     }
 
     /// Whether the Mac's panel enables an item of `kind` at `url` (its delegate's `panel(_:shouldEnable:)` and
@@ -121,14 +96,14 @@ enum PickedFolderRules {
         // file's name put back.)
         let url = FileManager.default.fileExists(atPath: url.path) ? url.resolvingSymlinksInPath()
             : url.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(url.lastPathComponent)
-        if isHolderName(url) { return problem(url, for: .exportFolder) }
+        if BackupDestination.isHolderName(url) { return problem(url, for: .exportFolder) }
         return problem(url.deletingLastPathComponent(), for: .exportFolder)
     }
 
     /// Why `url` cannot be chosen for `purpose`, in words for the user; nil when it can.
     static func problem(_ url: URL, for purpose: Purpose, isMac: Bool = Platform.isMac) -> String? {
         let name = url.lastPathComponent
-        if let holder = enclosingNamedHolder(of: url) {
+        if let holder = BackupDestination.enclosingNamedHolder(of: url) {
             let holderName = holder.lastPathComponent
             if purpose == .openVault {
                 return isMac
@@ -149,7 +124,7 @@ enum PickedFolderRules {
             return String(localized: "“\(name)” is a vault. A backup goes next to it, never into it: choose the folder that holds it, or another folder.",
                           comment: "Folder picker: a vault folder chosen as the backup folder; %@ is its name")
         }
-        if purpose == .exportFolder, isHolderName(url) {
+        if purpose == .exportFolder, BackupDestination.isHolderName(url) {
             return String(localized: "“\(name)” is a vault or a backup. Exported files are not encrypted, so they never go into one. Choose another folder.",
                           comment: "Folder picker: a vault or backup folder chosen for exported files; %@ is its name")
         }

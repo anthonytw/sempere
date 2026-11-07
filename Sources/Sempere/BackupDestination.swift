@@ -176,3 +176,37 @@ public enum BackupDestination {
         return !names.contains(where: countsAsContent)
     }
 }
+
+// MARK: - By name
+
+extension BackupDestination {
+    /// Whether `url` is named like a vault (`….sempere`) or a backup folder (`….sempere-backup`). Says nothing about
+    /// what it holds.
+    public static func isHolderName(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        return ext == vaultExtension || ext == folderExtension
+    }
+
+    /// The nearest folder above `url` (never `url` itself) named like a vault or a backup, nil when there is none.
+    /// For what an app may not read: its security scope covers a picked folder only, so what lies above it goes by
+    /// name. An app's container is not a vault, whatever its name: the Mac app's own is
+    /// `~/Library/Containers/io.github.anthonytw.sempere` (`isAppContainer`).
+    public static func enclosingNamedHolder(of url: URL) -> URL? {
+        let parts = url.standardizedFileURL.path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count > 1 else { return nil }
+        for n in stride(from: parts.count - 1, through: 1, by: -1) {
+            let candidate = URL(fileURLWithPath: "/" + parts.prefix(n).joined(separator: "/"), isDirectory: true)
+            if isHolderName(candidate), !isAppContainer(candidate) { return candidate }
+        }
+        return nil
+    }
+
+    /// A folder directly in `…/Library/Containers/` or `…/Shared/AppGroup/` (an app's or an App Group's container,
+    /// named by its identifier). Decided by place, never by the name's shape: `Notes.2026.sempere` is a vault.
+    public static func isAppContainer(_ url: URL) -> Bool {
+        let parts = url.standardizedFileURL.pathComponents
+        guard parts.count >= 3 else { return false }
+        let parent = parts[parts.count - 2], grand = parts[parts.count - 3]
+        return (parent == "Containers" && grand == "Library") || (parent == "AppGroup" && grand == "Shared")
+    }
+}

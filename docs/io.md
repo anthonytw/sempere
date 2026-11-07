@@ -580,7 +580,7 @@ package refused after the pick ("Choose a folder."). After the pick:
   and `vault.json` first (`previewRestore`; a stand-in counts as the file, `BackupLocation.isBackup`);
   the restore downloads the rest.
 - Sync With, Add Folder… and Choose Again…: a sync folder picked itself is the target
-  (`folderTargetLocation`), but only once it is on the device as a folder. A `….sempere` that is not
+  (`FolderTargetPlacement.location`), but only once it is on the device as a folder. A `….sempere` that is not
   (an iPhone lists a package not downloaded as a `.<name>.icloud` stand-in, or not at all), picked
   itself or found only as a stand-in in the picked folder, is refused with "not on this device yet"
   (`SyncTargetProblem.notDownloaded`) after the app asked iCloud Drive for it
@@ -1588,7 +1588,7 @@ syncs with both ways.
   device reaches (an app's container) gets no join steps but says a target both devices reach is needed; with no target it
   says one is needed first and opens Sync Targets. The copy's subfolder is recorded by comparing the picked
   folder and the copy's folder after the same normalization (`AppModel.subfolder(of:in:)`):
-  `standardizedFileURL` drops `/private` from `/private/var/…` only for a path that exists, so the comparison normalizes both. `AppModel.folderTargetLocation` (New Vault, Add Folder…, Choose Again…, Keep syncing) takes a picked
+  `standardizedFileURL` drops `/private` from `/private/var/…` only for a path that exists, so the comparison normalizes both. `FolderTargetPlacement.location` (SempereSync; the app's New Vault, Add Folder…, Choose Again…, Keep syncing, and `sempere store target add --folder` and `store import --keep-syncing`) takes a picked
   `….sempere` folder itself when its `vault.json` names THIS vault (or is not downloaded yet) or it is empty (one
   holding other files and no vault is refused); any other folder gets `<picked>/<name>.sempere`, never itself (re-check of #113); a picked
   folder holding another vault is refused

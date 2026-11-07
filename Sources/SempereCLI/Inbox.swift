@@ -364,7 +364,7 @@ struct InboxImport: ParsableCommand {
 /// is stored without a passphrase (the ledger's key is sealed to it); nil otherwise, and captures are then not
 /// caught up after a device change (run `inbox import` before one, or re-capture).
 func captureLedger(vaultId: UUID) -> FileWriteLedger? {
-    guard case .plain(let path) = DeviceKeyStore.stored(vaultId: vaultId),
+    guard case .plain(let path) = CLIDeviceKeyFiles.stored(vaultId: vaultId),
           let keys = try? readAccessKeyFile(path), case .mlkem768x25519(let pq) = keys.identity else { return nil }
     return cliLedger(vaultId: vaultId, device: pq)
 }

@@ -11,7 +11,7 @@ import Sempere
 /// This machine's device keys, one set per vault (design §6.1): `$XDG_STATE_HOME/sempere/devices/<vault
 /// id>/device.key` (mode 0600 in a 0700 folder), or `device.key.age` when passphrase-wrapped. They never
 /// leave the machine; a copied state directory makes two installs one device.
-enum DeviceKeyStore {
+enum CLIDeviceKeyFiles {
     enum Stored {
         case none
         case plain(String)
@@ -143,7 +143,7 @@ struct DeviceInit: ParsableCommand {
         guard !locked.devices.contains(where: { $0.id == device.id }) else {
             throw CLIError.failure("the new key's id collides with a listed device's: run this again")
         }
-        let path = try DeviceKeyStore.save(device, vaultId: locked.vaultId, passphrase: passphrase
+        let path = try CLIDeviceKeyFiles.save(device, vaultId: locked.vaultId, passphrase: passphrase
             ? try obtainPassphrase(envName: access.passphraseEnv, prompt: "Device key passphrase: ", confirm: true,
                                    asError: CLIError.failure) : nil)
         let request = try Vault.writeJoinRequest(at: url, device: device, name: name, kind: kind)

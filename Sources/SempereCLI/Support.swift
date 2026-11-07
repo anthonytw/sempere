@@ -3,6 +3,7 @@ import ArgumentParser
 import Foundation
 import Sempere
 import SempereImport
+import SempereSync
 
 #if canImport(Glibc)
 import Glibc
@@ -91,10 +92,32 @@ enum CLIError: Error {
             case .ambiguous(let q, let ids):
                 return .failure("'\(q)' is ambiguous: \(ids.map { $0.uuidString.lowercased() }.joined(separator: ", "))")
             }
+        case let e as FolderPlacementProblem:
+            return .failure(folderPlacementMessage(e))
         case let e as LocalizedError where e.errorDescription != nil:
             return .failure((e.errorDescription ?? "").split(whereSeparator: \.isNewline).joined(separator: " "))
         default:
             return .failure(text)
+        }
+    }
+
+    /// The CLI's words for a folder that cannot take a vault's sync copy (`FolderTargetPlacement`).
+    static func folderPlacementMessage(_ problem: FolderPlacementProblem) -> String {
+        switch problem {
+        case .isBackup:
+            return "the folder is a backup (it holds backup.json, or is named ….sempere-backup), never a sync target: "
+                + "a sync would write into it and pass deletions on. Restore it (sempere store restore), or copy it in "
+                + "once (sempere store import without --keep-syncing)"
+        case .insideVault(let holder):
+            return "the folder is inside the vault or backup \(holder), never a sync target: a sync would write into it. "
+                + "Choose a folder outside it"
+        case .otherVault(let name):
+            return "the folder holds another vault (\(name)): choose an empty folder or this vault's own sync folder"
+        case .notAVault(let name):
+            return "\(name) is named like a vault's sync folder but holds no vault, and it is not empty: choose the "
+                + "folder that holds it, or an empty folder"
+        case .notDownloaded(let name):
+            return "\(name) is a cloud placeholder, not on this machine yet: download it first"
         }
     }
 }
@@ -441,12 +464,12 @@ extension AccessOptions {
         if let (recovery, _) = try recoveryIdentity() { ids.append(recovery) }
         guard ids.isEmpty else { return ids }
         let scripted = passphraseEnv != nil || Env.vars["SEMPERE_PASSPHRASE"] != nil
-        switch DeviceKeyStore.stored(vaultId: vaultId) {
+        switch CLIDeviceKeyFiles.stored(vaultId: vaultId) {
         case .none: return []
-        case .plain: return try DeviceKeyStore.load(vaultId: vaultId, passphraseEnv: passphraseEnv).map { [$0.nativeIdentity] } ?? []
+        case .plain: return try CLIDeviceKeyFiles.load(vaultId: vaultId, passphraseEnv: passphraseEnv).map { [$0.nativeIdentity] } ?? []
         case .wrapped:
             guard scripted else { return [] }
-            return try DeviceKeyStore.load(vaultId: vaultId, passphraseEnv: passphraseEnv).map { [$0.nativeIdentity] } ?? []
+            return try CLIDeviceKeyFiles.load(vaultId: vaultId, passphraseEnv: passphraseEnv).map { [$0.nativeIdentity] } ?? []
         }
     }
 
@@ -479,7 +502,7 @@ extension AccessOptions {
             guard case .keyNotListed = e, try explicitKeys().isEmpty else { throw e }
             let locked = try Vault.open(at: try vaultURL())
             guard try trustStore().record(for: locked.vaultId) == nil else { throw e }
-            if case .none = DeviceKeyStore.stored(vaultId: locked.vaultId) { throw e }
+            if case .none = CLIDeviceKeyFiles.stored(vaultId: locked.vaultId) { throw e }
             return locked
         }
     }
@@ -524,7 +547,7 @@ extension AccessOptions {
         var keys = try explicitKeys()
         if keys.isEmpty {
             let scripted = passphraseEnv != nil || Env.vars["SEMPERE_PASSPHRASE"] != nil
-            switch DeviceKeyStore.stored(vaultId: locked.vaultId) {
+            switch CLIDeviceKeyFiles.stored(vaultId: locked.vaultId) {
             case .none:
                 guard unlock == .required else { return locked }
                 throw CLIError.cannotDecrypt("this machine has no device key for the vault: join it (sempere device init), "
@@ -535,7 +558,7 @@ extension AccessOptions {
             case .wrapped:
                 guard unlock == .required || scripted else { return locked }
                 let pass = try obtainPassphrase(envName: passphraseEnv, prompt: "Device key passphrase: ")
-                let device = try DeviceKeyStore.unwrap(vaultId: locked.vaultId, passphrase: pass)
+                let device = try CLIDeviceKeyFiles.unwrap(vaultId: locked.vaultId, passphrase: pass)
                 keys = [(device.nativeIdentity, device.signing)]
             }
         }

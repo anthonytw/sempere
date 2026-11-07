@@ -13,7 +13,7 @@
 		A1000000000000000000B005 /* SempereSpeech in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D004 /* SempereSpeech */; };
 		A1000000000000000000B007 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D005 /* SwiftMath */; };
 		A1000000000000000000B008 /* SempereImport in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D006 /* SempereImport */; };
-		A1000000000000000000B009 /* SempereNotability in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D007 /* SempereNotability */; };
+		A1000000000000000000B009 /* SempereImporters in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D007 /* SempereImporters */; };
 		A1000000000000000000B00D /* SempereWebDAV in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D008 /* SempereWebDAV */; };
 		A1000000000000000000B05C /* SempereSync in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D05C /* SempereSync */; };
 		A1000000000000000000B003 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F003 /* Fixtures */; };
@@ -146,7 +146,7 @@
 				A1000000000000000000B005 /* SempereSpeech in Frameworks */,
 				A1000000000000000000B007 /* SwiftMath in Frameworks */,
 				A1000000000000000000B008 /* SempereImport in Frameworks */,
-				A1000000000000000000B009 /* SempereNotability in Frameworks */,
+				A1000000000000000000B009 /* SempereImporters in Frameworks */,
 				A1000000000000000000B00D /* SempereWebDAV in Frameworks */,
 				A1000000000000000000B05C /* SempereSync in Frameworks */,
 			);
@@ -263,7 +263,7 @@
 				A1000000000000000000D004 /* SempereSpeech */,
 				A1000000000000000000D005 /* SwiftMath */,
 				A1000000000000000000D006 /* SempereImport */,
-				A1000000000000000000D007 /* SempereNotability */,
+				A1000000000000000000D007 /* SempereImporters */,
 				A1000000000000000000D008 /* SempereWebDAV */,
 				A1000000000000000000D05C /* SempereSync */,
 			);
@@ -914,9 +914,9 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = SempereImport;
 		};
-		A1000000000000000000D007 /* SempereNotability */ = {
+		A1000000000000000000D007 /* SempereImporters */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = SempereNotability;
+			productName = SempereImporters;
 		};
 		A1000000000000000000D008 /* SempereWebDAV */ = {
 			isa = XCSwiftPackageProductDependency;

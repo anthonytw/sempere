@@ -1,4 +1,5 @@
 import os
+import Sempere
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -291,7 +292,7 @@ final class MacSaveRules: NSObject {
     @objc(panel:shouldEnableURL:)
     func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
         let url = url.resolvingSymlinksInPath()
-        return !PickedFolderRules.isHolderName(url) && PickedFolderRules.enclosingNamedHolder(of: url) == nil
+        return !BackupDestination.isHolderName(url) && BackupDestination.enclosingNamedHolder(of: url) == nil
     }
 
     @objc(panel:validateURL:error:)

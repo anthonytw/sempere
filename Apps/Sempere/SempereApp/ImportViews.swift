@@ -1,4 +1,5 @@
 import SempereImport
+import SempereImporters
 import SwiftUI
 
 /// What the file picker returned for "Import from …", waiting for the options sheet.
@@ -40,7 +41,7 @@ struct ImportOptionsSheet: View {
     let pick: ImportPick
     @State private var options = ImportOptions()
 
-    private var importer: (any VaultImporter)? { AppImporters.registry.importer(id: pick.importer) }
+    private var importer: (any VaultImporter)? { BuiltInImporters.registry.importer(id: pick.importer) }
 
     var body: some View {
         NavigationStack {

@@ -60,10 +60,12 @@ Each one becomes a single implementation in the library that both call.
 1. **The revision writer.** `NoteWriter`/`DeviceClock` in the app and `Vault.apply`/`writeDelta` in
    the CLI handle the clock and `seq` differently. Make one writer in `Sempere`. It keeps the app's
    rule of one `DeviceClock` per state file, which CLAUDE.md requires.
-2. **Where a sync folder's vault copy goes.** `folderTargetLocation` exists only in the app, so the
-   CLI places the same copy somewhere else. Move it to `SempereSync`.
-3. **The importers.** `AppImporters` and the CLI's `ImportRegistry` are line-for-line twins. The CLI
-   also has its own `enum DeviceKeyStore`, which shares a name with the app's protocol.
+2. **Where a sync folder's vault copy goes.** Done: `FolderTargetPlacement.location` (SempereSync), the app's rule
+   of 1.0.0, which the app's pickers and `sempere store target add --folder` / `store import --keep-syncing` call
+   (`FolderTargetPlacementTests`). The CLI used to sync into the folder given itself.
+3. **The importers.** Done: one list, `BuiltInImporters` (target `SempereImporters`, the only file naming an
+   importer module), read by the app and by the CLI's `ImportRegistry` (one subcommand slot per entry). The CLI's
+   own device-key files are `CLIDeviceKeyFiles`, no longer a second `DeviceKeyStore`.
 4. **Sync problem classification** (`SyncStatus.problem(from:)` and `WebDAVSyncProblem.from`), the
    WebDAV connection check, how `SyncOptions` limits are filled in, the settings catalog accessors, and
    vault creation (`VaultLibrary.create` and `vault init`).

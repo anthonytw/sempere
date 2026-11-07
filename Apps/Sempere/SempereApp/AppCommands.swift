@@ -1,3 +1,4 @@
+import SempereImporters
 import SwiftUI
 
 /// A recent vault, as the File > Open Recent menu lists it.
@@ -225,7 +226,7 @@ enum WindowCommands {
         case .importFromApp:
             #if DEBUG
             // UI tests: the folder comes from the launch environment, not the open panel.
-            if let urls = DebugLaunch.importPick(), let importer = AppImporters.primary {
+            if let urls = DebugLaunch.importPick(), let importer = BuiltInImporters.primary {
                 ui.importPick = ImportPick(importer: importer.id, urls: urls, notebook: model.sidebarNotebook)
                 return true
             }

@@ -677,7 +677,8 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   refused (exit 1). `--name` names the copy (default: the source folder's name without `.sempere` or
   `.sempere-backup`); `-q` prints only the new
   path; `-v` reports progress on stderr. `--keep-syncing` makes the source a folder target of the copy (the
-  app's "Keep syncing with this folder"): `store sync` then syncs the two both ways.
+  app's "Keep syncing with this folder"): `store sync` then syncs the two both ways. The source, which
+  holds the vault, is the target itself (`target add`'s rule).
 - `restore BACKUP` restores a backup folder (or any vault folder) into the store, every file checked
   against `backup.json` as `sempere restore` does. The restore is built in the store's staging folder and
   must bring back every file, else nothing is added (exit 1). A vault id the store already holds is
@@ -702,9 +703,17 @@ a unique id prefix (4 characters or more), its name, path or URL.
 
 - `target list` prints id, kind, name, place and the last successful sync. `--json`: an array of `{id,
   kind, name, path, url, user, added, lastSuccess}`.
-- `target add` adds a target. `--folder PATH` may be missing or empty (the first sync copies the vault into
-  it) or hold the same vault (the first sync is a union: what either side lacks is copied, nothing is
-  deleted); it must not overlap the store and must not be a file (exit 1). `--webdav URL [--user NAME]`: https,
+- `target add` adds a target. `--folder PATH` places the vault's copy by the app's rule (Add Folder…,
+  `FolderTargetPlacement`): a `PATH` named `….sempere` is the copy itself, and so is one that already holds
+  this vault (or a `vault.json` not downloaded yet: the sync compares vault ids before it writes), as the
+  targets 1.0.0 synced straight into `PATH` do; any other folder gets the copy in
+  `PATH/<name>.sempere` (the store folder's name), or the next free `<name> N.sempere` when that name holds
+  another vault or a backup, so the vault's files never mix with other files in `PATH`. The copy may be
+  missing or empty (the first sync copies the vault into it) or hold the same vault (the first sync is a
+  union: what either side lacks is copied, nothing is deleted). Refused (exit 1): a `PATH` that holds another
+  vault, a `….sempere` holding other files but no vault, a cloud placeholder not downloaded (a
+  `.<name>.icloud` stand-in), a backup, a folder inside a vault or a backup, one overlapping the store, a
+  file. `--json` and `target list` show the copy's path. `--webdav URL [--user NAME]`: https,
   or http to localhost (exit 2 otherwise); no password is stored. A target at the same place (the same
   folder, or the same server folder and user) is refused (exit 1). `--json` prints the new target; `-q` only
   its id. A WebDAV target's server folder is listed first, with the password from `--password-env`

@@ -187,7 +187,7 @@ struct RecoveryTakeover: ParsableCommand {
         }
         let root = try access.givenRoot() ?? copyRoot
         // This machine's device keys for the vault; a machine that has none joins with new ones.
-        var device = try DeviceKeyStore.load(vaultId: locked.vaultId, passphraseEnv: access.passphraseEnv)
+        var device = try CLIDeviceKeyFiles.load(vaultId: locked.vaultId, passphraseEnv: access.passphraseEnv)
         var madeKeys = false
         if device == nil {
             do { device = try DeviceKeys.generate() } catch { throw CLIError.failure("\(error)") }
@@ -242,7 +242,7 @@ struct RecoveryTakeover: ParsableCommand {
             throw CLIError.usage("nothing written: pass --yes to take over (with --keep ID... or --keep-listed)")
         }
         if madeKeys {
-            _ = try DeviceKeyStore.save(device, vaultId: locked.vaultId, passphrase: nil)
+            _ = try CLIDeviceKeyFiles.save(device, vaultId: locked.vaultId, passphrase: nil)
         }
         // A store vault with sync targets: what this machine can reach is pulled first (design §5.2 step 2),
         // with its device key when it is listed.
@@ -261,7 +261,7 @@ struct RecoveryTakeover: ParsableCommand {
                 ledger: cliLedger(vaultId: locked.vaultId, device: device.identity),
                 setAside: SetAsideStore(directory: SetAsideStore.cliDirectory(environment: Env.vars)))
         } catch {
-            if madeKeys { try? FileManager.default.removeItem(at: DeviceKeyStore.directory(vaultId: locked.vaultId)) }
+            if madeKeys { try? FileManager.default.removeItem(at: CLIDeviceKeyFiles.directory(vaultId: locked.vaultId)) }
             throw error
         }
         if output.json { return try output.emitJSON(EpochChangeOutput(result.report, pulled: pulled.isEmpty ? nil : pulled)) }

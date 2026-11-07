@@ -18,17 +18,19 @@ the rest of the package neither imports it nor names its types:
 | --- | --- | --- |
 | `SempereImport` | the generic readers every importer uses (`ZipArchive`, `BinaryPlist`, `XMLPlist`, `KeyedArchive`, `NotePackage`), all of them untrusted-input code (`format.md` §9), and the host interface: `VaultImporter` (id, display name, accepted file extensions, option specs, `run(request, clock:)`), `ImporterRequest`, `ImporterResult`, `ImporterRegistry` | `Sempere`, `SemperePDF`, `SempereRender` |
 | `SempereNotability` | the importer (`NotabilityImporter`, the `.note` and `.ntb` readers, shapes, text, audio, attachments) and its adapter `NotabilityVaultImporter` (options, the CLI's report and JSON) | `SempereImport` and what that uses |
-| `SempereCLI` | `sempere import <id>`: one subcommand per registered importer (`RegisteredImportCommand`), its flags from the importer's option specs, `--notebook`, `--dry-run`, `--pdf-text`, `--recognize` and the vault and output options of every import | `SempereImport` |
-| the app | the Import entry of the File menu and the note list, the options sheet and the report sheet, built from the importer's option specs and result (`AppModel+Import`, `ImportViews`) | `SempereImport` |
+| `SempereImporters` | `BuiltInImporters`: the importers of the build, the one list the CLI and the app read | `SempereImport`, and `SempereNotability` when it is there |
+| `SempereCLI` | `sempere import <id>`: one subcommand per registered importer (`RegisteredImportCommand`), its flags from the importer's option specs, `--notebook`, `--dry-run`, `--pdf-text`, `--recognize` and the vault and output options of every import | `SempereImport`, `SempereImporters` |
+| the app | the Import entry of the File menu and the note list, the options sheet and the report sheet, built from the importer's option specs and result (`AppModel+Import`, `ImportViews`) | `SempereImport`, `SempereImporters` |
 
 Core (`Sources/Sempere`, `SempereRender`) holds no Notability code: an importer's derived ids,
 `engine: notability-<version>` strings and stroke kinds are plain data (`format.md`
 §5.5, §8.2.6) that core treats like any other.
 
-**Registering.** Each host lists its importers in exactly one file, gated by `#if canImport(SempereNotability)`:
-`Sources/SempereCLI/ImportRegistry.swift` and `Apps/Sempere/SempereApp/AppImporters.swift`.
+**Registering.** The importers are listed in exactly one file, gated by `#if canImport(SempereNotability)`:
+`Sources/SempereImporters/BuiltInImporters.swift` (`BuiltInImporters.registry`, target `SempereImporters`), which the
+CLI (`ImportRegistry.swift`: one `import <id>` subcommand per entry) and the app (its Import entries) both read.
 `scripts/check-importer-isolation.sh` fails CI when any other file names a `Notability…` identifier or imports the module.
-`Package.swift` adds the module's targets, its test target and the CLI's dependency on it only when
+`Package.swift` adds the module's targets, its test target and `SempereImporters`' dependency on it only when
 `Sources/SempereNotability` exists.
 
 **Removing it.**
@@ -37,16 +39,15 @@ Core (`Sources/Sempere`, `SempereRender`) holds no Notability code: an importer'
    (they are data) are unaffected; `sempere import` then lists only `pdf`. `scripts/check-removable-importers.sh` does exactly this
    in a copy, builds the package and every test target, and runs the CLI's tests (the Linux CI job runs it on every
    package change; `check-importer-isolation.sh` covers the other targets).
-2. The app (an Xcode project cannot test for a directory): `scripts/remove-notability-from-xcode.sh` removes the
-   `SempereNotability` package product dependency from the app target (four spots in
-   `Apps/Sempere/Sempere.xcodeproj/project.pbxproj`, ids `…B009` and `…D007`) and its row in
-   `scripts/release-check.sh`. `AppImporters.registry` is then empty: the Import entry disappears from the menu and the toolbar,
-   the rest of the app is unchanged. Only the CI `app` job builds the app, so this step is not checked automatically.
+2. The app links `SempereImporters`, never the module, so it needs no change either: `BuiltInImporters.registry` is then
+   empty, the Import entry disappears from the menu and the toolbar, and the rest of the app is unchanged. Only the app
+   builds check this (`scripts/app.sh build-ios`, the PR gate), not the Linux job.
 3. Optionally delete the catalog strings of the Import options and report (`Localizable.xcstrings`: the "Import …" and
    "Tag Notes with Their %@ Folders" entries); nothing fails if they stay.
 
-**Adding another importer** is the same shape: a module with a `VaultImporter`, one line in each registry, one product in the
-Xcode project.
+**Adding another importer** is the same shape: a module with a `VaultImporter`, `SempereImporters`' dependency on it in
+`Package.swift`, and one line in `BuiltInImporters` (the CLI has a command slot for up to four importers,
+`ImporterSlot` in `ImportRegistry.swift`).
 
 ## Running a bulk import
 

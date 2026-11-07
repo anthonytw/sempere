@@ -175,39 +175,20 @@ struct BackupAppTests {
         }
     }
 
-    /// TestFlight 1.0.0 (9): an owner picked an iCloud folder holding an earlier test vault, and the new vault's sync
-    /// target became that folder. The picked folder is the target only when its `vault.json` is THIS vault's; another
-    /// vault's is refused by name; `<picked>/<name>.sempere` holding another vault moves on to the next free name.
-    @Test func aPickedFolderIsTheTargetOnlyForThisVault() throws {
+    /// TestFlight 1.0.0 (9): another vault's sync folder picked is refused by name, in the app's words. The rule itself
+    /// (this vault's folder is the target, the next free name beside another vault's, an evicted `vault.json`) is
+    /// `FolderTargetPlacement`'s, pinned on Linux by `FolderTargetPlacementTests`.
+    @Test func anotherVaultsFolderIsRefusedInTheAppsWords() throws {
         let scratch = try Scratch()
         defer { scratch.cleanUp() }
         let (fixture, _) = try AppModelTests.fixtureVault()
-        let thisVault = try Vault.open(at: fixture).vaultId
-        let fm = FileManager.default
-        // This vault's own sync folder, picked itself (to join it, or Choose Again…): the target.
-        let drive = try scratch.folder("Drive")
-        let own = drive.appendingPathComponent("sample.sempere")
-        try fm.copyItem(at: fixture, to: own)
-        #expect(try AppModel.folderTargetLocation(picked: own, vaultFolderName: "sample.sempere", vaultId: thisVault).path
-                == own.path)
-        // The same folder for another vault: refused, naming the vault found there.
-        let otherVault = UUID()
+        let own = try scratch.folder("Drive").appendingPathComponent("sample.sempere")
+        try FileManager.default.copyItem(at: fixture, to: own)
         #expect(throws: SyncTargetProblem.otherVault("sample")) {
-            _ = try AppModel.folderTargetLocation(picked: own, vaultFolderName: "Whoopie.sempere", vaultId: otherVault)
+            _ = try AppModel.folderTargetLocation(picked: own, vaultFolderName: "Whoopie.sempere", vaultId: UUID())
         }
         let why = SyncTargetProblem.otherVault("sample").description
         #expect(why.contains("another vault (sample)") && why.contains("own sync folder"), "\(why)")
-        // Its parent picked for another vault named alike: the next free name, never into the other vault.
-        #expect(try AppModel.folderTargetLocation(picked: drive, vaultFolderName: "sample.sempere", vaultId: otherVault)
-                .lastPathComponent == "sample 2.sempere")
-        // ...and for this vault: its own folder.
-        #expect(try AppModel.folderTargetLocation(picked: drive, vaultFolderName: "sample.sempere", vaultId: thisVault)
-                .lastPathComponent == "sample.sempere")
-        // An evicted vault.json (iCloud's stand-in): taken as before; the engine compares ids before writing.
-        let evicted = try scratch.folder("Evicted.sempere")
-        try Data().write(to: evicted.appendingPathComponent(".vault.json.icloud"))
-        #expect(try AppModel.folderTargetLocation(picked: evicted, vaultFolderName: "x.sempere", vaultId: otherVault).path
-                == evicted.path)
     }
 
     @Test func restoreSourceAndName() throws {

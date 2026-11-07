@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereImport
+import SempereImporters
 import SempereRender
 import Testing
 @testable import SempereApp
@@ -178,7 +179,7 @@ struct ImportProgressTests {
         return (parts, count, copies)
     }
 
-    @Test(.enabled(if: AppImporters.primary != nil)) func aLargeSyntheticBackupImportsWithProgressAndAReport() async throws {
+    @Test(.enabled(if: BuiltInImporters.primary != nil)) func aLargeSyntheticBackupImportsWithProgressAndAReport() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
         let backup = try Self.syntheticBackup(count: 120)
         defer { try? FileManager.default.removeItem(at: backup.parts[0].deletingLastPathComponent()) }
@@ -191,7 +192,7 @@ struct ImportProgressTests {
             }
         }
         let before = model.notes.count
-        try await model.importFromApp(try #require(AppImporters.primary), urls: backup.parts, notebook: nil)
+        try await model.importFromApp(try #require(BuiltInImporters.primary), urls: backup.parts, notebook: nil)
         watcher.cancel()
         let summary = try #require(model.importSummary)
         #expect(summary.imported == backup.notes, "\(summary.failures)")
@@ -203,13 +204,13 @@ struct ImportProgressTests {
         #expect(summary.details.text.split(separator: "\n").count > backup.notes, "a line per file in the saved report")
 
         // Again: all already in the vault.
-        try await model.importFromApp(try #require(AppImporters.primary), urls: backup.parts, notebook: nil)
+        try await model.importFromApp(try #require(BuiltInImporters.primary), urls: backup.parts, notebook: nil)
         #expect(model.importSummary?.imported == 0)
         #expect(model.importSummary?.skipped == backup.notes + backup.copies)
         model.close()
     }
 
-    @Test(.enabled(if: AppImporters.primary != nil)) func cancellingTheRealImporterKeepsWholeNotesAndAReRunFinishes() async throws {
+    @Test(.enabled(if: BuiltInImporters.primary != nil)) func cancellingTheRealImporterKeepsWholeNotesAndAReRunFinishes() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
         let backup = try Self.syntheticBackup(count: 150)
         defer { try? FileManager.default.removeItem(at: backup.parts[0].deletingLastPathComponent()) }
@@ -221,7 +222,7 @@ struct ImportProgressTests {
             }
             model.cancelImport()
         }
-        try await model.importFromApp(try #require(AppImporters.primary), urls: backup.parts, notebook: nil)
+        try await model.importFromApp(try #require(BuiltInImporters.primary), urls: backup.parts, notebook: nil)
         await canceller.value
         let first = try #require(model.importSummary)
         #expect(first.wasCancelled, "the import was stopped (if this fails, the machine imported 150 notes before the cancel landed)")
@@ -231,7 +232,7 @@ struct ImportProgressTests {
         let vault = try #require(model.vault)
         for id in try vault.noteIDs() { _ = try vault.reconstruct(noteId: id) }
 
-        try await model.importFromApp(try #require(AppImporters.primary), urls: backup.parts, notebook: nil)
+        try await model.importFromApp(try #require(BuiltInImporters.primary), urls: backup.parts, notebook: nil)
         let second = try #require(model.importSummary)
         #expect(!second.wasCancelled)
         #expect(first.imported + second.imported == backup.notes)
