@@ -2,6 +2,7 @@ import Foundation
 import SempereSync
 import os
 import Sempere
+import SempereAppCore
 
 let inboxLog = Logger(subsystem: "io.github.anthonytw.sempere", category: "capture")
 

@@ -3,6 +3,7 @@ import SwiftUI
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Windows the system restores where they do not fit: the iPad build
 /// ("Designed for iPad" on a Mac) given the scenes the Catalyst build saved in

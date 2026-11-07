@@ -102,9 +102,10 @@ let package = Package(
         // On-device transcription (Speech framework where it exists; empty elsewhere).
         .target(name: "SempereSpeech", dependencies: ["Sempere"]),
         // The apps' session state, shared by the iPad, iPhone and Mac apps (docs/design/thin-app.md "Rules"): the menu
-        // commands, the note view's modes and toolbar, the device settings, onboarding and the demo vault (DEBUG only).
+        // commands, the note view's modes and toolbar, the device settings, onboarding, the vault library, backups, quick
+        // capture's logic and the demo vault (DEBUG only).
         // Foundation and Observation only, and no user-facing text: the app words its values.
-        .target(name: "SempereAppCore", dependencies: ["Sempere", "Age", "SempereImporters"]),
+        .target(name: "SempereAppCore", dependencies: ["Sempere", "Age", "SempereImporters", "SempereSync", "SempereRender"]),
         // Noto fonts for text in CLI exports (OFL 1.1); the app does not link them.
         .target(name: "SempereFonts", resources: [.copy("Fonts")]),
         .executableTarget(
@@ -153,7 +154,7 @@ let package = Package(
                                    "ImportTestSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "SempereSync", "Sempere", "Age", "FuzzSupport",
                                                        "TempDirSupport", "VaultTestSupport"]),
-        .testTarget(name: "SempereAppCoreTests", dependencies: ["SempereAppCore", "Sempere", "Age", "TempDirSupport"]),
+        .testTarget(name: "SempereAppCoreTests", dependencies: ["SempereAppCore", "Sempere", "SempereSync", "Age", "TempDirSupport", "VaultTestSupport"]),
         .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport", "VaultTestSupport"]),
     ] + appleOnlyTargets + (hasNotability ? [
         // The Notability importer (docs/import-notability.md "Structure"). Optional: delete this directory

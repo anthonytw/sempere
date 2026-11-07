@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -307,7 +308,7 @@ struct RestoreBackupView: View {
 
     private var canRestore: Bool {
         guard !working, preview != nil else { return false }
-        return (try? VaultLibrary.folderName(for: name)) != nil
+        return (try? VaultStore.folderName(for: name)) != nil
     }
 
     private func choose(_ result: Result<URL, Error>) async {

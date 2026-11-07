@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import Sempere
+import SempereAppCore
 import UIKit
 
 private let suspensionLog = Logger(subsystem: "io.github.anthonytw.sempere", category: "suspension")

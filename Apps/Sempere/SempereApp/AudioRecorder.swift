@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import Observation
 import Sempere
+import SempereAppCore
 
 /// What writes microphone audio into files: `AVAudioRecorder` in the app,
 /// a fake in tests. One file at a time; `finish` leaves it complete and
@@ -190,19 +191,6 @@ final class AVAudioCaptureBackend: AudioCaptureBackend {
     }
 }
 
-/// On disk, next to a session's audio: enough to save what was recorded if
-/// the app is killed before the recording is stopped (`RecordingRecovery`).
-struct RecordingManifest: Codable, Equatable {
-    var note: UUID
-    var recording: UUID
-    var started: Date?
-    var codec: String
-    /// Segment file names in order; the last may be unfinished.
-    var segments: [String]
-    /// Segments known to be complete.
-    var finished: Int
-}
-
 /// One recording being made into a note (docs/attachments.md §9, §13).
 ///
 /// Audio is written in segments of `segmentSeconds` (10 minutes): a crash
@@ -256,7 +244,7 @@ final class RecordingSession {
     /// The segment files' extension, which picks their container (`AVAudioRecorder` goes by it):
     /// `m4a` (MPEG-4, unreadable if the app dies before the file is finished), or `aac` (ADTS, AAC
     /// only: every frame stands alone, so a file cut off by a crash, a force quit or a restart is
-    /// readable up to its last frame). Quick voice notes use `aac` (`QuickCapture.segmentExtension`).
+    /// readable up to its last frame). Quick voice notes use `aac` (`CaptureSegments.segmentExtension`).
     let segmentExtension: String
     /// Called when the session stops by itself (the media server was reset,
     /// or no new segment file could be started): its owner saves what was
@@ -557,7 +545,8 @@ enum RecordingAssembly {
 /// with a manifest and no session running): saved into their note the next
 /// time it is opened.
 enum RecordingRecovery {
-    static let manifestName = "manifest.json"
+    /// `RecordingManifest.fileName` (SempereAppCore, which reads leftovers of quick voice notes too).
+    static let manifestName = RecordingManifest.fileName
 
     /// Folders under `root` whose manifest names `note` and that no running session owns.
     @MainActor

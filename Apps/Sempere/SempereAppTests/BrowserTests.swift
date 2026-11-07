@@ -32,13 +32,6 @@ struct BrowserTests {
 
     // MARK: - Creating
 
-    @Test func folderNamesAreValidated() throws {
-        #expect(try VaultLibrary.folderName(for: " Notes ") == "Notes.sempere")
-        for bad in ["", "  ", ".hidden", "a/b", "a:b", "x.sempere"] {
-            #expect(throws: VaultLibrary.LibraryError.invalidName) { try VaultLibrary.folderName(for: bad) }
-        }
-    }
-
     @Test func createsGeneratedKeyVaultAndOpensUnlocked() async throws {
         let library = try Self.library()
         let model = AppModel(deviceStateURL: try Self.tempDir().appendingPathComponent("device.json"))
@@ -82,45 +75,6 @@ struct BrowserTests {
         #expect(model.isVaultReadOnly)
     }
 
-    /// Any passphrase is taken for the copy, a one-letter one too: Sempere offers words, it does not require them.
-    @Test func aWeakPassphraseIsAccepted() async throws {
-        let parent = try Self.tempDir()
-        var request = NewVaultRequest(name: "Weak", keySource: .generate, passphrase: "a")
-        request.workFactor = 10
-        let created = try VaultLibrary.createVault(request, folder: "Weak.sempere", in: parent)
-        let vault = try Vault.open(at: created.url)
-        #expect(vault.passphraseCopyNames().count == 1)
-        #expect(try vault.openPassphraseCopy(passphrase: "a").root == vault.root)
-    }
-
-    /// Nothing is trimmed or judged: a whitespace-only passphrase is taken as typed.
-    @Test func aWhitespaceOnlyPassphraseIsTakenAsTyped() throws {
-        let parent = try Self.tempDir()
-        var request = NewVaultRequest(name: "Blank", keySource: .generate, passphrase: "  ")
-        request.workFactor = 10
-        let created = try VaultLibrary.createVault(request, folder: "Blank.sempere", in: parent)
-        let vault = try Vault.open(at: created.url)
-        #expect(try vault.openPassphraseCopy(passphrase: "  ").root == vault.root)
-        #expect(throws: (any Error).self) { try vault.openPassphraseCopy(passphrase: "") }
-    }
-
-    @Test func rejectsExistingVaults() async throws {
-        let parent = try Self.tempDir()
-        let ok = NewVaultRequest(name: "B", keySource: .generate, passphrase: nil)
-        _ = try VaultLibrary.createVault(ok, folder: "B.sempere", in: parent)
-        #expect(throws: VaultError.self) { try VaultLibrary.createVault(ok, folder: "B.sempere", in: parent) }
-    }
-
-    @Test func listsVaultsInAFolder() throws {
-        let parent = try Self.tempDir()
-        for name in ["b.sempere", "a.sempere"] {
-            try FileManager.default.createDirectory(at: parent.appendingPathComponent(name), withIntermediateDirectories: true)
-        }
-        try FileManager.default.createDirectory(at: parent.appendingPathComponent("other"), withIntermediateDirectories: true)
-        try Data().write(to: parent.appendingPathComponent("file.sempere"))
-        #expect(VaultLibrary.vaults(in: parent).map(\.lastPathComponent) == ["a.sempere", "b.sempere"])
-    }
-
     // MARK: - Bookmarks and recents
 
     @Test func bookmarkRoundTrips() throws {
@@ -128,68 +82,6 @@ struct BrowserTests {
         let resolved = try VaultBookmark.resolve(try VaultBookmark.make(for: dir))
         #expect(resolved.url.standardizedFileURL.resolvingSymlinksInPath().path
                 == dir.standardizedFileURL.resolvingSymlinksInPath().path)
-    }
-
-    @Test func recentsPersistDedupeAndCap() async throws {
-        let dir = try Self.tempDir()
-        let store = dir.appendingPathComponent("recents.json")
-        let library = VaultLibrary(storeURL: store)
-        var locations: [UUID] = []
-        for i in 0..<(VaultLibrary.maxRecents + 2) {
-            let location = UUID()
-            locations.append(location)
-            library.rememberWebDAV(location, name: "v\(i)")
-        }
-        #expect(library.recents.count == VaultLibrary.maxRecents)
-        #expect(library.recents.first?.name == "v\(VaultLibrary.maxRecents + 1)")
-        library.rememberWebDAV(locations[5], name: "v5")   // moves to the front, no duplicate
-        #expect(library.recents.first?.name == "v5")
-        #expect(library.recents.count == VaultLibrary.maxRecents)
-        #expect(Set(library.recents.map(\.name)).count == VaultLibrary.maxRecents)
-
-        let reloaded = VaultLibrary(storeURL: store)
-        #expect(reloaded.recents == library.recents)
-    }
-
-    /// A folder outside the store (a debug launch) is not recorded.
-    @Test func aFolderOutsideTheStoreIsNotRemembered() throws {
-        let library = try Self.library()
-        let outside = try Self.tempDir().appendingPathComponent("loose.sempere")
-        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
-        #expect(library.remember(outside) == nil)
-        #expect(library.recents.isEmpty)
-    }
-
-    /// A store vault that is gone from the store gives a clear error and the entry stays: the user removes it.
-    @Test func aGoneStoreVaultIsKeptWithAClearError() throws {
-        let store = try Self.tempDir().appendingPathComponent("recents.json")
-        let gone = RecentVault(id: UUID(), name: "Gone", lastOpened: Date(), storeID: UUID())
-        try JSONEncoder().encode([gone]).write(to: store)
-        let library = VaultLibrary(storeURL: store)
-        #expect(library.recents == [gone])
-        #expect(throws: VaultLibrary.LibraryError.cannotResolve(name: "Gone")) { try library.resolve(gone) }
-        let webdav = library.rememberWebDAV(UUID(), name: "Remote")
-        #expect(throws: VaultLibrary.LibraryError.cannotResolve(name: "Remote")) { try library.resolve(webdav) }
-        library.forget(gone)
-        #expect(VaultLibrary(storeURL: store).recents == [webdav])
-    }
-
-    /// The `recents.json` of 1.0.0: every entry carries `bookmark` (empty for a store or WebDAV vault) and `path`.
-    /// Both are ignored; an entry that is neither a store nor a WebDAV vault (never written by 1.0.0) is dropped.
-    @Test func aRecentsFileOf1_0_0StillDecodes() throws {
-        let store = try Self.tempDir().appendingPathComponent("recents.json")
-        let storeID = UUID(), location = UUID()
-        let json = """
-        [{"id":"\(UUID().uuidString)","name":"Notes","bookmark":"","lastOpened":800000000,
-          "path":"/var/mobile/Vaults/x/Notes.sempere","storeID":"\(storeID.uuidString)"},
-         {"id":"\(UUID().uuidString)","name":"Remote","bookmark":"","lastOpened":800000001,"webdav":"\(location.uuidString)"},
-         {"id":"\(UUID().uuidString)","name":"Loose","bookmark":"AQID","lastOpened":800000002,"path":"/tmp/Loose.sempere"}]
-        """
-        try Data(json.utf8).write(to: store)
-        let library = VaultLibrary(storeURL: store)
-        #expect(library.recents.map(\.name) == ["Notes", "Remote"])
-        #expect(library.recents[0].storeID == storeID)
-        #expect(library.recents[1].webdav == location)
     }
 
     @Test func newVaultReopensByItsOwnIdNotAnotherWithTheSameName() async throws {

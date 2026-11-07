@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import SempereAppCore
 
 /// The app's `WindowGroup`s, and what a window of one shows when the system
 /// brings it back (state restoration) in a build or a state it does not fit.

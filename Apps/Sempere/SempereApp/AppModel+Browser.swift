@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// Vault browsing: opening and creating vaults, and the sidebar's edits.
 /// Every edit is one delta per note, written through `NoteWriter` with the

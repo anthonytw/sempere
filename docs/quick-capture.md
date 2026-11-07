@@ -101,7 +101,7 @@ in it decodes) stays, protected, until quick voice notes are turned off.
 
 ### Restarts, force quits and crashes
 
-Segments are AAC in ADTS (`segment-NNN.aac`, `QuickCapture.segmentExtension`), merged into one MPEG-4
+Segments are AAC in ADTS (`segment-NNN.aac`, `CaptureSegments.segmentExtension`), merged into one MPEG-4
 file when the voice note is sealed. ADTS frames each stand alone, so a segment the recorder never
 finished (the iPhone restarted, the app was force quit or crashed) is readable up to its last frame.
 Build 6 recorded MPEG-4 segments of up to ten minutes, whose index is written only when the recorder
@@ -126,7 +126,7 @@ the vault opens. A vault whose `vault.json` says it was written by a newer
 version (`format.md` §7.3) is read-only for this one: voice notes for it go
 to the queue too, and stay there until an updated app (or one that can write
 it again) flushes them; neither delivery nor the queue writes into its
-`inbox/` (`QuickCapture.acceptsCaptures`).
+`inbox/` (`CaptureDelivery.acceptsCaptures`).
 
 ## Transcription
 

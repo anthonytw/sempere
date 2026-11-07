@@ -1,3 +1,4 @@
+import Age
 import CLITestSupport
 import Foundation
 import Sempere
@@ -87,7 +88,8 @@ final class CLIStoreTests: CLITestCase {
                            env: ["SEMPERE_PASSPHRASE": pass])
         XCTAssertEqual(info.status, 0, info.err)
 
-        for bad in [".hidden", "a/b", "x.sempere", ""] {
+        // The one name rule (`VaultStore.folderName`), the app's New Vault's too: a line break is refused, U+2028 included.
+        for bad in [".hidden", "a/b", "x.sempere", "", "line\u{2028}break"] {
             let r = try cli(["store", "create", bad, "--store", store] + recovery())
             XCTAssertEqual(r.status, 2, "\(bad): \(r.err)")
         }
@@ -95,6 +97,13 @@ final class CLIStoreTests: CLITestCase {
         try "age1nope\n".write(toFile: path("nope.key"), atomically: true, encoding: .utf8)
         let r = try cli(["store", "create", "Bad", "--recovery-key", path("nope.key"), "--store", store])
         XCTAssertNotEqual(r.status, 0)
+        XCTAssertEqual((try cli(["store", "list", "--store", store, "--json"]).json as? [Any])?.count, 1)
+        // A classic key is refused as the recovery key (`VaultCreation.Keys`, as in the app), before anything is written.
+        try IdentityFile.render(try NativeIdentity.generate(.x25519), created: Date())
+            .write(toFile: path("classic.key"), atomically: true, encoding: .utf8)
+        let classic = try cli(["store", "create", "Classic", "--recovery-key", path("classic.key"), "--store", store])
+        XCTAssertEqual(classic.status, 2, classic.err)
+        XCTAssertTrue(classic.err.contains("not a post-quantum key"), classic.err)
         XCTAssertEqual((try cli(["store", "list", "--store", store, "--json"]).json as? [Any])?.count, 1)
     }
 

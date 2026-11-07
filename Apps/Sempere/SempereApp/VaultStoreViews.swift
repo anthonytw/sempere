@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
 
 /// The welcome list's vaults on this device: the in-app store's (docs/design/device-first-sync.md §2),

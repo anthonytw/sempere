@@ -103,23 +103,28 @@ struct VaultInitOptions: ParsableArguments {
 
     /// The keys and passphrases, read and checked before anything is written.
     struct Prepared {
-        var recovery: MLKEM768X25519Identity
+        /// The recovery key (read or made), this machine's new device keys and the vault id
+        /// (`VaultCreation.Keys`, as the app's New Vault).
+        var keys: VaultCreation.Keys
         var copyPassphrase: String?
         /// The copy's passphrase when this command made it (`--generate-passphrase`): shown once.
         var generatedPassphrase: String?
         var deviceKeyPassphrase: String?
     }
 
-    /// Reads the recovery key (or makes one) and asks for the passphrases.
+    /// Reads the recovery key (or makes one), makes this machine's device keys and asks for the passphrases.
     func prepare() throws -> Prepared {
-        let recovery: MLKEM768X25519Identity
+        let source: VaultCreation.RecoverySource
         if let recoveryKey {
-            guard case .mlkem768x25519(let pq) = try readIdentityFile(recoveryKey) else {
-                throw CLIError.usage("\(recoveryKey) is not a post-quantum key (AGE-SECRET-KEY-PQ-1...)")
-            }
-            recovery = pq
+            source = .identity(try readIdentityFile(recoveryKey))
         } else {
-            do { recovery = try MLKEM768X25519Identity() } catch { throw CLIError.failure("\(error)") }
+            source = .generate
+        }
+        let keys: VaultCreation.Keys
+        do { keys = try VaultCreation.Keys(recovery: source) } catch VaultCreation.CreationError.classicRecoveryKey {
+            throw CLIError.usage("\(recoveryKey ?? "the key") is not a post-quantum key (AGE-SECRET-KEY-PQ-1...)")
+        } catch {
+            throw CLIError.failure("\(error)")
         }
         var copyPassphrase: String?
         var generated: String?
@@ -135,34 +140,36 @@ struct VaultInitOptions: ParsableArguments {
             ? try obtainPassphrase(envName: passphraseEnv, prompt: "Device key passphrase: ", confirm: true,
                                    asError: CLIError.failure) : nil
         if let deviceKeyPassphrase, deviceKeyPassphrase.isEmpty { throw CLIError.usage("the passphrase is empty") }
-        return Prepared(recovery: recovery, copyPassphrase: copyPassphrase, generatedPassphrase: generated,
+        return Prepared(keys: keys, copyPassphrase: copyPassphrase, generatedPassphrase: generated,
                         deviceKeyPassphrase: deviceKeyPassphrase)
     }
 
-    /// Creates the vault at `url` from `prepared` (`prepare()`): this machine's device key first (a vault
-    /// it cannot open later is no use), then the recovery key file, then the vault. A failure removes what
-    /// it wrote (the device key of a vault that does not exist, the unused recovery key).
+    /// What the vault is made with besides its keys.
+    var options: VaultCreation.Options {
+        VaultCreation.Options(deviceName: name, deviceKind: kind, workFactor: workFactor, label: vaultLabel)
+    }
+
+    /// Creates the vault at `url` from `prepared` (`prepare()`, `VaultCreation.create`): this machine's device
+    /// key file first (a vault it cannot open later is no use), then the recovery key file, then the vault. A
+    /// failure removes what it wrote (the device key of a vault that does not exist, the unused recovery key).
     func create(at url: URL, prepared: Prepared) throws -> Created {
-        let device: DeviceKeys
-        do { device = try DeviceKeys.generate() } catch { throw CLIError.failure("\(error)") }
-        let vaultId = UUID()
+        let keys = prepared.keys
         var wroteRecovery = false
         do {
-            let keyPath = try CLIDeviceKeyFiles.save(device, vaultId: vaultId, passphrase: prepared.deviceKeyPassphrase)
+            let keyPath = try CLIDeviceKeyFiles.save(keys.device, vaultId: keys.vaultId, passphrase: prepared.deviceKeyPassphrase)
             if let recoveryOut {
-                try writeNewSecretFile(IdentityFile.render(.mlkem768x25519(prepared.recovery), created: Date()),
-                                       to: recoveryOut)
+                try writeNewSecretFile(IdentityFile.render(keys.recoveryIdentity, created: Date()), to: recoveryOut)
                 wroteRecovery = true
             }
-            let vault = try Vault.create(at: url, device: device, deviceName: name, kind: kind,
-                                         recovery: prepared.recovery, recoveryPassphrase: prepared.copyPassphrase,
-                                         workFactor: workFactor, vaultId: vaultId, trust: trustStore(), label: vaultLabel)
-            return Created(vaultId: vault.vaultId, root: vault.root, device: device.id, deviceKey: keyPath,
+            var options = options
+            options.recoveryPassphrase = prepared.copyPassphrase
+            let vault = try VaultCreation.create(at: url, keys: keys, options: options, trust: trustStore())
+            return Created(vaultId: vault.vaultId, root: vault.root, device: keys.device.id, deviceKey: keyPath,
                            recoveryKey: recoveryOut,
                            passphraseCopy: vault.passphraseCopyNames().first.map { "keys/\($0)" },
                            generatedPassphrase: prepared.generatedPassphrase)
         } catch {
-            try? FileManager.default.removeItem(at: CLIDeviceKeyFiles.directory(vaultId: vaultId))
+            try? FileManager.default.removeItem(at: CLIDeviceKeyFiles.directory(vaultId: keys.vaultId))
             if wroteRecovery, let recoveryOut { try? FileManager.default.removeItem(atPath: recoveryOut) }
             throw error
         }

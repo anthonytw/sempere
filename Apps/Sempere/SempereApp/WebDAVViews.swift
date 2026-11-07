@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SempereSync
 import SempereWebDAV
 import SwiftUI

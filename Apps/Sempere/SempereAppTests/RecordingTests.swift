@@ -36,7 +36,7 @@ final class FakeCapture: AudioCaptureBackend {
     func begin(file url: URL, format: RecordingFormat) throws {
         log.append("begin")
         if failBegin { throw RecordingError.cannotRecord("test") }
-        // Quick voice notes record ADTS (`QuickCapture.segmentExtension`), in-note recordings MPEG-4.
+        // Quick voice notes record ADTS (`CaptureSegments.segmentExtension`), in-note recordings MPEG-4.
         try FileManager.default.copyItem(at: url.pathExtension == "aac" ? try TestAudio.adtsTone() : RecordingTests.tone, to: url)
         files.append(url)
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import SempereAppCore
 
 /// Asks before a vault handed to the app from outside (AirDrop, Files, another
 /// app) replaces the vault open in this window's model (security review

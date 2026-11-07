@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Sempere
+import SempereAppCore
 import Testing
 import UIKit
 @testable import SempereApp
@@ -10,7 +11,7 @@ import ActivityKit
 
 /// Audio files made for the tests.
 enum TestAudio {
-    /// A 2-second 440 Hz tone, AAC in ADTS (what quick voice notes record, `QuickCapture.segmentExtension`),
+    /// A 2-second 440 Hz tone, AAC in ADTS (what quick voice notes record, `CaptureSegments.segmentExtension`),
     /// written once per test run.
     static func adtsTone() throws -> URL {
         let url = TestTemp.root.appendingPathComponent("sempere-test-tone.aac")
@@ -71,12 +72,12 @@ struct QuickCaptureRobustnessTests {
         try await qc.start()
         let segment = try #require(qc.session?.segments.first)
         #expect(segment.pathExtension == "aac")
-        #expect(QuickCapture.segmentNumber(segment.lastPathComponent) == 1)
+        #expect(CaptureSegments.number(segment.lastPathComponent) == 1)
         _ = try await qc.stop()
         #expect(QuickCaptureTests.inbox(url).count == 1)
         let lossless = RecordingFormat(codec: .alac, bitRate: nil, sampleRate: 48_000, channels: 1)
-        #expect(QuickCapture.captureFormat(lossless).codec == .aac)
-        #expect(QuickCapture.captureFormat(.default) == .default)
+        #expect(CaptureSegments.captureFormat(lossless).codec == .aac)
+        #expect(CaptureSegments.captureFormat(.default) == .default)
     }
 
     /// One ADTS segment is rewritten as MPEG-4, never copied: the blob says `audio/mp4`.

@@ -3,6 +3,7 @@ import AVFAudio
 import ActivityKit
 #endif
 import Sempere
+import SempereAppCore
 import SwiftUI
 import UIKit
 
@@ -143,19 +144,7 @@ struct QuickCaptureSettingsSection: View {
     }
 }
 
-/// A system permission that keeps voice notes (widgets, Lock Screen, Control Center, Action button,
-/// Siri) from recording, shown in Settings ▸ Quick Voice Notes with a way to turn it on.
-enum VoiceNoteBlocker: Hashable {
-    case liveActivitiesOff
-    case microphoneDenied
-
-    static func current(liveActivitiesEnabled: Bool, microphoneDenied: Bool) -> [VoiceNoteBlocker] {
-        var out: [VoiceNoteBlocker] = []
-        if !liveActivitiesEnabled { out.append(.liveActivitiesOff) }
-        if microphoneDenied { out.append(.microphoneDenied) }
-        return out
-    }
-
+extension VoiceNoteBlocker {
     var title: String {
         switch self {
         case .liveActivitiesOff: return String(localized: "Live Activities are off", comment: "Settings ▸ Quick Voice Notes: a permission is missing")

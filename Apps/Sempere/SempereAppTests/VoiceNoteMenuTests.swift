@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import SempereApp
 import Sempere
+import SempereAppCore
 
 /// GA-23: File > Start / Stop Voice Note on a Mac, over the recorder Siri and the widgets use.
 struct VoiceNoteMenuActionTests {

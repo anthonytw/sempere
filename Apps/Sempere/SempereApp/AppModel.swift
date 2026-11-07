@@ -465,7 +465,7 @@ final class AppModel {
     /// Cancels the running backup (`cancelBackup`).
     @ObservationIgnored var backupControl: BackupRunControl?
     /// Per-vault backup folders and results (`UserDefaults`; tests use a scratch suite).
-    @ObservationIgnored var backupStore = BackupStore()
+    @ObservationIgnored var backupStore = BackupStore(defaults: UserDefaults.standard)
     /// Delivers backup reminders; the app installs `UserNotificationBackupNotifier`.
     @ObservationIgnored var backupNotifier: any BackupNotifying = NoBackupNotifier()
     /// Settings sync with the open vault (`AppModel+SettingsSync`, docs/settings-sync.md):

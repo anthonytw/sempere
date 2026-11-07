@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSync
 import Testing
 import UniformTypeIdentifiers
@@ -68,82 +69,13 @@ struct BackupAppTests {
 
     // MARK: - Where the backup goes
 
-    @Test func subfolderChoice() throws {
-        let scratch = try Scratch()
-        defer { scratch.cleanUp() }
-        let id = UUID()
-        // TestFlight 1.0.0 (9): the backup is always "<name>.sempere-backup" inside the picked folder, never named like
-        // the vault's sync folder; an empty folder too (the iPad poured the vault into it).
-        let empty = try scratch.folder("Empty")
-        #expect(try BackupLocation.subfolder(in: empty, vaultId: id, vaultName: "Notes", openVault: nil) == "Notes.sempere-backup")
-        // An empty folder named "….sempere-backup" was made for it: used as it is. One named like a vault is not.
-        let made = try scratch.folder("Mine.sempere-backup")
-        #expect(try BackupLocation.subfolder(in: made, vaultId: id, vaultName: "Notes", openVault: nil) == nil)
-        let vaultNamed = try scratch.folder("Mine.sempere")
-        #expect(try BackupLocation.subfolder(in: vaultNamed, vaultId: id, vaultName: "Notes", openVault: nil) == "Notes.sempere-backup")
-        let drive = try scratch.folder("Drive")
-        try Data("x".utf8).write(to: drive.appendingPathComponent("photo.jpg"))
-        #expect(try BackupLocation.subfolder(in: drive, vaultId: id, vaultName: "Notes", openVault: nil) == "Notes.sempere-backup")
-        // A file, or another vault's backup, under that name: the next free name.
-        try Data("x".utf8).write(to: drive.appendingPathComponent("Notes.sempere-backup"))
-        #expect(try BackupLocation.subfolder(in: drive, vaultId: id, vaultName: "Notes", openVault: nil) == "Notes 2.sempere-backup")
-        let (fixture, _) = try AppModelTests.fixtureVault()
-        let vault = try Vault.open(at: fixture)
-        _ = try Backup.run(source: vault, to: drive.appendingPathComponent("Notes 2.sempere-backup"))
-        #expect(try BackupLocation.subfolder(in: drive, vaultId: id, vaultName: "Notes", openVault: nil) == "Notes 3.sempere-backup")
-        // This vault's own backup, picked itself or found inside: reused.
-        let own = drive.appendingPathComponent("Notes 2.sempere-backup")
-        #expect(try BackupLocation.subfolder(in: own, vaultId: vault.vaultId, vaultName: "Notes", openVault: nil) == nil)
-        #expect(try BackupLocation.subfolder(in: drive, vaultId: vault.vaultId, vaultName: "Notes", openVault: nil)
-                == "Notes 2.sempere-backup")
-        // Refused: another vault's backup, a vault, the open vault or a folder inside it.
-        #expect(throws: BackupLocation.Problem.otherVaultsBackup("Notes 2.sempere-backup")) {
-            _ = try BackupLocation.subfolder(in: own, vaultId: id, vaultName: "Notes", openVault: nil)
-        }
-        #expect(throws: BackupLocation.Problem.isVault("sample.sempere")) {
-            _ = try BackupLocation.subfolder(in: fixture, vaultId: id, vaultName: "Notes", openVault: nil)
-        }
-        #expect(throws: BackupLocation.Problem.insideOpenVault) {
-            _ = try BackupLocation.subfolder(in: fixture.appendingPathComponent("notes"), vaultId: id, vaultName: "Notes",
-                                         openVault: fixture)
-        }
-        #expect(throws: BackupLocation.Problem.insideOpenVault) {
-            _ = try BackupLocation.subfolder(in: fixture.deletingLastPathComponent(), vaultId: id, vaultName: "Notes",
-                                         openVault: fixture)
-        }
+    /// The folder rules are `BackupLocation`'s, pinned on Linux by `BackupSettingsTests`; here, their words.
+    @Test func whereTheBackupGoesIsRefusedInTheAppsWords() {
         // The message covers both refusals: a folder inside the vault and one that holds it.
         let why = BackupLocation.Problem.insideOpenVault.description
         #expect(why.contains("holds it") && why.contains("inside it"), "\(why)")
-    }
-
-    /// Back Up Now resolves the folder at every run: a backup written straight into the picked folder (`backup --to`)
-    /// gets a "<name>.sempere-backup" inside it, its files untouched, and is continued there (the CLI's `--into`
-    /// takes the same folder); a recorded name another vault's backup took moves on to " 2".
-    @Test func backUpNowResolvesTheFolderAtEveryRun() throws {
-        let scratch = try Scratch()
-        defer { scratch.cleanUp() }
-        let (fixture, _) = try AppModelTests.fixtureVault()
-        let vault = try Vault.open(at: fixture)
-        let id = vault.vaultId
-        let fm = FileManager.default
-        func run(_ picked: URL, _ recorded: String?) throws -> String? {
-            try BackupLocation.runSubfolder(in: picked, recorded: recorded, vaultId: id, vaultName: "Notes", openVault: nil)
-        }
-        // A backup straight in the picked folder: a "<name>.sempere-backup" inside, nothing else touched,
-        // continued at the next run (the nested backup `BackupDestination.folder` takes, as `--into` does).
-        let pad = try scratch.folder("Pad")
-        _ = try Backup.run(source: vault, to: pad)
-        let before = try fm.contentsOfDirectory(atPath: pad.path).sorted()
-        #expect(try run(pad, nil) == "Notes.sempere-backup")
-        #expect(try fm.contentsOfDirectory(atPath: pad.path).sorted() == before)
-        _ = try Backup.run(source: vault, to: pad.appendingPathComponent("Notes.sempere-backup"))
-        #expect(try run(pad, "Notes.sempere-backup") == "Notes.sempere-backup")
-        // A recorded name another device's vault took before this one ran: the next free name.
-        let shared = try scratch.folder("Shared")
-        let other = shared.appendingPathComponent("Notes.sempere-backup")
-        try fm.createDirectory(at: other, withIntermediateDirectories: true)
-        try Data("x".utf8).write(to: other.appendingPathComponent("vault.json"))
-        #expect(try run(shared, "Notes.sempere-backup") == "Notes 2.sempere-backup")
+        #expect(BackupLocation.Problem.isVault("Notes.sempere").description.contains("“Notes.sempere” is a vault"))
+        #expect(BackupLocation.Problem.severalBackups(["A", "B"]).description.contains("A and B"))
     }
 
     /// Review of #108: a backup never becomes a sync target. Opening one is a one-time import (keep-syncing off,
@@ -192,27 +124,14 @@ struct BackupAppTests {
         #expect(why.contains("another vault (sample)") && why.contains("own sync folder"), "\(why)")
     }
 
-    @Test func restoreSourceAndName() throws {
-        let scratch = try Scratch()
-        defer { scratch.cleanUp() }
-        let (fixture, _) = try AppModelTests.fixtureVault()
-        let drive = try scratch.folder("Drive")
-        let backup = drive.appendingPathComponent("Notes.sempere-backup")
-        _ = try Backup.run(source: try Vault.open(at: fixture), to: backup)
-        // Compared by path: a folder found inside the pick is a directory URL (trailing slash).
-        #expect(try BackupLocation.restoreSource(backup).path == backup.path)
-        #expect(try BackupLocation.restoreSource(drive).path == backup.path)
-        #expect(try BackupLocation.restoreSource(fixture).path == fixture.path)
-        _ = try Backup.run(source: try Vault.open(at: fixture), to: drive.appendingPathComponent("Other"))
-        #expect(throws: BackupLocation.Problem.severalBackups(["Notes.sempere-backup", "Other"])) {
-            _ = try BackupLocation.restoreSource(drive)
-        }
-        #expect(throws: BackupLocation.Problem.nothingToRestore("Empty")) {
-            _ = try BackupLocation.restoreSource(try scratch.folder("Empty"))
-        }
-        #expect(BackupLocation.suggestedName(forBackup: backup) == "Notes (Restored)")
+    /// The restore's folder rule is `BackupLocation.restoreSource`, pinned on Linux by `BackupSettingsTests`; here,
+    /// the name the sheet offers.
+    @Test func theRestoredVaultsSuggestedName() {
+        let drive = TestTemp.root.appendingPathComponent("Drive")
+        #expect(BackupLocation.suggestedName(forBackup: drive.appendingPathComponent("Notes.sempere-backup")) == "Notes (Restored)")
         #expect(BackupLocation.suggestedName(forBackup: drive.appendingPathComponent("Notes 2.sempere-backup")) == "Notes 2 (Restored)")
-        #expect(BackupLocation.suggestedName(forBackup: fixture) == "sample (Restored)")
+        #expect(BackupLocation.suggestedName(forBackup: drive.appendingPathComponent("sample.sempere")) == "sample (Restored)")
+        #expect(BackupLocation.suggestedName(forBackup: drive.appendingPathComponent(" .sempere-backup")) == "Notes (Restored)")
     }
 
     /// Open Vault… takes a `.sempere-backup`, picked itself or as the one backup in the picked folder; a sync
@@ -431,23 +350,15 @@ struct BackupAppTests {
 
     // MARK: - Reminder
 
-    @Test func reminderDates() {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
+    /// The reminder's dates are `BackupReminder`'s, pinned on Linux by `BackupSettingsTests`; here, its text.
+    @Test func reminderText() {
         var r = BackupRecord()
-        #expect(BackupReminder.fireDate(r, now: now) == nil)
         r.reminderDays = 7
-        #expect(BackupReminder.fireDate(r, now: now) == nil, "no base yet")
-        r.reminderSince = now
-        #expect(BackupReminder.fireDate(r, now: now) == now.addingTimeInterval(7 * 86_400))
-        r.lastBackup = now.addingTimeInterval(-86_400)
-        #expect(BackupReminder.fireDate(r, now: now) == now.addingTimeInterval(6 * 86_400))
-        #expect(!BackupReminder.isOverdue(r, now: now))
-        r.lastBackup = now.addingTimeInterval(-30 * 86_400)
-        #expect(BackupReminder.isOverdue(r, now: now))
-        #expect(BackupReminder.fireDate(r, now: now) == now.addingTimeInterval(BackupReminder.minimumDelay))
+        r.lastBackup = Date(timeIntervalSince1970: 1_800_000_000)
         #expect(BackupReminder.message(vaultName: "Notes", record: r).body.contains("7 days"))
         r.lastBackup = nil
         #expect(BackupReminder.message(vaultName: "Notes", record: r).body.contains("never"))
+        #expect(BackupReminder.label(0) == "Off" && BackupReminder.label(7) == "After 7 days")
     }
 
     @Test func reminderIsScheduledMovedByABackupAndCancelled() async throws {
@@ -503,21 +414,6 @@ struct BackupAppTests {
         let record = model.backupStore.record(for: vaultId)
         #expect(record.lastBackup != nil)
         #expect(record.lastErrors == 0)
-    }
-
-    @Test func recordsArePerVault() throws {
-        let scratch = try Scratch()
-        defer { scratch.cleanUp() }
-        let store = BackupStore(defaults: scratch.defaults)
-        let a = UUID(), b = UUID()
-        var r = BackupRecord()
-        r.folderName = "Drive"
-        r.reminderDays = 14
-        store.save(r, for: a)
-        #expect(store.record(for: a) == r)
-        #expect(store.record(for: b) == BackupRecord())
-        scratch.defaults.set(Data("not json".utf8), forKey: BackupStore.key(b))
-        #expect(store.record(for: b) == BackupRecord())
     }
 
     // MARK: - Restore

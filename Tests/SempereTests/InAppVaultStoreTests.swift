@@ -87,7 +87,7 @@ final class InAppVaultStoreTests: TempDirTestCase {
 
     func testNamesAreChecked() throws {
         XCTAssertEqual(try VaultStore.folderName(for: "  Notes "), "Notes.sempere")
-        for bad in ["", "  ", ".hidden", "a/b", "a:b", "x.sempere", "tab\there", String(repeating: "n", count: 250)] {
+        for bad in ["", "  ", ".hidden", "a/b", "a:b", "x.sempere", "tab\there", "line\u{2028}break", String(repeating: "n", count: 250)] {
             XCTAssertThrowsError(try VaultStore.folderName(for: bad), bad) {
                 XCTAssertEqual($0 as? VaultStoreError, .invalidName(bad))
             }

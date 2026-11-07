@@ -1,5 +1,6 @@
 import Age
 import Sempere
+import SempereAppCore
 import SempereSync
 import SwiftUI
 import UIKit
@@ -392,7 +393,7 @@ struct NewVaultView: View {
                 }
                 if result.secretKey == nil { dismiss() } else { created = result }
             } catch {
-                failure = "\(error)"
+                failure = InvalidVaultName.describe(error)
             }
         }
     }

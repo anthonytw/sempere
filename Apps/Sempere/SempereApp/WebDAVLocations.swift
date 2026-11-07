@@ -128,7 +128,7 @@ final class WebDAVLocationStore {
     /// The local copy's folder name for a vault called `name`: `<name>.sempere`
     /// when that is a valid name, else `Vault.sempere`.
     nonisolated static func folderName(for name: String) -> String {
-        (try? VaultLibrary.folderName(for: name)) ?? "Vault.sempere"
+        (try? VaultStore.folderName(for: name)) ?? "Vault.sempere"
     }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import SempereAppCore
 
 /// Backup reminders as local notifications (`BackupReminder`): one pending
 /// request per vault, replaced whenever the due date moves. Nothing leaves

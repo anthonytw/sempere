@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereAppCore
 import Testing
 @testable import SempereApp
 
@@ -37,14 +38,6 @@ struct NewVaultKeyTests {
         // The stored copy opens with the passphrase and is the same key.
         let stored = try vault.openPassphraseCopy(passphrase: Self.strong)
         #expect(NativeIdentity.mlkem768x25519(stored.identity) == identity)
-    }
-
-    @Test func aClassicIdentityIsRefusedByTheLibraryToo() throws {
-        let classic = try NativeIdentity.generate(.x25519)
-        #expect(throws: VaultLibrary.LibraryError.classicIdentity) {
-            try VaultLibrary.createVault(NewVaultRequest(name: "Old", keySource: .identity(classic), passphrase: nil),
-                                         folder: "Old.sempere", in: try BrowserTests.tempDir())
-        }
     }
 
     @Test func whatWasPastedIsNamed() throws {

@@ -174,13 +174,17 @@ public struct VaultStore: Sendable {
 
     /// The folder name for a vault called `name`: `<name>.sempere`, `name` trimmed.
     ///
-    /// - Throws: `VaultStoreError.invalidName` for an empty name, a leading dot, a slash, colon or
-    ///   control character, a name already ending in `.sempere`, or more than 255 bytes.
+    /// The one rule for a vault's name: the app's New Vault, Restore from Backup and WebDAV copies, and the
+    /// CLI's `store create`, `store import --name` and `store restore --name` (`VaultCreation`).
+    ///
+    /// - Throws: `VaultStoreError.invalidName` for an empty name, a leading dot, a slash, backslash, colon,
+    ///   control character or line break (U+2028 and U+2029 too), a name already ending in `.sempere`, or more
+    ///   than 255 bytes.
     public static func folderName(for name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let bad = trimmed.isEmpty || trimmed.hasPrefix(".") || trimmed.lowercased().hasSuffix(".sempere")
             || trimmed.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
-            || trimmed.contains { $0 == "/" || $0 == ":" || $0 == "\\" }
+            || trimmed.contains { $0 == "/" || $0 == ":" || $0 == "\\" || $0.isNewline }
             || (trimmed + ".sempere").utf8.count > 255
         if bad { throw VaultStoreError.invalidName(name) }
         return trimmed + ".sempere"

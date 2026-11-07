@@ -452,7 +452,7 @@ sempere vault reencrypt --status [--json]
   not a store vault has no targets here and finishes at once (its `sync folder` runs carry the new copies).
 
 - `init` creates the vault (`PATH` must end in `.sempere`), with this machine
-  as its home device: epoch 1 with a new vault key, its epoch record in
+  as its home device, as the app's New Vault does (one implementation, `VaultCreation`): epoch 1 with a new vault key, its epoch record in
   `epochs/`, and `vault.json` listing this machine's new device key and the
   recovery key, each with a wrap of the vault key, signed by this machine
   (`format.md` §2). The device key and signing keys go to
@@ -665,7 +665,9 @@ by its folder: `--vault "$(sempere store path Notes)"`.
 - `path` prints the vault's folder (`--json`: the same object).
 - `create NAME` makes a new vault in the store, with `vault init`'s options (`--recovery-out` or
   `--recovery-key`, `--name`, `--vault-label`, `--recovery-passphrase`, …; [Vault](#vault)): this machine is its home. `NAME` is the folder name without `.sempere`: no
-  slashes, colons, leading dots or control characters (exit 2). Names need not be unique; ids are.
+  slashes, backslashes, colons, leading dots, control characters or line breaks (U+2028 and U+2029 too), not
+  ending in `.sempere`, at most 255 bytes with it (exit 2). It is the app's rule for a vault's name
+  (`VaultStore.folderName`), for `import --name` and `restore --name` too. Names need not be unique; ids are.
 - `import SOURCE` copies the vault folder `SOURCE` into the store, as the app's Open Vault… does. The
   source is only read. It must be a complete vault: a readable `vault.json`, no partial-copy markers
   (format.md §1.2), no unfinished restore, no cloud placeholders (`.<name>.icloud`: download it first), and

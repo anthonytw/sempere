@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSync
 
 /// What "Open Vault…" does with the folder it copied a vault from (docs/design/device-first-sync.md §8.1).

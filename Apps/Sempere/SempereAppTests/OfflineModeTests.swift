@@ -2,6 +2,7 @@ import Age
 import Darwin
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSpeech
 import SempereSync
 import Testing

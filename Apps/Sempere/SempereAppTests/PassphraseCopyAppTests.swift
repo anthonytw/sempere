@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereAppCore
 import Testing
 import UIKit
 @testable import SempereApp

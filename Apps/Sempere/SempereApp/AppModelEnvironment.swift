@@ -1,5 +1,6 @@
 import OSLog
 import SwiftUI
+import SempereAppCore
 
 /// `@Environment(AppModel.self)` that cannot trap: SwiftUI traps when a view
 /// reads an Observable object no ancestor provides, and on Mac Catalyst a view

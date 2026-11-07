@@ -65,8 +65,6 @@ enum SettingsText {
 
     static func where_(_ block: SettingsDeviceType?) -> String { block.map { "[\($0.rawValue)]" } ?? "the top level" }
 
-    static func usedBy(_ spec: SharedSettingSpec) -> String { spec.types?.map(\.rawValue).joined(separator: ",") ?? "all" }
-
     /// The vault's settings, migrated; empty when it has none.
     static func read(_ vault: Vault) throws -> SharedSettings {
         try vault.readSharedSettings() ?? SharedSettings()
@@ -119,12 +117,11 @@ struct SettingsList: ParsableCommand {
         let vault = try access.openVault(.required)
         let s = try SettingsText.read(vault)
         var rows: [Row] = []
-        for spec in SharedSettingsCatalog.specs {
-            if let deviceType, !spec.isUsed(by: deviceType) { continue }
+        for spec in SharedSettingsCatalog.specs(for: deviceType) {
             let r = s.resolve(spec, for: deviceType)
             for w in r.warnings { printError("warning: \(w)") }
             rows.append(Row(key: spec.name, value: r.value, source: r.source.rawValue, defaultValue: spec.defaultValue,
-                            usedBy: spec.types?.map(\.rawValue) ?? ["mac", "ipad", "iphone"], summary: spec.summary))
+                            usedBy: spec.deviceTypes.map(\.rawValue), summary: spec.summary))
         }
         var others: [Raw]?
         if all {
@@ -239,7 +236,7 @@ struct SettingsReset: ParsableCommand {
         let deviceType = try type.resolved()
         let vault = try access.openVault(.required)
         let spec = SharedSettingsCatalog.spec(named: key)
-        guard spec != nil || SharedSettingKeyCheck.isSettingKey(key) else {
+        guard spec != nil || SharedSettingsCatalog.isSettingKey(key) else {
             throw CLIError.usage("'\(SharedSettings.printable(key))' is not a setting key")
         }
         try vault.updateSharedSettings { s in
@@ -254,13 +251,6 @@ struct SettingsReset: ParsableCommand {
         } else {
             output.info("\(key) reset (\(SettingsText.where_(deviceType)))")
         }
-    }
-}
-
-enum SharedSettingKeyCheck {
-    /// A top-level member name that is a setting (not `$…` or `[…]`), at most 256 bytes.
-    static func isSettingKey(_ s: String) -> Bool {
-        !s.isEmpty && s.utf8.count <= 256 && !s.hasPrefix("$") && !s.hasPrefix("[")
     }
 }
 

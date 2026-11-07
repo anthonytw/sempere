@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// What a folder pick may choose (`FolderPicker.swift`, owner's tests of TestFlight build 10).
 ///

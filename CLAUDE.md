@@ -216,7 +216,7 @@ there. Commit messages:
   every await before publishing. Security-scoped URLs from the picker need
   `startAccessingSecurityScopedResource()` for the whole time the vault is used;
   vault bookmarks use `options: []` (no `.withSecurityScope` on iOS/Catalyst).
-- The app's non-UI logic (`AppModel*.swift`, `VaultLibrary.swift`, their tests)
+- The app's non-UI logic still in the app (`AppModel*.swift`, their tests)
   can be typechecked and run on Linux with a scratch package that symlinks the
   files and shims the Apple-only URL bookmark and scoped-resource APIs; SwiftUI
   views cannot, only the app build does (`scripts/app.sh build-ios`, in the PR gate).
@@ -320,7 +320,8 @@ there. Commit messages:
   does not cover the vault); `openVault(at:accessing:)` holds the security scope of the
   picked URL, not the derived one.
 - In-app vault store (P5a of docs/design/device-first-sync.md; `Sources/Sempere/VaultStore.swift`,
-  `VaultFileLock.swift`): New Vault (`VaultLibrary.create`) and Open Vault… (`AppModel.copyIn`, which
+  `VaultFileLock.swift`): New Vault (`VaultLibrary.create`, SempereAppCore, on `VaultCreation` in `Sempere`: the one vault creation, which
+  `vault init` and `store create` call too, with the one name rule `VaultStore.folderName`) and Open Vault… (`AppModel.copyIn`, which
   copies the picked vault in and opens the copy, or opens the copy already there) and Restore from Backup
   (`VaultStore.restore`, `--replace` swaps a copy: old aside, new in, `sweep` restores an interrupted one) put every vault in `VaultLibrary.vaultStore`
   (`Application Support/Sempere/Vaults/<vaultId>/<name>.sempere`; tests get one next to their
@@ -799,10 +800,15 @@ there. Commit messages:
   background time leaves it for `sweep()` rather than losing the note. Nothing rewrites `inbox/` files except
   catch-up, which re-seals this device's own captures of an earlier epoch from its ledger (format.md §15.14); a
   new epoch changes the capture key, and the profile must then be made again. A note "exists" for adoption once it has a revision (a folder holding only `att/` is still
-  new), and a waiting transcript writes nothing. Quick-capture segments are ADTS (`QuickCapture.segmentExtension`:
+  new), and a waiting transcript writes nothing. Quick-capture segments are ADTS (`CaptureSegments.segmentExtension`:
   an MPEG-4 segment cut off by a restart or force quit does not decode at all), and a start activates the audio
   session BEFORE requesting the Live Activity (iOS ends the intent's fake-foreground assertion when the activity
   begins, and a non-mixable activation after that is refused '!int'; docs/quick-capture.md "Start order").
+  What needs no platform service is in SempereAppCore (`QuickCaptureLogic.swift`, Linux tests): the profile and its
+  store protocol, `QuickCaptureError` (worded by the app's `QuickCapture+Text.swift`), where a sealed capture goes
+  (`CaptureDelivery`: inbox, else the queue with its epoch sidecar) and the seal's rule (`CaptureSegments.plan`:
+  only a folder with no audio is deleted unsealed). The recorder, the start order, the Live Activity, the intents,
+  background time, the Keychain and file protection stay in the app's `QuickCapture`.
 - Video items (`format.md` §8.2.7, task G2): a container is read only by
   `VideoProbe` (pure Swift, bounded reads, fuzzed); location metadata is
   removed in place by `ByteEdit`s applied while the file streams into the blob

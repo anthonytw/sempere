@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SempereRender
 import SwiftUI
 import UniformTypeIdentifiers

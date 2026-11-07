@@ -2,6 +2,7 @@ import Age
 import AVFoundation
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSync
 import Testing
 @testable import SempereApp
@@ -199,7 +200,7 @@ struct QuickCaptureTests {
         obj["format"] = "sempere/9"
         try JSONSerialization.data(withJSONObject: obj).write(to: manifest)
         let vaultID = try #require(try qc.store.load()).profile.vaultId
-        #expect(!QuickCapture.acceptsCaptures(at: url, vaultId: vaultID))
+        #expect(!CaptureDelivery.acceptsCaptures(at: url, vaultId: vaultID))
 
         try await qc.start()
         let outcome = try await qc.stop()
@@ -711,32 +712,6 @@ struct QuickCaptureTests {
         #expect(Self.inbox(url).isEmpty)
     }
 
-    /// Segment names come from the session's pattern only, in numeric order;
-    /// a manifest can never name a file outside its folder.
-    @Test func segmentFilesAreTheSessionsOwnInOrder() throws {
-        #expect(QuickCapture.segmentNumber("segment-007.m4a") == 7)
-        #expect(QuickCapture.segmentNumber("segment-1000.m4a") == 1000)
-        for name in ["capture.m4a", "manifest.json", "segment-.m4a", "segment-1a.m4a", "segment-+1.m4a", "segment-001.caf",
-                     "../segment-001.m4a"] {
-            #expect(QuickCapture.segmentNumber(name) == nil, "\(name)")
-        }
-        let folder = Self.temp("segments")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        for name in ["segment-1000.m4a", "segment-999.m4a", "segment-001.m4a", "capture.m4a", "manifest.json"] {
-            try Data([1]).write(to: folder.appendingPathComponent(name))
-        }
-        let listed = [folder.appendingPathComponent("segment-001.m4a")]
-        #expect(QuickCapture.segmentFiles(listed: listed, in: folder).map(\.lastPathComponent)
-                == ["segment-001.m4a", "segment-999.m4a", "segment-1000.m4a"])
-        let manifest = RecordingManifest(note: UUID(), recording: UUID(), started: nil, codec: "aac",
-                                         segments: ["../../escape.m4a", "segment-001.m4a"], finished: 5)
-        try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingRecovery.manifestName))
-        let leftover = try #require(QuickCapture.Leftover(folder: folder))
-        #expect(leftover.id == manifest.recording)
-        #expect(leftover.segments.map(\.lastPathComponent) == ["segment-001.m4a", "segment-999.m4a", "segment-1000.m4a"])
-        #expect(leftover.finished == 1, "never more than the manifest lists")
-    }
-
     /// A segment begun just before the app died may be missing from the
     /// manifest: it is sealed with the others, not deleted with the folder.
     @Test func sealIncludesASegmentTheManifestDidNotName() async throws {
@@ -878,7 +853,7 @@ struct QuickCaptureTests {
         let file = try AVAudioFile(forWriting: second, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC,
                                                                   AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1])
         file.close()
-        #expect(QuickCapture.byteCount(second) > 0, "a finished file, not an empty one")
+        #expect(CaptureSegments.byteCount(second) > 0, "a finished file, not an empty one")
         #expect(await QuickCapture.segmentAudio(second) == .none)
         #expect(await QuickCapture.segmentAudio(RecordingTests.tone) == .audio)
         let garbage = Self.temp("garbage").appendingPathExtension("m4a")

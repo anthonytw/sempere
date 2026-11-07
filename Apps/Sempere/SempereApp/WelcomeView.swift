@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
 
 /// Shown while no vault is open: the vaults on this device (the in-app store, with WebDAV vaults still

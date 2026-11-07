@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereAppCore
 import Testing
 @testable import SempereApp
 
@@ -68,7 +69,7 @@ struct OpenedVaultTests {
         let after = try #require(try qc.store.load())
         #expect(after.bookmark == stale.bookmark)
         #expect(after.profile == stale.profile)
-        #expect(QuickCapture.resolve(after.bookmark)?.standardizedFileURL.resolvingSymlinksInPath().path
+        #expect((try? SecurityScopedBookmarks().resolve(after.bookmark))?.url.standardizedFileURL.resolvingSymlinksInPath().path
                 == mine.standardizedFileURL.resolvingSymlinksInPath().path)
 
         // Back in its own folder, the profile is refreshed as before.

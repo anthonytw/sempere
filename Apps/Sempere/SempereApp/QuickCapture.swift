@@ -3,37 +3,13 @@ import Foundation
 import Observation
 import Security
 import Sempere
+import SempereAppCore
 import SempereSync
 import UIKit
 #if os(iOS) && !targetEnvironment(macCatalyst)
 import ActivityKit
 import WidgetKit
 #endif
-
-/// What this device keeps for quick voice notes (docs/quick-capture.md):
-/// the vault's capture profile (public recipients and the capture key, never
-/// the identity or the vault secret), where the vault is, and whether voice
-/// notes are transcribed here.
-struct StoredCaptureProfile: Codable, Equatable, Sendable {
-    var profile: CaptureProfile
-    var vaultName: String
-    /// Bookmark of the vault folder (`options: []`, as for recent vaults).
-    var bookmark: Data
-    /// Transcribe voice notes on this device when they stop.
-    var transcribe: Bool
-    /// This device is not on the vault's newest device list (key-hierarchy design §5.5; review of #87, R1): no
-    /// new voice note starts, while a recording in progress, leftovers and the queue are still sealed into
-    /// `inbox/` with ledger entries, so the unlisted screen's Save Files covers them. Lifted, keeping the
-    /// notebook, once the device is listed again. Absent means not suspended.
-    var suspended: Bool? = nil
-}
-
-/// Where the profile lives: the Keychain in the app, memory in tests.
-protocol CaptureProfileStore: Sendable {
-    func load() throws -> StoredCaptureProfile?
-    func save(_ profile: StoredCaptureProfile) throws
-    func delete() throws
-}
 
 /// One generic-password item, readable after the device's first unlock and
 /// on this device only (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`):
@@ -81,70 +57,6 @@ struct KeychainCaptureProfileStore: CaptureProfileStore {
     }
 }
 
-/// `CaptureProfileStore` in memory (tests).
-final class MemoryCaptureProfileStore: CaptureProfileStore, @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: StoredCaptureProfile?
-    func load() throws -> StoredCaptureProfile? { lock.withLock { value } }
-    func save(_ profile: StoredCaptureProfile) throws { lock.withLock { value = profile } }
-    func delete() throws { lock.withLock { value = nil } }
-}
-
-enum QuickCaptureError: Error, Equatable, CustomStringConvertible, CustomLocalizedStringResourceConvertible {
-    case notSetUp
-    /// A profile may be stored but could not be read (the Keychain before the
-    /// first unlock after a restart, or an item that does not decode).
-    case profileUnreadable
-    case microphoneDenied
-    /// iOS ends a recording started by an intent (widget, Control Center, Action
-    /// button) that shows no Live Activity, so none starts while they are off.
-    case liveActivitiesOff
-    case alreadyRecording
-    case notRecording
-    /// iOS did not start the recording's Live Activity (`Activity.request` threw) while the app was
-    /// not in front: an `AudioRecordingIntent` records in the background only while one shows, so the
-    /// recorder is not started there (the intent continues in the app instead).
-    case liveActivityRefused(String)
-    /// The intent could not continue in the app (`continueInForeground` threw: iOS refused, or the
-    /// device was not unlocked) after a refused background start.
-    case couldNotOpenApp(String)
-    /// The device has not been unlocked since it restarted: the profile (and the folder the audio
-    /// would go to) cannot be read until then (docs/quick-capture.md "Threat model").
-    case beforeFirstUnlock
-    /// The microphone permission read as not granted while the app was not in front (a process
-    /// Siri or a widget launched, maybe before the first unlock after a restart, which cannot show
-    /// the permission prompt): checked again with the app in front instead of refusing. TestFlight
-    /// 1.0.0 (6), iPhone: after a restart Siri said Sempere was not allowed to use the microphone.
-    case microphoneUnconfirmed
-    /// The profile is suspended (`StoredCaptureProfile.suspended`): this device was removed from the vault's
-    /// device list, so a new voice note could never reach the vault.
-    case notOnDeviceList
-
-    var description: String {
-        switch self {
-        case .notSetUp: return String(localized: "Quick Voice Notes is not set up: open Sempere, unlock the vault and turn it on in Settings.")
-        case .profileUnreadable: return String(localized: "Quick Voice Notes could not read its settings on this device. Unlock the device and try again; if it keeps happening, turn Quick Voice Notes off and on again in Settings.")
-        case .microphoneDenied: return RecordingError.microphoneDenied.description
-        case .liveActivitiesOff: return String(localized: "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in the Settings app ▸ Sempere ▸ Live Activities.")
-        case .alreadyRecording: return String(localized: "A voice note is already being recorded.")
-        case .notRecording: return String(localized: "No voice note is being recorded.")
-        case .liveActivityRefused(let why):
-            return String(localized: "iOS did not start the voice note's Live Activity, which it needs to record in the background: \(why)")
-        case .couldNotOpenApp(let why):
-            return String(localized: "iOS would not record in the background and did not open Sempere to record there: \(why)")
-        case .beforeFirstUnlock:
-            return String(localized: "Unlock this device once after it restarts: until then Sempere cannot record voice notes.")
-        case .microphoneUnconfirmed:
-            return String(localized: "Sempere could not confirm it may use the microphone without opening. Open Sempere to record.")
-        case .notOnDeviceList:
-            return String(localized: "This device was removed from the vault's device list: it takes no new voice notes until it is added again.")
-        }
-    }
-
-    /// What Siri, Shortcuts and the widgets show when an intent fails.
-    var localizedStringResource: LocalizedStringResource { LocalizedStringResource(stringLiteral: description) }
-}
-
 /// Quick voice notes (docs/quick-capture.md): one tap (Siri, Shortcuts, the
 /// Action button, a widget, Control Center) records; stopping seals the audio
 /// with the capture profile alone (`CaptureWriter`: age-encrypted to the
@@ -168,7 +80,7 @@ final class QuickCapture {
 
     enum State: Equatable { case idle, starting, recording, saving }
 
-    enum Delivery: Equatable, Sendable { case vault, queued }
+    typealias Delivery = CaptureDelivery.Destination
 
     /// What one capture did.
     struct Outcome: Equatable {
@@ -302,18 +214,6 @@ final class QuickCapture {
         if case .liveActivityRefused = error as? QuickCaptureError { return true }
         if case .microphoneUnconfirmed = error as? QuickCaptureError { return true }
         return false
-    }
-
-    /// The container of quick voice notes' segment files: ADTS, whose every frame stands alone, so
-    /// a recording cut off by a force quit, a crash or a restart keeps its audio up to the last frame.
-    /// MPEG-4 (`m4a`, what in-note recordings use) is unreadable until the recorder finishes the file:
-    /// a voice note interrupted by a restart was lost whole (TestFlight 1.0.0 (6), iPhone).
-    nonisolated static let segmentExtension = "aac"
-
-    /// The format quick voice notes record in: the recording settings, but AAC for Apple Lossless
-    /// (ADTS carries only AAC; `segmentExtension`).
-    nonisolated static func captureFormat(_ preferred: RecordingFormat) -> RecordingFormat {
-        preferred.codec == .alac ? .default : preferred
     }
 
     /// Hooks the intents (Siri, Shortcuts, widgets, Control Center) up to the shared instance.
@@ -604,9 +504,9 @@ final class QuickCapture {
         trace.session = try await activateSession(capture)
         // Read back and sealed on stop, often with the device still locked: `completeUnlessOpen`
         // files cannot be reopened then once closed, so `Self.protection` (readable after the first unlock).
-        // ADTS segments (`segmentExtension`): a recording cut off by a restart keeps its audio.
-        let s = RecordingSession(noteID: UUID(), format: Self.captureFormat(RecordingPreference.format()), root: root,
-                                 protection: Self.protection, segmentExtension: Self.segmentExtension,
+        // ADTS segments (`CaptureSegments.segmentExtension`): a recording cut off by a restart keeps its audio.
+        let s = RecordingSession(noteID: UUID(), format: CaptureSegments.captureFormat(RecordingPreference.format()), root: root,
+                                 protection: Self.protection, segmentExtension: CaptureSegments.segmentExtension,
                                  backend: capture, center: center)
         // Ended by the system (media services reset, no new segment file): sealed as after Stop.
         s.onStoppedBySystem = { [weak self, weak s] in
@@ -778,7 +678,7 @@ final class QuickCapture {
     /// (data protection), a finished segment that does not decode, bytes of
     /// which nothing decodes, a seal or a write that fails. Besides
     /// `segments`, every other `segment-NNN.m4a` in `folder` is sealed too
-    /// (`segmentFiles`). Of the segments, the first `finished` (all of them
+    /// (`CaptureSegments.files`). Of the segments, the first `finished` (all of them
     /// when nil) are complete; only a later one, the segment being written
     /// when the app died, may be undecodable and is then left out
     /// (docs/attachments.md §13: a crash loses at most that segment).
@@ -799,28 +699,26 @@ final class QuickCapture {
         }
         do {
             let writer = try CaptureWriter(profile: stored.profile)
-            let segments = Self.segmentFiles(listed: listed, in: folder)
+            let segments = CaptureSegments.files(listed: listed, in: folder)
             // Throws for a segment that is there but cannot be opened: its audio is not lost, only out of reach now.
             for url in segments where FileManager.default.fileExists(atPath: url.path) {
                 try FileHandle(forReadingFrom: url).close()
             }
-            var held: [(url: URL, audio: SegmentAudio)] = []
+            var held: [(url: URL, audio: CaptureSegments.Audio)] = []
             for url in segments { held.append((url, await Self.segmentAudio(url))) }
-            if held.allSatisfy({ $0.audio == .none }) {
-                // Not a byte recorded, or only finished files of no length (stopped, or the app died,
-                // before the recorder wrote any audio): nothing to keep.
+            // What may be deleted, what waits and what is sealed: `CaptureSegments.plan`.
+            let audio: [URL]
+            switch CaptureSegments.plan(held: held, listed: listed, finished: finished) {
+            case .nothingRecorded:
                 keep = false
                 throw RecordingError.cannotAssemble("no audio")
+            case .completeSegmentUndecodable(let name):
+                throw RecordingError.cannotAssemble("\(name) does not decode")
+            case .noReadableAudio:
+                throw RecordingError.cannotAssemble("no readable audio")
+            case .seal(let urls):
+                audio = urls
             }
-            let complete = Set(listed.prefix(max(0, finished ?? listed.count)).map(\.lastPathComponent))
-            // A complete segment that does not decode is not skipped: sealing the others and deleting
-            // the folder would lose its audio. It waits, as an unreadable one does.
-            if let bad = held.first(where: { $0.audio == .undecodable && complete.contains($0.url.lastPathComponent) }) {
-                throw RecordingError.cannotAssemble("\(bad.url.lastPathComponent) does not decode")
-            }
-            // Bytes of which nothing decodes (the app died in the first segment) are kept too.
-            let audio = held.filter { $0.audio == .audio }.map(\.url)
-            guard !audio.isEmpty else { throw RecordingError.cannotAssemble("no readable audio") }
             let out = folder.appendingPathComponent("capture.m4a")
             try await RecordingAssembly.merge(audio, into: out)
             let (sealed, audioRef) = try await Task.detached(priority: .userInitiated) { () throws -> (SealedCapture, BlobRef) in
@@ -850,47 +748,11 @@ final class QuickCapture {
         return outcome
     }
 
-    /// The segment files of a recording folder, in order: those `listed`
-    /// (the session's, or its manifest's), then every other
-    /// `segment-NNN.m4a` in `folder` by number. A segment begun just before
-    /// the app died may be missing from the manifest (its write failed or had
-    /// not happened yet); sealing without it and deleting the folder would
-    /// lose its audio.
-    nonisolated static func segmentFiles(listed: [URL], in folder: URL) -> [URL] {
-        let names = Set(listed.map(\.lastPathComponent))
-        let present = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        let extra = present.compactMap { name -> (Int, String)? in
-            guard !names.contains(name), let n = segmentNumber(name) else { return nil }
-            return (n, name)
-        }.sorted { $0.0 < $1.0 }
-        return listed + extra.map { folder.appendingPathComponent($0.1) }
-    }
-
-    /// The number of a segment file name (`segment-007.aac` or, from build 6 and
-    /// earlier, `segment-007.m4a` is 7, as `RecordingSession` names them); nil for any other name.
-    nonisolated static func segmentNumber(_ name: String) -> Int? {
-        guard name.hasPrefix("segment-"), name.hasSuffix(".m4a") || name.hasSuffix(".aac") else { return nil }
-        let digits = name.dropFirst("segment-".count).dropLast(".m4a".count)
-        guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
-        return Int(digits)
-    }
-
-    /// What a segment file holds, for `seal`.
-    enum SegmentAudio: Equatable {
-        /// No byte, or a file AVFoundation reads whose audio track is zero
-        /// seconds long (a segment stopped before its first frame): nothing to keep.
-        case none
-        /// Audio of some length (`RecordingAssembly.readable`).
-        case audio
-        /// Bytes AVFoundation cannot read as audio (unfinished by a crash, or damaged).
-        case undecodable
-    }
-
     /// Classifies the segment at `url`. Only a file AVFoundation positively
     /// reads as an audio track of no length is `.none` with bytes in it:
     /// anything it cannot read is `.undecodable`, which `seal` never deletes.
-    nonisolated static func segmentAudio(_ url: URL) async -> SegmentAudio {
-        guard byteCount(url) > 0 else { return .none }
+    nonisolated static func segmentAudio(_ url: URL) async -> CaptureSegments.Audio {
+        guard CaptureSegments.byteCount(url) > 0 else { return .none }
         let asset = AVURLAsset(url: url)
         if let duration = try? await asset.load(.duration), duration.seconds > 0 { return .audio }
         guard let tracks = try? await asset.loadTracks(withMediaType: .audio), !tracks.isEmpty else { return .undecodable }
@@ -902,11 +764,6 @@ final class QuickCapture {
         return .none
     }
 
-    /// The size of the file at `url` (0 when it is missing).
-    nonisolated static func byteCount(_ url: URL) -> Int {
-        ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0
-    }
-
     /// Added to a failed seal's error when the recording was kept.
     nonisolated static var keptOnDevice: String {
         String(localized: "The recording is kept on this device, and Sempere tries again to save it each time it opens.",
@@ -915,128 +772,34 @@ final class QuickCapture {
 
     // MARK: - Delivery
 
-    /// Writes `sealed` into the vault's inbox, or into the local queue when
-    /// the vault folder cannot be reached, is not the profile's vault, or is
-    /// read-only (a newer format: this version writes nothing into its
-    /// `inbox/`, format.md §7.3; security review 2026-10, N2).
+    /// Where sealed voice notes go (`CaptureDelivery`): the vault's inbox through its security-scoped bookmark or
+    /// the store, recorded in this device's ledger, else the queue.
+    var delivery: CaptureDelivery {
+        var ledger: (@Sendable (UUID) -> any WriteLedgerStore)?
+        if let stores = writeStores { ledger = { stores.ledger(for: $0) } }
+        return CaptureDelivery(queueRoot: queueRoot, vaultStore: vaultStore, bookmarks: SecurityScopedBookmarks(),
+                               ledger: ledger, delivered: { vault in
+            // A synced copy runs soon, open or not (`SyncCoordinator.captureDelivered`).
+            NotificationCenter.default.post(name: QuickCapture.deliveredNotification, object: nil, userInfo: ["vault": vault])
+        })
+    }
+
+    /// Writes `sealed` into the vault's inbox, or into the local queue (`CaptureDelivery.deliver`).
     func deliver(_ sealed: SealedCapture, _ stored: StoredCaptureProfile) throws -> Delivery {
-        if let url = vaultFolder(stored) {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            if Self.acceptsCaptures(at: url, vaultId: stored.profile.vaultId) {
-                let inbox = url.appendingPathComponent(CaptureFile.folderName, isDirectory: true)
-                do {
-                    try record(sealed, stored.profile)   // intent first: never placed unrecorded
-                    try CaptureWriter.store(sealed, in: inbox)
-                    // A synced copy runs soon, open or not (`SyncCoordinator.captureDelivered`).
-                    NotificationCenter.default.post(name: Self.deliveredNotification, object: nil,
-                                                    userInfo: ["vault": stored.profile.vaultId])
-                    return .vault
-                } catch {
-                    // Not reachable now: queued below.
-                }
-            }
-        }
-        let queue = queueFolder(stored.profile.vaultId)
-        // The epoch it was sealed under goes with it, written BEFORE the file (review nit): a crash between the two
-        // leaves a sidecar without a file (ignored), never a file without its epoch. The flush records that epoch,
-        // never a newer profile's (M4).
-        if let epoch = sealed.epoch, let id = sealed.epochId {
-            try FileManager.default.createDirectory(at: queue, withIntermediateDirectories: true)
-            try Data("\(epoch) \(id.map { String(format: "%02x", $0) }.joined())\n".utf8)
-                .write(to: Self.epochSidecar(queue.appendingPathComponent(sealed.name)), options: .atomic)
-        }
-        try CaptureWriter.store(sealed, in: queue)
-        return .queued
-    }
-
-    /// `<queued file>.epoch`: "<epoch> <epoch id hex>", the epoch of the profile that sealed it.
-    nonisolated static func epochSidecar(_ file: URL) -> URL { file.appendingPathExtension("epoch") }
-
-    /// The epoch a queued file was sealed under, from its sidecar.
-    nonisolated static func queuedEpoch(_ file: URL) -> (Int, Data)? {
-        guard let data = try? BoundedRead.contents(of: epochSidecar(file), maxBytes: 256),
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        let parts = text.split(whereSeparator: { $0 == " " || $0 == "\n" })
-        guard parts.count == 2, let e = Int(parts[0]) else { return nil }
-        let hex: [UInt8] = Array(parts[1].utf8)
-        guard hex.count == 64 else { return nil }
-        var id = Data()
-        for i in stride(from: 0, to: 64, by: 2) {
-            guard let byte = UInt8(String(decoding: hex[i..<i + 2], as: UTF8.self), radix: 16) else { return nil }
-            id.append(byte)
-        }
-        return (e, id)
-    }
-
-    /// Records `sealed` in the write ledger of the profile's vault (design §5.4); nothing without stores.
-    func record(_ sealed: SealedCapture, _ profile: CaptureProfile) throws {
-        guard let writeStores else { return }
-        try CaptureWriter(profile: profile).record(sealed, in: writeStores.ledger(for: profile.vaultId))
-    }
-
-    /// True when the folder at `url` is vault `vaultId` and this version may
-    /// write into its inbox: not one marked as written by a newer version
-    /// (its `format` or `features`, format.md §7.3). Checked from `vault.json`
-    /// alone, without a key.
-    nonisolated static func acceptsCaptures(at url: URL, vaultId: UUID) -> Bool {
-        guard let vault = try? Vault.open(at: url) else { return false }
-        return vault.vaultId == vaultId && !vault.isReadOnly
+        try delivery.deliver(sealed, stored)
     }
 
     /// Posted (userInfo `vault`: the vault id) when a voice note was written into a vault's inbox.
     nonisolated static let deliveredNotification = Notification.Name("io.github.anthonytw.sempere.captureDelivered")
 
-    func queueFolder(_ vault: UUID) -> URL { queueRoot.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true) }
+    func queueFolder(_ vault: UUID) -> URL { delivery.queueFolder(vault) }
 
-    /// The folder of the profile's vault: its in-app copy when the store holds it (found by id, so a moved
-    /// store or a stale bookmark does not matter), else the folder its bookmark names.
-    func vaultFolder(_ stored: StoredCaptureProfile) -> URL? {
-        vaultStore?.entry(id: stored.profile.vaultId)?.url ?? Self.resolve(stored.bookmark)
-    }
-
-    /// The vault folder a bookmark names (nil when it cannot be resolved).
-    nonisolated static func resolve(_ bookmark: Data) -> URL? {
-        var stale = false
-        return try? URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
-    }
-
-    /// Moves queued captures of `vaultId` into the vault at `vaultURL`
-    /// (sealed already: plain file moves). Returns how many moved. Nothing
-    /// moves into a read-only vault (format.md §7.3): they stay queued.
+    /// Moves queued captures of `vaultId` into the vault at `vaultURL` (`CaptureDelivery.flushQueue`), recorded under
+    /// the stored profile when it is this vault's; `coordinated`: each write coordinated (iCloud Drive).
     @discardableResult
     func flushQueue(into vaultURL: URL, vaultId: UUID, coordinated: Bool) -> Int {
-        guard Self.acceptsCaptures(at: vaultURL, vaultId: vaultId) else { return 0 }
-        let dir = queueFolder(vaultId)
-        let names = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { CaptureFile.parse(name: $0) != nil }
-        let inbox = vaultURL.appendingPathComponent(CaptureFile.folderName, isDirectory: true)
-        // A profile of this vault, to record them in its ledger (design §5.4) under the epoch each was sealed
-        // with (its sidecar; a file queued before sidecars existed takes the profile's); without a profile they
-        // stay queued, never placed unrecorded.
-        let profile = (try? store.load())?.profile
-        var moved = 0
-        for name in names {
-            let file = dir.appendingPathComponent(name)
-            guard let kind = CaptureFile.parse(name: name)?.kind,
-                  let data = try? BoundedRead.contents(of: file, maxBytes: CaptureFile.maxSealedBytes(kind)) else { continue }
-            do {
-                let epoch = Self.queuedEpoch(file)
-                let sealed = SealedCapture(name: name, data: data, epoch: epoch?.0, epochId: epoch?.1)
-                if writeStores != nil {
-                    guard let profile, profile.vaultId == vaultId else { continue }
-                    try record(sealed, profile)
-                }
-                try CloudVault.coordinatedWrite(coordinated ? inbox : nil) {
-                    try CaptureWriter.store(sealed, in: inbox)
-                }
-                try? FileManager.default.removeItem(at: file)
-                try? FileManager.default.removeItem(at: Self.epochSidecar(file))
-                moved += 1
-            } catch {
-                continue
-            }
-        }
-        return moved
+        delivery.flushQueue(into: vaultURL, vaultId: vaultId, profile: (try? store.load())?.profile,
+                            files: coordinated ? SystemFileCoordinator() : nil)
     }
 
     /// Moves queued captures into the stored profile's vault when its folder
@@ -1047,15 +810,7 @@ final class QuickCapture {
     func flushStoredQueue() throws -> Int {
         let stored: StoredCaptureProfile
         do { stored = try storedProfile() } catch QuickCaptureError.notSetUp { return 0 }
-        guard let url = vaultFolder(stored) else { return 0 }
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let moved = flushQueue(into: url, vaultId: stored.profile.vaultId, coordinated: false)
-        if moved > 0 {
-            NotificationCenter.default.post(name: Self.deliveredNotification, object: nil,
-                                            userInfo: ["vault": stored.profile.vaultId])
-        }
-        return moved
+        return delivery.flushQueue(of: stored)
     }
 
     /// Recordings a crash or a failed seal left in `root`: sealed when the
@@ -1066,7 +821,7 @@ final class QuickCapture {
     /// a reboot) leaves every folder for later, and a manifest that is there
     /// but cannot be read (data protection) leaves its folder. A folder whose
     /// manifest is missing, too large or does not decode is sealed from its
-    /// segment files (`Leftover`). With no profile at all (quick voice notes
+    /// segment files (`CaptureSegments.Leftover`). With no profile at all (quick voice notes
     /// were turned off) nothing can seal them, and they are deleted.
     ///
     /// Runs at launch and each time the app becomes active (a profile the
@@ -1088,11 +843,11 @@ final class QuickCapture {
         noTranscript.transcribe = false
         for dir in dirs {
             // A manifest that is there but cannot be read now: so are its segments; later.
-            guard let leftover = Leftover(folder: dir) else { continue }
+            guard let leftover = CaptureSegments.Leftover(folder: dir) else { continue }
             guard let id = leftover.id else {
                 // Not a folder a session made (its name is not an id) and no manifest names one: deleted
                 // only when it holds no audio, else left alone rather than sealed under a made-up id.
-                if leftover.segments.allSatisfy({ Self.byteCount($0) == 0 }) { try? fm.removeItem(at: dir) }
+                if leftover.segments.allSatisfy({ CaptureSegments.byteCount($0) == 0 }) { try? fm.removeItem(at: dir) }
                 continue
             }
             let outcome = await seal(segments: leftover.segments, finished: leftover.finished, folder: dir, id: id,
@@ -1117,43 +872,6 @@ final class QuickCapture {
         }
     }
 
-    /// What a recording folder left in `root` holds, from its manifest when
-    /// it can be read, else from its files: a session's folder is named by
-    /// its recording id, and its segments by number (`segmentFiles`). Without
-    /// a manifest every segment but the last counts as complete.
-    struct Leftover: Equatable {
-        var id: UUID?
-        var segments: [URL]
-        var finished: Int?
-        var started: Date?
-
-        static let maxManifestBytes = 1 << 20
-
-        /// Nil when the manifest is there but cannot be read now.
-        init?(folder: URL) {
-            let fm = FileManager.default
-            let url = folder.appendingPathComponent(RecordingRecovery.manifestName)
-            var manifest: RecordingManifest?
-            let size = ((try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue
-            if let size, size <= Self.maxManifestBytes {
-                guard let data = try? BoundedRead.contents(of: url, maxBytes: Self.maxManifestBytes) else { return nil }
-                manifest = try? JSONDecoder().decode(RecordingManifest.self, from: data)
-            }
-            // Only names a session gives its segments: never a path out of the folder.
-            let listed = (manifest?.segments ?? []).filter { QuickCapture.segmentNumber($0) != nil }
-                .map { folder.appendingPathComponent($0) }
-            segments = QuickCapture.segmentFiles(listed: listed, in: folder)
-            if let manifest {
-                id = manifest.recording
-                finished = min(max(0, manifest.finished), listed.count)
-                started = manifest.started
-            } else {
-                id = UUID(uuidString: folder.lastPathComponent)
-                finished = max(0, segments.count - 1)
-                started = segments.compactMap { (try? fm.attributesOfItem(atPath: $0.path))?[.creationDate] as? Date }.min()
-            }
-        }
-    }
     // MARK: - Live Activity
 
     /// The stale date of a recording's Live Activity content sent now: `activityStaleAfter` from now while it

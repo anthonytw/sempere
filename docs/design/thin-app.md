@@ -89,7 +89,7 @@ The call sites that are left, by file in `Apps/Sempere/SempereApp/` (2026-11-07)
 View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the platform API.
 
 - **`KeyValueStore`** (`UserDefaults`/`@AppStorage`): `AppCommands`, `AppModel`, `AppModel+SettingsSync`,
-  `AppModel+Thinning`, `AppModel+TranscriptSearch`, `AppThemeWindows`, `AppearancePreferences`, `BackupSettings`,
+  `AppModel+Thinning`, `AppModel+TranscriptSearch`, `AppThemeWindows`, `AppearancePreferences`,
   `ColumnLayout`, `DragTestSettings`, `DrawingPaletteView`,
   `DrawingToolbox` (its `defaults:` parameter), `EraserPreference`,
   `ImagePreparation`, `InsertUI`, `MathEditor`, `MathModels`, `MathSettings`, `MouseInk`, `NoteCanvasView`,
@@ -106,9 +106,10 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
 - **`FolderBookmarks`** (bookmarks and security scopes): `AppModel`, `AppModel+Backup`, `+BulkExport`,
   `+DeviceNotices`, `+Import`, `+SyncTargets` (`FolderTargetAccess.open` resolves with `mounting:`), `+VaultDetails`,
   `+VaultStore`, `ExportSheet`, `FolderPicker`, `InsertUI`, `MathModels`, `NewVaultView`, `PDFPreparation`,
-  `QuickCapture`, `VaultLibrary`.
+  `QuickCapture` (its profile's bookmark at setup), `VaultLibrary+App` (`VaultBookmark`, the backup folder's).
 - **`FileCoordinating`**: the callers of `CloudVault.coordinatedRead`/`Write` (`AppModel+Backup`, `+Thinning`,
-  `+VaultStore`, `NewVaultView`, `NoteEditor`, `QuickCapture`) pass `files:` once their code is in the library.
+  `+VaultStore`, `NewVaultView`, `NoteEditor`) pass `files:` once their code is in the library. Quick capture's
+  queue flush takes one already (`CaptureDelivery.flushQueue(…files:)`, the app passes `SystemFileCoordinator`).
   `Sources/SempereSync/UbiquitousFolderHooks.swift` calls `NSFileCoordinator` itself (Darwin only, already in the
   library): it can take a `FileCoordinating` when a second implementation is wanted.
 - **`PlatformServices`**: `Platform.isMac`/`isPhone` in 33 files (they stay for views; logic that moves takes
@@ -124,10 +125,27 @@ The package target and product exist (wave 3, 2026-11-07): Foundation, `Sempere`
 `NoteListDiff`, and the demo generators (`DemoVault`, `DemoHandwriting`, `DemoSearchNotes`), which are `#if DEBUG`
 so no release build has them. Their tests are `Tests/SempereAppCoreTests`.
 
+Wave 4 (library and capture half, 2026-11-07) added: `VaultLibrary` (recents, the store's vaults, `create`),
+`VaultLocator`, `FolderAccess`, `NewVaultRequest`/`CreatedVault`; the backup settings (`BackupRecord`, `BackupStore` on
+a `KeyValueStore`, `BackupLocation`, `BackupReminder`'s dates, `BackupNotifying`, `BackupProgress`, `BackupRunControl`);
+and quick capture's logic (`QuickCaptureLogic.swift`: `StoredCaptureProfile`, `CaptureProfileStore`,
+`QuickCaptureError`, `RecordingManifest`, `CaptureSegments` with the seal's rule `plan`, `CaptureDelivery`). Vault
+creation itself is `VaultCreation` in `Sempere` (no session state, and the CLI links `Sempere`, not this module):
+`VaultLibrary.create` and `vault init`/`store create` call it (duplicate 4). The module now also depends on
+`SempereSync` (placeholders) and `SempereRender` (the kit's `VaultInfo`).
+
+The `QuickCapture` class itself, the start/stop/sweep state machine, stays in the app for now: it drives the app's
+`RecordingSession` (`AudioRecorder.swift`, AVAudioSession observers and file protection, shared with the in-note
+recorder that moves with `NoteEditor` in wave 5) and speaks `VoiceNoteStatus`, `VoiceNoteActions` and the tap log of
+`SempereShared`, which the widget compiles and which wait for `SempereCaptureShared`. With those two in the package,
+the class moves behind protocols for the Live Activity, the app's state and background time. Its decisions that need
+no platform service are already in the module and tested on Linux.
+
 The words stayed in the app, next to the views that show them, so the string catalog's checks still see them
 (`LocalizationCatalogTests` scans `Apps/`): `MenuCommand+Titles.swift` words `MenuCommand.titleKind(in:)`,
-`DeviceSettings+Text.swift` the settings' choices and `StorageText`, and `Expectations+Text.swift` the tour pages
-(`TourPage.topic`). So did the glue that reads the process or the bundle for the app: `OnboardingPolicy.automatic`
+`DeviceSettings+Text.swift` the settings' choices and `StorageText`, `Expectations+Text.swift` the tour pages
+(`TourPage.topic`), `VaultLibrary+App.swift`, `BackupSettings+Text.swift` and `QuickCapture+Text.swift` the errors,
+progress, reminder and restore name of wave 4 (retroactive `CustomStringConvertible`, as `CloudVault+Live.swift`). So did the glue that reads the process or the bundle for the app: `OnboardingPolicy.automatic`
 (debug launch variables), `OnboardingMemory()` (`UserDefaults.standard`), the transcription hooks
 (`TranscriptionSettings.statusProvider` and the others, set at launch) and `DemoLaunch`.
 
@@ -147,7 +165,11 @@ Each one becomes a single implementation in the library that both call.
    own device-key files are `CLIDeviceKeyFiles`, no longer a second `DeviceKeyStore`.
 4. **Sync problem classification** (`SyncStatus.problem(from:)` and `WebDAVSyncProblem.from`), the
    WebDAV connection check, how `SyncOptions` limits are filled in, the settings catalog accessors, and
-   vault creation (`VaultLibrary.create` and `vault init`).
+   vault creation (`VaultLibrary.create` and `vault init`). Vault creation is done: `VaultCreation` (Sempere), the
+   app's 1.0.0 behavior, with `VaultStore.folderName` as the one name rule. So are the catalog accessors: the CLI's
+   own copies (the specs a device type uses, a spec's device types, what can be a setting key) are
+   `SharedSettingsCatalog.specs(for:)` (nil: all), `SharedSettingSpec.deviceTypes` and
+   `SharedSettingsCatalog.isSettingKey`; the app already read the catalog through the library.
 5. **Editor operations.** Items, insert, math, video and recordings in `NoteEditor+*` duplicate the
    CLI's `Items`/`Attach`/`AttachVideo`/`Recordings`/`NoteEdit` commands. So do the app's image
    preparation and item drawing (`ImagePreparation`, `ItemRendering`), next to `ImageIngest` and

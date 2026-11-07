@@ -1,6 +1,7 @@
 import Foundation
 import os
 import Sempere
+import SempereAppCore
 import UIKit
 
 private let settingsLog = Logger(subsystem: "io.github.anthonytw.sempere", category: "settings")

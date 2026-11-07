@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSync
 
 /// What a restore wrote: the new vault's folder, the core report and the
@@ -348,7 +349,7 @@ extension AppModel {
     func restoreBackup(picked: URL, source: URL, name: String, replace: Bool = false,
                        library: VaultLibrary) async throws -> RestoreOutcome {
         guard backupProgress == nil else { throw BackupAppError.busy }
-        _ = try VaultLibrary.folderName(for: name)
+        try InvalidVaultName.check(name)
         backupProgress = BackupProgress(stage: .restoring)
         defer { backupProgress = nil }
         let scopedSource = picked.startAccessingSecurityScopedResource()

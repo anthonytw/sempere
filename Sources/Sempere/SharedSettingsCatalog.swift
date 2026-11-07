@@ -39,6 +39,9 @@ public struct SharedSettingSpec: Sendable {
     /// Whether a device of `type` uses it.
     public func isUsed(by type: SettingsDeviceType) -> Bool { types?.contains(type) ?? true }
 
+    /// The device types that use it, every type when `types` is nil (`settings list`'s "used by").
+    public var deviceTypes: [SettingsDeviceType] { types ?? SettingsDeviceType.allCases }
+
     /// `value` in its stored form when the setting accepts it, nil otherwise.
     public func validated(_ value: JSONValue) -> JSONValue? {
         switch kind {
@@ -175,8 +178,19 @@ public enum SharedSettingsCatalog {
     /// Every key this version reads: the settings' keys.
     public static var allKeyNames: Set<String> { Set(specs.map(\.name)) }
 
-    /// The settings a device of `type` uses.
-    public static func specs(for type: SettingsDeviceType) -> [SharedSettingSpec] { specs.filter { $0.isUsed(by: type) } }
+    /// The settings a device of `type` uses (the app's settings pass, `settings list --type`); every setting when
+    /// `type` is nil (`settings list` without `--type`).
+    public static func specs(for type: SettingsDeviceType?) -> [SharedSettingSpec] {
+        guard let type else { return specs }
+        return specs.filter { $0.isUsed(by: type) }
+    }
+
+    /// Whether `name` can be a setting's key at the top level of the file: not empty, at most 256 bytes, and
+    /// neither a `$` member nor a `[type]` block (format.md §13.2). A key this version does not know may still be
+    /// one (`settings reset` of a newer version's key).
+    public static func isSettingKey(_ name: String) -> Bool {
+        !name.isEmpty && name.utf8.count <= 256 && !name.hasPrefix("$") && !name.hasPrefix("[")
+    }
 
     /// A problem `validate` found (docs/settings-sync.md §6).
     public struct Issue: Hashable, Sendable, CustomStringConvertible {
