@@ -342,7 +342,7 @@ struct InkDeviceCheckTests {
         try TS.writeAsAnotherDevice([.addStroke(page: made.page, stroke: remote), .removeStroke(page: second, strokeId: gone)],
                                     to: made.note, vault: made.url, key: made.key)
         let merge = Task { try await editor.mergeRevisions(vault: made.vault, clock: clock, coordinated: false, verify: nil) }
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .milliseconds(300))   // kept: a negative check, nothing to wait on
         #expect(!i.strokes.contains { $0.id == remote.id }, "no drawing replaced under the gesture")
         for p in path.dropFirst(4) { i.host.objectEraser.move(to: p) }
         i.eraserEnd(at: path[path.count - 1])

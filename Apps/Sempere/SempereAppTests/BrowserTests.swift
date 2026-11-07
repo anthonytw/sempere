@@ -423,7 +423,7 @@ struct BrowserTests {
     @Test func sortsByCreationAndPutsFavoritesFirstUnderAnyOrder() async throws {
         let model = try await Self.unlockedFixtureModel()
         let a = try await model.createNote(title: "alpha", paper: .ruled, notebook: nil)
-        try await Task.sleep(for: .milliseconds(20))
+        try await Task.sleep(for: .milliseconds(20))   // kept: a negative check, nothing to wait on
         let b = try await model.createNote(title: "Beta", paper: .ruled, notebook: nil)
         // `a` changes last: newest by modification, older by creation.
         try await model.renameNote(a, to: "alpha 2")

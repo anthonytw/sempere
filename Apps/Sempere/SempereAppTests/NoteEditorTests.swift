@@ -34,11 +34,11 @@ struct NoteEditorTests {
         for i in 0..<3 {
             drawing.strokes.append(TS.canvasStroke(TS.stroke(x: 50 + 60 * Double(i), y: 400)))
             editor.drawingDidChange(pageID: page.id, drawing: drawing, tool: nil)
-            try await Task.sleep(for: .milliseconds(60))
+            await Task.yield()   // one burst, well inside the debounce
         }
         #expect(editor.deltasWritten == 0)
         #expect(await TS.waitUntil { editor.deltasWritten == 1 })
-        try await Task.sleep(for: .milliseconds(700))
+        await editor.flush()   // nothing pending: no second delta follows
         #expect(editor.deltasWritten == 1)
         var deltas = try Self.myDeltas(vault, clock)
         #expect(deltas.count == 1)

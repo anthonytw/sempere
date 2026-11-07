@@ -229,7 +229,7 @@ struct VersionHistoryAppTests {
         let preview = try await model.thinVault(rule: .allButCheckpoints, dryRun: true)
         #expect(preview.notes.first { $0.id == Self.lecture } != nil)
         let at = try #require(preview.now)
-        try await Task.sleep(for: .milliseconds(50))
+        #expect(await TS.waitUntil { Date() > at }, "the clock passes the preview's time before the later saves")
         for y in [340.0, 380] { try await HistoryTests.draw(editor, y: y) }
         let since = try vault.loadNote(Self.lecture).revisions.filter { $0.wall > at }.map(\.name)
         #expect(since.count >= 2)

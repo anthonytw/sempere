@@ -157,7 +157,7 @@ extension TranscriptSearchAppTests {
 
         // A query that the next one replaces while it runs.
         model.searchText = "harbors"
-        try await Task.sleep(for: .milliseconds(50))
+        try await Task.sleep(for: .milliseconds(50))   // kept: a negative check, nothing to wait on
         let start = ContinuousClock.now
         model.searchText = "linear maps"
         #expect(await TS.waitUntil(timeout: .seconds(120)) { !model.isSearching && model.transcriptHits.count == 75 })

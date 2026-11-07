@@ -53,7 +53,7 @@ extension ExportTests {
         try await Task.sleep(for: NoteEditor.defaultDebounce)
         async let exported = pathCount(model)
         #expect(try await exported == before + 1)
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .milliseconds(300))   // kept: a negative check, nothing to wait on
         #expect(editor.deltasWritten == 1, "the stroke is written once")
         model.close()
     }

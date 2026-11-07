@@ -262,7 +262,7 @@ struct WebDAVAppTests {
         #expect(s.model.vaultURL?.standardizedFileURL == s.model.webdavLocations.copy(of: location).folder.standardizedFileURL)
         #expect(s.library.recents.first?.storeID?.uuidString.lowercased() == s.listing.vaultId.lowercased())
         // Nothing is taken from the server while the vault is locked: runs only upload.
-        try await Task.sleep(for: .milliseconds(150))
+        try await Task.sleep(for: .milliseconds(150))   // kept: a negative check, nothing to wait on
         #expect(s.remote.twoWayRuns == 0)
         #expect(s.remote.pushedUnlocked.allSatisfy { !$0 })
         // The same folder and user again: the location is reused, not duplicated.
@@ -444,12 +444,12 @@ struct WebDAVAppTests {
             relay.send(p)
         }
         #expect(await TS.waitUntil { !box.files.isEmpty })
-        try await Task.sleep(for: .milliseconds(50))
+        try await Task.sleep(for: .milliseconds(50))   // kept: a negative check, nothing to wait on
         #expect(box.files.count < 50, "coalesced, one main-actor task at a time")
         relay.close()
         relay.send(SyncProgress())
         let count = box.files.count
-        try await Task.sleep(for: .milliseconds(50))
+        try await Task.sleep(for: .milliseconds(50))   // kept: a negative check, nothing to wait on
         #expect(box.files.count == count)
     }
 

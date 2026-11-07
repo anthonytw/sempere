@@ -281,7 +281,7 @@ struct ExportTests {
         let cleaned = await TS.waitUntil(timeout: .seconds(30)) { self.staged().subtracting(before).isEmpty }
         #expect(cleaned)
         // And a late result never reaches the job.
-        try await Task.sleep(for: .milliseconds(200))
+        try await Task.sleep(for: .milliseconds(200))   // kept: a negative check, nothing to wait on
         #expect(job.state == .idle)
     }
 

@@ -67,7 +67,7 @@ struct SuspensionLockTests {
         let store = library.vaultStore
         await model.editGate.acquire()   // a browser edit is writing
         center.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
-        try await Task.sleep(for: .milliseconds(100))
+        await TS.yieldTurns()
         #expect(Self.leaseHeld(store, id), "held while the write finishes")
         tasks.expire()
         #expect(!Self.leaseHeld(store, id), "let go as soon as iOS takes the time back")
@@ -114,7 +114,7 @@ struct SuspensionLockTests {
         #expect(Self.leaseHeld(store, id), "taken back in the same turn")
         center.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
         #expect(await TS.waitUntil { !Self.leaseHeld(store, id) && tasks.ended == tasks.begun })
-        try await Task.sleep(for: .milliseconds(200))
+        await TS.yieldTurns()
         #expect(!Self.leaseHeld(store, id), "nothing takes it later")
         model.reacquireStoreLease()
         #expect(!Self.leaseHeld(store, id), "never taken while in the background")
@@ -129,7 +129,7 @@ struct SuspensionLockTests {
         let store = library.vaultStore
         await model.editGate.acquire()   // a browser edit is writing
         center.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
-        try await Task.sleep(for: .milliseconds(100))
+        await TS.yieldTurns()
         #expect(Self.leaseHeld(store, id))
         model.close()
         #expect(!Self.leaseHeld(store, id), "let go at once")
@@ -154,7 +154,7 @@ struct SuspensionLockTests {
         let (model, library, id, tasks, center) = try await Self.openStoreVault()
         model.releasesLocksInBackground = false
         center.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
-        try await Task.sleep(for: .milliseconds(100))
+        await TS.yieldTurns()
         #expect(Self.leaseHeld(library.vaultStore, id))
         #expect(tasks.begun.isEmpty)
         model.close()

@@ -135,7 +135,7 @@ struct BackgroundTargetsTests {
             s.schedule.finished(at: Date(), success: false)
         }
         coordinator.networkChanged(reachable: true)   // the first report: nothing changed
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .milliseconds(300))   // kept: a negative check, nothing to wait on
         #expect(davSession.schedule.failures == 1 && !davSession.schedule.demanded)
         coordinator.networkChanged(reachable: false)
         #expect(davSession.status.kind == .offline && !davSession.needsAttention)
@@ -143,7 +143,7 @@ struct BackgroundTargetsTests {
         // A flapping network: back for less than the debounce, then gone again, asks for nothing.
         coordinator.networkChanged(reachable: true)
         coordinator.networkChanged(reachable: false)
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .milliseconds(300))   // kept: a negative check, nothing to wait on
         #expect(!davSession.schedule.demanded && !folderSession.schedule.demanded)
         coordinator.networkChanged(reachable: true)
         #expect(davSession.status.kind == .offline, "still offline until the path has held (review of #91, S2)")
@@ -168,7 +168,7 @@ struct BackgroundTargetsTests {
         davSession.demand()
         folderSession.demand()
         #expect(await TS.waitUntil { log.targets.dropFirst(before).contains(folder.id) })
-        try await Task.sleep(for: .milliseconds(200))
+        try await Task.sleep(for: .milliseconds(200))   // kept: a negative check, nothing to wait on
         #expect(!log.targets.dropFirst(before).contains(dav.id), "no run without a path")
         #expect(davSession.schedule.demanded, "the demand waits for the network")
         _ = await davSession.syncNow()
@@ -191,7 +191,7 @@ struct BackgroundTargetsTests {
         session.noteWrite()   // due after its write delay
         session.schedule.writeDelay = 0
         coordinator.networkChanged(reachable: true)   // back, but not for long yet
-        try await Task.sleep(for: .milliseconds(400))
+        try await Task.sleep(for: .milliseconds(400))   // kept: a negative check, nothing to wait on
         #expect(log.targets.count == before, "no run during the debounce")
         _ = coordinator.stop(dav.id)
     }

@@ -172,11 +172,11 @@ struct EditorRecognitionTests {
         for i in 0..<4 {
             drawing.strokes.append(TS.canvasStroke(TS.stroke(x: 50 + 40 * Double(i), y: 420)))
             editor.drawingDidChange(pageID: page.id, drawing: drawing, tool: nil)
-            try await Task.sleep(for: .milliseconds(60))
+            await Task.yield()   // one burst, well inside the delay
         }
         #expect(editor.recognitionsWritten == 2, "not while the pen is still moving")
         #expect(await TS.waitUntil { editor.recognitionsWritten == 3 })
-        try await Task.sleep(for: .milliseconds(700))
+        await editor.recognizePending()   // nothing left to recognize: no fourth write follows
         #expect(editor.recognitionsWritten == 3)
         #expect(fake.calls.count == 3)
         #expect(fake.calls.last?.count == 6)

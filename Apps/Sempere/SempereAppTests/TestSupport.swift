@@ -99,6 +99,12 @@ enum TS {
         return true
     }
 
+    /// Lets already queued main-actor work run (a handler's follow-up task) without waiting on the wall clock.
+    @MainActor
+    static func yieldTurns(_ turns: Int = 30) async {
+        for _ in 0..<turns { await Task.yield() }
+    }
+
     /// Opens the fixture vault copy, unlocked.
     @MainActor
     static func unlockedFixture() throws -> (Vault, URL) {

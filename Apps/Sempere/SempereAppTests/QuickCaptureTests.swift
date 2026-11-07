@@ -981,7 +981,7 @@ extension QuickCaptureTests {
         let vaultId = try #require(model.vault).vaultId
         model.locksSuspended = true
         NotificationCenter.default.post(name: QuickCapture.deliveredNotification, object: nil, userInfo: ["vault": vaultId])
-        try await Task.sleep(for: .milliseconds(500))
+        try await Task.sleep(for: .milliseconds(500))   // kept: a negative check, nothing to wait on
         #expect(model.inboxAdoption == nil)
         #expect(!model.notes.contains { $0.id == CaptureAdoption.ids(for: id).note })
         model.locksSuspended = false
@@ -1027,7 +1027,7 @@ extension QuickCaptureTests {
         #expect(done == 1, "stopped between captures")
         #expect(Self.inbox(url).count == 1, "the other capture stays in the inbox")
         model.startInboxAdoption()
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .milliseconds(300))   // kept: a negative check, nothing to wait on
         #expect(Self.inbox(url).count == 1, "nothing is adopted while suspended")
         model.locksSuspended = false
         #expect(await model.adoptInbox() == 1)

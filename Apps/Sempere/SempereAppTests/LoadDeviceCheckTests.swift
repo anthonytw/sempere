@@ -144,7 +144,7 @@ struct LoadDeviceCheckTests {
         // A tap on unlinked paper does nothing.
         let before = player.position
         tap(CGPoint(x: 5, y: 5))
-        try await Task.sleep(for: .milliseconds(100))
+        try await Task.sleep(for: .milliseconds(100))   // kept: a negative check, nothing to wait on
         #expect(player.position == before)
     }
 

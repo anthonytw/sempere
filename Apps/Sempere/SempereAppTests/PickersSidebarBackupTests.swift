@@ -112,7 +112,7 @@ struct PickersSidebarBackupTests {
         PassphraseTextFieldSetup.update(field, text: confirmation, revealed: false, placeholder: "Repeat",
                                         coordinator: coordinator)
         #expect(field.text == "Abcd-efgh-ijkl-mn12", "not reset to the binding's empty value")
-        try await Task.sleep(for: .milliseconds(50))
+        try await Task.sleep(for: .milliseconds(50))   // kept: a negative check, nothing to wait on
         #expect(confirmation == "Abcd-efgh-ijkl-mn12", "the binding took it")
         // The app's own change still wins once the field's text was seen.
         confirmation = ""

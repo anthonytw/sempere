@@ -410,7 +410,7 @@ struct RemoteMergeCanvasTests {
         slot.coordinator.canvasViewDidBeginUsingTool(slot.host.canvas)
         #expect(editor.isInkInUse)
         let merge = Task { try await editor.mergeRevisions(vault: vault, clock: clock, coordinated: false, verify: nil) }
-        try await Task.sleep(for: .milliseconds(400))
+        try await Task.sleep(for: .milliseconds(400))   // kept: a negative check, nothing to wait on
         #expect(slot.host.canvas.drawing.strokes.isEmpty, "not under the pencil")
         slot.coordinator.canvasViewDidEndUsingTool(slot.host.canvas)
         #expect(try await merge.value == .merged(fromOtherDevice: true))

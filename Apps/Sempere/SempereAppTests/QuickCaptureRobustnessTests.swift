@@ -155,7 +155,7 @@ struct QuickCaptureRobustnessTests {
         #expect(await TS.waitUntil(timeout: .seconds(5)) { recordingStates >= first + 3 })
         _ = try await qc.stop()
         let after = recordingStates
-        try await Task.sleep(for: .milliseconds(400))
+        try await Task.sleep(for: .milliseconds(400))   // kept: a negative check, nothing to wait on
         #expect(recordingStates == after, "no refresh once stopped")
     }
     #endif

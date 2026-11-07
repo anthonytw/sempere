@@ -292,7 +292,7 @@ struct TwoDeviceSyncAppTests {
         let slow = Task { await session.syncNow() }
         #expect(await TS.waitUntil { session.isSyncing })
         let reopen = Task { try await w.a.model.openWebDAV(w.a.location, library: w.a.library) }
-        try await Task.sleep(for: .milliseconds(200))
+        try await Task.sleep(for: .milliseconds(200))   // kept: a negative check, nothing to wait on
         #expect(w.a.model.vault == nil || w.a.model.phase == .noVault || w.a.model.phase == .locked)
         w.server.gating(nil)
         gate.signal(); gate.signal()
@@ -470,12 +470,13 @@ struct SyncCoordinatorTests {
         }
         let slow = [location(), location()], open = location()
         let slowIDs = Set(slow.map(\.id))
-        let inFlight = RunCounter()
+        let inFlight = RunCounter(), released = RunCounter()
         let coordinator = SyncCoordinator(targets: { slow + [open] }, makeSession: { loc in
             SyncSession(locationID: loc.id, vaultID: loc.vaultID, name: loc.vaultName, lastSuccess: nil, run: { _ in
                 _ = inFlight.add(1)
                 defer { _ = inFlight.add(-1) }
-                if slowIDs.contains(loc.id) { try await Task.sleep(for: .seconds(4)) }
+                // A slow upload of a closed vault, until the test releases it.
+                if slowIDs.contains(loc.id) { while released.value == 0 { try await Task.sleep(for: .milliseconds(10)) } }
                 return SyncReport()
             }, countUnconfirmed: { 0 })
         })
@@ -488,6 +489,7 @@ struct SyncCoordinatorTests {
         Task { _ = await session.syncNow(); _ = finished.add(1) }
         #expect(await TS.waitUntil(timeout: .seconds(2)) { finished.value == 1 }, "the open vault's run waited behind background runs")
         #expect(coordinator.runsGoing <= coordinator.maxConcurrentRuns)
+        _ = released.add(1)
         for l in slow + [open] { _ = coordinator.stop(l.id) }
     }
 
@@ -514,7 +516,7 @@ struct SyncCoordinatorTests {
         let slow = try #require(coordinator.session(for: blocked))
         #expect(await TS.waitUntil { slow.isSyncing })
         let waiting = try #require(coordinator.session(for: queued))
-        try await Task.sleep(for: .milliseconds(100))
+        try await Task.sleep(for: .milliseconds(100))   // kept: a negative check, nothing to wait on
         #expect(waiting.lastSuccess == nil, "queued behind the background slot")
         let open = try #require(coordinator.attachOpen(queued.vaultID).first)
         open.vaultUnlocked()
@@ -542,7 +544,7 @@ struct SyncCoordinatorTests {
         coordinator.setInBackground(true)
         try await Task.sleep(for: .milliseconds(100))   // a run already going ends
         let paused = runs.value
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .milliseconds(300))   // kept: a negative check, nothing to wait on
         #expect(runs.value == paused, "no periodic run in the background")
         coordinator.sessions[closed.id]?.noteWrite()
         #expect(await TS.waitUntil { runs.value > paused }, "a write still runs")
