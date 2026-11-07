@@ -320,10 +320,10 @@ there. Commit messages:
   copies the picked vault in and opens the copy, or opens the copy already there) and Restore from Backup
   (`VaultStore.restore`, `--replace` swaps a copy: old aside, new in, `sweep` restores an interrupted one) put every vault in `VaultLibrary.vaultStore`
   (`Application Support/Sempere/Vaults/<vaultId>/<name>.sempere`; tests get one next to their
-  `recents.json`). Nothing creates or reads an in-place vault (a recent of an earlier build is copied in). A
+  `recents.json`). Nothing creates or reads an in-place vault. A
   vault appears in the store only complete (built or copied under `.staging`, checked, one `rename`;
   `sweep` removes leftovers), so never write into a store folder by hand. One copy per vault id. Recents
-  of store vaults carry `storeID` and no bookmark; an open store vault holds a `VaultStore.Lease` (let go in the
+  (`RecentVault`: `storeID` or `webdav`, no bookmark; a 1.0.0 `recents.json` still decodes, extra keys ignored); an open store vault holds a `VaultStore.Lease` (let go in the
   background on iOS: a suspended app holding any `flock` in the App Group container is killed, `0xdead10cc`;
   `AppModel+Suspension`, never hold a lock across a suspension), and every
   writer of a vault's files shares its `VaultFileLock` (`VaultStore.writeLock(for:)`). CLI: `sempere store` (list, path, create, import, restore, remove).

@@ -35,7 +35,7 @@ struct ProfileOptions: ParsableArguments {
         }
         let p: CaptureProfile
         do { p = try JSONDecoder().decode(CaptureProfile.self, from: data) } catch {
-            throw CLIError.failure("\(url.path) is not a capture profile")
+            throw CLIError.failure("\(url.path) is not a capture profile (or lacks its epoch fields): run `sempere inbox enable` again")
         }
         guard p.vaultId == vaultId else { throw CLIError.failure("\(url.path) is the capture profile of another vault") }
         return p

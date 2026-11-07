@@ -62,8 +62,7 @@ struct StoredVaultsSection: View {
         Button(String(localized: "Delete from This Device…", comment: "Removes a vault from the in-app store"),
                systemImage: "trash", role: .destructive) {
             Task {
-                removal = await KeyRemoval.check(vaultID: entry.vaultId, at: entry.url, store: keys.store,
-                                                 library: library, except: entry.url)
+                removal = await KeyRemoval.check(vaultID: entry.vaultId, at: entry.url, store: keys.store)
                 deleting = entry
             }
         }
@@ -80,7 +79,7 @@ struct StoredVaultsSection: View {
                 try await library.removeStored(entry)
                 // This device's keys for it go with it (key-hierarchy KH5): it would join again. Kept while another
                 // local copy opens with them (re-check of #88).
-                if removal.deletesKeys { try? await keys.store.delete(for: entry.vaultId) }
+                try? await keys.store.delete(for: entry.vaultId)
             }
         }
     }

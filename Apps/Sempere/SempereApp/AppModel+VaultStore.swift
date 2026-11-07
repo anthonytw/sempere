@@ -298,7 +298,6 @@ extension VaultLibrary {
         let gone = recents.filter { $0.storeID == entry.vaultId }.map(\.id)
         if !gone.isEmpty {
             recents.removeAll { gone.contains($0.id) }
-            for id in gone { states[id] = nil }
             save()
         }
     }

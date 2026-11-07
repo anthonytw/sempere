@@ -458,12 +458,38 @@ final class CaptureInboxTests: VaultTestCase {
         let vault = try Vault.open(at: vaultURL(), identities: [identity])
         let forger = CaptureProfile(vaultId: vault.vaultId, recipients: [try vault.vaultRecipient().string],
                                     key: Data(repeating: 7, count: 32), device: "0badf00d", notebook: "Inbox",
-                                    recipient: CaptureKey.fingerprint(of: vault.devices[0].key))
+                                    recipient: CaptureKey.fingerprint(of: vault.devices[0].key),
+                                    epoch: vault.manifest.epoch, epochId: Data(repeating: 1, count: 32))
         let id = UUID()
         let forged = try CaptureWriter(profile: forger).seal(audio: audio, started: started, id: id)
         try CaptureWriter.store(forged, in: vault.inboxURL)
         XCTAssertEqual(vault.adoptCapture(id, deviceState: deviceState(), app: "t").error, CaptureError.badTag.description)
         XCTAssertEqual(try Data(contentsOf: vault.inboxURL.appendingPathComponent(forged.name)), forged.data, "left untouched")
+    }
+
+    /// A profile as 1.0.0 stored it (both epoch fields present) still decodes; one without them does not, and a
+    /// writer refuses an epoch id that is not 32 bytes of hex.
+    func testAProfileNeedsItsEpochFields() throws {
+        let (_, profile, _) = try setUp()
+        let id = Hex.encode(Data(repeating: 0xab, count: 32))
+        func json(_ epoch: String) -> Data {
+            Data("""
+            {"vaultId":"\(profile.vaultId.uuidString)","recipients":["\(profile.recipients[0])"],\
+            "key":"\(Data(repeating: 7, count: 32).base64EncodedString())",\
+            "device":"0badf00d","notebook":"Inbox","recipient":"\(Hex.encode(Data(repeating: 7, count: 32)))"\(epoch)}
+            """.utf8)
+        }
+        let current = try JSONDecoder().decode(CaptureProfile.self, from: json(",\"epoch\":3,\"epochId\":\"\(id)\""))
+        XCTAssertEqual(current.epoch, 3)
+        XCTAssertEqual(current.epochId, id)
+        XCTAssertNoThrow(try CaptureWriter(profile: current))
+        XCTAssertThrowsError(try JSONDecoder().decode(CaptureProfile.self, from: json(""))) { error in
+            guard case DecodingError.keyNotFound = error else { return XCTFail("\(error)") }
+        }
+        XCTAssertThrowsError(try JSONDecoder().decode(CaptureProfile.self, from: json(",\"epoch\":3")))
+        var bad = current
+        bad.epochId = "zz"
+        XCTAssertThrowsError(try CaptureWriter(profile: bad))
     }
 
     /// Inbox files follow FileIO's write contract: written once, under a

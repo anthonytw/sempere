@@ -225,7 +225,7 @@ struct JoinTakeoverAppTests {
         let w = try await Self.world()
         defer { w.home.close() }
         let id = try #require(w.home.vault?.vaultId)
-        let alone = await KeyRemoval.check(vaultID: id, at: w.url, store: w.homeKeys.store, library: nil)
+        let alone = await KeyRemoval.check(vaultID: id, at: w.url, store: w.homeKeys.store)
         #expect(alone.home == .alone)
         #expect(alone.removalWarning()?.contains("recovery kit") == true)
         #expect(alone.forgetWarning?.contains("recovery kit") == true)
@@ -234,54 +234,14 @@ struct JoinTakeoverAppTests {
         defer { phone.close() }
         guard case .waiting(let words, _) = try await phone.startJoin(store: phoneKeys.store) else { return }
         _ = try await w.home.approveDevice(words: words, qr: nil)
-        let withOthers = await KeyRemoval.check(vaultID: id, at: w.url, store: w.homeKeys.store, library: nil)
+        let withOthers = await KeyRemoval.check(vaultID: id, at: w.url, store: w.homeKeys.store)
         #expect(withOthers.home == .withOthers)
         #expect(withOthers.offersMakeHome)
         #expect(withOthers.forgetWarning != nil)
-        let member = await KeyRemoval.check(vaultID: id, at: w.url, store: phoneKeys.store, library: nil)
+        let member = await KeyRemoval.check(vaultID: id, at: w.url, store: phoneKeys.store)
         #expect(member.home == .no)
         #expect(member.removalWarning() == nil)
         #expect(member.forgetWarning == nil)
-        // Another local copy that opens with the same keys keeps them, and says so.
-        let kept = KeyRemoval(home: .withOthers, otherCopies: ["Mine"])
-        #expect(!kept.deletesKeys)
-        #expect(!kept.offersMakeHome)
-        #expect(kept.removalWarning()?.contains("“Mine”") == true)
-    }
-
-    /// Second re-check of #88: a recent folder vault that does not answer in time, or whose bookmark does not
-    /// resolve, may be a copy: the keys stay and the dialog names it. A reader that hangs (and ignores
-    /// cancellation) does not hold the check past its bound.
-    @Test func anUncheckableFolderKeepsTheKeysAndAHungReaderDoesNotHoldTheCheck() async throws {
-        let id = UUID()
-        let gate = DispatchSemaphore(value: 0)
-        defer { gate.signal() }
-        let start = ContinuousClock.now
-        let hung = await KeyRemoval.folderCopies(of: id, in: [(name: "Slow", bookmark: Data([1])), (name: "Other", bookmark: Data([2])),
-                                                              (name: "Mine", bookmark: Data([3]))],
-                                                 except: nil, bound: .milliseconds(200)) { bookmark in
-            switch bookmark.first {
-            case 1: gate.wait(); return .folder(path: "/slow", vaultId: id)
-            case 2: return .folder(path: "/other", vaultId: UUID())
-            default: return .folder(path: "/mine", vaultId: id)
-            }
-        }
-        #expect(ContinuousClock.now - start < .seconds(2), "the hung reader is not waited for")
-        #expect(hung.copies == ["Mine"])
-        #expect(hung.unchecked == ["Slow"])
-
-        let unresolvable = await KeyRemoval.folderCopies(of: id, in: [(name: "Gone", bookmark: Data("not a bookmark".utf8))],
-                                                         except: nil)
-        #expect(unresolvable.unchecked == ["Gone"])
-        let kept = KeyRemoval(home: .withOthers, otherCopies: [], uncheckedCopies: unresolvable.unchecked)
-        #expect(!kept.deletesKeys)
-        #expect(!kept.offersMakeHome)
-        #expect(kept.removalWarning()?.contains("“Gone”") == true)
-        // The copy being removed is not counted.
-        let removing = await KeyRemoval.folderCopies(of: id, in: [(name: "This", bookmark: Data([3]))], except: "/mine") { _ in
-            .folder(path: "/mine", vaultId: id)
-        }
-        #expect(removing.copies.isEmpty && removing.unchecked.isEmpty)
     }
 
     /// Re-check of #88 (stray): a joiner whose request the copy no longer holds (home took it with an approval that

@@ -159,7 +159,6 @@ struct RootView: View {
             // whichever scene leaves last; a Mac app is never suspended, so its library window's phase still does.
             if phase == .active, Platform.isMac { model.enterForeground() }
             if phase == .active { model.scheduleSettingsSync() }   // another device may have changed the vault's settings
-            if phase == .active { library.refreshRecents() }
             if phase == .active {
                 // The widgets' status, queued voice notes, and recordings no seal could finish yet.
                 model.quickCaptureBecameActive()
@@ -246,13 +245,7 @@ struct RootView: View {
         .sheet(isPresented: Binding(get: { model.confirmingVault }, set: { model.confirmingVault = $0 })) {
             ConfirmVaultSheet()
         }
-        // A recent vault waited for (the launch reopen or a tap found it waiting for iCloud) arrived.
-        .onChange(of: library.states) {
-            guard model.phase == .noVault, let entry = library.takeReadyPendingOpen() else { return }
-            Task { await reopen(entry, pickOnFailure: false) }
-        }
         .onChange(of: model.phase) { _, phase in
-            if phase != .noVault { library.cancelPendingOpen() }   // another vault opened meanwhile
             #if DEBUG
             if phase == .unlocked, DebugLaunch.showsConfirmVault {
                 // After the unlock sheet has gone: one sheet at a time.
@@ -261,13 +254,8 @@ struct RootView: View {
             #endif
         }
         .task {
-            library.watchICloudAccount()
-            // Reopen the last vault on launch; a failure leaves the welcome screen. A vault iCloud has
-            // not delivered yet (after a restart) is listed as waiting and opens when it arrives.
-            guard !triedAutoOpen, model.phase == .noVault, let last = library.recents.first else {
-                await library.checkRecents()
-                return
-            }
+            // Reopen the last vault on launch; a failure leaves the welcome screen.
+            guard !triedAutoOpen, model.phase == .noVault, let last = library.recents.first else { return }
             #if DEBUG
             if DebugLaunch.isActive { return }   // the launch environment names the vault
             #endif

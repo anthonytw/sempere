@@ -133,39 +133,62 @@ struct BrowserTests {
         let dir = try Self.tempDir()
         let store = dir.appendingPathComponent("recents.json")
         let library = VaultLibrary(storeURL: store)
-        var urls: [URL] = []
+        var locations: [UUID] = []
         for i in 0..<(VaultLibrary.maxRecents + 2) {
-            let url = dir.appendingPathComponent("v\(i).sempere")
-            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            urls.append(url)
-            try library.remember(url)
+            let location = UUID()
+            locations.append(location)
+            library.rememberWebDAV(location, name: "v\(i)")
         }
         #expect(library.recents.count == VaultLibrary.maxRecents)
         #expect(library.recents.first?.name == "v\(VaultLibrary.maxRecents + 1)")
-        try library.remember(urls[5])   // moves to the front, no duplicate
+        library.rememberWebDAV(locations[5], name: "v5")   // moves to the front, no duplicate
         #expect(library.recents.first?.name == "v5")
         #expect(library.recents.count == VaultLibrary.maxRecents)
         #expect(Set(library.recents.map(\.name)).count == VaultLibrary.maxRecents)
 
         let reloaded = VaultLibrary(storeURL: store)
         #expect(reloaded.recents == library.recents)
-        let url = try reloaded.resolve(reloaded.recents[0])
-        #expect(url.lastPathComponent == "v5.sempere")
     }
 
-    /// A bookmark that does not resolve (iCloud Drive not ready after a restart, or a deleted folder)
-    /// gives a clear error and the entry stays: it is the user who removes it (RecentVaultWaitTests).
-    @Test func deadBookmarkIsKeptWithAClearError() throws {
+    /// A folder outside the store (a debug launch) is not recorded.
+    @Test func aFolderOutsideTheStoreIsNotRemembered() throws {
+        let library = try Self.library()
+        let outside = try Self.tempDir().appendingPathComponent("loose.sempere")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        #expect(library.remember(outside) == nil)
+        #expect(library.recents.isEmpty)
+    }
+
+    /// A store vault that is gone from the store gives a clear error and the entry stays: the user removes it.
+    @Test func aGoneStoreVaultIsKeptWithAClearError() throws {
         let store = try Self.tempDir().appendingPathComponent("recents.json")
-        let dead = RecentVault(id: UUID(), name: "Gone", bookmark: Data([1, 2, 3]), lastOpened: Date())
-        try JSONEncoder().encode([dead]).write(to: store)
+        let gone = RecentVault(id: UUID(), name: "Gone", lastOpened: Date(), storeID: UUID())
+        try JSONEncoder().encode([gone]).write(to: store)
         let library = VaultLibrary(storeURL: store)
-        #expect(library.recents == [dead])
-        #expect(throws: VaultLibrary.LibraryError.cannotResolve(name: "Gone")) { try library.resolve(dead) }
-        #expect(library.recents == [dead])
-        #expect(VaultLibrary(storeURL: store).recents == [dead])
-        library.forget(dead)
-        #expect(VaultLibrary(storeURL: store).recents.isEmpty)
+        #expect(library.recents == [gone])
+        #expect(throws: VaultLibrary.LibraryError.cannotResolve(name: "Gone")) { try library.resolve(gone) }
+        let webdav = library.rememberWebDAV(UUID(), name: "Remote")
+        #expect(throws: VaultLibrary.LibraryError.cannotResolve(name: "Remote")) { try library.resolve(webdav) }
+        library.forget(gone)
+        #expect(VaultLibrary(storeURL: store).recents == [webdav])
+    }
+
+    /// The `recents.json` of 1.0.0: every entry carries `bookmark` (empty for a store or WebDAV vault) and `path`.
+    /// Both are ignored; an entry that is neither a store nor a WebDAV vault (never written by 1.0.0) is dropped.
+    @Test func aRecentsFileOf1_0_0StillDecodes() throws {
+        let store = try Self.tempDir().appendingPathComponent("recents.json")
+        let storeID = UUID(), location = UUID()
+        let json = """
+        [{"id":"\(UUID().uuidString)","name":"Notes","bookmark":"","lastOpened":800000000,
+          "path":"/var/mobile/Vaults/x/Notes.sempere","storeID":"\(storeID.uuidString)"},
+         {"id":"\(UUID().uuidString)","name":"Remote","bookmark":"","lastOpened":800000001,"webdav":"\(location.uuidString)"},
+         {"id":"\(UUID().uuidString)","name":"Loose","bookmark":"AQID","lastOpened":800000002,"path":"/tmp/Loose.sempere"}]
+        """
+        try Data(json.utf8).write(to: store)
+        let library = VaultLibrary(storeURL: store)
+        #expect(library.recents.map(\.name) == ["Notes", "Remote"])
+        #expect(library.recents[0].storeID == storeID)
+        #expect(library.recents[1].webdav == location)
     }
 
     @Test func newVaultReopensByItsOwnIdNotAnotherWithTheSameName() async throws {

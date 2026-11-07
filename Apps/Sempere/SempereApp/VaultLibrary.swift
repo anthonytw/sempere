@@ -85,26 +85,19 @@ enum VaultLocator {
     }
 }
 
-/// A vault the app has opened before: a vault of the in-app store (`storeID`), a WebDAV
-/// location's local copy (`webdav`), or a folder opened in place by an earlier build, reachable
-/// through a bookmark (read until P7 of docs/design/device-first-sync.md; no new ones are made).
+/// A vault the app has opened before: a vault of the in-app store (`storeID`) or a WebDAV location's
+/// local copy (`webdav`). A `recents.json` of 1.0.0 also carries `bookmark` and `path` keys (unused
+/// now; the decoder ignores them).
 struct RecentVault: Codable, Identifiable, Hashable, Sendable {
     var id: UUID
     /// Folder name without `.sempere`, for display.
     var name: String
-    /// Bookmark of the vault folder. On iOS a bookmark made from a
-    /// document-picker URL carries its security scope. Empty for a WebDAV or store vault.
-    var bookmark: Data
     var lastOpened: Date
     /// The WebDAV location (`WebDAVLocationStore`) whose local copy this is;
-    /// nil for a folder. Opened with `AppModel.openWebDAV`, never through the bookmark.
+    /// nil for a store vault. Opened with `AppModel.openWebDAV`.
     var webdav: UUID?
-    /// Where the vault folder was the last time it was reached (standardized path), so the list can
-    /// say what it waits for (iCloud Drive, a provider) and drop duplicates without resolving every
-    /// bookmark; nil for a WebDAV vault and for entries saved before it was kept.
-    var path: String?
-    /// The vault id of a vault in the in-app store (`VaultLibrary.vaultStore`), opened by its id, never
-    /// through a bookmark (the container's path changes when iOS moves it); nil for any other vault.
+    /// The vault id of a vault in the in-app store (`VaultLibrary.vaultStore`), opened by its id (the
+    /// container's path changes when iOS moves it); nil for a WebDAV vault.
     var storeID: UUID?
 }
 
@@ -261,7 +254,6 @@ final class VaultLibrary {
 
     static let maxRecents = 10
 
-    // Not `private(set)`: `RecentVaultAvailability.swift` refreshes bookmarks and paths.
     var recents: [RecentVault] = []
     let storeURL: URL
     /// Where every vault this device creates or copies in lives (docs/design/device-first-sync.md §2):
@@ -270,37 +262,19 @@ final class VaultLibrary {
     /// The store's vaults, as last listed (`refreshStoredVaults`).
     var storedVaults: [VaultStore.Entry] = []
 
-    /// Where each recent vault stands (`RecentVaultAvailability.swift`); missing means not checked yet.
-    var states: [UUID: RecentVaultState] = [:]
-    /// The recent vault to open as soon as it is available (`openWhenAvailable`).
-    var pendingOpen: UUID?
-    /// Looks at a bookmark (`RecentVaultCheck.probe`; tests fake iCloud with their own). Runs off the main actor.
-    @ObservationIgnored let probe: @Sendable (Data) -> RecentVaultProbe
-    /// The clock of the waiting time (tests move it).
-    @ObservationIgnored var clock: () -> Date = Date.init
-    /// The wait before the next check (`RecentVaultCheck.delay`; tests shorten it).
-    @ObservationIgnored var retryDelay: (Int, Bool) -> Duration = RecentVaultCheck.delay
-    /// When each vault was first found unreachable (since it was last available).
-    @ObservationIgnored var firstMiss: [UUID: Date] = [:]
-    @ObservationIgnored var checkTask: Task<Void, Never>?
-    @ObservationIgnored var retryTask: Task<Void, Never>?
-    @ObservationIgnored var checkAttempt = 0
-    @ObservationIgnored var identityObserver: (any NSObjectProtocol)?
-
     /// - Parameter vaultStore: the in-app vault store; by default the `Vaults` folder next to `storeURL`
     ///   (`Application Support/Sempere/Vaults` for the app's own `storeURL`).
     init(storeURL: URL = VaultLibrary.defaultStoreURL,
-         probe: @escaping @Sendable (Data) -> RecentVaultProbe = RecentVaultCheck.probe,
          vaultStore: VaultStore? = nil) {
         self.storeURL = storeURL
-        self.probe = probe
         self.vaultStore = vaultStore
             ?? VaultStore(root: storeURL == Self.defaultStoreURL
                 ? Self.defaultVaultStoreRoot
                 : storeURL.deletingLastPathComponent().appendingPathComponent("Vaults", isDirectory: true))
         if let data = try? Data(contentsOf: storeURL),
            let list = try? JSONDecoder().decode([RecentVault].self, from: data) {
-            recents = list
+            // An entry that is neither a store vault nor a WebDAV one can not be opened: drop it.
+            recents = list.filter { $0.storeID != nil || $0.webdav != nil }
         }
         // Read at once (one small vault.json per vault), so the first frame lists them.
         storedVaults = self.vaultStore.list()
@@ -314,7 +288,6 @@ final class VaultLibrary {
         let gone = recents.filter { $0.storeID == vault }.map(\.id)
         guard !gone.isEmpty else { return }
         recents.removeAll { gone.contains($0.id) }
-        for id in gone { states[id] = nil }
         save()
     }
 
@@ -338,37 +311,20 @@ final class VaultLibrary {
 
     // MARK: - Recents
 
-    /// Records that the vault at `url` was opened. Access to it must be active. A vault of the
-    /// in-app store is recorded by its id, with no bookmark.
+    /// Records that the vault at `url` was opened, when it is a vault of the in-app store (the only
+    /// kind the app opens); a folder outside the store (a debug launch) is not recorded.
     @discardableResult
-    func remember(_ url: URL) throws -> RecentVault {
-        if let stored = vaultStore.entry(containing: url) { return rememberStored(stored) }
-        let data = try VaultBookmark.make(for: url)
-        let path = url.standardizedFileURL.path
-        let replaced = recents.filter { entry in
-            guard entry.webdav == nil else { return false }
-            // An entry saved before paths were kept is resolved (it gets its path at the next check).
-            if let known = entry.path { return known == path }
-            return (try? VaultBookmark.resolve(entry.bookmark))?.url.standardizedFileURL.path == path
-        }.map(\.id)
-        recents.removeAll { replaced.contains($0.id) }
-        for id in replaced { dropState(id) }
-        let entry = RecentVault(id: UUID(), name: Self.displayName(of: url), bookmark: data, lastOpened: Date(), path: path)
-        recents.insert(entry, at: 0)
-        states[entry.id] = .available
-        if recents.count > Self.maxRecents { recents.removeLast(recents.count - Self.maxRecents) }
-        save()
-        return entry
+    func remember(_ url: URL) -> RecentVault? {
+        guard let stored = vaultStore.entry(containing: url) else { return nil }
+        return rememberStored(stored)
     }
 
     /// Records that the store vault `entry` was opened.
     @discardableResult
     func rememberStored(_ entry: VaultStore.Entry) -> RecentVault {
         recents.removeAll { $0.storeID == entry.vaultId }
-        let recent = RecentVault(id: UUID(), name: entry.name, bookmark: Data(), lastOpened: Date(),
-                                 path: entry.url.standardizedFileURL.path, storeID: entry.vaultId)
+        let recent = RecentVault(id: UUID(), name: entry.name, lastOpened: Date(), storeID: entry.vaultId)
         recents.insert(recent, at: 0)
-        states[recent.id] = .available
         if recents.count > Self.maxRecents { recents.removeLast(recents.count - Self.maxRecents) }
         save()
         if !storedVaults.contains(where: { $0.vaultId == entry.vaultId }) { storedVaults.append(entry) }
@@ -379,7 +335,7 @@ final class VaultLibrary {
     @discardableResult
     func rememberWebDAV(_ location: UUID, name: String) -> RecentVault {
         recents.removeAll { $0.webdav == location }
-        let entry = RecentVault(id: UUID(), name: name, bookmark: Data(), lastOpened: Date(), webdav: location)
+        let entry = RecentVault(id: UUID(), name: name, lastOpened: Date(), webdav: location)
         recents.insert(entry, at: 0)
         if recents.count > Self.maxRecents { recents.removeLast(recents.count - Self.maxRecents) }
         save()
@@ -393,55 +349,18 @@ final class VaultLibrary {
         save()
     }
 
-    /// Resolves a recent entry to a URL, re-saving a stale bookmark. A
-    /// bookmark that does not resolve throws `cannotResolve`, and the entry is
-    /// KEPT: after a restart iCloud Drive may not be ready yet, and the vault
-    /// comes back (`RecentVaultAvailability.swift`); the user removes an entry.
-    /// A WebDAV entry has no bookmark: `AppModel.open(recent:)` opens it by its
-    /// location. Blocking; `resolved(_:)` does it off the main actor.
+    /// Resolves a recent entry to its vault folder in the store. A WebDAV entry is opened by its
+    /// location (`AppModel.open(recent:)`), so it, or a store vault that is gone, throws `cannotResolve`.
     func resolve(_ entry: RecentVault) throws -> URL {
-        if let id = entry.storeID {
-            guard let stored = vaultStore.entry(id: id) else { throw LibraryError.cannotResolve(name: entry.name) }
-            return stored.url
-        }
-        if entry.webdav != nil { throw LibraryError.cannotResolve(name: entry.name) }
-        guard let resolved = try? VaultBookmark.resolve(entry.bookmark) else {
+        guard let id = entry.storeID, let stored = vaultStore.entry(id: id) else {
             throw LibraryError.cannotResolve(name: entry.name)
         }
-        adoptRefreshed(resolved.refreshed, for: entry.id)
-        return resolved.url
-    }
-
-    /// `resolve(_:)` with the bookmark resolved off the main actor (it waits on the file provider).
-    func resolved(_ entry: RecentVault) async throws -> URL {
-        if entry.storeID != nil { return try resolve(entry) }
-        if entry.webdav != nil { throw LibraryError.cannotResolve(name: entry.name) }
-        let bookmark = entry.bookmark
-        guard let resolved = await Task.detached(priority: .userInitiated, operation: {
-            try? VaultBookmark.resolve(bookmark)
-        }).value else {
-            throw LibraryError.cannotResolve(name: entry.name)
-        }
-        adoptRefreshed(resolved.refreshed, for: entry.id)
-        return resolved.url
-    }
-
-    private func adoptRefreshed(_ fresh: Data?, for id: UUID) {
-        guard let fresh, let i = recents.firstIndex(where: { $0.id == id }) else { return }
-        recents[i].bookmark = fresh
-        save()
+        return stored.url
     }
 
     func forget(_ entry: RecentVault) {
         recents.removeAll { $0.id == entry.id }
-        dropState(entry.id)
         save()
-    }
-
-    private func dropState(_ id: UUID) {
-        states[id] = nil
-        firstMiss[id] = nil
-        if pendingOpen == id { pendingOpen = nil }
     }
 
     func save() {

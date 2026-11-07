@@ -120,15 +120,16 @@ public struct CaptureProfile: Codable, Hashable, Sendable {
     public var recipient: String
     /// The epoch whose key the profile holds, and its id (lowercase hex), so a capture can be recorded in the
     /// device's write ledger before it is placed (key-hierarchy design §5.4, §5.7): after a device change the
-    /// device re-seals its own captures of an earlier epoch. Absent in a profile made before KH3.
-    public var epoch: Int?
-    public var epochId: String?
+    /// device re-seals its own captures of an earlier epoch. Both are required: a stored profile without them
+    /// does not decode (`DecodingError.keyNotFound`), and a `CaptureWriter` refuses an `epochId` that is not 32 bytes of hex.
+    public var epoch: Int
+    public var epochId: String
 
     public init(vaultId: UUID, recipients: [String], key: Data, device: String, notebook: String, recipient: String,
-                epoch: Int? = nil, epochId: Data? = nil) {
+                epoch: Int, epochId: Data) {
         self.vaultId = vaultId; self.recipients = recipients; self.key = key; self.device = device
         self.notebook = notebook; self.recipient = recipient
-        self.epoch = epoch; self.epochId = epochId.map { Hex.encode($0) }
+        self.epoch = epoch; self.epochId = Hex.encode(epochId)
     }
 
     /// The default inbox notebook.
@@ -446,7 +447,8 @@ public struct SealedCapture: Hashable, Sendable {
     public var name: String
     public var data: Data
     /// The epoch of the profile that sealed it (key-hierarchy design §5.4): the one its ledger entry names,
-    /// whatever profile is current when it reaches the vault (review M4). Nil from a profile without one.
+    /// whatever profile is current when it reaches the vault (review M4). Nil only for a file read back
+    /// from a queue that did not keep it.
     public var epoch: Int?
     public var epochId: Data?
 
@@ -466,9 +468,15 @@ public struct CaptureWriter: Sendable {
     public let profile: CaptureProfile
     let key: CaptureKey
     let recipients: [NativeRecipient]
+    /// `profile.epochId` decoded.
+    let epochId: Data
 
     public init(profile: CaptureProfile) throws {
         self.profile = profile
+        guard let id = Hex.decode(profile.epochId), id.count == 32 else {
+            throw CaptureError.invalidContent("the capture profile's epoch id is not 32 bytes of hex")
+        }
+        epochId = id
         key = try CaptureKey(bytes: profile.key)
         recipients = profile.recipients.compactMap { try? NativeRecipient(string: $0) }
         guard !recipients.isEmpty, recipients.count == profile.recipients.count else { throw CaptureError.noRecipients }
@@ -493,7 +501,7 @@ public struct CaptureWriter: Sendable {
         let name = CaptureFile.name(id, .capture)
         let plain = try CaptureFile.frame(line: try InkJSON.encoder().encode(manifest), payload: audio, filename: name, key: key)
         return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients), epoch: profile.epoch,
-                             epochId: profile.epochId.flatMap { Hex.decode($0) })
+                             epochId: epochId)
     }
 
     /// Seals the transcript of capture `id` (its `recording` must be the
@@ -511,18 +519,16 @@ public struct CaptureWriter: Sendable {
         let plain = try CaptureFile.frame(line: try transcript.encoded(), payload: Data(audio.sha256.utf8), filename: name,
                                           key: key)
         return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients), epoch: profile.epoch,
-                             epochId: profile.epochId.flatMap { Hex.decode($0) })
+                             epochId: epochId)
     }
 
     /// Records `sealed` in this device's write ledger (key-hierarchy design §5.4, intent first: before the
     /// file is placed anywhere in a vault) under the profile's epoch, so a device change before it is adopted
-    /// is caught up (`Vault.catchUp` re-seals it). Nothing without a ledger or with a profile that names no
-    /// epoch; a ledger that cannot record throws, and the caller must not place the file.
+    /// is caught up (`Vault.catchUp` re-seals it). Nothing without a ledger; a ledger that cannot record throws, and the caller must not place the file.
     public func record(_ sealed: SealedCapture, in ledger: (any WriteLedgerStore)?) throws {
         // The epoch it was sealed under (never the current profile's, which may be newer: review M4).
-        let sealedUnder: (Int, Data)? = sealed.epoch.flatMap { e in sealed.epochId.map { (e, $0) } }
-            ?? profile.epoch.flatMap { e in profile.epochId.flatMap { Hex.decode($0) }.map { (e, $0) } }
-        guard let ledger, let (epoch, id) = sealedUnder else { return }
+        let (epoch, id) = sealed.epoch.flatMap { e in sealed.epochId.map { (e, $0) } } ?? (profile.epoch, epochId)
+        guard let ledger else { return }
         try ledger.append([LedgerEntry(path: "\(CaptureFile.folderName)/\(sealed.name)", sha256: FileDigest.sha256(sealed.data),
                                        epoch: epoch, epochId: id)])
     }

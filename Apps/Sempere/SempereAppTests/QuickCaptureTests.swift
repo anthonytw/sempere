@@ -914,7 +914,7 @@ struct QuickCaptureTests {
         let other = Self.temp("not-the-vault-2")
         try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
         var stored = try #require(try qc.store.load())
-        let sealedEpoch = try #require(stored.profile.epoch)
+        let sealedEpoch = stored.profile.epoch
         stored.bookmark = try other.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         try qc.store.save(stored)
         try await qc.start()

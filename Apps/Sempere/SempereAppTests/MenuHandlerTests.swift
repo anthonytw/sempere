@@ -32,7 +32,7 @@ struct MenuHandlerTests {
     }
 
     static func recent(_ name: String) -> RecentVault {
-        RecentVault(id: UUID(), name: name, bookmark: Data([1, 2, 3]), lastOpened: Date())
+        RecentVault(id: UUID(), name: name, lastOpened: Date(), storeID: UUID())
     }
 
     // MARK: File menu

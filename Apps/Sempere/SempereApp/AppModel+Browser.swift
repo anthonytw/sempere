@@ -9,13 +9,10 @@ extension AppModel {
 
     // MARK: - Opening and creating
 
-    /// Reopens a recent vault: a store vault by its id, a WebDAV one by its location, an older bookmark by
-    /// copying its folder in.
+    /// Reopens a recent vault: a store vault by its id, a WebDAV one by its location.
     ///
-    /// - Throws: `VaultLibrary.LibraryError.cannotResolve` when the bookmark
-    ///   does not resolve; otherwise whatever opening throws. The entry is
-    ///   kept either way (iCloud may still be starting up: `LibraryCommands.reopen`
-    ///   waits for a vault the library reports as waiting).
+    /// - Throws: `VaultLibrary.LibraryError.cannotResolve` when the store no longer holds the vault;
+    ///   otherwise whatever opening throws. The entry is kept either way.
     func open(recent entry: RecentVault, library: VaultLibrary) async throws {
         if let location = entry.webdav {
             guard webdavLocations.location(location) != nil else {
@@ -27,10 +24,7 @@ extension AppModel {
         if let id = entry.storeID, let joining = joiningWebDAVLocation(of: id) {
             return try await openWebDAV(joining, library: library)
         }
-        // A recent of an earlier build that opened a vault in place (a bookmark, no store id): the app no
-        // longer reads vaults in place (P7), so the folder is copied in, as "Open Vault…" does, and the copy
-        // opens. The folder itself is left as it was.
-        let url = try await library.resolved(entry)
+        let url = try library.resolve(entry)
         try await copyIn(picked: url, library: library)
     }
 
@@ -59,9 +53,7 @@ extension AppModel {
 
     func remember(in library: VaultLibrary) {
         guard let url = vaultURL else { return }
-        do { try library.remember(url) } catch {
-            errorMessage = String(localized: "The vault opened, but Sempere could not save access to it for next time: \(String(describing: error))")
-        }
+        library.remember(url)
     }
 
     // MARK: - Edits

@@ -86,7 +86,8 @@ final class CLIInboxTests: CLITestCase {
         // A profile with the right recipient (the vault identity) but a made-up capture key.
         let profile = CaptureProfile(vaultId: vault.vaultId, recipients: [try vault.vaultRecipient().string],
                                      key: Data(repeating: 1, count: 32), device: "0badf00d", notebook: "Inbox",
-                                     recipient: CaptureKey.fingerprint(of: vault.devices[0].key))
+                                     recipient: CaptureKey.fingerprint(of: vault.devices[0].key),
+                                     epoch: vault.manifest.epoch, epochId: Data(repeating: 1, count: 32))
         let forged = path("forged.json")
         try JSONEncoder().encode(profile).write(to: URL(fileURLWithPath: forged))
         XCTAssertEqual(try cli(["inbox", "capture", Self.tone, "--profile", forged] + locked).status, 0)

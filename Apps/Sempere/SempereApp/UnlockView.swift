@@ -145,7 +145,7 @@ struct UnlockView: View {
     /// Forget Key asks after the home check (re-check of #88, R1): forgetting home's key leaves only the kit.
     private func askToForget() async {
         if let id = model.vault?.vaultId {
-            forgetRemoval = await KeyRemoval.check(vaultID: id, at: model.vaultURL, store: keys.store, library: nil)
+            forgetRemoval = await KeyRemoval.check(vaultID: id, at: model.vaultURL, store: keys.store)
         }
         confirmForget = true
     }

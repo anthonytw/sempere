@@ -449,7 +449,7 @@ struct JoiningWebDAVRows: View {
                                     try await model.removeWebDAVLocation(removed.id, library: library)
                                     // The same rule as Delete from This Device: this device's keys for it go too,
                                     // unless another local copy opens with them.
-                                    if removal.deletesKeys, let id = UUID(uuidString: removed.vaultId) {
+                                    if let id = UUID(uuidString: removed.vaultId) {
                                         try? await keys.store.delete(for: id)
                                     }
                                 }
@@ -482,7 +482,7 @@ struct JoiningWebDAVRows: View {
         removingUnconfirmed = await model.unconfirmedWebDAVChanges(location.id)
         if let id = UUID(uuidString: location.vaultId) {
             let folder = model.webdavLocations.copy(of: location).folder
-            removal = await KeyRemoval.check(vaultID: id, at: folder, store: keys.store, library: library, except: folder)
+            removal = await KeyRemoval.check(vaultID: id, at: folder, store: keys.store)
         } else {
             removal = KeyRemoval()
         }

@@ -266,48 +266,18 @@ Details hold counts and 8-hex-digit note id prefixes only. `SEMPERE_PERF_LOG=0`
 turns the debug log off; `SEMPERE_DEBUG_DRAWING_CACHE=0` runs without the
 drawing cache, for comparisons.
 
-## Recent vaults after a restart
+## Recent vaults
 
-Recents are store vaults (by id) and WebDAV locations; a bookmark recent is an earlier build's in-place
-vault, which is copied in when chosen ("Every vault is an in-app copy"). For those bookmarks, and folder
-targets' bookmarks: right after a device restarts, iCloud Drive (and other providers) can take a
-while to come up: a recent vault's bookmark does not resolve yet, or it
-resolves to a folder iCloud has not listed. Before this was handled, the launch
-reopen took the failed resolve for a dead bookmark and dropped the entry, so
-the vault vanished from the welcome list until it was chosen again.
-
-Now (`RecentVaultAvailability.swift`, `VaultLibrary.states`):
-
-* A recent vault is never dropped by a failed resolve or open; only Remove
-  (swipe, or the row's context menu) takes it off the list.
-* Each entry keeps the path where it was last reached (`RecentVault.path`), so
-  the list knows it is in iCloud Drive or another provider without resolving.
-* The library checks every entry off the main actor (`checkRecents`:
-  bookmark resolution and a look for `vault.json` or its `.icloud` stand-in,
-  under the bookmark's scope). A vault that may be in a cloud provider and is
-  not reachable is **waiting** ("Waiting for iCloud…") for
-  `RecentVaultCheck.patience` (3 minutes), then **missing** (the bookmark still
-  resolves, the folder is gone and its parent is there) or **unreachable**
-  (iCloud Drive off or signed out, or the vault went with its folder). A vault
-  on this device has nothing to wait for and is reported at once.
-* Checks repeat with a backoff (1, 2, 4, 8, 16, then every 30 s; once a minute
-  for ten minutes when only gone vaults are left), and start over when the scene becomes active
-  or the iCloud account changes (`NSUbiquityIdentityDidChange`).
-* The launch reopen, File ▸ Reopen Last Vault and a tap on a waiting row do not
-  show an error: the vault opens by itself as soon as a check finds it
-  (`openWhenAvailable`, `takeReadyPendingOpen`), unless another vault was opened
-  meanwhile.
-
-The app has no iCloud container entitlement (free personal-team builds cannot
-have one; vaults are folders the user picks), so there is no ubiquity container
-to look up and no `NSMetadataQuery` over iCloud scopes: the bookmark and the
-folder are what is checked. Tests fake the iCloud side with `FakeVaultCloud`
-(`RecentVaultWaitTests`).
+Recents are store vaults (by `storeID`) and WebDAV locations (by `webdav`); neither holds a bookmark, and nothing
+waits for iCloud: every vault the app opens is an in-app copy ("Every vault is an in-app copy", CLAUDE.md), so
+reopening the last vault at launch is a local open. `recents.json` of 1.0.0 still decodes: its `bookmark` and
+`path` keys are ignored, and an entry that is neither a store nor a WebDAV vault is dropped (1.0.0 wrote none).
+Folder targets' bookmarks are a different thing (`SyncTarget.bookmark`, "Sync targets in the app").
 
 ## Saved folder access (sandboxed Mac)
 
-The app opens a vault folder through the system picker and remembers it as a
-bookmark (`VaultBookmark`, recent vaults in `VaultLibrary`). Whether a
+The app remembers a folder the user picked (a sync folder target, the backup folder) as a
+bookmark (`VaultBookmark`). Whether a
 remembered folder is still usable after a relaunch is the platform's decision:
 
 * **iPadOS:** a bookmark made from a picker URL carries its security scope;
@@ -1943,11 +1913,10 @@ confirmed, the confirmation says how many will be lost and to open the vault
 and sync first. The same check as Delete from This Device runs first
 (`KeyRemoval`): when this device manages the vault's devices it offers to open
 the vault and make another device home, when it is the vault's only device it
-says that only the recovery kit restores write access, and when another local
-copy opens with the same keys they are kept.
+says that only the recovery kit restores write access.
 
-**Recents.** A WebDAV vault is a recent entry with its location id and no
-bookmark (`RecentVault.webdav`), so "reopen the last vault" at launch opens
+**Recents.** A WebDAV vault is a recent entry with its location id
+(`RecentVault.webdav`), so "reopen the last vault" at launch opens
 the local copy, offline too.
 
 **Mac.** The sandboxed Mac build has `com.apple.security.network.client`

@@ -44,8 +44,6 @@ struct VaultStoreAppTests {
         #expect(model.vault?.devices.first?.key == created.device.key)
         let recent = try #require(library.recents.first)
         #expect(recent.storeID == entry.vaultId)
-        #expect(recent.bookmark.isEmpty)
-        #expect(library.state(of: recent) == .available)
         #expect(library.storedVaults.map(\.vaultId) == [entry.vaultId])
         // Nothing is left in the staging folder.
         let staging = library.vaultStore.root.appendingPathComponent(".staging")
