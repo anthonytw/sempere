@@ -284,8 +284,12 @@ final class IPadCanvasUITests: XCTestCase {
         defer { app.terminate() }
         guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
         // The list's row (the note's title is in the toolbar too, beside the Annotate button).
+        // The demo note is weeks old: its row is below the fold of the newest-first list until scrolled to.
         let row = app.cells.staticTexts.matching(NSPredicate(format: "label == %@", "Quick thoughts")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        let list = app.collectionViews.containing(NSPredicate(format: "label == %@", "Sync design sketch")).firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the note list")
+        for _ in 0..<6 where !(row.exists && row.isHittable) { list.swipeUp() }
+        XCTAssertTrue(row.exists && row.isHittable, "the Quick thoughts row is on screen")
         row.tap()
         Thread.sleep(forTimeInterval: 1.5)
         print("PALETTE after the list took the tap: \(String(describing: report(canvas)?.palette))")
