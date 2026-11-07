@@ -166,25 +166,27 @@ struct SuspensionLockTests {
 /// from the app's state and the stored setting, never left disabled by a scene that went away.
 @MainActor
 struct IdleTimerKeeperTests {
+    @MainActor
     final class Box {
         var noteOpen = true
         var active = true
-        var applied: [Bool] = []
+        let platform = HeadlessPlatform()
+        var applied: [Bool] { platform.idleTimerSettings }
     }
 
-    static func keeper(_ box: Box, _ defaults: UserDefaults) -> IdleTimerKeeper {
-        IdleTimerKeeper(defaults: defaults, noteOpen: { box.noteOpen }, appActive: { box.active },
-                        apply: { box.applied.append($0) })
+    static func keeper(_ box: Box, _ defaults: any KeyValueStore) -> IdleTimerKeeper {
+        IdleTimerKeeper(defaults: defaults, platform: box.platform, noteOpen: { box.noteOpen }, appActive: { box.active })
     }
 
     @Test func offMeansTheTimerRuns() throws {
-        let defaults = try #require(TestDefaults.suite("IdleTimerKeeperTests-\(UUID())"))
         let box = Box()
-        let keeper = Self.keeper(box, defaults)
+        let keeper = Self.keeper(box, MemoryKeyValueStore())
         keeper.start(center: NotificationCenter())
         #expect(box.applied == [false], "never set, note open, app active: the screen still locks")
     }
 
+    /// The real `UserDefaults` (its `KeyValueStore` conformance): a change reaches the keeper through the
+    /// defaults' own change notification, with no scene around to call `update`.
     @Test func followsTheSettingAndTheAppState() throws {
         let defaults = try #require(TestDefaults.suite("IdleTimerKeeperTests-\(UUID())"))
         let box = Box()
@@ -202,20 +204,20 @@ struct IdleTimerKeeperTests {
 
         // Turned off anywhere (a note window, settings sync) with no library scene around: applied.
         defaults.set(false, forKey: KeepScreenOn.key)
-        keeper.update()
-        #expect(keeper.disabled == false)
-        defaults.set(true, forKey: KeepScreenOn.key)
+        #expect(keeper.disabled == false, "the defaults' change notification applied it")
         box.noteOpen = false
-        keeper.update()
+        defaults.set(true, forKey: KeepScreenOn.key)
         #expect(keeper.disabled == false, "no note open")
-        #expect(box.applied == [true, false, true, false])
+        box.noteOpen = true
+        keeper.update()
+        #expect(keeper.disabled == true)
+        #expect(box.applied == [true, false, true, false, true])
     }
 
     /// Review of #105, finding 6: the model tells the keeper when its editors change, whichever scene (if any)
     /// shows them.
     @Test func theModelsEditorsReachTheKeeper() throws {
-        let defaults = try #require(TestDefaults.suite("IdleTimerKeeperTests-\(UUID())"))
-        defaults.set(true, forKey: KeepScreenOn.key)
+        let defaults = MemoryKeyValueStore([KeepScreenOn.key: true])
         let box = Box()
         let keeper = Self.keeper(box, defaults)
         keeper.start(center: NotificationCenter())

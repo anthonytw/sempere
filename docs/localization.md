@@ -23,14 +23,32 @@ Scope: interface text only.
 
 | File | Holds |
 | --- | --- |
-| `Apps/Sempere/Localization/Localizable.xcstrings` | every interface string of the app, the quick-capture intents and the widget extension |
+| `Sources/SempereLocalization/Resources/Localizable.xcstrings` | every interface string of the app, the quick-capture intents and the widget extension |
 | `Apps/Sempere/Localization/InfoPlist.xcstrings` | permission prompts (microphone, camera, Face ID, speech) and the exported document type names |
 | `Apps/Sempere/Localization/AppShortcuts.xcstrings` | Siri and Shortcuts phrases |
 | `web/src/i18n/catalog.ts` | every interface string of the web viewer (`docs/web-viewer.md` "Languages"; see [Web viewer](#web-viewer)) |
 
-`Localization/` is a folder-synchronized group of **both** the app and the `SempereWidgets` targets
-(the intents in `SempereShared` are compiled into both), so one catalog serves both bundles.
-`project.pbxproj` lists `es` in `knownRegions`.
+`Localizable.xcstrings` belongs to the package target **`SempereLocalization`** (Apple-only,
+`docs/design/thin-app.md` "Rules"), which will also hold the extensions that word library values. The one file is
+compiled twice:
+
+- into the package's resource bundle, `Bundle.sempereLocalization`, for code in the package
+  (`String(localized: "…", bundle: .sempereLocalization)`, or `SempereStrings.localized("…")`);
+- into the app's and the widget's **main** bundles: both targets list the same file as a resource
+  (`project.pbxproj`, group "String Catalog"), so SwiftUI literals and the app's `String(localized:)`, which look in
+  `Bundle.main`, need no `bundle:` argument, and the pseudo-language harness sees the tables it always did.
+
+So app code is written as before: a literal or `String(localized: "…")`. Only code that moves into the package
+names the bundle. The app and the widget link the `SempereLocalization` product; each carries the package bundle
+too (about the catalog's size again). `LocalizationTests.thePackageCatalogIsTheAppsCatalog` checks that both copies
+say the same. Every manual entry carries `"generatesSymbol" : false`: a package target generates a Swift symbol per
+manual string, and the build fails on keys that map to one symbol ("Thin Now" and "Thin Now…").
+`scripts/l10n.py merge` writes the flag, `format` adds it to entries made elsewhere (Xcode), and
+`LocalizationCatalogTests.testNoManualStringGeneratesASymbol` fails without it.
+
+`InfoPlist.xcstrings` and `AppShortcuts.xcstrings` stay in `Apps/Sempere/Localization/`, a folder-synchronized group
+of **both** the app and the `SempereWidgets` targets (the intents in `SempereShared` are compiled into both): the
+system reads them from the app bundle. `project.pbxproj` lists `es` in `knownRegions`.
 
 ## How strings get in
 
@@ -229,8 +247,8 @@ Languages are added by the maintainer. Anyone can suggest one, or a correction, 
 strings ([CONTRIBUTING.md](../CONTRIBUTING.md#suggesting-a-translation)). The steps below are the
 maintainer's.
 
-1. Open `Apps/Sempere/Localization/Localizable.xcstrings`, `InfoPlist.xcstrings` and
-   `AppShortcuts.xcstrings` in Xcode
+1. Open `Sources/SempereLocalization/Resources/Localizable.xcstrings`, `Apps/Sempere/Localization/InfoPlist.xcstrings`
+   and `AppShortcuts.xcstrings` in Xcode
    (**Project ▸ Sempere ▸ Info ▸ Localizations ▸ +**), or add the language code by hand as below.
 2. Translate every entry. Plurals need the variations of your language's CLDR categories
    (<https://www.unicode.org/cldr/charts/latest/supplemental/language_plural_rules.html>); keep

@@ -66,8 +66,7 @@ struct SempereApp: App {
         #endif
         let idleTimer = IdleTimerKeeper(debugLaunch: debugLaunch,
                                         noteOpen: { [weak model] in model.map { $0.editor != nil || !$0.windowEditors.isEmpty } ?? false },
-                                        appActive: { UIApplication.shared.applicationState == .active },
-                                        apply: { UIApplication.shared.isIdleTimerDisabled = $0 })
+                                        appActive: { UIApplication.shared.applicationState == .active })
         model.idleTimer = idleTimer
         idleTimer.start()
         AppModel.current = model

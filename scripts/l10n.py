@@ -24,7 +24,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCALIZATION = ROOT / "Apps/Sempere/Localization"
-TABLES = ("Localizable", "InfoPlist", "AppShortcuts")
+# `Localizable` is the package's (`SempereLocalization`, docs/design/thin-app.md); the other two stay in the app,
+# because the system reads them from the app bundle.
+CATALOGS = {
+    "Localizable": ROOT / "Sources/SempereLocalization/Resources/Localizable.xcstrings",
+    "InfoPlist": LOCALIZATION / "InfoPlist.xcstrings",
+    "AppShortcuts": LOCALIZATION / "AppShortcuts.xcstrings",
+}
+TABLES = tuple(CATALOGS)
 PLURAL = {"zero", "one", "two", "few", "many", "other"}
 DEVICE = {"iphone", "ipad", "mac", "applewatch", "appletv", "applevision", "other"}
 
@@ -46,7 +53,9 @@ def localization(value):
 
 
 def entry(frag):
-    out = {"extractionState": "manual"}
+    # A package target's catalog generates Swift symbols for its manual strings, and fails the build on keys that
+    # map to the same symbol ("Thin Now" and "Thin Now…"): the app uses literals, so no entry generates one.
+    out = {"extractionState": "manual", "generatesSymbol": False}
     if "comment" in frag:
         out["comment"] = frag["comment"]
     if frag.get("keep"):
@@ -66,6 +75,14 @@ def load(path):
     return {"sourceLanguage": "en", "strings": {}, "version": "1.0"}
 
 
+def no_symbols(data):
+    """Every manual entry says `generatesSymbol: false` (see `entry`)."""
+    for value in data["strings"].values():
+        if value.get("extractionState") == "manual":
+            value["generatesSymbol"] = False
+    return data
+
+
 def save(path, data):
     # Xcode's own layout: two-space indent, a space before the colon, keys sorted.
     text = json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False, separators=(",", " : "))
@@ -73,7 +90,7 @@ def save(path, data):
 
 
 def merge(table, files):
-    catalog = LOCALIZATION / f"{table}.xcstrings"
+    catalog = CATALOGS[table]
     data = load(catalog)
     added = replaced = 0
     for f in files:
@@ -97,10 +114,9 @@ def main(argv):
             return main([argv[0]])
         merge(table, args)
     elif len(argv) == 2 and argv[1] == "format":
-        for t in TABLES:
-            p = LOCALIZATION / f"{t}.xcstrings"
+        for t, p in CATALOGS.items():
             if p.exists():
-                save(p, load(p))
+                save(p, no_symbols(load(p)) if t == "Localizable" else load(p))
     else:
         print(__doc__)
         return 2

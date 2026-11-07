@@ -15,6 +15,9 @@ final class LocalizationCatalogTests: XCTestCase {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     static let apps = repo.appendingPathComponent("Apps/Sempere")
     static let localization = apps.appendingPathComponent("Localization")
+    /// `Localizable` lives in the package (`SempereLocalization`, docs/design/thin-app.md); `InfoPlist` and
+    /// `AppShortcuts` stay in the app, whose bundle the system reads them from.
+    static let packageCatalog = repo.appendingPathComponent("Sources/SempereLocalization/Resources/Localizable.xcstrings")
     /// Source folders whose literals are interface text. Debug, demo and performance code is exempt.
     static let sourceFolders = ["SempereApp", "SempereShared", "SempereWidgets"]
     static let exemptFiles: Set<String> = [
@@ -28,7 +31,7 @@ final class LocalizationCatalogTests: XCTestCase {
     }
 
     func catalog(_ name: String) throws -> Catalog {
-        try Catalog(url: Self.localization.appendingPathComponent("\(name).xcstrings"))
+        try Catalog(url: name == "Localizable" ? Self.packageCatalog : Self.localization.appendingPathComponent("\(name).xcstrings"))
     }
 
     func sources() throws -> [(name: String, scan: SwiftScan)] {
@@ -52,6 +55,15 @@ final class LocalizationCatalogTests: XCTestCase {
             XCTAssertEqual(c.sourceLanguage, "en", name)
             XCTAssertFalse(c.entries.isEmpty, "\(name) is empty")
         }
+    }
+
+    /// A package target's catalog generates a Swift symbol for each manual string, and the build fails when two
+    /// keys map to one symbol ("Thin Now", "Thin Now…"). The app uses literals, so no entry generates one
+    /// (`scripts/l10n.py` writes `generatesSymbol: false`; `format` adds it to entries made elsewhere).
+    func testNoManualStringGeneratesASymbol() throws {
+        let generating = try catalog("Localizable").entries.filter { $0.value.manual && $0.value.generatesSymbol }
+        XCTAssertTrue(generating.isEmpty, "\(generating.count) entries generate symbols (run scripts/l10n.py format): "
+                      + generating.keys.sorted().prefix(10).joined(separator: ", "))
     }
 
     func testEveryKeyHasEveryLanguage() throws {
@@ -331,6 +343,10 @@ struct Catalog {
         var comment: String?
         var shouldTranslate: Bool
         var localizations: [String: [String: Any]]
+        /// `extractionState` is `manual` (added by hand or by `scripts/l10n.py`, not extracted by Xcode).
+        var manual = false
+        /// `generatesSymbol` (absent: true).
+        var generatesSymbol = true
 
         func value(_ lang: String) -> Value? {
             guard let loc = localizations[lang] else { return nil }
@@ -366,7 +382,9 @@ struct Catalog {
         entries = strings.mapValues { raw in
             Entry(comment: raw["comment"] as? String,
                   shouldTranslate: (raw["shouldTranslate"] as? Bool) ?? true,
-                  localizations: (raw["localizations"] as? [String: [String: Any]]) ?? [:])
+                  localizations: (raw["localizations"] as? [String: [String: Any]]) ?? [:],
+                  manual: raw["extractionState"] as? String == "manual",
+                  generatesSymbol: (raw["generatesSymbol"] as? Bool) ?? true)
         }
     }
 }

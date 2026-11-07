@@ -14,18 +14,7 @@ import Foundation
 //   It refuses a file a live `DeviceClock` holds: a second clock ticking on one state file could hand out
 //   readings the first already issued, or save an older clock over a newer one.
 
-/// Where the package reports how long a phase took; the app forwards to its signposts (`Perf`). The
-/// default does nothing. `phase` is a stable dotted name (`writer.read`), `detail` counts and id prefixes only.
-public protocol PerfSink: Sendable {
-    /// Runs `body`, reporting it as `phase`.
-    func measure<T>(_ phase: String, _ detail: String, _ body: () throws -> T) rethrows -> T
-}
-
-/// A `PerfSink` that reports nothing (the CLI and tests).
-public struct NoPerfSink: PerfSink {
-    public init() {}
-    public func measure<T>(_ phase: String, _ detail: String, _ body: () throws -> T) rethrows -> T { try body() }
-}
+// Its timings go to a `PerfSink` (Platform/PerfSink.swift; the app's signposts, nothing in the CLI).
 
 /// One device state file (`DeviceState`: this installation's device id and hybrid clock, format.md §5),
 /// opened by a synchronous caller for the length of one operation. Every reading it hands out is saved

@@ -7,8 +7,25 @@ import PackageDescription
 let hasNotability = FileManager.default.fileExists(
     atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Sources/SempereNotability").path)
 
+// `SempereLocalization` (the app's string catalog, docs/design/thin-app.md "Rules") is Apple-only: SwiftPM on Linux
+// has no rule for an `.xcstrings` resource and Linux Foundation has no `String(localized:bundle:)`. Nothing on
+// Linux needs it (the CLI stays English); `LocalizationCatalogTests` reads the catalog's JSON there instead.
+#if os(Linux)
+let appleOnlyProducts: [Product] = []
+let appleOnlyTargets: [Target] = []
+let defaultLocalization: LanguageTag? = nil
+#else
+let appleOnlyProducts: [Product] = [.library(name: "SempereLocalization", targets: ["SempereLocalization"])]
+let appleOnlyTargets: [Target] = [
+    .target(name: "SempereLocalization", resources: [.process("Resources/Localizable.xcstrings")]),
+    .testTarget(name: "SempereLocalizationTests", dependencies: ["SempereLocalization"]),
+]
+let defaultLocalization: LanguageTag? = "en"
+#endif
+
 let package = Package(
     name: "sempere-core",
+    defaultLocalization: defaultLocalization,
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .library(name: "Age", targets: ["Age"]),
@@ -21,7 +38,7 @@ let package = Package(
         .library(name: "SempereWebDAV", targets: ["SempereWebDAV"]),
         .library(name: "SempereSpeech", targets: ["SempereSpeech"]),
         .executable(name: "sempere", targets: ["SempereCLI"]),
-    ],
+    ] + appleOnlyProducts,
     dependencies: [
         // 4.0 adds X-Wing (ML-KEM-768 + X25519) and HPKE with it, for the
         // post-quantum age recipient (Sources/Age/MLKEM768X25519.swift).
@@ -132,7 +149,7 @@ let package = Package(
         .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "SempereSync", "Sempere", "Age", "FuzzSupport",
                                                        "TempDirSupport", "VaultTestSupport"]),
         .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport", "VaultTestSupport"]),
-    ] + (hasNotability ? [
+    ] + appleOnlyTargets + (hasNotability ? [
         // The Notability importer (docs/import-notability.md "Structure"). Optional: delete this directory
         // (and Tests/SempereNotabilityTests) and everything else still builds.
         .target(

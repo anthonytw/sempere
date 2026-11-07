@@ -52,6 +52,68 @@ those lines can move:
 - **Tests move with their code**, into `Tests/<Module>Tests` (Swift Testing is fine there). App tests
   that import UIKit, SwiftUI or PencilKit stay in the app's test target.
 
+## Foundations in place (wave 3)
+
+What the movers build on. Code that moves into the package takes these as parameters (or stored properties
+of the type that moves), never the platform API itself, and its tests pass the memory versions.
+
+### Strings: `SempereLocalization`
+
+- `Sources/SempereLocalization/Resources/Localizable.xcstrings` is the catalog. The one file is compiled into
+  the package's bundle and, as a resource of the app and widget targets (`project.pbxproj`, group "String
+  Catalog"), into their main bundles. App code does not change: SwiftUI literals and `String(localized: "…")`
+  look in `Bundle.main` and find the same strings. This was chosen over giving every view a `bundle:`, which
+  would have touched every literal in the app.
+- Code in the package looks up `String(localized: "…", bundle: .sempereLocalization)` or
+  `SempereStrings.localized("…")`. A library value's wording is an extension in this target, such as
+  `extension SyncProblem { public var localizedDescription: String }`. The target has no dependencies yet. The
+  first such extension adds the module it words (the widget then links that module too), or it goes in a
+  second, app-only target if the widget should stay small.
+- Manual entries carry `"generatesSymbol" : false`. A package target generates symbols for them, and keys that
+  map to one symbol fail the build (`docs/localization.md` "Files").
+
+### The platform protocols
+
+They are in `Sources/Sempere/Platform/` (module `Sempere`, so every module that moves code can reach them). The
+app's implementations are in `Apps/Sempere/SempereApp/PlatformServices.swift`.
+
+| Protocol | Library's own version | App's version | Wired now |
+| --- | --- | --- | --- |
+| `KeyValueStore` (`object`/`bool`/`integer`/`double`/`string`/`data(forKey:)`, `set`, `removeObject`, `observeChanges` → `KeyValueObservation`) | `MemoryKeyValueStore` | `UserDefaults` itself (retroactive conformance; change = `didChangeNotification` of that defaults) | `KeepScreenOn.isOn`, `IdleTimerKeeper` (follows the setting through `observeChanges`) |
+| `PerfSink` (`measure`, `event`, `log(level, category, message)`) | `NoPerfSink`, `MemoryPerfSink` | `AppPerfSink` (`Perf` signposts, `os.Logger`) | `DeviceClock`'s writer reads (wave 2), `BundleBitRepair.clear(log:)` |
+| `FolderBookmarks` (`bookmark(for:)`, `resolve(_:mounting:)` → `ResolvedBookmark`, `startAccessing`/`stopAccessing`, `withAccess`) | `PathBookmarks` (a path, no scope) | `SecurityScopedBookmarks` (`options: []`; no `mounting` → `.withoutMounting`) | `AppModel.enableQuickCapture`, `isProfileFolder(_:_:bookmarks:)` |
+| `FileCoordinating` (`coordinateReading`/`coordinateWriting`, `coordinatedRead`/`coordinatedWrite` taking an optional URL) | `UncoordinatedFiles` | `SystemFileCoordinator` (`NSFileCoordinator`, the `reconcile.coordinate` signpost) | `CloudVault.coordinatedRead`/`coordinatedWrite(files:)`, so every caller of those already goes through it |
+| `PlatformServices` (`isMac`, `isPhone`, `setIdleTimerDisabled`, `play(HapticFeedback)`) | `HeadlessPlatform` (records what it was asked) | `AppPlatform` | `IdleTimerKeeper(platform:)`, `PageCanvasView.snapFeedback` |
+
+The call sites that are left, by file in `Apps/Sempere/SempereApp/` (2026-11-07). Switch one when its code moves.
+View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the platform API.
+
+- **`KeyValueStore`** (`UserDefaults`/`@AppStorage`): `AppCommands`, `AppModel`, `AppModel+SettingsSync`,
+  `AppModel+Thinning`, `AppModel+TranscriptSearch`, `AppThemeWindows`, `AppearancePreferences`, `BackupSettings`,
+  `BlobCache`, `ColumnLayout`, `DeviceSettings`, `DragTestSettings`, `DrawingCache`, `DrawingPaletteView`,
+  `DrawingToolbox` (its `defaults:` parameter), `EraserGeometry`, `EraserPreference`, `Expectations`,
+  `ImagePreparation`, `InsertUI`, `MathEditor`, `MathModels`, `MathSettings`, `MouseInk`, `NoteCanvasView`,
+  `NoteDragSource`, `NoteListView`, `NoteWindowView`, `PageCanvasHost+Appearance`, `PageCanvasView`,
+  `PageLayoutChoice`, `PageRecognizer`, `PaperPreference`, `RecordingPreferences`, `RenderCache`, `RootView`,
+  `SettingsGroups`, `SettingsSyncBridge`, `SettingsView`, `StatusItemBridge`, `SyncCoordinator`, `ToolPalette`
+  (and `DebugLaunch`, debug only).
+- **`PerfSink`**: `Perf.begin`/`measure`/`event` in `AppModel`, `AppModel+Backup`, `+History`, `+ListUpdates`,
+  `+Loading`, `+Reconcile`, `+RemoteMerge`, `+Thinning`, `BackgroundSync`, `ItemLayerView`, `ItemRendering`,
+  `NoteEditor`, `PageCanvasView`, `SyncCoordinator`; `os.Logger` in `AppModel+Inbox`, `+Notebooks`,
+  `+SettingsSync`, `+Suspension`, `+SyncTargets`, `AppModelEnvironment`, `DragLog`, `FolderPicker`,
+  `VoiceNoteStartLog`, `VoiceNoteTapLog`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
+  becomes `perf.measure("x", …)`.
+- **`FolderBookmarks`** (bookmarks and security scopes): `AppModel`, `AppModel+Backup`, `+BulkExport`,
+  `+DeviceNotices`, `+Import`, `+SyncTargets` (`FolderTargetAccess.open` resolves with `mounting:`), `+VaultDetails`,
+  `+VaultStore`, `ExportSheet`, `FolderPicker`, `InsertUI`, `MathModels`, `NewVaultView`, `PDFPreparation`,
+  `QuickCapture`, `VaultLibrary`.
+- **`FileCoordinating`**: the callers of `CloudVault.coordinatedRead`/`Write` (`AppModel+Backup`, `+Thinning`,
+  `+VaultStore`, `NewVaultView`, `NoteEditor`, `QuickCapture`) pass `files:` once their code is in the library.
+  `Sources/SempereSync/UbiquitousFolderHooks.swift` calls `NSFileCoordinator` itself (Darwin only, already in the
+  library): it can take a `FileCoordinating` when a second implementation is wanted.
+- **`PlatformServices`**: `Platform.isMac`/`isPhone` in 33 files (they stay for views; logic that moves takes
+  `platform.isMac`).
+
 ## Duplicates to remove first
 
 These are cases where the app and the CLI each implement the same logic, and the two can disagree.

@@ -16,10 +16,14 @@
 		A1000000000000000000B009 /* SempereImporters in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D007 /* SempereImporters */; };
 		A1000000000000000000B00D /* SempereWebDAV in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D008 /* SempereWebDAV */; };
 		A1000000000000000000B05C /* SempereSync in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D05C /* SempereSync */; };
+		A1000000000000000000B0A2 /* SempereLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0A2 /* SempereLocalization */; };
+		A1000000000000000000B0A3 /* SempereLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0A3 /* SempereLocalization */; };
 		A1000000000000000000B003 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F003 /* Fixtures */; };
 		A1000000000000000000B00B /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F007 /* LICENSE */; };
 		A1000000000000000000B00C /* LICENSE-EXCEPTION in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F008 /* LICENSE-EXCEPTION */; };
 		A1000000000000000000B0A1 /* privacy-policy.md in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F0A1 /* privacy-policy.md */; };
+		A1000000000000000000B0A4 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F0A2 /* Localizable.xcstrings */; };
+		A1000000000000000000B0A5 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F0A2 /* Localizable.xcstrings */; };
 		A1000000000000000000B006 /* SempereWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F005 /* SempereWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A1000000000000000000B00A /* SempereStatusItem.bundle in Embed Mac Plug-Ins */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F006 /* SempereStatusItem.bundle */; platformFilter = maccatalyst; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -89,6 +93,7 @@
 		A1000000000000000000F006 /* SempereStatusItem.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SempereStatusItem.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000000000000000000F007 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; name = LICENSE; path = ../../LICENSE; sourceTree = SOURCE_ROOT; };
 		A1000000000000000000F008 /* LICENSE-EXCEPTION */ = {isa = PBXFileReference; lastKnownFileType = text; name = "LICENSE-EXCEPTION"; path = "../../LICENSE-EXCEPTION"; sourceTree = SOURCE_ROOT; };
+		A1000000000000000000F0A2 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; name = Localizable.xcstrings; path = ../../Sources/SempereLocalization/Resources/Localizable.xcstrings; sourceTree = SOURCE_ROOT; };
 		A1000000000000000000F0A1 /* privacy-policy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = "privacy-policy.md"; path = "../../docs/appstore/privacy-policy.md"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -149,6 +154,7 @@
 				A1000000000000000000B009 /* SempereImporters in Frameworks */,
 				A1000000000000000000B00D /* SempereWebDAV in Frameworks */,
 				A1000000000000000000B05C /* SempereSync in Frameworks */,
+				A1000000000000000000B0A2 /* SempereLocalization in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -170,6 +176,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000B0A3 /* SempereLocalization in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -196,6 +203,7 @@
 				A1000000000000000000E008 /* StatusItemShared */,
 				A10000000000000000001003 /* Fixtures (shared with the package tests) */,
 				A10000000000000000001004 /* Licence (the repository's, bundled in the app) */,
+				A10000000000000000001005 /* String catalog (the package's, compiled into the app and the widget) */,
 				A10000000000000000001002 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -228,6 +236,14 @@
 				A1000000000000000000F0A1 /* privacy-policy.md */,
 			);
 			name = Licence;
+			sourceTree = "<group>";
+		};
+		A10000000000000000001005 /* String catalog (the package's, compiled into the app and the widget) */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000F0A2 /* Localizable.xcstrings */,
+			);
+			name = "String Catalog";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -266,6 +282,7 @@
 				A1000000000000000000D007 /* SempereImporters */,
 				A1000000000000000000D008 /* SempereWebDAV */,
 				A1000000000000000000D05C /* SempereSync */,
+				A1000000000000000000D0A2 /* SempereLocalization */,
 			);
 			productName = SempereApp;
 			productReference = A1000000000000000000F001 /* Sempere.app */;
@@ -331,6 +348,9 @@
 				A1000000000000000000E006 /* Localization */,
 			);
 			name = SempereWidgets;
+			packageProductDependencies = (
+				A1000000000000000000D0A3 /* SempereLocalization */,
+			);
 			productName = SempereWidgets;
 			productReference = A1000000000000000000F005 /* SempereWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -421,6 +441,7 @@
 				A1000000000000000000B00B /* LICENSE in Resources */,
 				A1000000000000000000B00C /* LICENSE-EXCEPTION in Resources */,
 				A1000000000000000000B0A1 /* privacy-policy.md in Resources */,
+				A1000000000000000000B0A4 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -443,6 +464,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000B0A5 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -925,6 +947,14 @@
 		A1000000000000000000D05C /* SempereSync */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SempereSync;
+		};
+		A1000000000000000000D0A2 /* SempereLocalization */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereLocalization;
+		};
+		A1000000000000000000D0A3 /* SempereLocalization */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereLocalization;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

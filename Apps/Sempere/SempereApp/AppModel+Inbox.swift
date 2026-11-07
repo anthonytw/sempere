@@ -81,7 +81,7 @@ extension AppModel {
         let clock = try deviceClockForWriting()
         let profile = try vault.captureProfile(device: clock.device,
                                                notebook: notebook ?? CaptureProfile.defaultNotebook)
-        let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        let bookmark = try SecurityScopedBookmarks().bookmark(for: url)
         try quickCapture.store.save(StoredCaptureProfile(profile: profile, vaultName: vaultName ?? "Vault", bookmark: bookmark,
                                                          transcribe: transcribe))
         // The widgets and the control stop showing "Set Up".
@@ -125,10 +125,9 @@ extension AppModel {
     /// `here` (security review 2026-10 stage 4, S16): a lookalike folder with
     /// the same vault id, opened from outside, must not take over the profile
     /// (its recipients, its key and where voice notes go).
-    nonisolated static func isProfileFolder(_ bookmark: Data, _ here: URL) -> Bool {
-        var stale = false
-        guard let target = try? URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
-        else { return false }
+    nonisolated static func isProfileFolder(_ bookmark: Data, _ here: URL,
+                                            bookmarks: any FolderBookmarks = SecurityScopedBookmarks()) -> Bool {
+        guard let target = try? bookmarks.resolve(bookmark).url else { return false }
         func path(_ u: URL) -> String { u.standardizedFileURL.resolvingSymlinksInPath().path }
         return path(target) == path(here)
     }

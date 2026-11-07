@@ -131,6 +131,9 @@ PRODUCT_SOURCES = {
     "SempereWebDAV": ["SempereWebDAV", "SempereSync", "Sempere", "Age", "CZlib"],
     # The sync engine (docs/io.md "Sync engine and transports"), linked by the app directly too.
     "SempereSync": ["SempereSync", "Sempere", "Age", "CZlib"],
+    # The string catalog and the code that words library values (docs/design/thin-app.md), linked by the app and
+    # the widget.
+    "SempereLocalization": ["SempereLocalization"],
     # Third-party (app only, never in Sources/): ships its own manifest if it needs one;
     # check the archive's privacy report.
     "SwiftMath": [],

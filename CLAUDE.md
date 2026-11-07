@@ -211,7 +211,7 @@ there. Commit messages:
   Never write vault files from `Apps/` any other way, and never open a second clock on a state file a
   `DeviceClock` holds. Work that stamps revisions itself (an import, thinning, snapshots, restores) runs on the
   clock in `withClock(save:)`, which keeps the ticks even when the body throws. The app adds only its state
-  file's place, `NoteWriter.appName` and its signposts (`AppPerfSink`, `DeviceClock.swift`). Async
+  file's place, `NoteWriter.appName` and its signposts (`AppPerfSink`, `PlatformServices.swift`). Async
   `AppModel` work re-checks the `generation` token (`ensureCurrent`) after
   every await before publishing. Security-scoped URLs from the picker need
   `startAccessingSecurityScopedResource()` for the whole time the vault is used;
@@ -834,8 +834,10 @@ there. Commit messages:
   `InkLasso` picks the strokes, as in the CLI; `PKCanvasView.selection` (iOS 27) gives only ids
   picked by PencilKit's own rule, so it is not used.
 - Localization (`docs/localization.md`, task L): every interface string is in
-  `Apps/Sempere/Localization/Localizable.xcstrings` (plus `InfoPlist`, `AppShortcuts`), a
-  synchronized group of the app and widget targets. SwiftUI literals localize themselves;
+  `Sources/SempereLocalization/Resources/Localizable.xcstrings` (the Apple-only package target
+  `SempereLocalization`, compiled into its own bundle and, from the same file, into the app's and the widget's main
+  bundles; package code looks up `bundle: .sempereLocalization`), plus `InfoPlist` and `AppShortcuts` in
+  `Apps/Sempere/Localization/`, a synchronized group of the app and widget targets. SwiftUI literals localize themselves;
   strings built in code use `String(localized: "…")` at the point they are defined (a
   `Text(someString)` never localizes), counts are plural variations (es: one/many/other),
   and the catalog key's specifier must match the Swift type (`%lld` for `Int`, `%@` for

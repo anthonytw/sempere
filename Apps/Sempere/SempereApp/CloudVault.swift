@@ -1,4 +1,5 @@
 import Foundation
+import Sempere
 
 /// Downloading a vault folder that lives in iCloud Drive before the app copies it in (Open Vault…, a
 /// restore: `AppModel.downloadSourceFolder`). Files iCloud has not downloaded are placeholders that a plain
@@ -149,41 +150,16 @@ enum CloudVault {
     }
 
     /// Runs `body` inside a coordinated read of `url` (nil: no coordination,
-    /// for vaults outside iCloud).
-    static func coordinatedRead<T>(_ url: URL?, _ body: () throws -> T) throws -> T {
-        guard let url else { return try body() }
-        var result: Result<T, any Error>?
-        var error: NSError?
-        let wait = Perf.begin(.reconcileCoordinate)
-        var granted = false
-        NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [.withoutChanges], error: &error) { _ in
-            Perf.end(wait, "read")
-            granted = true
-            result = Result { try body() }
-        }
-        if !granted { Perf.end(wait, "read refused") }
-        return try finish(result, error, url)
+    /// for vaults outside iCloud), through `files` (`SystemFileCoordinator`: `NSFileCoordinator`).
+    static func coordinatedRead<T>(_ url: URL?, files: any FileCoordinating = SystemFileCoordinator(),
+                                   _ body: () throws -> T) throws -> T {
+        try files.coordinatedRead(url, body)
     }
 
     /// Runs `body` inside a coordinated write of `url` (nil: no
     /// coordination), so iCloud uploads what `body` adds there.
-    static func coordinatedWrite<T>(_ url: URL?, _ body: () throws -> T) throws -> T {
-        guard let url else { return try body() }
-        var result: Result<T, any Error>?
-        var error: NSError?
-        let wait = Perf.begin(.reconcileCoordinate)
-        var granted = false
-        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: url, options: [], error: &error) { _ in
-            Perf.end(wait, "write")
-            granted = true
-            result = Result { try body() }
-        }
-        if !granted { Perf.end(wait, "write refused") }
-        return try finish(result, error, url)
-    }
-
-    private static func finish<T>(_ result: Result<T, any Error>?, _ error: NSError?, _ url: URL) throws -> T {
-        if let result { return try result.get() }
-        throw error ?? CocoaError(.fileReadUnknown, userInfo: [NSFilePathErrorKey: url.path])
+    static func coordinatedWrite<T>(_ url: URL?, files: any FileCoordinating = SystemFileCoordinator(),
+                                    _ body: () throws -> T) throws -> T {
+        try files.coordinatedWrite(url, body)
     }
 }

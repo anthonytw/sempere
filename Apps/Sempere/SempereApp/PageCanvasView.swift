@@ -1337,9 +1337,8 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     }
 
     /// The tick a pinch gives when it settles on the fitted width.
-    static func snapFeedback() {
-        guard !Platform.isMac else { return }
-        UISelectionFeedbackGenerator().selectionChanged()
+    static func snapFeedback(_ platform: any PlatformServices = AppPlatform()) {
+        platform.play(.selection)
     }
 
     /// Content size and paper follow the zoom (`PageExtent`): an infinite

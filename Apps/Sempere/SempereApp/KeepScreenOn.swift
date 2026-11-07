@@ -1,4 +1,5 @@
 import Foundation
+import Sempere
 import UIKit
 
 /// "Keep Screen On" (the open note's toolbar menu): while it is on, a note is
@@ -11,7 +12,7 @@ enum KeepScreenOn {
     static let defaultValue = false
 
     /// The stored choice, `defaultValue` when never set.
-    static func isOn(_ defaults: UserDefaults = .standard) -> Bool {
+    static func isOn(_ defaults: any KeyValueStore = UserDefaults.standard) -> Bool {
         defaults.object(forKey: key) as? Bool ?? defaultValue
     }
 
@@ -34,34 +35,44 @@ enum KeepScreenOn {
 /// iPad a note window can stay on screen, and the setting be changed there, while the library scene is in
 /// the background or gone, so the flag set earlier stayed set and the screen never locked. This follows
 /// the application instead (became active, resigned, entered the background, any defaults change) and
-/// counts every open editor, and it sets the flag back whenever any input says no.
+/// counts every open editor, and it sets the flag back whenever any input says no. The setting comes from a
+/// `KeyValueStore` (its change notification) and the flag goes to `PlatformServices` (docs/design/thin-app.md).
 @MainActor
 final class IdleTimerKeeper {
-    private let defaults: UserDefaults
+    private let defaults: any KeyValueStore
+    private let platform: any PlatformServices
     private let noteOpen: @MainActor () -> Bool
     private let appActive: @MainActor () -> Bool
     private let debugLaunch: Bool
-    private let apply: @MainActor (Bool) -> Void
     private var observers: [any NSObjectProtocol] = []
+    private var settingChanges: KeyValueObservation?
     /// What was applied last (nil before the first `update`).
     private(set) var disabled: Bool?
 
-    init(defaults: UserDefaults = .standard, debugLaunch: Bool = false,
+    init(defaults: any KeyValueStore = UserDefaults.standard, platform: any PlatformServices = AppPlatform(),
+         debugLaunch: Bool = false,
          noteOpen: @escaping @MainActor () -> Bool,
-         appActive: @escaping @MainActor () -> Bool,
-         apply: @escaping @MainActor (Bool) -> Void) {
+         appActive: @escaping @MainActor () -> Bool) {
         self.defaults = defaults
+        self.platform = platform
         self.debugLaunch = debugLaunch
         self.noteOpen = noteOpen
         self.appActive = appActive
-        self.apply = apply
     }
 
-    /// Starts following the app's state and the setting, and applies it now.
+    /// Starts following the app's state (posted on `center`) and the setting, and applies it now.
     func start(center: NotificationCenter = .default) {
         guard observers.isEmpty else { return }
+        // A change of any setting, on whichever thread made it.
+        settingChanges = defaults.observeChanges { [weak self] in
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { self?.update() }
+            } else {
+                Task { @MainActor in self?.update() }
+            }
+        }
         let names: [Notification.Name] = [UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,
-                                          UIApplication.didEnterBackgroundNotification, UserDefaults.didChangeNotification]
+                                          UIApplication.didEnterBackgroundNotification]
         observers = names.map { name in
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 let leaving = note.name == UIApplication.willResignActiveNotification
@@ -79,6 +90,6 @@ final class IdleTimerKeeper {
                                                    active: !leaving && appActive(), debugLaunch: debugLaunch)
         guard value != disabled else { return }
         disabled = value
-        apply(value)
+        platform.setIdleTimerDisabled(value)
     }
 }

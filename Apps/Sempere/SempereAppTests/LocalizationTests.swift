@@ -1,5 +1,6 @@
 import Foundation
 import SempereImporters
+import SempereLocalization
 import Testing
 @testable import SempereApp
 
@@ -22,6 +23,22 @@ struct LocalizationTests {
         #expect(String(localized: "Settings", bundle: es) == "Ajustes")
         #expect(String(localized: "Cancel", bundle: es) == "Cancelar")
         #expect(String(localized: "Done", bundle: es) == "Listo")
+    }
+
+    /// The catalog lives in the package (`SempereLocalization`) and is compiled into its resource bundle and into
+    /// the app's main bundle from the same file (docs/localization.md "Files"): SwiftUI literals read the main
+    /// bundle, package code the package's, and both say the same.
+    @Test func thePackageCatalogIsTheAppsCatalog() throws {
+        let es = try #require(Self.spanish)
+        // Resolved paths: a build under /tmp is reached through the /private/tmp symlink on one side only.
+        let package = Bundle.sempereLocalization.bundleURL.resolvingSymlinksInPath().path
+        let app = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        #expect(package.hasPrefix(app + "/"), "embedded in the app: \(package) is not inside \(app)")
+        for key in ["Settings", "Cancel", "New Note", "Keep Screen On"] {
+            #expect(SempereStrings.text(key, language: "es") == String(localized: String.LocalizationValue(key), bundle: es),
+                    "\(key)")
+        }
+        #expect(SempereStrings.text("Settings", language: "es") == "Ajustes")
     }
 
     /// `many` is for millions in Spanish: "1 000 000 de notas".

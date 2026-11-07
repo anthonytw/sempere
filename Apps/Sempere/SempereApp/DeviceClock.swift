@@ -24,11 +24,3 @@ extension NoteWriter {
         return "sempere-ios/\(v)"
     }
 }
-
-/// The package's timing reports as the app's signposts (`Perf`); phases the app does not know are not reported.
-struct AppPerfSink: PerfSink {
-    func measure<T>(_ phase: String, _ detail: String, _ body: () throws -> T) rethrows -> T {
-        guard let phase = Perf.Phase(rawValue: phase) else { return try body() }
-        return try Perf.measure(phase, detail, body)
-    }
-}

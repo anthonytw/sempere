@@ -1,8 +1,5 @@
 import Foundation
-import os
 import Sempere
-
-private let bundleBitLog = Logger(subsystem: "io.github.anthonytw.sempere", category: "bundleBit")
 
 /// Clears the Finder's `kHasBundle` flag on the vault and backup folders the app makes or uses (`FinderBundleBit`,
 /// docs/io.md "Vaults are folders"): the store's vaults, folder sync targets and backups, at setup and at each run.
@@ -20,9 +17,9 @@ enum BundleBitRepair {
 
     /// Clears the flag on `url` when it is a `….sempere` or `….sempere-backup` folder that has it; logs when it did.
     @discardableResult
-    nonisolated static func clear(_ url: URL, _ role: Role) -> Bool {
+    nonisolated static func clear(_ url: URL, _ role: Role, log: any PerfSink = AppPerfSink()) -> Bool {
         guard FinderBundleBit.appliesTo(url), FinderBundleBit.clear(at: url) else { return false }
-        bundleBitLog.notice("cleared kHasBundle on a \(role.rawValue, privacy: .public) folder")
+        log.log(.notice, "bundleBit", "cleared kHasBundle on a \(role.rawValue) folder")
         return true
     }
 }
