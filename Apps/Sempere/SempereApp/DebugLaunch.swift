@@ -2,6 +2,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereAppCore
 import UIKit
 
 /// Debug builds only: open a vault, unlock it and show a note straight from
@@ -137,7 +138,9 @@ enum DebugLaunch {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SempereDebugPick", isDirectory: true)
         let passphrase = environment["SEMPERE_DEMO_PASSPHRASE"]
         do {
-            let url = try await Task.detached { try await DemoVault.build(in: dir, passphrase: passphrase).url }.value
+            let url = try await Task.detached {
+                try await DemoVault.build(in: dir, passphrase: passphrase, app: NoteWriter.appName, perf: AppPerfSink()).url
+            }.value
             pickedDemo = url
             return url
         } catch {

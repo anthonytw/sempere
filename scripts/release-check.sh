@@ -134,6 +134,9 @@ PRODUCT_SOURCES = {
     # The string catalog and the code that words library values (docs/design/thin-app.md), linked by the app and
     # the widget.
     "SempereLocalization": ["SempereLocalization"],
+    # The apps' session state (docs/design/thin-app.md "Rules"): menus, modes, settings, onboarding; the app only.
+    "SempereAppCore": ["SempereAppCore", "SempereImporters", "SempereNotability", "SempereImport", "Sempere", "SemperePDF",
+                       "SempereRender", "Age", "CZlib"],
     # Third-party (app only, never in Sources/): ships its own manifest if it needs one;
     # check the archive's privacy report.
     "SwiftMath": [],

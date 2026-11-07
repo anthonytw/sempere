@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
 import UIKit
 
@@ -305,9 +306,9 @@ private struct TranscriptSearchSettingsSection: View {
 // MARK: - New notes
 
 private struct NewNoteSettingsSection: View {
-    @State private var format = NewNoteSettings.titleFormat()
+    @State private var format = NewNoteSettings.titleFormat(UserDefaults.standard)
     /// The custom pattern as typed (stored only while it checks).
-    @State private var pattern = NewNoteSettings.titlePattern()
+    @State private var pattern = NewNoteSettings.titlePattern(UserDefaults.standard)
     @State private var paper = PaperPreference.load()
     @State private var layout = NewNoteLayout.load()
     @State private var choosingPaper = false
@@ -328,7 +329,7 @@ private struct NewNoteSettingsSection: View {
                     }
                 }
             }
-            .onChange(of: format) { NewNoteSettings.setTitleFormat(format) }
+            .onChange(of: format) { NewNoteSettings.setTitleFormat(format, in: UserDefaults.standard) }
             .syncedSetting("newNote.titleFormat")
             if format == .custom {
                 TitlePatternField(pattern: $pattern)
@@ -370,7 +371,7 @@ private struct NewNoteSettingsSection: View {
     }
 
     private var sample: String {
-        let t = NewNoteSettings.title(format, pattern: NewNoteSettings.titlePattern())
+        let t = NewNoteSettings.title(format, pattern: NewNoteSettings.titlePattern(UserDefaults.standard))
         return t.isEmpty ? String(localized: "“Untitled”", comment: "Settings ▸ New Notes footer: how a note with no title is shown, in quotes") : "“\(t)”"
     }
 }
@@ -389,7 +390,7 @@ struct TitlePatternField: View {
                     .font(.body.monospaced())
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-                    .onChange(of: pattern) { NewNoteSettings.setTitlePattern(pattern) }
+                    .onChange(of: pattern) { NewNoteSettings.setTitlePattern(pattern, in: UserDefaults.standard) }
                     .accessibilityLabel("Title pattern")
                 Menu("Insert", systemImage: "plus.circle") {
                     ForEach(TitlePatternField.fields, id: \.self) { field in
@@ -477,7 +478,7 @@ struct TitlePatternField: View {
 // MARK: - Recording
 
 private struct RecordingSettingsSection: View {
-    @State private var settings = RecordingSettings.load()
+    @State private var settings = RecordingSettings.load(from: UserDefaults.standard)
 
     var body: some View {
         Section {
@@ -513,7 +514,7 @@ private struct RecordingSettingsSection: View {
             // A codec change can make the bit rate or sample rate invalid: show the corrected value.
             let fixed = settings.normalized()
             if fixed != settings { settings = fixed }
-            settings.save()
+            settings.save(to: UserDefaults.standard)
         }
     }
 }
@@ -521,8 +522,8 @@ private struct RecordingSettingsSection: View {
 // MARK: - Transcription
 
 private struct TranscriptionSettingsSection: View {
-    @State private var enabled = TranscriptionSettings.isEnabled()
-    @State private var locale = TranscriptionSettings.localeIdentifier()
+    @State private var enabled = TranscriptionSettings.isEnabled(UserDefaults.standard)
+    @State private var locale = TranscriptionSettings.localeIdentifier(UserDefaults.standard)
     @State private var status = TranscriptionSettings.ModelStatus.unavailable
     @State private var engineNote = ""
     @State private var downloading = false
@@ -531,7 +532,7 @@ private struct TranscriptionSettingsSection: View {
     var body: some View {
         Section {
             Toggle("Transcribe Recordings on This Device", isOn: $enabled)
-                .onChange(of: enabled) { TranscriptionSettings.setEnabled(enabled) }
+                .onChange(of: enabled) { TranscriptionSettings.setEnabled(enabled, in: UserDefaults.standard) }
                 .syncedSetting("transcription.enabled")
             if enabled {
                 Picker("Preferred Language", selection: $locale) {
@@ -540,7 +541,7 @@ private struct TranscriptionSettingsSection: View {
                         Text(Locale.current.localizedString(forIdentifier: id) ?? id).tag(String?.some(id))
                     }
                 }
-                .onChange(of: locale) { TranscriptionSettings.setLocaleIdentifier(locale) }
+                .onChange(of: locale) { TranscriptionSettings.setLocaleIdentifier(locale, in: UserDefaults.standard) }
                 .syncedSetting("transcription.language")
                 // The app picks the engine for the language; this says which one it chose.
                 Text(engineNote)

@@ -18,6 +18,7 @@
 		A1000000000000000000B05C /* SempereSync in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D05C /* SempereSync */; };
 		A1000000000000000000B0A2 /* SempereLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0A2 /* SempereLocalization */; };
 		A1000000000000000000B0A3 /* SempereLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0A3 /* SempereLocalization */; };
+		A1000000000000000000B0C0 /* SempereAppCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0C0 /* SempereAppCore */; };
 		A1000000000000000000B003 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F003 /* Fixtures */; };
 		A1000000000000000000B00B /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F007 /* LICENSE */; };
 		A1000000000000000000B00C /* LICENSE-EXCEPTION in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F008 /* LICENSE-EXCEPTION */; };
@@ -155,6 +156,7 @@
 				A1000000000000000000B00D /* SempereWebDAV in Frameworks */,
 				A1000000000000000000B05C /* SempereSync in Frameworks */,
 				A1000000000000000000B0A2 /* SempereLocalization in Frameworks */,
+				A1000000000000000000B0C0 /* SempereAppCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -283,6 +285,7 @@
 				A1000000000000000000D008 /* SempereWebDAV */,
 				A1000000000000000000D05C /* SempereSync */,
 				A1000000000000000000D0A2 /* SempereLocalization */,
+				A1000000000000000000D0C0 /* SempereAppCore */,
 			);
 			productName = SempereApp;
 			productReference = A1000000000000000000F001 /* Sempere.app */;
@@ -955,6 +958,10 @@
 		A1000000000000000000D0A3 /* SempereLocalization */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SempereLocalization;
+		};
+		A1000000000000000000D0C0 /* SempereAppCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereAppCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

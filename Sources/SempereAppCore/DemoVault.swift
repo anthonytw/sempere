@@ -7,56 +7,57 @@ import Sempere
 /// `scripts/screenshots.sh`): a few notebooks, tags and notes written in code,
 /// never from anyone's real notes. Every note is written through `NoteWriter`
 /// with a `DeviceClock` of its own, exactly as the app writes, at fixed dates, so
-/// the note list looks the same on every run. Pure Foundation + Sempere + Age.
-enum DemoVault {
+/// the note list looks the same on every run. Pure Foundation + Sempere + Age, and
+/// DEBUG only (`#if DEBUG`: a release build of the package, the app's included, has none of it).
+public enum DemoVault {
     /// The vault's folder is `My Notes.sempere`; the sidebar shows "My Notes".
-    static let folderName = "My Notes.sempere"
+    public static let folderName = "My Notes.sempere"
     /// The newest note's date, noon UTC. Notes are dated fractions of a day
     /// before it, so their day depends on the time zone: the screenshot tests
     /// run the app in UTC (`ScreenshotTests`).
-    static let anchor: Date = {
+    public static let anchor: Date = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
         return calendar.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 12)) ?? Date(timeIntervalSince1970: 1_791_201_600)
     }()
-    static let ruled = Paper(kind: .ruled)
-    static let margin = Paper(kind: .marginRuled)
-    static let grid = Paper(kind: .grid, spacing: 18)
-    static let dots = Paper(kind: .dot, spacing: 18, background: Paper.cream)
-    static let cornell = Paper(kind: .cornell, spacing: 24)
+    public static let ruled = Paper(kind: .ruled)
+    public static let margin = Paper(kind: .marginRuled)
+    public static let grid = Paper(kind: .grid, spacing: 18)
+    public static let dots = Paper(kind: .dot, spacing: 18, background: Paper.cream)
+    public static let cornell = Paper(kind: .cornell, spacing: 24)
 
     /// What `build` made.
-    struct Built: Sendable {
-        let url: URL
+    public struct Built: Sendable {
+        public let url: URL
         /// The device key file (`DeviceKeys.fileText`) of the vault's throwaway home device.
-        let identityText: String
+        public let identityText: String
         /// The `age-keygen` style text of the vault's throwaway recovery key (opens it read-only).
-        let recoveryText: String
+        public let recoveryText: String
         /// Note ids by `Spec.key`.
-        let notes: [String: UUID]
+        public let notes: [String: UUID]
     }
 
     /// One demo note.
-    struct Spec: Sendable {
-        let key: String
-        let title: String
-        let notebook: String?
-        let tags: [String]
-        let paper: Paper
+    public struct Spec: Sendable {
+        public let key: String
+        public let title: String
+        public let notebook: String?
+        public let tags: [String]
+        public let paper: Paper
         /// How long before `anchor` it was last edited.
-        let daysAgo: Double
+        public let daysAgo: Double
         /// Draws page 1; further pages are drawn by `more`.
-        let draw: @Sendable (inout DemoSheet) -> Void
-        var more: [@Sendable (inout DemoSheet) -> Void] = []
+        public let draw: @Sendable (inout DemoSheet) -> Void
+        public var more: [@Sendable (inout DemoSheet) -> Void] = []
     }
 
     /// FNV-1a: a stable seed from a name (`hashValue` differs on every launch).
-    static func seed(_ name: String) -> UInt64 {
+    public static func seed(_ name: String) -> UInt64 {
         name.utf8.reduce(0xCBF2_9CE4_8422_2325) { ($0 ^ UInt64($1)) &* 0x0000_0100_0000_01B3 }
     }
 
     /// The id of the note with this key: the same on every run.
-    static func noteID(_ key: String) -> UUID {
+    public static func noteID(_ key: String) -> UUID {
         var rng = DemoRandom(seed: seed("note/" + key))
         return rng.uuid()
     }
@@ -84,9 +85,13 @@ enum DemoVault {
     /// `device`: the home device's keys (UI tests, `SEMPERE_DEMO_DEVICE_KEY`: a key file the test also
     /// pastes into the unlock sheet, so the vault opens writable the way a user unlocks it); a fresh
     /// one when nil.
-    static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil,
-                      itemsImage: Data? = nil, denseStrokes: Int? = nil, searchNotes: Bool = false,
-                      trust: (any EpochTrustStore)? = nil, device given: DeviceKeys? = nil) async throws -> Built {
+    ///
+    /// `app`, `perf`: the revisions' `app` (format.md §5.1; the app passes its own, `NoteWriter.appName`) and where
+    /// the writer's timings go.
+    public static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil,
+                             itemsImage: Data? = nil, denseStrokes: Int? = nil, searchNotes: Bool = false,
+                             trust: (any EpochTrustStore)? = nil, device given: DeviceKeys? = nil,
+                             app: String, perf: any PerfSink = NoPerfSink()) async throws -> Built {
         let fm = FileManager.default
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -99,7 +104,7 @@ enum DemoVault {
                                      trust: trust)
         let text = try device.fileText(created: created)
         let recoveryText = IdentityFile.render(.mlkem768x25519(recovery), created: created)
-        let clock = try DeviceClock(url: directory.appendingPathComponent("device.json"))
+        let clock = try DeviceClock(url: directory.appendingPathComponent("device.json"), app: app, perf: perf)
         var ids: [String: UUID] = [:]
         for spec in specs {
             let id = noteID(spec.key)
@@ -132,15 +137,15 @@ enum DemoVault {
     }
 
     /// The pageless dense note's key (`denseStrokes`).
-    static let denseNote = "dense"
-    static var densePage: UUID {
+    public static let denseNote = "dense"
+    public static var densePage: UUID {
         var rng = DemoRandom(seed: seed("page/" + denseNote))
         return rng.uuid()
     }
 
     /// A pageless ruled note of `strokes` synthetic strokes, rows 24 points apart, its stored
     /// height the ink's (as an import writes it).
-    static func denseOps(strokes: Int) -> [Op] {
+    public static func denseOps(strokes: Int) -> [Op] {
         var ink = SyntheticInk(seed: seed("ink/" + denseNote), options: .init(pointsPerStroke: 16, rowHeight: 24, top: 40))
         let all = ink.strokes(strokes)
         let height = max(792, (ink.nextBaseline + 48).rounded(.up))
@@ -151,11 +156,11 @@ enum DemoVault {
     }
 
     /// The note `itemsImage` places items on.
-    static let itemsNote = "thoughts"
+    public static let itemsNote = "thoughts"
 
     /// A text box, an image (`png`, 4 × 3 pixels, stored first), an equation and a
     /// recording's card on the first page of note `note`, clear of its ink.
-    static func itemOps(vault: Vault, note: UUID, png: Data, page: UUID? = nil) throws -> [Op] {
+    public static func itemOps(vault: Vault, note: UUID, png: Data, page: UUID? = nil) throws -> [Op] {
         var rng = DemoRandom(seed: seed("page/" + itemsNote))
         let page = page ?? rng.uuid()
         let blob = try vault.writeBlob(note: note, png, type: "image/png")
@@ -169,7 +174,7 @@ enum DemoVault {
     }
 
     /// The ops that create `spec`'s note: its pages, metadata, tags and ink.
-    static func ops(for spec: Spec, id: UUID) -> [Op] {
+    public static func ops(for spec: Spec, id: UUID) -> [Op] {
         var rng = DemoRandom(seed: seed("page/" + spec.key))
         let firstPage = rng.uuid()
         var ops = NoteOps.newNote(title: spec.title, paper: spec.paper, notebook: spec.notebook, tags: spec.tags,
@@ -196,8 +201,8 @@ enum DemoVault {
     private static func base(_ k: Int) -> Double { Double(k) * 24 - 5 }
 
     /// A title in large blue with a double rule, then one line of writing per entry.
-    static func plain(_ title: String, _ lines: [String], x: Double = 60, spacing: Double = 24,
-                      first: Double = 72, into sheet: inout DemoSheet) {
+    public static func plain(_ title: String, _ lines: [String], x: Double = 60, spacing: Double = 24,
+                             first: Double = 72, into sheet: inout DemoSheet) {
         sheet.write(title, x: x, baseline: first, pen: DemoPen.blue.scaled(1.7), maxWidth: 470)
         sheet.underline(x0: x, x1: x + min(sheet.width(of: title, pen: DemoPen.blue.scaled(1.7)), 470), y: first + 8,
                         pen: .blue, double: true)
@@ -207,7 +212,7 @@ enum DemoVault {
     }
 
     /// The hero note: lecture notes on ruled paper with a margin, a diagram, highlights.
-    static func respiration(_ s: inout DemoSheet) {
+    public static func respiration(_ s: inout DemoSheet) {
         let x0 = 84.0
         s.write("Lecture 4  -  Oct 1", x: 410, baseline: base(1), pen: DemoPen.green.scaled(0.85))
         let title = DemoPen.blue.scaled(1.8)
@@ -251,7 +256,7 @@ enum DemoVault {
     }
 
     /// The second hero: a sketch of how the sync works, on dot paper.
-    static func atlas(_ s: inout DemoSheet) {
+    public static func atlas(_ s: inout DemoSheet) {
         let title = DemoPen.blue.scaled(1.8)
         s.write("Atlas: sync design", x: 54, baseline: 62, pen: title)
         s.underline(x0: 54, x1: 54 + s.width(of: "Atlas: sync design", pen: title), y: 72, pen: .blue, double: true)
@@ -284,7 +289,7 @@ enum DemoVault {
     }
 
     /// The demo vault's notes.
-    static let specs: [Spec] = [
+    public static let specs: [Spec] = [
         Spec(key: "atlas", title: "Sync design sketch", notebook: "Work/Atlas", tags: ["ideas"], paper: dots,
              daysAgo: 0.2, draw: atlas),
         Spec(key: "respiration", title: "Cellular Respiration", notebook: "School/Biology", tags: ["lecture", "exam"],

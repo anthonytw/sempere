@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// How far a listing of the open vault has got, for "Opening vault: 120 of 640".
 /// When the status bar under the note list is worth showing for a sync (as opposed to flashing
@@ -303,6 +304,6 @@ extension AppModel {
     }
 
     nonisolated static func byTitle(_ list: [NoteSummary]) -> [NoteSummary] {
-        list.sorted { ($0.title.lowercased(), $0.id.uuidString) < ($1.title.lowercased(), $1.id.uuidString) }
+        NoteListDiff.sorted(list)
     }
 }

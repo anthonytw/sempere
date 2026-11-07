@@ -10,12 +10,12 @@ import Sempere
 // runs on Linux (the app's logic tests are typechecked there, CLAUDE.md).
 
 /// SplitMix64: a small seeded generator, so a demo vault is reproducible.
-struct DemoRandom: RandomNumberGenerator {
+public struct DemoRandom: RandomNumberGenerator {
     private var state: UInt64
 
-    init(seed: UInt64) { state = seed }
+    public init(seed: UInt64) { state = seed }
 
-    mutating func next() -> UInt64 {
+    public mutating func next() -> UInt64 {
         state &+= 0x9E37_79B9_7F4A_7C15
         var z = state
         z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
@@ -26,13 +26,13 @@ struct DemoRandom: RandomNumberGenerator {
     /// A uniform value in `range`, mapped here rather than by
     /// `Double.random(in:using:)`, whose mapping the standard library may
     /// change: the demo ink must not move with an Xcode update.
-    mutating func value(_ range: ClosedRange<Double>) -> Double {
+    public mutating func value(_ range: ClosedRange<Double>) -> Double {
         let unit = Double(next() >> 11) * 0x1p-53
         return range.lowerBound + (range.upperBound - range.lowerBound) * unit
     }
 
     /// A UUID drawn from the generator (version and variant bits set).
-    mutating func uuid() -> UUID {
+    public mutating func uuid() -> UUID {
         var bytes = (0..<16).map { _ in UInt8(truncatingIfNeeded: next()) }
         bytes[6] = (bytes[6] & 0x0F) | 0x40
         bytes[8] = (bytes[8] & 0x3F) | 0x80
@@ -42,27 +42,27 @@ struct DemoRandom: RandomNumberGenerator {
 }
 
 /// What the pen looks like: ink, nib width and letter size.
-struct DemoPen: Sendable {
-    var tool: InkTool = .pen
-    var color = Color(r: 0x1E, g: 0x2A, b: 0x44)
+public struct DemoPen: Sendable {
+    public var tool: InkTool = .pen
+    public var color = Color(r: 0x1E, g: 0x2A, b: 0x44)
     /// Drawn width in points (format `w`, `NibSize` converts for PencilKit).
-    var width = 1.7
+    public var width = 1.7
     /// Height of a lowercase letter without ascender, points.
-    var xHeight = 8.8
+    public var xHeight = 8.8
     /// Average letter width, points.
-    var letterWidth = 8.6
+    public var letterWidth = 8.6
     /// Horizontal shift per unit of height: the lean of the writing.
-    var slant = 0.18
+    public var slant = 0.18
 
-    static let ink = DemoPen()
-    static let blue = DemoPen(color: Color(r: 0x2B, g: 0x58, b: 0xB0))
-    static let red = DemoPen(color: Color(r: 0xC2, g: 0x3B, b: 0x3B))
-    static let green = DemoPen(color: Color(r: 0x2E, g: 0x7D, b: 0x4F))
+    public static let ink = DemoPen()
+    public static let blue = DemoPen(color: Color(r: 0x2B, g: 0x58, b: 0xB0))
+    public static let red = DemoPen(color: Color(r: 0xC2, g: 0x3B, b: 0x3B))
+    public static let green = DemoPen(color: Color(r: 0x2E, g: 0x7D, b: 0x4F))
     /// A broad yellow highlighter.
-    static let highlighter = DemoPen(tool: .marker, color: Color(r: 0xFF, g: 0xD8, b: 0x3D), width: 11)
+    public static let highlighter = DemoPen(tool: .marker, color: Color(r: 0xFF, g: 0xD8, b: 0x3D), width: 11)
 
     /// This pen with letters `factor` times as large (and the nib scaled less).
-    func scaled(_ factor: Double) -> DemoPen {
+    public func scaled(_ factor: Double) -> DemoPen {
         var p = self
         p.xHeight *= factor; p.letterWidth *= factor; p.width *= 1 + (factor - 1) * 0.5
         return p
@@ -70,11 +70,11 @@ struct DemoPen: Sendable {
 }
 
 /// A page of strokes being written. Coordinates are page points, y down.
-struct DemoSheet {
+public struct DemoSheet {
     private(set) var strokes: [Stroke] = []
     private var rng: DemoRandom
 
-    init(seed: UInt64) { rng = DemoRandom(seed: seed) }
+    public init(seed: UInt64) { rng = DemoRandom(seed: seed) }
 
     // MARK: Words and lines
 
@@ -135,7 +135,7 @@ struct DemoSheet {
     ///
     /// Three words are drawn rather than spelled: `->` is an arrow, `+` a
     /// plus sign and `*` a bullet dot.
-    func width(of text: String, pen: DemoPen) -> Double {
+    public func width(of text: String, pen: DemoPen) -> Double {
         let space = pen.letterWidth * 0.8
         return text.split(separator: " ", omittingEmptySubsequences: true).enumerated().reduce(0) { total, item in
             let word = item.element
@@ -151,15 +151,15 @@ struct DemoSheet {
     }
 
     /// Writes `text` centered on `cx`.
-    mutating func writeCentered(_ text: String, cx: Double, baseline: Double, pen: DemoPen = .ink) {
+    public mutating func writeCentered(_ text: String, cx: Double, baseline: Double, pen: DemoPen = .ink) {
         write(text, x: cx - width(of: text, pen: pen) / 2, baseline: baseline, pen: pen)
     }
 
     /// Writes `text` starting at (`x`, `baseline`). `maxWidth` squeezes it to
     /// fit. Returns the x where the writing ended.
     @discardableResult
-    mutating func write(_ text: String, x: Double, baseline: Double, pen: DemoPen = .ink,
-                        maxWidth: Double? = nil) -> Double {
+    public mutating func write(_ text: String, x: Double, baseline: Double, pen: DemoPen = .ink,
+                               maxWidth: Double? = nil) -> Double {
         var pen = pen
         let natural = width(of: text, pen: pen)
         if let maxWidth, natural > maxWidth { pen = pen.scaled(maxWidth / natural) }
@@ -234,7 +234,7 @@ struct DemoSheet {
     // MARK: Shapes
 
     /// A smooth stroke through `waypoints` (page points).
-    mutating func addCurve(_ waypoints: [(Double, Double)], pen: DemoPen, spacing: Double = 2.0) {
+    public mutating func addCurve(_ waypoints: [(Double, Double)], pen: DemoPen, spacing: Double = 2.0) {
         let pts = DemoSheet.smooth(waypoints, spacing: spacing)
         guard pts.count >= 2 else { return }
         // Pressure: light at both ends, a gentle swell and a little noise in between.
@@ -257,7 +257,7 @@ struct DemoSheet {
     }
 
     /// A straight segment, slightly alive.
-    mutating func line(from a: (Double, Double), to b: (Double, Double), pen: DemoPen = .ink) {
+    public mutating func line(from a: (Double, Double), to b: (Double, Double), pen: DemoPen = .ink) {
         let n = max(Int(hypot(b.0 - a.0, b.1 - a.1) / 14), 1)
         let way = (0...n).map { i -> (Double, Double) in
             let f = Double(i) / Double(n)
@@ -267,7 +267,7 @@ struct DemoSheet {
     }
 
     /// An arrow from `a` to `b` with a two-stroke head, as one stroke.
-    mutating func arrow(from a: (Double, Double), to b: (Double, Double), pen: DemoPen = .ink) {
+    public mutating func arrow(from a: (Double, Double), to b: (Double, Double), pen: DemoPen = .ink) {
         line(from: a, to: b, pen: pen)
         let angle = atan2(b.1 - a.1, b.0 - a.0), head = 9.0
         let left = (b.0 - head * cos(angle - 0.45), b.1 - head * sin(angle - 0.45))
@@ -276,7 +276,7 @@ struct DemoSheet {
     }
 
     /// An ellipse drawn the way a hand does it: a little more than one turn.
-    mutating func ellipse(cx: Double, cy: Double, rx: Double, ry: Double, pen: DemoPen = .ink, tilt: Double = 0) {
+    public mutating func ellipse(cx: Double, cy: Double, rx: Double, ry: Double, pen: DemoPen = .ink, tilt: Double = 0) {
         let n = 14
         var way: [(Double, Double)] = []
         let start = rngJitter(0.4) - 1.2
@@ -290,7 +290,7 @@ struct DemoSheet {
     }
 
     /// A rounded box in one stroke whose ends overlap a little.
-    mutating func box(x: Double, y: Double, width: Double, height: Double, pen: DemoPen = .ink) {
+    public mutating func box(x: Double, y: Double, width: Double, height: Double, pen: DemoPen = .ink) {
         let r = min(8, width / 4, height / 4)
         let way: [(Double, Double)] = [
             (x + r, y), (x + width / 2, y + rngJitter(0.8)), (x + width - r, y), (x + width, y + r),
@@ -302,7 +302,7 @@ struct DemoSheet {
     }
 
     /// A wavy rule between `x0` and `x1`.
-    mutating func underline(x0: Double, x1: Double, y: Double, pen: DemoPen = .ink, double: Bool = false) {
+    public mutating func underline(x0: Double, x1: Double, y: Double, pen: DemoPen = .ink, double: Bool = false) {
         let n = max(Int((x1 - x0) / 40), 2)
         func rule(_ dy: Double) -> [(Double, Double)] {
             (0...n).map { i in
@@ -315,22 +315,22 @@ struct DemoSheet {
     }
 
     /// A broad highlighter band behind writing.
-    mutating func highlight(x0: Double, x1: Double, y: Double) {
+    public mutating func highlight(x0: Double, x1: Double, y: Double) {
         addCurve([(x0, y), ((x0 + x1) / 2, y + 0.8), (x1, y - 0.4)], pen: .highlighter, spacing: 4)
     }
 
     /// A filled-looking dot.
-    mutating func bullet(x: Double, y: Double, pen: DemoPen = .ink) {
+    public mutating func bullet(x: Double, y: Double, pen: DemoPen = .ink) {
         addCurve([(x - 1.4, y), (x, y - 1.6), (x + 1.4, y), (x, y + 1.6), (x - 1.2, y - 0.4)], pen: pen, spacing: 0.8)
     }
 
     /// A function graph through `waypoints`.
-    mutating func graph(_ waypoints: [(Double, Double)], pen: DemoPen = .blue) {
+    public mutating func graph(_ waypoints: [(Double, Double)], pen: DemoPen = .blue) {
         addCurve(waypoints, pen: pen, spacing: 2.5)
     }
 
     /// A five-pointed star outline.
-    mutating func star(cx: Double, cy: Double, radius: Double, pen: DemoPen = .red) {
+    public mutating func star(cx: Double, cy: Double, radius: Double, pen: DemoPen = .red) {
         var way: [(Double, Double)] = []
         for k in 0...5 {
             let a = -Double.pi / 2 + Double(k * 2 % 5) * 2 * Double.pi / 5
@@ -341,7 +341,7 @@ struct DemoSheet {
     }
 
     /// A padlock: body, shackle.
-    mutating func lock(x: Double, y: Double, size: Double = 16, pen: DemoPen = .ink) {
+    public mutating func lock(x: Double, y: Double, size: Double = 16, pen: DemoPen = .ink) {
         box(x: x, y: y + size * 0.45, width: size, height: size * 0.6, pen: pen)
         addCurve([(x + size * 0.2, y + size * 0.45), (x + size * 0.2, y + size * 0.1), (x + size * 0.5, y - size * 0.12),
                   (x + size * 0.8, y + size * 0.1), (x + size * 0.8, y + size * 0.45)], pen: pen, spacing: 1.5)
@@ -351,7 +351,7 @@ struct DemoSheet {
 
     /// Catmull-Rom spline through `way`, sampled about every `spacing` points
     /// of path length (and at least a few times per segment).
-    static func smooth(_ way: [(Double, Double)], spacing: Double) -> [(Double, Double)] {
+    public static func smooth(_ way: [(Double, Double)], spacing: Double) -> [(Double, Double)] {
         guard way.count >= 2 else { return way }
         var out: [(Double, Double)] = []
         let p = [way[0]] + way + [way[way.count - 1]]

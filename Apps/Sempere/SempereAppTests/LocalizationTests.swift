@@ -1,4 +1,5 @@
 import Foundation
+import SempereAppCore
 import SempereImporters
 import SempereLocalization
 import Testing
@@ -50,12 +51,22 @@ struct LocalizationTests {
         #expect(String(localized: "\(0) notes", bundle: es, locale: locale) == "0 notas")
     }
 
-    /// Every menu command has a Spanish title: the lookup of an English title must not fall back.
+    /// Window states with every switch on, so each `MenuCommand.Title` but `own` is asked for.
+    static let switchedOn: [MenuCommand.Context] = [
+        MenuCommand.Context(notePageless: true, paletteCompact: true, noteMode: .annotating, pageStripVisible: true,
+                            noteListHidden: true, voiceNote: .recording, isRecording: true),
+        MenuCommand.Context(noteMode: .hand),
+    ]
+
+    /// Every menu command has a Spanish title, in each of its wordings: the lookup of an English title must not
+    /// fall back.
     @Test func everyMenuTitleIsTranslated() throws {
         let es = try #require(Self.spanish)
         let missing = "\u{1}missing"
         // The import entry's title is built from the importer's name: its catalog key has a placeholder.
         let keys = MenuCommand.allCases.map { $0 == .importFromApp && BuiltInImporters.primary != nil ? "Import from %@…" : $0.title }
+            // The switches' other wordings (`MenuCommand.titleKind(in:)`, worded in `MenuCommand+Titles.swift`).
+            + Self.switchedOn.flatMap { c in MenuCommand.allCases.filter { $0.titleKind(in: c) != .own }.map { $0.title(in: c) } }
         let untranslated = keys.filter { key in
             es.localizedString(forKey: key, value: missing, table: nil) == missing
         }

@@ -1,5 +1,6 @@
 import PencilKit
 import Sempere
+import SempereAppCore
 import UIKit
 
 /// What selecting items does, decided without UIKit (tested): which item a

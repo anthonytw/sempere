@@ -13,6 +13,15 @@ final class SempereLocalizationTests: XCTestCase {
         XCTAssertNil(SempereStrings.text("no such key in the catalog", language: "es"))
     }
 
+    /// Words the app gives SempereAppCore's values (the menu bar's switches, a setting's choice, a tour page) keep
+    /// their Spanish.
+    func testTheWordsOfAppCoreValuesAreTranslated() throws {
+        XCTAssertEqual(SempereStrings.text("Back to Reading", language: "es"), "Volver a lectura")
+        XCTAssertEqual(SempereStrings.text("Stop Recording", language: "es"), "Detener grabación")
+        XCTAssertEqual(SempereStrings.text("Hide Pages", language: "es"), "Ocultar páginas")
+        XCTAssertEqual(SempereStrings.text("Your Notes, Your Key", language: "es"), "Tus notas, tu clave")
+    }
+
     func testPluralsResolveThroughTheBundle() throws {
         let path = try XCTUnwrap(Bundle.sempereLocalization.path(forResource: "es", ofType: "lproj"))
         let es = try XCTUnwrap(Bundle(path: path))

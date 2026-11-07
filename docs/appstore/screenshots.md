@@ -80,7 +80,7 @@ date follows the simulator's language, not the app's: set the simulator to Engli
 
 ## The demo vault
 
-`DemoVault.swift` builds `My Notes.sempere` in the app's temporary directory on every launch, with a
+`DemoVault.swift` (`Sources/SempereAppCore`) builds `My Notes.sempere` in the app's temporary directory on every launch, with a
 throwaway post-quantum key, then opens (and unlocks) it. Twelve notes in seven notebooks
 (`School/Biology`, `School/Physics`, `School/Spanish`, `Work/Atlas`, `Work/Meetings`, `Personal/Books`,
 `Personal/Travel`, plus two outside any notebook), seven tags, six paper styles, one two-page note.
@@ -92,7 +92,8 @@ from real notes. `DemoVaultTests` pins the structure, the fixed dates and the de
 (including the random generator's values, which use their own mapping to doubles so an Xcode
 update cannot move the demo ink).
 
-All of it is `#if DEBUG`; release builds contain none of it.
+All of it is `#if DEBUG` (the package's files and the app's `DemoLaunch` alike); release builds contain none of it.
+`DemoVaultTests` runs in SempereAppCoreTests, on Linux too.
 
 ## Launch variables (debug builds)
 

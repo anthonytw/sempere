@@ -2,6 +2,7 @@
 import CoreGraphics
 import Foundation
 import Sempere
+import SempereAppCore
 import UIKit
 
 /// Debug builds only: opens the synthetic demo vault (`DemoVault`) for the App
@@ -66,7 +67,8 @@ enum DemoLaunch {
             let device = try env["SEMPERE_DEMO_DEVICE_KEY"].map(DeviceKeys.parse)
             let built = try await Task.detached {
                 try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png, denseStrokes: dense,
-                                          searchNotes: search, trust: trust, device: device)
+                                          searchNotes: search, trust: trust, device: device, app: NoteWriter.appName,
+                                          perf: AppPerfSink())
             }.value
             try await model.openVault(at: try await storeCopy(of: built.url, model: model, env: env))
             if passphrase != nil {

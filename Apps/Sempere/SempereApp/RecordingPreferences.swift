@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSpeech
 
 /// The recording format new recordings are made in, read from the Settings

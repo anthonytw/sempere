@@ -9,30 +9,7 @@ import Sempere
 /// Gap audit GA-15 and GA-16: the iPhone's page actions, swipe to turn pages, search highlights
 /// at phone size and the paper picker's compact layout. The rules are plain values and run on
 /// every destination; the view checks follow the destination's idiom (`Platform.isPhone`), so the
-/// iPhone simulator run exercises the phone side.
-struct PageMenuTests {
-    @Test func aPagedEditableNoteOffersEveryPageAction() {
-        let entries = PageMenu.entries(readOnly: false, pageless: false, pageCount: 3, hasDeletedPages: false)
-        #expect(entries == [.addAfter, .addAtEnd, .insertPDF, .duplicate, .delete, .thumbnails, .layout])
-    }
-
-    @Test func undoDeleteAppearsOnlyAfterADeletion() {
-        let entries = PageMenu.entries(readOnly: false, pageless: false, pageCount: 3, hasDeletedPages: true)
-        #expect(entries.contains(.undoDelete))
-        #expect(entries.firstIndex(of: .undoDelete)! > entries.firstIndex(of: .delete)!)
-    }
-
-    @Test func aPagelessNoteOnlyOffersTheWayBackToPages() {
-        #expect(PageMenu.entries(readOnly: false, pageless: true, pageCount: 1, hasDeletedPages: true) == [.layout])
-        #expect(PageMenu.entries(readOnly: true, pageless: true, pageCount: 1, hasDeletedPages: false).isEmpty)
-    }
-
-    @Test func aReadOnlyNoteMayShowThumbnailsButChangesNothing() {
-        #expect(PageMenu.entries(readOnly: true, pageless: false, pageCount: 4, hasDeletedPages: true) == [.thumbnails])
-        #expect(PageMenu.entries(readOnly: true, pageless: false, pageCount: 1, hasDeletedPages: false).isEmpty)
-    }
-}
-
+/// iPhone simulator run exercises the phone side. The Pages menu's entries: `PageMenuTests` (SempereAppCoreTests).
 struct PhoneSwipeTests {
     @Test func aSwipeTurnsPagesOnlyWhileReadingAFittedPagedNote() {
         #expect(PhoneReading.swipeTurnsPages(isPhone: true, reading: true, zoomed: false, pageCount: 3))

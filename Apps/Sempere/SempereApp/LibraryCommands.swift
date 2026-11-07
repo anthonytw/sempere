@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// What the library window does for a File, Note or View menu command, apart from
 /// the SwiftUI state only `RootView` owns. Extracted from `RootView.perform` so the

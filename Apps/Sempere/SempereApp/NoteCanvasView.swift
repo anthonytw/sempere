@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
 
 /// The selected note: one page at a time on the canvas, with page controls.

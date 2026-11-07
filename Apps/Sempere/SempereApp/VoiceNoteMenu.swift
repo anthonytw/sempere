@@ -1,4 +1,5 @@
 import Foundation
+import SempereAppCore
 
 /// File > Start Voice Note / Stop Voice Note on a Mac (docs/quick-capture.md
 /// "Surfaces"): the same recorder as Siri, Shortcuts and the widgets

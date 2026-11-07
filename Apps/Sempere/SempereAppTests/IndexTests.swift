@@ -136,32 +136,6 @@ struct IndexTests {
         let scoped = IndexDiff.compute(listings: [listings[0]], indexed: [a: ["1"], d: ["1"]], known: [a, d], scope: [a])
         #expect(scoped.removed.isEmpty)
     }
-
-    /// Property: applying differences gives the same list as replacing and re-sorting.
-    @Test func listDiffEqualsAFullResort() {
-        var rng = RNG(state: 9)
-        func summary(_ id: UUID, _ title: String) -> NoteSummary {
-            NoteSummary(id: id, title: title, tags: [], notebook: nil, deleted: false, pages: 1, strokes: Int(rng.next() % 3),
-                        modified: nil, problem: nil)
-        }
-        let titles = ["a", "B", "b", "c", "", "Zed", "zed", "m"]
-        for _ in 0..<300 {
-            let ids = (0..<Int(rng.next() % 12)).map { _ in UUID() }
-            let list = AppModel.byTitle(ids.map { summary($0, titles[Int(rng.next() % 8)]) })
-            var upserts: [NoteSummary] = []
-            for _ in 0..<Int(rng.next() % 6) {
-                let id = rng.next() % 2 == 0 && !ids.isEmpty ? ids[Int(rng.next() % UInt64(ids.count))] : UUID()
-                upserts.append(summary(id, titles[Int(rng.next() % 8)]))
-            }
-            let removals = Set(ids.filter { _ in rng.next() % 5 == 0 })
-            var byID = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { _, n in n })
-            for s in upserts where !removals.contains(s.id) { byID[s.id] = s }
-            for id in removals { byID[id] = nil }
-            let expected = AppModel.byTitle(Array(byID.values))
-            let applied = NoteListDiff.apply(upserts: upserts, removals: removals, to: list) ?? list
-            #expect(applied == expected)
-        }
-    }
 }
 
 /// Counts from any thread.

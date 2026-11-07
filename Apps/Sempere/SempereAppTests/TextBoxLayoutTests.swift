@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereRender
 import Testing
 import UIKit

@@ -4,8 +4,8 @@ import Foundation
 /// (docs/iphone.md "The note view's toolbar on every device"). Devices differ only in placement, and only
 /// where the device needs it (`placement(of:on:)`, each difference with its reason). `EditorView` draws
 /// whatever `items(in:)` returns, in that order, so the table is the toolbar.
-enum NoteToolbar {
-    enum Item: Hashable, Sendable, CaseIterable {
+public enum NoteToolbar {
+    public enum Item: Hashable, Sendable, CaseIterable {
         // The modes.
         case annotate, hand
         // Annotate's tools. `drawingTools` is the Mac's tool menu (the palette's tools as a menu).
@@ -23,7 +23,7 @@ enum NoteToolbar {
     }
 
     /// Where an item is.
-    enum Placement: Equatable, Sendable {
+    public enum Placement: Equatable, Sendable {
         /// The top bar, trailing.
         case bar
         /// The overflow menu ("⋯").
@@ -33,21 +33,35 @@ enum NoteToolbar {
     }
 
     /// The one order: the top bar's items first, then the overflow menu's, on every device.
-    static let order: [Item] = Item.allCases
+    public static let order: [Item] = Item.allCases
 
     /// What the note view knows when it builds its toolbar.
-    struct State: Equatable, Sendable {
-        var device: NoteDevice
-        var mode = NoteMode.initial
-        var readOnly = false
-        var hasPage = true
-        var pageCount = 1
-        var pageless = false
-        var hasRecordings = false
+    public struct State: Equatable, Sendable {
+        public var device: NoteDevice
+        public var mode = NoteMode.initial
+        public var readOnly = false
+        public var hasPage = true
+        public var pageCount = 1
+        public var pageless = false
+        public var hasRecordings = false
         /// The Pages menu has entries besides turning pages (`PageMenu.entries`).
-        var pageEntries = true
+        public var pageEntries = true
         /// A note window of its own (Mac), not the library window's canvas.
-        var noteWindow = false
+        public var noteWindow = false
+
+        public init(device: NoteDevice, mode: NoteMode = NoteMode.initial, readOnly: Bool = false, hasPage: Bool = true,
+                    pageCount: Int = 1, pageless: Bool = false, hasRecordings: Bool = false, pageEntries: Bool = true,
+                    noteWindow: Bool = false) {
+            self.device = device
+            self.mode = mode
+            self.readOnly = readOnly
+            self.hasPage = hasPage
+            self.pageCount = pageCount
+            self.pageless = pageless
+            self.hasRecordings = hasRecordings
+            self.pageEntries = pageEntries
+            self.noteWindow = noteWindow
+        }
     }
 
     /// Where `item` goes on `device`. The iPhone's bar holds the two mode buttons and the overflow menu
@@ -56,7 +70,7 @@ enum NoteToolbar {
     /// Add Page and the thumbnails are in the Pages menu only. Only the Mac has Drawing Tools: the tools as a
     /// menu beside the palette, for the pointer and the keyboard (it came first, when PencilKit's palette
     /// showed nothing in Mac Catalyst).
-    static func placement(of item: Item, on device: NoteDevice) -> Placement? {
+    public static func placement(of item: Item, on device: NoteDevice) -> Placement? {
         switch item {
         case .annotate, .hand:
             return .bar
@@ -74,7 +88,7 @@ enum NoteToolbar {
     }
 
     /// Whether `item` is offered in `state` (the same rule on every device, besides the reasons noted).
-    static func isAvailable(_ item: Item, in s: State) -> Bool {
+    public static func isAvailable(_ item: Item, in s: State) -> Bool {
         let writable = !s.readOnly
         switch item {
         // Read-only notes draw and select nothing; a mode needs a page to act on.
@@ -99,7 +113,7 @@ enum NoteToolbar {
     }
 
     /// The toolbar in `state`: every available item with its placement, in `order`.
-    static func items(in state: State) -> [(item: Item, placement: Placement)] {
+    public static func items(in state: State) -> [(item: Item, placement: Placement)] {
         order.compactMap { item in
             guard isAvailable(item, in: state), let placement = placement(of: item, on: state.device) else { return nil }
             return (item, placement)
@@ -107,7 +121,7 @@ enum NoteToolbar {
     }
 
     /// The items of one placement, in order.
-    static func items(_ placement: Placement, in state: State) -> [Item] {
+    public static func items(_ placement: Placement, in state: State) -> [Item] {
         items(in: state).filter { $0.placement == placement }.map(\.item)
     }
 }
@@ -115,8 +129,8 @@ enum NoteToolbar {
 /// The page actions of the Pages menu (the overflow menu's "Pages", on every device), in order:
 /// everything the iPad's Add Page button offers when held, the thumbnails and the layout switch, so a
 /// phone can fix up a note without the iPad. Plain values; `EditorView` draws them.
-enum PageMenu {
-    enum Entry: Hashable, Sendable {
+public enum PageMenu {
+    public enum Entry: Hashable, Sendable {
         case addAfter, addAtEnd, insertPDF, duplicate, delete, undoDelete
         /// Show or hide the thumbnails (a sheet on a phone: `inspector` adapts to compact width).
         case thumbnails
@@ -124,7 +138,7 @@ enum PageMenu {
         case layout
     }
 
-    static func entries(readOnly: Bool, pageless: Bool, pageCount: Int, hasDeletedPages: Bool) -> [Entry] {
+    public static func entries(readOnly: Bool, pageless: Bool, pageCount: Int, hasDeletedPages: Bool) -> [Entry] {
         if pageless { return readOnly ? [] : [.layout] }
         if readOnly { return pageCount > 1 ? [.thumbnails] : [] }
         var entries: [Entry] = [.addAfter, .addAtEnd, .insertPDF, .duplicate, .delete]

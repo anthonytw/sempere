@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// Maps the shared settings' keys (docs/settings-sync.md §5,
 /// `SharedSettingsCatalog`) to where this app keeps each value: `UserDefaults`

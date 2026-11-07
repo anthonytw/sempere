@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import PencilKit
+import SempereAppCore
 import UIKit
 import Sempere
 import SempereRender

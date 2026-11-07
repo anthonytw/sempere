@@ -1,5 +1,4 @@
 import Foundation
-import SempereImport
 import SempereImporters
 
 /// Every command of the Mac menu bar, in one type. Menus (`AppCommands`),
@@ -8,9 +7,10 @@ import SempereImporters
 /// has to agree with it by hand: `MenuCommandTests` checks that no two
 /// commands share a shortcut.
 ///
-/// Pure Foundation: the SwiftUI side converts `Shortcut` to a
-/// `KeyboardShortcut` (`AppCommands.swift`).
-enum MenuCommand: String, CaseIterable, Sendable {
+/// Pure Foundation, and no text: the app words the titles (`MenuCommand.title`,
+/// `title(in:)`) and its SwiftUI side converts `Shortcut` to a `KeyboardShortcut`
+/// (`AppCommands.swift`).
+public enum MenuCommand: String, CaseIterable, Sendable {
     // File
     case newNote, newNotebook, openNoteInWindow, newVault, openVault, reopenVault, closeVault, reloadVault
     /// The open vault's sync targets (`SyncTargetsSheet`, docs/design/device-first-sync.md §8.1).
@@ -39,25 +39,26 @@ enum MenuCommand: String, CaseIterable, Sendable {
     case showAbout, showTour, showKeyNotice
 
     /// A key and its modifiers. `key` is the character the key types.
-    struct Shortcut: Hashable, Sendable {
-        struct Modifiers: OptionSet, Hashable, Sendable {
-            let rawValue: Int
-            static let command = Modifiers(rawValue: 1)
-            static let shift = Modifiers(rawValue: 2)
-            static let option = Modifiers(rawValue: 4)
-            static let control = Modifiers(rawValue: 8)
+    public struct Shortcut: Hashable, Sendable {
+        public struct Modifiers: OptionSet, Hashable, Sendable {
+            public let rawValue: Int
+            public init(rawValue: Int) { self.rawValue = rawValue }
+            public static let command = Modifiers(rawValue: 1)
+            public static let shift = Modifiers(rawValue: 2)
+            public static let option = Modifiers(rawValue: 4)
+            public static let control = Modifiers(rawValue: 8)
         }
 
-        var key: Character
-        var modifiers: Modifiers
+        public var key: Character
+        public var modifiers: Modifiers
 
-        init(_ key: Character, _ modifiers: Modifiers = [.command]) {
+        public init(_ key: Character, _ modifiers: Modifiers = [.command]) {
             self.key = key
             self.modifiers = modifiers
         }
 
         /// ⌫, the delete key (`KeyEquivalent.delete`).
-        static let backspace: Character = "\u{7F}"
+        public static let backspace: Character = "\u{7F}"
     }
 
     /// Commands whose shortcut UIKit's own menu bar already uses on a Mac
@@ -68,14 +69,14 @@ enum MenuCommand: String, CaseIterable, Sendable {
     /// turns UIKit's own items into them. UIKit's Settings… opened Catalyst's
     /// generated preferences pane (touch alternatives only), not the app's
     /// settings (TestFlight build 7).
-    static let nativeOnMac: [MenuCommand] = [.openVault, .find, .showSettings]
+    public static let nativeOnMac: [MenuCommand] = [.openVault, .find, .showSettings]
     /// Commands that replace UIKit's own items without a shortcut: Sempere >
     /// About Sempere (UIKit's opens the standard about panel) and the Help menu
     /// (UIKit's "Sempere Help" has no help book to open). `MacMenus` builds them.
-    static let nativeWithoutShortcut: [MenuCommand] = [.showAbout, .showTour, .showKeyNotice]
+    public static let nativeWithoutShortcut: [MenuCommand] = [.showAbout, .showTour, .showKeyNotice]
 
     /// Who handles the command.
-    enum Provider: Sendable {
+    public enum Provider: Sendable {
         /// The app, through `AppCommands`.
         case app
         /// UIKit's responder chain (Edit > Undo and Redo act on the focused
@@ -84,119 +85,52 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case system
     }
 
-    var provider: Provider {
+    public var provider: Provider {
         switch self {
         case .undo, .redo: return .system
         default: return .app
         }
     }
 
-    /// The menu item's title in `context` (nil: no window state known). Commands that
-    /// switch something on and off say what they do next; the others are `title`.
-    func title(in context: Context?) -> String {
+    /// Which wording the menu item has in `context` (nil: no window state known): commands that switch something
+    /// on and off say what they do next; the others have their own title (`own`). The app words each case
+    /// (`MenuCommand.title(in:)`).
+    public enum Title: Hashable, Sendable {
+        /// The command's own title.
+        case own
+        /// A mode command while its mode is on: "Back to Reading".
+        case backToReading
+        case useFullPalette, hidePages, showNoteList, switchToPagedLayout, stopVoiceNote, stopRecording
+    }
+
+    /// The wording of the menu item in `context`.
+    public func titleKind(in context: Context?) -> Title {
         switch self {
         // As the top bar's buttons: the lit one goes back to reading.
         case .toggleAnnotate:
-            return context?.noteMode == .annotating ? Self.backToReading : title
+            return context?.noteMode == .annotating ? .backToReading : .own
         case .toggleHand:
-            return context?.noteMode == .hand ? Self.backToReading : title
+            return context?.noteMode == .hand ? .backToReading : .own
         case .toggleCompactPalette:
-            return context?.paletteCompact == true ? String(localized: "Use Full Palette") : title
+            return context?.paletteCompact == true ? .useFullPalette : .own
         case .togglePageStrip:
-            return context?.pageStripVisible == true ? String(localized: "Hide Pages") : title
+            return context?.pageStripVisible == true ? .hidePages : .own
         case .toggleNoteList:
-            return context?.noteListHidden == true ? String(localized: "Show Note List", comment: "View menu: bring the note list back") : title
+            return context?.noteListHidden == true ? .showNoteList : .own
         case .toggleLayout:
-            return context?.notePageless == true ? String(localized: "Switch to Paged Layout") : title
+            return context?.notePageless == true ? .switchToPagedLayout : .own
         case .toggleVoiceNote:
-            return context?.voiceNote == .recording ? String(localized: "Stop Voice Note") : title
+            return context?.voiceNote == .recording ? .stopVoiceNote : .own
         case .toggleRecording:
-            return context?.isRecording == true ? String(localized: "Stop Recording") : title
+            return context?.isRecording == true ? .stopRecording : .own
         default:
-            return title
-        }
-    }
-
-    /// The mode commands' title while their mode is on.
-    static var backToReading: String {
-        String(localized: "Back to Reading", comment: "Tools menu: leave Annotate or Hand mode for reading")
-    }
-
-    var title: String {
-        switch self {
-        case .newNote: return String(localized: "New Note…")
-        case .newNotebook: return String(localized: "New Notebook…", comment: "File menu: create an empty notebook")
-        case .openNoteInWindow: return String(localized: "Open Note in New Window")
-        case .newVault: return String(localized: "New Vault…")
-        case .openVault: return String(localized: "Open Vault…")
-        case .reopenVault: return String(localized: "Reopen Last Vault")
-        case .closeVault: return String(localized: "Close Vault")
-        case .reloadVault: return String(localized: "Reload Vault")
-        case .syncTargets: return String(localized: "Sync Targets…")
-        case .importPDF: return String(localized: "Import PDF as New Note…")
-        case .importFromApp:
-            // The registered importer's name ("Import from Notability…"); a build without importers has no such entry.
-            return BuiltInImporters.primary.map { String(localized: "Import from \($0.displayName)…", comment: "File menu: import notes from another app (its name)") }
-                ?? String(localized: "Import from Other App…")
-        case .lastImportReport: return String(localized: "Last Import Report…", comment: "File menu: show (and save) the report of the last import")
-        case .insertPDFPages: return String(localized: "Insert PDF Pages…")
-        case .insertPhoto: return String(localized: "Insert Photo…")
-        case .exportNotes: return String(localized: "Export…", comment: "File menu: open the export sheet")
-        case .bulkExport: return String(localized: "Export to Folder or Zip…", comment: "File menu: bulk export to a folder or zip")
-        case .toggleVoiceNote: return String(localized: "Start Voice Note", comment: "File menu: record a quick voice note into the inbox")
-        case .renameNote: return String(localized: "Rename Note…")
-        case .editTags: return String(localized: "Edit Tags…")
-        case .changePaper: return String(localized: "Paper…", comment: "Note menu: choose the page's paper")
-        case .saveVersion: return String(localized: "Save Version…")
-        case .versionHistory: return String(localized: "Version History…", comment: "Note menu: browse earlier versions")
-        case .showRecordings: return String(localized: "Recordings…", comment: "Note menu: the note's recordings list")
-        case .deleteNote: return String(localized: "Move to Recently Deleted")
-        case .restoreNote: return String(localized: "Restore Note")
-        case .previousPage: return String(localized: "Previous Page")
-        case .nextPage: return String(localized: "Next Page")
-        case .addPage: return String(localized: "Add Page After This One")
-        case .addPageAtEnd: return String(localized: "Add Page at End")
-        case .duplicatePage: return String(localized: "Duplicate Page")
-        case .deletePage: return String(localized: "Delete Page")
-        case .undoDeletePage: return String(localized: "Undo Delete Page")
-        case .toggleLayout: return String(localized: "Switch to Pageless Layout", comment: "Note menu: make the note one infinite page")
-        case .duplicateItem: return String(localized: "Duplicate Item", comment: "Note menu: duplicate the selected image, text box or other item")
-        case .bringItemToFront: return String(localized: "Bring Item to Front", comment: "Note menu: draw the selected item above the others")
-        case .deleteItem: return String(localized: "Delete Item", comment: "Note menu: delete the selected image, text box or other item")
-        case .toggleRecording: return String(localized: "Start Recording", comment: "Note menu: start recording audio in the note")
-        case .find: return String(localized: "Find Notes", comment: "Edit menu: search the notes")
-        case .undo: return String(localized: "Undo", comment: "Edit menu: undo")
-        case .redo: return String(localized: "Redo", comment: "Edit menu: redo")
-        case .toolPen: return String(localized: "Pen", comment: "Tools menu: select the pen")
-        case .toolMarker: return String(localized: "Marker", comment: "Tools menu: select the marker")
-        case .toolPencil: return String(localized: "Pencil", comment: "Tools menu: select the pencil tool")
-        case .toolEraser: return String(localized: "Eraser", comment: "Tools menu: select the eraser")
-        case .toolLasso: return String(localized: "Lasso", comment: "Tools menu: select the lasso")
-        case .toggleRuler: return String(localized: "Ruler", comment: "Tools menu: show or hide the ruler")
-        case .toggleAnnotate: return String(localized: "Annotate", comment: "Tools menu: draw on the page (Annotate mode, the palette)")
-        case .toggleHand: return String(localized: "Hand", comment: "Tools menu: Hand mode (select, move and resize items; nothing draws)")
-        case .toolText: return String(localized: "Text", comment: "Tools menu: type text boxes on the page")
-        case .eraserSmaller: return String(localized: "Smaller Object Eraser", comment: "Tools menu")
-        case .eraserLarger: return String(localized: "Larger Object Eraser", comment: "Tools menu")
-        case .toggleCompactPalette: return String(localized: "Use Compact Palette", comment: "Tools menu: the short tool palette")
-        case .zoomIn: return String(localized: "Zoom In", comment: "View menu")
-        case .zoomOut: return String(localized: "Zoom Out", comment: "View menu")
-        case .fitWidth: return String(localized: "Fit Page Width")
-        case .actualSize: return String(localized: "Actual Size", comment: "View menu: zoom to 100%")
-        case .toggleNoteList: return String(localized: "Hide Note List", comment: "View menu: a full-width canvas")
-        case .togglePageStrip: return String(localized: "Show Pages", comment: "View menu: the page thumbnails beside the canvas")
-        case .showLibrary: return String(localized: "Library", comment: "View menu: show the library window")
-        case .showKeys: return String(localized: "Vault Keys", comment: "View menu: open the vault keys window")
-        case .showSettings: return String(localized: "Settings…", comment: "View menu: open Settings")
-        case .showAbout: return String(localized: "About Sempere", comment: "App menu: the About screen")
-        case .showTour: return String(localized: "Quick Tour", comment: "Help menu: show the quick tour again")
-        case .showKeyNotice: return String(localized: "About Your Key", comment: "Help menu: what the vault key means")
+            return .own
         }
     }
 
     /// The keyboard shortcut, if any. Plain keys are never used: they would
     /// take typing away from the title and tag fields.
-    var shortcut: Shortcut? {
+    public var shortcut: Shortcut? {
         let cmd: Shortcut.Modifiers = [.command]
         let shift: Shortcut.Modifiers = [.command, .shift]
         let option: Shortcut.Modifiers = [.command, .option]
@@ -276,63 +210,100 @@ enum MenuCommand: String, CaseIterable, Sendable {
     }
 
     /// What the focused window is showing, as far as menu enabling goes.
-    struct Context: Equatable, Sendable {
-        enum Vault: Equatable, Sendable { case none, locked, unlocked }
-        enum Window: Equatable, Sendable { case library, note, other }
+    public struct Context: Equatable, Sendable {
+        public enum Vault: Equatable, Sendable { case none, locked, unlocked }
+        public enum Window: Equatable, Sendable { case library, note, other }
         /// What the recorder is doing, as far as File > Start/Stop Voice Note goes.
-        enum VoiceNote: Equatable, Sendable { case idle, recording, busy }
+        public enum VoiceNote: Equatable, Sendable { case idle, recording, busy }
 
-        var window: Window = .library
-        var vault: Vault = .none
+        public var window: Window = .library
+        public var vault: Vault = .none
         /// A note is selected (library) or shown (note window).
-        var hasNote = false
-        var noteDeleted = false
+        public var hasNote = false
+        public var noteDeleted = false
         /// A note is open on a canvas that accepts input.
-        var canEditNote = false
+        public var canEditNote = false
         /// The open note is pageless (one infinite page): PDF pages cannot be inserted.
-        var notePageless = false
+        public var notePageless = false
         /// The vault opened read-only (a newer format version, format.md §7.3).
-        var vaultReadOnly = false
+        public var vaultReadOnly = false
         /// An import ran in this vault since it was opened (`AppModel.lastImportReport`).
-        var hasImportReport = false
+        public var hasImportReport = false
         /// The notes File > Export acts on (`CommandRouter.exportIDs`) are not empty.
-        var hasExportTargets = false
+        public var hasExportTargets = false
         /// The open note has more than one page (a note keeps at least one).
-        var canDeletePage = false
+        public var canDeletePage = false
         /// Pages deleted in this editor session can be brought back.
-        var hasDeletedPages = false
+        public var hasDeletedPages = false
         /// The compact tool palette is chosen (`ToolPalette.compactKey`).
-        var paletteCompact = false
+        public var paletteCompact = false
         /// The open note's mode (`NoteMode`): reading, Hand or annotating.
-        var noteMode = NoteMode.initial
+        public var noteMode = NoteMode.initial
         /// The page thumbnails are shown beside the canvas (`PageStrip.visibleKey`).
-        var pageStripVisible = false
+        public var pageStripVisible = false
         /// The library window shows the canvas alone (`ColumnLayout` `detailOnly`).
-        var noteListHidden = false
+        public var noteListHidden = false
         /// The quick voice note recorder (`QuickCapture.state`).
-        var voiceNote = VoiceNote.idle
+        public var voiceNote = VoiceNote.idle
         /// The canvas has a page to show.
-        var hasPage = false
+        public var hasPage = false
         /// An item (image, text box, PDF page…) is selected on the canvas.
-        var hasItemSelection = false
+        public var hasItemSelection = false
         /// A recording is running in the open note (the menu then says Stop Recording).
-        var isRecording = false
-        var pageIndex = 0
-        var pageCount = 0
+        public var isRecording = false
+        public var pageIndex = 0
+        public var pageCount = 0
         /// A vault was opened before and can be reopened.
-        var hasRecents = false
+        public var hasRecents = false
         /// A library window exists (View > Library opens one when not).
-        var libraryWindowOpen = true
+        public var libraryWindowOpen = true
         /// A text field of the window may have focus (search, rename, tags):
         /// ⌘⌫ there means "delete to the start of the line", and a menu key
         /// equivalent would win over it on the Mac.
-        var editingText = false
+        public var editingText = false
+
+        /// A context; every field defaults to nothing shown.
+        public init(window: Window = .library, vault: Vault = .none, hasNote: Bool = false,
+                    noteDeleted: Bool = false, canEditNote: Bool = false, notePageless: Bool = false,
+                    vaultReadOnly: Bool = false, hasImportReport: Bool = false, hasExportTargets: Bool = false,
+                    canDeletePage: Bool = false, hasDeletedPages: Bool = false, paletteCompact: Bool = false,
+                    noteMode: NoteMode = NoteMode.initial, pageStripVisible: Bool = false,
+                    noteListHidden: Bool = false, voiceNote: VoiceNote = VoiceNote.idle, hasPage: Bool = false,
+                    hasItemSelection: Bool = false, isRecording: Bool = false, pageIndex: Int = 0,
+                    pageCount: Int = 0, hasRecents: Bool = false, libraryWindowOpen: Bool = true,
+                    editingText: Bool = false) {
+            self.window = window
+            self.vault = vault
+            self.hasNote = hasNote
+            self.noteDeleted = noteDeleted
+            self.canEditNote = canEditNote
+            self.notePageless = notePageless
+            self.vaultReadOnly = vaultReadOnly
+            self.hasImportReport = hasImportReport
+            self.hasExportTargets = hasExportTargets
+            self.canDeletePage = canDeletePage
+            self.hasDeletedPages = hasDeletedPages
+            self.paletteCompact = paletteCompact
+            self.noteMode = noteMode
+            self.pageStripVisible = pageStripVisible
+            self.noteListHidden = noteListHidden
+            self.voiceNote = voiceNote
+            self.hasPage = hasPage
+            self.hasItemSelection = hasItemSelection
+            self.isRecording = isRecording
+            self.pageIndex = pageIndex
+            self.pageCount = pageCount
+            self.hasRecents = hasRecents
+            self.libraryWindowOpen = libraryWindowOpen
+            self.editingText = editingText
+        }
+
         /// The note list is in the window (library windows only).
-        var hasNoteList: Bool { window == .library }
+        public var hasNoteList: Bool { window == .library }
     }
 
     /// Whether the command is available in `context`.
-    func isEnabled(in context: Context) -> Bool {
+    public func isEnabled(in context: Context) -> Bool {
         let unlocked = context.vault == .unlocked
         switch self {
         // The vault pickers, the note list and the sheets they open live in the library window.
@@ -400,8 +371,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
 
 /// The menu bar's groups, in order, with their commands. The only place the
 /// layout is written down (`AppCommands` walks it).
-enum MenuLayout {
-    static let file: [[MenuCommand]] = [
+public enum MenuLayout {
+    public static let file: [[MenuCommand]] = [
         [.newNote, .newNotebook, .openNoteInWindow],
         [.newVault, .openVault, .reopenVault, .closeVault],
         // Import from another app only when the build has an importer (`BuiltInImporters`).
@@ -411,7 +382,7 @@ enum MenuLayout {
         [.syncTargets, .reloadVault],
         [.toggleVoiceNote],
     ]
-    static let note: [[MenuCommand]] = [
+    public static let note: [[MenuCommand]] = [
         [.renameNote, .editTags, .changePaper],
         [.saveVersion, .versionHistory, .showRecordings, .toggleRecording],
         [.previousPage, .nextPage],
@@ -420,28 +391,28 @@ enum MenuLayout {
         [.duplicateItem, .bringItemToFront, .deleteItem],
         [.deleteNote, .restoreNote],
     ]
-    static let tools: [[MenuCommand]] = [
+    public static let tools: [[MenuCommand]] = [
         [.toggleAnnotate, .toggleHand],
         [.toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso],
         [.toolText],
         [.eraserSmaller, .eraserLarger],
         [.toggleRuler, .toggleCompactPalette],
     ]
-    static let view: [[MenuCommand]] = [
+    public static let view: [[MenuCommand]] = [
         [.zoomIn, .zoomOut, .fitWidth, .actualSize],
         [.togglePageStrip],
         [.toggleNoteList],
     ]
-    static let window: [[MenuCommand]] = [[.showLibrary, .showKeys, .showSettings]]
+    public static let window: [[MenuCommand]] = [[.showLibrary, .showKeys, .showSettings]]
     /// The app menu's About Sempere (`MacMenus`).
-    static let app: [[MenuCommand]] = [[.showAbout]]
+    public static let app: [[MenuCommand]] = [[.showAbout]]
     /// Help (`MacMenus`).
-    static let help: [[MenuCommand]] = [[.showTour, .showKeyNotice]]
+    public static let help: [[MenuCommand]] = [[.showTour, .showKeyNotice]]
     /// Edit > Find (the system's Undo and Redo stay where UIKit puts them).
-    static let edit: [[MenuCommand]] = [[.find]]
+    public static let edit: [[MenuCommand]] = [[.find]]
 
     /// Every command a menu shows, in order.
-    static var all: [MenuCommand] {
+    public static var all: [MenuCommand] {
         (app + file + edit + note + tools + view + window + help).flatMap { $0 }
     }
 }

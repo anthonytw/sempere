@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import Sempere
+import SempereAppCore
 import SwiftUI
 import Testing
 import UIKit
@@ -31,7 +32,7 @@ struct PseudoLanguageLayoutTests {
     static func demoVault() async throws -> DemoVault.Built {
         if let demo { return demo }
         let dir = TestTemp.root.appendingPathComponent("SemperePseudoLayout", isDirectory: true)
-        let built = try await DemoVault.build(in: dir)
+        let built = try await DemoVault.build(in: dir, app: NoteWriter.appName)
         demo = built
         return built
     }

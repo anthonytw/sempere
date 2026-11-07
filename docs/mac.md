@@ -26,8 +26,8 @@ a hand test on a real Mac is listed in "To try by hand".
 
 ## Menus and shortcuts
 
-One type, `MenuCommand` (`MenuCommand.swift`), lists every command with its
-title, shortcut and enabling rule; `MenuLayout` orders them into menus and
+One type, `MenuCommand` (`Sources/SempereAppCore/MenuCommand.swift`), lists every command with its
+shortcut, enabling rule and which title it shows (the app words it, `MenuCommand+Titles.swift`); `MenuLayout` orders them into menus and
 `AppCommands` (`AppCommands.swift`) turns that into SwiftUI. A feature that
 adds a menu entry adds a case there (and a handler in `RootView.perform` or
 `EditorCommands.perform`); `MenuCommandTests` fails when two commands share a

@@ -90,8 +90,8 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
 
 - **`KeyValueStore`** (`UserDefaults`/`@AppStorage`): `AppCommands`, `AppModel`, `AppModel+SettingsSync`,
   `AppModel+Thinning`, `AppModel+TranscriptSearch`, `AppThemeWindows`, `AppearancePreferences`, `BackupSettings`,
-  `ColumnLayout`, `DeviceSettings`, `DragTestSettings`, `DrawingPaletteView`,
-  `DrawingToolbox` (its `defaults:` parameter), `EraserPreference`, `Expectations`,
+  `ColumnLayout`, `DragTestSettings`, `DrawingPaletteView`,
+  `DrawingToolbox` (its `defaults:` parameter), `EraserPreference`,
   `ImagePreparation`, `InsertUI`, `MathEditor`, `MathModels`, `MathSettings`, `MouseInk`, `NoteCanvasView`,
   `NoteDragSource`, `NoteListView`, `NoteWindowView`, `PageCanvasHost+Appearance`, `PageCanvasView`,
   `PageLayoutChoice`, `PageRecognizer`, `PaperPreference`, `RecordingPreferences`, `RenderCache`, `RootView`,
@@ -112,7 +112,24 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
   `Sources/SempereSync/UbiquitousFolderHooks.swift` calls `NSFileCoordinator` itself (Darwin only, already in the
   library): it can take a `FileCoordinating` when a second implementation is wanted.
 - **`PlatformServices`**: `Platform.isMac`/`isPhone` in 33 files (they stay for views; logic that moves takes
-  `platform.isMac`).
+  `platform.isMac`, as `NoteDevice.of(_:)` does: the app's `NoteDevice.current` passes `AppPlatform`).
+
+### `SempereAppCore`
+
+The package target and product exist (wave 3, 2026-11-07): Foundation, `Sempere`, `Age` and `SempereImporters`
+(Observation once `AppModel` moves). The app links it; the widget does not. It holds, from the app:
+`CanvasModes`, `NoteModes` (`NoteDevice`, `NoteMode`, `NoteModeInput`), `NoteToolbar` (and `PageMenu`),
+`MenuCommand` and `MenuLayout`, the device settings (`RecordingSettings`, `TranscriptionSettings`, `NewNoteSettings`,
+`UnusedAttachmentGroups`), `Expectations` (`OnboardingMemory`, `OnboardingPolicy`, `QuickTour`, `AboutInfo`),
+`NoteListDiff`, and the demo generators (`DemoVault`, `DemoHandwriting`, `DemoSearchNotes`), which are `#if DEBUG`
+so no release build has them. Their tests are `Tests/SempereAppCoreTests`.
+
+The words stayed in the app, next to the views that show them, so the string catalog's checks still see them
+(`LocalizationCatalogTests` scans `Apps/`): `MenuCommand+Titles.swift` words `MenuCommand.titleKind(in:)`,
+`DeviceSettings+Text.swift` the settings' choices and `StorageText`, and `Expectations+Text.swift` the tour pages
+(`TourPage.topic`). So did the glue that reads the process or the bundle for the app: `OnboardingPolicy.automatic`
+(debug launch variables), `OnboardingMemory()` (`UserDefaults.standard`), the transcription hooks
+(`TranscriptionSettings.statusProvider` and the others, set at launch) and `DemoLaunch`.
 
 ## Duplicates to remove first
 

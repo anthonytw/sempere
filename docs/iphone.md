@@ -5,7 +5,7 @@ The iPhone app is the iPad app's target with the iPhone device family added
 **full app**: it writes with a finger, records voice notes, keeps its own copy of each vault and
 syncs both ways, as on the iPad. Notes open in Reading, so a tap or a scroll never writes.
 Everything phone-only is gated on `Platform.isPhone` (`UIDevice` idiom `.phone`) or lives in `PhoneLayout.swift`. The note view's modes and toolbar are shared by every device
-(`NoteModes.swift`, `NoteToolbar.swift`; "The note view on every device" below) and differ only where a
+(`NoteModes.swift`, `NoteToolbar.swift` in `Sources/SempereAppCore`; "The note view on every device" below) and differ only where a
 device needs it.
 
 ## Layout
@@ -329,8 +329,9 @@ that is a bug.
   bottom page bar only while the palette is away, the drawing aids only while annotating). `PhoneCanvasTests` check
   the one-page canvas's finger count and drawing policy per state, and that they survive PencilKit's own
   recount (`pencilKitsOwnRecountKeepsReadingAtOneFinger`, after each palette tool, and a move to a window).
-- `NoteModeTests` and `NoteToolbarTests` (app tests, any destination): every button tap from every mode, what each
-  mode lets the canvas do on each device, the drawing policy per device and mode, the Mac's Tools commands; the
+- `NoteModeTests` and `NoteToolbarTests` (SempereAppCoreTests, Linux too): every button tap from every mode, what each
+  mode lets the canvas do on each device, the Mac's Tools commands (`MenuCommandTests`); the drawing policy per
+  device and mode is the app's `NoteModeCanvasTests`; the
   toolbar's one order on every device in every state, the same set (besides the listed differences), the same
   overflow menu, All Recordings… reachable on every device. `PencilAnnotatesTests`: an iPad's Pencil in Reading
   or Hand draws with PencilKit's own gesture, a stroke's start asks for Annotate, Hand's selection leaves the

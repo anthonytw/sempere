@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
 
 // The views of `Expectations.swift`: the key notice, the quick tour, the

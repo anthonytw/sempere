@@ -28,8 +28,8 @@ Do not use features newer than Swift 6.0 in `Sources/`.
 
 ## Hard rules
 
-- `Sources/*` and `Tests/*` must build on Linux: Foundation (plus FoundationNetworking in `SempereWebDAV` only), swift-crypto
-  (`import Crypto`), `CZlib` and swift-argument-parser only. No UIKit,
+- `Sources/*` and `Tests/*` must build on Linux: Foundation (plus FoundationNetworking in `SempereWebDAV` only, and
+  Observation in `SempereAppCore` only), swift-crypto (`import Crypto`), `CZlib` and swift-argument-parser only. No UIKit,
   AppKit, PencilKit, CoreGraphics, Compression, CommonCrypto, Security.
   Apple-only code goes under `Apps/`. Apple-only *tests* (e.g. comparing
   against PencilKit) are allowed behind `#if canImport(PencilKit)`.
@@ -299,8 +299,8 @@ there. Commit messages:
   (`docs/privacy/index.html` for Pages, `docs/appstore/privacy-policy.md`): edit both, same date.
 - App Store screenshots (`scripts/screenshots.sh`, `docs/appstore/screenshots.md`):
   `SEMPERE_DEMO=1` builds a synthetic vault in code (`DemoVault`,
-  `DemoHandwriting`, DEBUG only, Linux-typecheckable like the other non-UI
-  logic) and opens it; `SEMPERE_DEMO_*` pick note, sidebar, locked state and
+  `DemoHandwriting` in `Sources/SempereAppCore`, `#if DEBUG` so no release build has them, built and tested on
+  Linux in a debug `swift test`) and opens it; `SEMPERE_DEMO_*` pick note, sidebar, locked state and
   the paper picker. The `SempereScreenshots` scheme runs `SempereAppUITests`
   (not part of `SempereApp`'s test action, so `scripts/app.sh test` never
   builds it); run it with `scripts/screenshots.sh` (`just screenshots`). Never put
@@ -571,8 +571,8 @@ there. Commit messages:
   has no strings, no logic and no network; keep it that way. The app must work with it missing.
   A new entry is a case of `StatusItemProtocol.Action` handled in `StatusItemHost.run`.
 - Mac (Catalyst) behavior is in `docs/mac.md`. Menu entries are cases of
-  `MenuCommand` (title, shortcut, enabling in one place; `MenuCommandTests`
-  checks shortcut clashes); never add a menu item elsewhere. Menus act through
+  `MenuCommand` (`SempereAppCore`: shortcut, enabling and which title in one place, worded by the app's
+  `MenuCommand+Titles.swift`; `MenuCommandTests` (SempereAppCoreTests) checks shortcut clashes); never add a menu item elsewhere. Menus act through
   the focused window's `CommandRouter`. A note has at most one `NoteEditor`:
   note windows go through `AppModel.claimNote` / `openWindowNote` /
   `releaseNote`, and anything that changes the vault under open editors (key
@@ -612,7 +612,8 @@ there. Commit messages:
   A new window, sheet or column layout gets a step there; a new scene must
   inject the app environment, which `AppSceneEnvironmentTests` (Linux) checks,
   along with the wrapper rule above: no view reads the three with a plain `@Environment`.
-- Expectations (`Expectations.swift`, `ExpectationsViews.swift`, `docs/security.md`): "About Your Key"
+- Expectations (`Sources/SempereAppCore/Expectations.swift`, the app's `Expectations+Text.swift` and
+  `ExpectationsViews.swift`, `docs/security.md`): "About Your Key"
   shows by itself once per (vault, key) on a device (`OnboardingMemory`, digests only), then the
   quick tour once per device; both only in the canvas window, after the unlock sheet and never over
   the new-vault sheet (`holdsOnboarding`). Scripted debug launches skip them unless

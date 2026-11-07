@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import Sempere
+import SempereAppCore
 
 /// A tool the Tools menu selects.
 enum ToolChoice: String, CaseIterable, Sendable {

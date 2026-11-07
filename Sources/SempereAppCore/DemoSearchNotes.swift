@@ -10,11 +10,11 @@ import Sempere
 /// the highlight takes it as current.
 extension DemoVault {
     /// The word the search notes repeat.
-    static let searchWord = "wombat"
+    public static let searchWord = "wombat"
     /// The paged search note's key.
-    static let searchPagedNote = "search-paged"
+    public static let searchPagedNote = "search-paged"
     /// The pageless search note's key.
-    static let searchPagelessNote = "search-pageless"
+    public static let searchPagelessNote = "search-pageless"
 
     /// Lines of the paged note's pages and the pageless note: (baseline, words).
     private static let pagedLines: [[(Double, String)]] = [
@@ -26,7 +26,7 @@ extension DemoVault {
     ]
 
     /// The ops of both search notes, by key.
-    static func searchNoteOps() -> [(key: String, title: String, ops: [Op])] {
+    public static func searchNoteOps() -> [(key: String, title: String, ops: [Op])] {
         // Paged: two letter pages.
         var rng = DemoRandom(seed: seed("page/" + searchPagedNote))
         let first = rng.uuid()

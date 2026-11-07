@@ -1,5 +1,6 @@
 import Foundation
 import PencilKit
+import SempereAppCore
 import SwiftUI
 import Testing
 import UIKit

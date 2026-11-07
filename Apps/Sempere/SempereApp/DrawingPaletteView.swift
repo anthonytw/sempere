@@ -1,5 +1,6 @@
 import PencilKit
 import Sempere
+import SempereAppCore
 import SwiftUI
 import UIKit
 

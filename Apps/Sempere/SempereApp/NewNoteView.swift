@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
 
 /// Title, paper and notebook for a new note.
@@ -24,7 +25,7 @@ struct NewNoteView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 Form {
-                    TextField(NewNoteSettings.defaultTitle().isEmpty ? String(localized: "Title", comment: "Text field placeholder: a note title") : NewNoteSettings.defaultTitle(), text: $title, selection: $titleSelection)
+                    TextField(NewNoteSettings.defaultTitle(UserDefaults.standard).isEmpty ? String(localized: "Title", comment: "Text field placeholder: a note title") : NewNoteSettings.defaultTitle(UserDefaults.standard), text: $title, selection: $titleSelection)
                         .emojiCompletion(text: $title, selection: $titleSelection)
                     Button { choosingPaper = true } label: {
                         HStack(spacing: 12) {
@@ -59,7 +60,7 @@ struct NewNoteView: View {
                     Button("Create") {
                         Task {
                             do {
-                                try await model.createNote(title: NewNoteSettings.resolvedTitle(typed: title), paper: paper, notebook: notebook,
+                                try await model.createNote(title: NewNoteSettings.resolvedTitle(typed: title, defaults: UserDefaults.standard), paper: paper, notebook: notebook,
                                                            pageSize: layout.pageSize)
                                 // The sheet's choice is for this note only: the default for new notes is
                                 // Settings ▸ New Notes ▸ Layout, never the last note made (TestFlight build 8).

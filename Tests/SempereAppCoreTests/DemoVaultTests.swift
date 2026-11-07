@@ -2,15 +2,18 @@
 import Age
 import Foundation
 import Sempere
+import SempereAppCore
+import TempDirSupport
 import Testing
-import UIKit
-@testable import SempereApp
 
-/// The synthetic vault behind the App Store screenshots (`DemoVault`).
+/// The synthetic vault behind the App Store screenshots (`DemoVault`, DEBUG only like the tests).
 struct DemoVaultTests {
+    /// The revisions' `app` (the app passes `NoteWriter.appName`).
+    static let app = "sempere-ios/0"
+
     static func build() async throws -> (DemoVault.Built, URL) {
         let dir = TestTemp.root.appendingPathComponent("demo-\(UUID().uuidString)")
-        return (try await DemoVault.build(in: dir), dir)
+        return (try await DemoVault.build(in: dir, app: Self.app), dir)
     }
 
     static func open(_ built: DemoVault.Built) throws -> Vault {
@@ -55,7 +58,8 @@ struct DemoVaultTests {
     @Test func passphraseStoresTheRecoveryKey() async throws {
         let dir = TestTemp.root.appendingPathComponent("demo-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let built = try await DemoVault.build(in: dir, specs: Array(DemoVault.specs.prefix(1)), passphrase: "smoke test")
+        let built = try await DemoVault.build(in: dir, specs: Array(DemoVault.specs.prefix(1)), passphrase: "smoke test",
+                                              app: Self.app)
         let vault = try Self.open(built)
         let recovery = try IdentityFile.parse(built.recoveryText)
         #expect(vault.passphraseCopyNames().count == 1)
@@ -63,7 +67,7 @@ struct DemoVaultTests {
         #expect(NativeIdentity.mlkem768x25519(read.identity).recipient == recovery.recipient)
         #expect(throws: VaultError.self) { try vault.openPassphraseCopy(passphrase: "wrong") }
         // Without a passphrase no copy is written (the screenshots' vault).
-        let plain = try await DemoVault.build(in: dir, specs: Array(DemoVault.specs.prefix(1)))
+        let plain = try await DemoVault.build(in: dir, specs: Array(DemoVault.specs.prefix(1)), app: Self.app)
         #expect(try Self.open(plain).passphraseCopyNames().isEmpty)
     }
 
@@ -103,14 +107,6 @@ struct DemoVaultTests {
         #expect(values.value(0...1) == 0.3898297483912715)
         #expect(values.value(10...20) == 10.167882945281562)
         #expect(values.value(-5...5) == 4.007606806068834)
-    }
-
-    /// The shots are light whatever the simulator's or the Mac's appearance.
-    @MainActor @Test func demoForcesLightAppearance() {
-        let windows = [UIWindow(frame: .zero), UIWindow(frame: .zero)]
-        windows[0].overrideUserInterfaceStyle = .dark
-        DemoLaunch.forceLight(windows)
-        #expect(windows.allSatisfy { $0.overrideUserInterfaceStyle == .light })
     }
 
     @Test func randomIsSeeded() {

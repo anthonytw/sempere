@@ -1,3 +1,4 @@
+import SempereAppCore
 import SempereRender
 import Sempere
 import PencilKit

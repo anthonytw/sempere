@@ -21,8 +21,7 @@ final class LocalizationCatalogTests: XCTestCase {
     /// Source folders whose literals are interface text. Debug, demo and performance code is exempt.
     static let sourceFolders = ["SempereApp", "SempereShared", "SempereWidgets"]
     static let exemptFiles: Set<String> = [
-        "DebugLaunch.swift", "DebugProbe.swift", "DemoVault.swift", "DemoHandwriting.swift",
-        "DemoLaunch.swift", "Perf.swift",
+        "DebugLaunch.swift", "DebugProbe.swift", "DemoLaunch.swift", "Perf.swift",
     ]
 
     override func setUpWithError() throws {

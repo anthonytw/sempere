@@ -1900,7 +1900,7 @@ Defaults are the chosen policy.
 | | Drawing and attachment cache sizes, Clear Caches | — | clearing keeps the vault, the list's summary cache and every setting |
 
 Per device means per install: the keys are `Sempere.*` in `UserDefaults`
-(`DeviceSettings.swift`). A stored value outside its choices reads as the
+(`DeviceSettings.swift` in `Sources/SempereAppCore`, worded by the app's `DeviceSettings+Text.swift`). A stored value outside its choices reads as the
 nearest valid one or the default. The CLI never reads them (it edits only the vault's shared `settings.age`, with `sempere settings`); each has flags
 instead: `sempere compact --thin-older-than 30d` (or `--thin-all`), `sempere attach recording --codec …
 --sample-rate … --channels … --bit-rate …`, `sempere blobs unused|gc`.

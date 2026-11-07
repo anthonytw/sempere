@@ -1,6 +1,7 @@
 import Foundation
 import os
 import Sempere
+import SempereAppCore
 import UIKit
 
 // The app's implementations of the platform protocols the library declares (`Sources/Sempere/Platform/`,
@@ -138,4 +139,9 @@ extension BundleBitRepair {
     static func clear(_ url: URL, _ role: Role) -> Bool {
         clear(url, role, log: AppPerfSink())
     }
+}
+
+extension NoteDevice {
+    /// This device (`AppPlatform`): the Mac (Mac Catalyst), an iPhone, else an iPad.
+    @MainActor static var current: NoteDevice { .of(AppPlatform()) }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import PencilKit
 import Sempere
+import SempereAppCore
 import Testing
 import UIKit
 @testable import SempereApp
@@ -14,41 +15,7 @@ import UIKit
 /// are in `IPadCanvasUITests` (iPad simulator).
 @MainActor
 struct IPadCanvasTests {
-    // MARK: One-shot text tool
-
-    @Test func theTextToolIsOneShotAndGoesBackToDrawing() {
-        var modes = CanvasModes()
-        modes.addingText = true
-        #expect(modes.addingText && !modes.selectingItems)
-        modes.textToolEnded(.placed)
-        #expect(modes.mode == .drawing, "one box, then the palette's tool again")
-        // Picking a tool ends it too; so does turning the toggle off.
-        modes.addingText = true
-        modes.textToolEnded(.toolPicked)
-        #expect(modes.mode == .drawing)
-        modes.addingText = true
-        modes.addingText = false
-        #expect(modes.mode == .drawing)
-    }
-
-    @Test func theTextToolGoesBackToSelectionModeWhenItCameFromThere() {
-        var modes = CanvasModes()
-        modes.selectingItems = true
-        modes.addingText = true
-        #expect(modes.addingText && !modes.selectingItems, "one mode at a time")
-        modes.textToolEnded(.placed)
-        #expect(modes.selectingItems)
-        // A second placement from there does not remember the first.
-        modes.addingText = true
-        modes.selectingItems = false
-        #expect(modes.addingText, "turning off a mode that is not on changes nothing")
-        modes.selectingItems = true
-        #expect(modes.selectingItems && !modes.addingText)
-        modes.reset()
-        #expect(modes.mode == .drawing && modes.returnTo == .drawing)
-        modes.textToolEnded(.placed)
-        #expect(modes.mode == .drawing, "nothing to end")
-    }
+    // MARK: One-shot text tool (the rule itself: `CanvasModesTests`, SempereAppCoreTests)
 
     /// The canvas reports the one placement: a box started on the empty page ends the tool when
     /// its edit ends; editing an existing box does not.

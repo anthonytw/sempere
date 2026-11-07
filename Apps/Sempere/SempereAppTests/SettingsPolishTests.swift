@@ -1,4 +1,5 @@
 import Foundation
+import SempereAppCore
 import SempereSpeech
 import Testing
 @testable import SempereApp
