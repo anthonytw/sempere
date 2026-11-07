@@ -60,11 +60,11 @@ struct WebDAVCheckCommand: ParsableCommand {
         let client = try login.client(remote)
         let shown = SyncReport.printable(remote.absoluteString)
         let result: WebDAVCheckResult
-        do {
-            result = try WebDAVConnection.check(client)
-        } catch {
-            let problem = WebDAVSyncProblem.from(error: error)
-            let message = CLIError.from(error).message
+        switch WebDAVConnection.probe({ client }) {
+        case .reachable(let found):
+            result = found
+        case .failed(let problem, let message):
+            // The app's Test Connection reads the same problem and message.
             if output.json {
                 try output.emitJSON(Failure(url: shown, problem: problem.code, message: message))
             } else {

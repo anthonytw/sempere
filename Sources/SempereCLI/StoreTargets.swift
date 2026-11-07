@@ -119,11 +119,11 @@ struct StoreTargetAdd: ParsableCommand {
                 var login = WebDAVLoginOptions()
                 login.user = user
                 login.passwordEnv = passwordEnv
+                let client = try login.client(url)   // a missing password is the CLI's own error
                 let found: WebDAVTargetFolder
-                do { found = try WebDAVConnection.checkTargetFolder(try login.client(url), vaultId: entry.vaultId) } catch let e as CLIError {
-                    throw e
-                } catch {
-                    throw CLIError.failure(CLIError.from(error).message)
+                switch WebDAVConnection.probeTarget({ client }, vaultId: entry.vaultId) {
+                case .checked(let folder): found = folder
+                case .failed(_, let message): throw CLIError.failure(message)
                 }
                 guard found.acceptable else {
                     throw CLIError.failure("\(text) holds \(found == .otherVault ? "another vault" : "other files"): "
@@ -283,7 +283,9 @@ struct StoreSync: ParsableCommand {
                     throw SyncTargetError.io("target kind \(t.kind) is not supported by this version")
                 }
                 outcome.report = report
-                if WebDAVSyncProblem.from(report: report).isEmpty {
+                // The app's rule for a last success: a complete run without problems (a run cut short after it
+                // moved files is progress, not a last sync).
+                if SyncRunAssessment(report: report, twoWay: true).isSuccess {
                     try? store.targets.update(t.id, of: entry.vaultId) { $0.lastSuccess = Date() }
                 }
             } catch {

@@ -96,6 +96,10 @@ public enum WebDAVSyncProblem: Hashable, Sendable {
     case unauthorized
     /// The server's certificate is not trusted (or not the pinned one).
     case certificate(String)
+    /// The server's certificate was refused for its dates (expired, or not valid yet): either it is, or this
+    /// device's clock is far off (offline audit P14). Recognized by type, never by a message's words
+    /// (`CertificateDate`).
+    case certificateDate
     /// The server folder holds another vault.
     case otherVault
     /// The server folder is gone (404), or holds no vault any more.
@@ -120,7 +124,7 @@ public enum WebDAVSyncProblem: Hashable, Sendable {
         switch self {
         case .offline: return "offline"
         case .unauthorized: return "unauthorized"
-        case .certificate: return "certificate"
+        case .certificate, .certificateDate: return "certificate"
         case .otherVault: return "other-vault"
         case .notFound: return "not-found"
         case .redirect: return "redirect"
@@ -138,12 +142,30 @@ public enum WebDAVSyncProblem: Hashable, Sendable {
         return false
     }
 
-    /// The problem for a run that threw.
+    /// A certificate problem, of either kind (the connect sheet offers to trust the certificate).
+    public var isCertificate: Bool {
+        switch self {
+        case .certificate, .certificateDate: return true
+        default: return false
+        }
+    }
+
+    /// The problem for a run (or a check) that threw: a folder target's own failures first (a folder that went
+    /// away is "not found", one that cannot be reached now is "offline"), then a server's. The app's bar and the
+    /// CLI read the same answer.
     public static func from(error: Error) -> WebDAVSyncProblem {
+        switch error {
+        case FolderTargetError.missing: return .notFound
+        case FolderTargetError.unavailable: return .offline
+        case let e as FolderRemoteError where e.isUnreachable: return .offline   // never a full disk (review of #90, M1)
+        case let e where CertificateDate.isDateProblem(e): return .certificateDate
+        default: break
+        }
         if case SyncError.vaultMismatch? = error as? SyncError { return .otherVault }
         guard let e = error as? WebDAVError else { return .failed(SyncEngine.describe(error)) }
         switch e {
         case .offline, .notConnected: return .offline
+        case .untrustedCertificate(let m) where CertificateDate.matches(m): return .certificateDate
         case .untrustedCertificate(let m): return .certificate(SyncReport.printable(m))
         case .redirect(_, let location): return .redirect(SyncReport.printable(location))
         case .http(_, _, let status) where status == 401 || status == 403: return .unauthorized

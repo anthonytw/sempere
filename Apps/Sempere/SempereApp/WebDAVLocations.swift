@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Security
+import SempereAppCore
 import SempereSync
 import SempereWebDAV
 import Sempere
@@ -133,13 +134,16 @@ final class WebDAVLocationStore {
 }
 
 /// Why a WebDAV password could not be stored or read.
-enum WebDAVPasswordError: Error, Equatable, CustomStringConvertible {
+enum WebDAVPasswordError: Error, Equatable, CustomStringConvertible, DeviceUnlockWaiting {
     case notFound
     case missingEntitlement
     /// The device is locked and has not been unlocked since it started (`errSecInteractionNotAllowed`): the
     /// password can be read once it is. A sync waits for that; it is not a problem (review of #74, B1).
     case locked
     case keychain(Int32)
+
+    /// `.locked`: a sync waits for the device's unlock (`DeviceUnlockWaiting`).
+    var waitsForDeviceUnlock: Bool { self == .locked }
 
     var description: String {
         switch self {

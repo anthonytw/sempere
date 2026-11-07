@@ -1,36 +1,43 @@
 import Foundation
 import Sempere
-import SempereSync
 
 /// Files a folder target's runs wrote into a provider's folder (iCloud Drive, another provider that uploads) that the
 /// provider has not uploaded yet (offline audit P15). A run into such a folder only writes local files: offline, the
 /// target is not "synced" until the provider uploads them, so the bar says how many wait (or why the provider cannot
 /// upload them), and the unlisted screen does not count them as held by the target.
 ///
-/// Kept per target next to its sync state (`provider-uploads.json`; app only): each run adds the paths it wrote and
+/// Kept per target next to its sync state (`provider-uploads.json`; the app writes it): each run adds the paths it wrote and
 /// drops those the provider reports uploaded, so the count survives a relaunch while offline. A run is marked in
 /// flight before it starts (`begin`): when the next run finds the mark (the run threw or the app was killed before
 /// its report was recorded), it looks at every file of the folder once (`rescan`), so nothing written then is lost.
 /// Past `limit` paths the record says it is truncated, and the target then counts as holding nothing.
-enum ProviderUploads {
-    static let fileName = "provider-uploads.json"
+public enum ProviderUploads {
+    public static let fileName = "provider-uploads.json"
     /// At most this many paths are kept (a first upload of a large vault while offline): past it, `truncated`.
-    static let limit = 20_000
+    public static let limit = 20_000
 
     /// What the provider says about one file.
-    enum State: Equatable, Sendable {
+    public enum State: Equatable, Sendable {
         case uploaded
         case waiting
         /// The provider reported an upload error (`ubiquitousItemUploadingError`): its code and message.
         case failed(code: Int, domain: String, message: String)
+
+        /// The provider cannot upload at all: its storage is full (`CocoaError.fileWriteOutOfSpace`), or iCloud is
+        /// not available (`.ubiquitousFileUbiquityServerNotAvailable`). The app words it as such.
+        public var isStorageUnavailable: Bool {
+            guard case .failed(let code, let domain, _) = self, domain == NSCocoaErrorDomain else { return false }
+            return code == 640 || code == 4355   // fileWriteOutOfSpace, ubiquitousFileUbiquityServerNotAvailable
+        }
     }
 
     /// The provider's state of the file at `url`: nil when it is not a provider's (a local folder, a drive) or is
     /// gone, which drops it.
-    typealias Check = @Sendable (URL) -> State?
+    public typealias Check = @Sendable (URL) -> State?
 
     /// The system's answer (`ubiquitousItemIsUploaded`, `isUploading`, `ubiquitousItemUploadingError`), read fresh.
-    static let system: Check = { url in
+    public static let system: Check = { url in
+        #if canImport(Darwin)
         var fresh = url
         fresh.removeAllCachedResourceValues()
         let keys: Set<URLResourceKey> = [.isUbiquitousItemKey, .ubiquitousItemIsUploadedKey, .ubiquitousItemIsUploadingKey,
@@ -41,48 +48,67 @@ enum ProviderUploads {
         }
         if values.ubiquitousItemIsUploading == true { return .waiting }
         return values.ubiquitousItemIsUploaded == false ? .waiting : .uploaded
+        #else
+        return nil   // no provider uploads here
+        #endif
     }
 
     /// One target's record.
-    struct Record: Codable, Equatable, Sendable {
-        var paths: [String] = []
+    public struct Record: Codable, Equatable, Sendable {
+        public var paths: [String] = []
         /// More than `limit` paths waited: the list is not all of them.
-        var truncated = false
+        public var truncated = false
         /// A run started and has not recorded what it wrote yet (`begin`, cleared by `update`).
-        var inFlight = false
+        public var inFlight = false
         /// The last run met an upload error (a full iCloud storage): code, domain and message.
-        var errorCode: Int?
-        var errorDomain: String?
-        var error: String?
+        public var errorCode: Int?
+        public var errorDomain: String?
+        public var error: String?
 
-        var isEmpty: Bool { paths.isEmpty && !truncated && !inFlight && error == nil }
+        public init(paths: [String] = [], truncated: Bool = false, inFlight: Bool = false, errorCode: Int? = nil,
+                    errorDomain: String? = nil, error: String? = nil) {
+            self.paths = paths
+            self.truncated = truncated
+            self.inFlight = inFlight
+            self.errorCode = errorCode
+            self.errorDomain = errorDomain
+            self.error = error
+        }
+
+        public var isEmpty: Bool { paths.isEmpty && !truncated && !inFlight && error == nil }
     }
 
     /// What the bar shows.
-    struct Summary: Equatable, Sendable {
-        var count = 0
-        var truncated = false
-        var error: State?
+    public struct Summary: Equatable, Sendable {
+        public var count = 0
+        public var truncated = false
+        public var error: State?
+
+        public init(count: Int = 0, truncated: Bool = false, error: State? = nil) {
+            self.count = count
+            self.truncated = truncated
+            self.error = error
+        }
     }
 
-    static func url(in stateDirectory: URL) -> URL { stateDirectory.appendingPathComponent(fileName) }
+    public static func url(in stateDirectory: URL) -> URL { stateDirectory.appendingPathComponent(fileName) }
 
-    static func record(in stateDirectory: URL) -> Record {
+    public static func record(in stateDirectory: URL) -> Record {
         guard let data = try? BoundedRead.contents(of: url(in: stateDirectory), maxBytes: 8 << 20),
               let record = try? JSONDecoder().decode(Record.self, from: data) else { return Record() }
         return record
     }
 
     /// The paths waiting, as last recorded.
-    static func pending(in stateDirectory: URL) -> [String] { record(in: stateDirectory).paths }
+    public static func pending(in stateDirectory: URL) -> [String] { record(in: stateDirectory).paths }
 
-    static func summary(in stateDirectory: URL) -> Summary {
+    public static func summary(in stateDirectory: URL) -> Summary {
         let r = record(in: stateDirectory)
         let error = r.error.map { State.failed(code: r.errorCode ?? 0, domain: r.errorDomain ?? "", message: $0) }
         return Summary(count: r.paths.count, truncated: r.truncated, error: error)
     }
 
-    static func save(_ record: Record, in stateDirectory: URL) {
+    public static func save(_ record: Record, in stateDirectory: URL) {
         let file = url(in: stateDirectory)
         if record.isEmpty {
             try? FileManager.default.removeItem(at: file)
@@ -94,7 +120,7 @@ enum ProviderUploads {
     /// Before a run into the folder: marks it in flight. Returns true when the previous run's mark is still there
     /// (it never recorded what it wrote): `update` then rescans the folder.
     @discardableResult
-    static func begin(stateDirectory: URL) -> Bool {
+    public static func begin(stateDirectory: URL) -> Bool {
         var r = record(in: stateDirectory)
         let interrupted = r.inFlight
         r.inFlight = true
@@ -106,7 +132,7 @@ enum ProviderUploads {
     /// when `rescan`, after an interrupted run), and each is asked again; returns what still waits. Off the main
     /// actor (a resource lookup per file).
     @discardableResult
-    static func update(folder: URL, stateDirectory: URL, written: [String], rescan: Bool = false, check: Check) -> Summary {
+    public static func update(folder: URL, stateDirectory: URL, written: [String], rescan: Bool = false, check: Check) -> Summary {
         let previous = record(in: stateDirectory)
         var candidates = previous.paths + written
         // A rescan only for a provider's folder: a drive's or a local folder's files are never waiting.
@@ -137,7 +163,7 @@ enum ProviderUploads {
 
     /// Every regular file below `folder`, as a vault path, bounded by twice `limit`: `capped` when it stopped there
     /// with files left unlisted.
-    static func files(below folder: URL, cap: Int = 2 * limit) -> (paths: [String], capped: Bool) {
+    public static func files(below folder: URL, cap: Int = 2 * limit) -> (paths: [String], capped: Bool) {
         let base = folder.standardizedFileURL.path
         guard let walk = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey],
                                                         options: [.skipsHiddenFiles]) else { return ([], false) }
@@ -155,7 +181,7 @@ enum ProviderUploads {
     /// This device's own files that no target holds, with the files a provider target holds only locally (not
     /// uploaded yet) counted as not held (offline audit P15). A target whose record is truncated or in flight (its
     /// list may be incomplete) holds nothing. `targets`: each target's sync-state file and its folder of state.
-    static func unsyncedPaths(vault: Vault, targets: [(state: URL, directory: URL)]) throws -> [String] {
+    public static func unsyncedPaths(vault: Vault, targets: [(state: URL, directory: URL)]) throws -> [String] {
         let records = targets.map { (target: $0, record: record(in: $0.directory)) }
         let plain = records.filter { $0.record.paths.isEmpty && !$0.record.truncated && !$0.record.inFlight }.map(\.target.state)
         var unsynced = Set(try UnsyncedChanges.paths(vault: vault, stateURLs: plain))
@@ -166,18 +192,5 @@ enum ProviderUploads {
             unsynced.subtract(held.subtracting(provider.record.paths))
         }
         return unsynced.sorted()
-    }
-
-    /// The upload error as the bar says it: a full iCloud storage (or iCloud unavailable) in plain words.
-    static func errorText(_ state: State?) -> String? {
-        guard case .failed(let code, let domain, let message)? = state else { return nil }
-        let full = domain == NSCocoaErrorDomain
-            && (code == CocoaError.Code.fileWriteOutOfSpace.rawValue || code == CocoaError.Code.ubiquitousFileUbiquityServerNotAvailable.rawValue)
-        if full {
-            return String(localized: "iCloud is not uploading this folder's files: its storage may be full, or iCloud is not available. Check iCloud storage in Settings.",
-                          comment: "Sync status: a folder target in iCloud Drive whose uploads fail")
-        }
-        return String(localized: "The folder's provider could not upload some files: \(message)",
-                      comment: "Sync status; the value is the provider's error message")
     }
 }

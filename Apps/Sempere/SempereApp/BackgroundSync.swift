@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import SempereAppCore
 import UIKit
 
 /// iOS's background time for the sync of every vault and target (docs/design/device-first-sync.md §4.2,

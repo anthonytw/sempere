@@ -1,7 +1,7 @@
+import SempereAppCore
 import SwiftUI
 import UniformTypeIdentifiers
 import Sempere
-import SempereAppCore
 import SempereSync
 
 /// Sync Targets… (docs/design/device-first-sync.md §8.1): the open vault's targets with their status,

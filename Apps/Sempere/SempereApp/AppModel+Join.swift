@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSync
 
 /// Joining a vault on a WebDAV server without the iCloud machinery (docs/design/device-first-sync.md §8.2,

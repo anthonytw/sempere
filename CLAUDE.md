@@ -869,7 +869,7 @@ there. Commit messages:
   `VaultStoreRoot`); its targets (folder or WebDAV, any number) are `SyncTarget`s in the store's registry
   (`SyncTargetRegistry`, `<store>/.sync/<vault id>/`, shared with `sempere store target`), each with its own sync
   state and quarantine. A WebDAV vault is a store vault with a WebDAV target (`WebDAVLocationStore` is a view of
-  the registry; `LocalCopy(folder:stateDirectory:)`). The app's one `SyncCoordinator` runs a `SyncSession` per
+  the registry; `LocalCopy(folder:stateDirectory:)`). The app's one `SyncCoordinator` (SempereAppCore) runs a `SyncSession` per
   (vault, target), every vault open or not, at most two runs at once; only the open, unlocked vault's runs are
   two-way, every other run is upload-only (nothing unverified is placed in a vault nobody unlocked). Folder runs
   go through `FolderTargetRun` (the CLI's `store sync`); never open a target folder in place. Where a folder target's

@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// Sync when the app leaves the screen (`BackgroundSync`, docs/design/device-first-sync.md §4.2): runs going
 /// or asked for finish under background time; afterwards `BGTaskScheduler` tasks run every vault's targets

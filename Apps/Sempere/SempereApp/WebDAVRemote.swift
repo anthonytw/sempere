@@ -4,6 +4,7 @@ import Foundation
 import Network
 import Security
 import Sempere
+import SempereAppCore
 import SempereSync
 import SempereWebDAV
 
@@ -105,27 +106,25 @@ struct LiveWebDAVRemote: WebDAVRemote {
         return try WebDAVClient(baseURL: e.url, credentials: credentials, transport: transport)
     }
 
+    /// `WebDAVConnection.probe` (the CLI's `webdav check` too), with the refused certificate for the trust sheet.
     func check(_ endpoint: WebDAVEndpoint) -> WebDAVProbe {
         let recorder = CertificateRecorder()
-        do {
-            return .reachable(try WebDAVConnection.check(try client(endpoint, recorder: recorder)))
-        } catch {
-            let problem = WebDAVSyncProblem.from(error: error)
-            var certificate: ServerCertificate?
-            if case .certificate = problem { certificate = recorder.certificate }
-            return .failed(problem, message: WebDAVErrorText.message(error), certificate: certificate)
+        switch WebDAVConnection.probe({ try client(endpoint, recorder: recorder) }) {
+        case .reachable(let result):
+            return .reachable(result)
+        case .failed(let problem, let message):
+            return .failed(problem, message: message, certificate: problem.isCertificate ? recorder.certificate : nil)
         }
     }
 
+    /// `WebDAVConnection.probeTarget` (the CLI's `store target add --webdav --check` too), as `check`.
     func checkTarget(_ endpoint: WebDAVEndpoint, vaultID: UUID) -> WebDAVTargetProbe {
         let recorder = CertificateRecorder()
-        do {
-            return .checked(try WebDAVConnection.checkTargetFolder(try client(endpoint, recorder: recorder), vaultId: vaultID))
-        } catch {
-            let problem = WebDAVSyncProblem.from(error: error)
-            var certificate: ServerCertificate?
-            if case .certificate = problem { certificate = recorder.certificate }
-            return .failed(problem, message: WebDAVErrorText.message(error), certificate: certificate)
+        switch WebDAVConnection.probeTarget({ try client(endpoint, recorder: recorder) }, vaultId: vaultID) {
+        case .checked(let folder):
+            return .checked(folder)
+        case .failed(let problem, let message):
+            return .failed(problem, message: message, certificate: problem.isCertificate ? recorder.certificate : nil)
         }
     }
 
@@ -201,47 +200,6 @@ struct PinnedServerTrust: WebDAVServerTrust {
         let hash = SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined()
         let subject = (SecCertificateCopySubjectSummary(certificate) as String?) ?? "?"
         return ServerCertificate(sha256: hash, subject: SyncReport.printable(String(subject.prefix(120))))
-    }
-}
-
-/// A server certificate refused for its dates: either it really expired, or this device's clock is far off (a device
-/// back after a long time offline, a date set by hand). Recognized by type (review of #91, S6): the trust evaluation's
-/// `OSStatus` (`PinnedServerTrust`) or a `URLError` code, never by the words of a message. The refusal carries a
-/// fixed, unlocalized marker before its text, which only this app writes and the bar strips.
-enum CertificateDate {
-    /// Starts a refusal's reason that is a date problem.
-    static let marker = "[sempere:certificate-date] "
-
-    static var reason: String {
-        String(localized: "The server's certificate is not valid at this device's date and time. Check this device's date and time.",
-               comment: "WebDAV: a certificate expired or not yet valid by this device's clock")
-    }
-
-    /// The reason `PinnedServerTrust` refuses with.
-    static var refusal: String { marker + reason }
-
-    /// True when a refusal's reason is one of ours for the dates.
-    static func matches(_ message: String) -> Bool { message.hasPrefix(marker) }
-
-    /// The `URLError` codes of a certificate refused for its dates.
-    static func isDateProblem(_ error: Error) -> Bool {
-        guard let e = error as? URLError else { return false }
-        return e.code == .serverCertificateHasBadDate || e.code == .serverCertificateNotYetValid
-    }
-
-    /// `message` without the marker, for display.
-    static func displayed(_ message: String) -> String {
-        message.hasPrefix(marker) ? String(message.dropFirst(marker.count)) : message
-    }
-}
-
-/// One line for a WebDAV failure, without credentials (the library's
-/// messages never contain them).
-enum WebDAVErrorText {
-    static func message(_ error: Error) -> String {
-        let text = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-        let line = SyncReport.printable(text.split(whereSeparator: \.isNewline).joined(separator: " "))
-        return line.replacingOccurrences(of: CertificateDate.marker, with: "")
     }
 }
 

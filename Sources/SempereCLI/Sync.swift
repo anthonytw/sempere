@@ -339,22 +339,27 @@ enum SyncCLI {
         return try? DeviceState.loadOrCreate(at: url).device
     }
 
-    /// `--max-blob-mib`, `--max-notes`, `--max-entries`, `--max-download-mib`, `--max-minutes`.
+    /// `--max-blob-mib`, `--max-notes`, `--max-entries`, `--max-download-mib`, `--max-minutes` (`SyncBounds`, the
+    /// app's background runs fill theirs the same way).
     static func applyLimits(_ options: inout SyncOptions, maxBlobMiB: Int?, maxNotes: Int?, maxEntries: Int?,
                             maxDownloadMiB: Int?, maxMinutes: Int?) throws {
-        if let maxBlobMiB {
-            guard (1...(1 << 20)).contains(maxBlobMiB) else { throw CLIError.usage("--max-blob-mib must be 1 to 1048576") }
-            options.maxBlobBytes = maxBlobMiB << 20
+        do {
+            try SyncBounds.checked(maxBlobMiB: maxBlobMiB, maxNotes: maxNotes, maxEntries: maxEntries,
+                                   maxDownloadMiB: maxDownloadMiB, maxMinutes: maxMinutes).apply(to: &options)
+        } catch let error as SyncBounds.OutOfRange {
+            throw CLIError.usage("--\(flag(error.field)) must be 1 to \(error.field.range.upperBound)")
         }
-        func bounded(_ value: Int?, _ flag: String, max: Int) throws -> Int? {
-            guard let value else { return nil }
-            guard (1...max).contains(value) else { throw CLIError.usage("--\(flag) must be 1 to \(max)") }
-            return value
+    }
+
+    /// The option of a bound.
+    static func flag(_ field: SyncBounds.Field) -> String {
+        switch field {
+        case .maxBlobMiB: return "max-blob-mib"
+        case .maxNotes: return "max-notes"
+        case .maxEntries: return "max-entries"
+        case .maxDownloadMiB: return "max-download-mib"
+        case .maxMinutes: return "max-minutes"
         }
-        if let n = try bounded(maxNotes, "max-notes", max: 100_000_000) { options.limits.maxNotes = n }
-        if let n = try bounded(maxEntries, "max-entries", max: 1_000_000_000) { options.limits.maxEntries = n }
-        if let n = try bounded(maxDownloadMiB, "max-download-mib", max: 1 << 30) { options.limits.maxDownloadBytes = Int64(n) << 20 }
-        if let n = try bounded(maxMinutes, "max-minutes", max: 525_600) { options.limits.maxDuration = TimeInterval(n) * 60 }
     }
 
     /// `--jobs`.

@@ -416,7 +416,9 @@ final class AppModel {
     var syncCoordinator: SyncCoordinator {
         if let coordinatorStorage { return coordinatorStorage }
         let made = SyncCoordinator(targets: { [weak self] in self?.allSyncTargets() ?? [] },
-                                   makeSession: { [weak self] ref in self?.makeSession(for: ref) })
+                                   makeSession: { [weak self] ref in self?.makeSession(for: ref) },
+                                   deliveries: QuickCapture.deliveredNotification, settings: UserDefaults.standard,
+                                   perf: AppPerfSink())
         made.tick = webdavTick
         coordinatorStorage = made
         return made

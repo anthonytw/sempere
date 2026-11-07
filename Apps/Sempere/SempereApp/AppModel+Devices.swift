@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSync
 
 // The device list in the app (key-hierarchy design §5.5, §5.6, §6.4, §6.5; phase KH5): its rows and history,

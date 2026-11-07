@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSync
 
 /// Where a re-encryption stands, for the progress sheet (key-hierarchy design §7.2 "Progress").

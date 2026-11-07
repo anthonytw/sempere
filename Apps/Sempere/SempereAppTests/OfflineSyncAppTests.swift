@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereSync
 import SempereWebDAV
 import Testing
@@ -140,126 +141,51 @@ struct OfflineSyncAppTests {
         session.stop()
     }
 
-    /// Review of #90, N1: the path monitor's return reaches the engine, so a provider's late file is not counted as
-    /// stalled for the time the device had no network (offline audit P5).
-    @Test func theNetworksReturnReachesTheRun() async throws {
-        final class Seen: @unchecked Sendable {
-            private let lock = NSLock()
-            private var values: [Date?] = []
-            func add(_ d: Date?) { lock.lock(); values.append(d); lock.unlock() }
-            var all: [Date?] { lock.lock(); defer { lock.unlock() }; return values }
-        }
-        let seen = Seen()
-        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
-                                  run: { request in
-                                      var o = SyncOptions()
-                                      request.apply(to: &o)
-                                      seen.add(o.networkReturned)
-                                      return SyncReport()
-                                  }, countUnconfirmed: { 0 })
-        let back = Date(timeIntervalSince1970: 1_900_000_000)
-        session.now = { back }
-        session.vaultUnlocked()
-        _ = await session.syncNow()
-        session.networkChanged(reachable: false)
-        session.networkChanged(reachable: true)
-        _ = await session.syncNow()
-        #expect(seen.all.first == .some(nil), "never away: nothing to leave out")
-        #expect(seen.all.last == .some(back))
-        session.stop()
-    }
 
     // MARK: P14: a clock far off
 
+    /// The app's half: the trust check's codes and the words (the classification is `SyncProblemsTests`).
     @Test func certificateDateErrorsNameTheClock() {
         #expect(PinnedServerTrust.isDateProblem(CFIndex(errSecCertificateExpired)))
         #expect(PinnedServerTrust.isDateProblem(CFIndex(errSecCertificateNotValidYet)))
         #expect(!PinnedServerTrust.isDateProblem(CFIndex(errSecNotTrusted)))
-        #expect(SyncStatus.text(for: .certificate(CertificateDate.refusal)) == CertificateDate.reason)
+        #expect(SyncStatus.text(for: .certificateDate) == CertificateDate.reason)
         #expect(CertificateDate.reason.contains("date and time"))
         // Typed, never by words (review of #91, S6): a server message that mentions dates is not one.
         #expect(!SyncStatus.text(for: .certificate("check the date and time")).contains("this device's date"))
-        #expect(SyncStatus.problem(from: URLError(.serverCertificateHasBadDate)) == .certificate(CertificateDate.refusal))
-        #expect(SyncStatus.problem(from: URLError(.serverCertificateNotYetValid)) == .certificate(CertificateDate.refusal))
+        // The trust check's refusal, and the system's codes, are the date problem.
+        #expect(SyncStatus.problem(from: WebDAVError.untrustedCertificate(CertificateDate.refusal)) == .certificateDate)
+        #expect(SyncStatus.problem(from: URLError(.serverCertificateHasBadDate)) == .certificateDate)
+        #expect(SyncStatus.problem(from: URLError(.serverCertificateNotYetValid)) == .certificateDate)
         #expect(WebDAVErrorText.message(WebDAVError.untrustedCertificate(CertificateDate.refusal)).contains(CertificateDate.marker) == false)
     }
 
     // MARK: P15: written into iCloud Drive, not uploaded
 
-    @Test func filesTheProviderHasNotUploadedAreCountedAndDropOnceUploaded() throws {
-        let dir = try TestTemp.directory("provider-state")
-        let folder = try TestTemp.directory("provider-folder")
-        let uploaded = Set(["notes/a/1.delta.age"])
-        let check: ProviderUploads.Check = { url in
-            let path = url.path
-            if path.hasSuffix("local.age") { return nil }   // not a provider's file
-            return uploaded.contains { path.hasSuffix($0) } ? .uploaded : .waiting
-        }
-        let n = ProviderUploads.update(folder: folder, stateDirectory: dir, written: [
-            "notes/a/1.delta.age", "notes/a/2.delta.age", "inbox/c.capture.age", "local.age"], check: check)
-        #expect(n.count == 2 && !n.truncated && n.error == nil)
-        #expect(Set(ProviderUploads.pending(in: dir)) == ["notes/a/2.delta.age", "inbox/c.capture.age"])
-        // A later run asks again: everything is up now, and the file goes.
-        #expect(ProviderUploads.update(folder: folder, stateDirectory: dir, written: [], check: { _ in .uploaded }).count == 0)
-        #expect(!FileManager.default.fileExists(atPath: ProviderUploads.url(in: dir).path))
-    }
-
-    /// Review of #91, S3: past the limit the record says truncated; a run that never recorded what it wrote (it
-    /// threw, or the app was killed) makes the next look at the whole folder; an upload error is a visible problem.
-    @Test func providerUploadsSurviveOverflowInterruptionAndErrors() throws {
-        let dir = try TestTemp.directory("provider-state")
-        let folder = try TestTemp.directory("provider-folder")
-        let many = (0...ProviderUploads.limit).map { "notes/n/\($0).delta.age" }
-        let waiting: ProviderUploads.Check = { _ in .waiting }
-        let big = ProviderUploads.update(folder: folder, stateDirectory: dir, written: many, check: waiting)
-        #expect(big.count == ProviderUploads.limit && big.truncated)
-        _ = ProviderUploads.update(folder: folder, stateDirectory: dir, written: [], check: { _ in .uploaded })
-
-        // A run marked in flight that never recorded its report: the next run rescans the folder.
-        try FileManager.default.createDirectory(at: folder.appendingPathComponent("notes/x"), withIntermediateDirectories: true)
-        try Data([1]).write(to: folder.appendingPathComponent("notes/x/1.delta.age"))
-        #expect(!ProviderUploads.begin(stateDirectory: dir), "nothing interrupted yet")
-        // (the run throws here: no update)
-        #expect(ProviderUploads.begin(stateDirectory: dir), "the last run never recorded its files")
-        let rescanned = ProviderUploads.update(folder: folder, stateDirectory: dir, written: [], rescan: true, check: waiting)
-        #expect(ProviderUploads.pending(in: dir) == ["notes/x/1.delta.age"], "\(rescanned)")
-        // A rescan that stops at its cap says so: the record is then truncated, never taken as complete.
-        try Data([2]).write(to: folder.appendingPathComponent("notes/x/2.delta.age"))
-        #expect(ProviderUploads.files(below: folder, cap: 1).capped)
-        #expect(!ProviderUploads.files(below: folder, cap: 5).capped)
-        #expect(ProviderUploads.files(below: folder, cap: 5).paths.count == 2)
-
-        // iCloud refusing to upload (its storage full): a problem the user sees.
+    /// The bar's words for a provider's upload error (`ProviderUploads.State`, SempereSync; the record itself is
+    /// tested in `ProviderUploadsTests`): a full iCloud storage in plain words, a problem the user sees.
+    @Test func aProvidersUploadErrorIsWordedAsAProblem() throws {
         let full = ProviderUploads.State.failed(code: CocoaError.Code.ubiquitousFileUbiquityServerNotAvailable.rawValue,
                                                 domain: NSCocoaErrorDomain, message: "full")
-        let failing = ProviderUploads.update(folder: folder, stateDirectory: dir, written: ["notes/x/1.delta.age"], check: { _ in full })
-        #expect(failing.error == full)
-        let text = try #require(ProviderUploads.errorText(failing.error))
+        let text = try #require(ProviderUploads.errorText(full))
         #expect(text.contains("storage may be full"))
+        let other = ProviderUploads.State.failed(code: 1, domain: "provider", message: "the provider's words")
+        #expect(ProviderUploads.errorText(other)?.contains("the provider's words") == true)
+        #expect(ProviderUploads.errorText(.waiting) == nil)
+        // The library's numbers are the system's codes.
+        #expect(ProviderUploads.State.failed(code: CocoaError.Code.fileWriteOutOfSpace.rawValue, domain: NSCocoaErrorDomain,
+                                             message: "").isStorageUnavailable)
         let status = SyncStatus(syncing: false, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: Date(),
-                                folder: true, providerPending: 1, viaICloud: true, providerError: text)
-        #expect(status.needsAttention)
+                                folder: true, providerPending: 1, viaICloud: true, providerError: full)
         #expect(status.headline == text)
-        #expect(!status.lastSuccessIsSync)
     }
 
-    @Test func aFolderInICloudNeverSaysSyncedWhileUploadsWait() async throws {
-        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
-                                  run: { _ in SyncReport() }, countUnconfirmed: { 0 })
-        session.kind = .folder
-        session.uploadsViaICloud = true
-        session.providerSummary = { ProviderUploads.Summary(count: 3) }
-        session.vaultUnlocked()
-        _ = await session.syncNow()
-        #expect(session.status.kind == .waitingForProvider(3))
-        #expect(session.headline == "3 changes waiting for iCloud to upload")
-        #expect(!session.headline.contains("Synced"))
-        #expect(!session.status.lastSuccessIsSync, "the bar shows the run as written to the folder")
-        #expect(!session.needsAttention, "waiting is not a problem")
-        session.providerSummary = { ProviderUploads.Summary() }
-        _ = await session.syncNow()
-        #expect(session.status.kind == .synced)
-        session.stop()
+    /// The bar's words while files wait for iCloud (the session's behavior is `SyncSessionTests`): never "Synced".
+    @Test func aFolderInICloudNeverSaysSyncedWhileUploadsWait() {
+        let status = SyncStatus(syncing: false, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: Date(),
+                                folder: true, providerPending: 3, viaICloud: true)
+        #expect(status.headline == "3 changes waiting for iCloud to upload")
+        #expect(!status.headline.contains("Synced"))
     }
 
     /// The unlisted screen's "changes no target holds" counts a file a folder target holds only in iCloud Drive's

@@ -95,11 +95,11 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
   `ImagePreparation`, `InsertUI`, `MathEditor`, `MathModels`, `MathSettings`, `MouseInk`, `NoteCanvasView`,
   `NoteDragSource`, `NoteListView`, `NoteWindowView`, `PageCanvasHost+Appearance`, `PageCanvasView`,
   `PageLayoutChoice`, `PageRecognizer`, `PaperPreference`, `RecordingPreferences`, `RenderCache`, `RootView`,
-  `SettingsGroups`, `SettingsSyncBridge`, `SettingsView`, `StatusItemBridge`, `SyncCoordinator`, `ToolPalette`
+  `SettingsGroups`, `SettingsSyncBridge`, `SettingsView`, `StatusItemBridge`, `ToolPalette`
   (and `DebugLaunch`, debug only).
 - **`PerfSink`**: `Perf.begin`/`measure`/`event` in `AppModel`, `AppModel+Backup`, `+History`, `+ListUpdates`,
   `+Loading`, `+Reconcile`, `+RemoteMerge`, `+Thinning`, `BackgroundSync`, `ItemLayerView`, `ItemRendering`,
-  `NoteEditor`, `PageCanvasView`, `SyncCoordinator`; `os.Logger` in `AppModel+Inbox`, `+Notebooks`,
+  `NoteEditor`, `PageCanvasView`; `os.Logger` in `AppModel+Inbox`, `+Notebooks`,
   `+SettingsSync`, `+Suspension`, `+SyncTargets`, `AppModelEnvironment`, `DragLog`, `FolderPicker`,
   `VoiceNoteStartLog`, `VoiceNoteTapLog`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
   becomes `perf.measure("x", …)`.
@@ -141,6 +141,17 @@ recorder that moves with `NoteEditor` in wave 5) and speaks `VoiceNoteStatus`, `
 the class moves behind protocols for the Live Activity, the app's state and background time. Its decisions that need
 no platform service are already in the module and tested on Linux.
 
+Wave 4 (sync half, 2026-11-07) added the sync scheduling: `SyncCoordinator` (with `SyncTargetRef`), `SyncSession`
+(with `SyncRunMode`, `SyncRunRequest`, `SyncRunCancel`) and `SyncStatus`. The module now also depends on `SempereWebDAV`. The coordinator takes its
+platform services as parameters: `deliveries` (the app passes `QuickCapture.deliveredNotification`), `settings` (`UserDefaults.standard`, for the background tasks' fairness
+record) and `perf` (`AppPerfSink`). A run that waits for the device's first unlock is recognized by the
+`DeviceUnlockWaiting` protocol, which the app's `WebDAVPasswordError` adopts. The words stay in the app
+(`SyncStatus+Text.swift`: `SyncStatus.headline`, `SyncStatus.text(for:)`, `ProviderUploads.errorText`,
+`CertificateDate.reason`). `ProviderUploads` has no session state, so it went to `SempereSync`. The coordinator's
+and the sessions' tests are `Tests/SempereAppCoreTests/SyncCoordinatorTests.swift`. Two rules are still in
+`AppModel` and move in wave 5: a session's run closure is built by `AppModel+SyncTargets` and `AppModel+WebDAV`, and
+it decides two-way only for `phase == .unlocked && !syncVaultStale`.
+
 The words stayed in the app, next to the views that show them, so the string catalog's checks still see them
 (`LocalizationCatalogTests` scans `Apps/`): `MenuCommand+Titles.swift` words `MenuCommand.titleKind(in:)`,
 `DeviceSettings+Text.swift` the settings' choices and `StorageText`, `Expectations+Text.swift` the tour pages
@@ -170,6 +181,14 @@ Each one becomes a single implementation in the library that both call.
    own copies (the specs a device type uses, a spec's device types, what can be a setting key) are
    `SharedSettingsCatalog.specs(for:)` (nil: all), `SharedSettingSpec.deviceTypes` and
    `SharedSettingsCatalog.isSettingKey`; the app already read the catalog through the library.
+   The sync parts are done (wave 4). A thrown error is
+   classified once, by `WebDAVSyncProblem.from(error:)` (folder errors, then the certificate's dates as
+   `.certificateDate`, then the server's). A finished run is assessed by `SyncRunAssessment`: its problems,
+   whether it was cut short, and whether it counts as a last success. The app's sessions and `store sync` both read
+   it. The connection check is `WebDAVConnection.probe` and `probeTarget`, used by the app's Test Connection and by
+   `webdav check` and `store target add --check`. A failure's message is `WebDAVErrorText.message`. Run bounds are
+   `SyncBounds`: the CLI's `--max-*` flags and the app's background bound fill `SyncOptions` through it. Tests:
+   `SyncProblemsTests`.
 5. **Editor operations.** Items, insert, math, video and recordings in `NoteEditor+*` duplicate the
    CLI's `Items`/`Attach`/`AttachVideo`/`Recordings`/`NoteEdit` commands. So do the app's image
    preparation and item drawing (`ImagePreparation`, `ItemRendering`), next to `ImageIngest` and

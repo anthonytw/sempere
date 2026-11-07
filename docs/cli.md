@@ -704,7 +704,9 @@ id>/`, so targets and vaults never share state. Removing the vault removes them.
 a unique id prefix (4 characters or more), its name, path or URL.
 
 - `target list` prints id, kind, name, place and the last successful sync. `--json`: an array of `{id,
-  kind, name, path, url, user, added, lastSuccess}`.
+  kind, name, path, url, user, added, lastSuccess}`. A sync is a last success by the app's rule
+  (`SyncRunAssessment`): a complete run without problems. A run cut short after it moved files (the link lost
+  midway) is progress, not a last success: the next `store sync` continues it.
 - `target add` adds a target. `--folder PATH` places the vault's copy by the app's rule (Add Folder…,
   `FolderTargetPlacement`): a `PATH` named `….sempere` is the copy itself, and so is one that already holds
   this vault (or a `vault.json` not downloaded yet: the sync compares vault ids before it writes), as the
@@ -2996,7 +2998,8 @@ saying what is there, then `<vault id>  <name>  <url>` per vault. `--json`:
 unreadable}` (`name` is the vault's `label`, format.md §2, when its `vault.json` has
 one, else `folder`), or on failure `{url, reachable: false, problem, message}` with
 `problem` one of `offline`, `unauthorized`, `certificate`, `not-found`,
-`redirect`, `failed`. Names from the server are escaped and shortened. Exit 0
+`redirect`, `failed`. The problem and the message are the app's Test Connection's (`WebDAVConnection.probe`):
+the message is the error on one line, control characters escaped. Names from the server are escaped and shortened. Exit 0
 when at least one vault was found, 1 otherwise (no vault, or the server could
 not be used), 2 usage.
 
