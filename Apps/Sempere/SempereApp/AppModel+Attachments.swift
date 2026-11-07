@@ -30,7 +30,7 @@ extension AppModel {
         if !blobCacheAcrossLaunches { BlobCache.retire(root) }
         Task.detached(priority: .utility) { BlobCache.removeOthers(in: folder, keeping: key.name) }
         let cache = BlobCache(root: root,
-                              maxBytes: BlobCache.configuredMaxBytes, naming: BlobCache.keyedNaming(key)) {
+                              maxBytes: BlobCache.configuredMaxBytes(in: UserDefaults.standard), naming: BlobCache.keyedNaming(key)) {
             note, ref, destination in
             if let partial { try await partial(note, try vault.blobFileName(for: ref)) }
             try await Self.fetchBlob(ref, of: note, from: vault, to: destination)

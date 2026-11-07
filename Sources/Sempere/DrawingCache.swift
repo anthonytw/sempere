@@ -1,5 +1,4 @@
 import Foundation
-import Sempere
 
 /// Ready-to-show canvas drawings of note pages, so a note opened before
 /// opens without decoding, reconstructing and converting its ink
@@ -27,54 +26,54 @@ import Sempere
 /// user draw on it, and rebuilds it on any mismatch (`DrawingPreparation`).
 /// Thread-safe; file I/O happens on the caller's thread (call it off the
 /// main actor).
-final class DrawingCache: @unchecked Sendable {
+public final class DrawingCache: @unchecked Sendable {
     /// `SMPD` then format version 1.
-    static let magic: [UInt8] = [0x53, 0x4D, 0x50, 0x44, 0x01]
+    public static let magic: [UInt8] = [0x53, 0x4D, 0x50, 0x44, 0x01]
     /// Bumped whenever what a page entry holds changes (conversion, the
     /// layout's shape): older entries are then never found.
-    static let schemaVersion = 3
+    public static let schemaVersion = 3
     /// The default size limit.
-    static let defaultCapBytes = 200 << 20
-    /// The `UserDefaults` key of the size limit in megabytes (unset: 200).
-    static let capDefaultsKey = "Sempere.drawingCacheMegabytes"
+    public static let defaultCapBytes = 200 << 20
+    /// The settings key of the size limit in megabytes (unset: 200).
+    public static let capDefaultsKey = "Sempere.drawingCacheMegabytes"
     /// The largest single file read.
-    static let maxFileBytes = 256 << 20
+    public static let maxFileBytes = 256 << 20
 
-    /// The configured size limit (`capDefaultsKey`).
-    static var configuredCapBytes: Int {
-        let mb = UserDefaults.standard.integer(forKey: capDefaultsKey)
+    /// The size limit configured in `settings` (`capDefaultsKey`; the app's `UserDefaults`).
+    public static func configuredCapBytes(in settings: any KeyValueStore) -> Int {
+        let mb = settings.integer(forKey: capDefaultsKey)
         return mb > 0 ? min(mb, 1 << 14) << 20 : defaultCapBytes
     }
 
     /// `Library/Caches/Sempere/Drawings` in the app's container.
-    static var defaultRoot: URL? {
+    public static var defaultRoot: URL? {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
             .appendingPathComponent("Sempere/Drawings", isDirectory: true)
     }
 
     /// What one note version is, for the cache.
-    struct Key: Hashable, Sendable {
-        var note: UUID
+    public struct Key: Hashable, Sendable {
+        public var note: UUID
         /// Sorted revision file names.
-        var revisions: [String]
+        public var revisions: [String]
 
-        init(note: UUID, revisions: [String]) {
+        public init(note: UUID, revisions: [String]) {
             self.note = note
             self.revisions = revisions.sorted()
         }
 
-        var label: String { "\(DrawingCache.schemaVersion)|\(note.uuidString.lowercased())|\(revisions.joined(separator: ","))" }
+        public var label: String { "\(DrawingCache.schemaVersion)|\(note.uuidString.lowercased())|\(revisions.joined(separator: ","))" }
     }
 
     /// The pages of a note version, without ink.
-    struct Layout: Codable, Hashable, Sendable {
+    public struct Layout: Codable, Hashable, Sendable {
         /// The note's state with every page's `strokes` empty.
-        var state: NoteState
+        public var state: NoteState
         /// Strokes per page id.
-        var strokeCounts: [UUID: Int]
+        public var strokeCounts: [UUID: Int]
 
         /// The layout of `state`.
-        init(_ state: NoteState) {
+        public init(_ state: NoteState) {
             var bare = state
             for i in bare.pages.indices { bare.pages[i].strokes = [] }
             self.state = bare
@@ -83,9 +82,9 @@ final class DrawingCache: @unchecked Sendable {
     }
 
     /// This vault's folder.
-    let directory: URL
+    public let directory: URL
     /// Total size kept, in bytes.
-    let capBytes: Int
+    public let capBytes: Int
     private let key: LocalCacheKey
     /// Stamps a file's last use (its modification date), which orders the trim; tests step it by hand.
     private let clock: @Sendable () -> Date
@@ -95,11 +94,12 @@ final class DrawingCache: @unchecked Sendable {
     private var approximateBytes = 0
 
     /// The cache of `vault` under `root`; deletes the folders of other vaults
-    /// (and of this vault under an earlier secret).
+    /// (and of this vault under an earlier secret). The app passes the
+    /// configured `capBytes` (`configuredCapBytes(in:)`).
     ///
     /// - Throws: `VaultError.locked` when the vault secret is not known, or a
     ///   file error when the folder cannot be created.
-    init(root: URL, vault: Vault, capBytes: Int = DrawingCache.configuredCapBytes,
+    public init(root: URL, vault: Vault, capBytes: Int = DrawingCache.defaultCapBytes,
          clock: @escaping @Sendable () -> Date = { Date() }) throws {
         self.clock = clock
         key = try LocalCacheKey(vault: vault, purpose: "drawing-cache", magic: Self.magic)
@@ -125,30 +125,30 @@ final class DrawingCache: @unchecked Sendable {
     }
 
     /// The stored layout of `k`, or nil (missing, damaged, other schema).
-    func layout(_ k: Key) -> Layout? {
+    public func layout(_ k: Key) -> Layout? {
         guard let plain = read(layoutName(k)) else { return nil }
         return try? JSONDecoder().decode(Layout.self, from: plain)
     }
 
     /// The stored drawing bytes of page `page` of `k`, or nil.
-    func drawing(_ k: Key, page: UUID) -> Data? {
+    public func drawing(_ k: Key, page: UUID) -> Data? {
         read(pageName(k, page))
     }
 
     /// Stores the layout of `k`.
-    func store(_ layout: Layout, for k: Key) {
+    public func store(_ layout: Layout, for k: Key) {
         guard let data = try? JSONEncoder().encode(layout) else { return }
         write(data, layoutName(k))
     }
 
     /// Stores the drawing bytes of page `page` of `k`.
-    func store(drawing data: Data, for k: Key, page: UUID) {
+    public func store(drawing data: Data, for k: Key, page: UUID) {
         write(data, pageName(k, page))
     }
 
     /// Deletes what is stored for `k` (a version of a note the editor has
     /// just replaced with a newer one).
-    func remove(_ k: Key, pages: [UUID]) {
+    public func remove(_ k: Key, pages: [UUID]) {
         let fm = FileManager.default
         for name in [layoutName(k)] + pages.map({ pageName(k, $0) }) {
             try? fm.removeItem(at: directory.appendingPathComponent(name))
@@ -157,14 +157,14 @@ final class DrawingCache: @unchecked Sendable {
 
     /// Deletes every stored file but keeps the cache open ("Clear Caches" in
     /// Settings); notes rebuild their entries the next time they are opened.
-    func removeAll() {
+    public func removeAll() {
         let fm = FileManager.default
         for f in Self.files(in: directory) { try? fm.removeItem(at: f.url) }
         lock.withLock { approximateBytes = 0 }
     }
 
     /// Deletes everything and refuses later writes (the vault closed).
-    func close() {
+    public func close() {
         lock.withLock { closed = true }
         let fm = FileManager.default
         // A rename is instant; the files go in the background.
@@ -176,7 +176,7 @@ final class DrawingCache: @unchecked Sendable {
         }
     }
 
-    var isClosed: Bool { lock.withLock { closed } }
+    public var isClosed: Bool { lock.withLock { closed } }
 
     // MARK: - Files
 
@@ -205,7 +205,7 @@ final class DrawingCache: @unchecked Sendable {
 
     /// Deletes the least recently used files until the total is at most
     /// `capBytes` (to 90 % of it, so a full cache is not trimmed per write).
-    func trim() {
+    public func trim() {
         var files = Self.files(in: directory)
         var total = files.reduce(0) { $0 + $1.size }
         if total > capBytes {
@@ -219,7 +219,7 @@ final class DrawingCache: @unchecked Sendable {
     }
 
     /// Bytes in the folder now.
-    var totalBytes: Int { Self.files(in: directory).reduce(0) { $0 + $1.size } }
+    public var totalBytes: Int { Self.files(in: directory).reduce(0) { $0 + $1.size } }
 
     private struct File { var url: URL; var size: Int; var used: Date }
 

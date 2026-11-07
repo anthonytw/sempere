@@ -1121,7 +1121,8 @@ final class AppModel {
         if let drawingCache { return drawingCache }
         guard let root = drawingCacheRoot, let vault, vault.canRead else { return nil }
         let gen = generation
-        let cache = try? await offMain(priority: .utility) { try DrawingCache(root: root, vault: vault) }
+        let cap = DrawingCache.configuredCapBytes(in: UserDefaults.standard)
+        let cache = try? await offMain(priority: .utility) { try DrawingCache(root: root, vault: vault, capBytes: cap) }
         // A newer session may already use the same folder (the vault closed and
         // reopened meanwhile): drop this instance without deleting anything; the
         // closed session's `close` cleared its cache.

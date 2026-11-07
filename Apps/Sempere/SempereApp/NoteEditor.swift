@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Observation
 import PencilKit
+import SempereSync
 
 /// One open note being edited: its reconstructed state, a `StrokeLedger`
 /// per page, and autosave. Every drawing change updates the ledger at once;

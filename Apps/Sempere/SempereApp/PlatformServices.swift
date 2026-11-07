@@ -131,3 +131,11 @@ struct AppPlatform: PlatformServices {
         }
     }
 }
+
+extension BundleBitRepair {
+    /// `clear(_:_:log:)` (the package's), logging to the app's `AppPerfSink`.
+    @discardableResult
+    static func clear(_ url: URL, _ role: Role) -> Bool {
+        clear(url, role, log: AppPerfSink())
+    }
+}

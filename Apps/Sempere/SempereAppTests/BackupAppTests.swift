@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereSync
 import Testing
 import UniformTypeIdentifiers
 @testable import SempereApp

@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereSync
 
 /// What a restore wrote: the new vault's folder, the core report and the
 /// recents entry saved for it (nil when saving it failed).

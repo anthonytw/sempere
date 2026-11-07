@@ -1,13 +1,11 @@
 import Foundation
-import Sempere
 import Testing
-@testable import SempereApp
+@testable import Sempere
 
 /// `StrokeLedger.mergeStored`: revisions written elsewhere reach a page's
 /// ledger without losing what this canvas has not saved, and without ever
 /// becoming ops of this canvas (no echo). Pure (no PencilKit): canvas strokes
 /// are fingerprinted by the stored stroke's first point.
-@MainActor
 struct StrokeLedgerMergeTests {
     static let page = UUID()
 

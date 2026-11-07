@@ -3,6 +3,7 @@ import Foundation
 import Sempere
 import SempereRender
 import Observation
+import SempereSync
 import UniformTypeIdentifiers
 
 extension UTType {

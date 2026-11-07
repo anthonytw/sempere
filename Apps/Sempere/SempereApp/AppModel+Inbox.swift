@@ -1,4 +1,5 @@
 import Foundation
+import SempereSync
 import os
 import Sempere
 

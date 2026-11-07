@@ -17,71 +17,7 @@ struct AttachmentPersistenceTests {
         TestTemp.root.appendingPathComponent("persist-" + UUID().uuidString, isDirectory: true)
     }
 
-    // MARK: blob cache
-
-    @Test func aNewCacheOnTheSameFolderAdoptsVerifiedFilesInsteadOfFetching() async throws {
-        let (vault, _) = try TS.unlockedFixture()
-        let key = try LocalCacheKey(vault: vault, purpose: "blob-cache", magic: [1])
-        let store = FakeBlobStore()
-        let ref = store.put(Data(repeating: 9, count: 5000), type: "application/pdf")
-        let root = Self.root()
-        let first = BlobCache(root: root, naming: BlobCache.keyedNaming(key), fetch: store.fetch)
-        let url = try await first.acquire(note: Self.lecture, ref: ref)
-        await first.release(note: Self.lecture, ref: ref)
-        #expect(await first.fetchCount == 1)
-        #expect(url.pathExtension == "pdf")
-        #expect(!url.lastPathComponent.contains(ref.sha256), "names say nothing without the vault secret")
-        #expect(!url.lastPathComponent.contains(Self.lecture.uuidString.lowercased()))
-
-        // Next launch: same folder, a new cache. The file is hashed, then used.
-        let second = BlobCache(root: root, naming: BlobCache.keyedNaming(key), fetch: store.fetch)
-        #expect(await second.contains(note: Self.lecture, ref: ref), "listed from the folder")
-        let again = try await second.acquire(note: Self.lecture, ref: ref)
-        #expect(again == url)
-        #expect(await second.fetchCount == 0)
-        #expect(await second.adoptedCount == 1)
-        #expect(store.fetchLog.count == 1, "not decrypted again")
-        // Once checked, later uses do not hash it again.
-        _ = try await second.acquire(note: Self.lecture, ref: ref)
-        #expect(await second.adoptedCount == 1)
-    }
-
-    @Test func aChangedFileFromAnEarlierLaunchIsFetchedAgain() async throws {
-        let store = FakeBlobStore()
-        let ref = store.put(Data("original content".utf8))
-        let root = Self.root()
-        let first = BlobCache(root: root, fetch: store.fetch)
-        let url = try await first.acquire(note: Self.lecture, ref: ref)
-        try Data("tampered content".utf8).write(to: url)   // same size, other bytes
-        let second = BlobCache(root: root, fetch: store.fetch)
-        let fresh = try await second.acquire(note: Self.lecture, ref: ref)
-        #expect(try Data(contentsOf: fresh) == Data("original content".utf8))
-        #expect(await second.fetchCount == 1)
-        #expect(await second.adoptedCount == 0)
-        // Leftovers of an interrupted fetch are removed when the folder is listed.
-        try Data("x".utf8).write(to: root.appendingPathComponent(".tmp-leftover"))
-        let third = BlobCache(root: root, fetch: store.fetch)
-        _ = await third.contains(note: Self.lecture, ref: ref)
-        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent(".tmp-leftover").path))
-    }
-
-    @Test func filesOfEarlierLaunchesCountTowardsTheLimitOldestFirst() async throws {
-        let store = FakeBlobStore()
-        let refs = (0..<3).map { store.put(Data(repeating: UInt8($0), count: 100)) }
-        let root = Self.root()
-        let first = BlobCache(root: root, fetch: store.fetch)
-        let start = Date(timeIntervalSinceReferenceDate: 800_000_000)
-        for (i, ref) in refs.enumerated() {
-            let file = try await first.acquire(note: Self.lecture, ref: ref)
-            await first.release(note: Self.lecture, ref: ref)
-            // Distinct modification dates, set outright: no sleeping for the file system's clock to tick.
-            try FileManager.default.setAttributes([.modificationDate: start.addingTimeInterval(Double(i) * 10)], ofItemAtPath: file.path)
-        }
-        let second = BlobCache(root: root, maxBytes: 250, fetch: store.fetch)
-        #expect(!(await second.contains(note: Self.lecture, ref: refs[0])), "the least recently used went")
-        #expect(await second.contains(note: Self.lecture, ref: refs[2]))
-        #expect(await second.totalBytes <= 250)
-    }
+    // MARK: blob cache (the cache itself: Tests/SempereTests/BlobCacheTests.swift)
 
     /// The model's cache folder is the same for every launch of the same
     /// vault (and secret), and is deleted when the vault closes.
@@ -147,75 +83,6 @@ struct AttachmentPersistenceTests {
         second.close()
         _ = first
         #expect(BlobCache.keepsAcrossLaunches == !ProcessInfo.processInfo.isMacCatalystApp)
-    }
-
-    /// Security review 2026-10 stage 4, S12: a transcript drawn on an audio card was released without
-    /// `discard` and stayed in the cache (across launches on iOS), and a recording a killed session was
-    /// playing was adopted by the next launch. Recordings, clips and transcripts now never stay.
-    @Test func transcriptsAndRecordingsNeverStayInTheCache() async throws {
-        let store = FakeBlobStore()
-        let transcript = store.put(Data(#"{"text":"secret words"}"#.utf8), type: BlobRef.transcriptType)
-        let audio = store.put(Data(repeating: 7, count: 4000), type: "audio/mp4")
-        let video = store.put(Data(repeating: 8, count: 4000), type: "video/mp4")
-        let image = store.put(Data(repeating: 9, count: 4000), type: "image/png")
-        let root = Self.root()
-        let cache = BlobCache(root: root, fetch: store.fetch)
-        for ref in [transcript, audio, video] {
-            let url = try await cache.acquire(note: Self.lecture, ref: ref)
-            #expect(FileManager.default.fileExists(atPath: url.path))
-            await cache.release(note: Self.lecture, ref: ref)   // no `discard`, as the audio card did
-            #expect(!FileManager.default.fileExists(atPath: url.path), "\(ref.type)")
-            #expect(await !cache.contains(note: Self.lecture, ref: ref))
-        }
-        // Other attachments are kept for later, as before.
-        let kept = try await cache.acquire(note: Self.lecture, ref: image)
-        await cache.release(note: Self.lecture, ref: image)
-        #expect(FileManager.default.fileExists(atPath: kept.path))
-
-        // Killed while a recording played and a transcript was read: the next launch deletes both.
-        let playing = try await cache.acquire(note: Self.lecture, ref: audio)
-        let reading = try await cache.acquire(note: Self.lecture, ref: transcript)
-        let next = BlobCache(root: root, fetch: store.fetch)
-        #expect(await !next.contains(note: Self.lecture, ref: audio))
-        #expect(await !next.contains(note: Self.lecture, ref: transcript))
-        #expect(!FileManager.default.fileExists(atPath: playing.path))
-        #expect(!FileManager.default.fileExists(atPath: reading.path))
-        #expect(await next.contains(note: Self.lecture, ref: image), "an image is still adopted after its check")
-    }
-
-    /// Security review 2026-10 stage 4, S11: on a Mac (no data protection) decrypted attachments were deleted
-    /// only once a later launch unlocked a vault and used an attachment. A quit deletes them, and a launch
-    /// after a crash deletes them before any vault opens.
-    @Test func withoutDataProtectionQuitAndLaunchDeleteEveryDecryptedFile() async throws {
-        let blobs = Self.root()
-        let fm = FileManager.default
-        func plant() throws -> URL {
-            let dir = blobs.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            let file = dir.appendingPathComponent("doc.pdf")
-            try Data("plaintext".utf8).write(to: file)
-            return file
-        }
-        func regularFiles() -> [String] {
-            (fm.enumerator(atPath: blobs.path)?.allObjects as? [String] ?? []).filter {
-                var dir: ObjCBool = false
-                return fm.fileExists(atPath: blobs.appendingPathComponent($0).path, isDirectory: &dir) && !dir.boolValue
-            }
-        }
-        // Where files are protected at rest (iOS), both keep the cache.
-        let kept = try plant()
-        BlobCache.purgeAtLaunch(in: blobs, keepsAcrossLaunches: true)
-        BlobCache.purgeAtQuit(in: blobs, keepsAcrossLaunches: true)
-        #expect(fm.fileExists(atPath: kept.path))
-        // A Mac launch: nothing of an earlier session is left in a vault's folder once it returns.
-        BlobCache.purgeAtLaunch(in: blobs, keepsAcrossLaunches: false)
-        #expect(!fm.fileExists(atPath: kept.path))
-        #expect(await TS.waitUntil { regularFiles().isEmpty })
-        // A Mac quit: deleted at once.
-        let quit = try plant()
-        BlobCache.purgeAtQuit(in: blobs, keepsAcrossLaunches: false)
-        #expect(!fm.fileExists(atPath: quit.path))
-        #expect(!fm.fileExists(atPath: blobs.path))
     }
 
     // MARK: render cache
@@ -469,4 +336,30 @@ struct AttachmentPersistenceTests {
         print("PERF-REPORT text boxes: \(items.count) drawn \(firstTime), reopened from the cache \(reopenTime)")
     }
 
+}
+
+/// Counts fetches and hands out given content (thread-safe). The package's `BlobCacheTests` has its own.
+final class FakeBlobStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var contents: [String: Data] = [:]
+    private var fetched: [String] = []
+
+    func put(_ data: Data, type: String = "image/png") -> BlobRef {
+        let ref = BlobRef(content: data, type: type)
+        lock.withLock { contents[ref.sha256] = data }
+        return ref
+    }
+
+    var fetchLog: [String] { lock.withLock { fetched } }
+
+    var fetch: BlobCache.Fetch {
+        { [self] _, ref, destination in
+            lock.withLock { fetched.append(ref.sha256) }
+            let data = lock.withLock { contents[ref.sha256] }
+            try BlobCache.writeFile(destination) { write in
+                guard let data else { throw BlobError.missing(ref.sha256) }
+                try write(data)
+            }
+        }
+    }
 }

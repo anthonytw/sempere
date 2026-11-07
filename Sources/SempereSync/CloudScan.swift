@@ -1,30 +1,25 @@
 import Foundation
 import Sempere
-import SempereSync
 
 // The pure half of reading a vault from iCloud Drive: placeholder names,
 // which vault files to fetch, and progress. No iCloud API here, so it is
-// tested with plain files (`CloudVault` does the downloading).
+// tested with plain files on Linux (`CloudVault` waits for the downloads, through
+// the app's `CloudVault.Hooks.live`).
 
 /// Where the open vault's files that are not here yet come from: iCloud
 /// Drive (or another provider), or the WebDAV server of a partial copy
 /// (docs/io.md "WebDAV vaults in the app"). The download machinery is the
 /// same; only its texts name the source, which travels with the hooks
 /// (`CloudVault.Hooks.source`), the errors and the progress they produce.
-enum CloudSource: Equatable, Sendable {
+public enum CloudSource: Equatable, Sendable {
     case iCloudDrive
     /// A WebDAV server, by host.
     case server(String)
 
     /// The server's host, nil for iCloud Drive.
-    var serverName: String? {
+    public var serverName: String? {
         if case .server(let host) = self { return host }
         return nil
-    }
-
-    /// A problem the machinery reports, prefixed with where it comes from.
-    func problem(_ text: String) -> String {
-        "\(serverName ?? "iCloud Drive"): \(text)"
     }
 }
 
@@ -33,30 +28,30 @@ enum CloudSource: Equatable, Sendable {
 /// list the real name with a "not downloaded" status. Both are handled. A
 /// partial WebDAV copy's blob stand-ins (`.<name>.sempere-pending`, format.md
 /// §1.2) read the same way.
-enum CloudPlaceholder {
-    static let suffix = UbiquitousPlaceholder.suffix
+public enum CloudPlaceholder {
+    public static let suffix = UbiquitousPlaceholder.suffix
 
     /// The real name a placeholder stands for (`.vault.json.icloud` →
     /// `vault.json`, `.X.pdf.age.sempere-pending` → `X.pdf.age`); nil when
     /// `name` is not a placeholder.
-    static func realName(of name: String) -> String? {
+    public static func realName(of name: String) -> String? {
         if let real = PartialCopy.realName(ofStandIn: name) { return real }
         return UbiquitousPlaceholder.realName(of: name)
     }
 
     /// The placeholder name of `name` (`vault.json` → `.vault.json.icloud`).
-    static func placeholderName(for name: String) -> String {
+    public static func placeholderName(for name: String) -> String {
         UbiquitousPlaceholder.standInName(for: name)
     }
 
     /// The placeholder URL of the file at `url`, in the same folder.
-    static func placeholderURL(for url: URL) -> URL {
+    public static func placeholderURL(for url: URL) -> URL {
         url.deletingLastPathComponent().appendingPathComponent(placeholderName(for: url.lastPathComponent))
     }
 }
 
 /// How far a vault file is from being readable.
-enum CloudItemState: Equatable, Sendable {
+public enum CloudItemState: Equatable, Sendable {
     /// The local copy is the newest iCloud knows of (or the file is not in iCloud).
     case current
     /// A local copy exists; a newer version may still be on its way.
@@ -69,7 +64,7 @@ enum CloudItemState: Equatable, Sendable {
     case failed(String)
 
     /// Readable now, or nothing left to wait for.
-    var isSettled: Bool {
+    public var isSettled: Bool {
         switch self {
         case .current, .stale, .gone: return true
         case .missing, .failed: return false
@@ -78,50 +73,46 @@ enum CloudItemState: Equatable, Sendable {
 }
 
 /// Download progress over the files that were missing when it started.
-struct CloudProgress: Equatable, Sendable, CustomStringConvertible {
-    var total: Int
-    var downloaded: Int
+/// Its text is the app's (`CloudProgress.description`, in the app's `CloudVault+Live.swift`).
+public struct CloudProgress: Equatable, Sendable {
+    public var total: Int
+    public var downloaded: Int
     /// Where the files come from (the text names it).
-    var source = CloudSource.iCloudDrive
+    public var source = CloudSource.iCloudDrive
 
-    init(total: Int, downloaded: Int, source: CloudSource = .iCloudDrive) {
+    public init(total: Int, downloaded: Int, source: CloudSource = .iCloudDrive) {
         self.total = max(0, total)
         self.downloaded = min(max(0, downloaded), self.total)
         self.source = source
     }
 
     /// Progress over `states`: every settled state counts as downloaded.
-    init(states: [CloudItemState]) {
+    public init(states: [CloudItemState]) {
         self.init(total: states.count, downloaded: states.filter(\.isSettled).count)
     }
 
-    var isComplete: Bool { downloaded == total }
-    var fractionCompleted: Double { total == 0 ? 1 : Double(downloaded) / Double(total) }
-
-    var description: String {
-        let files = String(localized: "\(total) files", comment: "A number of files")
-        if let server = source.serverName {
-            return String(localized: "Downloading from \(server)… \(downloaded)/\(files)",
-                          comment: "Progress; first %@ is a server's host name, second a number of files, e.g. “3/6 files”")
-        }
-        return String(localized: "Downloading from iCloud… \(downloaded)/\(files)",
-                      comment: "Progress; %@ is a number of files, e.g. “3/6 files”")
-    }
+    public var isComplete: Bool { downloaded == total }
+    public var fractionCompleted: Double { total == 0 ? 1 : Double(downloaded) / Double(total) }
 }
 
 /// The files of a vault that iCloud may have to fetch.
-enum CloudScan {
+public enum CloudScan {
     /// One vault file, by its real name.
-    struct Item: Hashable, Sendable {
+    public struct Item: Hashable, Sendable {
         /// Where the file is (or will be) under its real name.
-        var url: URL
+        public var url: URL
         /// True when the listing showed `.<name>.icloud` instead of the file.
-        var placeholder: Bool
+        public var placeholder: Bool
+
+        public init(url: URL, placeholder: Bool) {
+            self.url = url
+            self.placeholder = placeholder
+        }
     }
 
     /// Root files a reader needs (format.md §2, §3.3.1), and the shared
     /// settings applied at unlock (format.md §13).
-    static let rootFiles: Set<String> = ["vault.json", "rewrap-journal.json", "settings.age"]
+    public static let rootFiles: Set<String> = ["vault.json", "rewrap-journal.json", "settings.age"]
 
     /// `vault.json`, `rewrap-journal.json`, `keys/*.age`, `notebooks/*.notebook.age`
     /// and `notes/<id>/*.age`, with placeholders mapped to the real names.
@@ -130,7 +121,7 @@ enum CloudScan {
     ///
     /// - Throws: when the vault folder or one of its folders exists but
     ///   cannot be listed ("could not read" never looks like "nothing there").
-    static func items(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
+    public static func items(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
         try essentialItems(inVault: root, fileManager: fileManager)
             + notebookItems(inVault: root, fileManager: fileManager)
             + noteGroups(inVault: root, fileManager: fileManager).flatMap(\.items)
@@ -138,7 +129,7 @@ enum CloudScan {
 
     /// `vault.json`, `rewrap-journal.json` and `keys/*.age`: what unlocking
     /// needs, small enough to fetch before anything else.
-    static func essentialItems(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
+    public static func essentialItems(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
         var items: [Item] = []
         for entry in try list(root, fileManager) where rootFiles.contains(entry.name) && !entry.isDirectory {
             items.append(entry.item(in: root))
@@ -152,7 +143,7 @@ enum CloudScan {
 
     /// The published summaries files (format.md §12, §12.5): `sempere-summaries.sealed`
     /// at the root and `summaries/<device>.sealed`, placeholders mapped to their real names.
-    static func summaryItems(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
+    public static func summaryItems(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
         var items: [Item] = []
         for entry in try list(root, fileManager) where entry.name == PublishedSummaries.fileName && !entry.isDirectory {
             items.append(entry.item(in: root))
@@ -167,7 +158,7 @@ enum CloudScan {
 
     /// The notebook records (format.md §14), `notebooks/<id>.notebook.age`, placeholders
     /// mapped to their real names; empty without `notebooks/`. Other names are skipped.
-    static func notebookItems(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
+    public static func notebookItems(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
         let folder = root.appendingPathComponent(NotebookRecords.folderName, isDirectory: true)
         return try list(folder, fileManager, allowMissing: true)
             .filter { !$0.isDirectory && NotebookRecords.id(ofFileName: $0.name) != nil }
@@ -175,23 +166,30 @@ enum CloudScan {
     }
 
     /// The files of one `notes/<dir>` folder.
-    struct NoteGroup: Sendable {
+    public struct NoteGroup: Sendable {
         /// The folder name.
-        var directory: String
+        public var directory: String
         /// The folder.
-        var url: URL
+        public var url: URL
         /// The note id when the folder is named like one (others are ignored by readers).
-        var id: UUID? { UUID(uuidString: directory) }
-        var items: [Item]
+        public var id: UUID? { UUID(uuidString: directory) }
+        public var items: [Item]
         /// The folder lists something besides revision files (`att/`, a marker, a
         /// temporary file): iCloud has listed its contents, so no revision means
         /// none has been written yet (blobs are written before the revision that
         /// names them), never "not listed yet".
-        var hasOtherEntries = false
+        public var hasOtherEntries = false
+
+        public init(directory: String, url: URL, items: [Item], hasOtherEntries: Bool = false) {
+            self.directory = directory
+            self.url = url
+            self.items = items
+            self.hasOtherEntries = hasOtherEntries
+        }
     }
 
     /// Every `notes/<dir>` folder with its revision files, in folder-name order.
-    static func noteGroups(inVault root: URL, fileManager: FileManager = .default) throws -> [NoteGroup] {
+    public static func noteGroups(inVault root: URL, fileManager: FileManager = .default) throws -> [NoteGroup] {
         let notes = root.appendingPathComponent("notes", isDirectory: true)
         var groups: [NoteGroup] = []
         for dir in try list(notes, fileManager, allowMissing: true) where dir.isDirectory && !dir.name.hasPrefix(".") {
@@ -205,7 +203,7 @@ enum CloudScan {
     }
 
     /// The folder of note `id` as a `NoteGroup`, listed fresh; nil when it is gone.
-    static func noteGroup(inVault root: URL, id: UUID, fileManager: FileManager = .default) throws -> NoteGroup? {
+    public static func noteGroup(inVault root: URL, id: UUID, fileManager: FileManager = .default) throws -> NoteGroup? {
         let noteDir = noteFolder(inVault: root, id: id)
         guard fileManager.fileExists(atPath: noteDir.path) else { return nil }
         let entries = try list(noteDir, fileManager, allowMissing: true)
@@ -216,16 +214,16 @@ enum CloudScan {
 
     /// The revision files of note `id` (`notes/<id>/`), listed fresh; empty
     /// when the note has no folder.
-    static func noteItems(inVault root: URL, id: UUID, fileManager: FileManager = .default) throws -> [Item] {
+    public static func noteItems(inVault root: URL, id: UUID, fileManager: FileManager = .default) throws -> [Item] {
         let noteDir = noteFolder(inVault: root, id: id)
         return try list(noteDir, fileManager, allowMissing: true).filter(\.isRevisionLike).map { $0.item(in: noteDir) }
     }
 
     /// One blob file of a note's `att/` (format.md §8.1.2), by its real name.
-    struct BlobItem: Hashable, Sendable {
-        var item: Item
+    public struct BlobItem: Hashable, Sendable {
+        public var item: Item
         /// From the name's `.<kind>.age` suffix.
-        var kind: BlobKind
+        public var kind: BlobKind
     }
 
     /// The blob files of note `id` (`notes/<id>/att/`), listed fresh, with
@@ -234,7 +232,7 @@ enum CloudScan {
     /// revisions alone define it: `noteItems`, the vault scan and
     /// `requireLocal` never look in `att/`, so a missing, unlisted or evicted
     /// `att/` never makes a note look empty or pending (docs/attachments.md §4).
-    static func blobItems(inVault root: URL, id: UUID, fileManager: FileManager = .default) throws -> [BlobItem] {
+    public static func blobItems(inVault root: URL, id: UUID, fileManager: FileManager = .default) throws -> [BlobItem] {
         let dir = attachmentFolder(inVault: root, id: id)
         return try list(dir, fileManager, allowMissing: true).filter(\.isRevisionLike).compactMap { entry in
             guard let parsed = BlobName.parse(entry.name) else { return nil }
@@ -244,7 +242,7 @@ enum CloudScan {
 
     /// The blob file `fileName` of note `id` as iCloud lists it now: a
     /// placeholder when only `.<name>.icloud` is there.
-    static func blobItem(inVault root: URL, id: UUID, fileName: String, fileManager: FileManager = .default) -> Item {
+    public static func blobItem(inVault root: URL, id: UUID, fileName: String, fileManager: FileManager = .default) -> Item {
         let url = attachmentFolder(inVault: root, id: id).appendingPathComponent(fileName, isDirectory: false)
         let placeholder = !fileManager.fileExists(atPath: url.path)
             && fileManager.fileExists(atPath: CloudPlaceholder.placeholderURL(for: url).path)
@@ -252,16 +250,16 @@ enum CloudScan {
     }
 
     /// One file of the vault's capture inbox (format.md §11), by its real name.
-    struct InboxItem: Hashable, Sendable {
-        var item: Item
-        var id: UUID
-        var kind: CaptureFile.Kind
+    public struct InboxItem: Hashable, Sendable {
+        public var item: Item
+        public var id: UUID
+        public var kind: CaptureFile.Kind
     }
 
     /// The capture inbox's files (`inbox/<id>.<kind>.age`), listed fresh,
     /// placeholders mapped to their real names; empty without `inbox/`.
     /// Other names (temporary files, unknown files) are skipped.
-    static func inboxItems(inVault root: URL, fileManager: FileManager = .default) throws -> [InboxItem] {
+    public static func inboxItems(inVault root: URL, fileManager: FileManager = .default) throws -> [InboxItem] {
         let dir = root.appendingPathComponent(CaptureFile.folderName, isDirectory: true)
         return try list(dir, fileManager, allowMissing: true).filter(\.isRevisionLike).compactMap { entry in
             guard let parsed = CaptureFile.parse(name: entry.name) else { return nil }
@@ -270,12 +268,12 @@ enum CloudScan {
     }
 
     /// `notes/<id>/att/` of the vault at `root`.
-    static func attachmentFolder(inVault root: URL, id: UUID) -> URL {
+    public static func attachmentFolder(inVault root: URL, id: UUID) -> URL {
         noteFolder(inVault: root, id: id).appendingPathComponent("att", isDirectory: true)
     }
 
     /// `notes/<id>/` of the vault at `root`.
-    static func noteFolder(inVault root: URL, id: UUID) -> URL {
+    public static func noteFolder(inVault root: URL, id: UUID) -> URL {
         root.appendingPathComponent("notes/\(id.uuidString.lowercased())", isDirectory: true)
     }
 

@@ -227,12 +227,14 @@ there. Commit messages:
 - Every vault the app opens is an in-app copy (`VaultStore`; P7 removed reading vaults in place). iCloud
   Drive and other providers reach the app only as a folder copied in (`copyIn`, a restore: every file
   downloaded first, `downloadSourceFolder`, `CloudVault.download`, `CloudScan` maps `.<name>.icloud` and
-  dataless stand-ins) or as a folder sync target, whose provider hazards (evicted files, unlisted folders,
+  dataless stand-ins; both in `SempereSync`, Linux-tested in `CloudScanTests`, with the provider calls the app's
+  `CloudVault.Hooks.live` in `CloudVault+Live.swift`) or as a folder sync target, whose provider hazards (evicted files, unlisted folders,
   conflict versions) belong to the sync engine (`FolderRemote`, `UbiquitousFolderHooks`, `ConflictVersions`;
   docs/io.md "Folder targets in providers"). Never add code that reads a vault in a provider in place, and
   never add file coordination around reads of the open vault: it is local. The simulator has no iCloud:
-  copy-in is tested with fake hooks; the Linux scratch package needs shims for `isUbiquitousItem`,
-  `startDownloadingUbiquitousItem`, `ubiquitousItemDownloading*` resource values and `NSFileCoordinator`.
+  copy-in is tested with fake hooks. `isUbiquitousItem`, `startDownloadingUbiquitousItem`, the
+  `ubiquitousItemDownloading*` resource values and `NSFileCoordinator` do not exist on Linux: they stay in the app
+  (`CloudVault+Live.swift`, `SystemFileCoordinator`), and the Linux scratch package needs shims for them.
 - The app's deployment target is iPadOS/iOS 27 and Mac Catalyst 27: iOS 27 APIs
   are used directly in `Apps/`, with no `#available` gate. The package keeps its own minimum
   (`Package.swift`: macOS 14 / iOS 17) so the CLI builds on older macOS and
@@ -240,12 +242,13 @@ there. Commit messages:
 - PencilKit stores control points in reduced precision (Float32 locations,
   quantized opacity/azimuth/altitude): compare converted strokes within a
   tolerance, never with `==`. Stroke identity across canvas edits comes from
-  `StrokeLedger`'s fingerprints, which are always taken from the `PKStroke`.
+  `StrokeLedger`'s fingerprints (`Sources/Sempere/StrokeLedger.swift`, plain `CanvasStrokeInfo` values, Linux-tested),
+  which are always taken from the `PKStroke` (the app's `CanvasStrokes.swift`).
   A loaded stroke's `PKStroke.id` is its stored id; the ledger uses a canvas
   stroke's id only to name an edit's parent (PencilKit gives erased pieces
   new ids), and never writes it. What a stroke keeps through save and reload is its texture seed: a
   canvas stroke is saved under an id whose first four bytes are its `PKStroke.randomSeed`
-  (`StrokeConversion.id(seed:)`), and a load takes the seed back from the id, so pencil, crayon and
+  (`StrokeSeed.id(seed:)`), and a load takes the seed back from the id (`StrokeSeed.seed(for:)`), so pencil, crayon and
   watercolor grain does not change on reopening (`InkRoundTripTests`).
 - `PKStrokePoint.size` is not the drawn width: a pen or monoline of size `s`
   is drawn `2s − 4` wide (invisible below 2), markers and textured inks
@@ -312,7 +315,7 @@ there. Commit messages:
   `.sempere` UTType as `public.folder`, NEVER `com.apple.package`: iCloud Drive syncs a
   package as one item, and a whole-vault conflict lost a note in TestFlight 1.0.0
   (`theVaultTypeIsAFolderNeverAPackage`, docs/io.md "Vaults are folders"). The Finder's `kHasBundle` flag in `com.apple.FinderInfo` makes a folder a package too:
-  the app clears it on every vault, sync folder and backup it uses (`FinderBundleBit`, `BundleBitRepair`). `VaultLocator.resolve` maps whatever was picked
+  the app clears it on every vault, sync folder and backup it uses (`FinderBundleBit`, `BundleBitRepair`, both in `Sempere`). `VaultLocator.resolve` maps whatever was picked
   to the vault folder (never upward: a pick inside a vault is an error, its scope
   does not cover the vault); `openVault(at:accessing:)` holds the security scope of the
   picked URL, not the derived one.
@@ -373,16 +376,17 @@ there. Commit messages:
   states, or the metadata stage stops being exact. Imports are checkpoints (§5.8.1).
   The app thins through `thinVault(rule:)` (`ThinningRule`: the window, or everything
   except checkpoints), the CLI through `Vault.prepareCompactions`.
-- Drawing cache (`DrawingCache`, format.md §10.1): keyed by note id + revision
+- Drawing cache (`DrawingCache`, `Sources/Sempere/DrawingCache.swift`, format.md §10.1): keyed by note id + revision
   file names; a note opened from it is `isPreparing` (read-only) until its
   revisions are read and every shown cached drawing passed
   `DrawingPreparation.matches`. The canvas gets its drawing through
   `readyDrawing`/`prepareDrawing` (off-main, visible strokes first), not
   `drawing(for:)` (synchronous, tests). Bump `DrawingCache.schemaVersion` when
-  `StrokeConversion` or the layout changes. Tests get no cache unless they pass
+  `StrokeConversion` or the layout changes. The app passes its size limit
+  (`configuredCapBytes(in: UserDefaults.standard)`). Tests get no cache unless they pass
   `drawingCacheRoot`.
 - Attachment caches outlive note opens and launches (docs/io.md "Opening a note
-  fast"): `BlobCache` (plaintext verified blob files, keyed names, a file of an
+  fast"): `BlobCache` (`Sources/Sempere/BlobCache.swift`; plaintext verified blob files, keyed names, a file of an
   earlier launch re-hashed before use; on a Mac, which has no data protection,
   deleted at quit and at launch instead: `blobCacheAcrossLaunches`, `purgeAtQuit`, `purgeAtLaunch`;
   audio, video and transcripts never stay: `isTransient`) and `RenderCache` (sealed image pictures
@@ -547,7 +551,8 @@ there. Commit messages:
   stray of a join that cannot go on) are forgotten from the unlock sheet. A run without the vault's key (a
   joiner's) never uploads `vault.json` (`keylessManifestHeld`). Items of the pre-KH5 `vault-key` service are
   neither read nor deleted (a one-time cleanup is the owner's call: `KeychainDeviceKeyStore`).
-- The object eraser is the app's (`ObjectEraser.swift`, `EraserGeometry.swift`):
+- The object eraser is the app's (`ObjectEraser.swift`; its hit-testing, `StrokeBoundsGrid` and `ObjectEraserSize` in
+  `Sources/Sempere/EraserGeometry.swift`):
   PencilKit's `.vector` eraser has no size. When the palette's eraser is in
   object mode, `PageCanvasHost` disables `drawingGestureRecognizer` and
   `ObjectEraserController` takes the touches (Pencil, plus one finger when
@@ -738,7 +743,7 @@ there. Commit messages:
   `meta.lang` to Vision (`RecognitionLanguage.preferred`, `VisionText.lines(language:)`).
   `markersBehindText` draws markers after background items and before content
   items (`PreparedPage.underIndex`; the canvas instead multiplies a copy of the
-  text boxes over the ink, `MarkerOrder`). PDF page text is the pdfPage
+  text boxes over the ink, `MarkerOrder` in SempereRender). PDF page text is the pdfPage
   item's `pageText` register, kept in `extra` (`Item.pageText`): fill it with a
   `PDFTextExtracting` (`BuiltinPDFTextExtractor`, the CLI's `pdftotext`,
   the app's `PDFKitTextExtractor`) through `PDFIngest.withText`.

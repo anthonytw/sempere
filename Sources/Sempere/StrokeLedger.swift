@@ -1,23 +1,23 @@
 import Foundation
-import Sempere
 
 /// What the ledger knows about one canvas stroke without converting it:
-/// cheap fingerprints taken from the PencilKit stroke (see
-/// `CanvasStrokeInfo.init(_: PKStroke)`). Pure values, so the ledger is
-/// testable without PencilKit.
-struct CanvasStrokeInfo: Hashable, Sendable {
+/// cheap fingerprints taken from the PencilKit stroke (the app's
+/// `CanvasStrokeInfo.init(_: PKStroke)`, `CanvasStrokes.swift`, which also
+/// turns a `PKDrawing` into `StrokeLedger.Item`s). Pure values, so the ledger
+/// is tested on Linux.
+public struct CanvasStrokeInfo: Hashable, Sendable {
     /// Identity: equal keys mean "the same canvas stroke, unchanged". Built
     /// from ink, color, transform, path length, creation date, a few control
     /// points, texture seed and mask ranges. Any edit (move, recolor,
     /// partial erase) changes it.
-    struct Key: Hashable, Sendable {
-        let ink: String
-        let values: [Double]
+    public struct Key: Hashable, Sendable {
+        public let ink: String
+        public let values: [Double]
         /// Hashed once: the ledger looks keys up on every drawing change, and
         /// hashing `values` (about 40 numbers) each time cost more than the lookups.
         private let hash: Int
 
-        init(ink: String, values: [Double]) {
+        public init(ink: String, values: [Double]) {
             self.ink = ink
             self.values = values
             var hasher = Hasher()
@@ -26,44 +26,64 @@ struct CanvasStrokeInfo: Hashable, Sendable {
             hash = hasher.finalize()
         }
 
-        static func == (a: Key, b: Key) -> Bool {
+        public static func == (a: Key, b: Key) -> Bool {
             a.hash == b.hash && a.ink == b.ink && a.values == b.values
         }
 
-        func hash(into hasher: inout Hasher) { hasher.combine(hash) }
+        public func hash(into hasher: inout Hasher) { hasher.combine(hash) }
     }
 
     /// Strokes that share a family (ink, color, transform, path creation
     /// date) can be pieces of one another.
-    struct Family: Hashable, Sendable {
-        var ink: String
-        var values: [Double]
+    public struct Family: Hashable, Sendable {
+        public var ink: String
+        public var values: [Double]
 
         /// The path's creation date: the last value (`init(_: PKStroke)`).
         /// A lasso move, resize or recolor changes the color or transform
         /// but keeps the path and this date.
-        var created: Double? { values.last }
+        public var created: Double? { values.last }
+
+        public init(ink: String, values: [Double]) {
+            self.ink = ink
+            self.values = values
+        }
     }
 
     /// Axis-aligned bounds in page points.
-    struct Bounds: Hashable, Sendable {
-        var minX: Double, minY: Double, maxX: Double, maxY: Double
+    public struct Bounds: Hashable, Sendable {
+        public var minX: Double, minY: Double, maxX: Double, maxY: Double
 
-        func contains(_ o: Bounds, slack: Double = 1) -> Bool {
+        public init(minX: Double, minY: Double, maxX: Double, maxY: Double) {
+            self.minX = minX
+            self.minY = minY
+            self.maxX = maxX
+            self.maxY = maxY
+        }
+
+        public func contains(_ o: Bounds, slack: Double = 1) -> Bool {
             o.minX >= minX - slack && o.minY >= minY - slack && o.maxX <= maxX + slack && o.maxY <= maxY + slack
         }
     }
 
-    var key: Key
-    var family: Family
+    public var key: Key
+    public var family: Family
     /// Control-point count plus first and last location: equal for the pieces
     /// of a masked (pixel-erased) stroke and the stroke they came from.
-    var pathSignature: [Double]
-    var bounds: Bounds
+    public var pathSignature: [Double]
+    public var bounds: Bounds
     /// The canvas stroke's `PKStroke.id` (iOS 27): the stored id for a loaded
     /// stroke, PencilKit's own for one drawn since. Not part of `key`; it only
     /// names the parent of an edit that kept it (`StrokeLedger`).
-    var canvasID: UUID? = nil
+    public var canvasID: UUID? = nil
+
+    public init(key: Key, family: Family, pathSignature: [Double], bounds: Bounds, canvasID: UUID? = nil) {
+        self.key = key
+        self.family = family
+        self.pathSignature = pathSignature
+        self.bounds = bounds
+        self.canvasID = canvasID
+    }
 }
 
 /// The stable-id side table for one page.
@@ -100,36 +120,52 @@ struct CanvasStrokeInfo: Hashable, Sendable {
 /// Ops are the net difference between what is on disk (`committed`) and
 /// what is live, so a stroke drawn and erased within one autosave pause
 /// never reaches the log.
-struct StrokeLedger {
+public struct StrokeLedger {
     /// One canvas stroke and the stored strokes it stands for (several for a
     /// masked stroke with several visible ranges, none for a fully masked one).
-    struct Entry {
-        var info: CanvasStrokeInfo
-        var strokes: [Stroke]
+    public struct Entry {
+        public var info: CanvasStrokeInfo
+        public var strokes: [Stroke]
+
+        public init(info: CanvasStrokeInfo, strokes: [Stroke]) {
+            self.info = info
+            self.strokes = strokes
+        }
     }
 
     /// One canvas stroke as reported by the canvas.
-    struct Item {
-        var info: CanvasStrokeInfo
+    public struct Item {
+        public var info: CanvasStrokeInfo
         /// Converts the canvas stroke; called only for strokes the ledger has
         /// not seen. Ids of the result are ignored.
-        var make: () -> [Stroke]
+        public var make: () -> [Stroke]
         /// The canvas stroke's `PKStroke.randomSeed` (texture grain). The ids given to the strokes made
-        /// carry it (`StrokeConversion.id(seed:)`), so a reload, which derives the seed from the id,
+        /// carry it (`StrokeSeed.id(seed:)`), so a reload, which derives the seed from the id,
         /// draws the grain the pen drew. Nil: any id.
-        var seed: UInt32? = nil
+        public var seed: UInt32? = nil
+
+        public init(info: CanvasStrokeInfo, make: @escaping () -> [Stroke], seed: UInt32? = nil) {
+            self.info = info
+            self.make = make
+            self.seed = seed
+        }
     }
 
     /// What one `update` changed.
-    struct Change: Equatable {
-        var added: [Stroke] = []
-        var removed: [Stroke] = []
-        var isEmpty: Bool { added.isEmpty && removed.isEmpty }
+    public struct Change: Equatable {
+        public var added: [Stroke] = []
+        public var removed: [Stroke] = []
+        public var isEmpty: Bool { added.isEmpty && removed.isEmpty }
+
+        public init(added: [Stroke] = [], removed: [Stroke] = []) {
+            self.added = added
+            self.removed = removed
+        }
     }
 
-    private(set) var entries: [Entry]
+    public private(set) var entries: [Entry]
     /// Strokes on disk for this page, in their stored order.
-    private(set) var committed: [Stroke]
+    public private(set) var committed: [Stroke]
     /// Every id ever written to disk for this page (live or since removed).
     private var written: Set<UUID>
     /// Removed canvas strokes by key, most recent last.
@@ -142,7 +178,7 @@ struct StrokeLedger {
 
     /// A ledger for a page loaded from disk; `info` fingerprints the canvas
     /// stroke each stored stroke will be shown as.
-    init(stored: [Stroke], info: (Stroke) -> CanvasStrokeInfo) {
+    public init(stored: [Stroke], info: (Stroke) -> CanvasStrokeInfo) {
         entries = stored.map { Entry(info: info($0), strokes: [$0]) }
         committed = stored
         written = Set(stored.map(\.id))
@@ -151,7 +187,7 @@ struct StrokeLedger {
     /// A ledger for a page loaded from disk whose canvas strokes were
     /// prepared elsewhere (`DrawingPreparation`): `infos[i]` fingerprints the
     /// canvas stroke shown for `stored[i]`. Nil when the counts differ.
-    init?(stored: [Stroke], infos: [CanvasStrokeInfo]) {
+    public init?(stored: [Stroke], infos: [CanvasStrokeInfo]) {
         guard stored.count == infos.count else { return nil }
         entries = zip(infos, stored).map { Entry(info: $0, strokes: [$1]) }
         committed = stored
@@ -159,7 +195,7 @@ struct StrokeLedger {
     }
 
     /// Live strokes, in canvas order.
-    var live: [Stroke] { entries.flatMap(\.strokes) }
+    public var live: [Stroke] { entries.flatMap(\.strokes) }
 
     /// The union of the canvas strokes' render bounds, as fingerprinted
     /// (`CanvasStrokeInfo.bounds`): the canvas drawing's `PKDrawing.bounds`
@@ -167,7 +203,7 @@ struct StrokeLedger {
     /// 200 ms on a page of 20,000 strokes). Strokes without bounds (a null
     /// rect, stored as infinities) are left out, as a union leaves them out;
     /// nil when none has any.
-    var inkBounds: CanvasStrokeInfo.Bounds? {
+    public var inkBounds: CanvasStrokeInfo.Bounds? {
         var u: CanvasStrokeInfo.Bounds?
         for i in entries.indices {
             let b = entries[i].info.bounds
@@ -183,7 +219,7 @@ struct StrokeLedger {
 
     /// Re-keys the table for a canvas rebuilt from `live` (one canvas stroke
     /// per stored stroke), keeping ids, history and what is committed.
-    mutating func rebase(info: (Stroke) -> CanvasStrokeInfo) {
+    public mutating func rebase(info: (Stroke) -> CanvasStrokeInfo) {
         entries = live.map { Entry(info: info($0), strokes: [$0]) }
     }
 
@@ -191,7 +227,7 @@ struct StrokeLedger {
     /// the canvas stroke shown for `live[i]`. False (and nothing changes)
     /// when the counts differ.
     @discardableResult
-    mutating func rebase(infos: [CanvasStrokeInfo]) -> Bool {
+    public mutating func rebase(infos: [CanvasStrokeInfo]) -> Bool {
         let live = self.live
         guard live.count == infos.count else { return false }
         entries = zip(infos, live).map { Entry(info: $0, strokes: [$1]) }
@@ -200,7 +236,7 @@ struct StrokeLedger {
 
     /// Matches the canvas's strokes against the table and assigns ids.
     @discardableResult
-    mutating func update(_ items: [Item]) -> Change {
+    public mutating func update(_ items: [Item]) -> Change {
         let old = entries
         return update(count: items.count, unchanged: { i, j, _ in items[i].info.key == old[j].info.key },
                       item: { items[$0] })
@@ -222,7 +258,7 @@ struct StrokeLedger {
     /// different number of times among the strokes and the entries in
     /// between. Then the end is matched in full.
     @discardableResult
-    mutating func update(count: Int, unchanged: (_ item: Int, _ entry: Int, _ info: CanvasStrokeInfo) -> Bool,
+    public mutating func update(count: Int, unchanged: (_ item: Int, _ entry: Int, _ info: CanvasStrokeInfo) -> Bool,
                          item: (Int) -> Item) -> Change {
         let n = entries.count
         var head = 0
@@ -288,7 +324,7 @@ struct StrokeLedger {
             let parents = parentCandidates(for: item.info, removed: removedEntries, index: &removedIndex)
             var strokes = item.make()
             for k in strokes.indices {
-                strokes[k].id = item.seed.map(StrokeConversion.id(seed:)) ?? UUID()
+                strokes[k].id = item.seed.map(StrokeSeed.id(seed:)) ?? UUID()
                 strokes[k].origin = nil
                 let parent = choose(parents, for: strokes[k], index: k)
                 strokes[k].parent = resolveParent(parent)
@@ -305,7 +341,7 @@ struct StrokeLedger {
 
     /// The ops that bring the disk up to `live`: removals, then additions in
     /// canvas order.
-    func pendingOps(page: UUID, live: [Stroke]) -> [Op] {
+    public func pendingOps(page: UUID, live: [Stroke]) -> [Op] {
         let liveIDs = Set(live.map(\.id))
         let committedIDs = Set(committed.map(\.id))
         let removes = committed.filter { !liveIDs.contains($0.id) }.map { Op.removeStroke(page: page, strokeId: $0.id) }
@@ -315,8 +351,8 @@ struct StrokeLedger {
 
     /// A save in flight (`beginSave`): the ops it writes and what was on
     /// disk before it.
-    struct Save: Equatable {
-        var ops: [Op]
+    public struct Save: Equatable {
+        public var ops: [Op]
         fileprivate var previous: [Stroke]
     }
 
@@ -326,7 +362,7 @@ struct StrokeLedger {
     /// id whose removal is being written, and the next save would add that
     /// removed id again (format.md §5.2), so the stroke would vanish on disk.
     /// Nil when nothing is pending. Call `saveFailed(_:)` if the write fails.
-    mutating func beginSave(page: UUID) -> Save? {
+    public mutating func beginSave(page: UUID) -> Save? {
         guard mayHavePending else { return nil }
         let live = self.live
         let ops = pendingOps(page: page, live: live)
@@ -339,20 +375,20 @@ struct StrokeLedger {
 
     /// Whether any op is pending (`pendingOps` of `live` is not empty);
     /// scans only a ledger that changed since its last save.
-    var hasPending: Bool {
+    public var hasPending: Bool {
         mayHavePending && !pendingOps(page: UUID(), live: live).isEmpty
     }
 
     /// The write started by `save` failed: its ops stay pending. Ids it added
     /// stay marked as written (the file may have landed), so they are never
     /// revived after a removal; at worst a later stroke names one as `parent`.
-    mutating func saveFailed(_ save: Save) {
+    public mutating func saveFailed(_ save: Save) {
         committed = save.previous
         mayHavePending = true
     }
 
     /// Records that `live` (as passed to `pendingOps`) is now on disk.
-    mutating func commit(_ live: [Stroke]) {
+    public mutating func commit(_ live: [Stroke]) {
         let liveIDs = Set(live.map(\.id))
         var kept = committed.filter { liveIDs.contains($0.id) }
         let have = Set(kept.map(\.id))
@@ -364,26 +400,26 @@ struct StrokeLedger {
     // MARK: - Revisions written elsewhere
 
     /// What `mergeStored` did to the page.
-    struct RemoteMerge: Equatable {
+    public struct RemoteMerge: Equatable {
         /// Where each new entry's canvas stroke comes from, in canvas order.
-        enum Source: Equatable {
+        public enum Source: Equatable {
             /// The canvas stroke the old entry at this index stood for, unchanged.
             case kept(Int)
             /// A new canvas stroke converted from this stored stroke.
             case converted(Stroke)
         }
 
-        var sources: [Source] = []
+        public var sources: [Source] = []
         /// How many entries (canvas strokes) the ledger had before.
-        var previousCount = 0
+        public var previousCount = 0
         /// Strokes another writer added that are now live.
-        var added: [Stroke] = []
+        public var added: [Stroke] = []
         /// Live strokes another writer removed.
-        var removed: [Stroke] = []
+        public var removed: [Stroke] = []
 
         /// True when the canvas must show something else: strokes came or
         /// went, or the order changed.
-        var changesCanvas: Bool {
+        public var changesCanvas: Bool {
             sources != (0..<previousCount).map(Source.kept)
         }
     }
@@ -402,7 +438,7 @@ struct StrokeLedger {
     /// new canvas order is the stored order, then the pending additions.
     /// `info` fingerprints the canvas stroke a stored stroke is shown as
     /// (`CanvasStrokeInfo.init(stored:)`).
-    mutating func mergeStored(_ stored: [Stroke], info: (Stroke) -> CanvasStrokeInfo) -> RemoteMerge {
+    public mutating func mergeStored(_ stored: [Stroke], info: (Stroke) -> CanvasStrokeInfo) -> RemoteMerge {
         mayHavePending = true   // what is committed changes under what is live
         let committedIDs = Set(committed.map(\.id))
         let liveIDs = Set(live.map(\.id))
@@ -552,5 +588,25 @@ struct StrokeLedger {
     private func resolveParent(_ p: Stroke?) -> UUID? {
         guard let p else { return nil }
         return written.contains(p.id) ? p.id : p.parent
+    }
+}
+
+/// A stroke's texture seed, kept in its id: the first four bytes of the id are the seed. The app saves a canvas
+/// stroke under `id(seed:)` of its `PKStroke.randomSeed` and gives a loaded stroke `seed(for:)` of its id, so pencil,
+/// crayon and watercolor grain does not change on reopening (`InkRoundTripTests`).
+public enum StrokeSeed {
+    /// A stable 32-bit seed from a stroke id.
+    public static func seed(for id: UUID) -> UInt32 {
+        let u = id.uuid
+        return UInt32(u.0) << 24 | UInt32(u.1) << 16 | UInt32(u.2) << 8 | UInt32(u.3)
+    }
+
+    /// A fresh random stroke id whose seed (`seed(for:)`) is `seed`: the first four bytes are the seed,
+    /// the other 12 random. A canvas stroke is saved under such an id, so the reloaded stroke has the
+    /// seed PencilKit gave the stroke the pen drew, and its grain.
+    public static func id(seed: UInt32) -> UUID {
+        var u = UUID().uuid
+        u.0 = UInt8(seed >> 24); u.1 = UInt8((seed >> 16) & 0xFF); u.2 = UInt8((seed >> 8) & 0xFF); u.3 = UInt8(seed & 0xFF)
+        return UUID(uuid: u)
     }
 }

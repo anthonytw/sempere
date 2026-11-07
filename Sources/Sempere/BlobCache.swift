@@ -1,7 +1,5 @@
-import CryptoKit
+import Crypto
 import Foundation
-import Sempere
-import SempereRender
 
 /// Decrypted, verified attachments of the open vault, as private files
 /// (docs/attachments.md §2 "Random access", §13): PDFKit and ImageIO need a
@@ -27,14 +25,14 @@ import SempereRender
 /// through the vault's checks (`Vault.streamBlob`: framing, padding, hash,
 /// keyed name) and throws on any failure, so a file in the cache is always
 /// whole, verified content (format.md §8.1.4).
-actor BlobCache {
+public actor BlobCache {
     /// Writes the verified content of `ref` (a blob of `note`) to
     /// `destination` (a new file), throwing on any failure.
-    typealias Fetch = @Sendable (_ note: UUID, _ ref: BlobRef, _ destination: URL) async throws -> Void
+    public typealias Fetch = @Sendable (_ note: UUID, _ ref: BlobRef, _ destination: URL) async throws -> Void
     /// The file name of `ref` in `note` (the same for every launch).
-    typealias Naming = @Sendable (_ note: UUID, _ ref: BlobRef) -> String
+    public typealias Naming = @Sendable (_ note: UUID, _ ref: BlobRef) -> String
 
-    enum CacheError: Error, Equatable {
+    public enum CacheError: Error, Equatable {
         /// The reference is not usable (bad hash or size).
         case invalidReference
         /// The fetched file is not the size the reference says.
@@ -44,19 +42,19 @@ actor BlobCache {
     }
 
     /// The default size limit.
-    static let defaultMaxBytes: Int64 = 512 << 20
-    /// The `UserDefaults` key of the size limit in megabytes (unset: 512).
-    static let capDefaultsKey = "Sempere.blobCacheMegabytes"
+    public static let defaultMaxBytes: Int64 = 512 << 20
+    /// The settings key of the size limit in megabytes (unset: 512).
+    public static let capDefaultsKey = "Sempere.blobCacheMegabytes"
 
-    /// The configured size limit (`capDefaultsKey`).
-    static var configuredMaxBytes: Int64 {
-        let mb = UserDefaults.standard.integer(forKey: capDefaultsKey)
+    /// The size limit configured in `settings` (`capDefaultsKey`; the app's `UserDefaults`).
+    public static func configuredMaxBytes(in settings: any KeyValueStore) -> Int64 {
+        let mb = settings.integer(forKey: capDefaultsKey)
         return mb > 0 ? Int64(min(mb, 1 << 16)) << 20 : defaultMaxBytes
     }
 
-    nonisolated let root: URL
-    nonisolated let maxBytes: Int64
-    nonisolated let maxFiles: Int
+    public nonisolated let root: URL
+    public nonisolated let maxBytes: Int64
+    public nonisolated let maxFiles: Int
     private let fetch: Fetch
     private let naming: Naming
 
@@ -81,9 +79,9 @@ actor BlobCache {
     /// Files of earlier launches have been listed (`indexFolder`).
     private var indexed = false
     /// Fetches started (for tests).
-    private(set) var fetchCount = 0
+    public private(set) var fetchCount = 0
     /// Files of an earlier launch used after their content checked out (for tests and timing).
-    private(set) var adoptedCount = 0
+    public private(set) var adoptedCount = 0
 
     private struct Placed: Sendable {
         var url: URL
@@ -95,7 +93,7 @@ actor BlobCache {
     ///   - root: a folder of this cache alone; created on first use, deleted by `clear`.
     ///   - naming: file names; by default the content hash and note id (tests). The
     ///     model passes names keyed by the vault secret (`keyedNaming`).
-    init(root: URL, maxBytes: Int64 = BlobCache.defaultMaxBytes, maxFiles: Int = 1024,
+    public init(root: URL, maxBytes: Int64 = BlobCache.defaultMaxBytes, maxFiles: Int = 1024,
          naming: @escaping Naming = BlobCache.plainName, fetch: @escaping Fetch) {
         self.root = root
         self.maxBytes = maxBytes
@@ -108,14 +106,14 @@ actor BlobCache {
     /// format.md §10.1): their files are deleted as soon as nothing plays or
     /// reads them (`release`), and a launch deletes any an earlier one left
     /// (`indexFolder`), so their plaintext never stays in the cache.
-    nonisolated static func isTransient(_ ref: BlobRef) -> Bool {
+    public nonisolated static func isTransient(_ ref: BlobRef) -> Bool {
         let kind = BlobKind(mediaType: ref.type)
         return kind == .audio || kind == .video || kind == .transcript
     }
 
     /// The prefix of transient files' names (`isTransient`), which tells a
     /// launch to delete them without knowing the vault secret.
-    nonisolated static let transientPrefix = "t-"
+    public nonisolated static let transientPrefix = "t-"
 
     /// The name of `ref`'s file: `naming`'s, marked when it is transient.
     private func fileName(_ note: UUID, _ ref: BlobRef) -> String {
@@ -123,18 +121,18 @@ actor BlobCache {
     }
 
     /// `<sha256>-<note><ext>`.
-    nonisolated static func plainName(_ note: UUID, _ ref: BlobRef) -> String {
+    public nonisolated static func plainName(_ note: UUID, _ ref: BlobRef) -> String {
         ref.sha256 + "-" + note.uuidString.lowercased() + pathExtension(ref)
     }
 
     /// Names that say nothing about the note or the content without the vault
     /// secret: `entryName(note|sha256|size)` of `key`, plus the type's extension.
-    nonisolated static func keyedNaming(_ key: LocalCacheKey) -> Naming {
+    public nonisolated static func keyedNaming(_ key: LocalCacheKey) -> Naming {
         { note, ref in key.entryName("blob|\(note.uuidString.lowercased())|\(ref.sha256)|\(ref.size)") + pathExtension(ref) }
     }
 
     /// `Library/Caches/Sempere/Blobs`: one folder per vault secret inside it.
-    static var folder: URL {
+    public static var folder: URL {
         (FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory)
             .appendingPathComponent("Sempere/Blobs", isDirectory: true)
@@ -144,13 +142,19 @@ actor BlobCache {
     /// encrypts them at rest while the device is locked (iOS and iPadOS data
     /// protection, `.complete`, format.md §10). Mac Catalyst has no protection
     /// class, so there a launch starts from an empty folder.
-    nonisolated static var keepsAcrossLaunches: Bool { !ProcessInfo.processInfo.isMacCatalystApp }
+    public nonisolated static var keepsAcrossLaunches: Bool {
+        #if canImport(Darwin)
+        return !ProcessInfo.processInfo.isMacCatalystApp
+        #else
+        return true
+        #endif
+    }
 
     /// At launch, where decrypted files are not encrypted at rest (a Mac,
     /// `keepsAcrossLaunches` false): every vault's folder in `folder` is
     /// renamed aside at once, before any vault opens, and deleted in the
     /// background. A launch after a crash (no `purgeAtQuit`) so starts empty.
-    nonisolated static func purgeAtLaunch(in folder: URL = BlobCache.folder,
+    public nonisolated static func purgeAtLaunch(in folder: URL = BlobCache.folder,
                                           keepsAcrossLaunches: Bool = BlobCache.keepsAcrossLaunches) {
         guard !keepsAcrossLaunches else { return }
         removeOthers(in: folder, keeping: "")
@@ -158,7 +162,7 @@ actor BlobCache {
 
     /// When the app quits (Mac: ⌘Q, `applicationWillTerminate`): deletes
     /// every decrypted file at once, so none outlives the session.
-    nonisolated static func purgeAtQuit(in folder: URL = BlobCache.folder,
+    public nonisolated static func purgeAtQuit(in folder: URL = BlobCache.folder,
                                         keepsAcrossLaunches: Bool = BlobCache.keepsAcrossLaunches) {
         guard !keepsAcrossLaunches else { return }
         try? FileManager.default.removeItem(at: folder)
@@ -166,7 +170,7 @@ actor BlobCache {
 
     /// Moves the folder `dir` aside at once (a `.closed-` sibling, which
     /// `removeOthers` deletes in the background), so nothing in it is reused.
-    nonisolated static func retire(_ dir: URL) {
+    public nonisolated static func retire(_ dir: URL) {
         guard FileManager.default.fileExists(atPath: dir.path) else { return }
         try? FileManager.default.moveItem(at: dir, to: dir.deletingLastPathComponent()
             .appendingPathComponent(".closed-\(UUID().uuidString)", isDirectory: true))
@@ -174,7 +178,7 @@ actor BlobCache {
 
     /// Deletes the folders in `folder` other than `keep` (other vaults, or
     /// this vault under an earlier secret), in the background.
-    nonisolated static func removeOthers(in folder: URL, keeping keep: String) {
+    public nonisolated static func removeOthers(in folder: URL, keeping keep: String) {
         let fm = FileManager.default
         for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where name != keep && !name.hasPrefix(".closed-") {
             // A rename is instant; the files go in the background.
@@ -189,7 +193,7 @@ actor BlobCache {
 
     /// The file holding `ref`'s verified content, fetched if needed. The file
     /// stays until `release` is called as many times as `acquire` returned.
-    func acquire(note: UUID, ref: BlobRef) async throws -> URL {
+    public func acquire(note: UUID, ref: BlobRef) async throws -> URL {
         guard !closed else { throw CacheError.cleared }
         guard ref.isValid else { throw CacheError.invalidReference }
         indexFolder()
@@ -295,7 +299,7 @@ actor BlobCache {
     }
 
     /// Whether `url` holds exactly `ref`'s content (size and SHA-256).
-    nonisolated static func matches(_ url: URL, _ ref: BlobRef) async -> Bool {
+    public nonisolated static func matches(_ url: URL, _ ref: BlobRef) async -> Bool {
         guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value,
               size == ref.size, let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
@@ -322,7 +326,7 @@ actor BlobCache {
     /// later. Recordings, clips and transcripts (`isTransient`,
     /// docs/attachments.md §13) are always discarded so, whatever the caller
     /// passes: their plaintext is on disk only while it is played or read.
-    func release(note: UUID, ref: BlobRef, discard: Bool = false) {
+    public func release(note: UUID, ref: BlobRef, discard: Bool = false) {
         let name = fileName(note, ref)
         guard var entry = entries[name] else { return }
         entry.pins = max(0, entry.pins - 1)
@@ -337,21 +341,21 @@ actor BlobCache {
 
     /// Whether `ref`'s file is in the cache now (no fetch; an earlier
     /// launch's file counts once listed, before it is checked).
-    func contains(note: UUID, ref: BlobRef) -> Bool {
+    public func contains(note: UUID, ref: BlobRef) -> Bool {
         indexFolder()
         return entries[fileName(note, ref)] != nil
     }
 
     /// Bytes held.
-    var totalBytes: Int64 { entries.values.reduce(0) { $0 + $1.size } }
+    public var totalBytes: Int64 { entries.values.reduce(0) { $0 + $1.size } }
 
     /// Files held.
-    var count: Int { entries.count }
+    public var count: Int { entries.count }
 
     /// Deletes every file (the vault closed, locked or changed keys). Fetches
     /// in flight are thrown away when they finish, and the cache fetches
     /// nothing more (`acquire` throws `cleared`): the model makes a new one.
-    func clear() {
+    public func clear() {
         closed = true
         epoch += 1
         entries = [:]
@@ -386,7 +390,7 @@ actor BlobCache {
     }
 
     /// A path extension readers may look at (PDF, images, audio).
-    nonisolated static func pathExtension(_ ref: BlobRef) -> String {
+    public nonisolated static func pathExtension(_ ref: BlobRef) -> String {
         switch ref.type.lowercased() {
         case "application/pdf": return ".pdf"
         case "image/jpeg": return ".jpg"
@@ -399,7 +403,7 @@ actor BlobCache {
 
     /// Writes `produce`'s pieces to a new private file at `url` (mode 0600),
     /// removing it if `produce` throws: for `Fetch` implementations.
-    nonisolated static func writeFile(_ url: URL, _ produce: ((Data) throws -> Void) throws -> Void) throws {
+    public nonisolated static func writeFile(_ url: URL, _ produce: ((Data) throws -> Void) throws -> Void) throws {
         var attributes: [FileAttributeKey: Any] = [.posixPermissions: 0o600]
         #if os(iOS)
         attributes[.protectionKey] = FileProtectionType.complete
@@ -422,11 +426,15 @@ actor BlobCache {
 /// Blobs already in a `BlobCache`, as the `BlobSource` the renderer reads
 /// (`ItemRaster`): the files were verified when they were fetched; the
 /// content is checked against the reference again on every read.
-struct CachedBlobSource: BlobSource {
+public struct CachedBlobSource: BlobSource {
     /// Verified content files by SHA-256 (lowercase hex).
-    var files: [String: URL]
+    public var files: [String: URL]
 
-    func data(for ref: BlobRef, maxBytes: Int) throws -> Data {
+    public init(files: [String: URL]) {
+        self.files = files
+    }
+
+    public func data(for ref: BlobRef, maxBytes: Int) throws -> Data {
         guard ref.size <= Int64(maxBytes) else { throw BlobError.contentTooLarge(limit: Int64(maxBytes)) }
         guard let url = files[ref.sha256] else { throw BlobError.missing(ref.sha256) }
         let data: Data
@@ -443,11 +451,11 @@ struct CachedBlobSource: BlobSource {
         return data
     }
 
-    func withFile<T>(for ref: BlobRef, _ body: (URL) throws -> T) throws -> T {
+    public func withFile<T>(for ref: BlobRef, _ body: (URL) throws -> T) throws -> T {
         guard let url = files[ref.sha256] else { throw BlobError.missing(ref.sha256) }
         return try body(url)
     }
 
     /// The files were decrypted into the cache before the export began.
-    var filesAreCached: Bool { true }
+    public var filesAreCached: Bool { true }
 }

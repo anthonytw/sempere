@@ -66,7 +66,7 @@ enum DrawingPreparation {
         guard pks.count == strokes.count else { return false }
         func close(_ a: CGFloat, _ b: Double) -> Bool { abs(Double(a) - b) <= 1e-3 * max(1, abs(b)) }
         for (pk, s) in zip(pks, strokes) {
-            guard pk.id == s.id, pk.randomSeed == StrokeConversion.seed(for: s.id), pk.ink.inkType == s.ink.tool.pkInkType,
+            guard pk.id == s.id, pk.randomSeed == StrokeSeed.seed(for: s.id), pk.ink.inkType == s.ink.tool.pkInkType,
                   pk.path.count == s.points.count else { return false }
             if let first = s.points.first, let last = s.points.last {
                 let a = pk.path[0].location, b = pk.path[pk.path.count - 1].location

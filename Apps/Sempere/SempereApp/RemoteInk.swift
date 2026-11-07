@@ -1,4 +1,5 @@
 import Foundation
+import Sempere
 
 /// A canvas that shows a page of a note's ink (`PageCanvasView.Coordinator`,
 /// one per canvas, in the one-page view and in the paged stack). The editor

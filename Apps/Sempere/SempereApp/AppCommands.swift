@@ -1,3 +1,4 @@
+import Sempere
 import SempereImporters
 import SwiftUI
 
@@ -167,7 +168,8 @@ enum EditorCommands {
         case .toggleHand:
             if editor != nil { ui.toolRequest = .hand }
         case .eraserSmaller, .eraserLarger:
-            ObjectEraserSize.save(ObjectEraserSize.step(ObjectEraserSize.load(), larger: command == .eraserLarger))
+            ObjectEraserSize.save(ObjectEraserSize.step(ObjectEraserSize.load(from: UserDefaults.standard), larger: command == .eraserLarger),
+                                  to: UserDefaults.standard)
         case .toggleCompactPalette:
             UserDefaults.standard.set(!ToolPalette.isCompact(), forKey: ToolPalette.compactKey)
         case .togglePageStrip:

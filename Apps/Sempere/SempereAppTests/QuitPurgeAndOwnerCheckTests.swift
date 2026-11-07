@@ -1,4 +1,5 @@
 import Foundation
+import Sempere
 import Testing
 import UIKit
 @testable import SempereApp

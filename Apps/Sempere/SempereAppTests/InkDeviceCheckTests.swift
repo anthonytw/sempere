@@ -240,7 +240,7 @@ struct InkDeviceCheckTests {
         let i = try InkInjector(editor: editor)
         defer { i.close() }
         #expect(await i.ready(timeout: .seconds(120)))
-        let radius = ObjectEraserSize.load()
+        let radius = ObjectEraserSize.load(from: UserDefaults.standard)
         let midY = Double(i.strokes[InkFixture.denseStrokes / 2].renderBounds.midY)
         let path = Self.zigzag(from: midY, to: midY + 120)
         let all = i.strokes
@@ -331,7 +331,7 @@ struct InkDeviceCheckTests {
         #expect(await i.ready())
         let path = Self.zigzag(from: 30, to: 90)
         let before = i.strokes
-        let expected = Self.touched(before, path: path, radius: ObjectEraserSize.load())
+        let expected = Self.touched(before, path: path, radius: ObjectEraserSize.load(from: UserDefaults.standard))
         i.host.objectEraser.begin(at: path[0])
         for p in path.prefix(4).dropFirst() { i.host.objectEraser.move(to: p) }
         try await Task.sleep(for: .milliseconds(100))   // a display frame passes

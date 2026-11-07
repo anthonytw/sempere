@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereSync
 
 // Change detection for the note list (docs/io.md "Opening a vault fast").
 //

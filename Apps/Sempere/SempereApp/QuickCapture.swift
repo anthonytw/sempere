@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import Security
 import Sempere
+import SempereSync
 import UIKit
 #if os(iOS) && !targetEnvironment(macCatalyst)
 import ActivityKit

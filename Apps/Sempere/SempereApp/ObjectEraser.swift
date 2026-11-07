@@ -164,7 +164,7 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     /// Touch-down: erases what the eraser touches at `p` (page points).
     func begin(at p: EraserPoint) {
         guard let canvas else { return }
-        radius = ObjectEraserSize.load()
+        radius = ObjectEraserSize.load(from: UserDefaults.standard)
         let drawing = canvas.drawing
         before = drawing
         remaining = drawing.strokes
@@ -205,7 +205,7 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     @objc private func hovered(_ g: UIHoverGestureRecognizer) {
         switch g.state {
         case .began, .changed:
-            radius = ObjectEraserSize.load()
+            radius = ObjectEraserSize.load(from: UserDefaults.standard)
             showCursor(at: g.location(in: host))
         default:
             if press.state == .possible { cursor.isHidden = true }
@@ -367,6 +367,18 @@ extension StrokeHitShape {
             runs.append(run)
         }
         self.init(runs: runs)
+    }
+}
+
+extension ObjectEraserSize {
+    /// A short name for a preset, for the size menu.
+    static func name(of radius: Double) -> String {
+        switch radius {
+        case ..<6: return String(localized: "Fine", comment: "Object eraser size")
+        case ..<12: return String(localized: "Small", comment: "Object eraser size")
+        case ..<24: return String(localized: "Medium", comment: "Object eraser size")
+        default: return String(localized: "Large", comment: "Object eraser size")
+        }
     }
 }
 

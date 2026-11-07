@@ -191,9 +191,9 @@ struct InkRoundTripTests {
 
     @Test func idWithSeedKeepsTheSeedAndStaysUnique() {
         for seed in [UInt32(0), 1, 0xDEAD_BEEF, .max, 0x0100_0000] {
-            let a = StrokeConversion.id(seed: seed), b = StrokeConversion.id(seed: seed)
-            #expect(StrokeConversion.seed(for: a) == seed)
-            #expect(StrokeConversion.seed(for: b) == seed)
+            let a = StrokeSeed.id(seed: seed), b = StrokeSeed.id(seed: seed)
+            #expect(StrokeSeed.seed(for: a) == seed)
+            #expect(StrokeSeed.seed(for: b) == seed)
             #expect(a != b)
         }
     }

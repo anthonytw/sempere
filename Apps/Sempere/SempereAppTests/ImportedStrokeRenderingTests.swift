@@ -202,7 +202,7 @@ struct ImportedStrokeRenderingTests {
     // MARK: - NibSize against PencilKit
 
     /// The texture seed of the strokes `drawnThickness` measures. Pencil, crayon and watercolor grain
-    /// follows the seed (`StrokeConversion.seed(for:)`, from the stroke id): a random id made each run
+    /// follows the seed (`StrokeSeed.seed(for:)`, from the stroke id): a random id made each run
     /// measure a different texture, and a crayon's grain can leave a single scan line at half the width.
     static let measuredSeed: UInt32 = 0x5E3B_1A07
 
@@ -217,7 +217,7 @@ struct ImportedStrokeRenderingTests {
             return StrokePoint(x: vertical ? 60 : d, y: vertical ? d : 60, t: Double(i) / 120, w: w, h: w, o: 1,
                                f: 0.5, az: 0, al: .pi / 2)
         }
-        let stroke = Stroke(id: StrokeConversion.id(seed: measuredSeed), ink: Ink(tool: tool, color: .black, width: w),
+        let stroke = Stroke(id: StrokeSeed.id(seed: measuredSeed), ink: Ink(tool: tool, color: .black, width: w),
                             points: points)
         let image = PKDrawing(strokes: [StrokeConversion.pkStroke(stroke)])
             .image(from: CGRect(x: 0, y: 0, width: 120, height: 120), scale: scale)

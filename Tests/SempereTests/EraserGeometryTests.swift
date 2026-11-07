@@ -1,6 +1,6 @@
 import Foundation
+import Sempere
 import Testing
-@testable import SempereApp
 
 /// The object eraser's hit-testing (pure geometry, no PencilKit).
 struct EraserGeometryTests {
@@ -75,8 +75,8 @@ struct EraserGeometryTests {
         #expect(EraserGeometry.hits([a, b, c], sweepFrom: Self.p(20, -10), to: Self.p(20, 60), radius: 2) == [0, 1])
     }
 
-    @Test func sizePresetsPersist() throws {
-        let defaults = try #require(TestDefaults.suite("EraserGeometryTests-\(UUID().uuidString)"))
+    @Test func sizePresetsPersist() {
+        let defaults = MemoryKeyValueStore()
         #expect(ObjectEraserSize.load(from: defaults) == ObjectEraserSize.defaultRadius)
         ObjectEraserSize.save(32, to: defaults)
         #expect(ObjectEraserSize.load(from: defaults) == 32)
