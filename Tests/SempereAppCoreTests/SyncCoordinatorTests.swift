@@ -207,13 +207,15 @@ struct SyncCoordinatorTests {
             }, countUnconfirmed: { 0 })
         })
         coordinator.tick = .milliseconds(10)
+        // Every wait here is positive: a starved open run waits until the test releases the slow ones, which
+        // it does only after the wait, so the bound only has to outlast a loaded runner (a 3 s one did not, on orin).
         for l in slow { coordinator.session(for: l) }
-        #expect(await Sync.waitUntil(timeout: .seconds(3)) { inFlight.value >= 1 })
+        #expect(await Sync.waitUntil(timeout: .seconds(30)) { inFlight.value >= 1 })
         let session = try #require(coordinator.attachOpen(open.vaultID).first)
         session.vaultUnlocked()
         let finished = Sync.Counter()
         Task { _ = await session.syncNow(); _ = finished.add(1) }
-        #expect(await Sync.waitUntil(timeout: .seconds(2)) { finished.value == 1 }, "the open vault's run waited behind background runs")
+        #expect(await Sync.waitUntil(timeout: .seconds(30)) { finished.value == 1 }, "the open vault's run waited behind background runs")
         #expect(coordinator.runsGoing <= coordinator.maxConcurrentRuns)
         _ = released.add(1)
         for l in slow + [open] { _ = coordinator.stop(l.id) }
@@ -248,7 +250,7 @@ struct SyncCoordinatorTests {
         open.vaultUnlocked()
         let finished = Sync.Counter()
         Task { _ = await open.syncNow(); _ = finished.add(1) }
-        #expect(await Sync.waitUntil(timeout: .seconds(2)) { finished.value == 1 }, "the open vault's runs wait for no background run")
+        #expect(await Sync.waitUntil(timeout: .seconds(30)) { finished.value == 1 }, "the open vault's runs wait for no background run")
         _ = released.add(1)
         for l in [blocked, queued] { _ = coordinator.stop(l.id) }
     }
