@@ -48,33 +48,10 @@ extension QuickCaptureTests {
 }
 
 extension RecordingTests {
-    /// The Transcribe button is the user's request: it may download the model (Apple's asset service).
-    @Test func theTranscribeButtonMayDownloadTheModel() async throws {
-        let model = try await Self.model()
-        let log = TranscriberLog()
-        model.transcriber = FakeTranscriber(log: log)
-        let editor = try #require(model.editor)
-        let r = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
-        await model.transcribe(r, in: editor)
-        #expect(log.downloadsAllowed == [true])
-        #expect(model.errorMessage == nil)
-    }
-
-    /// An automatic job that finds no model reports it in the app's words, never as a raw engine error.
-    @Test func anAutomaticJobWithoutTheModelSaysSo() async throws {
-        let model = try await Self.model()
-        let log = TranscriberLog()
-        model.transcriber = FakeTranscriber(log: log, failure: RecordingTranscriptionError.modelNotDownloaded)
-        let editor = try #require(model.editor)
-        let r = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
-        await model.transcribe(r, note: editor.noteID, file: Self.tone, meta: editor.meta, automatic: true)
-        #expect(log.downloadsAllowed == [false])
-        #expect(model.errorMessage == RecordingTranscriptionError.modelNotDownloaded.message)
-        #expect(editor.recording(r.id)?.transcript == nil)
-        // Once per launch: the next voice note without the model brings no second alert.
-        model.errorMessage = nil
-        await model.transcribe(r, note: editor.noteID, file: Self.tone, meta: editor.meta, automatic: true)
-        #expect(log.downloadsAllowed == [false, false])
-        #expect(model.errorMessage == nil)
+    /// The model's notice for a missing language model is the app's sentence saying where to get it (the model's
+    /// side is `RecordingModelTests.anAutomaticJobWithoutTheModelSaysSo` in SempereAppCoreTests).
+    @Test func theMissingModelNoticeSaysWhereToGetIt() {
+        #expect("\(AppModelNotice.transcriptionModelMissing)" == RecordingTranscriptionError.modelNotDownloaded.message)
+        #expect(RecordingTranscriptionError.modelNotDownloaded.message.contains("Settings ▸ Audio & Transcription"))
     }
 }

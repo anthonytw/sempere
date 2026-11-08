@@ -339,7 +339,7 @@ struct RecordingTests {
         #expect(editor.playbackHighlight.isEmpty)
     }
 
-    // MARK: - Model: playback, transcription, recovery
+    // MARK: - Model (playback, transcription and recovery are tested in SempereAppCoreTests, `RecordingModelTests`)
 
     static func model() async throws -> AppModel {
         let (url, key) = try AppModelTests.fixtureVault()
@@ -355,30 +355,6 @@ struct RecordingTests {
         return model
     }
 
-    /// A transcript added later (task E5; quick capture needs the same):
-    /// the blob, then one delta, and the open editor and player take it.
-    @Test func transcribingWritesAValidTranscriptBlobAndDelta() async throws {
-        let model = try await Self.model()
-        let editor = try #require(model.editor)
-        let r = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
-        await model.transcribe(r, in: editor)
-        #expect(model.errorMessage == nil)
-        let ref = try #require(editor.recording(r.id)?.transcript)
-        let vault = try #require(model.vault)
-        let stored = try #require(try vault.reconstruct(noteId: Self.lecture).recordings.first { $0.id == r.id })
-        #expect(stored.transcript == ref)
-        let t = try Transcript.decode(try vault.readBlob(note: Self.lecture, ref))
-        #expect(t.recording == r.id)
-        #expect(t.segments.first?.words?.map(\.t) == ["Linear", "maps."])
-        #expect(t.validationError == nil)
-        #expect(model.transcribing.isEmpty)
-        // Playback reads it back for the transcript view.
-        await model.play(r, in: editor, from: 0.7)
-        let player = try #require(editor.player)
-        #expect(await TS.waitUntil { player.transcript != nil })
-        #expect(player.transcript?.position(at: player.position)?.word == 1)
-    }
-
     @Test func savedRecordingsAreTranscribedWhenTheSettingIsOn() async throws {
         let defaults = UserDefaults.standard
         let old = defaults.object(forKey: TranscriptionPreference.key)
@@ -391,51 +367,6 @@ struct RecordingTests {
         #expect(await TS.waitUntil(timeout: .seconds(10)) { editor.recording(r.id)?.transcript != nil })
         #expect(await TS.waitUntil { (try? FileManager.default.contentsOfDirectory(atPath: model.recordingRoot.path))?.isEmpty ?? true },
                 "the plaintext audio is deleted once transcribed")
-    }
-
-    @Test func playbackLoadsFromTheBlobCacheAndSeeks() async throws {
-        let model = try await Self.model()
-        let editor = try #require(model.editor)
-        let r = try await editor.addRecording(file: Self.tone, started: Date())
-        await model.play(r, in: editor, from: 4)
-        let player = try #require(editor.player)
-        #expect(player.recording?.id == r.id)
-        #expect(player.isPlaying)
-        #expect(player.position == 4)
-        player.stop()
-        #expect(player.recording == nil)
-        // The decrypted audio is not kept in the attachment cache once playback ends.
-        let cache = try #require(model.attachmentCache())
-        var released = false
-        for _ in 0..<100 {
-            if await !cache.contains(note: Self.lecture, ref: r.blob) { released = true; break }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        #expect(released)
-    }
-
-    /// A recording the app was killed during is saved into its note the next
-    /// time the note opens, from the segments that were finished.
-    @Test func recordingsLeftByACrashAreRecovered() async throws {
-        let root = Self.root()
-        let id = UUID()
-        let folder = root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: Self.tone, to: folder.appendingPathComponent("segment-001.m4a"))
-        try Data("not audio".utf8).write(to: folder.appendingPathComponent("segment-002.m4a"))   // unfinished
-        let manifest = RecordingManifest(note: Self.lecture, recording: id, started: Date(timeIntervalSince1970: 1_800_000_000),
-                                         codec: "aac", segments: ["segment-001.m4a", "segment-002.m4a"], finished: 1)
-        try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingRecovery.manifestName))
-
-        let (vault, _) = try TS.unlockedFixture()
-        let (editor, _) = try await NoteEditorTests.open(vault, debounce: .seconds(60))
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        model.recordingRoot = root
-        await model.recoverRecordings(into: editor)
-        let recovered = try #require(editor.recording(id))
-        #expect(recovered.title == "Recovered recording")
-        #expect(!FileManager.default.fileExists(atPath: folder.path))
-        #expect(try vault.reconstruct(noteId: Self.lecture).recordings.map(\.id) == [id])
     }
 
     // MARK: - Settings and export

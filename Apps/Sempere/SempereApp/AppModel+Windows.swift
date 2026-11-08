@@ -70,6 +70,7 @@ extension AppModel {
         }
         opened.prepareBlobWrite = blobWritePreparer(note: noteID)
         configureRecordings(opened)
+        configureRecordingSaves(opened)
         opened.onRecognized = { [weak self] id in
             guard let self else { return }
             Task { try? await self.refresh([id]) }   // search sees the new text

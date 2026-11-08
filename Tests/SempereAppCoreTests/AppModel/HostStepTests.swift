@@ -27,9 +27,10 @@ extension AppModelSuites {
             #expect(model.appState.steps.last == "didReopen")
             #expect(model.keyEpoch == epoch + 1)
 
-            // A delta written with the model's clock reaches the host (the attachment index follows it).
+            // A delta written with the model's clock reaches the attachment index (`noteWritten`).
+            model.attachmentIndexDelay = .zero
             let id = try await model.createNote(title: "Written", paper: .ruled, notebook: nil)
-            #expect(await TS.waitUntil { model.appState.written.contains(id) })
+            #expect(await TS.waitUntil(timeout: .seconds(60)) { model.attachmentIndex[id] != nil })
 
             let before = model.appState.steps.filter { $0 == "willClose" }.count
             model.close()

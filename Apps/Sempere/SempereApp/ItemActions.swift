@@ -1,42 +1,6 @@
 import Foundation
-import Observation
 import Sempere
 import SempereAppCore
-
-/// Items copied for pasting, in this app only (never the system pasteboard:
-/// the plaintext would leave the app). Tied to one open vault: the model
-/// empties it when the vault closes or changes keys.
-@MainActor
-@Observable
-final class ItemClipboard {
-    /// What was copied: items and the note whose blobs they reference.
-    struct Entry: Equatable {
-        var note: UUID
-        var items: [Item]
-    }
-
-    private(set) var entry: Entry?
-    /// Pastes since the last copy, so repeated pastes do not stack exactly.
-    @ObservationIgnored private(set) var pasteCount = 0
-
-    func copy(_ items: [Item], from note: UUID) {
-        let usable = items.filter { $0.validationError == nil }
-        entry = usable.isEmpty ? nil : Entry(note: note, items: usable)
-        pasteCount = 0
-    }
-
-    func clear() {
-        entry = nil
-        pasteCount = 0
-    }
-
-    /// The offset of the next paste: on the same page as the copy, each
-    /// paste lands 20 points further down and right.
-    func nextOffset(samePage: Bool) -> Double {
-        pasteCount += 1
-        return samePage ? Double(pasteCount) * 20 : 0
-    }
-}
 
 /// Item gestures with undo: each change is one delta through the editor and
 /// one step on `undoManager` (the canvas's, so the system undo gestures and

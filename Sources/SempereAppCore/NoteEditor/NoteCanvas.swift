@@ -140,6 +140,8 @@ public enum RecognitionPassFailure: Equatable, Sendable {
 public enum RecordingChangeFailure: Equatable, Sendable {
     case rename(String)
     case delete(String)
+    /// A recording a crash left behind could not be saved into its note (`AppModel.recoverRecordings`).
+    case recover(String)
 }
 
 /// An error that says a note is not downloaded yet (a partial copy, `AppModel.partialNoteVerifier`): an editor

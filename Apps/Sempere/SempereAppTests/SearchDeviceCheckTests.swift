@@ -121,7 +121,10 @@ struct SearchDeviceCheckTests {
     }
 }
 
-extension TranscriptSearchAppTests {
+/// The transcript search on a large vault (the search itself is tested in SempereAppCoreTests, `TranscriptSearchTests`).
+@Suite(.serialized)
+@MainActor
+struct TranscriptSearchDeviceCheckTests {
     /// c15: a vault of 600 transcribed recordings (one per note). A phrase in 75 of them is found
     /// in all 75, within a bound; changing the query while it runs leaves only the new query's hits.
     @Test func c15SearchingMoreThan500Transcripts() async throws {

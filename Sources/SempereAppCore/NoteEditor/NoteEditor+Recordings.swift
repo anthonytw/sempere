@@ -88,6 +88,7 @@ extension NoteEditorModel {
     /// history can restore it).
     public func removeRecording(_ id: UUID) async {
         guard recordings.contains(where: { $0.id == id }) else { return }
+        if player?.recording?.id == id { player?.stop() }
         Canvas.recordingWillBeRemoved(id, in: self)
         do {
             await flush()

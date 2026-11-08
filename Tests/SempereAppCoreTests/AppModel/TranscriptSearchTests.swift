@@ -1,22 +1,21 @@
 import Foundation
 import Sempere
-import Testing
-@testable import SempereApp
 import SempereAppCore
+import Testing
 
-/// The app's search of recording transcripts (GA-06): opt-in, the CLI's phrase rules, and a hit that
-/// jumps to the recording at the segment.
-@Suite(.serialized)
+extension AppModelSuites {
+/// The search of recording transcripts (GA-06): opt-in, the CLI's phrase rules, and a hit that
+/// jumps to the recording at the segment. Moved from the app's `TranscriptSearchAppTests` (wave 5b part 3).
 @MainActor
-struct TranscriptSearchAppTests {
-    static let lecture = AppModelTests.lecture
+struct TranscriptSearchTests {
+    static let lecture = ModelFixture.lecture
 
     /// The lecture with one transcribed recording ("Linear maps." at 0.2 s and 0.6 s), summaries refreshed.
-    static func model() async throws -> (AppModel, NoteEditor, Recording) {
-        let model = try await RecordingTests.model()
+    static func model() async throws -> (AppModel, TestEditor, Recording) {
+        let model = try await RecordingModelTests.model()
         model.searchDebounce = .milliseconds(10)
         let editor = try #require(model.editor)
-        let r = try await editor.addRecording(file: RecordingTests.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
+        let r = try await editor.addRecording(file: RecordingModelTests.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
         await model.transcribe(r, in: editor)
         try await model.refresh([lecture])
         return (model, editor, r)
@@ -26,12 +25,12 @@ struct TranscriptSearchAppTests {
         let (model, _, r) = try await Self.model()
         #expect(model.notes.first { $0.id == Self.lecture }?.transcribed.map(\.recording) == [r.id])
         model.searchText = "linear maps"
-        #expect(await TS.waitUntil { !model.isSearching })
+        #expect(await TS.waitUntil(timeout: .seconds(30)) { !model.isSearching })
         #expect(model.transcriptHits.isEmpty, "off by default (reads and decrypts every transcript)")
 
         model.setSearchTranscripts(true)
         defer { model.setSearchTranscripts(false) }
-        #expect(await TS.waitUntil { !model.transcriptHits.isEmpty && !model.isSearching })
+        #expect(await TS.waitUntil(timeout: .seconds(30)) { !model.transcriptHits.isEmpty && !model.isSearching })
         let hit = try #require(model.transcriptHits.first)
         #expect(hit.note == Self.lecture && hit.recording == r.id)
         #expect(hit.snippet.lowercased().contains("linear maps"))
@@ -46,12 +45,12 @@ struct TranscriptSearchAppTests {
         model.setSearchTranscripts(true)
         defer { model.setSearchTranscripts(false) }
         model.searchText = "maps linear"   // the words, not the phrase
-        #expect(await TS.waitUntil { !model.isSearching })
+        #expect(await TS.waitUntil(timeout: .seconds(30)) { !model.isSearching })
         #expect(model.transcriptHits.isEmpty)
         model.searchText = "LINEAR"
-        #expect(await TS.waitUntil { !model.transcriptHits.isEmpty })
+        #expect(await TS.waitUntil(timeout: .seconds(30)) { !model.transcriptHits.isEmpty })
         model.setSearchTranscripts(false)
-        #expect(await TS.waitUntil { model.transcriptHits.isEmpty })
+        #expect(await TS.waitUntil(timeout: .seconds(30)) { model.transcriptHits.isEmpty })
         model.close()
     }
 
@@ -60,11 +59,11 @@ struct TranscriptSearchAppTests {
         model.setSearchTranscripts(true)
         defer { model.setSearchTranscripts(false) }
         model.searchText = "maps"
-        #expect(await TS.waitUntil { !model.transcriptHits.isEmpty })
+        #expect(await TS.waitUntil(timeout: .seconds(30)) { !model.transcriptHits.isEmpty })
         let hit = try #require(model.transcriptHits.first)
         model.openTranscriptHit(hit)
         #expect(model.selectedNoteID == Self.lecture)
-        #expect(await TS.waitUntil { editor.player?.recording?.id == r.id })
+        #expect(await TS.waitUntil(timeout: .seconds(30)) { editor.player?.recording?.id == r.id })
         let player = try #require(editor.player)
         #expect(abs(player.position - hit.start) < 0.01)
         #expect(!player.isPlaying, "a search result does not start the sound")
@@ -82,7 +81,7 @@ struct TranscriptSearchAppTests {
     }
 
     @Test func theChoiceIsStoredPerDevice() {
-        let d = TestDefaults.suite("TranscriptSearchAppTests-\(UUID().uuidString)")!
+        let d = MemoryKeyValueStore()
         #expect(!TranscriptSearchPreference.isOn(d))
         TranscriptSearchPreference.set(true, d)
         #expect(TranscriptSearchPreference.isOn(d))
@@ -119,4 +118,5 @@ struct TranscriptSearchAppTests {
         cache.removeAll()
         #expect(cache.count == 0)
     }
+}
 }

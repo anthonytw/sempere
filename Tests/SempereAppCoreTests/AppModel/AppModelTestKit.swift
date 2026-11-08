@@ -18,13 +18,9 @@ enum TestHost: AppModelHost {
     static func didUnlock(_ model: AppModel) async { model.appState.steps.append("didUnlock") }
     static func didReopen(_ model: AppModel) { model.appState.steps.append("didReopen") }
     static func willClose(_ model: AppModel) { model.appState.steps.append("willClose") }
-    static func vaultChanged(_ model: AppModel) {}
     static func editorsChanged(_ model: AppModel) {}
     static func prepareEditor(_ editor: TestEditor, of note: UUID, in model: AppModel) {}
     static func unreadableText(_ editor: TestEditor) -> String { "unreadable" }
-    static func noteWritten(_ id: UUID, in model: AppModel) { model.appState.written.append(id) }
-    static func summariesRead(_ summaries: [NoteSummary], in model: AppModel) {}
-    static func notesRemoved(_ ids: Set<UUID>, in model: AppModel) {}
     static func listingFinished(_ model: AppModel) { model.appState.steps.append("listingFinished") }
     static func closeWindowEditors(_ model: AppModel) async {}
     static func openWindowNote(_ id: UUID, in model: AppModel) async throws {}
@@ -33,14 +29,12 @@ enum TestHost: AppModelHost {
     static func refreshDeviceState(_ model: AppModel) async {}
     static func scheduleSettingsSync(_ model: AppModel) { model.appState.steps.append("scheduleSettingsSync") }
     static func startInboxAdoption(_ model: AppModel) { model.appState.steps.append("startInboxAdoption") }
-    static func play(_ recording: Recording, in editor: TestEditor, from time: Double, model: AppModel) {}
 }
 
 /// What the test host's steps were asked.
 @MainActor
 final class TestHostState {
     var steps: [String] = []
-    var written: [UUID] = []
 }
 
 /// The model the tests drive, as the app's `AppModel` is `AppModelCore<AppHost>`.

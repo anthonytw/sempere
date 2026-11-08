@@ -215,6 +215,8 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     public var transcribing: Set<UUID> = []
     /// Called to play a recording from a time (a tap on linked ink).
     @ObservationIgnored public var onPlayRequest: ((Recording, Double) -> Void)?
+    /// Plays the note's recordings (`AppModel.play`); nil until one is played.
+    public var player: RecordingPlayer?
 
     /// Ink closer than this to the bottom of an infinite page grows it.
     public static var growMargin: Double { NoteEditorDefaults.growMargin }
@@ -1046,6 +1048,8 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// no more changes and writes nothing (`isShutDown`). The pages' drawings
     /// are stored in the drawing cache for the next open (`storeForNextOpen`).
     public func close() async {
+        // Playback ends with the note (its decrypted audio is released, `RecordingPlayer.onUnload`).
+        player?.stop()
         // A recording in progress is saved into the note before the last save.
         await Canvas.editorWillClose(self)
         isClosed = true

@@ -937,7 +937,7 @@ struct UnusedAttachmentsView: View {
         do {
             let r = try await model.deleteUnusedAttachments(items)
             var text = String(localized: "Deleted \(StorageText.items(r.deleted, bytes: r.bytes)).")
-            if !r.problems.isEmpty { text += " " + r.problems.joined(separator: " ") }
+            if !r.problems.isEmpty { text += " " + r.problems.map { $0.text(title: model.noteTitle($0.note)) }.joined(separator: " ") }
             message = text
         } catch is CancellationError {
         } catch {

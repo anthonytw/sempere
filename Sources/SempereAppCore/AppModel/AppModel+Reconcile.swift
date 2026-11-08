@@ -104,7 +104,7 @@ extension AppModelCore {
         if !gone.isEmpty {
             queueListUpdate(removals: gone)
             for id in gone { indexedNames[id] = nil }
-            Host.notesRemoved(gone, in: self)
+            forgetAttachmentIndex(gone)
         }
         verifiedNoteIDs.formUnion(diff.unchanged)
         let shown = before.subtracting(gone)

@@ -244,6 +244,6 @@ extension AppModelCore {
         }
         pendingRecordingJump = nil
         guard let recording = editor.recording(jump.recording) else { return }
-        Host.play(recording, in: editor, from: jump.time, model: self)
+        Task { await play(recording, in: editor, from: jump.time, start: false) }
     }
 }

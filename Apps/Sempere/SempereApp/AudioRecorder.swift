@@ -541,27 +541,6 @@ enum RecordingAssembly {
     }
 }
 
-/// Recordings a crash or a kill left behind (`RecordingSession`'s folder
-/// with a manifest and no session running): saved into their note the next
-/// time it is opened.
-enum RecordingRecovery {
-    /// `RecordingManifest.fileName` (SempereAppCore, which reads leftovers of quick voice notes too).
-    static let manifestName = RecordingManifest.fileName
-
-    /// Folders under `root` whose manifest names `note` and that no running session owns.
-    @MainActor
-    static func pending(for note: UUID, root: URL = RecordingSession.root) -> [(URL, RecordingManifest)] {
-        let fm = FileManager.default
-        guard let dirs = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return [] }
-        return dirs.compactMap { dir -> (URL, RecordingManifest)? in
-            guard let data = try? BoundedRead.contents(of: dir.appendingPathComponent(manifestName), maxBytes: 1 << 20),
-                  let m = try? JSONDecoder().decode(RecordingManifest.self, from: data), m.note == note,
-                  RecordingSession.active?.id != m.recording, !RecordingSession.busy.contains(m.recording) else { return nil }
-            return (dir, m)
-        }
-    }
-}
-
 /// The recording quick capture drives (`QuickCapture`, SempereAppCore; `AppCaptureRecorder` makes it).
 extension RecordingSession: CaptureRecording {
     /// Paused by an interruption, a route change or the user.

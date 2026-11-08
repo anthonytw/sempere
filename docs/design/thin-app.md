@@ -256,12 +256,39 @@ Wave 5b, part 2 (the first half of the `AppModel` family, 2026-11-07) moved the 
   own (`TestHost`, `AppModelTestKit.swift`), plus `SyncRunRuleTests` (the two run rules, and that a stale open vault's
   runs place nothing). The rest of those files stays in the app until what they touch moves.
 
-**Wave 5b, part 3 (the plan).** The rest of the family, in an order that empties `AppModelAppState` and the host's steps:
+Wave 5b, part 3, steps 1 and 2 (attachments and recordings, 2026-11-08) moved:
 
-1. Attachments and their index (`+Attachments`, `+AttachmentIndex`): `RenderCache`'s pure part into the library behind
-   a narrow `RenderCaching` protocol (the app keeps the CoreGraphics drawing), `ItemClipboard` (no platform code).
-2. Recordings and transcripts (`+Recordings`): `AudioPlaybackBackend` and the player's state into the library; the
-   AVFoundation backend stays. `TranscriptSearchAppTests`, `RecordingTests` (their non-AVFoundation parts) follow.
+- **Attachments** (`AppModel+Attachments`, `+AttachmentIndex`): the blob cache, the prefetch policy (`BlobFetchPolicy`),
+  blob fetches of a partial copy, the item clipboard (`ItemClipboard`; `clipboardPaste(onto:of:)` gives the entry, its
+  offset and the blobs' fetch, and the app's `ItemActions.paste` writes it with its undo step) and the
+  unused-attachments index. The render cache is the library's `RenderStore<Codec>` (labels, sealed files, the memory
+  and disk limits, `schemaVersion`); the app's `RenderCache` is `RenderStore<CGPictureCodec>` (`RenderPicture`, JPEG
+  and LZFSE encoding, the PDF preview drawing, the fonts' salt, UIKit's memory warning). The model keeps it as
+  `any RenderCaching` (`close`), made by `AppModelServices.makeRenderCache`; the item layer takes it back as the app's
+  type (`itemLayerSource`). `AttachmentDeletion.problems` are typed (`Problem`: the note and why), worded by the app
+  with the note's title (`AppModel+Attachments.swift`).
+- **Recordings** (`AppModel+Recordings`): playback (`RecordingPlayer`, `AudioPlaybackBackend`; the editor holds its
+  `player`), transcripts (load, transcribe, store), and recovery of recordings a crash left (`RecordingRecovery`, which
+  reads the segment files through `CaptureAudioFiles` and leaves alone the recordings `recordingsInUse` names).
+  `AppModelServices` gained `makePlaybackBackend` (`AVAudioPlaybackBackend`), `recordingRoot`
+  (`RecordingSession.root`), `recordingsInUse` (`RecordingSession.active`/`busy`) and `audioFiles`
+  (`AVCaptureAudioFiles`). The microphone half stays in the app: what happens to a recording made in a note once
+  saved (`configureRecordingSaves`, the `prepareEditor` step) asks the model `transcribesSavedRecordings` and
+  `transcribeSaved`. `RecordingTranscriptionError` is the library's; its sentence, and the errors' (new
+  `AppModelNotice` cases: `recordingUnplayable`, `recordingUnreadable`, `recordingNotTranscribed`,
+  `transcriptionModelMissing`), are the app's; a failed recovery is `RecordingChangeFailure.recover`.
+- **Host steps gone**: `vaultChanged`, `noteWritten`, `summariesRead`, `notesRemoved` (the core calls the index and
+  `dropAttachments` itself) and `play`. `AppModelAppState` lost the render cache, the clipboard, the playback backend
+  and the recording root.
+- **Tests**: `AttachmentIndexTests`, `AttachmentCacheTests`, `RenderStoreTests` (in `AttachmentCacheTests.swift`), `RecordingModelTests` and
+  `TranscriptSearchTests` (all of the former `TranscriptSearchAppTests`) in `Tests/SempereAppCoreTests/AppModel`. The
+  app keeps Settings' storage words (`AttachmentIndexAppTests`), the CoreGraphics codec and drawing
+  (`AttachmentPersistenceTests`), the recording session (`RecordingTests`), the missing-model sentence
+  (`OfflineTranscriptionTests`) and the 600-transcript device check (`TranscriptSearchDeviceCheckTests`).
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 and 2 are done (above). The rest of the family, in an order that
+empties `AppModelAppState` and the host's steps:
+
 3. Inbox and settings sync (`+Inbox`, `+SettingsSync`): `QuickCapture.shared` as a service, `SettingsSyncBridge`'s pure
    part, the app icon behind `PlatformServices`; `SettingsSyncAppTests`.
 4. Devices, joins and re-encryption (`+Devices`, `+DeviceNotices`, `+JoinDevice`, `+Reencrypt`, `+Keys`, `+ListAlert`):

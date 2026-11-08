@@ -205,6 +205,13 @@ public final class AppModelCore<Host: AppModelHost> {
     }
     /// Transcribes recordings on device (`AppModel+Recordings`); tests inject a fake.
     @ObservationIgnored public var transcriber: (any RecordingTranscribing)?
+    /// Makes the players' audio backends (`services.makePlaybackBackend`; tests pass fakes).
+    @ObservationIgnored public var playbackBackend: @MainActor () -> any AudioPlaybackBackend
+    /// Where recordings in progress keep their files (`services.recordingRoot`; tests pass their own).
+    @ObservationIgnored public var recordingRoot: URL
+    /// Notes whose left recordings `recoverRecordings` is saving now: one recovery per note at a time (a library
+    /// editor and a note window's editor of the same note would otherwise merge and store the same folder at once).
+    @ObservationIgnored public var recoveringNotes: Set<UUID> = []
     /// Recordings being transcribed now, by id.
     public var transcribing: Set<UUID> = []
     /// Voice notes adopted from the inbox in this session (for the UI).
@@ -466,11 +473,15 @@ public final class AppModelCore<Host: AppModelHost> {
     public private(set) var vault: Vault? {
         // Decrypted attachments and copied items belong to the vault (and the
         // secret) they came from.
-        didSet { Host.vaultChanged(self) }
+        didSet { dropAttachments() }
     }
     /// Decrypted attachments of the open vault (`AppModel+Attachments`),
     /// created on first use, deleted whenever `vault` changes or closes.
     @ObservationIgnored public var blobCache: BlobCache?
+    /// The open vault's drawn attachments (`attachmentRenders`), made on first use; closed with the vault.
+    @ObservationIgnored public var renderCache: (any RenderCaching)?
+    /// Items copied for pasting (`ItemClipboard`), within the open vault.
+    public let itemClipboard = ItemClipboard()
     /// Where this model's attachment caches go (a folder per vault secret
     /// inside): the app's `BlobCache.folder`, kept across launches; without
     /// one (tests) a folder of this model alone. Tests may set their own.
@@ -625,6 +636,7 @@ public final class AppModelCore<Host: AppModelHost> {
         appState = Host.makeState()
         defaultTitle = { [settings = services.settings] in NewNoteSettings.defaultTitle(settings, now: $0) }
         transcriber = services.transcriber
+        playbackBackend = services.makePlaybackBackend
         iCloudHooks = services.iCloudHooks
         webdavRemote = services.webdavRemote
         webdavPasswords = services.webdavPasswords
@@ -637,6 +649,7 @@ public final class AppModelCore<Host: AppModelHost> {
         let scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("SempereModel-\(UUID().uuidString)", isDirectory: true)
         ownedScratch = scratch
+        recordingRoot = services.recordingRoot ?? scratch.appendingPathComponent("Recordings", isDirectory: true)
         self.webdavLocations = webdavLocations
             ?? WebDAVLocationStore(store: VaultStore(root: scratch.appendingPathComponent("Vaults", isDirectory: true)))
         self.deviceStateURL = deviceStateURL
@@ -1014,7 +1027,9 @@ public final class AppModelCore<Host: AppModelHost> {
             return
         }
         let stale = editor
-        Host.prepareEditor(opened, of: noteID, in: self)   // blob writes and recordings (the app's, part 3)
+        opened.prepareBlobWrite = blobWritePreparer(note: noteID)
+        configureRecordings(opened)
+        Host.prepareEditor(opened, of: noteID, in: self)   // saved recordings (the microphone half is the app's)
         opened.onRecognized = { [weak self] id in
             guard let self else { return }
             Task { try? await self.refresh([id]) }   // search sees the new text
@@ -1072,7 +1087,7 @@ public final class AppModelCore<Host: AppModelHost> {
         let clock = try DeviceClock(url: deviceStateURL, app: services.appName, perf: services.perf) { [weak self] id in
             Task { @MainActor in
                 guard let self else { return }
-                Host.noteWritten(id, in: self)
+                self.noteWritten(id)
                 self.syncSessions.forEach { $0.noteWrite() }   // every target syncs shortly after a write
             }
         }
@@ -1089,6 +1104,7 @@ public final class AppModelCore<Host: AppModelHost> {
         // Settings sync stops and the app-side state of the vault is forgotten (the extensions still in the app, wave 5b
         // part 3); a backup, inbox adoption or import still running is canceled below.
         Host.willClose(self)
+        resetAttachmentIndex()
         stopJoin()
         stopWebDAV()
         cancelRemoteMerges()

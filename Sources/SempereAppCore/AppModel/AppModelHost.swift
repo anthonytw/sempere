@@ -30,23 +30,16 @@ public protocol AppModelHost: Sendable {
     /// After the open vault was opened again under a new `vault.json` (`adoptReopened`).
     @MainActor static func didReopen(_ model: AppModelCore<Self>)
     /// At the start of `close()`: settings sync stops and the app-side state of the vault (the last import's report,
-    /// drag-out exports, export requests, the attachment index, drags, takeover and sighting notices) is forgotten.
+    /// drag-out exports, export requests, drags, takeover and sighting notices) is forgotten.
     /// The core's `close()` itself cancels a running backup, inbox adoption and import.
     @MainActor static func willClose(_ model: AppModelCore<Self>)
-    /// `vault` changed (decrypted attachments belong to the vault they came from: `dropAttachments`).
-    @MainActor static func vaultChanged(_ model: AppModelCore<Self>)
     /// The open editors changed ("Keep Screen On" follows them).
     @MainActor static func editorsChanged(_ model: AppModelCore<Self>)
-    /// An editor opened for the library window is about to be shown: blob writes and recordings are set up.
+    /// An editor opened for the library window is about to be shown: what happens to recordings made in it once
+    /// saved (the microphone half is the app's).
     @MainActor static func prepareEditor(_ editor: NoteEditorModel<Canvas>, of note: UUID, in model: AppModelCore<Self>)
     /// What the detail pane says for a note whose read failed before it was shown.
     @MainActor static func unreadableText(_ editor: NoteEditorModel<Canvas>) -> String
-    /// A delta of note `id` was written with the model's clock (the attachment index follows).
-    @MainActor static func noteWritten(_ id: UUID, in model: AppModelCore<Self>)
-    /// Summaries were read or re-read (their attachments are indexed again).
-    @MainActor static func summariesRead(_ summaries: [NoteSummary], in model: AppModelCore<Self>)
-    /// Notes left the vault (their index entries go).
-    @MainActor static func notesRemoved(_ ids: Set<UUID>, in model: AppModelCore<Self>)
     /// A listing `unlock` started finished (automatic thinning).
     @MainActor static func listingFinished(_ model: AppModelCore<Self>)
     /// The note windows' editors (Mac): close them all, open one, reopen one.
@@ -59,12 +52,15 @@ public protocol AppModelHost: Sendable {
     /// A sync brought settings, or the inbox, of the open vault.
     @MainActor static func scheduleSettingsSync(_ model: AppModelCore<Self>)
     @MainActor static func startInboxAdoption(_ model: AppModelCore<Self>)
-    /// A tapped transcript hit's recording, played once its note is open (`applyPendingRecordingJump`).
-    @MainActor static func play(_ recording: Recording, in editor: NoteEditorModel<Canvas>, from time: Double, model: AppModelCore<Self>)
 }
 
 /// The platform services the moved `AppModel` code takes (docs/design/thin-app.md "The platform protocols"). Each
 /// has a version for tests and the CLI (`headless`).
+///
+/// One rule for how the model reads them: a service tests replace on a model after it is made is copied into a model
+/// property at init and read from there (`transcriber`, `playbackBackend`, `recordingRoot`, `iCloudHooks`, the WebDAV
+/// remote and passwords); every other one is read from `services` when used (`perf`, `settings`, `bookmarks`,
+/// `platform`, `makeRenderCache`, `recordingsInUse`, `audioFiles`), and a test passes its own at init.
 public struct AppModelServices {
     /// Timing and log lines (`AppPerfSink` in the app).
     public var perf: any PerfSink
@@ -83,10 +79,25 @@ public struct AppModelServices {
     public var transcriber: (any RecordingTranscribing)?
     /// The `app` the model's revisions carry (format.md §5.1: `NoteWriter.appName`, `sempere-ios/<version>`).
     public var appName: String
+    /// Makes the open vault's cache of drawn attachments under a root (nil: memory only): the app's `RenderCache`
+    /// (CoreGraphics pictures); headless, a store of plain bytes.
+    public var makeRenderCache: @MainActor (_ root: URL?, _ vault: Vault) -> any RenderCaching
+    /// What plays recordings (`AVAudioPlaybackBackend`; headless, `SilentPlaybackBackend`).
+    public var makePlaybackBackend: @MainActor () -> any AudioPlaybackBackend
+    /// Where recordings in progress keep their files (`RecordingSession.root`); nil: a folder of the model's own.
+    public var recordingRoot: URL?
+    /// The recordings whose files are in use (running, being saved or transcribed): recovery leaves them alone.
+    public var recordingsInUse: @MainActor () -> Set<UUID>
+    /// What a recording's segment files hold, and their merge (`AVCaptureAudioFiles`; headless, bytes).
+    public var audioFiles: any CaptureAudioFiles
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,
-                iCloudHooks: CloudVault.Hooks, transcriber: (any RecordingTranscribing)?, appName: String) {
+                iCloudHooks: CloudVault.Hooks, transcriber: (any RecordingTranscribing)?, appName: String,
+                makeRenderCache: @escaping @MainActor (_ root: URL?, _ vault: Vault) -> any RenderCaching = AppModelServices.dataRenderCache,
+                makePlaybackBackend: @escaping @MainActor () -> any AudioPlaybackBackend = { SilentPlaybackBackend() },
+                recordingRoot: URL? = nil, recordingsInUse: @escaping @MainActor () -> Set<UUID> = { [] },
+                audioFiles: any CaptureAudioFiles = ByteCaptureAudioFiles()) {
         self.perf = perf
         self.settings = settings
         self.bookmarks = bookmarks
@@ -96,6 +107,17 @@ public struct AppModelServices {
         self.iCloudHooks = iCloudHooks
         self.transcriber = transcriber
         self.appName = appName
+        self.makeRenderCache = makeRenderCache
+        self.makePlaybackBackend = makePlaybackBackend
+        self.recordingRoot = recordingRoot
+        self.recordingsInUse = recordingsInUse
+        self.audioFiles = audioFiles
+    }
+
+    /// A render cache of plain bytes (`DataPictureCodec`), for tests and front ends that draw nothing.
+    @MainActor public static func dataRenderCache(root: URL?, vault: Vault) -> any RenderCaching {
+        RenderStore<DataPictureCodec>(root: root, vault: vault, capBytes: RenderStore<DataPictureCodec>.defaultCapBytes,
+                                      salt: "", memoryWarning: nil)
     }
 
     /// Memory versions: settings in memory, plain paths for bookmarks, an iPad with no haptics, no server, passwords

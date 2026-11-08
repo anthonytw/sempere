@@ -55,6 +55,14 @@ extension AppModelNotice: @retroactive CustomStringConvertible {
         case .deviceListUnreadable(let error):
             return String(localized: "The vault's device list changed on another device and could not be read here: \(error)",
                           comment: "The value is the error (English)")
+        case .recordingUnplayable(let detail):
+            return String(localized: "Could not play the recording: \(detail)")
+        case .recordingUnreadable(let detail):
+            return String(localized: "Could not read the recording: \(detail)")
+        case .recordingNotTranscribed(let detail):
+            return String(localized: "Could not transcribe the recording: \(detail)")
+        case .transcriptionModelMissing:
+            return RecordingTranscriptionError.modelNotDownloaded.message
         }
     }
 }

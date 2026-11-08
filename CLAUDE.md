@@ -405,7 +405,7 @@ there. Commit messages:
   deleted at quit and at launch instead: `blobCacheAcrossLaunches`, `purgeAtQuit`, `purgeAtLaunch`;
   audio, video and transcripts never stay: `isTransient`) and `RenderCache` (sealed image pictures
   and PDF page previews, memory + disk). Both are per vault key and go when
-  the vault closes (`dropAttachments`). Bump `RenderCache.schemaVersion` when
+  the vault closes (`dropAttachments`). Bump `RenderStore.schemaVersion` (SempereAppCore; the app's `RenderCache`) when
   `ItemRaster`, `PDFItemDrawing` or the preview drawing changes. Tests get a
   per-model blob folder and a memory-only render cache unless they pass
   `blobCacheRoot` / `renderCacheRoot`.

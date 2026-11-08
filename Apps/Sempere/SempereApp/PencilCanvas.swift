@@ -61,12 +61,10 @@ enum PencilCanvas: NoteCanvas {
     @MainActor static func editorWillClose(_ editor: NoteEditor) async {
         // A recording in progress is saved into the note before the last save.
         await editor.finishRecording()
-        editor.player?.stop()
     }
 
-    @MainActor static func recordingWillBeRemoved(_ id: UUID, in editor: NoteEditor) {
-        if editor.player?.recording?.id == id { editor.player?.stop() }
-    }
+    /// The editor stops its own playback of the recording (`NoteEditorModel.removeRecording`).
+    @MainActor static func recordingWillBeRemoved(_ id: UUID, in editor: NoteEditor) {}
 
     @MainActor static func recordingFailed(_ failure: RecordingChangeFailure, in editor: NoteEditor) {
         switch failure {
@@ -74,6 +72,8 @@ enum PencilCanvas: NoteCanvas {
             editor.recordingError = String(localized: "Could not rename the recording: \(detail)")
         case .delete(let detail):
             editor.recordingError = String(localized: "Could not delete the recording: \(detail)")
+        case .recover(let detail):
+            editor.recordingError = String(localized: "A recording interrupted by the app closing could not be recovered: \(detail)")
         }
     }
 }
@@ -101,8 +101,6 @@ final class NoteEditorAppState {
     // Recordings (`NoteEditor+RecordingSession.swift`, format.md §8.3, docs/attachments.md §9).
     /// The recording being made into this note, if one is.
     var recordingSession: RecordingSession?
-    /// Plays the note's recordings; nil until one is played.
-    var player: RecordingPlayer?
     /// The last recording, playback or transcription failure.
     var recordingError: String?
     /// Saves of finished recordings still running (`close` waits for them).
@@ -137,10 +135,6 @@ extension NoteEditor {
     var recordingSession: RecordingSession? {
         get { glue.recordingSession }
         set { glue.recordingSession = newValue }
-    }
-    var player: RecordingPlayer? {
-        get { glue.player }
-        set { glue.player = newValue }
     }
     var recordingError: String? {
         get { glue.recordingError }

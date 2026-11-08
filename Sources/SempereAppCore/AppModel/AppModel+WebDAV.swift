@@ -26,6 +26,14 @@ public enum AppModelNotice: Sendable, Equatable {
     case keyNoLongerListed
     /// The vault's device list changed on another device and could not be read here (the error, in English).
     case deviceListUnreadable(String)
+    /// A recording could not be loaded for playback (the error, in English).
+    case recordingUnplayable(String)
+    /// A recording's audio could not be read for the Transcribe button (the error, in English).
+    case recordingUnreadable(String)
+    /// A recording could not be transcribed (the error, in English).
+    case recordingNotTranscribed(String)
+    /// An automatic transcription found no language model on the device (said once per launch).
+    case transcriptionModelMissing
 }
 
 /// Why a WebDAV vault could not be opened or changed.

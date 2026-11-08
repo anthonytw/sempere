@@ -1,16 +1,41 @@
 import Foundation
 import Sempere
-import SempereAppCore
 
 /// What deleting unused attachments did (`deleteUnusedAttachments`).
-struct AttachmentDeletion: Equatable, Sendable {
+public struct AttachmentDeletion: Equatable, Sendable {
+    /// Why one note's attachments were not (all) deleted; the app words it (`Problem.text(title:)`,
+    /// `Apps/Sempere/SempereApp/AppModel+Attachments.swift`).
+    public struct Problem: Equatable, Sendable {
+        public enum Kind: Equatable, Sendable {
+            /// A partial copy: the note or a blob could not be downloaded (the error, English).
+            case notDownloaded(String)
+            /// The note could not be read in full, or collection failed (the error, English).
+            case failed(String)
+            /// Collection refused the note (`BlobCollectionReport.blocked`).
+            case blocked(String)
+            /// A blob file does not verify and was kept (the reason).
+            case doesNotVerify(String)
+        }
+
+        /// The note it is about.
+        public var note: UUID
+        public var kind: Kind
+
+        public init(note: UUID, kind: Kind) {
+            self.note = note
+            self.kind = kind
+        }
+    }
+
     /// Blob files deleted.
-    var deleted = 0
+    public var deleted = 0
     /// Bytes freed (sizes on disk).
-    var bytes: Int64 = 0
+    public var bytes: Int64 = 0
     /// Why some were not deleted (a note that could not be read in full, a
-    /// blob that does not verify, iCloud): one line each.
-    var problems: [String] = []
+    /// blob that does not verify, iCloud): one each.
+    public var problems: [Problem] = []
+
+    public init() {}
 }
 
 /// The unused-attachments index (docs/attachments.md §4, task E7).
@@ -33,12 +58,12 @@ struct AttachmentDeletion: Equatable, Sendable {
 /// Deleting goes through `Vault.collectBlobs(note:records:only:)` with the
 /// entry's records, which reads the note again and honors the 30-day window.
 /// In a partial copy (a join) a note not downloaded yet decides nothing.
-extension AppModel {
+extension AppModelCore {
     /// `Application Support/Sempere/AttachmentIndex`.
-    nonisolated static var defaultAttachmentIndexRoot: URL { AppSupport.folder("AttachmentIndex") }
+    public nonisolated static var defaultAttachmentIndexRoot: URL { AppSupport.folder("AttachmentIndex") }
 
     /// The open vault's index files; nil while it cannot read (locked).
-    func attachmentIndexStore() -> AttachmentIndexStore? {
+    public func attachmentIndexStore() -> AttachmentIndexStore? {
         if let store = attachmentIndexStoreCache { return store }
         guard let vault, vault.canRead, let store = try? AttachmentIndexStore(root: attachmentIndexRoot, vault: vault)
         else { return nil }
@@ -50,13 +75,13 @@ extension AppModel {
 
     /// A `NoteWriter` wrote a delta to note `id`: index it again, with the
     /// open editor's items as its current state when it is open.
-    func noteWritten(_ id: UUID) {
+    public func noteWritten(_ id: UUID) {
         noteChanged(id, current: openEditor(id)?.blobHashes)
     }
 
     /// The revisions of note `id` changed: queue its index update. `current`
     /// is what the note now shows (a fresh summary's `blobs`), nil when unknown.
-    func noteChanged(_ id: UUID, current: Set<String>?) {
+    public func noteChanged(_ id: UUID, current: Set<String>?) {
         guard vault?.canRead == true, phase == .unlocked else { return }
         if let current { attachmentIndexQueue[id] = .some(current) } else if attachmentIndexQueue[id] == nil {
             attachmentIndexQueue[id] = .some(nil)
@@ -67,7 +92,7 @@ extension AppModel {
 
     /// Fresh summaries were read: queue those notes (a summary with a
     /// problem says nothing about the current state, but the note is still re-indexed).
-    func summariesRead(_ summaries: [NoteSummary]) {
+    public func summariesRead(_ summaries: [NoteSummary]) {
         for s in summaries { noteChanged(s.id, current: s.problem == nil ? Set(s.blobs.map(\.sha256)) : nil) }
     }
 
@@ -113,7 +138,7 @@ extension AppModel {
     }
 
     /// Notes gone from the vault: their entries go too.
-    func forgetAttachmentIndex(_ ids: some Sequence<UUID>) {
+    public func forgetAttachmentIndex(_ ids: some Sequence<UUID>) {
         let store = attachmentIndexStoreCache
         let gone = Array(ids)
         var changed = false
@@ -125,12 +150,12 @@ extension AppModel {
     }
 
     /// Waits until every queued update is done (tests, and Settings' "Check").
-    func attachmentIndexIdle() async {
+    public func attachmentIndexIdle() async {
         while let task = attachmentIndexTask { await task.value; if attachmentIndexTask == task { break } }
     }
 
     /// The vault closed: forget the index (its files stay for the next opening).
-    func resetAttachmentIndex() {
+    public func resetAttachmentIndex() {
         attachmentIndexTask?.cancel()
         attachmentIndexTask = nil
         attachmentIndexQueue = [:]
@@ -142,7 +167,7 @@ extension AppModel {
     }
 
     /// The hashes the list's summary of `id` says the note shows; nil when unknown.
-    func summaryBlobHashes(_ id: UUID) -> Set<String>? {
+    public func summaryBlobHashes(_ id: UUID) -> Set<String>? {
         guard let s = notes.first(where: { $0.id == id }), s.problem == nil, !placeholderNoteIDs.contains(id) else {
             return nil
         }
@@ -150,7 +175,7 @@ extension AppModel {
     }
 
     /// The editor that has note `id` open, if any (library or note window).
-    func openEditor(_ id: UUID) -> NoteEditor? {
+    public func openEditor(_ id: UUID) -> Editor? {
         if let editor, editor.noteID == id { return editor }
         return windowEditors[id]
     }
@@ -159,7 +184,7 @@ extension AppModel {
 
     /// Reads every stored entry of the open vault once (entries updated this
     /// session are newer and kept).
-    func loadAttachmentIndex() async {
+    public func loadAttachmentIndex() async {
         guard !attachmentIndexLoaded, let store = attachmentIndexStore() else { return }
         let gen = generation
         let stored = (try? await offMain(priority: .utility) { store.loadAll() }) ?? [:]
@@ -172,7 +197,7 @@ extension AppModel {
     /// Queues the notes of the list that have no entry yet (`all`: every
     /// note, to look at each one's `att/` again, e.g. for blobs that arrived
     /// without a revision). Returns at once; the model's task does the work.
-    func indexAttachments(all: Bool = false) async {
+    public func indexAttachments(all: Bool = false) async {
         await loadAttachmentIndex()
         for s in notes where !placeholderNoteIDs.contains(s.id) && (all || attachmentIndex[s.id] == nil) {
             noteChanged(s.id, current: s.problem == nil ? Set(s.blobs.map(\.sha256)) : nil)
@@ -180,18 +205,18 @@ extension AppModel {
     }
 
     /// Notes in the list without an entry (Settings offers to check them).
-    var notesWithoutAttachmentIndex: Int {
+    public var notesWithoutAttachmentIndex: Int {
         notes.filter { !placeholderNoteIDs.contains($0.id) && attachmentIndex[$0.id] == nil }.count
     }
 
     /// Settings' numbers and lists, from the entries of the notes in the list.
-    func attachmentStorage() -> AttachmentStorageReport {
+    public func attachmentStorage() -> AttachmentStorageReport {
         let listed = Set(notes.map(\.id))
         return AttachmentStorageReport(entries: attachmentIndex.values.filter { listed.contains($0.note) })
     }
 
     /// The title the list shows for note `id`.
-    func noteTitle(_ id: UUID) -> String { notesByID[id]?.title ?? "" }
+    public func noteTitle(_ id: UUID) -> String { notesByID[id]?.title ?? "" }
 
     // MARK: Deleting
 
@@ -200,7 +225,7 @@ extension AppModel {
     /// full and a blob goes only if no revision references it and this device
     /// first found it unused at least 30 days ago (the entry's records). In
     /// iCloud Drive the note and the blobs are made local first.
-    func deleteUnusedAttachments(_ items: [AttachmentStorageReport.Unused]) async throws -> AttachmentDeletion {
+    public func deleteUnusedAttachments(_ items: [AttachmentStorageReport.Unused]) async throws -> AttachmentDeletion {
         guard let vault, phase == .unlocked else { throw ModelError.noVaultOpen }
         let gen = generation
         var result = AttachmentDeletion()
@@ -215,7 +240,7 @@ extension AppModel {
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
-                    result.problems.append(String(localized: "\(noteTitleOrID(note)): not downloaded: \(String(describing: error))", comment: "Delete result; the note's title, then the error (English)"))
+                    result.problems.append(.init(note: note, kind: .notDownloaded(String(describing: error))))
                     continue
                 }
                 try ensureCurrent(gen)
@@ -233,7 +258,7 @@ extension AppModel {
                 }
             } catch {
                 try ensureCurrent(gen)
-                result.problems.append("\(noteTitleOrID(note)): \(error)")
+                result.problems.append(.init(note: note, kind: .failed("\(error)")))
                 continue
             }
             try ensureCurrent(gen)
@@ -241,9 +266,9 @@ extension AppModel {
             let sizes = Dictionary(byNote[note]?.map { ($0.fileName, $0.bytes) } ?? [], uniquingKeysWith: { a, _ in a })
             result.deleted += report.deleted.count
             result.bytes += report.deleted.reduce(0) { $0 + (sizes[$1] ?? 0) }
-            if let blocked = report.blocked { result.problems.append("\(noteTitleOrID(note)): \(blocked)") }
+            if let blocked = report.blocked { result.problems.append(.init(note: note, kind: .blocked(blocked))) }
             for (name, why) in report.failures.sorted(by: { $0.key < $1.key }) where names.contains(name) {
-                result.problems.append(String(localized: "\(noteTitleOrID(note)): a file does not verify and was kept: \(why)", comment: "Delete result; the note's title, then the reason (English)"))
+                result.problems.append(.init(note: note, kind: .doesNotVerify("\(why)")))
             }
             // Collection's look is the newest: keep its records, then refresh the entry.
             var entry = attachmentIndex[note] ?? AttachmentIndexEntry(note: note)
@@ -255,24 +280,19 @@ extension AppModel {
     }
 
     /// The unused attachments that may be deleted now ("Delete All Eligible").
-    func eligibleUnusedAttachments() -> [AttachmentStorageReport.Unused] {
+    public func eligibleUnusedAttachments() -> [AttachmentStorageReport.Unused] {
         attachmentStorage().eligible(at: attachmentNow())
-    }
-
-    private func noteTitleOrID(_ id: UUID) -> String {
-        let t = noteTitle(id)
-        return t.isEmpty ? String(id.uuidString.lowercased().prefix(8)) : NoteTitle.display(t)
     }
 
     // MARK: Previews
 
     /// The largest attachment Settings decrypts for a preview.
-    nonisolated static let maxPreviewBytes = 32 << 20
+    public nonisolated static var maxPreviewBytes: Int { 32 << 20 }
 
     /// The content of an image or PDF blob for its preview in Settings
     /// (verified, in memory only); nil for other kinds, large files, or when
     /// it cannot be read.
-    func attachmentPreviewData(note: UUID, fileName: String, kind: BlobKind) async -> Data? {
+    public func attachmentPreviewData(note: UUID, fileName: String, kind: BlobKind) async -> Data? {
         guard kind == .image || kind == .pdf, let vault, phase == .unlocked else { return nil }
         if let fetchBlob = partialBlobFetcher() { try? await fetchBlob(note, fileName) }
         let gen = generation
@@ -284,11 +304,11 @@ extension AppModel {
     }
 }
 
-extension NoteEditor {
+extension NoteEditorModel {
     /// The content hashes the note shows now (`Item.blobReferences`: blobs,
     /// video posters, equation renders; recordings' audio and transcripts),
     /// as `NoteState.blobReferences` gives them.
-    var blobHashes: Set<String> {
+    public var blobHashes: Set<String> {
         Set(pages.flatMap { $0.items.flatMap(\.blobReferences).map(\.sha256) }
             + recordings.flatMap { [$0.blob.sha256] + ($0.transcript.map { [$0.sha256] } ?? []) })
     }

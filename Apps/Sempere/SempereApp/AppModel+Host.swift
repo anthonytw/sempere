@@ -24,7 +24,10 @@ enum AppHost: AppModelHost {
         AppModelServices(perf: AppPerfSink(), settings: UserDefaults.standard, bookmarks: SecurityScopedBookmarks(),
                          platform: AppPlatform(), webdavRemote: LiveWebDAVRemote(),
                          webdavPasswords: KeychainWebDAVPasswordStore(), iCloudHooks: CloudVault.Hooks.live,
-                         transcriber: SpeechRecordingTranscriber(), appName: NoteWriter.appName)
+                         transcriber: SpeechRecordingTranscriber(), appName: NoteWriter.appName,
+                         makeRenderCache: AppModel.makeRenderCache, makePlaybackBackend: { AVAudioPlaybackBackend() },
+                         recordingRoot: RecordingSession.root, recordingsInUse: AppModel.recordingsInUse,
+                         audioFiles: AVCaptureAudioFiles())
     }
 
     static func didUnlock(_ model: AppModel) async {
@@ -53,29 +56,22 @@ enum AppHost: AppModelHost {
         NotePDFExport.purge(in: model.exportFolder, olderThan: 0)   // plaintext PDFs dragged out of this vault
         model.exportRequest = nil
         model.bulkExportRequest = nil
-        model.resetAttachmentIndex()
         model.draggedPayload = nil
         model.dropTarget = nil
         model.takeoverAlert = nil
         model.sightingRowsState = []
     }
 
-    static func vaultChanged(_ model: AppModel) { model.dropAttachments() }
-
     static func editorsChanged(_ model: AppModel) { model.idleTimer?.update() }
 
     static func prepareEditor(_ editor: NoteEditor, of note: UUID, in model: AppModel) {
-        editor.prepareBlobWrite = model.blobWritePreparer(note: note)
-        model.configureRecordings(editor)
+        model.configureRecordingSaves(editor)
     }
 
     static func unreadableText(_ editor: NoteEditor) -> String {
         editor.readOnlyReason ?? String(localized: "This note could not be read.")
     }
 
-    static func noteWritten(_ id: UUID, in model: AppModel) { model.noteWritten(id) }
-    static func summariesRead(_ summaries: [NoteSummary], in model: AppModel) { model.summariesRead(summaries) }
-    static func notesRemoved(_ ids: Set<UUID>, in model: AppModel) { model.forgetAttachmentIndex(ids) }
     static func listingFinished(_ model: AppModel) { model.thinIfDue() }
     static func closeWindowEditors(_ model: AppModel) async { await model.closeWindowEditors() }
     static func openWindowNote(_ id: UUID, in model: AppModel) async throws { _ = try await model.openWindowNote(id) }
@@ -84,10 +80,6 @@ enum AppHost: AppModelHost {
     static func refreshDeviceState(_ model: AppModel) async { await model.refreshDeviceState() }
     static func scheduleSettingsSync(_ model: AppModel) { model.scheduleSettingsSync() }
     static func startInboxAdoption(_ model: AppModel) { model.startInboxAdoption() }
-
-    static func play(_ recording: Recording, in editor: NoteEditor, from time: Double, model: AppModel) {
-        Task { await model.play(recording, in: editor, from: time, start: false) }
-    }
 }
 
 /// The state of the `AppModel` extensions still in the app, whose types are the app's (wave 5b part 3 moves each
@@ -95,12 +87,6 @@ enum AppHost: AppModelHost {
 @MainActor
 @Observable
 final class AppModelAppState {
-    /// Makes the players' audio backends; nil: AVFoundation's (tests pass fakes).
-    @ObservationIgnored var playbackBackend: (@MainActor () -> AudioPlaybackBackend)?
-
-    /// Where recordings in progress keep their files (tests pass their own).
-    @ObservationIgnored var recordingRoot: URL = RecordingSession.root
-
     /// Quick voice notes (`QuickCapture`, `AppModel+Inbox`); tests pass their own.
     @ObservationIgnored var quickCapture: QuickCapture = QuickCapture.shared
 
@@ -161,12 +147,6 @@ final class AppModelAppState {
     /// Where settings are read and written (tests use a scratch suite).
     @ObservationIgnored var settingsDefaults: UserDefaults = .standard
 
-    /// The open vault's render cache, made on first use; closed with the vault.
-    @ObservationIgnored var renderCache: RenderCache?
-
-    /// Items copied for pasting (`ItemClipboard`), within the open vault.
-    let itemClipboard = ItemClipboard()
-
     /// Where this model's PDF exports (drag to Finder) are written; emptied when the vault closes.
     let exportFolder: URL = NotePDFExport.folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
 
@@ -203,14 +183,6 @@ final class AppModelAppState {
 }
 
 extension AppModel {
-    var playbackBackend: (@MainActor () -> AudioPlaybackBackend)? {
-        get { appState.playbackBackend }
-        set { appState.playbackBackend = newValue }
-    }
-    var recordingRoot: URL {
-        get { appState.recordingRoot }
-        set { appState.recordingRoot = newValue }
-    }
     var quickCapture: QuickCapture {
         get { appState.quickCapture }
         set { appState.quickCapture = newValue }
@@ -283,11 +255,6 @@ extension AppModel {
         get { appState.settingsDefaults }
         set { appState.settingsDefaults = newValue }
     }
-    var renderCache: RenderCache? {
-        get { appState.renderCache }
-        set { appState.renderCache = newValue }
-    }
-    var itemClipboard: ItemClipboard { appState.itemClipboard }
     var exportFolder: URL { appState.exportFolder }
     var exportEpoch: ExportEpoch { appState.exportEpoch }
     var takeoverAlert: TakeoverAlert? {
