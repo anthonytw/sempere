@@ -561,3 +561,15 @@ enum RecordingRecovery {
         }
     }
 }
+
+/// The recording quick capture drives (`QuickCapture`, SempereAppCore; `AppCaptureRecorder` makes it).
+extension RecordingSession: CaptureRecording {
+    /// Paused by an interruption, a route change or the user.
+    var isPaused: Bool { state == .interrupted || state == .paused }
+}
+
+extension RecordingError: CaptureStartRefusal {
+    /// The audio system refused to start: from the background, iOS may refuse the microphone
+    /// where the app in front would get it (`VoiceNoteIntents` then continues in the app).
+    var mayWorkInForeground: Bool { isCannotRecord }
+}

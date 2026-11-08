@@ -51,9 +51,7 @@ struct OpenedVaultTests {
         let (lookalike, _) = try AppModelTests.fixtureVault()
         let key = try String(contentsOf: keyURL, encoding: .utf8)
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        let qc = QuickCapture()
-        qc.store = MemoryCaptureProfileStore()
-        qc.showsActivity = false
+        let qc = QuickCapture.testing()
         model.quickCapture = qc
         try await model.openVault(at: mine)
         try await model.unlock(identityText: key)

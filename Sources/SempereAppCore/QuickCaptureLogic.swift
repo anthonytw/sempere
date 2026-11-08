@@ -3,9 +3,9 @@ import Sempere
 
 // The logic of quick voice notes (docs/quick-capture.md, format.md §11) that needs no platform service: the stored
 // profile and where it lives, the errors, which segment files a recording folder holds and what a seal may do with
-// them, and where a sealed capture goes (the vault's inbox, else the local queue). The recorder, the audio session,
-// the Live Activity, the intents, the Keychain and file protection stay in the app (`QuickCapture`), which calls
-// these. No text: the app words the errors (`QuickCapture+Text.swift`).
+// them, and where a sealed capture goes (the vault's inbox, else the local queue). The state machine that calls these is
+// `QuickCapture` (`QuickCapture/`); the recorder, the audio session, the Live Activity, the intents, the Keychain and
+// file protection stay in the app (`QuickCapture+App.swift`). No text: the app words the errors (`QuickCapture+Text.swift`).
 
 /// What this device keeps for quick voice notes (docs/quick-capture.md):
 /// the vault's capture profile (public recipients and the capture key, never
@@ -140,7 +140,7 @@ public enum CaptureSegments {
 
     /// The segment files of a recording folder, in order: those `listed`
     /// (the session's, or its manifest's), then every other
-    /// `segment-NNN.m4a` in `folder` by number. A segment begun just before
+    /// `segment-NNN.aac` (or, from build 6 and earlier, `.m4a`) in `folder` by number. A segment begun just before
     /// the app died may be missing from the manifest (its write failed or had
     /// not happened yet); sealing without it and deleting the folder would
     /// lose its audio.

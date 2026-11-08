@@ -38,6 +38,7 @@ let package = Package(
         .library(name: "SempereWebDAV", targets: ["SempereWebDAV"]),
         .library(name: "SempereSpeech", targets: ["SempereSpeech"]),
         .library(name: "SempereAppCore", targets: ["SempereAppCore"]),
+        .library(name: "SempereCaptureShared", targets: ["SempereCaptureShared"]),
         .executable(name: "sempere", targets: ["SempereCLI"]),
     ] + appleOnlyProducts,
     dependencies: [
@@ -103,11 +104,16 @@ let package = Package(
         .target(name: "SempereSpeech", dependencies: ["Sempere"]),
         // The apps' session state, shared by the iPad, iPhone and Mac apps (docs/design/thin-app.md "Rules"): the menu
         // commands, the note view's modes and toolbar, the device settings, onboarding, the vault library, backups, quick
-        // capture's logic, the sync scheduling (`SyncCoordinator`, `SyncSession`, `SyncStatus`) and the demo vault
-        // (DEBUG only).
+        // capture (its state machine, the platform behind protocols), the sync scheduling (`SyncCoordinator`,
+        // `SyncSession`, `SyncStatus`) and the demo vault (DEBUG only).
         // Foundation and Observation only, and no user-facing text: the app words its values.
         .target(name: "SempereAppCore", dependencies: ["Sempere", "Age", "SempereImporters", "SempereSync", "SempereRender",
-                                                       "SempereWebDAV"]),
+                                                       "SempereWebDAV", "SempereCaptureShared"]),
+        // What the quick voice note widgets, the control and the Live Activity share with the app (docs/design/thin-app.md
+        // "Rules"): the status the widgets read, the links, the tap log and the intents' hooks. No dependencies (Foundation
+        // only), so the widget extension links it without the core; the words and the AppIntents/ActivityKit glue stay in
+        // `Apps/Sempere/SempereShared`.
+        .target(name: "SempereCaptureShared"),
         // Noto fonts for text in CLI exports (OFL 1.1); the app does not link them.
         .target(name: "SempereFonts", resources: [.copy("Fonts")]),
         .executableTarget(
@@ -156,8 +162,9 @@ let package = Package(
                                    "ImportTestSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "SempereSync", "Sempere", "Age", "FuzzSupport",
                                                        "TempDirSupport", "VaultTestSupport"]),
-        .testTarget(name: "SempereAppCoreTests", dependencies: ["SempereAppCore", "Sempere", "SempereSync", "SempereWebDAV", "Age",
-                                                         "TempDirSupport", "VaultTestSupport"]),
+        .testTarget(name: "SempereAppCoreTests", dependencies: ["SempereAppCore", "SempereCaptureShared", "Sempere", "SempereSync",
+                                                         "SempereWebDAV", "Age", "TempDirSupport", "VaultTestSupport"]),
+        .testTarget(name: "SempereCaptureSharedTests", dependencies: ["SempereCaptureShared", "TempDirSupport"]),
         .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport", "VaultTestSupport"]),
     ] + appleOnlyTargets + (hasNotability ? [
         // The Notability importer (docs/import-notability.md "Structure"). Optional: delete this directory

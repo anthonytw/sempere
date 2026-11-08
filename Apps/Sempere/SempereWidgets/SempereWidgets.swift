@@ -1,4 +1,5 @@
 import AppIntents
+import SempereCaptureShared
 import SwiftUI
 import WidgetKit
 #if canImport(ActivityKit)
@@ -14,6 +15,9 @@ import ActivityKit
 /// App Group container and reloads these after every change.
 @main
 struct SempereWidgets: WidgetBundle {
+    /// A tap kept in this process (an intent run without the app's hooks) goes to the unified log too.
+    init() { VoiceNoteTapLog.installUnifiedLog() }
+
     var body: some Widget {
         VoiceNoteWidget()
         VoiceNoteControl()

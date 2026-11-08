@@ -9,9 +9,10 @@ any device, each voice note becomes a note in the inbox notebook ("Inbox",
 configurable), titled with its date and time, holding the recording on its
 page (the card a recording made in a note gets, `format.md` §11.3) and, when
 it is ready, its transcript in that card. Format: `format.md` §11. Code: core
-`Sources/Sempere/CaptureInbox.swift`, CLI `sempere inbox`, app
-`QuickCapture.swift`, `AppModel+Inbox.swift`, `SempereShared/` (intents) and
-`SempereWidgets/` (widget extension).
+`Sources/Sempere/CaptureInbox.swift`, the state machine `QuickCapture` and its rules
+(`Sources/SempereAppCore/QuickCapture/`, `QuickCaptureLogic.swift`), what the widgets share with the app
+(`Sources/SempereCaptureShared`), CLI `sempere inbox`, app `QuickCapture+App.swift` (the platform: recorder,
+Live Activity, Keychain), `AppModel+Inbox.swift`, `SempereShared/` (intents) and `SempereWidgets/` (widget extension).
 
 ## Why a capture key and an inbox
 
@@ -192,7 +193,7 @@ Siri matches what it heard against these phrases with some freedom, but not
 against arbitrary wording: a phrase that is not listed may not work.
 
 The intents live in `Apps/Sempere/SempereShared/`, which both the app and
-the widget extension compile. They always run in the app's process
+the widget extension compile (what they do is `VoiceNoteActions`, `SempereCaptureShared`). They always run in the app's process
 (`AudioRecordingIntent`, `LiveActivityIntent`); the extension only shows
 buttons.
 
@@ -217,7 +218,7 @@ explanation (also shown in Settings).
 ## What the widgets and the control show
 
 The widget extension cannot ask the app anything, so the app writes a small
-status (`VoiceNoteStatus`, `SempereShared/VoiceNoteStatus.swift`) into the
+status (`VoiceNoteStatus`, `Sources/SempereCaptureShared/VoiceNoteStatus.swift`) into the
 App Group container `group.io.github.anthonytw.sempere` after every change
 (recorder state, quick voice notes turned on or off, the app becoming active,
 Live Activities switched in Settings) and reloads the widgets
@@ -333,7 +334,7 @@ text; the audio system's code is named, for example `'!rec' cannotStartRecording
 error, and the outcome. No note content, no keys, no vault name. Settings ▸ Quick Voice Notes ▸ Recent Starts
 shows them (selectable text), with Clear.
 
-Every tap that reaches Sempere is kept too (`VoiceNoteTap`, `SempereShared/VoiceNoteTapLog.swift`), whatever it
+Every tap that reaches Sempere is kept too (`VoiceNoteTap`, `Sources/SempereCaptureShared/VoiceNoteTapLog.swift`), whatever it
 was decided to do, in `VoiceNoteTaps.json` in the App Group container (the last 12, protected until the first
 unlock, so the widget extension could add to it as well) and in the unified log (`voice note tap …`): which
 intent ran (`VoiceNoteControlIntent`, `StartVoiceNoteIntent`, `StopVoiceNoteIntent`) or that a widget opened the

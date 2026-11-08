@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 import Testing
 @testable import SempereApp
 
@@ -68,7 +69,7 @@ struct StatusItemHostTests {
         var updates: [StatusItemProtocol.State] = []
         private var token: NSObjectProtocol?
 
-        init(bundleExists: Bool = true, capture: QuickCapture = QuickCapture()) {
+        init(bundleExists: Bool = true, capture: QuickCapture = QuickCapture.testing()) {
             let name = "StatusItemHostTests-\(UUID().uuidString)"
             defaults = TestDefaults.suite(name)!
             defaults.removePersistentDomain(forName: name)

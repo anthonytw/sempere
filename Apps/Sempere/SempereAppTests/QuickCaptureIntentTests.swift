@@ -1,11 +1,13 @@
 import Foundation
 import Sempere
 import SempereAppCore
+import SempereCaptureShared
 import Testing
 @testable import SempereApp
 
 /// Gap audit GA-56: what the quick voice note intents do with the app's hooks
-/// (`VoiceNoteActions`), how long the result is shown, and when the banner goes.
+/// (`VoiceNoteActions`) and how long the result is shown. When the banner goes:
+/// `QuickCaptureFlowTests.theBannerClearsItselfAfterItsTime` (SempereAppCoreTests).
 ///
 /// Not covered here, because it needs a device or the widget extension:
 /// - the widget, control and Live Activity views (`SempereWidgets.swift`) live in
@@ -212,28 +214,12 @@ struct QuickCaptureIntentTests {
         #expect(QuickCaptureTests.inbox(url).count == 1)
     }
 
-    /// The Live Activity is dismissed `shownFor` seconds after it ends (`endActivity(…, after:)`),
-    /// and the banner clears itself after the same time.
-    @Test func resultsAreShownFiveSecondsAndFailuresTwelve() {
-        #expect(VoiceNoteResult.savedToInbox.shownFor == 5)
-        #expect(VoiceNoteResult.savedOnDevice.shownFor == 5)
-        #expect(VoiceNoteResult.failed.shownFor == 12)
+    /// The Live Activity's and the banner's words for each result (`VoiceNoteStatus+Text.swift`; how long each is
+    /// shown: `VoiceNoteStatusTests.resultsAreShownFiveSecondsAndFailuresTwelve`, SempereCaptureSharedTests).
+    @Test func theResultsAreWorded() {
         for result in [VoiceNoteResult.savedToInbox, .savedOnDevice, .failed] {
-            #expect(!result.title.isEmpty && !result.detail.isEmpty && !result.symbol.isEmpty)
+            #expect(!result.title.isEmpty && !result.detail.isEmpty)
         }
-        #expect(VoiceNoteResult.failed.symbol != VoiceNoteResult.savedToInbox.symbol)
-    }
-
-    /// A saved voice note's banner goes by itself after its 5 seconds, unless
-    /// it was replaced meanwhile (the old timer must not clear a newer notice).
-    @Test func theBannerClearsItselfAfterItsTime() async throws {
-        let (_, _, _, qc, _) = try QuickCaptureTests.setUp(transcribe: false)
-        try await qc.start()
-        _ = try await qc.stop()
-        let first = try #require(qc.notice)
-        #expect(first.result == .savedToInbox)
-        #expect(first.error == nil)
-        #expect(await TS.waitUntil(timeout: .seconds(2)) { qc.notice == nil } == false, "still shown after 2 seconds")
-        #expect(await TS.waitUntil(timeout: .seconds(8)) { qc.notice == nil }, "gone after about 5 seconds")
+        #expect(VoiceNoteResult.savedToInbox.title == "Saved to Inbox")
     }
 }

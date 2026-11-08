@@ -7,8 +7,9 @@ import Testing
 import VaultTestSupport
 
 /// Quick voice notes' rules that need no recorder (docs/quick-capture.md): a recording folder's segments, what a seal
-/// may delete, and where a sealed capture goes. The recorder, the Live Activity and the full start/stop/sweep flow:
-/// `QuickCaptureTests`, `QuickCaptureRobustnessTests` (SempereAppTests).
+/// may delete, and where a sealed capture goes. The start/stop/sweep flow on fakes: `QuickCaptureFlowTests`,
+/// `QuickCaptureStartTests`; on the app's recorder and AVFoundation: `QuickCaptureTests`, `QuickCaptureRobustnessTests`
+/// (SempereAppTests).
 struct QuickCaptureLogicTests {
     static func tempDir(_ name: String = "capture") throws -> URL {
         let dir = TestTemp.root.appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)

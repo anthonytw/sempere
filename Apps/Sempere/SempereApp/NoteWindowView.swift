@@ -1,5 +1,6 @@
 import Sempere
 import SempereAppCore
+import SempereCaptureShared
 import SwiftUI
 
 /// One note in a window of its own (Mac): its canvas, title and tags. The

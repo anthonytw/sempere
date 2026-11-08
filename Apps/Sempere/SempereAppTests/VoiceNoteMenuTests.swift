@@ -51,9 +51,7 @@ struct VoiceNoteMenuActionTests {
 struct VoiceNoteMenuModelTests {
     @Test func notSetUpOpensQuickVoiceNotesSettings() async {
         let model = AppModel()
-        let capture = QuickCapture()
-        capture.store = MemoryCaptureProfileStore()
-        capture.showsActivity = false
+        let capture = QuickCapture.testing()
         model.quickCapture = capture
         await model.toggleVoiceNote()
         #expect(capture.pendingLink == .settings)
@@ -79,7 +77,7 @@ struct VoiceNoteMenuModelTests {
 
     @Test func aMicrophoneRefusalIsShownAsAnError() async throws {
         let (_, _, _, capture, _) = try QuickCaptureTests.setUp(transcribe: false, transcriber: nil)
-        capture.microphoneAllowed = { false }
+        capture.appAudio.microphoneAllowed = { false }
         let model = AppModel()
         model.quickCapture = capture
         await model.toggleVoiceNote()

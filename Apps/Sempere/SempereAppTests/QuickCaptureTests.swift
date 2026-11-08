@@ -3,13 +3,16 @@ import AVFoundation
 import Foundation
 import Sempere
 import SempereAppCore
+import SempereCaptureShared
 import SempereSync
 import Testing
 @testable import SempereApp
 
-/// Quick voice notes (docs/quick-capture.md): capture with only the stored
-/// profile (no key, no unlock), delivery to the vault's inbox or the queue,
-/// interruptions, transcripts now or later, adoption into notes.
+/// Quick voice notes in the app (docs/quick-capture.md): capture on the app's recorder (`RecordingSession`, files
+/// protected for the Lock Screen) and AVFoundation (ADTS segments merged into MPEG-4), interruptions of the real
+/// session, transcripts now or later, adoption into notes by the `AppModel`. The state machine itself (starts,
+/// stops, sweeps, seals, the status and the banner) is tested on Linux with fakes: `QuickCaptureFlowTests`
+/// (SempereAppCoreTests).
 @Suite(.serialized)
 @MainActor
 struct QuickCaptureTests {
@@ -30,15 +33,7 @@ struct QuickCaptureTests {
                                             bookmark: try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil),
                                             transcribe: transcribe))
         let center = NotificationCenter()
-        let qc = QuickCapture()
-        qc.store = store
-        qc.backend = { FakeCapture() }
-        qc.microphoneAllowed = { true }
-        qc.transcriber = transcriber
-        qc.root = temp("qc-root")
-        qc.queueRoot = temp("qc-queue")
-        qc.center = center
-        qc.showsActivity = false
+        let qc = QuickCapture.testing(store: store, center: center, transcriber: transcriber)
         return (url, key, identity, qc, center)
     }
 
@@ -79,27 +74,6 @@ struct QuickCaptureTests {
         #expect(pending.transcript?.segments.first?.words?.map(\.t) == ["Linear", "maps."])
     }
 
-    /// Device check c48: a voice note stopped within a second of starting (before the first segment tick, and with
-    /// a recorder that wrote almost nothing) is saved, not dropped as too short.
-    @Test func aVoiceNoteStoppedWithinASecondIsSaved() async throws {
-        let (url, _, identity, qc, _) = try Self.setUp(transcribe: false)
-        try await qc.start()
-        let outcome = try await qc.stop()   // no time passes
-        #expect(outcome.error == nil && outcome.delivery == .vault)
-        #expect(qc.notice?.result == .savedToInbox)
-        #expect(Self.inbox(url) == [CaptureFile.name(outcome.id, .capture)])
-        #expect(Self.leftovers(qc.root).isEmpty)
-        let pending = try Vault.open(at: url, identities: [identity]).readCapture(outcome.id)
-        #expect((pending.audio?.count ?? 0) > 0)
-        // And again right after, from the other side of a pause: start, interruption, stop.
-        try await qc.start()
-        let session = try #require(qc.session)
-        session.interruption(began: true, shouldResume: false)
-        let second = try await qc.stop()
-        #expect(second.error == nil)
-        #expect(Self.inbox(url).count == 2)
-    }
-
     /// A voice note started and stopped on the Lock Screen is assembled and
     /// read back from closed files before any unlock: its files must use a
     /// class that is readable while locked (after the first unlock), not
@@ -109,7 +83,7 @@ struct QuickCaptureTests {
     @Test func voiceNotesAreRecordedInAClassReadableWhileLocked() async throws {
         let (_, _, _, qc, _) = try Self.setUp(transcribe: false)
         try await qc.start()
-        let session = try #require(qc.session)
+        let session = try #require(qc.session as? RecordingSession)
         #expect(session.protection == .completeUntilFirstUserAuthentication)
         _ = try await qc.stop()
         let inNote = RecordingSession(noteID: UUID(), format: .default, root: Self.temp("rec"), backend: FakeCapture())
@@ -122,7 +96,7 @@ struct QuickCaptureTests {
     @Test func interruptionDuringAVoiceNote() async throws {
         let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
         try await qc.start()
-        let session = try #require(qc.session)
+        let session = try #require(qc.session as? RecordingSession)
         // The iOS 27 deactivation and resumption messages cannot be built in a
         // test (their contexts are made by the system): drive the session directly.
         session.interruption(began: true, shouldResume: false)
@@ -134,150 +108,13 @@ struct QuickCaptureTests {
         #expect(Self.inbox(url) == [CaptureFile.name(outcome.id, .capture)])
     }
 
-    #if os(iOS) && !targetEnvironment(macCatalyst)
-    /// Bug audit B41: the Live Activity shows a pause (its timer stands still)
-    /// and the resumption, and its last state gives the length of the audio,
-    /// not the time since the start.
-    @Test func theLiveActivityShowsAPause() async throws {
-        let (_, _, _, qc, _) = try Self.setUp(transcribe: false)
-        var states: [VoiceNoteAttributes.ContentState] = []
-        qc.activityStates = { states.append($0) }
-        try await qc.start()
-        let session = try #require(qc.session)
-        session.interruption(began: true, shouldResume: false)
-        #expect(qc.isPaused)
-        #expect(await TS.waitUntil { states.contains { $0.paused } })
-        let paused = try #require(states.last)
-        #expect(paused.paused && paused.isRecording && !paused.timerRuns)
-        let length = try #require(paused.ended).timeIntervalSince(paused.started)
-        #expect(abs(length - session.timeline.audioLength(at: Date())) < 0.5)
-        try await Task.sleep(for: .milliseconds(300))   // paused: no audio, and the timer must not count it
-        session.interruption(began: false, shouldResume: true)
-        #expect(await TS.waitUntil { states.count >= 2 && states.last?.paused == false })
-        let resumed = try #require(states.last)
-        #expect(resumed.timerRuns)
-        let start = try #require(session.timeline.started)
-        #expect(resumed.started.timeIntervalSince(start) >= 0.3, "the timer starts later by the pause")
-        _ = try await qc.stop()
-        let last = try #require(states.last)
-        let ended = try #require(last.ended)
-        let shown = ended.timeIntervalSince(last.started)
-        #expect(abs(shown - session.timeline.audioLength(at: Date())) < 0.05)
-        #expect(shown < ended.timeIntervalSince(start) - 0.25)
-    }
-    #endif
-
-    /// When the vault folder cannot be reached the sealed capture waits in a
-    /// local queue (encrypted) and moves into the vault later.
-    @Test func unreachableVaultQueuesTheCapture() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        // The bookmark now names a folder that is not the vault (gone, renamed, another vault).
-        let other = Self.temp("not-the-vault")
-        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
-        var stored = try #require(try qc.store.load())
-        stored.bookmark = try other.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        try qc.store.save(stored)
-        try await qc.start()
-        let outcome = try await qc.stop()
-        #expect(outcome.delivery == .queued)
-        #expect(qc.notice?.result == .savedOnDevice, "the banner says the note is on this device, not in the vault yet")
-        let vaultID = stored.profile.vaultId
-        #expect(Self.leftovers(qc.queueFolder(vaultID)).sorted()
-                == [CaptureFile.name(outcome.id, .capture), CaptureFile.name(outcome.id, .capture) + ".epoch"])
-        #expect(Self.inbox(url).isEmpty)
-        #expect(qc.flushQueue(into: url, vaultId: vaultID, coordinated: false) == 1)
-        #expect(Self.inbox(url) == [CaptureFile.name(outcome.id, .capture)])
-        #expect(Self.leftovers(qc.queueFolder(vaultID)).isEmpty)
-    }
-
-    /// Security review 2026-10 (N2): a vault whose `vault.json` names a newer
-    /// format is read-only for this version (format.md §7.3), so a voice note
-    /// for it waits in the local queue, and the queue is not flushed into it.
-    @Test func aReadOnlyVaultGetsNoCaptures() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let manifest = url.appendingPathComponent("vault.json")
-        var obj = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: manifest)) as? [String: Any])
-        obj["format"] = "sempere/9"
-        try JSONSerialization.data(withJSONObject: obj).write(to: manifest)
-        let vaultID = try #require(try qc.store.load()).profile.vaultId
-        #expect(!CaptureDelivery.acceptsCaptures(at: url, vaultId: vaultID))
-
-        try await qc.start()
-        let outcome = try await qc.stop()
-        #expect(outcome.delivery == .queued)
-        #expect(Self.inbox(url).isEmpty, "nothing written into the read-only vault")
-        #expect(qc.flushQueue(into: url, vaultId: vaultID, coordinated: false) == 0)
-        #expect(Self.inbox(url).isEmpty)
-        #expect(Self.leftovers(qc.queueFolder(vaultID)).filter { CaptureFile.parse(name: $0) != nil } == [CaptureFile.name(outcome.id, .capture)])
-    }
-
-    /// The widget and Control Center fired together: the second start used to
-    /// pass the idle check during the first one's microphone prompt and start
-    /// a second recording that nothing could stop.
-    @Test func aSecondStartDuringTheFirstIsRefused() async throws {
-        let (_, _, _, qc, _) = try Self.setUp()
-        let gate = AsyncStream<Void>.makeStream()
-        qc.microphoneAllowed = {
-            for await _ in gate.stream { break }
-            return true
-        }
-        let first = Task { try await qc.start() }
-        #expect(await TS.waitUntil { qc.state == .starting })
-        await #expect(throws: QuickCaptureError.alreadyRecording) { try await qc.start() }
-        gate.continuation.yield()
-        try await first.value
-        #expect(qc.state == .recording)
-        _ = try await qc.stop()
-        #expect(qc.state == .idle)
-    }
-
-    /// The widgets and the control read what `publishStatus` writes into the
-    /// App Group: set up or not, ready, recording (with its start), and back.
-    /// Widgets are reloaded only when the status changed.
-    @Test func statusFollowsSetupAndTheRecorder() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let statusStore = VoiceNoteStatusStore(directory: Self.temp("qc-status"))
-        let reloads = ReloadCounter()
-        qc.statusStore = statusStore
-        qc.activitiesEnabled = { true }
-        qc.reloadSurfaces = { reloads.count += 1 }
-
-        qc.publishStatus()
-        #expect(statusStore.read() == VoiceNoteStatus(phase: .ready))
-        #expect(reloads.count == 1)
-        qc.publishStatus()
-        #expect(reloads.count == 1, "an unchanged status reloads nothing")
-
-        try await qc.start()
-        let recording = try #require(statusStore.read())
-        #expect(recording.phase == .recording)
-        #expect(recording.started == qc.started)
-        #expect(recording.action == .stop)
-
-        let outcome = try await qc.stop()
-        #expect(outcome.delivery == .vault)
-        #expect(statusStore.read() == VoiceNoteStatus(phase: .ready))
-        #expect(qc.notice?.result == .savedToInbox, "the banner says where the voice note went")
-        #expect(Self.inbox(url).count == 1)
-
-        qc.activitiesEnabled = { false }
-        qc.publishStatus()
-        #expect(statusStore.read()?.phase == .liveActivitiesOff)
-        #expect(statusStore.read()?.action == .open(.settings))
-
-        try qc.store.delete()
-        qc.publishStatus()
-        #expect(statusStore.read()?.phase == .notSetUp)
-        #expect(statusStore.read()?.action == .open(.settings))
-    }
-
     /// The widgets are reloaded when the status changes, and also, unchanged, each time the
     /// app launches or becomes active: a widget can show an older status than the file.
     @Test func widgetsReloadOnChangeAndOnEveryActivation() async throws {
         let (_, _, _, qc, _) = try Self.setUp(transcribe: false)
         let reloads = ReloadCounter()
         qc.statusStore = VoiceNoteStatusStore(directory: Self.temp("qc-status"))
-        qc.activitiesEnabled = { true }
+        qc.liveActivity = NoLiveActivity()   // enabled
         qc.reloadSurfaces = { reloads.count += 1 }
         qc.publishStatus()
         #expect(reloads.count == 1)
@@ -296,108 +133,6 @@ struct QuickCaptureTests {
         #expect(VoiceNoteStatus.refreshInterval > 0 && VoiceNoteStatus.refreshInterval <= 3600)
     }
 
-    /// The status widget's timer follows a pause as the Live Activity's does
-    /// (B41): it stands still at the audio's length while paused, and runs
-    /// again from a start moved later by the pause.
-    @Test func theStatusWidgetTimerStandsStillDuringAPause() async throws {
-        let (_, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let statusStore = VoiceNoteStatusStore(directory: Self.temp("qc-status"))
-        qc.statusStore = statusStore
-        qc.activitiesEnabled = { true }
-        qc.reloadSurfaces = {}
-        try await qc.start()
-        let session = try #require(qc.session)
-        let start = try #require(session.timeline.started)
-        #expect(statusStore.read()?.timerRuns == true)
-        session.interruption(began: true, shouldResume: false)
-        #expect(await TS.waitUntil { statusStore.read()?.paused != nil })
-        let paused = try #require(statusStore.read())
-        #expect(paused.phase == .recording && !paused.timerRuns && paused.action == .stop)
-        let shown = try #require(paused.paused).timeIntervalSince(try #require(paused.started))
-        #expect(abs(shown - session.timeline.audioLength(at: Date())) < 0.05)
-        try await Task.sleep(for: .milliseconds(300))   // paused: the timer must not count this
-        session.interruption(began: false, shouldResume: true)
-        #expect(await TS.waitUntil { statusStore.read()?.paused == nil })
-        let resumed = try #require(statusStore.read())
-        #expect(resumed.timerRuns)
-        #expect(try #require(resumed.started).timeIntervalSince(start) >= 0.3, "the timer starts later by the pause")
-        _ = try await qc.stop()
-        #expect(statusStore.read() == VoiceNoteStatus(phase: .ready))
-    }
-
-    /// Live Activities off: iOS would end an intent's recording, so nothing
-    /// starts, and the status sends the next tap to Settings.
-    @Test func liveActivitiesOffRefusesAndShowsInTheStatus() async throws {
-        let (_, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let statusStore = VoiceNoteStatusStore(directory: Self.temp("qc-status"))
-        qc.statusStore = statusStore
-        qc.reloadSurfaces = {}
-        qc.activitiesEnabled = { false }
-        qc.showsActivity = true   // off in the other tests, which skips the check
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        await #expect(throws: QuickCaptureError.liveActivitiesOff) { try await qc.start() }
-        #endif
-        #expect(qc.state == .idle)
-        qc.publishStatus()
-        #expect(statusStore.read()?.phase == .liveActivitiesOff)
-    }
-
-    /// A failed seal says so (and why) instead of "Saved".
-    @Test func aStopWithoutAProfileSaysNotSaved() async throws {
-        let (_, _, _, qc, _) = try Self.setUp(transcribe: false)
-        try await qc.start()
-        try qc.store.delete()   // turned off while recording
-        await #expect(throws: QuickCaptureError.notSetUp) { try await qc.stop() }
-        #expect(qc.notice?.result == .failed)
-        #expect(qc.notice?.error == QuickCaptureError.notSetUp.description)
-        qc.dismissNotice()
-        #expect(qc.notice == nil)
-    }
-
-    @Test func nothingStartsWithoutAProfile() async throws {
-        let qc = QuickCapture()
-        qc.store = MemoryCaptureProfileStore()
-        qc.showsActivity = false
-        await #expect(throws: QuickCaptureError.notSetUp) { try await qc.start() }
-        await #expect(throws: QuickCaptureError.notRecording) { try await qc.stop() }
-        #expect(qc.state == .idle, "a refused start leaves nothing claimed")
-    }
-
-    /// A profile the store cannot read now is not "not set up": the setup is
-    /// not offered again, and a start says what is wrong.
-    @Test func anUnreadableProfileIsNotNotSetUp() async throws {
-        let qc = QuickCapture()
-        qc.store = FailingCaptureProfileStore()
-        qc.showsActivity = false
-        qc.activitiesEnabled = { true }
-        #expect(qc.isSetUp)
-        #expect(qc.status.phase == .ready)
-        await #expect(throws: QuickCaptureError.profileUnreadable) { try await qc.start() }
-        #expect(qc.state == .idle)
-        #expect(QuickCaptureError.profileUnreadable.description != QuickCaptureError.notSetUp.description)
-        qc.store = MemoryCaptureProfileStore()
-        #expect(!qc.isSetUp)
-        await #expect(throws: QuickCaptureError.notSetUp) { try await qc.start() }
-    }
-
-    /// A stop whose profile cannot be read keeps the recording (it may well
-    /// be there) and says so; the next sweep seals it.
-    @Test func aStopWithAnUnreadableProfileKeepsTheRecording() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let store = qc.store
-        try await qc.start()
-        qc.store = FailingCaptureProfileStore()
-        await #expect(throws: QuickCaptureError.profileUnreadable) { try await qc.stop() }
-        #expect(qc.state == .idle)
-        #expect(qc.notice?.result == .failed)
-        #expect(qc.notice?.error?.hasPrefix(QuickCaptureError.profileUnreadable.description) == true)
-        #expect(Self.leftovers(qc.root).count == 1, "the recording is kept")
-        qc.store = store
-        await qc.sweep()
-        #expect(Self.inbox(url).count == 1)
-        #expect(Self.leftovers(qc.root).isEmpty)
-    }
-
     /// The model tells "no profile" from "a profile it cannot read now", as
     /// `QuickCapture` does: Settings must not show Quick Voice Notes as off
     /// while it is on (bug audit follow-up: `quickCaptureProfile` made every
@@ -411,6 +146,7 @@ struct QuickCaptureTests {
         #expect(throws: QuickCaptureError.profileUnreadable) { try model.storedQuickCaptureProfile() }
         qc.store = MemoryCaptureProfileStore()
         #expect(try model.storedQuickCaptureProfile() == nil)
+        #expect(QuickCaptureError.profileUnreadable.description != QuickCaptureError.notSetUp.description)
     }
 
     /// Settings' three states: off, on, and "cannot be read", which is shown
@@ -460,32 +196,6 @@ struct QuickCaptureTests {
         let id = try #require(UUID(uuidString: folder.lastPathComponent))
         #expect(Self.inbox(url) == [CaptureFile.name(id, .capture), CaptureFile.name(queuedID, .capture)].sorted())
         #expect(Self.leftovers(qc.root).isEmpty)
-    }
-
-    /// Moving the queue when the app becomes active says when the profile
-    /// cannot be read, instead of doing nothing silently.
-    @Test func flushingTheStoredQueueSaysWhenTheProfileCannotBeRead() throws {
-        let (_, _, _, qc, _) = try Self.setUp(transcribe: false)
-        qc.store = FailingCaptureProfileStore()
-        #expect(throws: QuickCaptureError.profileUnreadable) { try qc.flushStoredQueue() }
-        qc.store = MemoryCaptureProfileStore()
-        #expect(try qc.flushStoredQueue() == 0, "no profile: nothing to move, and nothing wrong")
-    }
-
-    /// The sweep also runs each time the app becomes active, which at launch
-    /// overlaps the launch's sweep: one recording is sealed by one of them
-    /// only (two seals would merge into the same file at once).
-    @Test func overlappingSweepsSealARecordingOnce() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        var sealing = 0
-        qc.willSeal = { _ in sealing += 1 }
-        async let first: Void = qc.sweep()
-        async let second: Void = qc.sweep()
-        _ = await (first, second)
-        #expect(sealing == 1)
-        #expect(Self.inbox(url).count == 1)
-        #expect(!FileManager.default.fileExists(atPath: folder.path))
     }
 
     /// The model adopts the inbox once the vault is unlocked; a voice note
@@ -595,9 +305,7 @@ struct QuickCaptureTests {
     @Test func enablingStoresAProfileWithoutTheIdentityAndRefreshFollowsKeyChanges() async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        let qc = QuickCapture()
-        qc.store = MemoryCaptureProfileStore()
-        qc.showsActivity = false
+        let qc = QuickCapture.testing()
         model.quickCapture = qc
         try await model.openVault(at: url)
         let keyText = try String(contentsOf: key, encoding: .utf8)
@@ -624,22 +332,6 @@ struct QuickCaptureTests {
         #expect(try qc.store.load() == nil)
     }
 
-    /// A voice note interrupted by a crash is sealed from its finished
-    /// segments at the next launch, and its plaintext deleted.
-    @Test func sweepSealsWhatACrashLeft() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let id = UUID()
-        let folder = qc.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: RecordingTests.tone, to: folder.appendingPathComponent("segment-001.m4a"))
-        let manifest = RecordingManifest(note: UUID(), recording: id, started: Date(), codec: "aac",
-                                         segments: ["segment-001.m4a"], finished: 1)
-        try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingRecovery.manifestName))
-        await qc.sweep()
-        #expect(Self.inbox(url) == [CaptureFile.name(id, .capture)])
-        #expect(Self.leftovers(qc.root).isEmpty)
-    }
-
     /// A crash-left recording folder with a finished segment and its manifest.
     static func crashLeftRecording(in root: URL) throws -> URL {
         let id = UUID()
@@ -652,275 +344,27 @@ struct QuickCaptureTests {
         return folder
     }
 
-    /// A profile that cannot be read now (the Keychain before the first unlock
-    /// after a reboot) is not "no profile": the recordings wait for a later
-    /// launch instead of being deleted (bug audit B39).
-    @Test func sweepKeepsRecordingsWhenTheProfileCannotBeRead() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        qc.store = FailingCaptureProfileStore()
-        await qc.sweep()
-        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("segment-001.m4a").path))
-        #expect(Self.inbox(url).isEmpty)
-    }
-
-    /// A manifest that is there but cannot be read now (data protection) keeps
-    /// its folder (B39), and nothing is sealed from it yet.
-    @Test func sweepKeepsAFolderWhoseManifestCannotBeRead() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let unreadable = try Self.crashLeftRecording(in: qc.root)
-        let manifest = unreadable.appendingPathComponent(RecordingRecovery.manifestName)
-        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: manifest.path)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: manifest.path) }
-        await qc.sweep()
-        #expect(Self.leftovers(qc.root) == [unreadable.lastPathComponent])
-        #expect(Self.inbox(url).isEmpty)
-    }
-
-    /// A manifest that is missing or does not decode no longer deletes the
-    /// voice note with it (audit leftovers, quick capture): the folder is
-    /// sealed from its segment files under the id it is named by, and deleted
-    /// only then.
-    @Test func sweepSealsAFolderWhoseManifestIsMissingOrGarbled() async throws {
-        let (url, _, identity, qc, _) = try Self.setUp(transcribe: false)
-        let missing = try Self.crashLeftRecording(in: qc.root)
-        try FileManager.default.removeItem(at: missing.appendingPathComponent(RecordingRecovery.manifestName))
-        let garbled = try Self.crashLeftRecording(in: qc.root)
-        try Data("not json".utf8).write(to: garbled.appendingPathComponent(RecordingRecovery.manifestName))
-        await qc.sweep()
-        let ids = try [missing, garbled].map { try #require(UUID(uuidString: $0.lastPathComponent)) }
-        #expect(Self.inbox(url) == ids.map { CaptureFile.name($0, .capture) }.sorted())
-        #expect(Self.leftovers(qc.root).isEmpty)
-        let vault = try Vault.open(at: url, identities: [identity])
-        let tone = try Data(contentsOf: RecordingTests.tone)
-        for id in ids { #expect(try vault.readCapture(id).audio == tone) }
-    }
-
-    /// A folder with no manifest and no segment holds nothing: it is deleted.
-    /// One that is not named by an id and holds audio is never sealed under a
-    /// made-up id, and never deleted.
-    @Test func sweepDeletesOnlyFoldersWithoutAudio() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let empty = qc.root.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
-        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
-        try Data().write(to: empty.appendingPathComponent("segment-001.m4a"))
-        let stray = qc.root.appendingPathComponent("not-an-id", isDirectory: true)
-        try FileManager.default.createDirectory(at: stray, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: RecordingTests.tone, to: stray.appendingPathComponent("segment-001.m4a"))
-        await qc.sweep()
-        #expect(Self.leftovers(qc.root) == ["not-an-id"])
-        #expect(Self.inbox(url).isEmpty)
-    }
-
-    /// A segment begun just before the app died may be missing from the
-    /// manifest: it is sealed with the others, not deleted with the folder.
-    @Test func sealIncludesASegmentTheManifestDidNotName() async throws {
-        let (url, _, identity, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        try FileManager.default.copyItem(at: RecordingTests.tone, to: folder.appendingPathComponent("segment-002.m4a"))
-        let id = try #require(UUID(uuidString: folder.lastPathComponent))
-        await qc.sweep()
-        #expect(Self.inbox(url) == [CaptureFile.name(id, .capture)])
-        #expect(Self.leftovers(qc.root).isEmpty)
-        let vault = try Vault.open(at: url, identities: [identity])
-        let tone = try Data(contentsOf: RecordingTests.tone)
-        let audio = try #require(try vault.readCapture(id).audio)
-        #expect(audio.count > tone.count * 3 / 2, "both segments are in the voice note")
-    }
-
-    /// A complete segment that does not decode is not skipped: sealing the
-    /// rest and deleting the folder would lose it. Nothing is sealed, the
-    /// recording is kept, and the error says so.
-    @Test func sealKeepsTheRecordingWhenACompleteSegmentDoesNotDecode() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        let second = folder.appendingPathComponent("segment-002.m4a")
-        try Data("not audio".utf8).write(to: second)
-        let segments = [folder.appendingPathComponent("segment-001.m4a"), second]
-        let stored = try #require(try qc.store.load())
-        let outcome = await qc.seal(segments: segments, finished: 2, folder: folder, id: UUID(), started: Date(), stored: stored)
-        #expect(outcome.delivery == nil)
-        #expect(outcome.error?.contains(QuickCapture.keptOnDevice) == true)
-        #expect(FileManager.default.fileExists(atPath: second.path))
-        #expect(Self.inbox(url).isEmpty)
-    }
-
-    /// The segment being written when the app died (after the manifest's
-    /// `finished`) may not decode: the voice note is sealed without it
-    /// (docs/attachments.md §13), and the folder is deleted once it is.
-    @Test func sealLeavesOutAnUnfinishedSegmentThatDoesNotDecode() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        let second = folder.appendingPathComponent("segment-002.m4a")
-        try Data("unfinished".utf8).write(to: second)
-        let segments = [folder.appendingPathComponent("segment-001.m4a"), second]
-        let stored = try #require(try qc.store.load())
-        let id = UUID()
-        let outcome = await qc.seal(segments: segments, finished: 1, folder: folder, id: id, started: Date(), stored: stored)
-        #expect(outcome.delivery == .vault)
-        #expect(Self.inbox(url) == [CaptureFile.name(id, .capture)])
-        #expect(Self.leftovers(qc.root).isEmpty)
-    }
-
-    /// A segment that is there but cannot be read now (data protection before
-    /// the first unlock) keeps the recording: nothing is sealed or deleted
-    /// until it can be read, and the failure says the voice note was kept
-    /// (bug audit: seal deleted the folder whatever happened).
-    @Test func sealKeepsTheRecordingWhenASegmentCannotBeRead() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        let segment = folder.appendingPathComponent("segment-001.m4a")
-        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: segment.path)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: segment.path) }
-        let stored = try #require(try qc.store.load())
-        let outcome = await qc.seal(segments: [segment], folder: folder, id: UUID(), started: Date(), stored: stored)
-        #expect(outcome.delivery == nil)
-        #expect(outcome.error?.contains(QuickCapture.keptOnDevice) == true)
-        #expect(FileManager.default.fileExists(atPath: segment.path), "the voice note is kept for the next seal")
-        #expect(Self.inbox(url).isEmpty)
-        // Readable again (after the unlock): the next sweep seals it and only then deletes it.
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: segment.path)
-        await qc.sweep()
-        #expect(Self.inbox(url).count == 1)
-        #expect(Self.leftovers(qc.root).isEmpty)
-    }
-
-    /// A sealed capture that cannot be written anywhere (neither the vault
-    /// nor the queue) keeps the recording for the next seal.
-    @Test func sealKeepsTheRecordingWhenTheSealedCaptureCannotBeWritten() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        var stored = try #require(try qc.store.load())
-        let other = Self.temp("not-the-vault")
-        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
-        stored.bookmark = try other.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        // The queue's folder is a file: the queued write fails too.
-        try Data("not a folder".utf8).write(to: qc.queueRoot)
-        let outcome = await qc.seal(segments: [folder.appendingPathComponent("segment-001.m4a")], folder: folder,
-                                    id: UUID(), started: Date(), stored: stored)
-        #expect(outcome.delivery == nil)
-        #expect(outcome.error?.contains(QuickCapture.keptOnDevice) == true)
-        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("segment-001.m4a").path))
-        #expect(Self.inbox(url).isEmpty)
-    }
-
-    /// Bytes of which nothing decodes (the app died in the first segment) are
-    /// not "no audio": the voice note was not sealed into an inbox file, so it
-    /// is kept and the error says so (audit leftovers, quick capture: the
-    /// folder used to be deleted).
-    @Test func sealKeepsARecordingOfWhichNothingDecodes() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        let segment = folder.appendingPathComponent("segment-001.m4a")
-        try Data("not audio".utf8).write(to: segment)
-        let stored = try #require(try qc.store.load())
-        for finished in [0, 1] {
-            let outcome = await qc.seal(segments: [segment], finished: finished, folder: folder, id: UUID(), started: Date(), stored: stored)
-            #expect(outcome.delivery == nil)
-            #expect(outcome.error?.contains(QuickCapture.keptOnDevice) == true)
-            #expect(FileManager.default.fileExists(atPath: segment.path), "finished: \(finished)")
-        }
-        #expect(Self.inbox(url).isEmpty)
-        await qc.sweep()
-        #expect(FileManager.default.fileExists(atPath: segment.path), "the sweep keeps it too")
-    }
-
-    /// A recording without a single byte of audio (stopped before the recorder
-    /// wrote any) holds nothing to save: it is deleted, not kept forever.
-    @Test func sealDeletesARecordingWithoutAByteOfAudio() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        let segment = folder.appendingPathComponent("segment-001.m4a")
-        try Data().write(to: segment)
-        let stored = try #require(try qc.store.load())
-        let outcome = await qc.seal(segments: [segment, folder.appendingPathComponent("segment-002.m4a")], folder: folder,
-                                    id: UUID(), started: Date(), stored: stored)
-        #expect(outcome.delivery == nil)
-        #expect(outcome.error?.contains(QuickCapture.keptOnDevice) == false)
-        #expect(Self.leftovers(qc.root).isEmpty)
-        #expect(Self.inbox(url).isEmpty)
-    }
-
-    /// A finished segment of no length (stopped just after a new segment
-    /// began, before its first frame) holds nothing: the voice note is sealed
-    /// from the other segments. It used to count as "a complete segment that
-    /// does not decode", which kept the whole voice note unsealed for good.
-    /// Bytes AVFoundation cannot read at all still count as undecodable.
-    @Test func sealSkipsAFinishedSegmentOfNoLength() async throws {
-        let (url, _, identity, qc, _) = try Self.setUp(transcribe: false)
-        let folder = try Self.crashLeftRecording(in: qc.root)
-        let second = folder.appendingPathComponent("segment-002.m4a")
-        let file = try AVAudioFile(forWriting: second, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC,
-                                                                  AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1])
+    /// A finished segment of no length (stopped just after a new segment began, before its first frame) holds
+    /// nothing: AVFoundation reads it as an audio track of no length, which a seal leaves out
+    /// (`QuickCaptureFlowTests.sealSkipsAFinishedSegmentOfNoLength`). It used to count as "a complete segment that
+    /// does not decode", which kept the whole voice note unsealed for good. Bytes AVFoundation cannot read at all
+    /// still count as undecodable (`AVCaptureAudioFiles.classify`).
+    @Test func aFinishedSegmentOfNoLengthHoldsNoAudio() async throws {
+        let dir = Self.temp("no-length")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let empty = dir.appendingPathComponent("segment-002.m4a")
+        let file = try AVAudioFile(forWriting: empty, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC,
+                                                                 AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1])
         file.close()
-        #expect(CaptureSegments.byteCount(second) > 0, "a finished file, not an empty one")
-        #expect(await QuickCapture.segmentAudio(second) == .none)
-        #expect(await QuickCapture.segmentAudio(RecordingTests.tone) == .audio)
-        let garbage = Self.temp("garbage").appendingPathExtension("m4a")
+        #expect(CaptureSegments.byteCount(empty) > 0, "a finished file, not an empty one")
+        let files = AVCaptureAudioFiles()
+        #expect(await files.classify(empty) == .none)
+        #expect(await files.classify(RecordingTests.tone) == .audio)
+        #expect(await files.classify(try TestAudio.adtsTone()) == .audio)
+        let garbage = dir.appendingPathComponent("garbage.m4a")
         try Data("not audio".utf8).write(to: garbage)
-        defer { try? FileManager.default.removeItem(at: garbage) }
-        #expect(await QuickCapture.segmentAudio(garbage) == .undecodable)
-        let segments = [folder.appendingPathComponent("segment-001.m4a"), second]
-        let stored = try #require(try qc.store.load())
-        let id = UUID()
-        let outcome = await qc.seal(segments: segments, finished: 2, folder: folder, id: id, started: Date(), stored: stored)
-        #expect(outcome.delivery == .vault)
-        #expect(Self.inbox(url) == [CaptureFile.name(id, .capture)])
-        #expect(Self.leftovers(qc.root).isEmpty)
-        let vault = try Vault.open(at: url, identities: [identity])
-        #expect(try vault.readCapture(id).audio == (try Data(contentsOf: RecordingTests.tone)))
-    }
-
-    /// No profile at all: nothing can seal the recordings, so they are deleted.
-    @Test func sweepDeletesRecordingsWithoutAProfile() async throws {
-        let (_, _, _, qc, _) = try Self.setUp(transcribe: false)
-        _ = try Self.crashLeftRecording(in: qc.root)
-        qc.store = MemoryCaptureProfileStore()
-        await qc.sweep()
-        #expect(Self.leftovers(qc.root).isEmpty)
-    }
-
-    /// A queued voice note is recorded under the epoch of the profile that SEALED it, not the profile current when
-    /// the queue is flushed (review M4: else it would be set aside for good).
-    @Test func aQueuedVoiceNoteKeepsTheEpochItWasSealedUnder() async throws {
-        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
-        let stores = DeviceWriteStores.inMemoryKey(root: try TestTemp.directory("ledger-queue"))
-        qc.writeStores = stores
-        let other = Self.temp("not-the-vault-2")
-        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
-        var stored = try #require(try qc.store.load())
-        let sealedEpoch = stored.profile.epoch
-        stored.bookmark = try other.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        try qc.store.save(stored)
-        try await qc.start()
-        let outcome = try await qc.stop()
-        #expect(outcome.delivery == .queued)
-        // The profile is refreshed to a later epoch before the queue is flushed.
-        stored.profile.epoch = sealedEpoch + 1
-        stored.profile.epochId = String(repeating: "ab", count: 32)
-        try qc.store.save(stored)
-        #expect(qc.flushQueue(into: url, vaultId: stored.profile.vaultId, coordinated: false) == 1)
-        let entry = try #require(try stores.ledger(for: stored.profile.vaultId).entries()
-            .first { $0.path == "inbox/\(CaptureFile.name(outcome.id, .capture))" })
-        #expect(entry.epoch == sealedEpoch)
-        #expect(Self.leftovers(qc.queueFolder(stored.profile.vaultId)).isEmpty, "the sidecar goes with the file")
-    }
-
-    /// A voice note is recorded in its vault's ledger, under the profile's epoch, before it is placed in the
-    /// inbox (design §5.4, §5.7): a device change before it is adopted is caught up from there.
-    @Test func voiceNotesAreRecordedInTheLedgerBeforeTheInbox() async throws {
-        let (url, _, _, qc, _) = try Self.setUp()
-        let stores = DeviceWriteStores.inMemoryKey(root: try TestTemp.directory("ledger-capture"))
-        qc.writeStores = stores
-        try await qc.start()
-        let outcome = try await qc.stop()
-        #expect(outcome.delivery == .vault)
-        let vault = try Vault.open(at: url)
-        let entries = try stores.ledger(for: vault.vaultId).entries()
-        let name = CaptureFile.name(outcome.id, .capture)
-        let entry = try #require(entries.first { $0.path == "inbox/\(name)" })
-        #expect(entry.epoch == vault.manifest.epoch)
-        #expect(entry.sha256 == FileDigest.sha256(try Data(contentsOf: url.appendingPathComponent("inbox/\(name)"))))
+        #expect(await files.classify(garbage) == .undecodable)
+        #expect(await files.classify(dir.appendingPathComponent("missing.m4a")) == .none)
     }
 }
 
@@ -935,6 +379,30 @@ struct FailingCaptureProfileStore: CaptureProfileStore {
 @MainActor
 final class ReloadCounter {
     var count = 0
+}
+
+extension QuickCapture {
+    /// The app's quick capture on a fake recorder (`FakeCapture`) with the microphone allowed, no Live Activity and
+    /// no widget status, in folders of its own (tests).
+    static func testing(store: any CaptureProfileStore = MemoryCaptureProfileStore(), center: NotificationCenter = NotificationCenter(),
+                        transcriber: (any RecordingTranscribing)? = nil) -> QuickCapture {
+        let qc = QuickCapture.app(store: store, root: QuickCaptureTests.temp("qc-root"), queueRoot: QuickCaptureTests.temp("qc-queue"),
+                                  statusStore: nil)
+        let audio = AppCaptureAudio()
+        audio.backend = { FakeCapture() }
+        audio.microphoneAllowed = { true }
+        audio.center = center
+        qc.audio = audio
+        qc.transcriber = transcriber
+        qc.showsActivity = false
+        return qc
+    }
+
+    /// Its `AppCaptureAudio` (tests change the backend or the permission).
+    var appAudio: AppCaptureAudio {
+        // swiftlint:disable:next force_cast
+        audio as! AppCaptureAudio
+    }
 }
 
 extension QuickCaptureTests {

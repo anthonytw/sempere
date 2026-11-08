@@ -1,3 +1,5 @@
+import SempereAppCore
+import SempereCaptureShared
 import SwiftUI
 
 /// The in-app face of a quick voice note (docs/quick-capture.md "In the
@@ -29,7 +31,7 @@ struct VoiceNoteBanner: View {
                     Image(systemName: notice.result.symbol).font(.title2)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(notice.title ?? notice.result.title).font(.headline)
-                        Text(notice.error ?? notice.result.detail).font(.footnote).opacity(0.9)
+                        Text(notice.errorText ?? notice.result.detail).font(.footnote).opacity(0.9)
                     }
                     Spacer(minLength: 0)
                     Button { capture.dismissNotice() } label: {

@@ -54,7 +54,7 @@ struct SempereApp: App {
         // The write ledger and set-aside store (key-hierarchy design §5.4, §5.8), in the App Group beside the store.
         let writeStores = DeviceWriteStores.app(storeRoot: library.vaultStore.root)
         model.writeStores = writeStores
-        model.quickCapture.writeStores = writeStores
+        model.quickCapture.ledger = { writeStores.ledger(for: $0) }
         // Voice notes go straight into their vault's in-app inbox, and its targets upload them
         // (`QuickCapture.deliveredNotification`).
         model.quickCapture.vaultStore = library.vaultStore

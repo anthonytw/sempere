@@ -30,7 +30,7 @@ Do not use features newer than Swift 6.0 in `Sources/`.
 
 - `Sources/*` and `Tests/*` must build on Linux: Foundation (plus FoundationNetworking in `SempereWebDAV` only, and
   Observation in `SempereAppCore` only), swift-crypto (`import Crypto`), `CZlib` and swift-argument-parser only. No UIKit,
-  AppKit, PencilKit, CoreGraphics, Compression, CommonCrypto, Security.
+  AppKit, PencilKit, CoreGraphics, Compression, CommonCrypto, Security, `os` (log through `PerfSink`).
   Apple-only code goes under `Apps/`. Apple-only *tests* (e.g. comparing
   against PencilKit) are allowed behind `#if canImport(PencilKit)`.
 - Files under a vault's `notes/` (revisions and each note's `att/` blobs), `notebooks/` and `epochs/`
@@ -802,11 +802,16 @@ there. Commit messages:
   authenticate inbox files) into `inbox/<id>.capture.age`; adoption (`Vault.readCapture`, `CaptureAdoption`,
   `AppModel+Inbox`, `sempere inbox import`) turns them into ordinary revisions and blobs. Never store the vault
   key or an identity outside Face ID for capture. Note/page/recording ids derive from the capture id
-  (concurrent adoption converges). Intents live in `Apps/Sempere/SempereShared/` (compiled by the app and the
+  (concurrent adoption converges). The start/stop/sweep state machine is `QuickCapture` (SempereAppCore, its platform
+  behind `QuickCapturePlatform.swift`: recorder, segment decoding, Live Activity, app state, background time; the app's
+  implementations and shared instance in `QuickCapture+App.swift`, Linux tests in `Tests/SempereAppCoreTests/QuickCapture`).
+  What the widgets share with the app (status, links, tap log, the intents' hooks `VoiceNoteActions`) is
+  `SempereCaptureShared` (no dependencies, linked by the app and the widget, never `SempereAppCore`); the intents, the
+  ActivityKit attributes and the surfaces' words live in `Apps/Sempere/SempereShared/` (compiled by the app and the
   `SempereWidgets` extension, iOS only, `platformFilter = ios`) and run in the app's process; the profile is a
   Keychain item `AfterFirstUnlockThisDeviceOnly` (`KeychainCaptureProfileStore`, tests use
   `MemoryCaptureProfileStore`). Plaintext audio lives only in `QuickCapture.root`
-  (`completeUntilFirstUserAuthentication`, `QuickCapture.protection`: Lock Screen notes are sealed from closed
+  (`completeUntilFirstUserAuthentication`, the app's `QuickCapture.protection`: Lock Screen notes are sealed from closed
   files before any unlock, which `completeUnlessOpen` forbids) until sealed and transcribed; running out of
   background time leaves it for `sweep()` rather than losing the note. Nothing rewrites `inbox/` files except
   catch-up, which re-seals this device's own captures of an earlier epoch from its ledger (format.md §15.14); a

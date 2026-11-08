@@ -1,61 +1,7 @@
-import AVFoundation
 import Foundation
 import Observation
-import Security
 import Sempere
-import SempereAppCore
-import SempereSync
-import UIKit
-#if os(iOS) && !targetEnvironment(macCatalyst)
-import ActivityKit
-import WidgetKit
-#endif
-
-/// One generic-password item, readable after the device's first unlock and
-/// on this device only (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`):
-/// a voice note can start from the Lock Screen, and the item never leaves the
-/// device. No biometry: the capture key cannot read anything (docs/quick-capture.md).
-struct KeychainCaptureProfileStore: CaptureProfileStore {
-    static let service = "io.github.anthonytw.sempere.quick-capture"
-    static let account = "profile"
-
-    enum Failure: Error, Equatable { case status(OSStatus) }
-
-    private var query: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service,
-         kSecAttrAccount as String: Self.account]
-    }
-
-    func load() throws -> StoredCaptureProfile? {
-        var q = query
-        q[kSecReturnData as String] = true
-        q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var out: CFTypeRef?
-        let status = SecItemCopyMatching(q as CFDictionary, &out)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = out as? Data else { throw Failure.status(status) }
-        return try JSONDecoder().decode(StoredCaptureProfile.self, from: data)
-    }
-
-    func save(_ profile: StoredCaptureProfile) throws {
-        let data = try JSONEncoder().encode(profile)
-        let attributes: [String: Any] = [kSecValueData as String: data,
-                                         kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-                                         kSecAttrLabel as String: "Sempere — quick voice notes"]
-        var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            var add = query
-            add.merge(attributes) { $1 }
-            status = SecItemAdd(add as CFDictionary, nil)
-        }
-        guard status == errSecSuccess else { throw Failure.status(status) }
-    }
-
-    func delete() throws {
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw Failure.status(status) }
-    }
-}
+import SempereCaptureShared
 
 /// Quick voice notes (docs/quick-capture.md): one tap (Siri, Shortcuts, the
 /// Action button, a widget, Control Center) records; stopping seals the audio
@@ -64,206 +10,224 @@ struct KeychainCaptureProfileStore: CaptureProfileStore {
 /// nor the device needs unlocking and no Face ID is asked. The sealed file goes
 /// into the vault's `inbox/` (a coordinated write in iCloud Drive), or into a
 /// local queue when the vault folder cannot be reached, moved into the vault
-/// later. The plaintext audio exists only in protected temporary files
-/// (`QuickCapture.protection`: `completeUntilFirstUserAuthentication`, since a
+/// later. The plaintext audio exists only in protected temporary files (the
+/// recorder's, `CaptureRecording`: readable after the first unlock, since a
 /// voice note started from the Lock Screen is read back from closed files and
-/// sealed before any unlock, which `completeUnlessOpen` forbids) and in
-/// memory, and is deleted as soon as the capture (and its
-/// transcript, made on device from it) is sealed; leftovers from a crash or
+/// sealed before any unlock) and in memory, and is deleted as soon as the capture
+/// (and its transcript, made on device from it) is sealed; leftovers from a crash or
 /// a failed seal are sealed at the next launch or activation (`sweep`), and
 /// never deleted before their audio is sealed. The app adopts inbox
 /// captures as notes once the vault is unlocked (`AppModel+Inbox`).
+///
+/// The platform is behind protocols (`QuickCapturePlatform.swift`): the recorder (`CaptureAudio`), decoding the
+/// segments (`CaptureAudioFiles`), the Live Activity, the app's state and background time. The app makes the
+/// shared instance with its own (`QuickCapture+App.swift`) and words the values (`QuickCapture+Text.swift`).
 @MainActor
 @Observable
-final class QuickCapture {
-    static let shared = QuickCapture()
+public final class QuickCapture {
+    public enum State: Equatable, Sendable { case idle, starting, recording, saving }
 
-    enum State: Equatable { case idle, starting, recording, saving }
-
-    typealias Delivery = CaptureDelivery.Destination
+    public typealias Delivery = CaptureDelivery.Destination
 
     /// What one capture did.
-    struct Outcome: Equatable {
-        var id: UUID
-        var delivery: Delivery?
-        var transcribed = false
-        var error: String?
+    public struct Outcome: Equatable, Sendable {
+        public var id: UUID
+        public var delivery: Delivery?
+        public var transcribed = false
+        /// What went wrong (the error's description), when nothing was delivered.
+        public var error: String?
+        /// The recording is kept on this device for the next seal (`sweep`): said after `error`.
+        public var kept = false
+
+        public init(id: UUID, delivery: Delivery? = nil, transcribed: Bool = false, error: String? = nil, kept: Bool = false) {
+            self.id = id
+            self.delivery = delivery
+            self.transcribed = transcribed
+            self.error = error
+            self.kept = kept
+        }
     }
 
-    private(set) var state = State.idle {
+    /// What the banner says after a stop, a failed start or a sweep.
+    public struct Notice: Equatable, Sendable {
+        /// What the banner is about (its title; the app words it).
+        public enum Kind: Equatable, Sendable {
+            /// A voice note just stopped: where it went (`result`).
+            case stopped
+            /// A start that failed: nothing was recorded to save.
+            case notRecorded
+            /// A voice note cut off by a restart or a force quit, saved by a sweep.
+            case interruptedSaved
+            /// One cut off by a restart, kept on the device for now.
+            case interruptedNotSaved
+        }
+
+        public var result: VoiceNoteResult
+        public var kind: Kind
+        /// Why it failed (the error's description, `Outcome.error`).
+        public var error: String?
+        /// The recording is kept on this device (said after `error`).
+        public var kept: Bool
+        /// Stays until dismissed rather than for `result.shownFor`.
+        public var persists: Bool
+        public var id: UUID
+
+        public init(result: VoiceNoteResult, kind: Kind = .stopped, error: String? = nil, kept: Bool = false,
+                    persists: Bool = false, id: UUID = UUID()) {
+            self.result = result
+            self.kind = kind
+            self.error = error
+            self.kept = kept
+            self.persists = persists
+            self.id = id
+        }
+    }
+
+    public private(set) var state = State.idle {
         didSet { if state != oldValue { publishStatus() } }
     }
     /// The recording in progress.
-    private(set) var session: RecordingSession?
+    public private(set) var session: (any CaptureRecording)?
     /// A `sweep()` is running.
     @ObservationIgnored private var sweeping = false
     /// The last capture's outcome.
-    private(set) var lastOutcome: Outcome?
+    public private(set) var lastOutcome: Outcome?
     /// Where the last stopped voice note went, while the app's banner shows it
     /// (cleared after `VoiceNoteResult.shownFor`).
-    private(set) var notice: Notice?
+    public private(set) var notice: Notice?
     /// A place a widget, the control or the Live Activity asked the app to
     /// show (`sempere://quick-voice/…`, `VoiceNoteControlIntent`); the window
     /// that shows it clears it.
-    var pendingLink: VoiceNoteLink?
-
-    /// What the banner says after a stop.
-    struct Notice: Equatable {
-        var result: VoiceNoteResult
-        /// Why it failed (`Outcome.error`).
-        var error: String?
-        /// Shown instead of `result.title` (a start that failed: nothing was recorded to save).
-        var title: String?
-        /// Stays until dismissed rather than for `result.shownFor`.
-        var persists = false
-        var id = UUID()
-    }
+    public var pendingLink: VoiceNoteLink?
 
     /// When the recording in progress started.
-    var started: Date? { session?.timeline.started }
+    public var started: Date? { session?.timeline.started }
 
     /// Whether the recording in progress is paused (a call, a headset unplugged).
-    var isPaused: Bool { session.map { $0.state == .interrupted || $0.state == .paused } ?? false }
+    public var isPaused: Bool { session?.isPaused ?? false }
 
     /// When the recording in progress would have started had it never paused:
     /// a timer counting from it shows the audio recorded (`audioLength` while paused).
-    func timerStart(at now: Date = Date()) -> Date? {
+    /// `at` nil: `now()`.
+    public func timerStart(at time: Date? = nil) -> Date? {
         guard let s = session, s.timeline.started != nil else { return nil }
-        return now.addingTimeInterval(-s.timeline.audioLength(at: now))
+        let t = time ?? now()
+        return t.addingTimeInterval(-s.timeline.audioLength(at: t))
     }
 
-    /// Seconds of audio recorded so far.
-    func audioLength(at now: Date = Date()) -> Double { session?.timeline.audioLength(at: now) ?? 0 }
+    /// Seconds of audio recorded so far (`at` nil: `now()`).
+    public func audioLength(at time: Date? = nil) -> Double { session?.timeline.audioLength(at: time ?? now()) ?? 0 }
 
-    @ObservationIgnored var store: any CaptureProfileStore = KeychainCaptureProfileStore()
-    @ObservationIgnored var backend: (@MainActor () -> AudioCaptureBackend)?
-    @ObservationIgnored var transcriber: (any RecordingTranscribing)? = SpeechRecordingTranscriber()
-    @ObservationIgnored var microphoneAllowed: @MainActor () async -> Bool = { await AVAudioCaptureBackend.requestMicrophone() }
-    /// The microphone permission's name, for the start diagnostics.
-    @ObservationIgnored var microphonePermission: @MainActor () -> String = { QuickCapture.systemMicrophonePermission() }
-    /// Whether protected data can be read (false before the first unlock after a restart; tests set it).
-    @ObservationIgnored var protectedDataAvailable: @MainActor () -> Bool = { UIApplication.shared.isProtectedDataAvailable }
+    // MARK: - Platform and settings
+
+    /// Where the profile is (the Keychain in the app).
+    @ObservationIgnored public var store: any CaptureProfileStore
+    /// The microphone and the recorder.
+    @ObservationIgnored public var audio: any CaptureAudio
+    /// Decodes and joins the segment files.
+    @ObservationIgnored public var audioFiles: any CaptureAudioFiles
+    @ObservationIgnored public var transcriber: (any RecordingTranscribing)?
+    @ObservationIgnored public var liveActivity: any CaptureLiveActivity
+    @ObservationIgnored public var app: any CaptureAppState
+    @ObservationIgnored public var backgroundTime: any BackgroundTime
+    /// Resolves the profile's bookmark (the app's security-scoped bookmarks).
+    @ObservationIgnored public var bookmarks: any FolderBookmarks
+    /// Coordinates a queue flush into a vault in iCloud Drive (`flushQueue(…coordinated: true)`).
+    @ObservationIgnored public var files: any FileCoordinating
+    /// The start diagnostics' log lines.
+    @ObservationIgnored public var perf: any PerfSink
+    /// The default title of a voice note (the app: in the device's language); nil: `CaptureWriter.defaultTitle`.
+    @ObservationIgnored public var noteTitle: (@Sendable (Date) -> String)?
+    /// The time now (tests set their own, with a recording that reads it too).
+    @ObservationIgnored public var now: @MainActor () -> Date = { Date() }
+    /// Waits (the banner's time, the Live Activity's heartbeat); tests set their own.
+    @ObservationIgnored public var sleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     /// How long after its last update the recording's Live Activity counts as stale: the app refreshes
     /// it every `activityHeartbeat` while recording, so an activity whose app died (force quit, crash)
     /// shows "interrupted" and an Open button instead of a Stop that reaches nothing.
-    @ObservationIgnored var activityStaleAfter: TimeInterval = 120
-    @ObservationIgnored var activityHeartbeat: Duration = .seconds(45)
+    @ObservationIgnored public var activityStaleAfter: TimeInterval = 120
+    @ObservationIgnored public var activityHeartbeat: Duration = .seconds(45)
     /// Interrupted recordings a sweep could not save yet that the banner already reported (once per launch).
     @ObservationIgnored private var reportedKept: Set<UUID> = []
-    @ObservationIgnored var center: NotificationCenter = .default
     /// Where recordings in progress are (plaintext, protected, deleted once sealed).
-    @ObservationIgnored var root = QuickCapture.defaultRoot
+    @ObservationIgnored public var root: URL
     /// Sealed captures waiting for the vault folder, per vault id.
-    @ObservationIgnored var queueRoot = QuickCapture.defaultQueueRoot
+    @ObservationIgnored public var queueRoot: URL
     /// The in-app vault store (the app sets it at launch): a voice note for a store vault goes straight into
     /// its in-app inbox, found by vault id, open or not (docs/design/device-first-sync.md §5.3).
-    @ObservationIgnored var vaultStore: VaultStore?
-    /// This device's write ledgers (the app sets them at launch): a voice note is recorded in its vault's ledger
-    /// before it is placed in the vault's inbox (key-hierarchy design §5.4, §5.7), so one sealed under an
-    /// earlier epoch's profile is re-sealed at the next unlock. Nil in tests unless set.
-    @ObservationIgnored var writeStores: DeviceWriteStores?
+    @ObservationIgnored public var vaultStore: VaultStore?
+    /// This device's write ledger of a vault (the app sets it at launch, `DeviceWriteStores`): a voice note is
+    /// recorded in its vault's ledger before it is placed in the vault's inbox (key-hierarchy design §5.4, §5.7),
+    /// so one sealed under an earlier epoch's profile is re-sealed at the next unlock. Nil records nothing (tests).
+    @ObservationIgnored public var ledger: (@Sendable (UUID) -> any WriteLedgerStore)?
     /// Starts a Live Activity while recording (off in tests).
-    @ObservationIgnored var showsActivity = true
+    @ObservationIgnored public var showsActivity = true
     /// Where the widgets read `VoiceNoteStatus` (the App Group; nil without one, and in tests unless set).
-    @ObservationIgnored var statusStore: VoiceNoteStatusStore? = VoiceNoteStatusStore.shared
-    /// Whether Live Activities are allowed for the app (Settings ▸ Sempere).
-    @ObservationIgnored var activitiesEnabled: @MainActor () -> Bool = QuickCapture.systemActivitiesEnabled
+    @ObservationIgnored public var statusStore: VoiceNoteStatusStore?
     /// Reloads the widgets and the control after the status changed.
-    @ObservationIgnored var reloadSurfaces: @MainActor () -> Void = QuickCapture.reloadSystemSurfaces
-    /// The app's state, for the start diagnostics and the decision to wait (tests set it).
-    @ObservationIgnored var applicationState: @MainActor () -> UIApplication.State = { UIApplication.shared.applicationState }
+    @ObservationIgnored public var reloadSurfaces: @MainActor () -> Void = {}
     /// How long a start that continued in the app waits for the app to be active before trying again.
-    @ObservationIgnored var foregroundWait: Duration = .seconds(12)
-    /// Waits, at most the given time, for the app to become active (`AppActivation.wait`; tests send their own signal).
-    @ObservationIgnored var waitUntilActive: @MainActor (Duration) async -> Bool = { timeout in
-        await AppActivation.wait(timeout: timeout) { UIApplication.shared.applicationState == .active }
-    }
-    /// Asks for the Live Activity instead of ActivityKit (tests: a request that fails); nil uses ActivityKit.
-    @ObservationIgnored var requestActivity: (@MainActor (Date) throws -> Void)?
-    /// The last voice-note starts, kept for Settings (`VoiceNoteStartLog`); memory only until `register()`.
-    @ObservationIgnored var startLog = VoiceNoteStartLog(url: nil)
+    @ObservationIgnored public var foregroundWait: Duration = .seconds(12)
+    /// The last voice-note starts, kept for Settings (`VoiceNoteStartLog`); memory only unless the app gives a file.
+    @ObservationIgnored public var startLog = VoiceNoteStartLog(url: nil)
     /// `startLog`'s attempts, newest first, for Settings ▸ Quick Voice Notes ▸ Recent Starts (observed through the log).
-    var recentStarts: [VoiceNoteStartAttempt] { startLog.attempts }
+    public var recentStarts: [VoiceNoteStartAttempt] { startLog.attempts }
     /// The last taps on a widget, the control or a voice note shortcut, from the app and the widget
     /// extension (`VoiceNoteTapLog`), newest first; read again by `refreshTaps()`.
-    private(set) var recentTaps: [VoiceNoteTap] = []
+    public private(set) var recentTaps: [VoiceNoteTap] = []
     /// Called with the capture id as each seal begins (tests).
-    @ObservationIgnored var willSeal: (@MainActor (UUID) -> Void)?
-    #if os(iOS) && !targetEnvironment(macCatalyst)
-    /// Every state sent to the Live Activity (tests; also without one).
-    @ObservationIgnored var activityStates: (@MainActor (VoiceNoteAttributes.ContentState) -> Void)?
-    @ObservationIgnored private var activity: Activity<VoiceNoteAttributes>?
-    /// The last update or end sent to `activity`: each waits for the one before
-    /// (an end overtaking the "Saving" update would leave the activity saving).
-    @ObservationIgnored private var activityWork: Task<Void, Never>?
-    #endif
+    @ObservationIgnored public var willSeal: (@MainActor (UUID) -> Void)?
 
-    /// The Data Protection class of recordings in progress. Not `completeUnlessOpen`: its files
-    /// cannot be reopened while the device is locked once closed, and a voice note started from
-    /// the Lock Screen is assembled, read and sealed from closed segment files before any unlock.
-    static let protection = FileProtectionType.completeUntilFirstUserAuthentication
+    /// - Parameters: the platform's services (`QuickCapturePlatform.swift`); the defaults record nothing, show no
+    ///   Live Activity and run as an app in front, for tests and the CLI.
+    public init(store: any CaptureProfileStore = MemoryCaptureProfileStore(), audio: any CaptureAudio = NoCaptureAudio(),
+                audioFiles: any CaptureAudioFiles = ByteCaptureAudioFiles(), transcriber: (any RecordingTranscribing)? = nil,
+                liveActivity: any CaptureLiveActivity = NoLiveActivity(), app: any CaptureAppState = ActiveCaptureApp(),
+                backgroundTime: any BackgroundTime = NoBackgroundTime(), bookmarks: any FolderBookmarks = PathBookmarks(),
+                files: any FileCoordinating = UncoordinatedFiles(), perf: any PerfSink = NoPerfSink(),
+                root: URL = QuickCapture.defaultRoot, queueRoot: URL = QuickCapture.defaultQueueRoot) {
+        self.store = store
+        self.audio = audio
+        self.audioFiles = audioFiles
+        self.transcriber = transcriber
+        self.liveActivity = liveActivity
+        self.app = app
+        self.backgroundTime = backgroundTime
+        self.bookmarks = bookmarks
+        self.files = files
+        self.perf = perf
+        self.root = root
+        self.queueRoot = queueRoot
+    }
 
-    nonisolated static var defaultRoot: URL { AppSupport.folder("QuickCapture") }
-    nonisolated static var defaultQueueRoot: URL { AppSupport.folder("CaptureQueue") }
+    public nonisolated static var defaultRoot: URL { AppSupport.folder("QuickCapture") }
+    public nonisolated static var defaultQueueRoot: URL { AppSupport.folder("CaptureQueue") }
 
     /// Whether a failed start may work with the app in front: the audio system's refusal, which iOS
-    /// can give a background start, and a Live Activity iOS would not start in the background
-    /// (`start(_:)` then continues in the app).
-    static func worksInForeground(_ error: Error) -> Bool {
-        if (error as? RecordingError)?.isCannotRecord == true { return true }
+    /// can give a background start (`CaptureStartRefusal`), and a Live Activity iOS would not start in the
+    /// background (`start(_:)` then continues in the app).
+    public nonisolated static func worksInForeground(_ error: Error) -> Bool {
+        if (error as? any CaptureStartRefusal)?.mayWorkInForeground == true { return true }
         if case .liveActivityRefused = error as? QuickCaptureError { return true }
         if case .microphoneUnconfirmed = error as? QuickCaptureError { return true }
         return false
     }
 
-    /// Hooks the intents (Siri, Shortcuts, widgets, Control Center) up to the shared instance.
-    /// Also ends Live Activities left by an earlier process (killed, crashed or
-    /// rebooted while recording): nothing of theirs is recording any more, and
-    /// their Stop button would reach a process that knows nothing of them.
-    static func register() {
-        QuickCapture.shared.startLog = VoiceNoteStartLog(url: VoiceNoteStartLog.defaultURL)
-        VoiceNoteActions.open = { QuickCapture.shared.pendingLink = $0 }
-        VoiceNoteActions.status = { QuickCapture.shared.status }
-        VoiceNoteActions.appState = { QuickCapture.shared.applicationState().diagnosticName }
-        VoiceNoteActions.tapRecorded = { _ in QuickCapture.shared.refreshTaps() }
-        QuickCapture.shared.refreshTaps()
-        VoiceNoteActions.start = { try await QuickCapture.shared.start($0) }
-        VoiceNoteActions.stop = {
-            do { _ = try await QuickCapture.shared.stop() } catch QuickCaptureError.notRecording {
+    /// Hooks the intents (Siri, Shortcuts, widgets, Control Center) up to this instance (the app's shared one,
+    /// `QuickCapture.register()` in the app, which adds what only the platform can watch).
+    public func installActions() {
+        VoiceNoteActions.open = { [weak self] in self?.pendingLink = $0 }
+        VoiceNoteActions.status = { [weak self] in self?.status ?? .unknown }
+        VoiceNoteActions.appState = { [weak self] in self?.app.activity.rawValue ?? CaptureAppActivity.unknown.rawValue }
+        VoiceNoteActions.tapRecorded = { [weak self] _ in self?.refreshTaps() }
+        refreshTaps()
+        VoiceNoteActions.start = { [weak self] in
+            guard let self else { throw VoiceNoteIntentError.unavailable }
+            try await self.start($0)
+        }
+        VoiceNoteActions.stop = { [weak self] in
+            do { _ = try await self?.stop() } catch QuickCaptureError.notRecording {
                 // Stop on an orphaned Live Activity: it is gone now (stop ended it); nothing to report.
-            }
-        }
-        let launched = Date()
-        Task { await QuickCapture.shared.endOrphanedActivities() }
-        // A status left by a process that died while recording would offer a Stop that stops nothing.
-        QuickCapture.shared.publishStatus(forceReload: true)
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        Task {
-            for await _ in ActivityAuthorizationInfo().activityEnablementUpdates {
-                QuickCapture.shared.publishStatus()
-            }
-        }
-        // `Activity.activities` may not list an earlier process's activity yet at launch: one the
-        // system reports later, started before this launch, is an orphan too.
-        Task.detached {
-            for await a in Activity<VoiceNoteAttributes>.activityUpdates
-            where a.id != ownedActivity.value && a.content.state.started < launched {
-                await a.end(nil, dismissalPolicy: .immediate)
-            }
-        }
-        #endif
-        // A launch before the first unlock after a restart (Siri, a widget) can read neither the
-        // profile nor an interrupted recording: once the device is unlocked, they are sealed. The app
-        // need not come to the front for that.
-        NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification,
-                                               object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated {
-                QuickCapture.shared.startLog.reload()
-                QuickCapture.shared.publishStatus(forceReload: true)
-                Task {
-                    await QuickCapture.shared.sweep()
-                    await QuickCapture.shared.endOrphanedActivities()
-                }
             }
         }
     }
@@ -273,10 +237,10 @@ final class QuickCapture {
     /// The status the widgets and the control show now. Its timer counts the
     /// audio, as the Live Activity's does: it starts later by the pauses so far
     /// and stands still during one (`VoiceNoteStatus.paused`).
-    var status: VoiceNoteStatus {
+    public var status: VoiceNoteStatus {
         // From the current run alone, so that the status (compared to skip widget reloads) is the same until the next pause or resumption.
         let run = session?.timeline.runs.last
-        return VoiceNoteStatus.make(setUp: isSetUp, activitiesEnabled: activitiesEnabled(),
+        return VoiceNoteStatus.make(setUp: isSetUp, activitiesEnabled: liveActivity.areEnabled,
                                     recording: state == .recording, saving: state == .saving,
                                     started: run.map { $0.wallStart.addingTimeInterval(-$0.audioStart) },
                                     paused: run?.wallEnd)
@@ -291,7 +255,7 @@ final class QuickCapture {
     /// activation, because a widget can show a status older than the file (a
     /// reload lost while the app was in the background) and would then send a
     /// tap to Settings instead of recording.
-    func publishStatus(forceReload: Bool = false) {
+    public func publishStatus(forceReload: Bool = false) {
         guard let statusStore else { return }
         do {
             if try statusStore.write(status) || forceReload { reloadSurfaces() }
@@ -300,25 +264,10 @@ final class QuickCapture {
         }
     }
 
-    nonisolated static func systemActivitiesEnabled() -> Bool {
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        return ActivityAuthorizationInfo().areActivitiesEnabled
-        #else
-        return true
-        #endif
-    }
-
-    static func reloadSystemSurfaces() {
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        WidgetCenter.shared.reloadTimelines(ofKind: VoiceNoteStatus.widgetKind)
-        ControlCenter.shared.reloadControls(ofKind: VoiceNoteStatus.controlKind)
-        #endif
-    }
-
     /// The stored profile. Throws `notSetUp` when there is none, and
     /// `profileUnreadable` when the store would not hand it over: not the
     /// same thing, and "not set up" would send the user to turn on what is on.
-    func storedProfile() throws -> StoredCaptureProfile {
+    public func storedProfile() throws -> StoredCaptureProfile {
         let stored: StoredCaptureProfile?
         do { stored = try store.load() } catch { throw QuickCaptureError.profileUnreadable }
         guard let stored else { throw QuickCaptureError.notSetUp }
@@ -328,7 +277,7 @@ final class QuickCapture {
     /// Whether quick voice notes are set up on this device: false only when
     /// no profile is stored. A profile that cannot be read now counts as set
     /// up, so that a tap starts and `start()` says why it cannot.
-    var isSetUp: Bool {
+    public var isSetUp: Bool {
         do {
             _ = try storedProfile()
             return true
@@ -343,12 +292,12 @@ final class QuickCapture {
 
     /// Reads the tap log again (`VoiceNoteActions.tapLog`): after a tap in this process, and when the
     /// app becomes active (the widget extension may have added one).
-    func refreshTaps() {
+    public func refreshTaps() {
         recentTaps = VoiceNoteActions.tapLog?.read() ?? []
     }
 
     /// Clears Recent Starts: the starts and the taps.
-    func clearDiagnostics() {
+    public func clearDiagnostics() {
         startLog.clear()
         VoiceNoteActions.tapLog?.clear()
         refreshTaps()
@@ -363,7 +312,7 @@ final class QuickCapture {
     /// do on this device (docs/quick-capture.md "Threat model": a voice note is sealed to the vault's
     /// keys, and recording shows the banner, the Live Activity and the system's microphone indicator).
     @discardableResult
-    func widgetOpenedApp() -> Task<Void, Never> {
+    public func widgetOpenedApp() -> Task<Void, Never> {
         let action = status.action
         let decision: VoiceNoteTap.Decision
         switch action {
@@ -394,21 +343,21 @@ final class QuickCapture {
 
     /// Starts a voice note from the app (File ▸ Start Voice Note, the menu-bar item). Needs only the
     /// stored profile: no vault, no key.
-    func start() async throws {
+    public func start() async throws {
         try await start(VoiceNoteStartRequest(source: .app))
     }
 
     /// Starts a voice note for `request` and keeps what happened in `startLog`.
     ///
     /// An intent's start runs in the background. When iOS refuses it there (the audio system's
-    /// `cannotRecord`, or no Live Activity: `worksInForeground`), the intent continues in the app
-    /// (`request.continueInApp`), this waits until the app is actually active (`waitUntilActive`, at
+    /// refusal, or no Live Activity: `worksInForeground`), the intent continues in the app
+    /// (`request.continueInApp`), this waits until the app is actually active (`app.waitUntilActive`, at
     /// most `foregroundWait`: from the Lock Screen that is after the unlock) and tries once more. If
     /// that fails too, the banner says so (`announceStartFailure`) and the error goes to the intent.
     /// The retry runs in a task of its own, so it is not cancelled with the intent's.
-    func start(_ request: VoiceNoteStartRequest) async throws {
-        var attempt = VoiceNoteStartAttempt(date: Date(), source: request.source, intentMode: request.intentMode,
-                                            first: VoiceNoteStartTry(appState: applicationState().diagnosticName))
+    public func start(_ request: VoiceNoteStartRequest) async throws {
+        var attempt = VoiceNoteStartAttempt(date: now(), source: request.source, intentMode: request.intentMode,
+                                            first: VoiceNoteStartTry(appState: app.activity.rawValue))
         let continueInApp: @MainActor () async throws -> Void
         do {
             try await startRecorder(&attempt.first)
@@ -431,7 +380,7 @@ final class QuickCapture {
             } catch {
                 foreground.error = VoiceNoteErrorInfo(error)
             }
-            if foreground.error != nil, applicationState() != .active {
+            if foreground.error != nil, app.activity != .active {
                 // iOS would not bring the app forward (or the user did not unlock): nothing to wait for.
                 attempt.foreground = foreground
                 startLog.append(attempt)
@@ -439,11 +388,11 @@ final class QuickCapture {
                 announceStartFailure(error)
                 throw error
             }
-            foreground.becameActive = await waitUntilActive(foregroundWait)
+            foreground.becameActive = await app.waitUntilActive(timeout: foregroundWait)
             let waited = clock.now - asked
             foreground.waited = Double(waited.components.seconds) + Double(waited.components.attoseconds) / 1e18
             attempt.foreground = foreground
-            var retry = VoiceNoteStartTry(appState: applicationState().diagnosticName)
+            var retry = VoiceNoteStartTry(appState: app.activity.rawValue)
             do {
                 try await startRecorder(&retry)
                 attempt.retry = retry
@@ -477,7 +426,7 @@ final class QuickCapture {
         state = .starting
         var started = false
         defer { if !started { state = .idle } }
-        let unlocked = protectedDataAvailable()
+        let unlocked = app.protectedDataAvailable
         trace.protectedData = unlocked
         let stored: StoredCaptureProfile
         do { stored = try storedProfile() } catch QuickCaptureError.profileUnreadable where !unlocked {
@@ -485,29 +434,26 @@ final class QuickCapture {
         }
         // New captures only: a stop, the sweep and the queue still seal under a suspended profile.
         if stored.suspended == true { throw QuickCaptureError.notOnDeviceList }
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        if showsActivity, !activitiesEnabled() { throw QuickCaptureError.liveActivitiesOff }
-        #endif
-        let allowed = await microphoneAllowed()
-        trace.microphone = microphonePermission()
+        if showsActivity, liveActivity.isSupported, !liveActivity.areEnabled { throw QuickCaptureError.liveActivitiesOff }
+        let allowed = await audio.requestMicrophone()
+        trace.microphone = audio.microphonePermission
         if !allowed {
             // In front the answer is the user's (and the prompt can show); in a process an intent launched
             // in the background it may be neither (TestFlight 1.0.0 (6): Siri after a restart).
-            throw applicationState() == .active ? QuickCaptureError.microphoneDenied : QuickCaptureError.microphoneUnconfirmed
+            throw app.activity == .active ? QuickCaptureError.microphoneDenied : QuickCaptureError.microphoneUnconfirmed
         }
         // Nothing records here yet, so any Live Activity still shown is an orphan.
-        await Self.endActivities(startedBefore: .distantFuture)
+        await liveActivity.endAll(startedBefore: .distantFuture)
         // The audio session first, while the intent's fake-foreground assertion still holds: iOS ends that
         // assertion the moment the Live Activity begins, and a non-mixable session activated after it is
         // refused ('!int' cannotInterruptOthers; iPhone, iOS 27.0.1, TestFlight 1.0.0 (6), unified log).
-        let capture: AudioCaptureBackend = backend?() ?? AVAudioCaptureBackend()
+        let capture = audio.makeRecorder()
         trace.session = try await activateSession(capture)
-        // Read back and sealed on stop, often with the device still locked: `completeUnlessOpen`
-        // files cannot be reopened then once closed, so `Self.protection` (readable after the first unlock).
-        // ADTS segments (`CaptureSegments.segmentExtension`): a recording cut off by a restart keeps its audio.
-        let s = RecordingSession(noteID: UUID(), format: CaptureSegments.captureFormat(RecordingPreference.format()), root: root,
-                                 protection: Self.protection, segmentExtension: CaptureSegments.segmentExtension,
-                                 backend: capture, center: center)
+        // Read back and sealed on stop, often with the device still locked: the recorder's files stay readable
+        // after the first unlock (`CaptureRecording`). ADTS segments (`CaptureSegments.segmentExtension`): a
+        // recording cut off by a restart keeps its audio.
+        let s = capture.makeRecording(format: CaptureSegments.captureFormat(audio.preferredFormat), root: root,
+                                      segmentExtension: CaptureSegments.segmentExtension)
         // Ended by the system (media services reset, no new segment file): sealed as after Stop.
         s.onStoppedBySystem = { [weak self, weak s] in
             guard let self, let s, self.session === s else { return }
@@ -517,9 +463,9 @@ final class QuickCapture {
         // when you begin the audio recording … If you don't start a Live Activity, the audio recording stops",
         // and only a `LiveActivityIntent` may start one from the background (`Activity.request`). Its result
         // goes to the start diagnostics; with the app in the background a failed request ends the try here.
-        let request = startActivity(started: Date())
+        let request = startActivity(started: now())
         trace.activity = request
-        if case .failed(let why) = request, applicationState() != .active {
+        if case .failed(let why) = request, app.activity != .active {
             // No Live Activity, no background recording (`AudioRecordingIntent`): the app continues in front.
             capture.deactivate()
             throw QuickCaptureError.liveActivityRefused(why.summary)
@@ -527,14 +473,14 @@ final class QuickCapture {
         do {
             try s.start()
         } catch {
-            endActivity(.init(started: Date(), result: .failed, ended: Date()), after: 0)
+            endActivity(VoiceNoteActivityState(started: now(), result: .failed, ended: now()), after: 0)
             capture.deactivate()
             throw error
         }
         session = s
         state = .recording
         started = true
-        if let begun = s.timeline.started { updateActivity(.init(started: begun)) }
+        if let begun = s.timeline.started { updateActivity(VoiceNoteActivityState(started: begun)) }
         followPauses(of: s, paused: false)
         keepActivityFresh(for: s)
     }
@@ -542,13 +488,13 @@ final class QuickCapture {
     /// Makes the audio session active for a start (`startRecorderOnce`), not mixable; when iOS refuses that
     /// with the app not in front, mixable (it interrupts no one). Returns how, for the diagnostics; throws the
     /// first refusal when both fail (`worksInForeground`: the intent then continues in the app).
-    private func activateSession(_ capture: AudioCaptureBackend) async throws -> String {
+    private func activateSession(_ capture: any CaptureRecorder) async throws -> String {
         do {
             try await capture.activateSession(mixable: false)
             return "not mixable"
         } catch {
             let refused = error
-            guard applicationState() != .active else { throw refused }
+            guard app.activity != .active else { throw refused }
             do { try await capture.activateSession(mixable: true) } catch { throw refused }
             return "mixable after a refusal (\(VoiceNoteErrorInfo(refused).description))"
         }
@@ -556,17 +502,19 @@ final class QuickCapture {
 
     /// Shows on the Live Activity and the widgets when `s` pauses (an
     /// interruption) and resumes: the timer stands still meanwhile, as the audio does.
-    private func followPauses(of s: RecordingSession, paused: Bool) {
+    private func followPauses(of s: any CaptureRecording, paused: Bool) {
         withObservationTracking {
-            _ = s.state
+            _ = s.isPaused
+            _ = s.isActive
         } onChange: { [weak self, weak s] in
             Task { @MainActor in
                 guard let self, let s, self.session === s, self.state == .recording, s.isActive else { return }
                 let pausedNow = self.isPaused
                 if pausedNow != paused {
-                    let at = Date()
+                    let at = self.now()
                     let length = s.timeline.audioLength(at: at)
-                    self.updateActivity(.init(started: at.addingTimeInterval(-length), paused: pausedNow, ended: pausedNow ? at : nil))
+                    self.updateActivity(VoiceNoteActivityState(started: at.addingTimeInterval(-length), paused: pausedNow,
+                                                               ended: pausedNow ? at : nil))
                     self.publishStatus()
                 }
                 self.followPauses(of: s, paused: pausedNow)
@@ -576,12 +524,12 @@ final class QuickCapture {
 
     /// Stops the voice note and seals it (and its transcript, when that is on).
     @discardableResult
-    func stop() async throws -> Outcome {
+    public func stop() async throws -> Outcome {
         guard let s = session, s.isActive else {
             // Stop pressed on a Live Activity this process did not start (the app was force quit, crashed or
             // restarted while recording): end it, and save what that recording left (`sweep`).
             if state == .idle {
-                await Self.endActivities(startedBefore: .distantFuture)
+                await liveActivity.endAll(startedBefore: .distantFuture)
                 await sweep()
             }
             throw QuickCaptureError.notRecording
@@ -591,13 +539,13 @@ final class QuickCapture {
     }
 
     /// Seals a stopped session (`stop`, or the system ended it).
-    private func finish(_ s: RecordingSession) async throws -> Outcome {
+    private func finish(_ s: any CaptureRecording) async throws -> Outcome {
         guard session === s, state == .recording else { throw QuickCaptureError.notRecording }
-        let started = s.timeline.started ?? Date(), ended = Date()
+        let started = s.timeline.started ?? now(), ended = now()
         // The Live Activity shows the length of the audio, without the pauses.
         let shown = ended.addingTimeInterval(-s.timeline.audioLength(at: ended))
         state = .saving
-        updateActivity(.init(started: shown, saving: true, ended: ended))
+        updateActivity(VoiceNoteActivityState(started: shown, saving: true, ended: ended))
         defer {
             session = nil
             state = .idle
@@ -608,37 +556,43 @@ final class QuickCapture {
         } catch QuickCaptureError.notSetUp {
             // Turned off while recording: nothing can seal it.
             s.discardFiles()
-            announce(nil, error: QuickCaptureError.notSetUp.description, started: shown, ended: ended)
+            announce(nil, error: "\(QuickCaptureError.notSetUp)", kept: false, started: shown, ended: ended)
             throw QuickCaptureError.notSetUp
         } catch {
             // The profile may still be there: the recording waits for `sweep()`.
-            announce(nil, error: "\(QuickCaptureError.profileUnreadable.description) \(Self.keptOnDevice)", started: shown, ended: ended)
+            announce(nil, error: "\(QuickCaptureError.profileUnreadable)", kept: true, started: shown, ended: ended)
             throw QuickCaptureError.profileUnreadable
         }
         let outcome = await seal(segments: s.segments, folder: s.folder, id: s.id, started: started, stored: stored) { [weak self] delivery in
             // Said as soon as the audio is in the inbox (or the queue), not after the transcript.
-            self?.announce(delivery, error: nil, started: shown, ended: ended)
+            self?.announce(delivery, error: nil, kept: false, started: shown, ended: ended)
         }
         // `delivered` is called exactly when the audio was delivered.
-        if outcome.delivery == nil { announce(nil, error: outcome.error, started: shown, ended: ended) }
+        if outcome.delivery == nil { announce(nil, error: outcome.error, kept: outcome.kept, started: shown, ended: ended) }
         lastOutcome = outcome
         return outcome
     }
 
     /// Where a stopped voice note went: the Live Activity's last state (then
-    /// dismissed) and the app's banner. `started` is the activity's (`ContentState.started`).
-    private func announce(_ delivery: Delivery?, error: String?, started: Date, ended: Date) {
+    /// dismissed) and the app's banner. `started` is the activity's (`VoiceNoteActivityState.started`).
+    private func announce(_ delivery: Delivery?, error: String?, kept: Bool, started: Date, ended: Date) {
         let result = Self.result(for: delivery)
-        endActivity(.init(started: started, result: result, ended: ended), after: result.shownFor)
-        let notice = Notice(result: result, error: result == .failed ? error : nil)
+        endActivity(VoiceNoteActivityState(started: started, result: result, ended: ended), after: result.shownFor)
+        show(Notice(result: result, error: result == .failed ? error : nil, kept: result == .failed && kept))
+    }
+
+    /// Shows `notice` in the banner; unless it persists, it goes after `result.shownFor` (if not replaced meanwhile).
+    private func show(_ notice: Notice) {
         self.notice = notice
+        guard !notice.persists else { return }
+        let sleep = self.sleep
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(result.shownFor))
+            await sleep(.seconds(notice.result.shownFor))
             if self?.notice?.id == notice.id { self?.notice = nil }
         }
     }
 
-    nonisolated static func result(for delivery: Delivery?) -> VoiceNoteResult {
+    public nonisolated static func result(for delivery: Delivery?) -> VoiceNoteResult {
         switch delivery {
         case .vault: return .savedToInbox
         case .queued: return .savedOnDevice
@@ -648,45 +602,36 @@ final class QuickCapture {
 
     /// Says in the app's banner that a voice note did not start (`start(_:)` after continuing in
     /// the app): kept until it is dismissed, since the app may come to the front only later.
-    func announceStartFailure(_ error: Error) {
-        notice = Notice(result: .failed, error: "\(error)",
-                        title: String(localized: "Voice Note Not Recorded", comment: "Banner title: a quick voice note could not start"),
-                        persists: true)
+    public func announceStartFailure(_ error: Error) {
+        show(Notice(result: .failed, kind: .notRecorded, error: "\(error)", persists: true))
     }
 
     /// Hides the banner's notice (tapped away).
-    func dismissNotice() { notice = nil }
-
-    /// "Voice note 7 Oct 2026 at 14:32" in this device's language (the CLI
-    /// writes `CaptureWriter.defaultTitle`'s fixed form instead).
-    nonisolated static func title(_ started: Date) -> String {
-        String(localized: "Voice note \(started.formatted(date: .abbreviated, time: .shortened))",
-               comment: "Default title of a quick-capture voice note: its start date and time")
-    }
+    public func dismissNotice() { notice = nil }
 
     /// Seals the audio in `segments` as capture `id`, delivers it, transcribes
     /// it on device from the plaintext when the profile says so and delivers
     /// the transcript, then deletes `folder` (the plaintext).
     ///
     /// The folder is deleted only once the sealed audio is in the inbox or
-    /// the queue, or when no segment holds any audio (`segmentAudio`: not a
+    /// the queue, or when no segment holds any audio (`audioFiles.classify`: not a
     /// byte, or a finished file of no length): a voice note whose
     /// audio was not sealed into an inbox file is never deleted. Everything
     /// else keeps it for the next seal (`sweep()`, at launch and each time
-    /// the app becomes active), and the outcome's error says so
-    /// (`keptOnDevice`): a segment that is there but cannot be opened now
+    /// the app becomes active), and the outcome says so
+    /// (`kept`): a segment that is there but cannot be opened now
     /// (data protection), a finished segment that does not decode, bytes of
     /// which nothing decodes, a seal or a write that fails. Besides
-    /// `segments`, every other `segment-NNN.m4a` in `folder` is sealed too
+    /// `segments`, every other `segment-NNN` file in `folder` is sealed too
     /// (`CaptureSegments.files`). Of the segments, the first `finished` (all of them
     /// when nil) are complete; only a later one, the segment being written
     /// when the app died, may be undecodable and is then left out
     /// (docs/attachments.md §13: a crash loses at most that segment).
-    func seal(segments listed: [URL], finished: Int? = nil, folder: URL, id: UUID, started: Date, stored: StoredCaptureProfile,
-              delivered: (@MainActor (Delivery) -> Void)? = nil) async -> Outcome {
+    public func seal(segments listed: [URL], finished: Int? = nil, folder: URL, id: UUID, started: Date, stored: StoredCaptureProfile,
+                     delivered: (@MainActor (Delivery) -> Void)? = nil) async -> Outcome {
         var outcome = Outcome(id: id)
         willSeal?(id)
-        let background = BackgroundWork.begin(name: "Seal voice note") {
+        let background = backgroundTime.begin("Seal voice note") {
             // Out of time: the folder stays. If the app is resumed, this seal
             // finishes and deletes it; if it is terminated, `sweep()` seals it
             // at the next launch. Deleting it here lost a voice note whose
@@ -705,26 +650,26 @@ final class QuickCapture {
                 try FileHandle(forReadingFrom: url).close()
             }
             var held: [(url: URL, audio: CaptureSegments.Audio)] = []
-            for url in segments { held.append((url, await Self.segmentAudio(url))) }
+            for url in segments { held.append((url, await audioFiles.classify(url))) }
             // What may be deleted, what waits and what is sealed: `CaptureSegments.plan`.
             let audio: [URL]
             switch CaptureSegments.plan(held: held, listed: listed, finished: finished) {
             case .nothingRecorded:
                 keep = false
-                throw RecordingError.cannotAssemble("no audio")
+                throw CaptureAssemblyError.noAudio
             case .completeSegmentUndecodable(let name):
-                throw RecordingError.cannotAssemble("\(name) does not decode")
+                throw CaptureAssemblyError.segmentUndecodable(name)
             case .noReadableAudio:
-                throw RecordingError.cannotAssemble("no readable audio")
+                throw CaptureAssemblyError.noReadableAudio
             case .seal(let urls):
                 audio = urls
             }
             let out = folder.appendingPathComponent("capture.m4a")
-            try await RecordingAssembly.merge(audio, into: out)
+            try await audioFiles.merge(audio, into: out)
+            let title = noteTitle?(started)
             let (sealed, audioRef) = try await Task.detached(priority: .userInitiated) { () throws -> (SealedCapture, BlobRef) in
                 let audio = try BoundedRead.contents(of: out, maxBytes: CaptureFile.maxBytes - (1 << 20))
-                return (try writer.seal(audio: audio, started: started, info: try? AudioProbe.probe(audio),
-                                        title: QuickCapture.title(started), id: id),
+                return (try writer.seal(audio: audio, started: started, info: try? AudioProbe.probe(audio), title: title, id: id),
                         BlobRef(content: audio, type: "audio/mp4"))
             }.value
             let delivery = try deliver(sealed, stored)
@@ -743,63 +688,39 @@ final class QuickCapture {
                 }
             }
         } catch {
-            outcome.error = keep ? "\(error) \(Self.keptOnDevice)" : "\(error)"
+            outcome.error = "\(error)"
+            outcome.kept = keep
         }
         return outcome
     }
 
-    /// Classifies the segment at `url`. Only a file AVFoundation positively
-    /// reads as an audio track of no length is `.none` with bytes in it:
-    /// anything it cannot read is `.undecodable`, which `seal` never deletes.
-    nonisolated static func segmentAudio(_ url: URL) async -> CaptureSegments.Audio {
-        guard CaptureSegments.byteCount(url) > 0 else { return .none }
-        let asset = AVURLAsset(url: url)
-        if let duration = try? await asset.load(.duration), duration.seconds > 0 { return .audio }
-        guard let tracks = try? await asset.loadTracks(withMediaType: .audio), !tracks.isEmpty else { return .undecodable }
-        for track in tracks {
-            guard let range = try? await track.load(.timeRange), range.duration.isValid, range.duration.seconds == 0 else {
-                return .undecodable
-            }
-        }
-        return .none
-    }
-
-    /// Added to a failed seal's error when the recording was kept.
-    nonisolated static var keptOnDevice: String {
-        String(localized: "The recording is kept on this device, and Sempere tries again to save it each time it opens.",
-               comment: "Added after the reason a voice note could not be saved")
-    }
-
     // MARK: - Delivery
 
-    /// Where sealed voice notes go (`CaptureDelivery`): the vault's inbox through its security-scoped bookmark or
+    /// Where sealed voice notes go (`CaptureDelivery`): the vault's inbox through its bookmark or
     /// the store, recorded in this device's ledger, else the queue.
-    var delivery: CaptureDelivery {
-        var ledger: (@Sendable (UUID) -> any WriteLedgerStore)?
-        if let stores = writeStores { ledger = { stores.ledger(for: $0) } }
-        return CaptureDelivery(queueRoot: queueRoot, vaultStore: vaultStore, bookmarks: SecurityScopedBookmarks(),
-                               ledger: ledger, delivered: { vault in
+    public var delivery: CaptureDelivery {
+        CaptureDelivery(queueRoot: queueRoot, vaultStore: vaultStore, bookmarks: bookmarks, ledger: ledger, delivered: { vault in
             // A synced copy runs soon, open or not (`SyncCoordinator.captureDelivered`).
             NotificationCenter.default.post(name: QuickCapture.deliveredNotification, object: nil, userInfo: ["vault": vault])
         })
     }
 
     /// Writes `sealed` into the vault's inbox, or into the local queue (`CaptureDelivery.deliver`).
-    func deliver(_ sealed: SealedCapture, _ stored: StoredCaptureProfile) throws -> Delivery {
+    public func deliver(_ sealed: SealedCapture, _ stored: StoredCaptureProfile) throws -> Delivery {
         try delivery.deliver(sealed, stored)
     }
 
     /// Posted (userInfo `vault`: the vault id) when a voice note was written into a vault's inbox.
-    nonisolated static let deliveredNotification = Notification.Name("io.github.anthonytw.sempere.captureDelivered")
+    public nonisolated static let deliveredNotification = Notification.Name("io.github.anthonytw.sempere.captureDelivered")
 
-    func queueFolder(_ vault: UUID) -> URL { delivery.queueFolder(vault) }
+    public func queueFolder(_ vault: UUID) -> URL { delivery.queueFolder(vault) }
 
     /// Moves queued captures of `vaultId` into the vault at `vaultURL` (`CaptureDelivery.flushQueue`), recorded under
-    /// the stored profile when it is this vault's; `coordinated`: each write coordinated (iCloud Drive).
+    /// the stored profile when it is this vault's; `coordinated`: each write coordinated (`files`, iCloud Drive).
     @discardableResult
-    func flushQueue(into vaultURL: URL, vaultId: UUID, coordinated: Bool) -> Int {
+    public func flushQueue(into vaultURL: URL, vaultId: UUID, coordinated: Bool) -> Int {
         delivery.flushQueue(into: vaultURL, vaultId: vaultId, profile: (try? store.load())?.profile,
-                            files: coordinated ? SystemFileCoordinator() : nil)
+                            files: coordinated ? files : nil)
     }
 
     /// Moves queued captures into the stored profile's vault when its folder
@@ -807,7 +728,7 @@ final class QuickCapture {
     /// throws `profileUnreadable` when the profile cannot be read now (the
     /// captures stay queued; unlocking the vault moves them too).
     @discardableResult
-    func flushStoredQueue() throws -> Int {
+    public func flushStoredQueue() throws -> Int {
         let stored: StoredCaptureProfile
         do { stored = try storedProfile() } catch QuickCaptureError.notSetUp { return 0 }
         return delivery.flushQueue(of: stored)
@@ -827,7 +748,7 @@ final class QuickCapture {
     /// Runs at launch and each time the app becomes active (a profile the
     /// launch could not read may be readable then); one sweep at a time, so
     /// two never seal the same recording into the same file at once.
-    func sweep() async {
+    public func sweep() async {
         guard session == nil, !sweeping else { return }
         sweeping = true
         defer { sweeping = false }
@@ -851,23 +772,13 @@ final class QuickCapture {
                 continue
             }
             let outcome = await seal(segments: leftover.segments, finished: leftover.finished, folder: dir, id: id,
-                                     started: leftover.started ?? Date(), stored: noTranscript)
+                                     started: leftover.started ?? now(), stored: noTranscript)
             // Said in the app's banner: a voice note a force quit, a crash or a restart cut off is never
             // saved (or kept) without a word.
             if let delivery = outcome.delivery {
-                let saved = Notice(result: Self.result(for: delivery), error: nil,
-                                   title: String(localized: "Interrupted Voice Note Saved",
-                                                 comment: "Banner title: a voice note cut off by a restart or a force quit was saved"))
-                notice = saved
-                Task { [weak self] in
-                    try? await Task.sleep(for: .seconds(saved.result.shownFor))
-                    if self?.notice?.id == saved.id { self?.notice = nil }
-                }
+                show(Notice(result: Self.result(for: delivery), kind: .interruptedSaved))
             } else if fm.fileExists(atPath: dir.path), reportedKept.insert(id).inserted {
-                notice = Notice(result: .failed, error: outcome.error,
-                                title: String(localized: "Interrupted Voice Note Not Saved Yet",
-                                              comment: "Banner title: a voice note cut off by a restart is kept on the device for now"),
-                                persists: true)
+                show(Notice(result: .failed, kind: .interruptedNotSaved, error: outcome.error, kept: outcome.kept, persists: true))
             }
         }
     }
@@ -877,178 +788,64 @@ final class QuickCapture {
     /// The stale date of a recording's Live Activity content sent now: `activityStaleAfter` from now while it
     /// records (`keepActivityFresh` moves it on), none once it is saving or done.
     private func staleDate(for recording: Bool) -> Date? {
-        recording ? Date().addingTimeInterval(activityStaleAfter) : nil
+        recording ? now().addingTimeInterval(activityStaleAfter) : nil
     }
 
     /// Asks for the recording's Live Activity and says what came of it (the start diagnostics):
     /// the error is kept, never swallowed (TestFlight 1.0.0 (3) and (4) dropped it with `try?`).
     private func startActivity(started: Date) -> VoiceNoteActivityRequest {
         guard showsActivity else { return .notRequested("turned off") }
-        if let requestActivity {
-            do {
-                try requestActivity(started)
-                return .started
-            } catch {
-                return .failed(VoiceNoteErrorInfo(error))
-            }
-        }
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        guard activitiesEnabled() else { return .notRequested("Live Activities are off") }
+        guard liveActivity.isSupported else { return .notRequested("no Live Activities on this platform") }
+        guard liveActivity.areEnabled else { return .notRequested("Live Activities are off") }
         do {
             // Stale unless the app refreshes it (`keepActivityFresh`): if the app dies, the activity says
             // the recording was interrupted instead of offering a Stop that reaches nothing.
-            let a = try Activity.request(attributes: VoiceNoteAttributes(),
-                                         content: .init(state: .init(started: started), staleDate: staleDate(for: true)))
-            activity = a
-            ownedActivity.value = a.id
+            try liveActivity.request(VoiceNoteActivityState(started: started), staleDate: staleDate(for: true))
             return .started
         } catch {
             return .failed(VoiceNoteErrorInfo(error))
         }
-        #else
-        return .notRequested("no Live Activities on this platform")
-        #endif
     }
 
     /// While `s` records, sends the Live Activity its current state again every `activityHeartbeat`, which
     /// moves its stale date on. When the process dies (force quit, crash), the updates stop and the activity
     /// turns stale within `activityStaleAfter`: the widget then shows "interrupted" and opens the app, whose
     /// launch ends it and saves the recording (`endOrphanedActivities`, `sweep`).
-    private func keepActivityFresh(for s: RecordingSession) {
-        let beat = activityHeartbeat
+    private func keepActivityFresh(for s: any CaptureRecording) {
+        let beat = activityHeartbeat, sleep = self.sleep
         Task { [weak self, weak s] in
             while true {
-                try? await Task.sleep(for: beat)
+                await sleep(beat)
                 guard let self, let s, self.session === s, self.state == .recording, s.isActive else { return }
-                let at = Date()
+                let at = self.now()
                 let length = s.timeline.audioLength(at: at)
                 let paused = self.isPaused
-                self.updateActivity(.init(started: at.addingTimeInterval(-length), paused: paused, ended: paused ? at : nil))
+                self.updateActivity(VoiceNoteActivityState(started: at.addingTimeInterval(-length), paused: paused,
+                                                           ended: paused ? at : nil))
             }
         }
     }
 
-    #if os(iOS) && !targetEnvironment(macCatalyst)
     /// Shows `state` on the recording's Live Activity (paused, resumed, saving).
-    private func updateActivity(_ state: VoiceNoteAttributes.ContentState) {
-        activityStates?(state)
-        guard let id = activity?.id else { return }
-        let previous = activityWork
-        let stale = staleDate(for: state.isRecording)
-        // `Activity` is not Sendable: reach it by id from a nonisolated task.
-        activityWork = Task.detached {
-            await previous?.value
-            for a in Activity<VoiceNoteAttributes>.activities where a.id == id {
-                await a.update(ActivityContent(state: state, staleDate: stale))
-            }
-        }
+    private func updateActivity(_ state: VoiceNoteActivityState) {
+        liveActivity.update(state, staleDate: staleDate(for: state.isRecording))
     }
 
-    /// Ends the recording's Live Activity on `state` (where the voice note
-    /// went), dismissed `seconds` later.
-    private func endActivity(_ state: VoiceNoteAttributes.ContentState, after seconds: TimeInterval) {
-        activityStates?(state)
-        guard let id = activity?.id else { return }
-        activity = nil
-        let dismissal = Date().addingTimeInterval(seconds)
-        let previous = activityWork
-        activityWork = Task.detached {
-            await previous?.value
-            for a in Activity<VoiceNoteAttributes>.activities where a.id == id {
-                await a.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(dismissal))
-            }
-            if ownedActivity.value == id { ownedActivity.value = nil }
-        }
+    /// Ends the recording's Live Activity on `state` (where the voice
+    /// note went), dismissed `seconds` later.
+    private func endActivity(_ state: VoiceNoteActivityState, after seconds: TimeInterval) {
+        liveActivity.end(state, dismissal: now().addingTimeInterval(seconds))
     }
-    #else
-    private struct ActivityState {
-        init(started: Date, paused: Bool = false, saving: Bool? = nil, result: VoiceNoteResult? = nil, ended: Date? = nil) {}
-    }
-    private func updateActivity(_ state: ActivityState) {}
-    private func endActivity(_ state: ActivityState, after seconds: TimeInterval) {}
-    #endif
 
     /// Ends every voice note Live Activity that is not this process's recording: one left by a process
     /// that was force quit, crashed or was restarted while recording. Run at launch, each time the app
     /// becomes active and when protected data becomes available (an activity started a moment ago, by a
     /// start in progress, is left alone). Returns how many it ended.
     @discardableResult
-    func endOrphanedActivities(now: Date = Date()) async -> Int {
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        let recent = now.addingTimeInterval(-Self.orphanGrace)
-        return await Task.detached { () -> Int in
-            var ended = 0
-            for a in Activity<VoiceNoteAttributes>.activities
-            where a.id != ownedActivity.value && a.content.state.started < recent {
-                await a.end(nil, dismissalPolicy: .immediate)
-                ended += 1
-            }
-            return ended
-        }.value
-        #else
-        return 0
-        #endif
+    public func endOrphanedActivities(now: Date? = nil) async -> Int {
+        await liveActivity.endOrphans(startedBefore: (now ?? self.now()).addingTimeInterval(-Self.orphanGrace))
     }
 
     /// An activity started less than this long ago may be a start of this process still in progress.
-    nonisolated static let orphanGrace: TimeInterval = 10
-
-    /// Ends every voice note Live Activity that started before `cutoff`.
-    nonisolated static func endActivities(startedBefore cutoff: Date) async {
-        #if os(iOS) && !targetEnvironment(macCatalyst)
-        await Task.detached {
-            for a in Activity<VoiceNoteAttributes>.activities where a.content.state.started < cutoff {
-                await a.end(nil, dismissalPolicy: .immediate)
-            }
-            ownedActivity.value = nil
-        }.value
-        #endif
-    }
-
-    /// `AVAudioApplication`'s record permission, named for the diagnostics.
-    nonisolated static func systemMicrophonePermission() -> String {
-        switch AVAudioApplication.shared.recordPermission {
-        case .granted: return "granted"
-        case .denied: return "denied"
-        case .undetermined: return "undetermined"
-        @unknown default: return "unknown"
-        }
-    }
-}
-
-/// The id of this process's recording's Live Activity (nil when none): every other voice note activity is
-/// an orphan (`QuickCapture.endOrphanedActivities`). Read from nonisolated tasks, so behind a lock.
-final class OwnedActivityID: @unchecked Sendable {
-    private let lock = NSLock()
-    private var id: String?
-    var value: String? {
-        get { lock.withLock { id } }
-        set { lock.withLock { id = newValue } }
-    }
-}
-
-let ownedActivity = OwnedActivityID()
-
-/// A background-time assertion while a voice note is sealed (the app may
-/// have been launched by an intent, or sent to the background meanwhile).
-@MainActor
-final class BackgroundWork {
-    private var id = UIBackgroundTaskIdentifier.invalid
-
-    static func begin(name: String, expired: @escaping @MainActor @Sendable () -> Void) -> BackgroundWork {
-        let work = BackgroundWork()
-        work.id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak work] in
-            MainActor.assumeIsolated {
-                expired()
-                work?.end()
-            }
-        }
-        return work
-    }
-
-    func end() {
-        guard id != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(id)
-        id = .invalid
-    }
+    public nonisolated static let orphanGrace: TimeInterval = 10
 }

@@ -1,5 +1,6 @@
 import Sempere
 import SempereAppCore
+import SempereCaptureShared
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers

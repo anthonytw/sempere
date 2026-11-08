@@ -3,15 +3,6 @@ import Sempere
 import SempereSpeech
 import SempereAppCore
 
-/// Transcribes a recording's audio file on device.
-protocol RecordingTranscribing: Sendable {
-    /// `allowModelDownload`: the user asked for this one (the Transcribe button), so the engine may fetch its
-    /// language model from Apple's asset service. Automatic jobs (a recording saved, a quick voice note, an
-    /// adopted capture) pass false: offline, a download would fail or wait, so they report
-    /// `RecordingTranscriptionError.modelNotDownloaded` instead (offline audit A-P1).
-    func transcribe(file: URL, recording: UUID, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript
-}
-
 /// Why a recording was not transcribed, in the app's words.
 enum RecordingTranscriptionError: Error, Equatable {
     /// The language's on-device model is not installed, and this job may not download it.

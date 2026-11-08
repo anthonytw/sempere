@@ -579,16 +579,8 @@ struct UnlistedOverSyncAppTests {
 
     /// A quick-capture instance for `model` that records with the fake backend and keeps its files in temp folders.
     static func quickCapture(for model: AppModel) -> QuickCapture {
-        let qc = QuickCapture()
-        qc.store = MemoryCaptureProfileStore()
-        qc.backend = { FakeCapture() }
-        qc.microphoneAllowed = { true }
-        qc.transcriber = nil
-        qc.root = QuickCaptureTests.temp("devices-qc-root")
-        qc.queueRoot = QuickCaptureTests.temp("devices-qc-queue")
-        qc.center = NotificationCenter()
-        qc.showsActivity = false
-        qc.writeStores = model.writeStores
+        let qc = QuickCapture.testing()
+        if let stores = model.writeStores { qc.ledger = { stores.ledger(for: $0) } }
         model.quickCapture = qc
         return qc
     }

@@ -135,8 +135,10 @@ PRODUCT_SOURCES = {
     # the widget.
     "SempereLocalization": ["SempereLocalization"],
     # The apps' session state (docs/design/thin-app.md "Rules"): menus, modes, settings, onboarding; the app only.
-    "SempereAppCore": ["SempereAppCore", "SempereImporters", "SempereNotability", "SempereImport", "Sempere", "SemperePDF",
-                       "SempereRender", "Age", "CZlib"],
+    "SempereAppCore": ["SempereAppCore", "SempereCaptureShared", "SempereImporters", "SempereNotability", "SempereImport", "Sempere",
+                       "SemperePDF", "SempereRender", "Age", "CZlib"],
+    # What the quick voice note widgets share with the app (docs/design/thin-app.md): linked by the app and the widget.
+    "SempereCaptureShared": ["SempereCaptureShared"],
     # Third-party (app only, never in Sources/): ships its own manifest if it needs one;
     # check the archive's privacy report.
     "SwiftMath": [],

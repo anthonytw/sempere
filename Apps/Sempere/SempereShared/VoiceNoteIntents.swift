@@ -1,63 +1,11 @@
 import AppIntents
 import Foundation
+import SempereCaptureShared
 
-/// Where a voice-note start came from (Settings ▸ Quick Voice Notes ▸ Recent Starts).
-enum VoiceNoteStartSource: String, Codable, Sendable {
-    /// `StartVoiceNoteIntent`: Siri, Shortcuts, the Action button set to the shortcut.
-    case shortcut
-    /// `VoiceNoteControlIntent`: the Control Center control (and the Action button set to it),
-    /// the Lock Screen and Home Screen widgets. The system does not say which of them.
-    case widgetOrControl
-    /// The app itself: File ▸ Start Voice Note, the Mac menu-bar item.
-    case app
-}
+// The voice note intents (AppIntents, compiled into the app and the widget extension). What they do is
+// `VoiceNoteActions` and `VoiceNoteStatus` (SempereCaptureShared); the app installs the hooks at launch.
 
-/// One start an intent asks the app for.
-struct VoiceNoteStartRequest {
-    var source: VoiceNoteStartSource
-    /// `systemContext.currentMode` as the intent saw it (nil in the app).
-    var intentMode: String?
-    /// Brings the app to the front (`AppIntent.continueInForeground`); nil in the app.
-    var continueInApp: (@MainActor () async throws -> Void)?
-}
-
-/// What the app does when a voice note intent runs. The app sets these at
-/// launch (`QuickCapture.register`); the widget extension compiles the same
-/// intents for its buttons but never performs them: `AudioRecordingIntent`
-/// and `LiveActivityIntent` run in the app's process.
-@MainActor
-enum VoiceNoteActions {
-    /// Starts a voice note (`QuickCapture.start(_:)`): in the background, and, when the audio
-    /// system refuses the microphone there, with the app in front once it is active.
-    static var start: (@MainActor (VoiceNoteStartRequest) async throws -> Void)?
-    static var stop: (@MainActor () async throws -> Void)?
-    /// Shows a place in the app (`VoiceNoteControlIntent`).
-    static var open: (@MainActor (VoiceNoteLink) -> Void)?
-    /// The live status (`QuickCapture.status`): what the control's tap does.
-    static var status: (@MainActor () -> VoiceNoteStatus)?
-    /// The app's state as the diagnostics name it ("active", "background"; `QuickCapture.register`).
-    /// Nil in the widget extension, which has no `UIApplication`.
-    static var appState: (@MainActor () -> String)?
-    /// Where every tap is kept (`VoiceNoteTapLog`, the App Group: the extension writes there too).
-    static var tapLog: VoiceNoteTapLog? = VoiceNoteTapLog.shared
-    /// Called after a tap was kept (the app refreshes Settings ▸ Quick Voice Notes ▸ Recent Starts).
-    static var tapRecorded: (@MainActor (VoiceNoteTap) -> Void)?
-
-    /// Keeps one tap (`VoiceNoteTapLog`) and writes it to the unified log, in whichever process it ran.
-    static func recordTap(_ entry: VoiceNoteTap.Entry, decision: VoiceNoteTap.Decision, shown: String? = nil,
-                          mode: String? = nil, error: Error? = nil) {
-        let text = error.map { e -> String in
-            let ns = e as NSError
-            return String("\(ns.domain) \(ns.code): \(String(describing: e))".prefix(VoiceNoteTap.maxError))
-        }
-        let tap = VoiceNoteTap(date: Date(), entry: entry, process: VoiceNoteTap.processName, shown: shown,
-                               live: status?().phase.rawValue, decision: decision, mode: mode, appState: appState?(),
-                               error: text)
-        VoiceNoteTapLog.log(tap)
-        tapLog?.append(tap)
-        tapRecorded?(tap)
-    }
-
+extension VoiceNoteActions {
     /// Starts recording for `intent`; a start the audio system refused in the background is tried
     /// once more with the app in front (`QuickCapture.start(_:)` waits for it to be active), so a
     /// tap records rather than failing.
@@ -68,11 +16,8 @@ enum VoiceNoteActions {
     }
 }
 
-/// Why a voice note intent did nothing.
-enum VoiceNoteIntentError: Error, CustomLocalizedStringResourceConvertible {
-    case unavailable
-
-    var localizedStringResource: LocalizedStringResource {
+extension VoiceNoteIntentError: @retroactive CustomLocalizedStringResourceConvertible {
+    public var localizedStringResource: LocalizedStringResource {
         // The same words as `QuickCaptureError.notSetUp` (the app's own error for this state).
         "Quick Voice Notes is not set up: open Sempere, unlock the vault and turn it on in Settings."
     }

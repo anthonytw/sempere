@@ -278,16 +278,8 @@ struct FolderTargetAppTests {
         let w = try await Self.world()
         let vault = try #require(w.b.model.vault)
         let profile = try vault.captureProfile(device: DeviceID("0badf00d")!)
-        let qc = QuickCapture()
-        qc.store = MemoryCaptureProfileStore()
+        let qc = QuickCapture.testing()
         try qc.store.save(StoredCaptureProfile(profile: profile, vaultName: "Shared", bookmark: Data(), transcribe: false))
-        qc.backend = { FakeCapture() }
-        qc.microphoneAllowed = { true }
-        qc.transcriber = nil
-        qc.root = TestTemp.root.appendingPathComponent("qc-\(UUID().uuidString)", isDirectory: true)
-        qc.queueRoot = TestTemp.root.appendingPathComponent("qcq-\(UUID().uuidString)", isDirectory: true)
-        qc.center = NotificationCenter()
-        qc.showsActivity = false
         qc.vaultStore = w.b.store
         let coordinator = w.b.model.syncCoordinator
         coordinator.start()   // every vault syncs, as in the app

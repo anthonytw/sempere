@@ -45,8 +45,8 @@ those lines can move:
   It may use Observation (part of the Swift toolchain on Linux too). The hard rule in CLAUDE.md, that
   `Sources/` uses Foundation only, gains Observation for this module.
 - **`SempereCaptureShared`** is a tiny module with no dependencies. It holds the voice-note status, the
-  tap log and the status-item protocol, so the widget and the Mac status item do not link the whole
-  core.
+  tap log and the intents' hooks, so the widget does not link the whole core (wave 5b). The Mac status item's
+  `StatusItemProtocol` stays a file the app and its bundle both compile (decided in the review of #20).
 - **`NoteEditor` never names PencilKit in the library.** The canvas glue (`PKDrawing`, about 240
   lines) stays in the app, behind the editor's `NoteCanvas` type parameter and a widened `RemoteInkView`
   (wave 5, decided for good: a type parameter rather than the `NoteEditing` protocol first planned, see below).
@@ -101,16 +101,15 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
 - **`PerfSink`**: `Perf.begin`/`measure`/`event` in `AppModel`, `AppModel+Backup`, `+History`, `+ListUpdates`,
   `+Loading`, `+Reconcile`, `+RemoteMerge`, `+Thinning`, `BackgroundSync`, `ItemLayerView`, `ItemRendering`,
   `NoteEditor`, `PageCanvasView`; `os.Logger` in `AppModel+Inbox`, `+Notebooks`,
-  `+SettingsSync`, `+Suspension`, `+SyncTargets`, `AppModelEnvironment`, `DragLog`, `FolderPicker`,
-  `VoiceNoteStartLog`, `VoiceNoteTapLog`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
+  `+SettingsSync`, `+Suspension`, `+SyncTargets`, `AppModelEnvironment`, `DragLog`, `FolderPicker`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
   becomes `perf.measure("x", …)`.
 - **`FolderBookmarks`** (bookmarks and security scopes): `AppModel`, `AppModel+Backup`, `+BulkExport`,
   `+DeviceNotices`, `+Import`, `+SyncTargets` (`FolderTargetAccess.open` resolves with `mounting:`), `+VaultDetails`,
   `+VaultStore`, `ExportSheet`, `FolderPicker`, `InsertUI`, `MathModels`, `NewVaultView`, `PDFPreparation`,
-  `QuickCapture` (its profile's bookmark at setup), `VaultLibrary+App` (`VaultBookmark`, the backup folder's).
+  `VaultLibrary+App` (`VaultBookmark`, the backup folder's).
 - **`FileCoordinating`**: the callers of `CloudVault.coordinatedRead`/`Write` (`AppModel+Backup`, `+Thinning`,
-  `+VaultStore`, `NewVaultView`, `NoteEditor`) pass `files:` once their code is in the library. Quick capture's
-  queue flush takes one already (`CaptureDelivery.flushQueue(…files:)`, the app passes `SystemFileCoordinator`).
+  `+VaultStore`, `NewVaultView`, `NoteEditor`) pass `files:` once their code is in the library. Quick capture
+  takes one (`QuickCapture.files`, for `CaptureDelivery.flushQueue(…files:)`; the app passes `SystemFileCoordinator`).
   `Sources/SempereSync/UbiquitousFolderHooks.swift` calls `NSFileCoordinator` itself (Darwin only, already in the
   library): it can take a `FileCoordinating` when a second implementation is wanted.
 - **`PlatformServices`**: `Platform.isMac`/`isPhone` in 33 files (they stay for views; logic that moves takes
@@ -135,12 +134,7 @@ creation itself is `VaultCreation` in `Sempere` (no session state, and the CLI l
 `VaultLibrary.create` and `vault init`/`store create` call it (duplicate 4). The module now also depends on
 `SempereSync` (placeholders) and `SempereRender` (the kit's `VaultInfo`).
 
-The `QuickCapture` class itself, the start/stop/sweep state machine, stays in the app for now: it drives the app's
-`RecordingSession` (`AudioRecorder.swift`, AVAudioSession observers and file protection, shared with the in-note
-recorder that moves with `NoteEditor` in wave 5) and speaks `VoiceNoteStatus`, `VoiceNoteActions` and the tap log of
-`SempereShared`, which the widget compiles and which wait for `SempereCaptureShared`. With those two in the package,
-the class moves behind protocols for the Live Activity, the app's state and background time. Its decisions that need
-no platform service are already in the module and tested on Linux.
+The `QuickCapture` class itself, the start/stop/sweep state machine, moved in wave 5b (below).
 
 Wave 4 (sync half, 2026-11-07) added the sync scheduling: `SyncCoordinator` (with `SyncTargetRef`), `SyncSession`
 (with `SyncRunMode`, `SyncRunRequest`, `SyncRunCancel`) and `SyncStatus`. The module now also depends on `SempereWebDAV`. The coordinator takes its
@@ -174,10 +168,59 @@ recording (`NoteEditor+RecordingSession`: `RecordingSession`, `RecordingAssembly
 `Tests/SempereAppCoreTests/NoteEditor` on a canvas of stored strokes (`TestCanvas`). `AppModel` is unchanged and
 moves next.
 
+Wave 5b, part 1 (capture, 2026-11-07) moved quick capture's state machine and what the widgets share with the app:
+
+- **`SempereCaptureShared`** (`Sources/SempereCaptureShared`, Foundation only; a product the app and the widget link,
+  and the widget does not link `SempereAppCore`): `VoiceNoteStatus` (with `VoiceNoteLink`, `VoiceNoteResult`,
+  `VoiceNoteStatusStore`), `VoiceNoteActivityState` (the Live Activity's state, the same JSON as before), the intents'
+  hooks `VoiceNoteActions` with `VoiceNoteStartSource`, `VoiceNoteStartRequest` and `VoiceNoteIntentError`, and the tap
+  log (`VoiceNoteTap`, `VoiceNoteTapLog`; its unified-log lines go through the `VoiceNoteTapLog.logLine` hook, which
+  `VoiceNoteTapLog+Logger.swift` in `Apps/Sempere/SempereShared` installs at launch in the app and the widget, because
+  the module has no dependency to take a `PerfSink` from and `Sources/` imports no `os`). Its tests are `Tests/SempereCaptureSharedTests`. Still in
+  `Apps/Sempere/SempereShared/`, which the app and the widget compile: the intents (AppIntents, with
+  `VoiceNoteActions.startOrContinueInApp` and the text of `VoiceNoteIntentError`), `VoiceNoteAttributes` (ActivityKit,
+  `ContentState = VoiceNoteActivityState`), the unified-log hook and the surfaces' words (`VoiceNoteStatus+Text.swift`: the status's
+  `title` and `subtitle`, the result's `title` and `detail`).
+- **`QuickCapture`** (`Sources/SempereAppCore/QuickCapture/`): the class, and the start diagnostics (`VoiceNoteStartLog`
+  and its records, which log through `PerfSink`). Its platform is behind protocols in `QuickCapturePlatform.swift`,
+  each with a version for tests and the CLI:
+
+  | Protocol | Wraps (app) | Why a seam of its own |
+  | --- | --- | --- |
+  | `CaptureAudio` → `CaptureRecorder` → `CaptureRecording` | the microphone permission and the preferred format; per start, an `AudioCaptureBackend` and the audio session; the `RecordingSession` it records into, its files protected `completeUntilFirstUserAuthentication` | the start order (session before the Live Activity, the mixable retry) is the library's, the AVFoundation calls and the file protection class are the app's |
+  | `CaptureAudioFiles` | `AVURLAsset` (what a segment holds), `RecordingAssembly.merge` | the seal's rule (`CaptureSegments.plan`) is the library's; decoding is AVFoundation |
+  | `CaptureLiveActivity` | ActivityKit (`Activity.request`/`update`/`end`, orphans) | iPhone and iPad only; the app keeps the activity id and the ordered updates |
+  | `CaptureAppState` | `UIApplication` state, protected data, `AppActivation.wait` | the decision to continue in the app is the library's |
+  | `BackgroundTime` | `beginBackgroundTask` | the seal runs on borrowed time |
+
+  The existing protocols cover the rest: `FolderBookmarks` (the profile's bookmark), `FileCoordinating` (a coordinated
+  queue flush) and `PerfSink` (the start log). `RecordingTranscribing` moved into the module (the app's
+  `SpeechRecordingTranscriber` adopts it). A refusal that may work in front is `CaptureStartRefusal` (the app's
+  `RecordingError.cannotRecord`). The time and the banner's and heartbeat's waits are parameters (`now`, `sleep`), so
+  tests wait on nothing. No words: the banner's titles are `Notice.Kind`, a kept recording is `Outcome.kept` and
+  `Notice.kept`, a seal's own failures are `CaptureAssemblyError`, and the default title of a voice note is the app's
+  (`noteTitle`); `QuickCapture+Text.swift` words them as before.
+- **In the app** (`QuickCapture+App.swift`): `QuickCapture.shared`, made with the app's services by `QuickCapture.app()`;
+  `register()` (the intents' hooks, the ActivityKit and protected-data observers); `KeychainCaptureProfileStore`;
+  `AppCaptureAudio` and `AppCaptureRecorder` (`RecordingSession` with `QuickCapture.protection`); `AVCaptureAudioFiles`;
+  `SystemLiveActivity`; `UIKitCaptureApp` and `UIKitBackgroundTime`. `AppActivation` stays (UIKit), and so does the
+  in-note recorder (`NoteEditor+RecordingSession`, `RecordingSession`, `RecordingAssembly`: AVFoundation).
+- **Decided in the review of #20**: file protection stays part of the recorder's contract (the recorder is what
+  creates the files), not a protocol of its own. Both end-to-end capture tests stay: the package's on fakes (Linux)
+  and the app's on the real recorder and AVFoundation. `VoiceNoteActivityState.saving` and
+  `StoredCaptureProfile.suspended` stay optional: 1.0.0 compatibility. `StatusItemProtocol` stays a file the app and
+  the Mac menu-bar bundle both compile: the bundle is a native macOS plug-in in the app's process, and linking a
+  package product into both would put two copies of the module in one process. Accepting `segment-NNN.m4a` in
+  quick-capture leftovers (build 6 and earlier) is a separate follow-up.
+- **Tests**: the state machine's are `Tests/SempereAppCoreTests/QuickCapture` (`QuickCaptureFlowTests`,
+  `QuickCaptureStartTests`), on the fakes of `CaptureTestKit.swift` and one fixture vault copied per test. The app
+  keeps what needs AVFoundation (ADTS cut-offs and merges, the zero-length segment, the real session's interruptions
+  and file protection), ActivityKit, the intents (AppIntents), `AppActivation`, and the `AppModel` ones (wave 5b, part 2).
+
 The words stayed in the app, next to the views that show them, so the string catalog's checks still see them
 (`LocalizationCatalogTests` scans `Apps/`): `MenuCommand+Titles.swift` words `MenuCommand.titleKind(in:)`,
 `DeviceSettings+Text.swift` the settings' choices and `StorageText`, `Expectations+Text.swift` the tour pages
-(`TourPage.topic`), `VaultLibrary+App.swift`, `BackupSettings+Text.swift` and `QuickCapture+Text.swift` the errors,
+(`TourPage.topic`), `VaultLibrary+App.swift`, `BackupSettings+Text.swift` and `QuickCapture+Text.swift` the errors (and, since wave 5b, the banner's titles and the kept-on-device line),
 progress, reminder and restore name of wave 4 (retroactive `CustomStringConvertible`, as `CloudVault+Live.swift`). So did the glue that reads the process or the bundle for the app: `OnboardingPolicy.automatic`
 (debug launch variables), `OnboardingMemory()` (`UserDefaults.standard`), the transcription hooks
 (`TranscriptionSettings.statusProvider` and the others, set at launch) and `DemoLaunch`.
