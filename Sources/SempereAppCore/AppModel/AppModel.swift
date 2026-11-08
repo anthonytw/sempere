@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import Sempere
 import SempereImport
+import SempereRender
 import SempereSync
 import SempereWebDAV
 
@@ -73,7 +74,7 @@ public enum AppModelError: Error, Equatable, Sendable {
     case notesStillDownloading
     /// The same, from the WebDAV server (host) of a partial copy.
     case notesStillDownloadingFromServer(String)
-    /// The open note's pending canvas changes could not be saved first.
+    /// The open note's pending canvas changes could not be saved first (the editor's `saveFailure`).
     case unsavedChanges(String)
     /// A notebook dropped into itself or a notebook inside it.
     case invalidNotebookMove
@@ -288,6 +289,18 @@ public final class AppModelCore<Host: AppModelHost> {
     public var importProgress: ImporterProgress?
     /// Stops the running import between notes (`cancelImport`); nil when the importer cannot stop safely.
     public var importCancellation: ImporterCancellation?
+    /// What the last import did, until the alert is dismissed (`AppModel+Import`).
+    public var importSummary: ImportSummary?
+    /// The last import of this vault, for File > Last Import Report (until the vault closes).
+    public var lastImportReport: ImportSummary?
+    /// The export sheet's request (`AppModel+Export`).
+    public var exportRequest: ExportRequest?
+    /// The "Export to Folder or Zip…" sheet's request (`AppModel+BulkExport`).
+    public var bulkExportRequest: BulkExportRequest?
+    /// Where this model's drag-out exports (a note dragged to the Finder) are written; emptied when the vault closes.
+    public let exportFolder: URL = NotePDFExport.folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    /// Bumped when the vault closes: a drag-out export prepared before it writes nothing.
+    public let exportEpoch = ExportEpoch()
     public var sortOrder = NoteSort.modified
     /// Favorites at the top of the note list, under any `sortOrder`.
     public var favoritesFirst = false
@@ -1162,6 +1175,11 @@ public final class AppModelCore<Host: AppModelHost> {
         if let o = inboxDeliveryObserver { NotificationCenter.default.removeObserver(o) }
         inboxDeliveryObserver = nil
         importCancellation?.cancel()   // a running import stops after its current note
+        lastImportReport = nil
+        exportEpoch.bump()
+        NotePDFExport.purge(in: exportFolder, olderThan: 0)   // plaintext files dragged out of this vault
+        exportRequest = nil
+        bulkExportRequest = nil
         publishedRows = [:]
         publishedRowsSignature = []
         isBusy = false

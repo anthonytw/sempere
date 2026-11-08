@@ -165,7 +165,8 @@ struct ImportProgressOverlay: View {
 /// same lines `sempere import <id> -v` prints), and Save Report… / Share… for the whole report as a text file.
 struct ImportReportView: View {
     @Environment(\.dismiss) private var dismiss
-    let details: ImportDetails
+    let summary: ImportSummary
+    private var details: ImportDetails { summary.details }
     @State private var handOff = ExportHandOffState()
     @State private var file: URL?
 
@@ -206,8 +207,9 @@ struct ImportReportView: View {
             .accessibilityIdentifier("importReport")
             .exportHandOff($handOff)
             .task {
-                guard file == nil, !details.text.isEmpty else { return }
-                file = try? ImportReportText.write(details.text)
+                let text = summary.reportText
+                guard file == nil, !text.isEmpty else { return }
+                file = try? ImportReportText.write(text)
             }
             .onDisappear {
                 if let file { ImportReportText.discard(file) }

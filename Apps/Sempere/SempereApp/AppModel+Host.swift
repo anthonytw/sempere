@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import Sempere
 import SempereAppCore
+import SempereRender
 import SempereSync
 import UIKit
 
@@ -19,7 +20,8 @@ enum AppHost: AppModelHost {
     static func makeState() -> AppModelAppState { AppModelAppState() }
 
     /// The platform's: signposts and `os.Logger`, `UserDefaults.standard`, security-scoped bookmarks, the device,
-    /// the network and the Keychain for WebDAV, iCloud, on-device speech, quick capture, Vision, the owner check.
+    /// the network and the Keychain for WebDAV, iCloud, on-device speech, quick capture, Vision, the owner check,
+    /// file coordination, and PDFKit, ImageIO and CoreText for exports and imports.
     static func makeServices() -> AppModelServices {
         AppModelServices(perf: AppPerfSink(), settings: UserDefaults.standard, bookmarks: SecurityScopedBookmarks(),
                          platform: AppPlatform(), webdavRemote: LiveWebDAVRemote(),
@@ -29,15 +31,13 @@ enum AppHost: AppModelHost {
                          recordingRoot: RecordingSession.root, recordingsInUse: AppModel.recordingsInUse,
                          audioFiles: AVCaptureAudioFiles(), makeQuickCapture: { _ in QuickCapture.shared },
                          settingsStorage: AppSettingsStorage(), makePageRecognizer: { VisionPageRecognizer() },
-                         ownerAuthenticator: SystemOwnerAuthenticator(), files: SystemFileCoordinator())
+                         ownerAuthenticator: SystemOwnerAuthenticator(), files: SystemFileCoordinator(),
+                         exportRendering: RenderOptions(pdfRasterizer: PDFKitRasterizer(), imageDecoder: ImageIODecoder(),
+                                                        shaper: CoreTextShaper()),
+                         pdfTextExtractor: PDFKitTextExtractor())
     }
 
     static func willClose(_ model: AppModel) {
-        model.lastImportReport = nil
-        model.exportEpoch.bump()
-        NotePDFExport.purge(in: model.exportFolder, olderThan: 0)   // plaintext PDFs dragged out of this vault
-        model.exportRequest = nil
-        model.bulkExportRequest = nil
         model.draggedPayload = nil
         model.dropTarget = nil
     }
@@ -73,22 +73,10 @@ final class AppModelAppState {
     /// `landedDropDuration` so it is clear where they went (`move(_:to:undoManager:)`).
     var landedDrop: LandedDrop?
 
-    /// The export sheet's request (`AppModel+Export`).
-    var exportRequest: ExportRequest?
-
     /// PDFs opened from outside the app (Finder's Open With, the share sheet),
     /// waiting to be imported as new notes (`AppModel+OpenedFiles`). App
     /// state, not the vault's: they wait while a vault is opened or unlocked.
     var openedPDFs: [OpenedPDF] = []
-
-    /// What the last import did, until the alert is dismissed.
-    var importSummary: ImportSummary?
-
-    /// The report of the last import of this vault, for File > Last Import Report (until the vault closes).
-    var lastImportReport: ImportDetails?
-
-    /// The "Export to Folder or Zip…" sheet's request (`AppModel+BulkExport`).
-    var bulkExportRequest: BulkExportRequest?
 
     /// Background time and scheduled tasks for the sync (`AppModel+Background`); tests pass fakes.
     @ObservationIgnored var backgroundTasks: any BackgroundTaskRunning = UIKitBackgroundTasks()
@@ -100,12 +88,6 @@ final class AppModelAppState {
 
     /// Watches the network for the WebDAV targets (`startReachability`); nil until started.
     @ObservationIgnored var reachability: WebDAVReachability?
-
-    /// Where this model's PDF exports (drag to Finder) are written; emptied when the vault closes.
-    let exportFolder: URL = NotePDFExport.folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
-
-    /// Bumped when the vault closes: a drag-out export prepared before it writes nothing.
-    let exportEpoch = ExportEpoch()
 
     /// The assertion held while the last saves finish before the lease is let go, and its wait.
     @ObservationIgnored var suspensionToken: BackgroundTaskToken?
@@ -127,25 +109,9 @@ extension AppModel {
         get { appState.landedDrop }
         set { appState.landedDrop = newValue }
     }
-    var exportRequest: ExportRequest? {
-        get { appState.exportRequest }
-        set { appState.exportRequest = newValue }
-    }
     var openedPDFs: [OpenedPDF] {
         get { appState.openedPDFs }
         set { appState.openedPDFs = newValue }
-    }
-    var importSummary: ImportSummary? {
-        get { appState.importSummary }
-        set { appState.importSummary = newValue }
-    }
-    var lastImportReport: ImportDetails? {
-        get { appState.lastImportReport }
-        set { appState.lastImportReport = newValue }
-    }
-    var bulkExportRequest: BulkExportRequest? {
-        get { appState.bulkExportRequest }
-        set { appState.bulkExportRequest = newValue }
     }
     var backgroundTasks: any BackgroundTaskRunning {
         get { appState.backgroundTasks }
@@ -163,8 +129,6 @@ extension AppModel {
         get { appState.reachability }
         set { appState.reachability = newValue }
     }
-    var exportFolder: URL { appState.exportFolder }
-    var exportEpoch: ExportEpoch { appState.exportEpoch }
     var suspensionToken: BackgroundTaskToken? {
         get { appState.suspensionToken }
         set { appState.suspensionToken = newValue }

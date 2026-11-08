@@ -74,8 +74,13 @@ extension AppModelSuites {
             let notifier = FakeBackupNotifier()
             let model = AppModel(deviceStateURL: TS.deviceStateURL(), backupNotifier: notifier)
             model.backupStore = BackupStore(defaults: scratch.defaults)
-            try await model.openVault(at: url)
-            try await model.unlock(identityText: try await ModelFixture.keyText(key))
+            do {
+                try await model.openVault(at: url)
+                try await model.unlock(identityText: try await ModelFixture.keyText(key))
+            } catch {
+                model.close()   // the caller's `defer` never runs for a model it did not get
+                throw error
+            }
             return (model, notifier, url, key)
         }
 

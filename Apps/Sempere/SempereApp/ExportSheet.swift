@@ -1,6 +1,7 @@
 import SempereRender
 import SwiftUI
 import UIKit
+import SempereAppCore
 
 /// The export sheet: format and options, progress with Cancel, then Share and
 /// Save to Files for the result.
@@ -33,10 +34,10 @@ struct ExportSheet: View {
                     }
                 case .finished(let outcome):
                     result(outcome)
-                case .failed(let message):
+                case .failed(let failure):
                     Section {
                         Label("Export failed", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
-                        Text(message).font(.callout)
+                        Text(failure.text).font(.callout)
                     }
                     Section { Button("Try Again") { job.discard() } }
                 }

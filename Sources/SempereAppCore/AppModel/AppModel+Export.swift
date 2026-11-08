@@ -1,10 +1,9 @@
 import Foundation
 import Sempere
 import SempereRender
-import SempereAppCore
 
 /// A request whose sheet shows in the window that asked for it.
-protocol WindowTargeted {
+public protocol WindowTargeted {
     /// The window that asked (`WindowUI.id`): its sheet shows there. Nil: the
     /// library window with the canvas.
     var window: UUID? { get }
@@ -14,7 +13,7 @@ extension WindowTargeted {
     /// `request` when window `window` shows it: the window that asked, or for
     /// a request without one, the library window with the canvas (or any, when
     /// none has it: `OpenedFile.shows`).
-    static func shown(_ request: Self?, in window: UUID, canvasWindow: UUID?) -> Self? {
+    public static func shown(_ request: Self?, in window: UUID, canvasWindow: UUID?) -> Self? {
         guard let request else { return nil }
         if let asker = request.window { return asker == window ? request : nil }
         return OpenedFile.shows(in: window, canvasWindow: canvasWindow) ? request : nil
@@ -22,59 +21,78 @@ extension WindowTargeted {
 }
 
 /// What the export sheet was asked to export.
-struct ExportRequest: Identifiable, Equatable, WindowTargeted {
-    let id = UUID()
-    var noteIDs: [UUID]
-    var format: ShareFormat
+public struct ExportRequest: Identifiable, Equatable, WindowTargeted {
+    public let id = UUID()
+    public var noteIDs: [UUID]
+    public var format: ShareFormat
     /// The window that asked (`WindowUI.id`): its sheet shows there. Nil: the
     /// library window with the canvas.
-    var window: UUID?
+    public var window: UUID?
+
+    public init(noteIDs: [UUID], format: ShareFormat, window: UUID? = nil) {
+        self.noteIDs = noteIDs
+        self.format = format
+        self.window = window
+    }
 }
 
-/// How far an export has come: notes read from the vault, then notes rendered.
-struct ExportProgress: Equatable, Sendable {
-    enum Phase: Equatable, Sendable { case reading, rendering }
-    var phase: Phase
-    var done: Int
-    var total: Int
+/// How far an export has come: notes read from the vault, then notes rendered. Its line (`description`) is the
+/// app's.
+public struct ExportProgress: Equatable, Sendable {
+    public enum Phase: Equatable, Sendable { case reading, rendering }
+    public var phase: Phase
+    public var done: Int
+    public var total: Int
+
+    public init(phase: Phase, done: Int, total: Int) {
+        self.phase = phase
+        self.done = done
+        self.total = total
+    }
 
     /// 0 ... 1 over both phases.
-    var fraction: Double {
+    public var fraction: Double {
         guard total > 0 else { return 0 }
         let steps = Double(done) + (phase == .rendering ? Double(total) : 0)
         return min(1, steps / Double(2 * total))
     }
+}
 
-    var description: String {
-        switch phase {
-        case .reading: return String(localized: "Reading note \(min(done + 1, total)) of \(total)…")
-        case .rendering: return done >= total ? String(localized: "Finishing…", comment: "Export progress: last step") : String(localized: "Exporting note \(done + 1) of \(total)…")
+extension ShareFormat {
+    /// Whether exporting notes with these summaries in this format makes sense: the text export needs recognized
+    /// handwriting in at least one of them (otherwise it would hold titles and tags only), the media export a
+    /// recording, video, image or PDF (`MediaExport.mayHaveMedia`). The app's `ExportCommand` enables its items with it.
+    public func isAvailable(for notes: [NoteSummary]) -> Bool {
+        switch self {
+        case .markdown: return notes.contains { $0.recognizedPages > 0 }
+        case .media: return notes.contains(where: MediaExport.mayHaveMedia)
+        default: return true
         }
     }
 }
 
 /// Share and export (docs/io.md "Share and export").
-extension AppModel {
+extension AppModelCore {
     /// The notes the export commands act on: the ticked notes while selecting
     /// (still in the vault), else the open note. In list order.
-    var exportTargetIDs: [UUID] {
+    public var exportTargetIDs: [UUID] {
         let wanted: Set<UUID> = isSelectingNotes ? multiSelection : (selectedNoteID.map { [$0] } ?? [])
         return notes.filter { wanted.contains($0.id) && !placeholderNoteIDs.contains($0.id) }.map(\.id)
     }
 
-    /// True when `format` can export `ids` (`ExportCommand.isAvailable`):
+    /// True when `format` can export `ids` (`ShareFormat.isAvailable`):
     /// the text export needs a note with recognized handwriting.
-    func canExport(_ format: ShareFormat, ids: [UUID]) -> Bool {
+    public func canExport(_ format: ShareFormat, ids: [UUID]) -> Bool {
         guard !ids.isEmpty else { return false }
         let wanted = Set(ids)
-        return ExportCommand.isAvailable(format, for: notes.filter { wanted.contains($0.id) })
+        return format.isAvailable(for: notes.filter { wanted.contains($0.id) })
     }
 
-    /// Opens the export sheet for `ids` with the command's format.
-    func requestExport(_ command: ExportCommand, ids: [UUID], window: UUID? = nil) {
+    /// Opens the export sheet for `ids` in `format` (the app's `ExportCommand` passes its own).
+    public func requestExport(_ format: ShareFormat, ids: [UUID], window: UUID? = nil) {
         // One export at a time: replacing the request would dismiss a running sheet.
-        guard phase == .unlocked, canExport(command.format, ids: ids), exportRequest == nil, bulkExportRequest == nil else { return }
-        exportRequest = ExportRequest(noteIDs: ids, format: command.format, window: window)
+        guard phase == .unlocked, canExport(format, ids: ids), exportRequest == nil, bulkExportRequest == nil else { return }
+        exportRequest = ExportRequest(noteIDs: ids, format: format, window: window)
     }
 
     /// Reads `ids` from the vault and renders them into `scratch`.
@@ -89,7 +107,7 @@ extension AppModel {
     ///
     /// - Throws: `CancellationError` (also when the vault is closed meanwhile),
     ///   `ModelError.noVaultOpen`, or a file error for `scratch`.
-    func exportNotes(_ ids: [UUID], options: ShareOptions, into scratch: URL,
+    public func exportNotes(_ ids: [UUID], options: ShareOptions, into scratch: URL,
                      progress: @escaping @MainActor @Sendable (ExportProgress) -> Void) async throws -> ShareResult {
         guard let vault, phase == .unlocked else { throw ModelError.noVaultOpen }
         let gen = generation
@@ -126,13 +144,15 @@ extension AppModel {
         let source = "sempere:\(vault.vaultId.uuidString.lowercased())"
         let total = ids.count
         let skipped = total - loaded.count
-        // PDF page backgrounds: the note's attachments and Core Graphics (docs/attachments.md §10);
-        // text boxes laid out by CoreText exactly as the canvas shows them (`CoreTextShaper`).
-        // An attachment that cannot be read is a placeholder in the export, never a failure.
+        // PDF page backgrounds: the note's attachments and the platform's drawing (`services.exportRendering`: in
+        // the app Core Graphics, docs/attachments.md §10); text boxes laid out by CoreText exactly as the canvas
+        // shows them (`CoreTextShaper`). An attachment that cannot be read is a placeholder in the export, never a
+        // failure.
+        let base = services.exportRendering
         let render = Task.detached(priority: .userInitiated) { [loaded, vault] in
             try ShareExport.run(loaded, options: options, into: scratch, vaultSource: source,
-                                blobs: { vault.blobSource(note: $0) }, pdfRasterizer: PDFKitRasterizer(),
-                                shaper: CoreTextShaper(), imageDecoder: ImageIODecoder(),
+                                blobs: { vault.blobSource(note: $0) }, pdfRasterizer: base.pdfRasterizer,
+                                shaper: base.shaper, imageDecoder: base.imageDecoder,
                                 progress: { done, _ in
                 let shown = done + skipped
                 Task { @MainActor in progress(ExportProgress(phase: .rendering, done: shown, total: total)) }
@@ -145,27 +165,25 @@ extension AppModel {
     }
 }
 
-/// An open note's changes could not be saved (`NoteEditor.saveError`): it
-/// is not exported, since the export would differ from what the note shows.
-struct UnsavedChangesError: Error, CustomStringConvertible {
-    var description: String {
-        String(localized: "Its latest changes could not be saved, so it was not exported.")
-    }
+/// An open note's changes could not be saved (`NoteEditor.saveFailure`): it
+/// is not exported, since the export would differ from what the note shows. Its sentence is the app's.
+public struct UnsavedChangesError: Error, Equatable {
+    public init() {}
 }
 
-extension AppModel {
+extension AppModelCore {
     /// Saves the pending changes of every open editor (the main one and note
     /// windows) of a note in `ids`, as a drag-out does (`prepareExport`), so
     /// an export reads what the canvas shows. Returns the notes whose editor
-    /// still could not save (`saveError`).
-    func flushEditors(for ids: Set<UUID>) async -> Set<UUID> {
-        var open: [NoteEditor] = []
+    /// still could not save (`saveFailure`).
+    public func flushEditors(for ids: Set<UUID>) async -> Set<UUID> {
+        var open: [Editor] = []
         if let editor, ids.contains(editor.noteID) { open.append(editor) }
         open += windowEditors.filter { ids.contains($0.key) }.map(\.value)
         var unsaved = Set<UUID>()
         for editor in open {
             await editor.flush()
-            if editor.saveError != nil { unsaved.insert(editor.noteID) }
+            if editor.saveFailure != nil { unsaved.insert(editor.noteID) }
         }
         return unsaved
     }
@@ -174,7 +192,7 @@ extension AppModel {
     /// recordings and their transcripts, and video clips (format.md §8.2.7),
     /// fetched only now, when they are embedded. Failures are left to the
     /// export, which reports them.
-    func ensurePDFAttachmentsLocal(_ state: NoteState, of id: UUID) async {
+    public func ensurePDFAttachmentsLocal(_ state: NoteState, of id: UUID) async {
         for r in state.recordings {
             try? await ensureBlobLocal(r.blob, of: id)
             if let t = r.transcript { try? await ensureBlobLocal(t, of: id) }
@@ -185,7 +203,7 @@ extension AppModel {
     /// Downloads (iCloud) every blob a media export of `state` writes:
     /// recordings and their transcripts, clips, images and PDFs
     /// (`MediaExport.plan`). Failures are left to the export, which reports them.
-    func ensureMediaLocal(_ state: NoteState, of id: UUID) async {
+    public func ensureMediaLocal(_ state: NoteState, of id: UUID) async {
         for p in MediaExport.plan(state) {
             try? await ensureBlobLocal(p.ref, of: id)
             if let t = p.transcript { try? await ensureBlobLocal(t, of: id) }
@@ -194,7 +212,7 @@ extension AppModel {
 
     /// Reads one note for an export: fetched first in a partial copy (`downloadNote`), which refuses a note
     /// still incomplete (an export of a partial note would be an older note without a word).
-    func loadNoteForExport(_ id: UUID, vault: Vault) async throws -> LoadedForExport {
+    public func loadNoteForExport(_ id: UUID, vault: Vault) async throws -> LoadedForExport {
         try await downloadNote(id)
         let verify = partialNoteVerifier(id)
         return try await offMain { () throws -> LoadedForExport in
@@ -206,9 +224,15 @@ extension AppModel {
     }
 }
 
-struct LoadedForExport: Sendable {
-    let summary: NoteSummary
-    let state: NoteState
+public struct LoadedForExport: Sendable {
+    public let summary: NoteSummary
+    public let state: NoteState
     /// `BulkExportPlan.version` of the revisions read.
-    var version = ""
+    public var version = ""
+
+    public init(summary: NoteSummary, state: NoteState, version: String = "") {
+        self.summary = summary
+        self.state = state
+        self.version = version
+    }
 }

@@ -1,6 +1,7 @@
 import SempereRender
 import SwiftUI
 import UniformTypeIdentifiers
+import SempereAppCore
 
 /// "Export to Folder or Zip…": several notes, a notebook or the whole vault, as PDF,
 /// PDF + attachments or PNG pages, into a folder (resumable) or a zip
@@ -48,10 +49,10 @@ struct BulkExportSheet: View {
                     }
                 case .finished(let result):
                     finished(result)
-                case .failed(let message):
+                case .failed(let failure):
                     Section {
                         Label("Export failed", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
-                        Text(message).font(.callout)
+                        Text(failure.text).font(.callout)
                     }
                     Section { Button("Try Again") { run.discard() } }
                 }

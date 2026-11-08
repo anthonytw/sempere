@@ -200,17 +200,6 @@ extension AppModel {
     }
 }
 
-/// A vault generation readable from any thread: `AppModel.close` bumps it, and
-/// an export prepared before then writes nothing (`PreparedExport.write`).
-final class ExportEpoch: @unchecked Sendable {
-    private let lock = NSLock()
-    private var current = 0
-
-    var value: Int { lock.withLock { current } }
-
-    func bump() { lock.withLock { current += 1 } }
-}
-
 /// A note ready to be rendered to a PDF (`AppModel.prepareExport`).
 struct PreparedExport: Sendable {
     let vault: Vault
@@ -238,8 +227,8 @@ struct PreparedExport: Sendable {
     }
 }
 
-/// Rendering a note to a PDF file outside the vault (Mac drag and drop).
-enum NotePDFExport {
+/// Rendering a note to a PDF file outside the vault (Mac drag and drop); its folder and purge are the core's.
+extension NotePDFExport {
     struct Rendered: Sendable {
         var title: String
         var pdf: Data
@@ -258,12 +247,6 @@ enum NotePDFExport {
         return Rendered(title: state.meta.title, pdf: try PDFWriter.render(note: state, options: options))
     }
 
-    /// Folder under the temporary directory holding exported files, one
-    /// sub-folder per export so equal titles never collide.
-    static var folder: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("SempereExport", isDirectory: true)
-    }
-
     /// Writes `rendered` to `<folder>/<uuid>/<title>.pdf`, old exports removed first.
     static func write(_ rendered: Rendered, in folder: URL = NotePDFExport.folder) throws -> URL {
         purge(in: folder)
@@ -272,17 +255,5 @@ enum NotePDFExport {
         let url = dir.appendingPathComponent(ExportFileName.pdf(title: rendered.title))
         try rendered.pdf.write(to: url, options: .atomic)
         return url
-    }
-
-    /// Removes exports older than `age` seconds (all of them with 0).
-    static func purge(in folder: URL = NotePDFExport.folder, olderThan age: TimeInterval = 600, now: Date = Date()) {
-        let fm = FileManager.default
-        guard let entries = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
-        for entry in entries {
-            let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            if age <= 0 || modified.map({ now.timeIntervalSince($0) > age }) ?? true {
-                try? fm.removeItem(at: entry)
-            }
-        }
     }
 }

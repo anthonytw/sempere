@@ -47,7 +47,7 @@ struct WindowSheets: ViewModifier {
                 ImportOptionsSheet(pick: pick)
             }
             .sheet(isPresented: Binding(get: { ui.importReport != nil }, set: { if !$0 { ui.importReport = nil } })) {
-                if let details = ui.importReport { ImportReportView(details: details) }
+                if let summary = ui.importReport { ImportReportView(summary: summary) }
             }
             .overlay {
                 if model.isImporting {
@@ -57,9 +57,9 @@ struct WindowSheets: ViewModifier {
             .alert(model.importSummary?.title ?? "", isPresented: Binding(get: { model.importSummary != nil && isFront },
                                                                           set: { if !$0 { model.importSummary = nil } })) {
                 // The report can always be shown and saved (its text lists every note), even with no totals.
-                if let details = model.importSummary?.details, !details.isEmpty || !details.text.isEmpty {
+                if let summary = model.importSummary, !summary.details.isEmpty || !summary.reportText.isEmpty {
                     Button("Show Report") {
-                        ui.importReport = details
+                        ui.importReport = summary
                         model.importSummary = nil
                     }
                 }

@@ -222,3 +222,27 @@ extension TS {
         return (try Vault.open(at: url, identities: [identity]), url)
     }
 }
+
+/// A `FileCoordinating` that records the URLs it was asked to coordinate (review of #28): the model's coordinated
+/// reads of a provider's folder go through `services.files`, and nothing else does.
+final class RecordingFiles: FileCoordinating, @unchecked Sendable {
+    private let lock = NSLock()
+    private var readURLs: [URL] = []
+    private var writeURLs: [URL] = []
+
+    var reads: [URL] { lock.withLock { readURLs } }
+    var writes: [URL] { lock.withLock { writeURLs } }
+
+    func coordinateReading<T>(_ url: URL, _ body: () throws -> T) throws -> T {
+        lock.withLock { readURLs.append(url) }
+        return try body()
+    }
+
+    func coordinateWriting<T>(_ url: URL, _ body: () throws -> T) throws -> T {
+        lock.withLock { writeURLs.append(url) }
+        return try body()
+    }
+
+    /// Whether a read of `url` (standardized) was coordinated.
+    func read(_ url: URL) -> Bool { reads.contains { $0.standardizedFileURL.path == url.standardizedFileURL.path } }
+}

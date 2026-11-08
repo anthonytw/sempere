@@ -290,7 +290,7 @@ final class WindowUI {
     /// Files picked for such an import, waiting for the options sheet (`ImportOptionsSheet`).
     var importPick: ImportPick?
     /// The report of the last import, shown from its result alert (`ImportReportView`).
-    var importReport: ImportDetails?
+    var importReport: ImportSummary?
     /// A menu command for the editor's Insert menu (`InsertRequest`), taken by the window's editor.
     var insertRequest: InsertRequest?
     /// About Sempere, the quick tour or the key notice (`ExpectationsSheets`).

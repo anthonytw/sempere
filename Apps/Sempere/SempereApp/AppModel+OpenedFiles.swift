@@ -13,55 +13,6 @@ struct OpenedPDF: Identifiable, Equatable, Sendable {
     var name: String
 }
 
-/// Files the system hands the app (`onOpenURL`): Finder's Open With and
-/// double-click on a Mac, the share sheet and Files' Open In on an iPad. The
-/// app is a viewer of PDFs (`CFBundleDocumentTypes`, rank Alternate, never
-/// Owner) and the owner of `.sempere` vaults.
-enum OpenedFile {
-    /// What an opened URL is.
-    enum Kind: Equatable { case pdf, vault }
-
-    /// A PDF by its type or its extension (the type cannot always be read
-    /// before the security scope is taken); anything else is taken for a
-    /// vault (or a folder inside one), as before.
-    static func kind(of url: URL, contentType: UTType? = nil) -> Kind {
-        if contentType?.conforms(to: .pdf) == true || url.pathExtension.lowercased() == "pdf" { return .pdf }
-        return .vault
-    }
-
-    /// Where the PDFs waiting to be imported stand, given the model's state.
-    enum Stage: Equatable {
-        /// Nothing waits.
-        case none
-        /// No vault is open: the welcome screen says a PDF waits for one.
-        case needsVault
-        /// A vault is open but locked (or finishing a key change, or still opening): the
-        /// import is offered once it is unlocked.
-        case needsUnlock
-        /// The open vault cannot be written (format.md §7.3).
-        case readOnly
-        /// The import sheet is shown.
-        case ready
-    }
-
-    /// Whether window `window` shows the import sheet: the library window
-    /// with the canvas, or any window when no library window has it.
-    static func shows(in window: UUID, canvasWindow: UUID?) -> Bool {
-        canvasWindow == nil || canvasWindow == window
-    }
-
-    static func stage(waiting: Int, phase: AppModel.Phase, busy: Bool, readOnly: Bool) -> Stage {
-        guard waiting > 0 else { return .none }
-        switch phase {
-        case .noVault: return .needsVault
-        case .locked: return .needsUnlock
-        case .unlocked:
-            if busy { return .needsUnlock }
-            return readOnly ? .readOnly : .ready
-        }
-    }
-}
-
 /// PDFs opened from outside the app become new notes of the open vault
 /// (docs/mac.md "Opening PDFs from the Finder"): the file is copied at once
 /// (its security scope ends with the call), waits while a vault is opened and
@@ -98,7 +49,7 @@ extension AppModel {
     @discardableResult
     func handleOpened(_ url: URL, library: VaultLibrary, confirmed: Bool = false) async -> OpenedVaultConfirmation? {
         let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
-        switch OpenedFile.kind(of: url, contentType: type) {
+        switch OpenedFile.kind(of: url, isPDFType: type?.conforms(to: .pdf) == true) {
         case .pdf:
             await receiveOpenedPDF(url)
         case .vault:

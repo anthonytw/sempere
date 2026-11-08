@@ -163,7 +163,8 @@ let package = Package(
         .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "SempereSync", "Sempere", "Age", "FuzzSupport",
                                                        "TempDirSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereAppCoreTests", dependencies: ["SempereAppCore", "SempereCaptureShared", "Sempere", "SempereSync",
-                                                         "SempereWebDAV", "Age", "TempDirSupport", "VaultTestSupport"]),
+                                                         "SempereWebDAV", "SempereRender", "SempereImport", "Age",
+                                                         "TempDirSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereCaptureSharedTests", dependencies: ["SempereCaptureShared", "TempDirSupport"]),
         .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport", "VaultTestSupport"]),
     ] + appleOnlyTargets + (hasNotability ? [

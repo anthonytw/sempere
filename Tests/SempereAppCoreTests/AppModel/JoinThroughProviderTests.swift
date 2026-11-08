@@ -48,20 +48,20 @@ extension AppModelSuites {
 
             // Home (the Mac): the vault, unlocked with its device key, synced into the shared folder.
             let home = FolderTargetTests.device(provider)
+            defer { home.model.close() }
             home.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
             home.model.deviceMemory = MemoryKeyValueStore()
             try await home.model.copyIn(picked: vault, library: home.library)
             _ = try await home.model.unlock(identityText: key)
             try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)
             await home.model.syncAllTargetsNow()
-            defer { home.model.close() }
 
             // The iPad opens the shared folder, keeps syncing with it and asks to join.
             let pad = Self.joiningDevice(provider)
+            defer { pad.model.close() }
             let uploads = Uploads()   // its provider has not uploaded what the runs wrote yet
             pad.model.providerUploadCheck = { _ in uploads.done ? .uploaded : .waiting }
             try await pad.model.copyIn(picked: shared, library: pad.library, followUp: .keepSyncing)
-            defer { pad.model.close() }
             #expect(pad.model.phase == .locked)
             let padKeys = RememberedKeys(store: MemoryDeviceKeyStore())
             guard case .waiting(let words, _) = try await pad.model.startJoin(store: padKeys.store) else {
@@ -119,11 +119,11 @@ extension AppModelSuites {
             try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
             let shared = drive.appendingPathComponent("Shared.sempere", isDirectory: true)
             let home = FolderTargetTests.device(nil)
+            defer { home.model.close() }
             home.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
             try await home.model.copyIn(picked: vault, library: home.library)
             _ = try await home.model.unlock(identityText: key)
             try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)
-            defer { home.model.close() }
             await #expect(throws: DeviceJoinError.requestNotArrived) {
                 _ = try await home.model.approveDevice(words: ["abandon", "ability", "able", "about", "above", "absent"], qr: nil)
             }
@@ -148,23 +148,29 @@ extension AppModelSuites {
             let shared = drive.appendingPathComponent("Shared.sempere", isDirectory: true)
             let provider = EvictingFolderProvider(root: shared, cloud: drive.appendingPathComponent(".cloud"))
             let home = FolderTargetTests.device(provider)
-            home.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
-            home.model.deviceMemory = MemoryKeyValueStore()
-            try await home.model.copyIn(picked: vault, library: home.library)
-            _ = try await home.model.unlock(identityText: key)
-            try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)
-            await home.model.syncAllTargetsNow()
             let pad = Self.joiningDevice(provider)
-            try await pad.model.copyIn(picked: shared, library: pad.library, followUp: .keepSyncing)
-            guard case .waiting(let words, _) = try await pad.model.startJoin(store: MemoryDeviceKeyStore()) else {
-                throw CancellationError()
+            do {
+                home.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
+                home.model.deviceMemory = MemoryKeyValueStore()
+                try await home.model.copyIn(picked: vault, library: home.library)
+                _ = try await home.model.unlock(identityText: key)
+                try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)
+                await home.model.syncAllTargetsNow()
+                try await pad.model.copyIn(picked: shared, library: pad.library, followUp: .keepSyncing)
+                guard case .waiting(let words, _) = try await pad.model.startJoin(store: MemoryDeviceKeyStore()) else {
+                    throw CancellationError()
+                }
+                await pad.model.syncAllTargetsNow()
+                let joins = shared.appendingPathComponent("joins")
+                let request = try #require(try FileManager.default.contentsOfDirectory(atPath: joins.path).first { $0.hasSuffix(".join.json") })
+                try provider.evict("joins/\(request)", as: .standIn)
+                provider.arrivalDelay = 1_000_000_000
+                return Asked(home: home, pad: pad, provider: provider, words: words)
+            } catch {
+                home.model.close()   // the caller's `defer` never runs for models it did not get
+                pad.model.close()
+                throw error
             }
-            await pad.model.syncAllTargetsNow()
-            let joins = shared.appendingPathComponent("joins")
-            let request = try #require(try FileManager.default.contentsOfDirectory(atPath: joins.path).first { $0.hasSuffix(".join.json") })
-            try provider.evict("joins/\(request)", as: .standIn)
-            provider.arrivalDelay = 1_000_000_000
-            return Asked(home: home, pad: pad, provider: provider, words: words)
         }
 
         static func targetRequests(_ w: Asked) -> [String] {

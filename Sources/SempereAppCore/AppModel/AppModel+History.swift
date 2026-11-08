@@ -1,6 +1,5 @@
 import Foundation
 import Sempere
-import SempereAppCore
 
 /// One note's revisions as read for the history browser: loaded once, so
 /// previewing several restore points does not decrypt the note again. The
@@ -8,23 +7,23 @@ import SempereAppCore
 /// P53): the list's completeness flags come from exactly the revisions and
 /// failures a plain `loadNote` gives, and decrypting (not decoding stroke
 /// geometry) is what the read costs.
-struct HistoryData: Sendable {
-    let noteID: UUID
-    let revisions: [Revision]
+public struct HistoryData: Sendable {
+    public let noteID: UUID
+    public let revisions: [Revision]
     /// Listed revisions that could not be read.
-    let unreadable: [RevisionName]
+    public let unreadable: [RevisionName]
     /// This installation's device id, for "This device" labels.
-    let thisDevice: DeviceID?
+    public let thisDevice: DeviceID?
     /// Restore points, oldest first (`NoteHistory.restorePoints`). Computed
     /// once: the views read it on every update.
-    let points: [RestorePoint]
+    public let points: [RestorePoint]
     /// The rows to show, newest first.
-    let entries: [HistoryEntry]
+    public let entries: [HistoryEntry]
     /// The same rows grouped as the list shows them (format.md §5.8.2):
     /// checkpoints and editing sessions, newest first.
-    let groups: [HistoryGroupRow]
+    public let groups: [HistoryGroupRow]
 
-    init(noteID: UUID, revisions: [Revision], unreadable: [RevisionName], thisDevice: DeviceID?) {
+    public init(noteID: UUID, revisions: [Revision], unreadable: [RevisionName], thisDevice: DeviceID?) {
         self.noteID = noteID
         self.revisions = revisions
         self.unreadable = unreadable
@@ -35,37 +34,39 @@ struct HistoryData: Sendable {
     }
 
     /// The last previewed states, shared by copies of this value.
-    let previews = HistoryPreviews()
+    public let previews = HistoryPreviews()
 
     /// The note as of `point`; throws `HistoryError.incompleteHistory` for a
     /// point compaction or an unreadable file made unrebuildable. Stepping
     /// back to one of the last few points previewed rebuilds nothing.
-    func state(at point: RevisionName) throws -> NoteState {
+    public func state(at point: RevisionName) throws -> NoteState {
         if let kept = previews.state(at: point) { return kept }
         let state = try NoteHistory.state(revisions, at: point, unreadable: unreadable)
         previews.remember(state, at: point)
         return state
     }
 
-    /// The sentence that says compacted revisions are not restore points,
-    /// shown when the note has a snapshot or a point cannot be rebuilt.
-    var compactionNotice: String? { HistoryEntry.compactionNotice(points) }
+    /// Whether the list says compacted revisions are not restore points (`HistoryEntry.needsCompactionNotice`;
+    /// the sentence is the app's).
+    public var needsCompactionNotice: Bool { HistoryEntry.needsCompactionNotice(points) }
 }
 
 /// The last `kept` states a history browser previewed, newest last. Previews
 /// are built off the main actor, so behind a lock.
-final class HistoryPreviews: @unchecked Sendable {
-    static let kept = 4
+public final class HistoryPreviews: @unchecked Sendable {
+    public static let kept = 4
     private let lock = NSLock()
     private var states: [(point: RevisionName, state: NoteState)] = []
     /// States built (not taken from here), for tests.
     private(set) var built = 0
 
-    func state(at point: RevisionName) -> NoteState? {
+    public init() {}
+
+    public func state(at point: RevisionName) -> NoteState? {
         lock.withLock { states.first { $0.point == point }?.state }
     }
 
-    func remember(_ state: NoteState, at point: RevisionName) {
+    public func remember(_ state: NoteState, at point: RevisionName) {
         lock.withLock {
             built += 1
             states.removeAll { $0.point == point }
@@ -74,50 +75,50 @@ final class HistoryPreviews: @unchecked Sendable {
         }
     }
 
-    var buildCount: Int { lock.withLock { built } }
+    public var buildCount: Int { lock.withLock { built } }
 }
 
-/// A restore point as a row of the history list.
-struct HistoryEntry: Identifiable, Hashable, Sendable {
-    let point: RestorePoint
+/// A restore point as a row of the history list. Its words (`deviceLabel`, `kindLabel`, `checkpointTitle`,
+/// `unavailableReason`) are the app's, from the typed values here.
+public struct HistoryEntry: Identifiable, Hashable, Sendable {
+    /// What kind of restore point a row is.
+    public enum Kind: Hashable, Sendable {
+        /// A checkpoint ("Saved version").
+        case savedVersion
+        /// A compacted snapshot.
+        case snapshot
+        /// One autosaved change (a delta).
+        case edit
+    }
+
+    public let point: RestorePoint
     /// The newest restore point: what the note is now.
-    let isLatest: Bool
-    let isThisDevice: Bool
+    public let isLatest: Bool
+    public let isThisDevice: Bool
 
-    var id: RevisionName { point.name }
-    var date: Date { point.wall }
+    public init(point: RestorePoint, isLatest: Bool, isThisDevice: Bool) {
+        self.point = point
+        self.isLatest = isLatest
+        self.isThisDevice = isThisDevice
+    }
+
+    public var id: RevisionName { point.name }
+    public var date: Date { point.wall }
     /// Whether the note as of this point can be shown and restored.
-    var isAvailable: Bool { point.complete }
+    public var isAvailable: Bool { point.complete }
 
-    /// "This device", or "Device " and the id's first four characters.
-    var deviceLabel: String {
-        if isThisDevice { return String(localized: "This device", comment: "History: a version saved on this device") }
-        let prefix = String(point.device.rawValue.prefix(4))
-        return String(localized: "Device \(prefix)", comment: "History: another device, named by the first characters of its id")
-    }
+    /// The first four characters of the device id, which names another device.
+    public var devicePrefix: String { String(point.device.rawValue.prefix(4)) }
 
-    /// "Saved version" for a checkpoint, "Edit" for a delta, "Snapshot" for a snapshot.
-    var kindLabel: String {
-        if point.isCheckpoint { return String(localized: "Saved version", comment: "History: kind of a restore point (a checkpoint)") }
-        return point.kind == .snapshot
-            ? String(localized: "Snapshot", comment: "History: kind of a restore point (a compacted snapshot)")
-            : String(localized: "Edit", comment: "History: kind of a restore point (noun: one autosaved change)")
-    }
-
-    /// A checkpoint's name; "Saved Version" when it has none; nil for other points.
-    var checkpointTitle: String? {
-        guard let c = point.checkpoint else { return nil }
-        return c.name ?? String(localized: "Saved Version", comment: "History: title of a saved version without a name")
-    }
-
-    /// Why the point is grayed out, when it is.
-    var unavailableReason: String? {
-        isAvailable ? nil : String(localized: "Earlier revisions were compacted away or cannot be read, so this version cannot be rebuilt.")
+    /// A checkpoint for a checkpoint, else a snapshot or an edit.
+    public var kind: Kind {
+        if point.isCheckpoint { return .savedVersion }
+        return point.kind == .snapshot ? .snapshot : .edit
     }
 
     /// Rows for `points` (oldest first, as `NoteHistory.restorePoints` returns
     /// them), newest first.
-    static func entries(_ points: [RestorePoint], thisDevice: DeviceID?) -> [HistoryEntry] {
+    public static func entries(_ points: [RestorePoint], thisDevice: DeviceID?) -> [HistoryEntry] {
         points.enumerated().reversed().map { i, p in
             HistoryEntry(point: p, isLatest: i == points.count - 1, isThisDevice: p.device == thisDevice)
         }
@@ -125,49 +126,37 @@ struct HistoryEntry: Identifiable, Hashable, Sendable {
 
     /// Compaction (format.md §5.3) deletes revisions and they are not restore
     /// points; said whenever a snapshot exists or a point is incomplete.
-    static func compactionNotice(_ points: [RestorePoint]) -> String? {
-        guard points.contains(where: { $0.kind == .snapshot || !$0.complete }) else { return nil }
-        return String(localized: "Revisions removed by compaction are not restore points and are not listed. Versions that depend on them are grayed out and cannot be shown or restored.")
+    public static func needsCompactionNotice(_ points: [RestorePoint]) -> Bool {
+        points.contains(where: { $0.kind == .snapshot || !$0.complete })
     }
 }
 
 /// One top-level row of the history list: a checkpoint, or an editing
 /// session whose autosaves are shown when it is expanded.
-struct HistoryGroupRow: Identifiable, Hashable, Sendable {
-    enum Kind: Hashable, Sendable { case checkpoint, session }
-    let kind: Kind
+public struct HistoryGroupRow: Identifiable, Hashable, Sendable {
+    public enum Kind: Hashable, Sendable { case checkpoint, session }
+    public let kind: Kind
     /// The group's rows, newest first; never empty.
-    let entries: [HistoryEntry]
+    public let entries: [HistoryEntry]
+
+    public init(kind: Kind, entries: [HistoryEntry]) {
+        self.kind = kind
+        self.entries = entries
+    }
 
     /// The newest point's revision.
-    var id: RevisionName { entries[0].id }
-    var newest: HistoryEntry { entries[0] }
+    public var id: RevisionName { entries[0].id }
+    public var newest: HistoryEntry { entries[0] }
     /// `wall` of the oldest and the newest point.
-    var start: Date { entries[entries.count - 1].date }
-    var end: Date { entries[0].date }
-    var saves: Int { entries.count }
+    public var start: Date { entries[entries.count - 1].date }
+    public var end: Date { entries[0].date }
+    public var saves: Int { entries.count }
     /// Whether the note as it is now is in this group.
-    var containsLatest: Bool { entries.contains(where: \.isLatest) }
-
-    /// "This device · 12 saves" (the device and the number of autosaves).
-    var summary: String {
-        let savesText = String(localized: "\(saves) saves", comment: "History: number of autosaves in an editing session")
-        return String(localized: "\(newest.deviceLabel) · \(savesText)", comment: "History: device and number of saves of a session")
-    }
-
-    /// "Oct 6, 2026, 2:02 PM – 2:31 PM": the date and time range of a session
-    /// (one time when it has one save; both dates when it spans days).
-    var timeRange: String {
-        let first = start.formatted(date: .abbreviated, time: .shortened)
-        guard saves > 1, end != start else { return first }
-        let sameDay = Calendar.current.isDate(start, inSameDayAs: end)
-        let last = end.formatted(date: sameDay ? .omitted : .abbreviated, time: .shortened)
-        return String(localized: "\(first) – \(last)", comment: "History: the start and end of an editing session")
-    }
+    public var containsLatest: Bool { entries.contains(where: \.isLatest) }
 
     /// Groups `points` (oldest first) with `NoteHistory.groups` and pairs them
     /// with their `entries` (newest first, as `HistoryEntry.entries` makes them).
-    static func rows(_ points: [RestorePoint], entries: [HistoryEntry]) -> [HistoryGroupRow] {
+    public static func rows(_ points: [RestorePoint], entries: [HistoryEntry]) -> [HistoryGroupRow] {
         let byName = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         return NoteHistory.groups(points).reversed().compactMap { group in
             let rows = group.points.reversed().compactMap { byName[$0.name] }
@@ -178,11 +167,11 @@ struct HistoryGroupRow: Identifiable, Hashable, Sendable {
     }
 }
 
-extension AppModel {
+extension AppModelCore {
     /// Reads every revision of note `id` for the history browser. The open
     /// canvas's pending changes are saved first, so the newest row ("Current")
     /// is what the canvas shows. In a partial copy the note is fetched first (`downloadNote`).
-    func loadHistory(for id: UUID) async throws -> HistoryData {
+    public func loadHistory(for id: UUID) async throws -> HistoryData {
         guard let vault, phase == .unlocked else { throw ModelError.noVaultOpen }
         let gen = generation
         if let editor, editor.noteID == id { await editor.flush() }
@@ -190,15 +179,17 @@ extension AppModel {
         try ensureCurrent(gen)
         try await downloadNote(id)
         let device = try? deviceClockForWriting().device
-        let data = try await offMain { try Self.readHistory(id, vault: vault, thisDevice: device) }
+        let perf = services.perf
+        let data = try await offMain { try Self.readHistory(id, vault: vault, thisDevice: device, perf: perf) }
         try ensureCurrent(gen)
         return data
     }
 
     /// `loadHistory`'s read, off the main actor: every revision of `id`, on
-    /// several cores.
-    nonisolated static func readHistory(_ id: UUID, vault: Vault, thisDevice: DeviceID?) throws -> HistoryData {
-        try Perf.measure(.historyRead) { () throws -> HistoryData in
+    /// several cores, reported to `perf` as "history.read".
+    nonisolated public static func readHistory(_ id: UUID, vault: Vault, thisDevice: DeviceID?,
+                                               perf: any PerfSink = NoPerfSink()) throws -> HistoryData {
+        try perf.measure("history.read", "") { () throws -> HistoryData in
             let loaded = try vault.loadNoteConcurrently(id)
             return HistoryData(noteID: id, revisions: loaded.revisions, unreadable: Array(loaded.failures.keys),
                                thisDevice: thisDevice)
@@ -207,11 +198,11 @@ extension AppModel {
 
     /// A read-only editor showing the note as of `point`, for the preview. It
     /// has no writer: nothing the user does with it can reach the vault.
-    func historyPreview(_ data: HistoryData, at point: RevisionName) async throws -> NoteEditor {
+    public func historyPreview(_ data: HistoryData, at point: RevisionName) async throws -> Editor {
         let gen = generation
         let state = try await offMain { try data.state(at: point) }
         try ensureCurrent(gen)
-        return NoteEditor(noteID: data.noteID, state: state, writer: nil, readOnly: .preview, perf: AppPerfSink())
+        return Editor(noteID: data.noteID, state: state, writer: nil, readOnly: .preview, perf: services.perf)
     }
 
     /// Restores note `id` to `point` with one delta (`NoteWriter.restore`),
@@ -222,15 +213,15 @@ extension AppModel {
     ///
     /// - Returns: what changed, or nil when the note already matched `point`.
     @discardableResult
-    func restoreVersion(of id: UUID, to point: RevisionName) async throws -> RestoreSummary? {
+    public func restoreVersion(of id: UUID, to point: RevisionName) async throws -> RestoreSummary? {
         try await downloadNote(id)
         if let editor, editor.noteID == id {
             await editor.flush()
-            if let failure = editor.saveError { throw ModelError.unsavedChanges(failure) }
+            if let failure = editor.saveFailure { throw ModelError.unsavedChanges(failure) }
         }
         if let windowed = windowEditors[id] {   // the same for the note's own window
             await windowed.flush()
-            if let failure = windowed.saveError { throw ModelError.unsavedChanges(failure) }
+            if let failure = windowed.saveFailure { throw ModelError.unsavedChanges(failure) }
         }
         var result: (name: RevisionName, summary: RestoreSummary)?
         try await commit(ids: [id]) { vault, clock, verifier in
@@ -249,15 +240,15 @@ extension AppModel {
     ///
     /// - Returns: the checkpoint's revision.
     @discardableResult
-    func saveVersion(of id: UUID, name: String?) async throws -> RevisionName {
+    public func saveVersion(of id: UUID, name: String?) async throws -> RevisionName {
         try await downloadNote(id)
         if let editor, editor.noteID == id {
             await editor.flush()
-            if let failure = editor.saveError { throw ModelError.unsavedChanges(failure) }
+            if let failure = editor.saveFailure { throw ModelError.unsavedChanges(failure) }
         }
         if let windowed = windowEditors[id] {
             await windowed.flush()
-            if let failure = windowed.saveError { throw ModelError.unsavedChanges(failure) }
+            if let failure = windowed.saveFailure { throw ModelError.unsavedChanges(failure) }
         }
         let checkpoint = Checkpoint(name: name)
         var written: RevisionName?

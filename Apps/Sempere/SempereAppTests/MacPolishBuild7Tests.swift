@@ -152,9 +152,9 @@ struct MacPolishBuild7Tests {
 
     @Test func pdfsAreToldFromVaults() {
         #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/Paper.PDF")) == .pdf)
-        #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/scan"), contentType: .pdf) == .pdf)
+        #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/scan"), isPDFType: true) == .pdf)
         #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/Notes.sempere", isDirectory: true)) == .vault)
-        #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/Notes"), contentType: .folder) == .vault)
+        #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/Notes"), isPDFType: false) == .vault)
     }
 
     @Test func theImportWaitsForAnUnlockedWritableVault() {
@@ -292,7 +292,7 @@ struct MacPolishBuild7Tests {
         let (model, _) = try await NoteWindowTests.unlockedModel()
         #expect(NoteListView.importsEnabled(model))
         model.close()
-        let (url, keyText) = try ReadOnlyVaultTests.newerVault()
+        let (url, keyText) = try ReadOnlyVaultTextTests.newerVault()
         let readOnly = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .seconds(60))
         try await readOnly.openVault(at: url)
         try await readOnly.unlock(identityText: keyText)

@@ -645,8 +645,8 @@ there. Commit messages:
   "Tooltips"). Menu-only view builders are marked `// help-lint: titled`.
 - PDFs opened with the app (`onOpenURL`) are imported as new notes, never
   opened as vaults (`AppModel+OpenedFiles`, `OpenedFile.kind`). The app's
-  Notability import (`AppModel+NotabilityImport`) is the one app write that
-  does not go through `NoteWriter`: it runs the CLI's `NotabilityImporter`
+  import from another app (`AppModel+Import`, SempereAppCore) is the one app write that
+  does not go through `NoteWriter`: it runs the CLI's importer (`BuiltInImporters`)
   on the model's `DeviceClock` (`withClock`) under the edit gate, never with
   overwrite, so no open note changes under its editor.
 - The object eraser must list `indirectPointer` among its touch types on a Mac
@@ -656,10 +656,11 @@ there. Commit messages:
   shared core in SempereRender (`BulkExportPlan`, `BulkExportSession`,
   `ZipWriter`; docs/io.md "Bulk export"): one note in memory at a time, never
   load every state first. The folder's `.sempere-export-bulk.json` is
-  untrusted (it may only cause a skip). App: `AppModel.runBulkExport`,
-  `BulkExportRun`, `BulkExportSheet`; zips stage under `tmp/SempereBulkExports`.
+  untrusted (it may only cause a skip). App: `AppModel.runBulkExport` and
+  `BulkExportRun` (SempereAppCore), `BulkExportSheet`; zips stage under `tmp/SempereBulkExports`.
 - Dragging a note out writes a plaintext PDF under `$TMPDIR/SempereExport/`
-  (`NotePDFExport`); keep it per model and purge it when the vault closes.
+  (`NotePDFExport`); keep it per model (`AppModelCore.exportFolder`) and purge it when the vault closes (the core's
+  `close()` does).
 - Attachment blobs (`Sources/Sempere/Blob*.swift`, `format.md` §8.1): write with
   `Vault.writeBlob` / `copyBlob` before the delta that references them; read only
   through a reference of the same note (`readBlob`, `streamBlob`, `withBlobFile`,

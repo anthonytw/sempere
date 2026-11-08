@@ -7,114 +7,11 @@ import SempereRender
 import Testing
 @testable import SempereApp
 
-/// An importer that takes its time over `count` notes, reporting progress and stopping when cancelled, as the
-/// Notability importer does (device check c23: the owner saw no progress during a long import).
-struct SlowFakeImporter: VaultImporter {
-    var id = "slow"
-    var displayName = "Slow"
-    var abstract = ""
-    var discussion = ""
-    var pathHelp = ""
-    var fileExtensions = ["slow"]
-    var options: [ImporterOptionSpec] = []
-    var usesPDFText = false
-    var supportsRecognizeAfter = false
-    var supportsCancel = true
-    var count = 40
-    var pause: TimeInterval = 0.02
-
-    func run(_ request: ImporterRequest, clock: inout HybridClock) throws -> ImporterResult {
-        request.progress?(ImporterProgress(phase: .finding, done: 0, total: 0))
-        var notes: [ImporterNoteOutcome] = []
-        var stopped = false
-        for i in 0..<count {
-            if request.cancellation?.isCancelled == true { stopped = true }
-            if stopped {
-                notes.append(ImporterNoteOutcome(source: "/b/N\(i).slow", noteID: nil, status: .skipped(ImporterResult.cancelledReason)))
-                continue
-            }
-            request.progress?(ImporterProgress(phase: .writing, done: i, total: count, current: "N\(i).slow"))
-            Thread.sleep(forTimeInterval: pause)
-            notes.append(ImporterNoteOutcome(source: "/b/N\(i).slow", noteID: nil, status: .imported))
-        }
-        let outcome = notes
-        return ImporterResult(notes: outcome, imported: [], leftOut: [], cancelled: stopped) { _, _ in
-            ImporterPresentation(lines: outcome.map { .init("\($0.status == .imported ? "imported" : "skipped") \($0.source)") })
-        }
-    }
-}
-
-/// The app's import progress, Cancel and saved report (c23), on a fake and on the real importer with a synthetic
-/// backup (never the owner's notes).
+/// The import's progress line, and the real importer on a synthetic backup (never the owner's notes) with progress,
+/// Cancel and the saved report (c23). Progress and Cancel on a fake importer are `ImportTests` in `SempereAppCoreTests`.
 @MainActor
 @Suite(.serialized)
 struct ImportProgressTests {
-    static func file() throws -> URL {
-        let url = TestTemp.root.appendingPathComponent("x-\(UUID().uuidString).slow")
-        try Data().write(to: url)
-        return url
-    }
-
-    @Test func progressIsPublishedWhileTheImportRuns() async throws {
-        let (model, _) = try await NoteWindowTests.unlockedModel()
-        let url = try Self.file()
-        defer { try? FileManager.default.removeItem(at: url) }
-        var seen: [ImporterProgress] = []
-        let watcher = Task { @MainActor in
-            while !Task.isCancelled {
-                if let p = model.importProgress, seen.last != p { seen.append(p) }
-                try? await Task.sleep(for: .milliseconds(5))
-            }
-        }
-        try await model.importFromApp(SlowFakeImporter(), urls: [url], notebook: nil)
-        watcher.cancel()
-        let writing = seen.filter { $0.phase == .writing }
-        #expect(writing.count >= 5, "the bar moved: \(seen.count) updates")
-        #expect(writing.map(\.done) == writing.map(\.done).sorted(), "never backwards")
-        #expect(model.importProgress == nil && model.importCancellation == nil && !model.isImporting)
-        let summary = try #require(model.importSummary)
-        #expect(summary.imported == 40 && !summary.wasCancelled)
-        #expect(model.lastImportReport == summary.details, "File > Last Import Report shows it again")
-        #expect(MenuCommand.lastImportReport.isEnabled(in: Self.context(model)))
-        model.close()
-        #expect(model.lastImportReport == nil, "the report goes with the vault")
-    }
-
-    @Test func cancelStopsBetweenNotesAndSaysHowManyWereLeft() async throws {
-        let (model, _) = try await NoteWindowTests.unlockedModel()
-        let url = try Self.file()
-        defer { try? FileManager.default.removeItem(at: url) }
-        let canceller = Task { @MainActor in
-            while (model.importProgress?.done ?? 0) < 10 { try? await Task.sleep(for: .milliseconds(5)) }
-            #expect(model.importCancellation != nil, "Cancel is offered")
-            model.cancelImport()
-        }
-        try await model.importFromApp(SlowFakeImporter(), urls: [url], notebook: nil)
-        await canceller.value
-        let summary = try #require(model.importSummary)
-        #expect(summary.wasCancelled)
-        #expect(summary.title == "Import Canceled")
-        #expect(summary.cancelled > 0 && summary.imported + summary.cancelled == 40)
-        #expect(summary.skipped == 0, "cancelled notes are not counted as skipped")
-        #expect(summary.message.contains("not imported because you canceled"))
-        model.close()
-    }
-
-    @Test func theReportIsSavedAsTextWithEveryNote() async throws {
-        let (model, _) = try await NoteWindowTests.unlockedModel()
-        let url = try Self.file()
-        defer { try? FileManager.default.removeItem(at: url) }
-        try await model.importFromApp(SlowFakeImporter(count: 3, pause: 0), urls: [url], notebook: nil)
-        let details = try #require(model.importSummary?.details)
-        #expect(details.text.contains("3 notes imported."))
-        for i in 0..<3 { #expect(details.text.contains("imported /b/N\(i).slow")) }
-        let file = try ImportReportText.write(details.text)
-        #expect(try String(contentsOf: file, encoding: .utf8) == details.text)
-        #expect(file.pathExtension == "txt")
-        ImportReportText.discard(file)
-        #expect(!FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path))
-        model.close()
-    }
 
     @Test func theProgressLineNamesThePhase() {
         #expect(ImportProgressOverlay.phaseLine(ImporterProgress(phase: .reading, done: 3, total: 9)) == "Reading note 3 of 9")
@@ -123,14 +20,6 @@ struct ImportProgressTests {
                          .init(phase: .reading, done: 10, total: 10), .init(phase: .writing, done: 0, total: 10),
                          .init(phase: .writing, done: 10, total: 10)].map(\.fraction)
         #expect(fractions == fractions.sorted() && fractions.last == 1)
-    }
-
-    static func context(_ model: AppModel) -> MenuCommand.Context {
-        var c = MenuCommand.Context()
-        c.vault = .unlocked
-        c.window = .library
-        WindowCommands.fill(&c, model: model, exportIDs: [])
-        return c
     }
 
     // MARK: The real importer on a synthetic split backup
@@ -202,7 +91,7 @@ struct ImportProgressTests {
         #expect(model.notes.count == before + backup.notes)
         #expect(phases.contains("writing"), "progress reached the model: \(phases)")
         #expect(maxDone > 0)
-        #expect(summary.details.text.split(separator: "\n").count > backup.notes, "a line per file in the saved report")
+        #expect(summary.reportText.split(separator: "\n").count > backup.notes, "a line per file in the saved report")
 
         // Again: all already in the vault.
         try await model.importFromApp(try #require(BuiltInImporters.primary), urls: backup.parts, notebook: nil)

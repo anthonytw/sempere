@@ -48,11 +48,7 @@ enum ExportCommand: String, CaseIterable, Identifiable, Sendable {
     /// (otherwise it would hold titles and tags only), the media export a
     /// recording, video, image or PDF (`MediaExport.mayHaveMedia`).
     static func isAvailable(_ format: ShareFormat, for notes: [NoteSummary]) -> Bool {
-        switch format {
-        case .markdown: return notes.contains { $0.recognizedPages > 0 }
-        case .media: return notes.contains(where: MediaExport.mayHaveMedia)
-        default: return true
-        }
+        format.isAvailable(for: notes)
     }
 
     /// The submenu's title.
@@ -73,7 +69,7 @@ struct ExportMenu: View {
         Menu(ExportCommand.menuTitle, systemImage: ExportCommand.menuImage) {
             ForEach(ExportCommand.allCases) { command in
                 Button(command.title, systemImage: command.systemImage) {
-                    model.requestExport(command, ids: ids, window: ui?.id)
+                    model.requestExport(command.format, ids: ids, window: ui?.id)
                 }
                 .disabled(!model.canExport(command.format, ids: ids))
             }
@@ -100,7 +96,7 @@ struct ExportMenuCommands: Commands {
             let ids = router?.exportIDs ?? []
             Menu(ExportCommand.menuTitle) {
                 ForEach(ExportCommand.allCases) { command in
-                    Button(command.title) { model.requestExport(command, ids: ids, window: router?.windowID) }
+                    Button(command.title) { model.requestExport(command.format, ids: ids, window: router?.windowID) }
                         .disabled(model.phase != .unlocked || !model.canExport(command.format, ids: ids))
                 }
             }

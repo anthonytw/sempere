@@ -41,7 +41,9 @@ extension AppModelError: @retroactive CustomStringConvertible {
         case .invalidNotebookMove: return String(localized: "A notebook cannot be moved into itself or into a notebook inside it.")
         case .notebookNotEmpty: return String(localized: "Only an empty notebook can be deleted. Move or delete its notes first.")
         case .notebookNameTooLong: return String(localized: "That notebook name is too long.")
-        case .unsavedChanges(let reason):
+        case .unsavedChanges(let detail):
+            // The editor's save failure (`saveFailure`), worded as the editor words it (`saveError`).
+            let reason = String(localized: "Could not save: \(detail)")
             return String(localized: "The note's latest changes could not be saved first, so nothing was restored. \(reason)")
         }
     }

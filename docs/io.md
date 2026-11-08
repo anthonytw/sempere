@@ -347,7 +347,8 @@ manifest.
 - **Off the main actor, with cancel.** `AppModel.exportNotes` reads each note
   (a partial copy's notes are fetched first and refused while still incomplete, so a note missing a
   revision is reported as a failure, never exported stale; same rules as opening a note) and renders in a detached task, checking cancellation between
-  notes. `ExportJob` drives it for the export sheet: progress over both phases,
+  notes (SempereAppCore; the PDF pages, images and text boxes are drawn with what `AppModelServices.exportRendering`
+  gives: the app's PDFKit, ImageIO and CoreText). `ExportJob` drives it for the export sheet: progress over both phases,
   Cancel, failures listed per note while the others are exported (also in a
   merged PDF, which leaves out a note that cannot be rendered). One export at a
   time: an Export command while the sheet is up is ignored. Closing the

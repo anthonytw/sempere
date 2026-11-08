@@ -178,5 +178,34 @@ extension AppModelSuites {
                 ($0, try Data(contentsOf: base.appendingPathComponent($0)))
             })
         }
+
+        /// Review of #28: a copy-in from a provider's folder (iCloud Drive) and a restore from one read the folder under
+        /// a coordinated read of `services.files`, with the folder's URL (not the uncoordinated nil).
+        @Test func aProviderCopyInAndARestoreAreCoordinatedThroughTheServices() async throws {
+            let (source, _) = try await ModelFixture.vault()
+            let files = RecordingFiles()
+            var services = AppModelServices.headless()
+            services.files = files
+            let model = AppModel(deviceStateURL: TS.deviceStateURL(), services: services)
+            defer { model.close() }
+            model.iCloudHooks = BackupTests.iCloudHooks()
+            let library = try BrowserTests.library()
+            try await model.copyIn(picked: source, library: library)
+            #expect(files.read(source), "the copy-in: \(files.reads)")
+            #expect(library.storedVaults.count == 1)
+
+            let backup = source.deletingLastPathComponent().appendingPathComponent("Notes.sempere-backup", isDirectory: true)
+            _ = try Backup.run(source: try Vault.open(at: source), to: backup)
+            model.close()
+            let found = try await model.previewRestore(from: backup)
+            let before = files.reads.count
+            // Into another device's store (this one already holds the vault).
+            let outcome = try await model.restoreBackup(picked: backup, source: found.source, name: "Restored",
+                                                        library: try BrowserTests.library())
+            #expect(outcome.isComplete)
+            #expect(files.reads.dropFirst(before).contains { $0.standardizedFileURL.path == found.source.standardizedFileURL.path },
+                    "the restore: \(files.reads)")
+            #expect(files.writes.isEmpty, "the picked folders are only read")
+        }
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereRender
 import SempereSync
 
 /// What an `AppModelCore` needs from the front end that runs it: its canvas type, the platform services the moved
@@ -24,9 +25,9 @@ public protocol AppModelHost: Sendable {
 
     // MARK: Steps of the extensions still in the app (wave 5b part 3)
 
-    /// At the start of `close()`, once settings sync stopped: the app-side state of the vault (the last import's
-    /// report, drag-out exports, export requests, drags) is forgotten.
-    /// The core's `close()` itself cancels a running backup, inbox adoption and import.
+    /// At the start of `close()`, once settings sync stopped: the app-side state of the vault (drags) is forgotten.
+    /// The core's `close()` itself cancels a running backup, inbox adoption and import, and forgets the last import's
+    /// report, the drag-out exports and the export requests.
     @MainActor static func willClose(_ model: AppModelCore<Self>)
     /// The open editors changed ("Keep Screen On" follows them).
     @MainActor static func editorsChanged(_ model: AppModelCore<Self>)
@@ -48,7 +49,7 @@ public protocol AppModelHost: Sendable {
 /// property at init and read from there (`transcriber`, `playbackBackend`, `recordingRoot`, `iCloudHooks`, the WebDAV
 /// remote and passwords, `quickCapture`, `ownerAuthenticator`, and `settings` as `deviceMemory`); every other one is read from `services` when used (`perf`, `settings`,
 /// `bookmarks`, `platform`, `makeRenderCache`, `recordingsInUse`, `audioFiles`, `settingsStorage`,
-/// `makePageRecognizer`, `files`), and a test passes its own at init.
+/// `makePageRecognizer`, `files`, `exportRendering`, `pdfTextExtractor`), and a test passes its own at init.
 public struct AppModelServices {
     /// Timing and log lines (`AppPerfSink` in the app).
     public var perf: any PerfSink
@@ -94,6 +95,12 @@ public struct AppModelServices {
     /// Coordinated reads of a folder a provider may touch while it is read (a copy-in, a restore from iCloud Drive):
     /// the app's `SystemFileCoordinator` (`NSFileCoordinator`); headless, none (`UncoordinatedFiles`).
     public var files: any FileCoordinating
+    /// What exports draw with beyond the note itself (`RenderOptions`' PDF page rasterizer, image decoder and text
+    /// shaper: the app's PDFKit, ImageIO and CoreText); headless, none (PDF pages and images are placeholders, text is
+    /// left out as the CLI does without fonts).
+    public var exportRendering: RenderOptions
+    /// Reads the text of PDF pages for search in an import (`--pdf-text`): the app's PDFKit; headless, none.
+    public var pdfTextExtractor: (any PDFTextExtracting)?
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,
@@ -106,7 +113,8 @@ public struct AppModelServices {
                 settingsStorage: any SettingsSyncStorage = StoredSettingsSyncStorage(),
                 makePageRecognizer: @escaping @MainActor () -> (any PageRecognizing)? = { nil },
                 ownerAuthenticator: any OwnerAuthenticator = NoOwnerCheck(),
-                files: any FileCoordinating = UncoordinatedFiles()) {
+                files: any FileCoordinating = UncoordinatedFiles(),
+                exportRendering: RenderOptions = RenderOptions(), pdfTextExtractor: (any PDFTextExtracting)? = nil) {
         self.perf = perf
         self.settings = settings
         self.bookmarks = bookmarks
@@ -126,6 +134,8 @@ public struct AppModelServices {
         self.makePageRecognizer = makePageRecognizer
         self.ownerAuthenticator = ownerAuthenticator
         self.files = files
+        self.exportRendering = exportRendering
+        self.pdfTextExtractor = pdfTextExtractor
     }
 
     /// A quick capture that records nothing (`QuickCapture`'s defaults), its folders under `scratch`.

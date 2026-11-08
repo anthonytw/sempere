@@ -8,6 +8,9 @@ import Testing
 /// removing store vaults is the model's: `VaultStoreTests` in `SempereAppCoreTests`.
 @MainActor
 struct VaultStoreAppTests {
+    /// The app's copy-ins and restores coordinate with the file provider (review of #28).
+    @Test func theAppCoordinatesWithTheSystem() { #expect(AppHost.makeServices().files is SystemFileCoordinator) }
+
     @Test func copyProgressAndRefusalsRead() {
         let progress = VaultCopyProgress(name: "Notes", stage: .copying(done: 3, total: 12))
         #expect(progress.text.contains("3 of 12"))

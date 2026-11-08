@@ -2,29 +2,22 @@ import Foundation
 import Observation
 import Sempere
 import SempereRender
-import SempereAppCore
 
 /// What "Export to Folder or Zip…" was asked to export (docs/io.md "Bulk export").
-struct BulkExportRequest: Identifiable, Equatable, WindowTargeted {
-    let id = UUID()
-    var scope: BulkExportScope
+public struct BulkExportRequest: Identifiable, Equatable, WindowTargeted {
+    public let id = UUID()
+    public var scope: BulkExportScope
     /// The window that asked (`WindowUI.id`): its sheet shows there. Nil: the
     /// library window with the canvas, as for `ExportRequest`.
-    var window: UUID?
+    public var window: UUID?
 
-    /// "3 Notes", "Notebook “School”", "All Notes".
-    var title: String {
-        switch scope {
-        case .notes(let ids): return String(localized: "\(ids.count) Notes")
-        case .notebook(let path):
-            let name = NotebookPath.components(path).last ?? path
-            return String(localized: "Notebook “\(name)”")
-        case .vault: return String(localized: "All Notes")
-        }
+    public init(scope: BulkExportScope, window: UUID? = nil) {
+        self.scope = scope
+        self.window = window
     }
 
     /// The zip archive's name: the notebook's, else "Sempere Notes".
-    var archiveName: String {
+    public var archiveName: String {
         if case .notebook(let path) = scope, let last = NotebookPath.components(path).last {
             return ExportName.folderComponent(last) + ".zip"
         }
@@ -36,7 +29,7 @@ extension BulkExportRequest {
     /// The `sempere export` invocation that writes the same files (docs/cli.md
     /// "Bulk export"), for the sheet and the docs. A list selection has no
     /// one-line equivalent: the CLI exports one named note or `--all`.
-    func cliEquivalent(_ options: BulkExportOptions, zip: Bool) -> String? {
+    public func cliEquivalent(_ options: BulkExportOptions, zip: Bool) -> String? {
         var args = ["sempere", "export", "--all"]
         switch scope {
         case .notes: return nil
@@ -57,7 +50,7 @@ extension BulkExportRequest {
     }
 
     /// `s` as one shell word: unchanged when plain, else in single quotes.
-    static func shellQuoted(_ s: String) -> String {
+    public static func shellQuoted(_ s: String) -> String {
         let plain = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./"))
         if !s.isEmpty, s.unicodeScalars.allSatisfy({ $0.isASCII && plain.contains($0) }) { return s }
         return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
@@ -65,7 +58,7 @@ extension BulkExportRequest {
 }
 
 /// Where a bulk export goes.
-enum BulkExportTarget: Equatable, Sendable {
+public enum BulkExportTarget: Equatable, Sendable {
     /// Files into a folder the user picked (resumable: a re-run skips unchanged notes).
     /// `scoped`: the URL came from the folder picker and needs its security scope.
     case folder(URL, scoped: Bool)
@@ -73,25 +66,28 @@ enum BulkExportTarget: Equatable, Sendable {
     case zip
 }
 
-/// How far a bulk export has come, in notes.
-struct BulkExportProgress: Equatable, Sendable {
-    var done: Int
-    var total: Int
-    var skipped: Int = 0
-    var failed: Int = 0
+/// How far a bulk export has come, in notes. Its line (`description`) is the app's.
+public struct BulkExportProgress: Equatable, Sendable {
+    public var done: Int
+    public var total: Int
+    public var skipped: Int = 0
+    public var failed: Int = 0
 
-    var fraction: Double { total > 0 ? min(1, Double(done) / Double(total)) : 0 }
-
-    var description: String {
-        done >= total ? String(localized: "Finishing…") : String(localized: "Exporting note \(done + 1) of \(total)…")
+    public init(done: Int, total: Int, skipped: Int = 0, failed: Int = 0) {
+        self.done = done
+        self.total = total
+        self.skipped = skipped
+        self.failed = failed
     }
+
+    public var fraction: Double { total > 0 ? min(1, Double(done) / Double(total)) : 0 }
 }
 
 /// Bulk export: many notes, one at a time (`BulkExportSession`, shared with
 /// `sempere export --all`).
-extension AppModel {
+extension AppModelCore {
     /// Opens the "Export to Folder or Zip…" sheet for `scope`.
-    func requestBulkExport(_ scope: BulkExportScope, window: UUID? = nil) {
+    public func requestBulkExport(_ scope: BulkExportScope, window: UUID? = nil) {
         // One export at a time, either kind.
         guard phase == .unlocked, bulkExportRequest == nil, exportRequest == nil else { return }
         if case .notes(let ids) = scope, ids.isEmpty { return }
@@ -100,7 +96,7 @@ extension AppModel {
 
     /// The scope File ▸ Export to Folder or Zip… takes in a library window: the ticked
     /// notes while selecting, else the sidebar's notebook, else the vault.
-    var bulkExportScope: BulkExportScope {
+    public var bulkExportScope: BulkExportScope {
         if isSelectingNotes, !exportTargetIDs.isEmpty { return .notes(exportTargetIDs) }
         if case .notebook(let path) = sidebarSelection { return .notebook(path) }
         return .vault
@@ -109,31 +105,31 @@ extension AppModel {
     /// The notes `scope` takes and where each goes (`BulkExportPlan.jobs`),
     /// from the listed summaries; notes still downloading without a summary
     /// are left out.
-    func bulkExportJobs(_ scope: BulkExportScope, options: BulkExportOptions) -> [BulkExportJob] {
+    public func bulkExportJobs(_ scope: BulkExportScope, options: BulkExportOptions) -> [BulkExportJob] {
         let listed = notes.filter { !placeholderNoteIDs.contains($0.id) }
         return BulkExportPlan.jobs(for: scope, from: listed, format: options.format, layout: options.layout)
     }
 
     /// What reading a note ahead found (`LoadAhead`): the revision names it listed, and the note
     /// when it was read.
-    struct BulkPrefetched: Sendable {
-        var names: [String]?
+    public struct BulkPrefetched: Sendable {
+        public var names: [String]?
         /// nil: not read here (the consumer reads it, in turn).
-        var item: Result<LoadedForExport, any Error>?
+        public var item: Result<LoadedForExport, any Error>?
     }
 
     /// In memory, a note is several times its revision files (they are compressed and encrypted).
-    nonisolated static let bulkDecodeFactor = 8
+    nonisolated public static var bulkDecodeFactor: Int { 8 }
     /// Assumed size of a note whose files cannot be measured (evicted from iCloud): in memory.
-    nonisolated static let bulkUnknownNoteBytes = 64 << 20
+    nonisolated public static var bulkUnknownNoteBytes: Int { 64 << 20 }
     /// Most estimated bytes of notes held by a bulk export at once: the note being rendered plus
     /// those read ahead. A note over it is read and rendered on its own, as one note always was.
-    nonisolated static let bulkMemoryBudget = 256 << 20
+    nonisolated public static var bulkMemoryBudget: Int { 256 << 20 }
     /// How many notes after the current one are read ahead.
-    nonisolated static let bulkReadAheadDepth = 2
+    nonisolated public static var bulkReadAheadDepth: Int { 2 }
 
     /// The estimated bytes of `id` in memory once read.
-    nonisolated static func bulkEstimate(of id: UUID, vault: Vault) -> Int {
+    nonisolated public static func bulkEstimate(of id: UUID, vault: Vault) -> Int {
         guard let disk = vault.revisionBytes(of: id) else { return bulkUnknownNoteBytes }
         return max(1 << 20, disk * bulkDecodeFactor)
     }
@@ -181,7 +177,7 @@ extension AppModel {
     ///
     /// - Throws: `ModelError.noVaultOpen`, `CancellationError` when the vault
     ///   closes meanwhile, or `BulkExportError` when the zip cannot be written.
-    func runBulkExport(_ jobs: [BulkExportJob], session: BulkExportSession,
+    public func runBulkExport(_ jobs: [BulkExportJob], session: BulkExportSession,
                        progress: @escaping @MainActor (BulkExportProgress) -> Void) async throws -> BulkExportResult {
         guard let vault, phase == .unlocked else { throw ModelError.noVaultOpen }
         let gen = generation
@@ -292,7 +288,7 @@ extension AppModel {
     }
 
     /// True when `url` is the vault folder or inside it.
-    func isInsideVault(_ url: URL) -> Bool {
+    public func isInsideVault(_ url: URL) -> Bool {
         guard let root = vault?.url ?? vaultURL else { return false }
         return url.isSameOrInside(root)
     }
@@ -307,54 +303,58 @@ extension AppModel {
 /// (deleted by `discard`, and by `purgeStale` at launch).
 @MainActor
 @Observable
-final class BulkExportRun {
-    enum State: Equatable {
+public final class BulkExportRun {
+    public enum State: Equatable {
         case idle
         case running(BulkExportProgress)
         case finished(BulkExportResult)
-        case failed(String)
+        case failed(ExportRunFailure)
     }
 
-    private(set) var state = State.idle
+    public init() {}
+
+    public private(set) var state = State.idle
     private var task: Task<Void, Never>?
     private var staging: URL?
     /// The current run: a run that ended after `discard` (or a newer start) changes nothing.
     private var token = UUID()
 
-    var isRunning: Bool { if case .running = state { return true } else { return false } }
+    public var isRunning: Bool { if case .running = state { return true } else { return false } }
 
     /// Where zip exports are staged (under the temporary directory, never in the vault).
-    nonisolated static var stagingRoot: URL {
+    nonisolated public static var stagingRoot: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("SempereBulkExports", isDirectory: true)
     }
 
     /// Deletes every staged archive: plaintext copies of notes. Call when the
     /// app starts, when no export can be running.
-    nonisolated static func purgeStale() {
+    nonisolated public static func purgeStale() {
         try? FileManager.default.removeItem(at: stagingRoot)
     }
 
     /// Starts exporting `request` to `target`. Does nothing while a run is in flight.
-    func start(model: AppModel, request: BulkExportRequest, options: BulkExportOptions, target: BulkExportTarget) {
+    public func start<Host>(model: AppModelCore<Host>, request: BulkExportRequest, options: BulkExportOptions,
+                            target: BulkExportTarget) {
         guard !isRunning else { return }
         discard()
         let jobs = model.bulkExportJobs(request.scope, options: options)
         guard !jobs.isEmpty else {
-            state = .failed(String(localized: "There are no notes to export."))
+            state = .failed(.noNotes)
             return
         }
         let destination: BulkExportSession.Destination
-        /// The picked folder whose security scope this run holds until it ends.
+        /// The picked folder whose security scope this run holds until it ends (`services.bookmarks`).
         let scopedURL: URL?
+        let bookmarks = model.services.bookmarks
         switch target {
         case .folder(let url, let scoped):
             // Plaintext never goes into the vault folder (it syncs wherever the vault does).
             if model.isInsideVault(url) {
-                state = .failed(String(localized: "Choose a folder outside the vault: exported notes are not encrypted."))
+                state = .failed(.folderInsideVault)
                 return
             }
             destination = .folder(url)
-            scopedURL = scoped && url.startAccessingSecurityScopedResource() ? url : nil
+            scopedURL = scoped && bookmarks.startAccessing(url) ? url : nil
         case .zip:
             let dir = Self.stagingRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
             staging = dir
@@ -364,10 +364,11 @@ final class BulkExportRun {
         }
         state = .running(BulkExportProgress(done: 0, total: jobs.count))
         let mine = staging
+        let renderBase = model.services.exportRendering
         let current = UUID()
         token = current
         task = Task { [weak self] in
-            defer { scopedURL?.stopAccessingSecurityScopedResource() }
+            defer { if let scopedURL { bookmarks.stopAccessing(scopedURL) } }
             var next: State
             do {
                 if let mine {
@@ -378,9 +379,7 @@ final class BulkExportRun {
                     #endif
                 }
                 let session = try BulkExportSession(destination: destination, options: options, jobs: jobs,
-                                                    renderBase: RenderOptions(pdfRasterizer: PDFKitRasterizer(),
-                                                                              imageDecoder: ImageIODecoder(),
-                                                                              shaper: CoreTextShaper()))
+                                                    renderBase: renderBase)
                 let result = try await model.runBulkExport(jobs, session: session) { progress in
                     self?.advance(to: progress)
                 }
@@ -392,7 +391,7 @@ final class BulkExportRun {
                 return
             } catch {
                 if let mine { try? FileManager.default.removeItem(at: mine) }
-                next = .failed("\(error)")
+                next = .failed(.error("\(error)"))
             }
             guard let self, self.token == current else {
                 if let mine { try? FileManager.default.removeItem(at: mine) }
@@ -405,12 +404,12 @@ final class BulkExportRun {
 
     /// Stops after the note being exported. A folder keeps what was written
     /// (a re-run skips it); a zip is deleted.
-    func cancel() {
+    public func cancel() {
         task?.cancel()
     }
 
     /// Cancels, forgets the result and deletes a staged zip. Call when the sheet goes away.
-    func discard() {
+    public func discard() {
         task?.cancel()
         task = nil
         token = UUID()

@@ -431,15 +431,64 @@ Wave 5b, part 3, step 5a (vault store, backups, thinning, storage and Vault Deta
   (`JoinThroughProviderTests`: `AddDeviceApproval`) and the two thinning runs after a Save Version
   (`VersionHistoryAppTests`, until `+History` moves).
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b and 5a are done (above). The rest of the family, in an
+Wave 5b, part 3, step 5b (history, export and import, 2026-11-08) moved:
+
+- **`+History`, `+Export`, `+BulkExport` and `+Import`** into `Sources/SempereAppCore/AppModel/`, with `ExportJob`
+  (the export sheet's run) and `OpenedFile` (the pure part of `+OpenedFiles`: `kind`, `Stage`, `shows`, which
+  `WindowTargeted` needs): `loadHistory`, `readHistory` (on `services.perf`, "history.read"), `historyPreview`,
+  `restoreVersion`, `saveVersion`, `HistoryData`, `HistoryPreviews`, `HistoryEntry`, `HistoryGroupRow`; `exportNotes`,
+  `requestExport` (now taking a `ShareFormat`; `ShareFormat.isAvailable(for:)` is the rule `ExportCommand` enables
+  with), `flushEditors`, `loadNoteForExport`, `ExportRequest`, `ExportProgress`, `LoadedForExport`,
+  `UnsavedChangesError`; `runBulkExport` with its read-ahead, `BulkExportRequest`, `BulkExportTarget`,
+  `BulkExportProgress`, `BulkExportRun`; `importFromApp`, `cancelImport`, `ImportOptions`, `ImportDetails`,
+  `ImportSummary`, `ImportProgressRelay`. The drag-out folder and its purge (`NotePDFExport.folder`, `purge`) and
+  `ExportEpoch` are the core's too; rendering the dragged note (`NotePDFExport.render`, `write`, PDFKit) stays in the
+  app.
+- **Services**: what exports draw with is `AppModelServices.exportRendering` (a `RenderOptions` with the app's
+  `PDFKitRasterizer`, `ImageIODecoder` and `CoreTextShaper`; headless, none), the PDF page text of an import
+  `pdfTextExtractor` (`PDFKitTextExtractor`; headless, none), reading handwriting after an import
+  `makePageRecognizer` (Vision; headless, none, and nothing is read), and the picked folders' and files' security
+  scopes `services.bookmarks`. The import's progress hops to the main actor with a task, not `DispatchQueue.main`.
+- **Library values for the platform's types**: the import picker's types are `ImportFileKind` (`.zip`, `.folder`,
+  `.fileExtension`; `AppModel.importFileKinds(for:)`), which the app turns into `UTType`s (`importTypes(for:)`);
+  `OpenedFile.kind(of:isPDFType:)` takes a `Bool`, the app reads the URL's `UTType`. No `CGRect` was left in the moved
+  code (the editor's `visible:` rectangles are Foundation's `CGRect`, already portable).
+- **Typed values the app words**, same strings (`History+Text.swift`, `Export+Text.swift`, `Import+Text.swift`):
+  `HistoryEntry.kind` (`.savedVersion`, `.snapshot`, `.edit`), `devicePrefix` and `needsCompactionNotice` (the app's
+  `deviceLabel`, `kindLabel`, `checkpointTitle`, `unavailableReason`, `compactionNotice`, `HistoryGroupRow.summary`
+  and `timeRange`); the progress lines (`ExportProgress.description`, `BulkExportProgress.description`),
+  `BulkExportRequest.title`, why a run failed (`ExportRunFailure`: `.error`, `.noteFailed`, `.noMedia`,
+  `.nothingExported`, `.noNotes`, `.folderInsideVault`; `text`) and `UnsavedChangesError`'s sentence; an import
+  report's rows are the importer's count ids (`Row.key`, `english`; the app's `label`), the alert's `title` and
+  `message`, and the saved report (`ImportSummary.reportText`, from `details.noteLines` and `date`).
+  `AppModelError.unsavedChanges` carries the editor's `saveFailure`, which the app words as the editor does.
+  `Sempere` has a `HistoryEntry` of its own, so the app's `History+Text.swift` names the core's with a typealias.
+- **State that left `AppModelAppState`**: `exportRequest`, `bulkExportRequest`, `importSummary`, `lastImportReport`
+  (now the whole `ImportSummary`, which the report sheet takes), `exportFolder` and `exportEpoch`; the core's
+  `close()` forgets them (and purges the drag-out folder), so `willClose` keeps only the drags.
+- **Tests** in `Tests/SempereAppCoreTests/AppModel`: `HistoryTests` (all of the app's `HistoryTests`, the model's
+  cases of `VersionHistoryAppTests`, new: the read's signpost and the refusals without a vault), `ReadOnlyVaultTests`,
+  `ThinningTests` (gained the two runs after a Save Version), `ExportTests` and `BulkExportTests` (every case of the
+  app's but the words, on the headless rendering) and `ImportTests` (the model's cases of `ImportReportTests` and
+  `ImportProgressTests`; progress and Cancel now act from the importer's own thread at a set note, so nothing polls
+  or races the import). The app keeps the words (`VersionHistoryAppTests`, `ReadOnlyVaultTextTests`, `ExportTests`,
+  `BulkExportAppTests`, `ImportReportTests`), what needs the app's renderers (`ExportTests.theAppRendersWithPDFKitImageIOAndCoreText`),
+  the device checks with the real debounce (`ExportStressAppTests`), and the real importer on a synthetic backup
+  (`ImportProgressTests`).
+- **Review of #28, folded in**: `RecordingFiles` (`AppModelTestKit.swift`) checks that a copy-in and a restore from a
+  provider's folder coordinate through `services.files` with the folder's URL and thinning never does
+  (`VaultStoreTests`, `ThinningTests`), and `VaultStoreAppTests` that the app's is `SystemFileCoordinator`; models are
+  closed when a test's setup throws (`BackupTests.model`, `FolderTargetTests.world`, `JoinThroughProviderTests`,
+  `ThinningTests.unlockedModel`); `FolderTargetTests.world(withB: false)` for the two tests that only use A, and an
+  arrival wait of 0.1 s for the two that wait for files that never arrive within a run.
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b, 5a and 5b are done (above). The rest of the family, in an
 order that empties `AppModelAppState` and the host's steps:
 
-5. b. History, export and import (`+History`, `+Export`, `+BulkExport`, `+Import`, `+OpenedFiles`): `UTType` and
-   `CGRect` uses become library values; `HistoryEntry`'s labels become typed values the app words. Tests:
-   `ReadOnlyVaultTests` (it saves a version), the two thinning runs after a Save Version in `VersionHistoryAppTests`,
-   and the export, bulk-export and import suites that need no PDFKit. Host state that goes: `exportRequest`,
-   `bulkExportRequest`, `openedPDFs`, `importSummary`, `lastImportReport`, `exportFolder`, `exportEpoch` (and
-   `willClose` with them).
+5. c. Opened files and the PDF and image inserts (`+OpenedFiles`' extension, `+Insert`, `+Video`): `handleOpened`,
+   `receiveOpenedPDF`, `importOpenedPDFs` and `discardOpenedPDFs` call the app's PDF import (`importPDF(copy:to:password:)`,
+   `PDFPreparation` on PDFKit), so they move with it, PDFKit and AVFoundation behind services. Host state that goes:
+   `openedPDFs`.
 6. App lifecycle and windows (`+Background`, `+Suspension`, `+Windows`, `+MenuBar`, the drags of `+Browser`): the
    background-task and lifecycle protocols move, UIKit's implementations stay; `DragPayload`/`DropTarget` leave
    `SidebarDrop.swift`. "Keep Screen On" (`editorsChanged`, the UIKit `IdleTimerKeeper`) follows the open editors

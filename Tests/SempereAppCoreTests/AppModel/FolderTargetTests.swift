@@ -28,47 +28,60 @@ extension AppModelSuites {
             let shared: URL
             let provider: EvictingFolderProvider
             var a: Device
-            var b: Device
+            /// Nil for a world of A alone (`world(withB: false)`), for the tests that never sync B.
+            var b: Device!
         }
 
-        static func device(_ provider: EvictingFolderProvider?) -> Device {
+        /// A device of its own; its runs wait `arrivalWait` for files the provider is downloading (read when its
+        /// sessions are made).
+        static func device(_ provider: EvictingFolderProvider?, arrivalWait: TimeInterval = 0.5) -> Device {
             let root = TestTemp.root.appendingPathComponent("device-\(UUID().uuidString)", isDirectory: true)
             let library = VaultLibrary(storeURL: root.appendingPathComponent("recents.json"))
             let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50))
             model.vaultStore = library.vaultStore
             model.webdavTick = .milliseconds(20)
             model.folderWriteDelay = 0.05
-            model.folderArrivalWait = 0.5
+            model.folderArrivalWait = arrivalWait
             if let provider { model.folderProvider = { _ in provider } }
             return Device(model: model, library: library)
         }
 
         /// A copies the fixture vault in and keeps a copy in a shared folder; B opens that folder with "Keep
-        /// syncing with this folder". Both unlocked and in step.
-        static func world() async throws -> World {
+        /// syncing with this folder". Both unlocked and in step. Without B (`withB: false`) only A's half is made, for
+        /// the tests about A's own target (Linux time, review of #28). The models are closed here if setting up throws.
+        static func world(withB: Bool = true, arrivalWait: TimeInterval = 0.5) async throws -> World {
             let (vault, keyURL) = try await ModelFixture.vault()
             let key = try await ModelFixture.keyText(keyURL)
             let drive = TestTemp.root.appendingPathComponent("drive-\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
             let shared = drive.appendingPathComponent("Shared.sempere", isDirectory: true)
             let provider = EvictingFolderProvider(root: shared, cloud: drive.appendingPathComponent(".cloud"))
-            let a = device(provider)
-            try await a.model.copyIn(picked: vault, library: a.library)
-            try await a.model.unlock(identityText: key)
-            try a.model.addFolderTarget(shared, scope: drive, to: a.vaultID)
-            #expect(a.model.syncSessions.count == 1)
-            #expect(a.model.openVaultTargets.first?.subfolder == "Shared.sempere")
-            await a.model.syncAllTargetsNow()
-            let folder = shared
-            #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("vault.json").path))
-
-            let b = device(provider)
-            try await b.model.copyIn(picked: folder, library: b.library, followUp: .keepSyncing)
-            try await b.model.unlock(identityText: key)
-            #expect(b.model.openVaultTargets.count == 1)
-            let w = World(key: key, shared: folder, provider: provider, a: a, b: b)
-            try await settle(w)
-            return w
+            let a = device(provider, arrivalWait: arrivalWait)
+            var b: Device?
+            do {
+                try await a.model.copyIn(picked: vault, library: a.library)
+                try await a.model.unlock(identityText: key)
+                try a.model.addFolderTarget(shared, scope: drive, to: a.vaultID)
+                #expect(a.model.syncSessions.count == 1)
+                #expect(a.model.openVaultTargets.first?.subfolder == "Shared.sempere")
+                await a.model.syncAllTargetsNow()
+                let folder = shared
+                #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("vault.json").path))
+                if withB {
+                    let made = device(provider, arrivalWait: arrivalWait)
+                    b = made
+                    try await made.model.copyIn(picked: folder, library: made.library, followUp: .keepSyncing)
+                    try await made.model.unlock(identityText: key)
+                    #expect(made.model.openVaultTargets.count == 1)
+                }
+                let w = World(key: key, shared: folder, provider: provider, a: a, b: b)
+                if withB { try await settle(w) }
+                return w
+            } catch {
+                a.model.close()
+                b?.model.close()
+                throw error
+            }
         }
 
         static func settle(_ w: World, rounds: Int = 6) async throws {
@@ -130,8 +143,8 @@ extension AppModelSuites {
         /// The target folder deleted after it was synced: the run says so ("choose it again"), recreates
         /// nothing and deletes nothing here. Its parent gone too (a drive not connected): offline, not an error.
         @Test func aTargetFolderDeletedOrUnavailable() async throws {
-            let w = try await Self.world()
-            defer { w.a.model.close(); w.b.model.close() }
+            let w = try await Self.world(withB: false)
+            defer { w.a.model.close() }
             let before = Self.noteFiles(w.a.folder)
             try FileManager.default.removeItem(at: w.shared)
             let session = try #require(w.a.model.syncSessions.first)
@@ -160,7 +173,7 @@ extension AppModelSuites {
         /// Files the provider evicted are arriving, never missing: the run asks for them and says they are on
         /// their way, quarantines nothing and deletes nothing; a later run takes them.
         @Test func evictedFilesArriveLater() async throws {
-            let w = try await Self.world()
+            let w = try await Self.world(arrivalWait: 0.1)   // the evicted files never arrive within a run: wait less for them
             defer { w.a.model.close(); w.b.model.close() }
             let note = try await w.a.model.createNote(title: "Evicted", paper: .ruled, notebook: nil)
             await w.a.model.syncAllTargetsNow()
@@ -185,7 +198,7 @@ extension AppModelSuites {
         /// its way, writes nothing and makes no folder (an empty one beside the package would be a split copy of the
         /// vault); once it is back, the next run syncs what was written meanwhile, into the one copy.
         @Test func aTargetEvictedWholeArrivesAndIsNeverSplit() async throws {
-            let w = try await Self.world()
+            let w = try await Self.world(arrivalWait: 0.1)   // the package never arrives within a run: wait less for it
             defer { w.a.model.close(); w.b.model.close() }
             w.provider.arrivalDelay = 100_000
             try w.provider.evictFolder("", as: .standIn)
@@ -210,8 +223,8 @@ extension AppModelSuites {
         /// Review of #119 (1): a re-encryption opens its targets through the runs' rule, so a target folder synced before
         /// and deleted is refused there and never made again by the claim.
         @Test func aReencryptionNeverMakesADeletedTargetAgain() async throws {
-            let w = try await Self.world()
-            defer { w.a.model.close(); w.b.model.close() }
+            let w = try await Self.world(withB: false)
+            defer { w.a.model.close() }
             try FileManager.default.removeItem(at: w.shared)
             await #expect(throws: (any Error).self) { _ = try await w.a.model.openReencryptTargets(requireAll: true) }
             let open = try await w.a.model.openReencryptTargets(requireAll: false)
