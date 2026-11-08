@@ -58,12 +58,14 @@ extension AppModelCore {
         return try await offMain { try vault.reencryptStatus() }
     }
 
-    /// Re-encrypt everything, the start (design §7.1 steps 1–4; on home, after device-owner authentication and the
-    /// device review): the targets run first (bounded), the journal is made and claims every target the open vault
+    /// Re-encrypt everything, the start (design §7.1 steps 1–4; on home, after the device review): it asks for the
+    /// device owner first (`ownerAuthenticator`, as a kit replacement does, since it replaces the kit too; a refused
+    /// check, or a vault closed or replaced while it asks, changes nothing), the targets run (bounded), the journal is made and claims every target the open vault
     /// syncs with, then the `reencrypt` epoch is written (a new vault key and `newKit`). A refused claim releases the
     /// claims made and changes nothing. The progress sheet then advances it (`advanceReencryption`).
     public func startReencryption(_ newKit: MLKEM768X25519Identity, keep: Set<String>, remove: Set<String>,
                            passphrase: String?) async throws -> DeviceChangeOutcome {
+        try await checkOwner(for: .reencrypt)
         let (targets, close) = try await openReencryptTargets(requireAll: true)
         defer { close() }
         let claimsURL = vault.map(\.vaultId).map { ReencryptCoordinator.claimSightingsURL(store: syncStore, vaultId: $0) }

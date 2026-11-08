@@ -4,10 +4,10 @@ import SempereRender
 import SwiftUI
 import SempereAppCore
 
-/// Replace Recovery Kit (on home: key-hierarchy design §6.5): device-owner authentication, then every device is
-/// kept or removed (takeovers since the current kit marked), then the new kit is printed and one of its lines
-/// typed back, and an optional passphrase copy. The old kit is useless for every later change; it still opens
-/// what was written before, unless everything is re-encrypted.
+/// Replace Recovery Kit (on home: key-hierarchy design §6.5): every device is kept or removed (takeovers since the
+/// current kit marked), then the new kit is printed and one of its lines typed back, and an optional passphrase copy;
+/// the change itself asks for device-owner authentication (the model's). The old kit is useless for every later
+/// change; it still opens what was written before, unless everything is re-encrypted.
 ///
 /// In `.reencrypt` mode it is the start of Re-encrypt Everything (design §7.1 steps 1–4): the same review, a new
 /// kit and line check, then the claims and the `reencrypt` epoch (`AppModel.startReencryption`); the progress sheet
@@ -127,26 +127,21 @@ struct ReplaceKitSheet: View {
         return review.allSatisfy { answers[$0.device.id ?? ""] != nil }
     }
 
+    /// The new kit. The device owner is asked when the change is made: the model's `replaceRecoveryKit` and
+    /// `startReencryption` check them (design §6.5 step 3), so no front end can leave the check out.
     private func continueToKit() {
         failure = nil
-        working = true
-        Task {
-            defer { working = false }
-            do {
-                // The one list change that needs the owner at the device (design §6.5 step 0).
-                try await model.ownerAuthenticator.authenticate(reason: mode == .reencrypt ? .reencrypt : .replaceRecoveryKit)
-                let kit = try MLKEM768X25519Identity()
-                newKit = kit
-                lineNumber = Self.checkLine(of: kit.string)
-                stage = .kit
-            } catch is CancellationError {
-            } catch {
-                failure = DeviceChangeText.message(error)
-            }
+        do {
+            let kit = try MLKEM768X25519Identity()
+            newKit = kit
+            lineNumber = Self.checkLine(of: kit.string)
+            stage = .kit
+        } catch {
+            failure = DeviceChangeText.message(error)
         }
     }
 
-    // MARK: - The new kit (design §6.5 steps 2 and 3)
+    // MARK: - The new kit and the change (design §6.5 steps 2 to 4)
 
     @ViewBuilder private var kitForm: some View {
         if let newKit, let vault = model.vault {

@@ -66,6 +66,15 @@ public struct EpochChangeReport: Hashable, Sendable {
     public var home: Data
     /// How many files the record sealed.
     public var sealed: Int
+
+    public init(epoch: Int, epochId: Data, reason: EpochReason, removed: [Data], home: Data, sealed: Int) {
+        self.epoch = epoch
+        self.epochId = epochId
+        self.reason = reason
+        self.removed = removed
+        self.home = home
+        self.sealed = sealed
+    }
 }
 
 extension Vault {

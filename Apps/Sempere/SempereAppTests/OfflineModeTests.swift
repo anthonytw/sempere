@@ -91,7 +91,7 @@ struct OfflineModeTests {
         let library = VaultLibrary(storeURL: root.appendingPathComponent("recents.json"))
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50), trust: MemoryEpochTrustStore())
         model.vaultStore = library.vaultStore
-        model.deviceMemory = DevicesAppTests.defaults()
+        model.deviceMemory = MemoryKeyValueStore()
         model.folderWriteDelay = 0.05
         model.folderArrivalWait = 0.5
         try await model.copyIn(picked: shared, library: library, followUp: .keepSyncing)
@@ -110,7 +110,7 @@ struct OfflineModeTests {
 
         _ = await model.syncSessions.first?.syncNow()
         await model.refreshLockedManifest()
-        #expect(await keys.unlockWithDeviceKey(model) == .joining)
+        #expect({ if case .joining = $0 { true } else { false } }(await keys.unlockWithDeviceKey(model)))
         #expect(keys.joinStage == .confirming)
         let device = try await keys.store.keys(for: try #require(model.vault?.vaultId), reason: .unlock(vaultName: nil))
         try await model.confirmJoin(words: reply, keys: device)

@@ -162,6 +162,8 @@ extension SyncTargetProblem: @retroactive CustomStringConvertible {
         case .notWritable(let name):
             return String(localized: "Sempere cannot write to “\(name)”: this account has no permission to change it (it belongs to another user, or is read-only). Choose a folder you can write to.",
                           comment: "Sync targets: the picked folder is not writable; %@ is its name")
+        case .serverFolderTaken:
+            return Self.other(String(localized: "The server folder holds another vault or other files. Choose an empty or new folder.")).description
         case .other(let message):
             return String(localized: "The folder could not be added: \(message)", comment: "The value is the reason (English)")
         }

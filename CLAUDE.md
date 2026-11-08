@@ -340,7 +340,7 @@ there. Commit messages:
   first (a one-note `LocalCopy.fetch`, bounded by `noteFetchTimeout`, cancellable), and every write re-checks
   with `partialNoteVerifier` (`commit(ids:)`, the editor's read): never write a delta to an incomplete note.
   A note that cannot be opened shows `editorFailure` in the detail pane, never a blank canvas. Tests:
-  `JoinAppTests` (real engine, `EngineWebDAVRemote.gating`/`gatingFetches`), `WebDAVPartialAppTests`.
+  `JoinTests` (SempereAppCoreTests; real engine, `EngineWebDAVRemote.gating`/`gatingFetches`), `WebDAVPartialTests`.
 - Note listings (`AppModel+Loading`): `unlock` only checks the key and starts
   `startLoadingNotes`, a task the model owns (UI callers pass `awaitNotes:
   false`; a view's `.task` must never own a listing, SwiftUI cancels it when
@@ -552,8 +552,11 @@ there. Commit messages:
   `fingerprint(of:)` of the device's `age1pq1…` key, not the §15.4 fingerprint) and `v_e`;
   `Vault.captureKeyRing` is what verifies inbox files, never one key alone.
 - This device's keys (`DeviceKeyStore.swift`, `RememberedKeys.swift`; key-hierarchy design §6.1, §16.12; the
-  `DeviceKeyStore` and `OwnerAuthenticator` protocols, `MemoryDeviceKeyStore` and the typed prompt reasons are
-  SempereAppCore's, the Keychain, the Secure Enclave and the prompts' words the app's): per vault, the
+  `DeviceKeyStore` and `OwnerAuthenticator` protocols, `MemoryDeviceKeyStore`, the typed prompt reasons and the unlock
+  sheet's model `RememberedKeys` (its key problems typed: `DeviceKeyProblem`, `DeviceUnlockFailure`) are
+  SempereAppCore's, the Keychain, the Secure Enclave and the words the app's, `RememberedKeys+App.swift`). A change
+  that needs the owner at the device asks for them in the model (`ownerAuthenticator`: a passphrase copy, an
+  approval, Replace Recovery Kit, Re-encrypt Everything), never in a sheet. Per vault, the
   X-Wing device key in a Keychain item `WhenUnlockedThisDeviceOnly` (with "Require Face ID to Open":
   `.biometryCurrentSet`, or `.userPresence` without biometrics) and the signing pair in the Secure Enclave
   (`SecureEnclaveSigner`, an `AuthorSigner`; its blobs in a second item `AfterFirstUnlockThisDeviceOnly`, software
@@ -907,8 +910,8 @@ there. Commit messages:
   management in the app is KH5 (the device list, joins, takeovers). Two-way runs record `synced` (`SyncOptions.recordSynced`, the app and the CLI). A folder target synced before that is gone is never recreated, and one present only as a provider's stand-in
   (an evicted package) is arriving, never made beside it: one rule, `FolderRemote.absentBase`, applied by
   `FolderTargetRun.check` and by the engine before it makes a base (`SyncRemote.checkAbsentBase`, `listBase`).
-  App tests use `FakeWebDAVRemote` (scripted), `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`:
-  `TwoDeviceSyncAppTests`), folders under `EvictingFolderProvider` (`AppModel.folderProvider`:
+  The model's sync tests (SempereAppCoreTests, `WebDAVTestKit.swift`) use `FakeWebDAVRemote` (scripted),
+  `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`: `TwoDeviceSyncTests`); app tests use folders under `EvictingFolderProvider` (`AppModel.folderProvider`:
   `FolderTargetAppTests`) and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav
   (`scripts/test-webdav.sh`).
 - A folder copied in from another app's provider storage (`StorageLocation`) is read under one coordinated

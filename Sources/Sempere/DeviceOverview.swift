@@ -38,6 +38,17 @@ public struct DeviceHistoryEvent: Hashable, Sendable {
     public var newHome: DeviceRef?
     /// The devices it removed, computed from the signed lists (design §4.1).
     public var removed: [DeviceRef]
+
+    public init(epoch: Int, epochId: Data, reason: EpochReason, date: Date?, author: DeviceRef, newHome: DeviceRef?,
+                removed: [DeviceRef]) {
+        self.epoch = epoch
+        self.epochId = epochId
+        self.reason = reason
+        self.date = date
+        self.author = author
+        self.newHome = newHome
+        self.removed = removed
+    }
 }
 
 /// A removal this device made as home that a takeover dropped (offline audit P16): the devices it removed are

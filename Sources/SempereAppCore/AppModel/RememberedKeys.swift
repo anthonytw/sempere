@@ -1,22 +1,40 @@
-import Age
 import Foundation
-import LocalAuthentication
 import Observation
 import Sempere
-import SempereAppCore
 
-/// The keys this device keeps per vault (key-hierarchy design §6.1; KH5): its own device keys, in the Keychain
-/// with the signing pair in the Secure Enclave (`DeviceKeyStore`). It unlocks a vault with them when it opens
-/// (Face ID first when the vault asks for it), tracks a join of this device in progress (`joinStage`), and holds
-/// the vault's "Require Face ID" setting. The recovery key is never kept: it opens a vault read-only, or signs a
+/// Why this device's keys for a vault cannot be used (`RememberedKeys.Attempt.keyProblem`): the unlock sheet offers
+/// to forget them and join again (review of #88, M3). Worded by the app.
+public enum DeviceKeyProblem: Equatable, Sendable {
+    /// The keys can no longer be read (gone after a Face ID change) or do not read as keys.
+    case unreadable
+    /// This device's request to join expired: home deletes requests after 7 days.
+    case expired
+    /// Keys not on the device list, with no request to join (a failed kit join, a request home deleted).
+    case stray
+}
+
+/// Why an unlock with this device's keys failed although they are there (`RememberedKeys.Attempt.failed`); the keys
+/// are kept and Unlock is offered again. Worded by the app.
+public enum DeviceUnlockFailure: Error {
+    /// The keys could not be read: a failed Face ID, a Keychain error, a build without the entitlement.
+    case keysNotRead(any Error)
+    /// The keys were read but did not unlock the vault.
+    case keysDidNotUnlock(any Error)
+}
+
+/// The keys this device keeps per vault (key-hierarchy design §6.1; KH5): its own device keys, in a `DeviceKeyStore`
+/// (the app's: the Keychain, with the signing pair in the Secure Enclave). It unlocks a vault with them when it
+/// opens (Face ID first when the vault asks for it), tracks a join of this device in progress (`joinStage`), and
+/// holds the vault's "Require Face ID" setting. The recovery key is never kept: it opens a vault read-only, or signs a
 /// takeover and is dropped.
 ///
-/// Kept apart from `AppModel` (it calls the model), so tests give it a `MemoryDeviceKeyStore`.
+/// Kept apart from the model (it calls the model): the unlock sheet's model, one per app; tests give it a
+/// `MemoryDeviceKeyStore`.
 @MainActor
 @Observable
-final class RememberedKeys {
+public final class RememberedKeys {
     /// How an attempt to unlock with this device's keys ended.
-    enum Attempt: Equatable {
+    public enum Attempt: Sendable {
         case unlocked
         /// This device has no keys for the vault.
         case noKey
@@ -25,66 +43,38 @@ final class RememberedKeys {
         /// The user canceled Face ID, or the vault changed meanwhile.
         case cancelled
         /// The keys could not be read, or did not open the vault.
-        case failed(String)
+        case failed(DeviceUnlockFailure)
         /// This device has keys for the vault that cannot be used (unreadable after a Face ID change, or of a join
         /// that cannot go on): the unlock sheet offers to forget them and join again (review of #88, M3).
-        case keyProblem(String)
+        case keyProblem(DeviceKeyProblem)
     }
 
-    let store: any DeviceKeyStore
+    public let store: any DeviceKeyStore
     /// The open vault has keys on this device (`refresh`).
-    private(set) var hasKeysVaultID: UUID?
+    public private(set) var hasKeysVaultID: UUID?
     /// "Require Face ID to open this vault" for the open vault.
-    private(set) var requiresBiometry = false
+    public private(set) var requiresBiometry = false
     /// While the open, locked vault is being joined by this device: where it stands.
-    var joinStage: JoinStage?
+    public var joinStage: JoinStage?
     /// This device's keys for the open vault cannot be used: why (`Attempt.keyProblem`).
-    private(set) var keyProblem: String?
-
-    static let unreadableText = String(localized: "This device's key for the vault can no longer be read, for example after Face ID was set up again. Forget it, then join again or take over with the recovery kit.")
-    static let expiredText = String(localized: "This device's request to join the vault has expired: the device that manages devices deletes requests after 7 days. Forget this key, then join again.")
-    static let strayText = String(localized: "This device has a key for the vault that is not on its device list and has no request to join. Forget it, then join again or take over with the recovery kit.")
+    public private(set) var keyProblem: DeviceKeyProblem?
     /// True while Face ID / the Keychain is being asked.
-    private(set) var isUnlocking = false
+    public private(set) var isUnlocking = false
     /// True while an unlock with a passphrase or pasted key runs.
-    private(set) var isManualUnlocking = false
+    public private(set) var isManualUnlocking = false
 
-    init(store: any DeviceKeyStore = KeychainDeviceKeyStore()) {
+    public init(store: any DeviceKeyStore) {
         self.store = store
     }
 
-    /// "this iPad", "this iPhone", or "this Mac" under Mac Catalyst.
-    @MainActor static var deviceName: String {
-        name(isMac: ProcessInfo.processInfo.isMacCatalystApp, isPhone: Platform.isPhone)
-    }
-
-    nonisolated static func name(isMac: Bool, isPhone: Bool) -> String {
-        if isMac { return String(localized: "this Mac", comment: "Device phrase inside sentences: “Saved on this Mac”") }
-        return isPhone
-            ? String(localized: "this iPhone", comment: "Device phrase inside sentences: “Saved on this iPhone”")
-            : String(localized: "this iPad", comment: "Device phrase inside sentences: “Saved on this iPad”")
-    }
-
-    /// The device's biometry ("Face ID", "Touch ID", "Optic ID") when one is enrolled.
-    static var biometryName: String? {
-        let context = LAContext()
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) else { return nil }
-        switch context.biometryType {
-        case .faceID: return "Face ID"
-        case .touchID: return "Touch ID"
-        case .opticID: return "Optic ID"
-        default: return nil
-        }
-    }
-
     /// Whether this device has keys for the open vault (as of the last `refresh`).
-    func hasKeys(for model: AppModel) -> Bool {
+    public func hasKeys<Host>(for model: AppModelCore<Host>) -> Bool {
         guard let id = model.vault?.vaultId else { return false }
         return hasKeysVaultID == id
     }
 
     /// Looks up, without reading or prompting, whether this device has keys for the open vault.
-    func refresh(_ model: AppModel) async {
+    public func refresh<Host>(_ model: AppModelCore<Host>) async {
         guard let id = model.vault?.vaultId else { return }
         let has = await store.hasKeys(for: id)
         let biometry = has ? await store.requiresBiometry(for: id) : false
@@ -96,7 +86,7 @@ final class RememberedKeys {
     // MARK: - Unlocking
 
     /// Unlocks the locked vault with this device's keys; a device that is joining gets its join stage instead.
-    func unlockWithDeviceKey(_ model: AppModel) async -> Attempt {
+    public func unlockWithDeviceKey<Host>(_ model: AppModelCore<Host>) async -> Attempt {
         guard model.phase == .locked, let vault = model.vault, !isUnlocking else { return .cancelled }
         let id = vault.vaultId
         let gen = model.generation
@@ -112,13 +102,9 @@ final class RememberedKeys {
         do {
             keys = try await store.keys(for: id, reason: .unlock(vaultName: model.vaultName))
         } catch {
-            switch Self.readOutcome(error) {
-            case .keyProblem:
-                keyProblem = Self.unreadableText
-                return .keyProblem(Self.unreadableText)
-            case let other:
-                return other
-            }
+            let outcome = Self.readOutcome(error)
+            if case .keyProblem(let problem) = outcome { keyProblem = problem }
+            return outcome
         }
         // The vault changed meanwhile: nothing about these keys is known from that (re-check of #88, R1).
         do { try model.ensureCurrent(gen) } catch { return .cancelled }
@@ -127,13 +113,13 @@ final class RememberedKeys {
             joinStage = stage
             return .joining
         case .stray:
-            keyProblem = Self.strayText
+            keyProblem = .stray
             joinStage = nil
-            return .keyProblem(Self.strayText)
+            return .keyProblem(.stray)
         case .expired:
-            keyProblem = Self.expiredText
+            keyProblem = .expired
             joinStage = nil
-            return .keyProblem(Self.expiredText)
+            return .keyProblem(.expired)
         case .member:
             break
         }
@@ -145,8 +131,7 @@ final class RememberedKeys {
         } catch is CancellationError {
             return .cancelled
         } catch {
-            return .failed(String(localized: "This device's key did not unlock the vault: \(String(describing: error))",
-                                  comment: "The error text follows (English)"))
+            return .failed(.keysDidNotUnlock(error))
         }
     }
 
@@ -154,25 +139,24 @@ final class RememberedKeys {
     /// change invalidated them) or do not read as keys are a key problem, offered to be forgotten; a cancel is a
     /// cancel; anything else (a failed Face ID, a Keychain error, a build without the entitlement) is a failure
     /// that leaves the keys alone and Unlock offered again.
-    static func readOutcome(_ error: any Error) -> Attempt {
+    public static func readOutcome(_ error: any Error) -> Attempt {
         if error is CancellationError { return .cancelled }
         switch error as? DeviceKeyStoreError {
-        case .notFound, .malformed: return .keyProblem(unreadableText)
+        case .notFound, .malformed: return .keyProblem(.unreadable)
         case .cancelled: return .cancelled
-        case let e?: return .failed(e.description)
-        case nil: return .failed(String(describing: error))
+        case .some, nil: return .failed(.keysNotRead(error))
         }
     }
 
     /// Unlocks with pasted key text: the recovery key (read-only), or a device key file made with sempere.
-    func unlock(_ model: AppModel, identityText: String) async throws {
+    public func unlock<Host>(_ model: AppModelCore<Host>, identityText: String) async throws {
         isManualUnlocking = true
         defer { isManualUnlocking = false }
         try await model.unlock(identityText: identityText, awaitNotes: false)
     }
 
     /// Unlocks read-only with the passphrase of the recovery key's copy in the vault.
-    func unlock(_ model: AppModel, passphrase: String) async throws {
+    public func unlock<Host>(_ model: AppModelCore<Host>, passphrase: String) async throws {
         isManualUnlocking = true
         defer { isManualUnlocking = false }
         try await model.unlock(passphrase: passphrase, awaitNotes: false)
@@ -180,7 +164,7 @@ final class RememberedKeys {
 
     /// Forgets this device's keys for the open vault (a key that cannot be used, review of #88 M3): the unlock
     /// sheet then offers Join and Take Over.
-    func forgetKeys(_ model: AppModel) async throws {
+    public func forgetKeys<Host>(_ model: AppModelCore<Host>) async throws {
         guard let id = model.vault?.vaultId else { return }
         try await store.delete(for: id)
         model.clearJoinRequested(id)
@@ -190,16 +174,16 @@ final class RememberedKeys {
     }
 
     /// Keeps the keys of a vault this device just created (its home), with no other copy anywhere.
-    func saveCreatedVaultKeys(_ device: DeviceKeys, vaultID: UUID, vaultName: String) async throws {
+    public func saveCreatedVaultKeys(_ device: DeviceKeys, vaultID: UUID, vaultName: String) async throws {
         try await store.save(device, for: vaultID, vaultName: vaultName)
         hasKeysVaultID = vaultID
     }
 
     /// Whether the unlock sheet stays up although the vault is unlocked: a manual unlock is finishing.
-    func holdsUnlockSheet(_ model: AppModel) -> Bool { isManualUnlocking }
+    public func holdsUnlockSheet<Host>(_ model: AppModelCore<Host>) -> Bool { isManualUnlocking }
 
     /// Turns "Require Face ID to open this vault" on or off (design §6.1).
-    func setRequiresBiometry(_ on: Bool, model: AppModel) async throws {
+    public func setRequiresBiometry<Host>(_ on: Bool, model: AppModelCore<Host>) async throws {
         guard let id = model.vault?.vaultId else { return }
         try await store.setRequiresBiometry(on, for: id, vaultName: model.vaultName ?? "")
         requiresBiometry = await store.requiresBiometry(for: id)

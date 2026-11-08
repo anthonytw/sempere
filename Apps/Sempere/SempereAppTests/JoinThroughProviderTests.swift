@@ -33,7 +33,7 @@ struct JoinThroughProviderTests {
         model.folderWriteDelay = 0.05
         model.folderArrivalWait = 0.5
         model.folderProvider = { _ in provider }
-        model.deviceMemory = DevicesAppTests.defaults()
+        model.deviceMemory = MemoryKeyValueStore()
         return FolderTargetAppTests.Device(model: model, library: library)
     }
 
@@ -47,8 +47,8 @@ struct JoinThroughProviderTests {
 
         // Home (the Mac): the vault, unlocked with its device key, synced into the shared folder.
         let home = FolderTargetAppTests.device(provider)
-        home.model.ownerAuthenticator = JoinTakeoverAppTests.PassingOwner()
-        home.model.deviceMemory = DevicesAppTests.defaults()
+        home.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
+        home.model.deviceMemory = MemoryKeyValueStore()
         try await home.model.copyIn(picked: vault, library: home.library)
         _ = try await home.model.unlock(identityText: key)
         try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)
@@ -103,7 +103,7 @@ struct JoinThroughProviderTests {
         await home.model.syncAllTargetsNow()
         await pad.model.syncAllTargetsNow()
         await pad.model.refreshLockedManifest()
-        #expect(await padKeys.unlockWithDeviceKey(pad.model) == .joining)
+        #expect({ if case .joining = $0 { true } else { false } }(await padKeys.unlockWithDeviceKey(pad.model)))
         #expect(padKeys.joinStage == .confirming, "\(String(describing: pad.model.syncSessions.first?.lastReport))")
         let device = try await padKeys.store.keys(for: try #require(pad.model.vault?.vaultId), reason: .unlock(vaultName: nil))
         try await pad.model.confirmJoin(words: reply.words, keys: device)
@@ -119,7 +119,7 @@ struct JoinThroughProviderTests {
         try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
         let shared = drive.appendingPathComponent("Shared.sempere", isDirectory: true)
         let home = FolderTargetAppTests.device(nil)
-        home.model.ownerAuthenticator = JoinTakeoverAppTests.PassingOwner()
+        home.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
         try await home.model.copyIn(picked: vault, library: home.library)
         _ = try await home.model.unlock(identityText: key)
         try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)
@@ -160,8 +160,8 @@ struct JoinThroughProviderTests {
         let shared = drive.appendingPathComponent("Shared.sempere", isDirectory: true)
         let provider = EvictingFolderProvider(root: shared, cloud: drive.appendingPathComponent(".cloud"))
         let home = FolderTargetAppTests.device(provider)
-        home.model.ownerAuthenticator = JoinTakeoverAppTests.PassingOwner()
-        home.model.deviceMemory = DevicesAppTests.defaults()
+        home.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
+        home.model.deviceMemory = MemoryKeyValueStore()
         try await home.model.copyIn(picked: vault, library: home.library)
         _ = try await home.model.unlock(identityText: key)
         try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)

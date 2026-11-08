@@ -201,33 +201,35 @@ struct KeychainDeviceKeyStoreTests {
     /// to be forgotten; a cancel is a cancel; any other error is a failure that keeps the keys and Unlock.
     @MainActor
     @Test func eachKeychainErrorEndsTheUnlockAsItShould() async throws {
-        let cases: [(String, (FakeKeychainItems, String) -> Void, RememberedKeys.Attempt?)] = [
-            ("gone", { f, a in f.dataStatus = [a: errSecItemNotFound] }, .keyProblem(RememberedKeys.unreadableText)),
+        /// How each case ends: a key problem (Forget offered), a cancel, or a failure (Unlock offered again).
+        enum End: Equatable { case unreadable, cancelled, failed }
+        let cases: [(String, (FakeKeychainItems, String) -> Void, End)] = [
+            ("gone", { f, a in f.dataStatus = [a: errSecItemNotFound] }, .unreadable),
             ("malformed", { f, a in f.setData(Data("not a key".utf8), service: KeychainDeviceKeyStore.service, account: a) },
-             .keyProblem(RememberedKeys.unreadableText)),
+             .unreadable),
             ("canceled", { f, a in f.dataStatus = [a: errSecUserCanceled] }, .cancelled),
-            ("auth failed", { f, a in f.dataStatus = [a: errSecAuthFailed] }, nil),
-            ("entitlement", { f, a in f.dataStatus = [a: errSecMissingEntitlement] }, nil),
-            ("io", { f, a in f.dataStatus = [a: errSecIO] }, nil),
+            ("auth failed", { f, a in f.dataStatus = [a: errSecAuthFailed] }, .failed),
+            ("entitlement", { f, a in f.dataStatus = [a: errSecMissingEntitlement] }, .failed),
+            ("io", { f, a in f.dataStatus = [a: errSecIO] }, .failed),
         ]
-        let w = try await JoinTakeoverAppTests.world()
-        let vaultID = try #require(w.home.vault?.vaultId)
-        let home = try await w.homeKeys.store.keys(for: vaultID, reason: .unlock(vaultName: nil))
-        w.home.close()
+        let (url, vaultID, home) = try await JoinTakeoverAppTests.vault(device: try DeviceKeys.generate())
         for (label, breakIt, expected) in cases {
             let fake = FakeKeychainItems()
             let keys = RememberedKeys(store: KeychainDeviceKeyStore(items: fake))
             try await keys.store.save(home, for: vaultID, vaultName: "Mine")
-            let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: w.home.trust)
-            model.deviceMemory = DevicesAppTests.defaults()
-            try await model.openVault(at: w.url)
+            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            model.deviceMemory = MemoryKeyValueStore()
+            try await model.openVault(at: url)
             breakIt(fake, KeychainDeviceKeyStore.account(vaultID))
-            let attempt = await keys.unlockWithDeviceKey(model)
-            if let expected {
-                #expect(attempt == expected, "\(label)")
-            } else {
-                guard case .failed = attempt else { Issue.record("\(label): \(attempt)"); model.close(); continue }
+            switch (await keys.unlockWithDeviceKey(model), expected) {
+            case (.keyProblem(.unreadable), .unreadable):
+                #expect(keys.keyProblem == .unreadable, "\(label): Forget offered")
+            case (.cancelled, .cancelled):
+                break
+            case (.failed, .failed):
                 #expect(keys.keyProblem == nil, "\(label): Unlock stays, no Forget")
+            case (let attempt, _):
+                Issue.record("\(label): \(attempt)")
             }
             #expect(fake.has(KeychainDeviceKeyStore.service, KeychainDeviceKeyStore.account(vaultID)), "\(label): kept")
             model.close()

@@ -70,6 +70,8 @@ public enum SyncTargetProblem: Error, Equatable, Sendable {
     case notDownloaded(String)
     /// This account may not write to the folder (its name): another user's, or read-only.
     case notWritable(String)
+    /// The server folder of a new WebDAV target holds another vault or other files.
+    case serverFolderTaken
     case other(String)
 }
 

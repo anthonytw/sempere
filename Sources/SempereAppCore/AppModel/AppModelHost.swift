@@ -104,7 +104,7 @@ public struct AppModelServices {
                 makeQuickCapture: @escaping @MainActor (_ scratch: URL) -> QuickCapture = AppModelServices.scratchQuickCapture,
                 settingsStorage: any SettingsSyncStorage = StoredSettingsSyncStorage(),
                 makePageRecognizer: @escaping @MainActor () -> (any PageRecognizing)? = { nil },
-                ownerAuthenticator: any OwnerAuthenticator = ScriptedOwnerCheck(.refuse(OwnerCheckUnavailable()))) {
+                ownerAuthenticator: any OwnerAuthenticator = NoOwnerCheck()) {
         self.perf = perf
         self.settings = settings
         self.bookmarks = bookmarks

@@ -1712,7 +1712,7 @@ syncs with both ways.
   status (`VaultListStatusLine`).
 - **Published summaries.** An unlocked two-way run of a complete copy creates and keeps current the
   target's `sempere-summaries.sealed` (`SyncOptions.publishSummaries`, without the web index): a device
-  joining the vault lists the notes from it before they arrive (`JoinAppTests`). Never from a partial copy,
+  joining the vault lists the notes from it before they arrive (`JoinTests`). Never from a partial copy,
   and never from a run that took another `vault.json` (the next run publishes). The write is conditional on
   the version the run read (ETag, or the folder's stamp); when another device replaced it meanwhile the run
   reads it again and keeps that copy's entries for notes it has none for, up to three times, so two devices
@@ -1761,7 +1761,7 @@ syncs with both ways.
   Settings…; "Download Again" is gone, since a run takes what the server has.
 - **Other writers.** Several devices write to one server folder; their files meet by the engine's
   union rules (docs/design/device-first-sync.md §5), conflicts on `vault.json` keep both copies and
-  are reported. Tests: `TwoDeviceSyncAppTests` (two `AppModel`s on one in-memory server running the
+  are reported. Tests: `TwoDeviceSyncTests` (SempereAppCoreTests; two `AppModel`s on one in-memory server running the
   real engine: a note and a rename reaching the other device's list and open editor, edits made
   offline on both, settings, a 6 MB attachment, runs cut midway, a server folder that vanishes and
   comes back empty, a vault reopened while a run goes, a closed vault that only uploads);

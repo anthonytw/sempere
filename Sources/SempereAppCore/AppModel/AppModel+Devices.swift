@@ -255,9 +255,12 @@ extension AppModelCore {
         return try await offMain { try vault.kitReview() }
     }
 
-    /// Replaces the recovery kit (on home, after device-owner authentication and the review: design §6.5).
+    /// Replaces the recovery kit (on home, after the review and the printed kit: design §6.5). It asks for the device
+    /// owner first (`ownerAuthenticator`, step 3): the one list change that needs the owner at the device. A refused
+    /// check changes nothing, and so does a vault closed or replaced while the check asks.
     public func replaceRecoveryKit(_ newKit: MLKEM768X25519Identity, keep: Set<String>, remove: Set<String>,
                             oldKit: MLKEM768X25519Identity?, passphrase: String?) async throws -> DeviceChangeOutcome {
+        try await checkOwner(for: .replaceRecoveryKit)
         return try await performDeviceChange { v in
             try v.replaceRecoveryKit(newKit, keep: keep, remove: remove, oldRecovery: oldKit, passphrase: passphrase)
         }
@@ -272,6 +275,19 @@ extension AppModelCore {
         guard case .mlkem768x25519(let recovery)? = key else { throw KeyProblem.recoveryKeyNeeded }
         try await ownerAuthenticator.authenticate(reason: .addPassphraseCopy)
         _ = try await offMain { try vault.addPassphraseCopy(recovery: recovery, passphrase: passphrase) }
+    }
+
+    /// The owner check of a change of the open vault (`ownerAuthenticator`), with the vault unlocked and writable
+    /// before and after it: on Mac Catalyst the passcode dialog does not block the menus, so another vault may be
+    /// opened, or this one closed, while it asks. Then the change is not made (`KeyError.vaultChanged`).
+    func checkOwner(for reason: OwnerCheckReason) async throws {
+        guard let start = vault, phase == .unlocked else { throw KeyError.notUnlocked }
+        try requireWritableVault()
+        let gen = generation
+        try await ownerAuthenticator.authenticate(reason: reason)
+        guard generation == gen, vault?.vaultId == start.vaultId else { throw KeyError.vaultChanged }
+        guard phase == .unlocked else { throw KeyError.notUnlocked }
+        try requireWritableVault()
     }
 
     /// The steps every device change shares: a bounded, cancellable two-way run of every target (design §5.2 step 2,

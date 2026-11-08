@@ -122,7 +122,7 @@ public enum OwnerCheckReason: Equatable, Sendable {
     case addPassphraseCopy
     /// Add Device's approval of a new device (design §6.2 step 2).
     case approveDevice
-    /// Replace Recovery Kit (design §6.5 step 0).
+    /// Replace Recovery Kit (design §6.5 step 3).
     case replaceRecoveryKit
     /// Re-encrypt Everything (design §7.1).
     case reencrypt
@@ -140,7 +140,15 @@ public struct OwnerCheckUnavailable: Error, Equatable, Sendable {
     public init() {}
 }
 
-/// An owner check with a scripted answer, which records what it was asked (tests; headless, it refuses).
+/// The owner check of a front end with no device owner to ask (headless, `AppModelServices.headless()`): every check
+/// fails with `OwnerCheckUnavailable`, so nothing that needs the owner happens by accident.
+public struct NoOwnerCheck: OwnerAuthenticator {
+    public init() {}
+
+    public func authenticate(reason: OwnerCheckReason) async throws { throw OwnerCheckUnavailable() }
+}
+
+/// An owner check with a scripted answer, which records what it was asked (tests).
 public final class ScriptedOwnerCheck: OwnerAuthenticator, @unchecked Sendable {
     public enum Answer: Sendable {
         case pass

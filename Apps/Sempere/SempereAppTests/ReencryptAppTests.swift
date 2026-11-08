@@ -25,6 +25,7 @@ struct ReencryptAppTests {
         try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
         let shared = drive.appendingPathComponent("Shared.sempere", isDirectory: true)
         let a = FolderTargetAppTests.device(nil)
+        a.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)   // the start asks for the owner
         try await a.model.copyIn(picked: vault, library: a.library)
         try await a.model.unlock(identityText: key)
         defer { a.model.close() }
@@ -68,6 +69,7 @@ struct ReencryptAppTests {
         try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
         let shared = drive.appendingPathComponent("Shared.sempere", isDirectory: true)
         let a = FolderTargetAppTests.device(nil)
+        a.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)   // the start asks for the owner
         try await a.model.copyIn(picked: vault, library: a.library)
         try await a.model.unlock(identityText: key)
         defer { a.model.close() }

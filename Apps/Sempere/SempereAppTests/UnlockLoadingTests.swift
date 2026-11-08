@@ -26,7 +26,7 @@ struct UnlockLoadingTests {
         let attempt = Task { await keys.unlockWithDeviceKey(model) }
         await gate.waitForArrivals(start + 1)   // the key check
         await gate.releaseOne()
-        #expect(await attempt.value == .unlocked)
+        #expect({ if case .unlocked = $0 { true } else { false } }(await attempt.value))
         // Unlocked, sheet released, the listing still waiting at the gate.
         #expect(model.phase == .unlocked)
         #expect(!keys.holdsUnlockSheet(model))

@@ -235,7 +235,7 @@ struct JoinDeviceView: View {
 
     private func recheck() async {
         await model.refreshLockedManifest()
-        if case .keyProblem(let why) = await keys.unlockWithDeviceKey(model), why == RememberedKeys.expiredText {
+        if case .keyProblem(.expired) = await keys.unlockWithDeviceKey(model) {
             // Home deleted the request (second re-check of #88): this join is over; Ask to Join starts a new one.
             await model.cancelJoin(store: keys.store)
             try? await keys.forgetKeys(model)

@@ -8,8 +8,8 @@ import Testing
 @testable import SempereApp
 
 /// The device list's words in the app (key-hierarchy design §5.5, §6.3 to §6.5; phase KH5): what the sheets, the
-/// history and the banners say. The model's half moved to `SempereAppCoreTests` (`DevicesTests`); `World` stays for
-/// the app suites that still build a model of a vault with devices (wave 5b part 3, step 4b moves them).
+/// history and the banners say. The model's half is `SempereAppCoreTests` (`DevicesTests`, `UnlistedOverSyncTests`,
+/// `JoinTakeoverTests`).
 @Suite(.serialized)
 @MainActor
 struct DevicesAppTests {
@@ -56,65 +56,46 @@ struct DevicesAppTests {
         #expect(shared.contains("Join This Device"), "\(shared)")
     }
 
-    /// A vault created by this device (home, "Home iPad"), with `others` approved and confirmed.
-    struct World {
-        let url: URL
-        let home: DeviceKeys
-        let homeTrust: MemoryEpochTrustStore
-        let recovery: MLKEM768X25519Identity
-        var others: [String: (keys: DeviceKeys, trust: MemoryEpochTrustStore)] = [:]
-
-        init(others names: [String]) throws {
-            let parent = TestTemp.root.appendingPathComponent("Devices-\(UUID().uuidString)", isDirectory: true)
-            try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-            homeTrust = MemoryEpochTrustStore()
-            var request = NewVaultRequest(name: "Mine", keySource: .generate, passphrase: nil)
-            request.deviceName = "Home iPad"
-            request.workFactor = 10
-            let created = try VaultLibrary.createVault(request, folder: "Mine.sempere", in: parent, trust: homeTrust)
-            url = created.url
-            home = created.device
-            guard case .mlkem768x25519(let r)? = try created.secretKey.map(IdentityFile.parse) else { throw CancellationError() }
-            recovery = r
-            var vault = try Vault.open(at: url, identities: [home.nativeIdentity], signing: home.signing, trust: homeTrust)
-            for name in names {
-                let keys = try DeviceKeys.generate()
-                let words = try vault.approveDevice(keys.joinRequest(vaultId: vault.vaultId, name: name, kind: "iphone"))
-                let trust = MemoryEpochTrustStore()
-                var v = try Vault.open(at: url, identities: [keys.nativeIdentity], signing: keys.signing, trust: trust)
-                try v.confirmJoin(words: words)
-                others[name] = (keys, trust)
-            }
+    /// The history's lines name the devices (`DeviceChangeText.history`): a removal, a handoff, the creation, a
+    /// takeover with what it removed, and a device no list here names. The names come from the model
+    /// (`DevicesTests.aRemovalStartsANewEpochReopensTheVaultAndShowsInTheHistory`).
+    @Test func theHistoryLinesNameTheDevices() {
+        let pad = DeviceRef(fingerprint: Data(repeating: 1, count: 32), name: "Home iPad")
+        let oldMac = DeviceRef(fingerprint: Data(repeating: 2, count: 32), name: "Old Mac")
+        let mac = DeviceRef(fingerprint: Data(repeating: 3, count: 32), name: "Mac")
+        let unnamed = DeviceRef(fingerprint: Data(repeating: 0xAB, count: 32), name: nil)
+        func event(_ reason: EpochReason, newHome: DeviceRef? = nil, removed: [DeviceRef] = []) -> DeviceHistoryEvent {
+            DeviceHistoryEvent(epoch: 2, epochId: Data(count: 32), reason: reason, date: nil, author: pad, newHome: newHome,
+                               removed: removed)
         }
-
-        @MainActor func model(_ name: String? = nil, defaults: UserDefaults? = nil) async throws -> AppModel {
-            let (keys, trust) = name.flatMap { others[$0] } ?? (home, homeTrust)
-            let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: trust)
-            model.deviceMemory = defaults ?? DevicesAppTests.defaults()
-            try await model.openVault(at: url)
-            try await model.unlock(device: keys)
-            return model
-        }
+        #expect(DeviceChangeText.history(event(.create)) == "Vault created on Home iPad")
+        #expect(DeviceChangeText.history(event(.remove, removed: [oldMac])) == "Old Mac removed by Home iPad")
+        #expect(DeviceChangeText.history(event(.handoff, newHome: mac)) == "Home iPad made Mac manage devices")
+        let takeover = DeviceChangeText.history(event(.takeover, removed: [unnamed]))
+        #expect(takeover.hasPrefix("Home iPad took over with the recovery kit"), "\(takeover)")
+        #expect(takeover.contains("abababab"), "a device no list names is named by its id: \(takeover)")
     }
 
-    nonisolated static func defaults() -> UserDefaults {
-        TestDefaults.suite("DevicesAppTests-\(UUID().uuidString)") ?? .standard
+    /// After a change, the sheet names each target the run before it could not reach (design §5.2 step 2; the model's
+    /// half is `UnlistedOverSyncTests.aChangeWhoseTargetCannotBeReachedNamesIt`).
+    @Test func theDoneLineNamesTheUnreachableTargets() {
+        let report = EpochChangeReport(epoch: 2, epochId: Data(count: 32), reason: .remove, removed: [], home: Data(count: 32),
+                                       sealed: 0)
+        #expect(DeviceChangeText.done(DeviceChangeOutcome(report: report), action: "Removed.") == "Removed.")
+        let line = DeviceChangeText.done(DeviceChangeOutcome(report: report, unreachable: [.init(name: "nas", lastSuccess: nil)]),
+                                         action: "Removed.")
+        #expect(line.hasPrefix("Removed.") && line.contains("nas was not reachable"), "\(line)")
     }
 
-    struct PassingOwner: OwnerAuthenticator {
-        func authenticate(reason: OwnerCheckReason) async throws {}
-    }
-
-    /// The history's lines name the devices (`DeviceChangeText.history`), after a removal, a handoff and the creation.
-    @Test func theHistoryLinesNameTheDevices() async throws {
-        let w = try World(others: ["Phone", "Old Mac", "Mac"])
-        let model = try await w.model()
-        defer { model.close() }
-        #expect(DeviceChangeText.history(try #require(try await model.loadDeviceList().history.first)).contains("Home iPad"))
-        _ = try await model.removeDevices([try #require(w.others["Old Mac"]?.keys.id)])
-        #expect(DeviceChangeText.history(try #require(try await model.loadDeviceList().history.first)).contains("Old Mac"))
-        _ = try await model.makeHome(try #require(w.others["Mac"]?.keys.id))
-        #expect(DeviceChangeText.history(try #require(try await model.loadDeviceList().history.first)).contains("Mac"))
+    /// The unlock sheet's words for its model's typed outcomes (`RememberedKeys`, SempereAppCore).
+    @Test func theUnlockSheetWordsTheKeyProblemsAndFailures() {
+        #expect(DeviceKeyProblem.unreadable.text.contains("can no longer be read"))
+        #expect(DeviceKeyProblem.expired.text.contains("has expired"))
+        #expect(DeviceKeyProblem.stray.text.contains("not on its device list"))
+        #expect(DeviceUnlockFailure.keysNotRead(DeviceKeyStoreError.authenticationFailed).text
+                == DeviceKeyStoreError.authenticationFailed.description)
+        let didNot = DeviceUnlockFailure.keysDidNotUnlock(AppModel.KeyError.vaultChanged).text
+        #expect(didNot.hasPrefix("This device's key did not unlock the vault: ") && didNot.contains("Another vault"), "\(didNot)")
     }
 
     /// The takeover banner names the device and says what to do (`TakeoverAlert.message`).
@@ -179,205 +160,8 @@ struct DevicesAppTests {
             #expect(!notice.text.isEmpty)
             #expect(!notice.symbol.isEmpty)
         }
-    }
-}
-
-/// A removal reaching a device over sync (design §5.5): its runs report it unlisted, the banner says so, and the
-/// model refuses writes. A device that cannot verify the change yet is held back, and says so after a day.
-@Suite(.serialized)
-@MainActor
-struct UnlistedOverSyncAppTests {
-    struct Setup {
-        var home: Vault
-        let model: AppModel
-        let phone: DeviceKeys
-        let sync: () throws -> Void
-        let server: EngineWebDAVRemote
-        let homeKeys: DeviceKeys
-        let listing: WebDAVVaultListing
-    }
-
-    /// Home (the fixture's device, as the CLI would) approves a phone; the phone connects over WebDAV and,
-    /// with `trust`, confirms its join as the app will (KH5 part 2), then unlocks.
-    static func setUp(trust: MemoryEpochTrustStore?, writeStores: URL? = nil) async throws -> Setup {
-        let (vault, keyURL) = try AppModelTests.fixtureVault()
-        let server = EngineWebDAVRemote(store: MemoryStore(name: "server"))
-        let homeKeys = try DeviceKeys.parse(try String(contentsOf: keyURL, encoding: .utf8))
-        var home = try Vault.open(at: vault, identities: [homeKeys.nativeIdentity], signing: homeKeys.signing)
-        let phone = try DeviceKeys.generate()
-        let words = try home.approveDevice(phone.joinRequest(vaultId: home.vaultId, name: "Phone", kind: "iphone"))
-        let homeState = vault.deletingLastPathComponent().appendingPathComponent("home-sync.json")
-        let sync = {
-            _ = try SyncEngine(directory: vault, vault: try Vault.open(at: vault, identities: [homeKeys.nativeIdentity],
-                                                                      signing: homeKeys.signing),
-                               remote: server.remote, stateURL: homeState, options: SyncOptions()).run()
-        }
-        try sync()
-        let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: vault.appendingPathComponent("vault.json")))
-        let vaultId = try #require((manifest as? [String: Any])?["vaultId"] as? String).lowercased()
-        let listing = WebDAVVaultListing(path: [], name: "Shared", vaultId: vaultId, format: "sempere/1",
-                                         url: "https://dav.example.org/shared/")
-        let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50), trust: trust)
-        model.deviceMemory = DevicesAppTests.defaults()
-        if let writeStores {
-            model.writeStores = DeviceWriteStores(ledgerDirectory: writeStores.appendingPathComponent("Ledger"),
-                                                  setAside: SetAsideStore(directory: writeStores.appendingPathComponent("SetAside")),
-                                                  key: { Data(repeating: 7, count: 32) })
-        }
-        model.webdavRemote = server
-        model.webdavPasswords = MemoryWebDAVPasswordStore()
-        model.webdavTick = .milliseconds(20)
-        model.webdavWriteDelay = 0.05
-        let library = VaultLibrary(storeURL: TestTemp.root.appendingPathComponent("recents-\(UUID().uuidString).json"))
-        let location = try await model.connectWebDAV(listing, user: nil, password: "", pin: nil, library: library)
-        if let trust {
-            let folder = try #require(model.webdavLocations.location(location).map { model.webdavLocations.copy(of: $0).folder })
-            var v = try Vault.open(at: folder, identities: [phone.nativeIdentity], signing: phone.signing, trust: trust)
-            try v.confirmJoin(words: words)
-        }
-        try await model.unlock(device: phone)
-        _ = await model.webdav?.syncNow()
-        #expect(model.deviceNotices.isEmpty)
-        return Setup(home: home, model: model, phone: phone, sync: sync, server: server, homeKeys: homeKeys, listing: listing)
-    }
-
-    @Test func aDeviceRemovedElsewhereShowsTheBannerAndWritesNothing() async throws {
-        var s = try await Self.setUp(trust: MemoryEpochTrustStore())
-        let model = s.model
-        defer { model.close() }
-        #expect(model.listAlert == nil, "the join is confirmed")
-        _ = try await model.createNote(title: "Before", paper: Paper(kind: .ruled), notebook: nil)
-        _ = await model.webdav?.syncNow()
-        try s.home.removeDevices([s.phone.id])
-        try s.sync()
-        _ = await model.webdav?.syncNow()
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { model.deviceNotices.contains(.unlisted) },
-                "\(String(describing: model.webdav?.lastReport?.epoch))")
-        #expect(model.isUnlisted)
-        #expect(model.isVaultReadOnly)
-        #expect(await TS.waitUntil { model.vault?.unlistedNotice != nil }, "the vault was opened again: it refuses writes itself")
-        await #expect(throws: (any Error).self) {
-            _ = try await model.createNote(title: "No", paper: Paper(kind: .ruled), notebook: nil)
-        }
-        let facts = await model.unlistedFacts()
-        #expect(facts.unsynced.isEmpty, "everything it wrote reached the server")
-    }
-
-    /// Review of #87, M3, and its re-check, R1: once unlisted, the device takes no new voice notes (its profile is
-    /// suspended, not deleted), while the recording in progress and a leftover are still sealed into `inbox/` with
-    /// ledger entries, counted apart and saved by Save Files. Listed again, the suspension is lifted with the
-    /// notebook kept.
-    @Test func anUnlistedDeviceSuspendsVoiceNotesSealsWhatItHoldsAndResumesWhenListed() async throws {
-        let root = try TestTemp.directory("unlisted-capture")
-        var s = try await Self.setUp(trust: MemoryEpochTrustStore(), writeStores: root)
-        let model = s.model
-        defer { model.close() }
-        let qc = Self.quickCapture(for: model)
-        try model.enableQuickCapture(notebook: "Field", transcribe: false)
-        // A voice note in progress when the removal arrives.
-        try await qc.start()
-        #expect(qc.state == .recording)
-
-        try s.home.removeDevices([s.phone.id])
-        try s.sync()
-        _ = await model.webdav?.syncNow()
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { model.vault?.unlistedNotice != nil })
-        #expect(await TS.waitUntil { (try? model.storedQuickCaptureProfile())??.suspended == true }, "suspended, not deleted")
-        #expect(try model.storedQuickCaptureProfile()?.profile.notebook == "Field")
-
-        let outcome = try await qc.stop()
-        #expect(outcome.delivery == .vault, "the recording in progress is still sealed")
-        await #expect(throws: QuickCaptureError.notOnDeviceList) { try await qc.start() }
-        #expect(qc.state == .idle)
-        // A recording a crash left: the sweep still seals it.
-        let leftover = try QuickCaptureTests.crashLeftRecording(in: qc.root)
-        await qc.sweep()
-        #expect(!FileManager.default.fileExists(atPath: leftover.path))
-        let leftoverID = try #require(UUID(uuidString: leftover.lastPathComponent))
-
-        let facts = await model.unlistedFacts()
-        #expect(facts.captures == 2, "\(facts.unsynced)")
-        #expect(facts.unsynced.contains("inbox/\(CaptureFile.name(outcome.id, .capture))"))
-        #expect(facts.unsynced.contains("inbox/\(CaptureFile.name(leftoverID, .capture))"))
-        #expect(facts.notes.isEmpty, "Export of notes would not cover them")
-        let out = try TestTemp.directory("unlisted-out")
-        #expect(try await model.exportUnsyncedFiles(facts.unsynced, to: out) == facts.unsynced.count)
-        let saved = try FileManager.default.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)
-        let copy = try #require(saved.first).appendingPathComponent("inbox/\(CaptureFile.name(outcome.id, .capture))")
-        let folder = try #require(model.vaultURL)
-        #expect(try Data(contentsOf: copy) == Data(contentsOf: folder.appendingPathComponent("inbox/\(CaptureFile.name(outcome.id, .capture))")))
-
-        // Forget All (the warning's choice) forgets the removal marker: the vault reopens listed until a sync meets
-        // the change again.
-        #expect(!model.sightingRows.isEmpty)
-        try await model.forgetSightings(anchoredToo: true)
-        #expect(model.vault?.unlistedNotice == nil)
-        #expect(model.sightingRows.isEmpty)
-    }
-
-    /// Re-check of #87, R1: a device listed again (its open vault and its targets say so) gets voice notes back,
-    /// with the notebook it had.
-    @Test func aListedDeviceLiftsTheSuspensionKeepingTheNotebook() async throws {
-        let w = try DevicesAppTests.World(others: ["Phone"])
-        let model = try await w.model("Phone")
-        defer { model.close() }
-        let qc = Self.quickCapture(for: model)
-        try model.enableQuickCapture(notebook: "Field", transcribe: false)
-        var stored = try #require(try model.storedQuickCaptureProfile())
-        stored.suspended = true   // as an earlier unlisting left it
-        try qc.store.save(stored)
-        await #expect(throws: QuickCaptureError.notOnDeviceList) { try await qc.start() }
-        model.refreshQuickCaptureProfile()
-        let lifted = try #require(try model.storedQuickCaptureProfile())
-        #expect(lifted.suspended == nil)
-        #expect(lifted.profile.notebook == "Field")
-        try await qc.start()
-        #expect(qc.state == .recording)
-        _ = try await qc.stop()
-    }
-
-    /// A quick-capture instance for `model` that records with the fake backend and keeps its files in temp folders.
-    static func quickCapture(for model: AppModel) -> QuickCapture {
-        let qc = QuickCapture.testing()
-        if let stores = model.writeStores { qc.ledger = { stores.ledger(for: $0) } }
-        model.quickCapture = qc
-        return qc
-    }
-
-    /// Design §5.2 step 2: a target the run before a change cannot reach is named; the change goes ahead.
-    @Test func aChangeWhoseTargetCannotBeReachedNamesIt() async throws {
-        let s = try await Self.setUp(trust: nil)
-        s.model.close()
-        let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50))
-        model.deviceMemory = DevicesAppTests.defaults()
-        model.webdavRemote = s.server
-        model.webdavPasswords = MemoryWebDAVPasswordStore()
-        model.webdavTick = .milliseconds(20)
-        model.deviceChangeRunBound = 2
-        let library = VaultLibrary(storeURL: TestTemp.root.appendingPathComponent("recents-\(UUID().uuidString).json"))
-        _ = try await model.connectWebDAV(s.listing, user: nil, password: "", pin: nil, library: library)
-        try await model.unlock(device: s.homeKeys)
-        defer { model.close() }
-        #expect(model.vault?.isHome == true)
-        try await model.completePartialCopy()   // a change needs the whole copy
-        s.server.failing(URLError(.notConnectedToInternet))
-        let done = try await model.removeDevices([s.phone.id])
-        #expect(done.report.reason == .remove)
-        #expect(done.unreachable.count == 1)
-        #expect(DeviceChangeText.done(done, action: "Removed.").contains("was not reachable"))
-        s.server.failing(nil)
-    }
-
-    @Test func aChangeThatCannotBeVerifiedHoldsSyncBackAndSaysSoAfterADay() async throws {
-        var s = try await Self.setUp(trust: nil)
-        let model = s.model
-        defer { model.close() }
-        try s.home.removeDevices([s.phone.id])
-        try s.sync()
-        _ = await model.webdav?.syncNow()
-        let since = try #require(model.webdav?.lastReport?.epoch?.heldSince, "\(String(describing: model.webdav?.lastReport))")
-        #expect(model.deviceNotices.isEmpty, "held back for less than a day: no banner")
-        model.deviceNoticeNow = { since.addingTimeInterval(2 * 86_400) }
-        #expect(model.deviceNotices == [.heldBack(since: since)])
+        let home = DeviceRow(id: "aaaaaaaa", fingerprint: Data(count: 32), name: "Home iPad", kind: "ipad", added: nil,
+                             addedBy: .creation, isHome: true, isThisDevice: true, lastSynced: nil)
+        #expect(home.symbol == "ipad")
     }
 }

@@ -36,7 +36,7 @@ struct UnlockView: View {
         Form {
             if let problem = keys.keyProblem {
                 Section {
-                    Label(problem, systemImage: "key.slash").foregroundStyle(.orange)
+                    Label(problem.text, systemImage: "key.slash").foregroundStyle(.orange)
                     Button("Forget This Device's Key…", systemImage: "trash", role: .destructive) { Task { await askToForget() } }
                         .accessibilityIdentifier("unlock.forgetKey")
                 }
@@ -154,7 +154,7 @@ struct UnlockView: View {
     private func tryDeviceKey() async {
         failure = nil
         switch await keys.unlockWithDeviceKey(model) {
-        case .failed(let message): failure = message
+        case .failed(let why): failure = why.text
         case .unlocked, .noKey, .cancelled, .joining, .keyProblem: break
         }
     }

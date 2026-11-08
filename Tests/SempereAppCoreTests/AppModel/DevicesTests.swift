@@ -7,7 +7,7 @@ import TempDirSupport
 import Testing
 
 /// A vault created by this device (home, "Home iPad"), with `others` approved and confirmed: devices in process on
-/// one vault folder, no sync (the app's `DevicesAppTests.World`, which its suites that stay keep).
+/// one vault folder, no sync.
 struct DeviceWorld: Sendable {
     let url: URL
     let home: DeviceKeys
@@ -160,10 +160,13 @@ extension AppModelSuites {
             #expect(Set(review.compactMap(\.device.id)) == Set(w.others.values.map(\.keys.id)))
             let phone = try #require(w.others["Phone"]?.keys.id), lost = try #require(w.others["Lost iPad"]?.keys.id)
             let newKit = try MLKEM768X25519Identity()
+            let owner = ScriptedOwnerCheck(.pass)
+            model.ownerAuthenticator = owner
             await #expect(throws: VaultError.self, "every device must be answered") {
                 _ = try await model.replaceRecoveryKit(newKit, keep: [phone], remove: [], oldKit: nil, passphrase: nil)
             }
             let done = try await model.replaceRecoveryKit(newKit, keep: [phone], remove: [lost], oldKit: w.recovery, passphrase: "a")
+            #expect(owner.reasons == [.replaceRecoveryKit, .replaceRecoveryKit], "each change asks for the owner first")
             #expect(try model.vault?.openPassphraseCopy(passphrase: "a").identity.recipient.string == newKit.recipient.string,
                     "any passphrase is taken for the new kit's copy")
             #expect(done.report.reason == .recovery)
@@ -171,6 +174,84 @@ extension AppModelSuites {
             let list = try await model.loadDeviceList()
             #expect(list.devices.map(\.name) == ["Home iPad", "Phone"])
             #expect(list.history.first?.reason == .recovery)
+        }
+
+        /// Replace Recovery Kit and Re-encrypt Everything ask for the device owner themselves (design §6.5 step 3, §7.1),
+        /// so no front end can leave the check out: without an owner to ask (headless) or with the check refused,
+        /// nothing changes: no new epoch, the old kit, no journal.
+        /// Review of #27: on Mac Catalyst the passcode dialog leaves the menus usable, so the vault may be closed, or
+        /// another one opened, while the owner check asks. Then neither change is made, to either vault.
+        @Test func aVaultClosedOrReplacedDuringTheOwnerCheckIsNotChanged() async throws {
+            let w = try await DeviceWorld.make(others: ["Phone"])
+            let other = try await DeviceWorld.make(others: [])
+            let model = try await w.model()
+            defer { model.close() }
+            let keep = try await Self.everyDeviceKept(model)
+            let before = try await Self.recoveryAndEpoch(w.url), otherBefore = try await Self.recoveryAndEpoch(other.url)
+            let actions: [(String, @MainActor () async throws -> Void)] = [
+                ("closed", { model.close() }),
+                ("another vault opened", {
+                    try await model.openVault(at: other.url)
+                    try await model.unlock(device: other.home)
+                }),
+            ]
+            for (label, act) in actions {
+                for reencrypt in [false, true] {
+                    if model.vaultURL?.standardizedFileURL != w.url.standardizedFileURL || model.phase != .unlocked {
+                        try await model.openVault(at: w.url)
+                        try await model.unlock(device: w.home)
+                    }
+                    model.ownerAuthenticator = ActingOwnerCheck(act)
+                    await #expect(throws: (any Error).self, "\(label), re-encrypt \(reencrypt)") {
+                        if reencrypt {
+                            _ = try await model.startReencryption(try MLKEM768X25519Identity(), keep: keep, remove: [], passphrase: nil)
+                        } else {
+                            _ = try await model.replaceRecoveryKit(try MLKEM768X25519Identity(), keep: keep, remove: [], oldKit: nil,
+                                                                   passphrase: nil)
+                        }
+                    }
+                    #expect(try await Self.recoveryAndEpoch(w.url) == before, "\(label): nothing written to the first vault")
+                    #expect(try await Self.recoveryAndEpoch(other.url) == otherBefore, "\(label): nor to the other")
+                    #expect(!FileManager.default.fileExists(atPath: w.url.appendingPathComponent("reencrypt-journal.age").path))
+                    #expect(!FileManager.default.fileExists(atPath: other.url.appendingPathComponent("reencrypt-journal.age").path))
+                }
+            }
+        }
+
+        /// The recovery key and the epoch id in the vault's `vault.json` on disk (off the main actor).
+        @concurrent static func recoveryAndEpoch(_ url: URL) async throws -> [String] {
+            let manifest = try Vault.open(at: url).manifest
+            return [manifest.recoveryEntry?.key ?? "", manifest.epochId.base64EncodedString()]
+        }
+
+        @Test func replacingTheKitAndReencryptingNeedTheOwner() async throws {
+            let w = try await DeviceWorld.make(others: ["Phone"])
+            let model = try await w.model()
+            defer { model.close() }
+            let keep = try await Self.everyDeviceKept(model)
+            let epoch = try #require(model.vault?.manifest.epochId)
+            let kit = try #require(model.vault?.manifest.recoveryEntry?.key)
+            await #expect(throws: OwnerCheckUnavailable.self, "headless: no owner can be asked") {
+                _ = try await model.replaceRecoveryKit(try MLKEM768X25519Identity(), keep: keep, remove: [], oldKit: nil, passphrase: nil)
+            }
+            await #expect(throws: OwnerCheckUnavailable.self, "headless: no owner can be asked") {
+                _ = try await model.startReencryption(try MLKEM768X25519Identity(), keep: keep, remove: [], passphrase: nil)
+            }
+            let owner = ScriptedOwnerCheck(.refuse(CancellationError()))
+            model.ownerAuthenticator = owner
+            await #expect(throws: CancellationError.self) {
+                _ = try await model.replaceRecoveryKit(try MLKEM768X25519Identity(), keep: keep, remove: [], oldKit: nil, passphrase: nil)
+            }
+            await #expect(throws: CancellationError.self) {
+                _ = try await model.startReencryption(try MLKEM768X25519Identity(), keep: keep, remove: [], passphrase: nil)
+            }
+            #expect(owner.reasons == [.replaceRecoveryKit, .reencrypt])
+            #expect(model.vault?.manifest.epochId == epoch, "no new epoch")
+            #expect(model.vault?.manifest.recoveryEntry?.key == kit, "the old kit")
+            #expect(try await !model.reencryptStatus().pending)
+            #expect(!FileManager.default.fileExists(atPath: try #require(model.vaultURL).appendingPathComponent("reencrypt-journal.age").path))
+            let list = try await model.loadDeviceList()
+            #expect(list.history.map(\.reason) == [.create])
         }
 
         /// Review of #87, M1: a takeover whose parent is below this device's frontier gets an epoch number at or
@@ -340,6 +421,23 @@ extension AppModelSuites {
             #expect(again.takeoverAlert == nil)
         }
 
+        /// Review of #26, note (a): a takeover by another device that arrives while the vault is open reopens it
+        /// (`syncedVaultFileArrived`, then `adoptReopened`), which checks the takeovers again: the alert is raised.
+        @Test func aTakeoverSeenOnAReopenRaisesTheAlert() async throws {
+            let w = try await DeviceWorld.make(others: ["Phone"])
+            let phone = try #require(w.others["Phone"])
+            let model = try await w.model("Phone")
+            defer { model.close() }
+            #expect(model.takeoverAlert == nil, "first sight: nothing before it is reported")
+            _ = try await w.takeover(by: try DeviceKeys.generate(), keep: [phone.keys.fingerprint], name: "New iPad",
+                                     trust: MemoryEpochTrustStore(), root: try await w.root())
+            await model.syncedVaultFileArrived()
+            #expect(model.vault?.isHome == false)
+            #expect(await TS.waitUntil(timeout: .seconds(60)) { model.takeoverAlert != nil }, "the reopen checked the takeovers")
+            #expect(model.takeoverAlert?.by == "New iPad")
+            #expect(try await model.loadDeviceList().homeName == "New iPad", "the vault follows the takeover")
+        }
+
         @Test func theUnlistedFactsNameTheNotesOfTheUnsyncedFiles() {
             let a = UUID(), b = UUID()
             let facts = UnlistedFacts(by: "Home iPad", seen: Date(), unsynced: [
@@ -496,6 +594,7 @@ extension AppModelSuites {
             let w = try await DeviceWorld.make(others: ["Phone"])
             let model = try await w.model()
             defer { model.close() }
+            model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
             let titles = Set(model.notes.map(\.id))
             let before = try #require(model.vault?.manifest.epoch)
             let newKit = try MLKEM768X25519Identity()
@@ -521,6 +620,7 @@ extension AppModelSuites {
             let w = try await DeviceWorld.make(others: ["Phone"])
             let model = try await w.model()
             defer { model.close() }
+            model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
             _ = try await model.startReencryption(try MLKEM768X25519Identity(), keep: try await Self.everyDeviceKept(model),
                                                   remove: [], passphrase: nil)
             model.isAdvancingReencryption = true
@@ -547,4 +647,13 @@ extension AppModelSuites {
             await #expect(throws: VaultError.self) { _ = try await phone.advanceReencryption() }
         }
     }
+}
+
+/// An owner check that does something while it asks (the user acting meanwhile), then passes.
+final class ActingOwnerCheck: OwnerAuthenticator, @unchecked Sendable {
+    let act: @MainActor () async throws -> Void
+
+    init(_ act: @escaping @MainActor () async throws -> Void) { self.act = act }
+
+    func authenticate(reason: OwnerCheckReason) async throws { try await act() }
 }

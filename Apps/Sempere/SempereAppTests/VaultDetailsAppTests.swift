@@ -5,8 +5,9 @@ import Testing
 @testable import SempereApp
 import SempereAppCore
 
-/// P9 of docs/design/device-first-sync.md in the app: Vault Details (storage, devices per target), Repair's
-/// adopt, export and delete, and Add WebDAV Server…, on two devices syncing through a folder.
+/// P9 of docs/design/device-first-sync.md in the app: Vault Details (storage, devices per target) and Repair's
+/// adopt, export and delete, on two devices syncing through a folder. Add WebDAV Server… is the model's
+/// (`WebDAVTests.aWebDAVServerIsAddedOnceAsATarget` in `SempereAppCoreTests`).
 @MainActor
 struct VaultDetailsAppTests {
     @Test func detailsShowTheCopyAndTheDevicesATargetHeld() async throws {
@@ -53,26 +54,6 @@ struct VaultDetailsAppTests {
         #expect(fm.fileExists(atPath: copy.path))
         try await model.deleteQuarantined(bad, target: target, of: vault)
         #expect(quarantine.list().isEmpty)
-        w.a.model.close(); w.b.model.close()
-    }
-
-    @Test func aWebDAVServerIsAddedOnceAsATarget() async throws {
-        let w = try await FolderTargetAppTests.world()
-        let model = w.a.model
-        model.webdavRemote = FakeWebDAVRemote(server: TestTemp.root.appendingPathComponent("server-\(UUID().uuidString)"))
-        model.webdavPasswords = MemoryWebDAVPasswordStore()
-        let url = try #require(URL(string: "https://dav.example.org/notes/"))
-        guard case .checked(let found) = await model.probeWebDAVTarget(url: url, user: "me", password: "pw", pin: nil,
-                                                                      vaultID: w.a.vaultID) else {
-            Issue.record("the check failed"); return
-        }
-        #expect(found.acceptable)
-        let id = try await model.addWebDAVTarget(url: url, user: "me", password: "pw", pin: nil, to: w.a.vaultID)
-        #expect(model.openVaultTargets.contains { $0.id == id && $0.kind == .webdav && $0.joined == true })
-        #expect(try model.webdavPasswords.password(for: id) == "pw")
-        await #expect(throws: SyncTargetProblem.duplicate) {
-            try await model.addWebDAVTarget(url: url, user: "me", password: "pw", pin: nil, to: w.a.vaultID)
-        }
         w.a.model.close(); w.b.model.close()
     }
 }

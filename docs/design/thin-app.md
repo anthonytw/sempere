@@ -359,28 +359,52 @@ Wave 5b, part 3, step 4a (devices, joins and re-encryption: the model's code, 20
   main actor). The app keeps the words (`DevicesAppTests`: history lines, the takeover alert, the typed refusals, the
   removal sheet, the kit line check) and every suite that needs `RememberedKeys` or the WebDAV fakes (below).
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4a are done (above). The rest of the family, in an order that
+Wave 5b, part 3, step 4b (the unlock sheet's model and the sync suites, 2026-11-08) moved:
+
+- **`RememberedKeys`** (`Sources/SempereAppCore/AppModel/RememberedKeys.swift`): unlocking with this device's keys, the
+  join stage, forgetting keys, the created vault's keys and "Require Face ID". Its methods are generic over the host
+  (`AppModelCore<Host>`), so the class keeps its name and the views their spelling. The key problems are typed:
+  `Attempt.keyProblem(DeviceKeyProblem)` (`.unreadable`, `.expired`, `.stray`) and `Attempt.failed(DeviceUnlockFailure)`
+  (`.keysNotRead`, `.keysDidNotUnlock`, carrying the error), worded by the app as before (`RememberedKeys+App.swift`:
+  `DeviceKeyProblem.text`, `DeviceUnlockFailure.text`, plus the Keychain store as the default, `deviceName`, `name(isMac:isPhone:)`
+  and `biometryName`, which need `LocalAuthentication`). `Attempt` is no longer `Equatable` (its failure carries an error).
+- **The owner check is the model's for every change that needs it**: `replaceRecoveryKit` and `startReencryption` ask
+  `ownerAuthenticator` themselves (`.replaceRecoveryKit`, `.reencrypt`; after the unlocked and writable checks, before
+  anything else), as `addPassphraseCopy` and `approveDevice` already did, so no front end can leave it out.
+  `ReplaceKitSheet` lost its own check, so the prompt now comes when the change is made (design §6.5 step 3), not before
+  the new kit is shown; the vault is checked again after it (`checkOwner`: on Mac Catalyst the passcode dialog leaves
+  the menus usable, so another vault may be open by then).
+  The headless default is `NoOwnerCheck` (every check throws `OwnerCheckUnavailable`).
+- **Add WebDAV Server…** (`probeWebDAVTarget`, `addWebDAVTarget`; `AppModel+WebDAVTarget.swift`), pulled forward from
+  step 5 for its test. Its "holds another vault or other files" refusal is `SyncTargetProblem.serverFolderTaken`, worded
+  as the same sentence.
+- **Tests, moved as one** into `Tests/SempereAppCoreTests/AppModel` with their fakes (`WebDAVTestKit.swift`:
+  `FakeWebDAVRemote`, `FolderDAVTransport`, `EngineWebDAVRemote`, and `WebDAVFixture` for the listing, the server's seed,
+  a big attachment and a model's WebDAV settings, all off the main actor): `WebDAVTests` (and the WebDAV case of
+  `VaultDetailsAppTests`), `WebDAVPartialTests`, `TwoDeviceSyncTests`, `JoinTests`, `UnlistedOverSyncTests` (its quick
+  capture on the fakes of `CaptureTestKit.swift`), `JoinTakeoverTests` and `JoinOverSyncTests`. Assertions on words
+  became the typed values (`SyncStatus.kind`, `JoinProgress.server`, `DeviceKeyProblem`); the words got app tests instead
+  (`WebDAVAppTests.theBarSaysOfflineAndNamesTheServerOfAFill`, `DevicesAppTests`). `aRecentWebDAVVaultReopensFromItsCopy`
+  checks `joiningWebDAVLocation`, what Open Recent (`open(recent:)`, the app's until step 5: it calls `copyIn`) uses.
+  New: the owner checks of a kit replacement and a re-encryption (`DevicesTests.replacingTheKitAndReencryptingNeedTheOwner`)
+  and a takeover seen on a reopen (`aTakeoverSeenOnAReopenRaisesTheAlert`, review of #26).
+- **Test seams gone**: `DevicesAppTests.World`, `defaults()` and `PassingOwner` (and `JoinTakeoverAppTests.PassingOwner`):
+  the app suites that stay use `MemoryKeyValueStore` and `ScriptedOwnerCheck(.pass)`. The app keeps the words
+  (`DevicesAppTests`: the history lines from values, the done line, the unlock sheet's words, the notices with
+  `DeviceRow.symbol`; `WebDAVAppTests` in `WebDAVTextAppTests.swift`, `StorageLocationTests`), and what needs the app:
+  `JoinTakeoverAppTests` (`JoinTakeoverPlatformTests.swift`: `KeyRemoval`, the takeover screen's codes, `TypedWords`,
+  `StoredSigning`, the Secure Enclave), `KeychainDeviceKeyStoreTests`, `JoinThroughProviderTests`, `OfflineModeTests`.
+  `DeviceHistoryEvent` and `EpochChangeReport` (Sempere) got public initializers for the word tests.
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b are done (above). The rest of the family, in an order that
 empties `AppModelAppState` and the host's steps:
 
-4b. `RememberedKeys` (the unlock sheet's model: unlocking with this device's keys, the join stage, the key problems,
-   which become typed values the sheet words, as `unreadableText`, `strayText` and `expiredText` are today) into the
-   library, and with it every suite that uses the shared WebDAV and two-device fakes, which then move as one into
-   `SempereAppCoreTests` (the app's test target cannot import it, and a test-support product linked into both the app
-   and its hosted tests would put two copies of `SempereAppCore` in one process): `FakeWebDAVRemote` and
-   `FolderDAVTransport` (`WebDAVAppTests`, `WebDAVPartialAppTests`), `EngineWebDAVRemote` (`TwoDeviceSyncAppTests`,
-   `JoinAppTests`, `UnlistedOverSyncAppTests` in `DevicesAppTests.swift`, `JoinOverSyncAppTests` in
-   `JoinTakeoverAppTests.swift`), plus `JoinTakeoverAppTests` itself (`RememberedKeys`) and the WebDAV case of
-   `VaultDetailsAppTests` (`aWebDAVServerIsAddedOnceAsATarget`, whose Add WebDAV Server is the library's; the rest of
-   that suite is step 5). Their words stay (`WebDAVDownloadStatus.description`, `SyncStatus.headline`, the connect
-   sheet, `StorageLocationTests`). `UnlistedOverSyncAppTests` also needs `QuickCapture.testing()` and
-   `QuickCaptureTests.crashLeftRecording`, which are the app's: their capture parts get core equivalents
-   (`CaptureTestKit.swift`). `DevicesAppTests.World` then goes (its core copy is `DeviceWorld`), and so do
-   `DevicesAppTests.defaults()` and `PassingOwner` (`MemoryKeyValueStore`, `ScriptedOwnerCheck`), which the app suites
-   that stay (`JoinThroughProviderTests`, `OfflineModeTests`, `KeychainDeviceKeyStoreTests`) use today.
 5. Vault store, backups, thinning, history, export and import (`+VaultStore`, `+Backup` (its reminder moved in step
-   3), `+Thinning`, `+History`, `+Export`, `+BulkExport`, `+Import`, `+OpenedFiles`, `+Storage`, `+VaultDetails`):
+   3), `+Thinning`, `+History`, `+Export`, `+BulkExport`, `+Import`, `+OpenedFiles`, `+Storage`, `+VaultDetails` (its
+   Add WebDAV Server moved in step 4b), and `open(recent:)` of `+Browser`, which calls `copyIn`):
    `UTType` and `CGRect` uses become library values; `FolderTargetAppTests`, `BackupAppTests`, `ReadOnlyVaultTests`,
-   `VaultStoreAppTests`.
+   `VaultStoreAppTests`, `VaultDetailsAppTests`, `ReencryptAppTests` (its folder-target cases), and the model halves of
+   `JoinThroughProviderTests` and `OfflineModeTests` (they build their vaults with `copyIn`).
 6. App lifecycle and windows (`+Background`, `+Suspension`, `+Windows`, `+MenuBar`, the drags of `+Browser`): the
    background-task and lifecycle protocols move, UIKit's implementations stay; `DragPayload`/`DropTarget` leave
    `SidebarDrop.swift`. "Keep Screen On" (`editorsChanged`, the UIKit `IdleTimerKeeper`) follows the open editors
