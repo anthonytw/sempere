@@ -1,26 +1,11 @@
 import Foundation
 import PencilKit
 import Sempere
+import SempereAppCore
 
 /// A page's canvas drawing, ready to show, with the ledger fingerprint of
-/// each of its strokes (one canvas stroke per stored stroke, in stored
-/// order). Built off the main actor (`DrawingPreparation`).
-struct PreparedDrawing: @unchecked Sendable {
-    let drawing: PKDrawing
-    let infos: [CanvasStrokeInfo]
-
-    init(drawing: PKDrawing) {
-        self.drawing = drawing
-        infos = drawing.strokes.map(CanvasStrokeInfo.init)
-    }
-}
-
-/// A drawing handed between actors as it is (PencilKit's value types are
-/// immutable once built).
-struct SendableDrawing: @unchecked Sendable {
-    let drawing: PKDrawing
-    init(_ drawing: PKDrawing) { self.drawing = drawing }
-}
+/// each of its strokes (`SempereAppCore.PreparedInk` on PencilKit).
+typealias PreparedDrawing = SempereAppCore.PreparedInk<PencilCanvas>
 
 /// Turning stored strokes into the canvas's drawing without blocking the
 /// main actor (docs/io.md "Opening a note fast").

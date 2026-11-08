@@ -4,6 +4,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Smoothed mouse and trackpad strokes on a Mac (`MouseInk.swift`,
 /// docs/mac.md "Mouse and trackpad"). The filter itself is tested on Linux

@@ -4,6 +4,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Synthetic ink through the app's real canvas path: a `PageCanvasHost` in a window, its
 /// `PageCanvasView.Coordinator` as the canvas delegate (as `PageCanvasView` and the paged stack

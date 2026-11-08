@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// One note's revisions as read for the history browser: loaded once, so
 /// previewing several restore points does not decrypt the note again. The
@@ -210,8 +211,7 @@ extension AppModel {
         let gen = generation
         let state = try await offMain { try data.state(at: point) }
         try ensureCurrent(gen)
-        return NoteEditor(noteID: data.noteID, state: state, writer: nil,
-                          readOnlyReason: String(localized: "Preview of an earlier version. Nothing here can be edited."))
+        return NoteEditor(noteID: data.noteID, state: state, writer: nil, readOnly: .preview, perf: AppPerfSink())
     }
 
     /// Restores note `id` to `point` with one delta (`NoteWriter.restore`),

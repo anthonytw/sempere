@@ -2,19 +2,7 @@ import AVFoundation
 import Foundation
 import Sempere
 import SempereRender
-
-/// A clip ready to store (format.md §8.2.7): the work copy to stream into the
-/// blob, what its container says, the edits that blank its location and
-/// device metadata on the way (none when the privacy setting is off), and
-/// its poster frame (nil when no frame could be taken: readers then draw a
-/// placeholder with the play mark).
-struct PreparedVideo: Sendable {
-    /// Plaintext work copy: `discard` it when done.
-    var file: URL
-    var info: VideoInfo
-    var edits: [ByteEdit]
-    var poster: PreparedImage?
-}
+import SempereAppCore
 
 /// Turns a picked, recorded or dropped clip into what is stored (docs/attachments.md
 /// §14 G2). The container is read by the shared pure-Swift `VideoProbe`, the

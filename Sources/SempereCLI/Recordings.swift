@@ -179,14 +179,12 @@ struct RecordingsRename: ParsableCommand {
         let vault = try access.openVault(.required)
         let id = try vault.resolveNote(note)
         let target = try resolveRecording(recording, in: try liveState(vault, id))
-        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
-            guard let current = state.recordings.first(where: { $0.id == target.id }) else {
+            guard state.recordings.contains(where: { $0.id == target.id }) else {
                 throw CLIError.failure("the recording was removed while the command ran")
             }
-            guard (current.title ?? "") != t else { return [] }
-            return [.setRecording(recordingId: current.id, change: .title(t.isEmpty ? nil : t))]
+            return NoteOps.renameRecording(target.id, to: title, in: state.recordings)
         }
         try reportEdit(vault, id, r, output: output, done: "Renamed the recording", unchanged: "The recording already has that title.")
     }

@@ -7,6 +7,7 @@ import Testing
 import UIKit
 import Vision
 @testable import SempereApp
+import SempereAppCore
 
 /// A recognizer that returns fixed text, counting the strokes it was shown.
 final class FakeRecognizer: PageRecognizing, @unchecked Sendable {

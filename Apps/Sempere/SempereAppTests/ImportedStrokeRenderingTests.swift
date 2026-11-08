@@ -5,6 +5,7 @@ import PencilKit
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Imported strokes (Notability: thin pens, polylines, highlighters, scaled to
 /// letter width) must show on the canvas where SempereRender draws them. PencilKit

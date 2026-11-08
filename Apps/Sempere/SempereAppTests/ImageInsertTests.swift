@@ -6,6 +6,7 @@ import Testing
 import UIKit
 import UniformTypeIdentifiers
 @testable import SempereApp
+import SempereAppCore
 
 /// Images into notes (docs/attachments.md §14 task E1): the privacy setting
 /// (on by default: HEIC → JPEG, no location or camera data), orientation kept

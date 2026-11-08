@@ -172,7 +172,7 @@ SwiftUI `List`.
     session was killed first.
   - `RenderCache` (`Library/Caches/Sempere/Renders`, 256 MB,
     `Sempere.renderCacheMegabytes`, plus 96 MB of decoded images in memory):
-    image items as drawn (`ItemRendering`), and one preview bitmap per PDF page
+    image items as drawn (`ItemRendering`, on SempereRender's `ItemRenderKey`), and one preview bitmap per PDF page
     item at the unzoomed screen scale. A PDF page shows its preview at once,
     before its blob is opened, and the tile layer draws the sharp page over
     it. Files are sealed like the drawing cache's.

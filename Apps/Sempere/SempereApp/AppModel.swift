@@ -1076,7 +1076,7 @@ final class AppModel {
                                                    guard let self else { throw CancellationError() }
                                                    try self.ensureCurrent(gen)   // never into another vault
                                                    try await self.downloadNote(noteID)
-                                               })
+                                               }, perf: AppPerfSink())
         await afterIO?()
         guard gen == generation, selectedNoteID == noteID,   // closed, or the selection moved on meanwhile
               editor?.noteID != noteID else {                // a concurrent open won; keep its edits
@@ -1112,7 +1112,7 @@ final class AppModel {
             Task { try? await self.refresh([id]) }   // search sees the new text
         }
         Perf.end(interval, "\(Perf.short(noteID)) pages=\(opened.pages.count) fromCache=\(opened.isPreparing)")
-        opened.openInterval = render   // ended by the canvas when the ink is on screen
+        opened.openInterval = PerfInterval(render)   // ended by the canvas when the ink is on screen
         shown = true
         editor = opened
         applyPendingJump()

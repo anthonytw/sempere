@@ -4,6 +4,7 @@ import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 private final class MarkdownFixtureToken {}
 

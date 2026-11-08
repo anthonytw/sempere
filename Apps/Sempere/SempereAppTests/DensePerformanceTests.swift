@@ -6,6 +6,7 @@ import Testing
 import UIKit
 import os
 @testable import SempereApp
+import SempereAppCore
 
 /// Baselines of `DensePerformanceTests`, measured on the Mac (Mac Catalyst) with the sizes below.
 /// Update them with `SEMPERE_PERF_RECORD=1` (docs/ci.md "Performance tests"): the run prints a

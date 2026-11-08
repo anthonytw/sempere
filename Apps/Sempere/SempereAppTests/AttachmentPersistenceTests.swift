@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import Sempere
+import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp

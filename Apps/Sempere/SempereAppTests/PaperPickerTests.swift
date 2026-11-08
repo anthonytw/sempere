@@ -4,6 +4,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// The paper picker's model, the remembered default and applying paper to a note.
 @MainActor

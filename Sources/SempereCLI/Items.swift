@@ -281,7 +281,7 @@ struct ItemsReplace: ParsableCommand {
         let vault = try access.openVault(.required)
         let id = try vault.resolveNote(note)
         let data = try readInput(file, limit: ImageLimits.maxBlobBytes, what: "image (exports draw larger ones as placeholders)")
-        let image = try translating { try ImageIngest.prepare(data, keepMetadata: keepMetadata) }
+        let image = try translating { try ImageIngest.prepare(data, privacy: !keepMetadata, converter: nil) }
         let ref = BlobRef(content: image.data, type: image.mediaType)
         // Refuse before anything is written: the item must be an image.
         let (page, found) = try findItem(item, in: try liveState(vault, id))

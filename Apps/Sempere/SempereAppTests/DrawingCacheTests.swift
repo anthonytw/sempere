@@ -3,6 +3,7 @@ import PencilKit
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// The drawing cache (docs/io.md "Opening a note fast"): a miss converts and
 /// stores, a hit opens from the cache and is checked against what is read,

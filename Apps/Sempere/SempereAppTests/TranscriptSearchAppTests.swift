@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// The app's search of recording transcripts (GA-06): opt-in, the CLI's phrase rules, and a hit that
 /// jumps to the recording at the segment.

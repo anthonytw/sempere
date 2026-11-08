@@ -4,6 +4,7 @@ import PencilKit
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// The canvas path of a drawing change (`StrokeLedger.update(_:tool:)`, which
 /// fingerprints only the strokes that fail the cheap check) against the full

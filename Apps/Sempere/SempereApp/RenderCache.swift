@@ -3,6 +3,7 @@ import CryptoKit
 import Foundation
 import ImageIO
 import Sempere
+import SempereRender
 import UIKit
 import UniformTypeIdentifiers
 

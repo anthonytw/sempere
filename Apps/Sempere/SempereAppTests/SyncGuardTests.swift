@@ -3,6 +3,7 @@ import Sempere
 import PencilKit
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Counts the `verify` calls of `NoteEditor.mergeRevisions` (made by each
 /// read of the note, twice per read, on a background thread) and can hold the

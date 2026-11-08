@@ -1,18 +1,37 @@
-import CoreGraphics
 import Foundation
 import Sempere
 import SempereRender
+
+/// A PDF ready to be stored (the app's `PDFPreparation`): an unencrypted file in the app's temporary
+/// folder (delete it once written) and its pages as the format sees them.
+public struct PreparedPDF: Sendable {
+    /// The file to store (plaintext: never leave it behind, `PDFPreparation.discard`).
+    public var file: URL
+    /// Every page: index and effective size (`PDFIngest`, shared with the CLI).
+    public var pages: [PDFPageRef]
+    /// Whether the PDF was encrypted and is stored decrypted.
+    public var decrypted: Bool
+    /// The picked file's name without `.pdf`, for a new note's title.
+    public var name: String
+
+    public init(file: URL, pages: [PDFPageRef], decrypted: Bool, name: String) {
+        self.file = file
+        self.pages = pages
+        self.decrypted = decrypted
+        self.name = name
+    }
+}
 
 /// Adding images and PDF pages to the open note (docs/attachments.md §14
 /// tasks E1, E3), and cropping. The blob is written first, then one delta;
 /// frames, z order and pages come from the shared `NoteOps` builders the
 /// CLI's `attach image`, `attach pdf` and `items crop` use.
-extension NoteEditor {
+extension NoteEditorModel {
     /// Places `image` (from `ImagePreparation`) on `pageID`: fitted into the
     /// part of the page on screen (`visible`, page points), centered on `point`
     /// when given (a drop), else on what is on screen (`NoteOps.viewFrame`).
     @discardableResult
-    func insertImage(_ image: PreparedImage, on pageID: UUID, visible: CGRect?,
+    public func insertImage(_ image: PreparedImage, on pageID: UUID, visible: CGRect?,
                      at point: CGPoint? = nil) async throws -> Item {
         guard canEditItems else { throw ItemError.notEditable }
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
@@ -30,7 +49,7 @@ extension NoteEditor {
     /// below the page's items it would cover (`NoteOps.unoccupied`: TestFlight
     /// 1.0.0, a second clip or card landed on the first), unless the user
     /// dropped it there. An infinite page grows to keep it in reach.
-    func placedFrame(_ frame: Rect, on page: Page, dropped: Bool) -> Rect {
+    public func placedFrame(_ frame: Rect, on page: Page, dropped: Bool) -> Rect {
         guard !dropped else { return frame }
         let placed = NoteOps.unoccupied(frame, among: page.items, pageSize: pageSize)
         growPage(toFit: placed.y + placed.h)
@@ -46,7 +65,7 @@ extension NoteEditor {
     /// - Throws: `AttachmentOpsError.noSuchImage` when the page has no image
     ///   `id` (checked again after the blob is written), `ItemError`, or a write error.
     @discardableResult
-    func replaceImage(_ id: UUID, with image: PreparedImage, on pageID: UUID) async throws -> (old: Item, new: Item) {
+    public func replaceImage(_ id: UUID, with image: PreparedImage, on pageID: UUID) async throws -> (old: Item, new: Item) {
         guard canEditItems else { throw ItemError.notEditable }
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
         let planned = BlobRef(content: image.data, type: image.mediaType)
@@ -74,7 +93,7 @@ extension NoteEditor {
     ///   one infinite page; import the PDF as a new note, or switch to pages),
     ///   `ItemError.notEditable`, or a write error.
     @discardableResult
-    func insertPDFPages(_ pdf: PreparedPDF, after index: Int) async throws -> [UUID] {
+    public func insertPDFPages(_ pdf: PreparedPDF, after index: Int) async throws -> [UUID] {
         guard canEditItems else { throw ItemError.notEditable }
         guard !isPageless else { throw AttachmentOpsError.pagelessNote }
         // Fail before anything is written when the pages cannot be added.
@@ -94,7 +113,7 @@ extension NoteEditor {
     /// stays in place). Returns the crop it had (nil: none), wrapped; nil when
     /// nothing changed.
     @discardableResult
-    func setItemCrop(_ id: UUID, to crop: Rect?, on pageID: UUID) -> Rect?? {
+    public func setItemCrop(_ id: UUID, to crop: Rect?, on pageID: UUID) -> Rect?? {
         guard canEditItems, let page = pages.first(where: { $0.id == pageID }),
               let item = page.items.first(where: { $0.id == id }),
               let edit = try? NoteOps.setCrop(id, to: crop, on: page), applyItemEdit(edit) else { return nil }
@@ -104,15 +123,7 @@ extension NoteEditor {
 
 extension Rect {
     /// A rect in page points from a Core Graphics one.
-    init(_ r: CGRect) {
+    public init(_ r: CGRect) {
         self.init(x: Double(r.origin.x), y: Double(r.origin.y), w: Double(r.size.width), h: Double(r.size.height))
-    }
-}
-
-extension ItemActions {
-    /// Crops an item (one delta, one undo step that puts the old crop back).
-    func setCrop(_ id: UUID, to crop: Rect?, on page: UUID) {
-        guard let old = editor.setItemCrop(id, to: crop, on: page) else { return }
-        register(String(localized: "Crop", comment: "Undo action name (Edit menu: Undo …)")) { $0.setCrop(id, to: old, on: page) }
     }
 }

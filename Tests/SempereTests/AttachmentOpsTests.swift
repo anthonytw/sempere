@@ -252,4 +252,18 @@ final class AttachmentOpsTests: XCTestCase {
         overlapping.segments = [.init(start: 0, end: 2, text: "a"), .init(start: 1, end: 3, text: "b")]
         XCTAssertThrowsError(try NoteOps.setTranscript(tRef, content: try overlapping.encoded(), for: rec.id, in: state))
     }
+
+    /// Rename (the app's and `sempere recordings rename`): trimmed, empty clears, the same title writes nothing.
+    func testRenamingARecordingTrimsAndClears() {
+        let audio = BlobRef(sha256: String(repeating: "ef", count: 32), size: 10, type: "audio/mp4")
+        var rec = NoteOps.recording(blob: audio, started: Date(timeIntervalSince1970: 0), title: "Lecture")
+        XCTAssertEqual(NoteOps.renameRecording(rec.id, to: "  Week 2 \n", in: [rec]),
+                       [.setRecording(recordingId: rec.id, change: .title("Week 2"))])
+        XCTAssertEqual(NoteOps.renameRecording(rec.id, to: " ", in: [rec]),
+                       [.setRecording(recordingId: rec.id, change: .title(nil))])
+        XCTAssertEqual(NoteOps.renameRecording(rec.id, to: "Lecture ", in: [rec]), [])
+        XCTAssertEqual(NoteOps.renameRecording(UUID(), to: "Other", in: [rec]), [])
+        rec.title = nil
+        XCTAssertEqual(NoteOps.renameRecording(rec.id, to: "", in: [rec]), [], "no title, none given")
+    }
 }

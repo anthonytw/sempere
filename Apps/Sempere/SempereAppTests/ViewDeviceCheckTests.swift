@@ -6,6 +6,7 @@ import Testing
 import UIKit
 import UIKit.UIGestureRecognizerSubclass
 @testable import SempereApp
+import SempereAppCore
 
 /// A pan the test moves: what `ItemSelectionController.panned` reads from a real one.
 final class FakePan: UIPanGestureRecognizer {

@@ -5,6 +5,7 @@ import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Device check c42 ("Export right after drawing"), in the app on the simulator and on Mac Catalyst: with the
 /// real autosave debounce (1.5 s), ink drawn 0, 0.5 and 1.4 s before an export, during the autosave's own write,

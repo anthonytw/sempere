@@ -4,6 +4,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// The ink device checks of the audit's checklist (plan "Device checks after the audit"), automated
 /// through the real canvas path (`InkInjector`) on synthetic ink (`SyntheticInk`, as `sempere pages

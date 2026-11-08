@@ -1550,7 +1550,7 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   of rotated frames) in `Sources/Sempere/ItemOps.swift`, for the CLI too;
   `ItemRaster` (`Sources/SempereRender`): one item drawn alone through the PNG
   export's composition. App: `NoteWriter.addBlob`/`copyBlob`; `NoteEditor+Items`
-  (`addAttachment(file:|data:type:on:item:)` is the entry point for E1, E3, E4;
+  (SempereAppCore; `addAttachment(file:|data:type:on:item:)` is the entry point for E1, E3, E4;
   every gesture one delta); `ItemActions` (undo/redo on the canvas's undo
   manager; undo of a delete re-adds under new ids with `parent`);
   `ItemClipboard` (in-app only, never the system pasteboard); `BlobCache`;
@@ -1570,11 +1570,13 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   when:* with the setting on, a HEIC with GPS becomes a JPEG blob without APP1;
   with it off, the HEIC is stored as picked and still exports without location;
   orientation 6 photo displays upright.
-  *Code:* `ImagePreparation` (app): JPEG and PNG through the CLI's
-  `ImageIngest`; HEIC (setting on), WebP, GIF, TIFF and CMYK JPEG converted
-  with ImageIO to JPEG q 0.9 (PNG with alpha) and then through `ImageIngest`,
-  so one place decides what is stored; with the setting off a HEIC is stored as
-  picked. Frames from `NoteOps.placeImage` and `NoteOps.viewFrame` (fitted into
+  *Code:* `ImageIngest.prepare(_:privacy:converter:)` (SempereRender), the
+  one rule the app and `sempere attach image` / `items replace` call: JPEG and
+  PNG through `ImageIngest`; with the app's ImageIO converter
+  (`ImagePreparation`, `ImageIOConverter`), HEIC (setting on), WebP, GIF, TIFF
+  and CMYK JPEG converted to JPEG q 0.9 (PNG with alpha) and then through
+  `ImageIngest`; with the setting off a HEIC is stored as picked. The CLI has
+  no converter and takes JPEG and PNG only. Frames from `NoteOps.placeImage` and `NoteOps.viewFrame` (fitted into
   what is on screen, or centered on a drop). Insert menu in the editor toolbar
   (Photos, Take Photo where there is a camera and never on a Mac, Paste, PDF
   Pages), drops on the canvas (`UIDropInteraction`: images and PDFs from other
@@ -1646,8 +1648,9 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   app-wide), `RecordingAssembly` (segments joined by `AVMutableComposition`,
   passthrough else AAC), `RecordingRecovery` (a session left by a crash is saved
   into its note, titled "Recovered recording", the next time the note opens),
-  `NoteEditor+Recordings` (blob first, then one `addRecording` delta; rename,
-  delete; strokes stamped in `StrokeLedger.items(for:tool:stamp:)`, pieces of a
+  `NoteEditor+RecordingSession` (app) and `NoteEditor+Recordings` (SempereAppCore:
+  blob first, then one `addRecording` delta; rename by `NoteOps.renameRecording`,
+  as the CLI; delete; strokes stamped in `StrokeLedger.items(for:tool:stamp:)`, pieces of a
   sliced stroke keep their parent's `rec`; items placed while recording get
   `rec` too), `RecordingPlayer` (from the `BlobCache`), the canvas's "Tap Ink to
   Play" mode (drawing off, a tap on linked ink plays from it) and playback

@@ -378,6 +378,15 @@ extension NoteOps {
         return [.addRecording(recording)]
     }
 
+    /// The op that renames recording `id` of `recordings` to `title`, trimmed; an empty title clears it. None
+    /// when it already has that title or is not there (the app's Rename and `sempere recordings rename`).
+    public static func renameRecording(_ id: UUID, to title: String, in recordings: [Recording]) -> [Op] {
+        guard let current = recordings.first(where: { $0.id == id }) else { return [] }
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (current.title ?? "") != t else { return [] }
+        return [.setRecording(recordingId: id, change: .title(t.isEmpty ? nil : t))]
+    }
+
     /// The op that sets `recording`'s transcript to `transcript`, the blob
     /// holding `content` (format.md §8.3.2). The content must decode, name
     /// this recording, and have valid segments; the one that is there is

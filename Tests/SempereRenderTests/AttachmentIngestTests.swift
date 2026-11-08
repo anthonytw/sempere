@@ -113,6 +113,76 @@ final class AttachmentIngestTests: XCTestCase {
 
     // MARK: PDF
 
+    // MARK: the shared rule (`prepare(_:privacy:converter:)`: the app's Add Image, the CLI's attach image)
+
+    /// A converter that records what it was asked and answers with a 2 × 1 PNG.
+    final class FakeConverter: ImageConverting, @unchecked Sendable {
+        private let lock = NSLock()
+        private var calls: [String] = []
+        var asked: [String] { lock.withLock { calls } }
+        let output: Data
+
+        init(output: Data? = nil) throws {
+            self.output = try output ?? PNGEncoder.encode(width: 2, height: 1, rgba: [255, 0, 0, 255, 0, 0, 255, 255])
+        }
+
+        func asPicked(_ data: Data) throws -> PreparedImage {
+            lock.withLock { calls.append("picked") }
+            return PreparedImage(data: data, mediaType: "image/heic", pixelSize: Size(w: 3, h: 4), orientation: nil)
+        }
+
+        func convert(_ data: Data, keepMetadata: Bool) throws -> Data {
+            lock.withLock { calls.append("convert keep=\(keepMetadata)") }
+            return output
+        }
+    }
+
+    static let heic = Data([0, 0, 0, 24] + Array("ftypheic".utf8) + [0, 0, 0, 0])
+
+    func testWithoutAConverterOnlyJPEGAndPNGAreTaken() throws {
+        let jpeg = try Self.image("metadata.jpg")
+        XCTAssertEqual(try ImageIngest.prepare(jpeg, privacy: true, converter: nil), try ImageIngest.prepare(jpeg))
+        XCTAssertEqual(try ImageIngest.prepare(jpeg, privacy: false, converter: nil),
+                       try ImageIngest.prepare(jpeg, keepMetadata: true))
+        XCTAssertThrowsError(try ImageIngest.prepare(Self.heic, privacy: false, converter: nil)) {
+            XCTAssertEqual($0 as? ImageIngestError, .heic)
+        }
+        XCTAssertThrowsError(try ImageIngest.prepare(Data("RIFF....WEBP".utf8), privacy: true, converter: nil)) {
+            XCTAssertEqual($0 as? ImageIngestError, .unsupportedFormat)
+        }
+    }
+
+    func testAConverterKeepsHEICOnlyWithPrivacyOffAndConvertsTheRest() throws {
+        let picked = try FakeConverter()
+        XCTAssertEqual(try ImageIngest.prepare(Self.heic, privacy: false, converter: picked).mediaType, "image/heic")
+        XCTAssertEqual(picked.asked, ["picked"])
+
+        let private_ = try FakeConverter()
+        let converted = try ImageIngest.prepare(Self.heic, privacy: true, converter: private_)
+        XCTAssertEqual(private_.asked, ["convert keep=false"])
+        XCTAssertEqual(converted.mediaType, "image/png")
+        XCTAssertEqual(converted.pixelSize, Size(w: 2, h: 1))
+
+        let webp = try FakeConverter()
+        _ = try ImageIngest.prepare(Data("RIFF....WEBP".utf8), privacy: false, converter: webp)
+        XCTAssertEqual(webp.asked, ["convert keep=true"])
+
+        // A JPEG the reader cannot decode (a CMYK one) is converted; one it can is not.
+        let cmyk = try FakeConverter()
+        _ = try ImageIngest.prepare(Data([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]), privacy: true, converter: cmyk)
+        XCTAssertEqual(cmyk.asked, ["convert keep=false"])
+        let plain = try FakeConverter()
+        _ = try ImageIngest.prepare(try Self.image("metadata.jpg"), privacy: true, converter: plain)
+        XCTAssertEqual(plain.asked, [])
+    }
+
+    func testAConversionThatCannotBeReadBackIsRefused() throws {
+        let broken = try FakeConverter(output: Data("not an image".utf8))
+        XCTAssertThrowsError(try ImageIngest.prepare(Self.heic, privacy: true, converter: broken)) {
+            XCTAssertEqual($0 as? ImageConversionError, .cannotConvert)
+        }
+    }
+
     func testPageSizesAreEffective() throws {
         let classic = try PDFIngest.inspect(try Self.pdf("classic.pdf"))
         XCTAssertEqual(classic.pages.first?.size, Size(w: 400, h: 300))

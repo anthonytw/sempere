@@ -1,5 +1,6 @@
 import PencilKit
 import UIKit
+import SempereAppCore
 
 /// The lasso of "Convert to Math" (docs/attachments.md §14 G1 part 2): while
 /// the editor picks ink (`NoteEditor.mathLassoActive`), `PageCanvasHost`

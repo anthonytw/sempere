@@ -1,6 +1,7 @@
 import Sempere
 import SempereRender
 import UIKit
+import SempereAppCore
 
 /// Typing in text boxes on the canvas (docs/attachments.md §13 "Text
 /// editing on the canvas", task E2). New boxes are Markdown boxes (format.md

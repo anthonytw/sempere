@@ -5,6 +5,7 @@ import SempereRender
 import Testing
 import UniformTypeIdentifiers
 @testable import SempereApp
+import SempereAppCore
 
 /// Video clips in the app (format.md §8.2.7, docs/attachments.md §14 G2):
 /// preparing a clip (the shared probe, the privacy setting's metadata

@@ -1,18 +1,36 @@
-import CoreGraphics
 import Foundation
 import Sempere
 import SempereRender
+
+/// A clip ready to store (format.md §8.2.7; the app's `VideoPreparation`): the work copy to stream into the
+/// blob, what its container says, the edits that blank its location and device metadata on the way (none when
+/// the privacy setting is off), and its poster frame (nil when no frame could be taken: readers then draw a
+/// placeholder with the play mark).
+public struct PreparedVideo: Sendable {
+    /// Plaintext work copy: `discard` it when done.
+    public var file: URL
+    public var info: VideoInfo
+    public var edits: [ByteEdit]
+    public var poster: PreparedImage?
+
+    public init(file: URL, info: VideoInfo, edits: [ByteEdit], poster: PreparedImage?) {
+        self.file = file
+        self.info = info
+        self.edits = edits
+        self.poster = poster
+    }
+}
 
 /// Adding video clips to the open note and giving them a poster (format.md
 /// §8.2.7, docs/attachments.md §14 G2). Blobs first (the poster, then the
 /// clip, streamed with its metadata edits), then one delta; the frame and z
 /// come from the shared `NoteOps.placeVideo` that `sempere attach video` uses.
-extension NoteEditor {
+extension NoteEditorModel {
     /// Places `video` (from `VideoPreparation`) on `pageID`: fitted into the
     /// part of the page on screen (`visible`, page points), centered on
     /// `point` when given (a drop), else on what is on screen.
     @discardableResult
-    func insertVideo(_ video: PreparedVideo, on pageID: UUID, visible: CGRect?, at point: CGPoint? = nil) async throws -> Item {
+    public func insertVideo(_ video: PreparedVideo, on pageID: UUID, visible: CGRect?, at point: CGPoint? = nil) async throws -> Item {
         guard canEditItems else { throw ItemError.notEditable }
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
         let size = pageSize
@@ -39,7 +57,7 @@ extension NoteEditor {
     /// frame could be taken (the CLI on Linux) gets one the first time it
     /// plays here. Returns false when nothing changed.
     @discardableResult
-    func setVideoPoster(_ id: UUID, to poster: PreparedImage, on pageID: UUID) async throws -> Bool {
+    public func setVideoPoster(_ id: UUID, to poster: PreparedImage, on pageID: UUID) async throws -> Bool {
         guard canEditItems else { throw ItemError.notEditable }
         let stored = try await storeBlob(poster.data, type: poster.mediaType)
         guard canEditItems, let page = pages.first(where: { $0.id == pageID }),

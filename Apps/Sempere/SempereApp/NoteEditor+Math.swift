@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// Equations on the open note (format.md §8.2.8, docs/attachments.md §14
 /// G1): typeset with SwiftMath (`MathTypesetter`), the rendered PDF written as

@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Sempere
+import SempereAppCore
 
 /// Items copied for pasting, in this app only (never the system pasteboard:
 /// the plaintext would leave the app). Tied to one open vault: the model
@@ -173,5 +174,13 @@ final class ItemActions {
             MainActor.assumeIsolated { body(target) }
         }
         undoManager?.setActionName(name)
+    }
+}
+
+extension ItemActions {
+    /// Crops an item (one delta, one undo step that puts the old crop back).
+    func setCrop(_ id: UUID, to crop: Rect?, on page: UUID) {
+        guard let old = editor.setItemCrop(id, to: crop, on: page) else { return }
+        register(String(localized: "Crop", comment: "Undo action name (Edit menu: Undo …)")) { $0.setCrop(id, to: old, on: page) }
     }
 }

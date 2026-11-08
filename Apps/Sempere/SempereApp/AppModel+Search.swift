@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// Where a search looks.
 enum SearchScope: String, CaseIterable, Identifiable, Sendable {

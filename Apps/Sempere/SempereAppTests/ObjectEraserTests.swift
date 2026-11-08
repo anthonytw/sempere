@@ -4,6 +4,7 @@ import PencilKit
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// The sized object eraser on PencilKit strokes: hit shapes, and erasing
 /// through the ledger into `removeStroke` ops, with undo.

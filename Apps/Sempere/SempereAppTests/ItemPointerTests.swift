@@ -3,6 +3,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Placed items with a pointer and a keyboard (docs/mac.md "Placed items"):
 /// the pointer's shape over an item and its handles, the arrow keys and

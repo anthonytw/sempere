@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// Where an imported PDF goes.
 enum PDFDestination {

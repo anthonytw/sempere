@@ -5,6 +5,7 @@ import Testing
 import UIKit
 import XCTest
 @testable import SempereApp
+import SempereAppCore
 
 /// `:name` completion in a canvas text box works at the caret, not at the end of the text.
 final class TextBoxEmojiTests: XCTestCase {

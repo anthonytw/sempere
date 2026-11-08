@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// Note windows (Mac): one note per window, each with its own `NoteEditor`.
 ///
@@ -55,7 +56,7 @@ extension AppModel {
         let clock = try deviceClockForWriting()
         let opened = try await NoteEditor.open(vault: vault, noteID: noteID, clock: clock, debounce: editorDebounce,
                                                recognizer: recognizer, recognitionDelay: recognitionDelay,
-                                               verify: partialNoteVerifier(noteID))
+                                               verify: partialNoteVerifier(noteID), perf: AppPerfSink())
         try ensureCurrent(gen)
         if let open = windowEditors[noteID] {   // a concurrent call won
             Task { await opened.close() }

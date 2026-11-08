@@ -3,6 +3,7 @@ import PencilKit
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Timings of the ink paths that run on the main actor per pen-up, erase
 /// sample or playback tick, at a realistic page size. The default size is

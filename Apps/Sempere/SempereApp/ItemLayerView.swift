@@ -1,4 +1,5 @@
 import Sempere
+import SempereRender
 import UIKit
 
 /// Where the item layer gets a note's attachments from (the model's).

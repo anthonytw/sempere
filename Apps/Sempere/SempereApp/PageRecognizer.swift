@@ -6,15 +6,6 @@ import SempereRender
 import UIKit
 import Vision
 
-/// Reads the handwriting of one page. Implementations run off the main
-/// actor; tests substitute a fake.
-protocol PageRecognizing: Sendable {
-    /// The text of `strokes` (one page's live strokes), read in `language`
-    /// (the note's `meta.lang`, format.md §5.4; nil: the recognizer's
-    /// default). `basis` is left nil: the caller sets it from the stroke ids it passed.
-    func recognize(strokes: [Stroke], language: String?) async throws -> Recognition
-}
-
 /// Why a page could not be read.
 enum RecognitionFailure: Error, CustomStringConvertible {
     /// The page's ink could not be drawn into an image (for example, out of memory).

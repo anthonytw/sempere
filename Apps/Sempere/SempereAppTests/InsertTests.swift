@@ -3,6 +3,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// What the Insert menu offers on the iPad, the iPhone and the Mac, where
 /// added images land, drops, and cropping with undo (docs/attachments.md §14

@@ -4,6 +4,7 @@ import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Equations in the app (format.md §8.2.8, docs/attachments.md §14 G1):
 /// SwiftMath typesets a one-page PDF render that the shared reader accepts,

@@ -5,6 +5,7 @@ import Testing
 import UIKit
 import UniformTypeIdentifiers
 @testable import SempereApp
+import SempereAppCore
 
 /// Selecting items on the canvas (build 7 feedback, docs/attachments.md §13
 /// "Selecting items"): one model for every kind and every way in (selection

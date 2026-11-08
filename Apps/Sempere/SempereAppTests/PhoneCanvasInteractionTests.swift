@@ -4,6 +4,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// The iPhone canvas (TestFlight 1.0.0 (2), the owner's iPhone): a finger draws there, so a finger
 /// tap on an item used to leave a dot and select nothing, and a held finger showed no menu. A tap

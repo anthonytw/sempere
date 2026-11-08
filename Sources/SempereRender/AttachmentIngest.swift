@@ -117,6 +117,71 @@ public enum ImageIngest {
     static func exifOrientation(_ data: Data) -> Int { JPEG.exifOrientation(data) ?? 1 }
 }
 
+/// Decoding and re-encoding only a platform image library can do (the app's ImageIO, `ImageIOConverter`): an
+/// image kept as picked (HEIC with the privacy setting off), and every format `ImageIngest` does not read itself
+/// converted to JPEG or PNG. The CLI has none.
+public protocol ImageConverting: Sendable {
+    /// The size and orientation of `data`, stored as it is (nothing re-encoded).
+    func asPicked(_ data: Data) throws -> PreparedImage
+    /// `data` as JPEG or PNG bytes, which `ImageIngest.prepare(_:keepMetadata:)` then takes. Without
+    /// `keepMetadata`, only the pixels (and a JPEG's orientation) are written.
+    func convert(_ data: Data, keepMetadata: Bool) throws -> Data
+}
+
+/// Why `ImageIngest.prepare(_:privacy:converter:)` refused an image it would otherwise have converted.
+public enum ImageConversionError: Error, Equatable, Sendable {
+    /// More than `ImageLimits.maxPixels`, or a result over `ImageLimits.maxBlobBytes`.
+    case tooLarge
+    /// The converted image could not be read back.
+    case cannotConvert
+}
+
+extension ImageIngest {
+    /// What to store for picked, pasted or dropped image bytes (docs/attachments.md §7, §13 "Images"): the one
+    /// rule of the app's Add Image and the CLI's `attach image` / `items replace`. JPEG and PNG go through
+    /// `prepare(_:keepMetadata:)`, their metadata kept only when `privacy` is off. With a `converter` (the app),
+    /// HEIC is stored as picked when `privacy` is off, and everything else (HEIC with privacy on, WebP, GIF,
+    /// TIFF, a JPEG `prepare` cannot read such as CMYK) is converted first and then takes the same path. Without
+    /// one, anything but JPEG and PNG fails as `prepare(_:keepMetadata:)` does. What is stored is at most
+    /// `ImageLimits.maxBlobBytes` (checked here when converting; the CLI's input is bounded by it).
+    ///
+    /// - Throws: `ImageIngestError` (no converter, or a JPEG/PNG that is unreadable for another reason than its
+    ///   size), `ImageConversionError`, or what the converter throws.
+    public static func prepare(_ data: Data, privacy: Bool, converter: (any ImageConverting)?) throws -> PreparedImage {
+        let prepared = try prepareUnchecked(data, privacy: privacy, converter: converter)
+        // The CLI reads at most `ImageLimits.maxBlobBytes` and removing metadata only shrinks; the app reads
+        // larger sources (`ImagePreparation.maxInputBytes`), and a conversion may grow.
+        guard converter == nil || prepared.data.count <= ImageLimits.maxBlobBytes else {
+            throw ImageConversionError.tooLarge
+        }
+        return prepared
+    }
+
+    private static func prepareUnchecked(_ data: Data, privacy: Bool, converter: (any ImageConverting)?) throws -> PreparedImage {
+        guard let converter else { return try prepare(data, keepMetadata: !privacy) }
+        switch format(of: data) {
+        case .jpeg, .png:
+            do {
+                return try prepare(data, keepMetadata: !privacy)
+            } catch let error as ImageIngestError {
+                // A CMYK or otherwise unusual JPEG: the converter takes it below.
+                guard case .unreadable(let why) = error else { throw error }
+                if case .tooLarge = why { throw ImageConversionError.tooLarge }
+            }
+        case .heic where !privacy:
+            return try converter.asPicked(data)
+        case .heic, .other:
+            break
+        }
+        let converted = try converter.convert(data, keepMetadata: !privacy)
+        do {
+            return try prepare(converted, keepMetadata: !privacy)
+        } catch {
+            throw ImageConversionError.cannotConvert
+        }
+    }
+}
+
 /// Why a PDF cannot become a background or figure.
 public enum PDFIngestError: Error, Equatable, Sendable {
     /// Not readable, encrypted, or beyond a reader limit.

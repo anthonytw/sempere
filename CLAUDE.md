@@ -358,8 +358,19 @@ there. Commit messages:
   `merge` (an edit's own re-read, immediate), never by assigning `notes`
   wholesale. Tests that need "another device wrote a revision" use
   `TS.writeAsAnotherDevice` (an eviction alone changes nothing).
+- The note editor's model half is `NoteEditorModel<Canvas>` (`Sources/SempereAppCore/NoteEditor/`: loading,
+  autosave, page and item gestures, merges, recognition, recordings' data, search highlights). It never names
+  PencilKit: the canvas is its `NoteCanvas` type parameter (drawings, conversion, the ledger update, the app's
+  hooks), and it holds each page's canvas drawing next to the page's ledger so both change in one main-actor
+  turn. The app's `NoteEditor` is `NoteEditorModel<PencilCanvas>` (`PencilCanvas.swift`, with the app's own
+  per-editor state in `NoteEditorAppState`: canvas target, math lasso, recording session and player); the
+  microphone half of recording (`NoteEditor+RecordingSession.swift`), typesetting (`NoteEditor+Math`,
+  `+Markdown`, `+MathInk`) stay in the app. It holds no words: `readOnly` (`NoteReadOnly`), `saveFailure`,
+  `recognitionFailure` and `RecordingChangeFailure` are worded by the app (`readOnlyReason`, `saveError`, …).
+  Its tests run on Linux on a canvas of stored strokes (`Tests/SempereAppCoreTests/NoteEditor/TestCanvas.swift`);
+  app suites keep what needs PencilKit or the screen.
 - Remote changes reach an open note in place (`AppModel+RemoteMerge`,
-  `NoteEditor.mergeRevisions`, docs/io.md "Changes from other devices while a
+  `NoteEditor.mergeRevisions`, `NoteEditor+RemoteMerge.swift`, docs/io.md "Changes from other devices while a
   note is open"): a listing names a revision the editor does not know
   (`knownRevisionNames`), the note is downloaded, the editor saves, re-reads
   and applies the result synchronously. Never replace a canvas's drawing for
@@ -370,7 +381,7 @@ there. Commit messages:
   applies only the new revisions to the editor's `ReducedNote` (exact, or it
   falls back to a full read) and the apply compares only the pages they
   changed: any change to the reducer must keep `ReducedNoteTests` (incremental
-  == full read) passing. Tests: `RemoteMergeTests`, `RemoteMergeIncrementalTests`.
+  == full read) passing. Tests: `RemoteMergeTests` (app), `RemoteMergeIncrementalTests` (SempereAppCoreTests).
 - Thinning (`format.md` §5.8.4) is decided from revision metadata first
   (`RevisionMeta`, kept per entry in the `SummaryCache`; `CompactionPlanner.select` /
   `mayDelete` take hollow revisions): never add a rule to `select` that needs ops or
@@ -380,7 +391,7 @@ there. Commit messages:
 - Drawing cache (`DrawingCache`, `Sources/Sempere/DrawingCache.swift`, format.md §10.1): keyed by note id + revision
   file names; a note opened from it is `isPreparing` (read-only) until its
   revisions are read and every shown cached drawing passed
-  `DrawingPreparation.matches`. The canvas gets its drawing through
+  `NoteCanvas.matches` (the app's `DrawingPreparation.matches`). The canvas gets its drawing through
   `readyDrawing`/`prepareDrawing` (off-main, visible strokes first), not
   `drawing(for:)` (synchronous, tests). Bump `DrawingCache.schemaVersion` when
   `StrokeConversion` or the layout changes. The app passes its size limit
@@ -664,7 +675,7 @@ there. Commit messages:
   `attachmentIndexSource`.
 - Placed items on the canvas (task E0, `docs/attachments.md` §14): build item ops
   with the `NoteOps` item builders (`Sources/Sempere/ItemOps.swift`), apply them in
-  the app through `NoteEditor+Items` (`applyItemEdit`: one delta per gesture) and
+  the editor through `NoteEditor+Items` (SempereAppCore; `applyItemEdit`: one delta per gesture) and
   `ItemActions` (undo; a deleted item comes back under a new id with `parent`, item
   tombstones are permanent). New attachments: `NoteEditor.addAttachment(file:|data:…)`
   (blob first, then the delta). The item layer (`ItemLayerView`, between `PaperView`
@@ -682,7 +693,7 @@ there. Commit messages:
   (`PDFPreparation.copyPicked`, plaintext: `discard` it). PDF page items are
   drawn by `PDFTileLayer` (a `CATiledLayer`, `draw(in:)` on Core Animation's
   threads, so `nonisolated` and lock-protected), not as `ItemRaster` bitmaps.
-- Handwriting search (`PageRecognizer.swift`, `NoteEditor` extension, `AppModel+Search.swift`;
+- Handwriting search (`PageRecognizer.swift`, `NoteEditor+Recognition.swift` in SempereAppCore, `AppModel+Search.swift`;
   pure logic in `Sources/Sempere/RecognitionSupport.swift` and `NoteSearch.swift`, tested on
   Linux). Recognition carries `basis` = `RecognitionBasis.digest` of the page's live stroke ids
   (`format.md` §5.5): current iff equal. Recognition without a basis (imported) is
@@ -704,7 +715,7 @@ there. Commit messages:
   while it hovers (`SidebarDrop.accepts`). One drop = one `commit(ids:)`, one `UndoManager` step
   (`NotebookMoveRecord`) on the undo manager of the window it happened in, passed to `move` (the
   model is shared by every Mac window, so it keeps none). The `DropDelegate`s need a real drag session: test the rules, not the UI.
-- Search highlights (`NoteEditor+SearchHighlight.swift`, `SearchMatchCursor`): boxes come from the
+- Search highlights (`NoteEditor+SearchHighlight.swift` in SempereAppCore, `SearchMatchCursor`): boxes come from the
   page's recognition; recognition whose basis no longer matches the strokes, or of a page edited in
   this session (`dirtyPages`), is left out. The layer is a plain `UIView` of `CALayer`s inside the
   canvas, above the paper and the items, below the ink; it follows `zoomChanged()`. In a paged note's stack (`PageStackHost`) each page's canvas draws its own highlights

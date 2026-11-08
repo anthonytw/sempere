@@ -4,6 +4,7 @@ import PencilKit
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// The canvas never takes the keyboard from a field by itself (TestFlight
 /// 1.0.0 on a Mac: "the selected folder constantly steals focus" from the

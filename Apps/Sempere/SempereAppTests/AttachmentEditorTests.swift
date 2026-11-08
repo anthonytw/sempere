@@ -3,6 +3,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Attachment plumbing in the editor (docs/attachments.md §14, task E0):
 /// blobs through `NoteWriter`, then one delta per item gesture (add, move,

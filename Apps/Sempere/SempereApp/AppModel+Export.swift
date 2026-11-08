@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// A request whose sheet shows in the window that asked for it.
 protocol WindowTargeted {

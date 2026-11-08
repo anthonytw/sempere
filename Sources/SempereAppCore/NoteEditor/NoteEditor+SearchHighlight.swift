@@ -5,12 +5,10 @@ import SempereRender
 /// Highlighting the words a search found (recognition boxes, format.md §5.5, and the words inside
 /// text boxes, found with the layout the canvas draws) on the canvas, and stepping through them across
 /// the note's pages.
-extension NoteEditor {
-    /// Where words fall inside a text box: laid out by CoreText, the shaper that draws the canvas's
-    /// text (`TextMatchBoxes`, the CLI's `search --show-boxes` uses the same code with its own shaper).
-    static let textBoxMatcher: TextBoxMatcher = { words, item in
-        TextMatchBoxes.boxes(of: words, in: item, shaper: CoreTextShaper())
-    }
+extension NoteEditorModel {
+    /// Where words fall inside a text box, as the canvas lays it out (`NoteCanvas.textBoxMatcher`: the app's
+    /// CoreText shaper through `TextMatchBoxes`, as the CLI's `search --show-boxes` with its own shaper).
+    public static var textBoxMatcher: TextBoxMatcher { Canvas.textBoxMatcher }
 
     /// The pages as the highlight sees them: recognition that no longer
     /// describes the strokes (edited here, or a basis that does not match)
@@ -21,7 +19,7 @@ extension NoteEditor {
     /// Kept between calls: a page is judged again (its stroke digest included)
     /// only when the page itself, its dirty flag or `isPreparing` changed
     /// since the last answer, so a step with nothing edited judges no page.
-    var pagesForHighlight: [Page] {
+    public var pagesForHighlight: [Page] {
         let dirty = dirtyPages
         if let c = highlightCache, c.preparing == isPreparing, c.dirty == dirty, c.source == pages { return c.result }
         let old = highlightCache
@@ -49,7 +47,7 @@ extension NoteEditor {
     /// (the page the search result named) when it has one, and shows it.
     /// Shows nothing when no word has a box (a match in the title or a tag, or
     /// in a page with neither recognized words nor a text box that contains one).
-    func highlightSearch(query: String, page: UUID?) {
+    public func highlightSearch(query: String, page: UUID?) {
         guard !isPreparing else {
             pendingSearch = (query, page)   // `applyPendingSearch` runs when the pages are read
             return
@@ -61,13 +59,13 @@ extension NoteEditor {
     }
 
     /// Runs a highlight asked for while the note was opening.
-    func applyPendingSearch() {
+    public func applyPendingSearch() {
         guard let pending = pendingSearch else { return }
         highlightSearch(query: pending.query, page: pending.page)
     }
 
     /// Stops highlighting.
-    func clearSearchHighlight() {
+    public func clearSearchHighlight() {
         pendingSearch = nil
         searchCursor = nil
     }
@@ -76,7 +74,7 @@ extension NoteEditor {
     /// the note, showing its page and scrolling to it. The list is rebuilt
     /// first, so a page edited or re-read since is not stepped through with
     /// stale boxes.
-    func stepSearchMatch(_ delta: Int) {
+    public func stepSearchMatch(_ delta: Int) {
         guard var cursor = searchCursor?.refreshed(pages: pagesForHighlight) else {
             searchCursor = nil
             return
@@ -87,7 +85,7 @@ extension NoteEditor {
     }
 
     /// What the canvas draws on page `id`: the matching boxes, the current one flagged.
-    func highlightBoxes(onPage id: UUID) -> [HighlightBox] {
+    public func highlightBoxes(onPage id: UUID) -> [HighlightBox] {
         // Strokes written at the moment a recording is playing (NoteEditor+Recordings).
         let playback = playbackBoxes(onPage: id)
         // A page edited since the cursor was made has stale boxes: none until the next step rebuilds the list.
@@ -98,7 +96,7 @@ extension NoteEditor {
     /// Shows the current match: its page becomes the current one and the canvas scrolls to it
     /// (`revealToken`). No page jump: in a paged note a jump to the top of the match's page arriving
     /// after the reveal scrolled a match lower on a page out of view again (`showPageOfMatch`).
-    private func revealCurrentMatch() {
+    func revealCurrentMatch() {
         guard let cursor = searchCursor else { return }
         showPageOfMatch(id: cursor.current.pageId)
         revealToken &+= 1
@@ -106,15 +104,21 @@ extension NoteEditor {
 }
 
 /// One highlighted word (or, during playback, a stroke): its box in page points.
-struct HighlightBox: Equatable, Sendable {
-    enum Style: Equatable, Sendable {
+public struct HighlightBox: Equatable, Sendable {
+    public enum Style: Equatable, Sendable {
         /// A word the search found.
         case search
         /// Ink written at the moment the recording is playing.
         case playback
     }
 
-    var box: Recognition.Box
-    var isCurrent: Bool
-    var style: Style = .search
+    public var box: Recognition.Box
+    public var isCurrent: Bool
+    public var style: Style = .search
+
+    public init(box: Recognition.Box, isCurrent: Bool, style: Style = .search) {
+        self.box = box
+        self.isCurrent = isCurrent
+        self.style = style
+    }
 }

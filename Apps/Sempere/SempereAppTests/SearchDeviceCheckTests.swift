@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Device check c15 (search under load), automated: stepping through the matches of a large note,
 /// typing a query while Recognize All runs and notes arrive from another device, and searching

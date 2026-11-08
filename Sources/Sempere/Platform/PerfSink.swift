@@ -12,6 +12,33 @@ public protocol PerfSink: Sendable {
     func event(_ phase: String, _ detail: String)
     /// A log line of `category` (`os.Logger`'s category in the app).
     func log(_ level: LogLevel, _ category: String, _ message: String)
+    /// Starts an interval of `phase` whose detail is known only when it ends (`end`): a cache lookup's hit or
+    /// miss, or one that spans several calls (a note's first render).
+    func begin(_ phase: String) -> PerfInterval
+    /// Ends `interval`, reporting it with `detail`.
+    func end(_ interval: PerfInterval, _ detail: String)
+}
+
+/// An interval a `PerfSink` began (`begin`). `mark` is the sink's own (the app's signpost interval).
+public struct PerfInterval: Sendable {
+    public let phase: String
+    public let mark: (any Sendable)?
+
+    public init(phase: String, mark: (any Sendable)? = nil) {
+        self.phase = phase
+        self.mark = mark
+    }
+}
+
+extension PerfSink {
+    /// An interval reported as one event when it ends (sinks without intervals of their own).
+    public func begin(_ phase: String) -> PerfInterval { PerfInterval(phase: phase) }
+    public func end(_ interval: PerfInterval, _ detail: String) { event(interval.phase, detail) }
+}
+
+extension UUID {
+    /// The first 8 hex digits, lowercased: how log details name a note or page.
+    public var perfShort: String { String(uuidString.lowercased().prefix(8)) }
 }
 
 /// The level of a `PerfSink.log` line (`os.Logger`'s levels).
@@ -56,5 +83,9 @@ public final class MemoryPerfSink: PerfSink, @unchecked Sendable {
 
     public func log(_ level: LogLevel, _ category: String, _ message: String) {
         lock.withLock { kept.append(.log(level, category: category, message: message)) }
+    }
+
+    public func end(_ interval: PerfInterval, _ detail: String) {
+        lock.withLock { kept.append(.measured(phase: interval.phase, detail: detail)) }
     }
 }

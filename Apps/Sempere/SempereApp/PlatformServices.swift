@@ -41,6 +41,16 @@ struct AppPerfSink: PerfSink {
         Perf.event(phase, detail)
     }
 
+    func begin(_ phase: String) -> PerfInterval {
+        guard let known = Perf.Phase(rawValue: phase) else { return PerfInterval(phase: phase) }
+        return PerfInterval(Perf.begin(known))
+    }
+
+    func end(_ interval: PerfInterval, _ detail: String) {
+        guard let mark = interval.mark as? PerfMark else { return }
+        Perf.end(mark.interval, detail)
+    }
+
     func log(_ level: LogLevel, _ category: String, _ message: String) {
         let logger = perfLoggers.withLock { loggers in
             if let known = loggers[category] { return known }
@@ -57,6 +67,18 @@ struct AppPerfSink: PerfSink {
         }
         logger.log(level: type, "\(message, privacy: .public)")
     }
+}
+
+extension PerfInterval {
+    /// A signpost interval the app began itself (`Perf.begin`), for the package to end (`AppPerfSink.end`).
+    init(_ interval: Perf.Interval) {
+        self.init(phase: interval.phase.rawValue, mark: PerfMark(interval: interval))
+    }
+}
+
+/// `Perf.Interval` handed through the package (its signpost state is used on one thread at a time).
+struct PerfMark: @unchecked Sendable {
+    let interval: Perf.Interval
 }
 
 // MARK: - FolderBookmarks

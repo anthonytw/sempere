@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// Attachments of the open vault (docs/attachments.md §4, §13): the cache of
 /// decrypted blobs the canvas draws from, fetching a partial copy's blobs on

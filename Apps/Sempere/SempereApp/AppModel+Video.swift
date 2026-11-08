@@ -3,6 +3,7 @@ import CoreGraphics
 import Foundation
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// Video clips (format.md §8.2.7, docs/attachments.md §14 G2): adding a
 /// picked, recorded or dropped clip, and playing one. A clip is prepared off

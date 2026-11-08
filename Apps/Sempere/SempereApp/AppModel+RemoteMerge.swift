@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// Revisions written elsewhere (another device through iCloud Drive, the CLI,
 /// or this device's browser edits) reach a note that is open in an editor

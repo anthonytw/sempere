@@ -5,6 +5,7 @@ import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// PDFs into notes (docs/attachments.md §14 task E3): a new note with one
 /// finite page per PDF page, pages inserted into the open note, encrypted

@@ -4,6 +4,7 @@ import PencilKit
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Revisions another device writes while a note is open reach the editor in
 /// place (`NoteEditor.mergeRevisions`, `AppModel+RemoteMerge`): nothing
@@ -238,7 +239,7 @@ struct RemoteMergeTests {
         try f.elsewhere([.deleteNote])
         #expect(try await f.merge() == .merged(fromOtherDevice: true))
         #expect(f.editor.isReadOnly)
-        #expect(f.editor.readOnlyReason == NoteEditor.deletedReason)
+        #expect(f.editor.readOnly == .deleted)
         try f.elsewhere([.restoreNote])
         try await f.merge()
         #expect(!f.editor.isReadOnly)

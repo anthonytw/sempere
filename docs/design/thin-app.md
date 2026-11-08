@@ -48,7 +48,8 @@ those lines can move:
   tap log and the status-item protocol, so the widget and the Mac status item do not link the whole
   core.
 - **`NoteEditor` never names PencilKit in the library.** The canvas glue (`PKDrawing`, about 240
-  lines) stays in the app, behind a widened `RemoteInkView` and a `NoteEditing` protocol.
+  lines) stays in the app, behind the editor's `NoteCanvas` type parameter and a widened `RemoteInkView`
+  (wave 5, decided for good: a type parameter rather than the `NoteEditing` protocol first planned, see below).
 - **Tests move with their code**, into `Tests/<Module>Tests` (Swift Testing is fine there). App tests
   that import UIKit, SwiftUI or PencilKit stay in the app's test target.
 
@@ -152,6 +153,27 @@ and the sessions' tests are `Tests/SempereAppCoreTests/SyncCoordinatorTests.swif
 `AppModel` and move in wave 5: a session's run closure is built by `AppModel+SyncTargets` and `AppModel+WebDAV`, and
 it decides two-way only for `phase == .unlocked && !syncVaultStale`.
 
+Wave 5 (editor half, 2026-11-07) moved the `NoteEditor`'s model half: `NoteEditorModel<Canvas: NoteCanvas>`
+(`Sources/SempereAppCore/NoteEditor/`), with loading and the drawing cache, autosave, page and item gestures,
+images, PDFs and video, merges, recognition, recordings' data (save, place, rename, remove, playback highlight)
+and search highlights. The seam is a type parameter rather than the `NoteEditing` protocol first planned, and it stays (decided in the
+review of #18): the editor keeps
+each page's canvas drawing next to the page's `StrokeLedger`, one canvas stroke per entry, and a merge, the end of a
+cached open and ink taken off a page change both in one main-actor turn, so the drawing type has to be the
+editor's own (`NoteCanvas.Drawing`, `CanvasStroke`) rather than state behind a protocol the app implements.
+`NoteCanvas` also carries the conversion (`convert`, `matches`, `encode`/`decode` for the cache), the ledger update
+of a canvas drawing, the text layout and matcher, and the app's hooks (the running recording's stamp, the part of a
+page on screen, close, a removed recording, a failed rename or delete). The app's `NoteEditor` is
+`NoteEditorModel<PencilCanvas>` (`PencilCanvas.swift`), whose per-editor state (canvas target, the math lasso and
+its request, the recording session and player, recording errors) is `NoteEditorAppState`, read through
+forwarding properties so no view changed. The library holds no words: `NoteReadOnly`, `saveFailure`,
+`RecognitionPassFailure` and `RecordingChangeFailure` are worded in `PencilCanvas.swift`. `RemoteInkView` and
+`PageRecognizing` are the package's; `PerfSink` gained `begin`/`end`. Still in the app: the microphone half of
+recording (`NoteEditor+RecordingSession`: `RecordingSession`, `RecordingAssembly`, AVFoundation), typesetting
+(`NoteEditor+Math`, `+Markdown`, `+MathInk`: SwiftMath, TextKit, UndoManager). The editor's tests are
+`Tests/SempereAppCoreTests/NoteEditor` on a canvas of stored strokes (`TestCanvas`). `AppModel` is unchanged and
+moves next.
+
 The words stayed in the app, next to the views that show them, so the string catalog's checks still see them
 (`LocalizationCatalogTests` scans `Apps/`): `MenuCommand+Titles.swift` words `MenuCommand.titleKind(in:)`,
 `DeviceSettings+Text.swift` the settings' choices and `StorageText`, `Expectations+Text.swift` the tour pages
@@ -192,7 +214,14 @@ Each one becomes a single implementation in the library that both call.
 5. **Editor operations.** Items, insert, math, video and recordings in `NoteEditor+*` duplicate the
    CLI's `Items`/`Attach`/`AttachVideo`/`Recordings`/`NoteEdit` commands. So do the app's image
    preparation and item drawing (`ImagePreparation`, `ItemRendering`), next to `ImageIngest` and
-   `ItemRaster`.
+   `ItemRaster`. Done (wave 5): the frames, z order, pages and ops were already the `NoteOps` builders on both
+   sides; what each side did on top of them is now shared where it was the same rule. Image bytes:
+   `ImageIngest.prepare(_:privacy:converter:)` (SempereRender), the app with its ImageIO `ImageIOConverter`, the
+   CLI without one. A recording's rename: `NoteOps.renameRecording`. A file's planned blob reference:
+   `Vault.blobRef` (the app's own `BlobPlanning` hash went). Item drawing: `ItemScale`, `ItemRenderKey` and
+   `ItemRaster.drawnBlobs(of:)` (SempereRender); `ItemRendering` keeps the CoreText and ImageIO drawing. What
+   stays different is the platform's, not a rule: the app places on what is on screen (`viewFrame`,
+   `unoccupied`) where the CLI takes flags, lays text out with TextKit, and typesets equations.
 6. **Thinning, the bulk-export driver, notebook rename, join approval, history rendering and the demo
    generators.**
 

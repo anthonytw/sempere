@@ -4,6 +4,7 @@ import PencilKit
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// `StrokeLedger.update(count:unchanged:item:)`: canvas strokes that are
 /// unchanged at the start and end of the canvas are not fingerprinted, and

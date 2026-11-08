@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// Markdown text boxes on the open note (format.md §8.2.4 "Markdown text",
 /// §8.5.4): the editor writes the source; before the delta, every formula of

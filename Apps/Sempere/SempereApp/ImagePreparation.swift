@@ -20,13 +20,11 @@ enum PhotoPrivacy {
 }
 
 /// Turns picked, pasted, dropped or photographed image bytes into what is
-/// stored (docs/attachments.md §7, §13 "Images"). JPEG and PNG go through the
-/// CLI's `ImageIngest` (metadata removed unless the privacy setting is off,
-/// EXIF orientation kept as the item's field). Everything else is converted
-/// with ImageIO first: HEIC to JPEG (unless the setting is off: then the HEIC
-/// is stored as picked), WebP, GIF, TIFF and CMYK JPEG always, to JPEG (PNG
-/// when the source has alpha). The converted file then takes the same
-/// `ImageIngest` path, so what is stored is decided in one place.
+/// stored (docs/attachments.md §7, §13 "Images"): the rule is the package's
+/// (`ImageIngest.prepare(_:privacy:converter:)`, shared with the CLI); this is
+/// ImageIO's part of it (`ImageIOConverter`): HEIC to JPEG (unless the setting
+/// is off: then the HEIC is stored as picked), WebP, GIF, TIFF and CMYK JPEG
+/// always, to JPEG (PNG when the source has alpha).
 enum ImagePreparation {
     enum Failure: Error, Equatable, CustomStringConvertible {
         /// ImageIO cannot read it either.
@@ -74,33 +72,15 @@ enum ImagePreparation {
         }
     }
 
-    /// What to store for `data`; `privacy` is `PhotoPrivacy.isOn()`.
+    /// What to store for `data`; `privacy` is `PhotoPrivacy.isOn()`: the shared rule
+    /// (`ImageIngest.prepare(_:privacy:converter:)`, as the CLI) with ImageIO's conversions.
     /// Cost: one decode to check the image; a conversion decodes and encodes once more.
     static func prepare(_ data: Data, privacy: Bool) throws -> PreparedImage {
-        let prepared = try prepareUnchecked(data, privacy: privacy)
-        guard prepared.data.count <= ImageLimits.maxBlobBytes else { throw Failure.tooLarge }
-        return prepared
-    }
-
-    private static func prepareUnchecked(_ data: Data, privacy: Bool) throws -> PreparedImage {
-        switch ImageIngest.format(of: data) {
-        case .jpeg, .png:
-            do {
-                return try ImageIngest.prepare(data, keepMetadata: !privacy)
-            } catch let error as ImageIngestError {
-                // A CMYK or otherwise unusual JPEG: ImageIO converts it below.
-                guard case .unreadable(let why) = error else { throw error }
-                if case .tooLarge = why { throw Failure.tooLarge }
-            }
-        case .heic where !privacy:
-            return try asPicked(data)
-        case .heic, .other:
-            break
-        }
-        let converted = try convert(data, keepMetadata: !privacy)
         do {
-            return try ImageIngest.prepare(converted, keepMetadata: !privacy)
-        } catch {
+            return try ImageIngest.prepare(data, privacy: privacy, converter: ImageIOConverter())
+        } catch ImageConversionError.tooLarge {
+            throw Failure.tooLarge
+        } catch ImageConversionError.cannotConvert {
             throw Failure.cannotConvert
         }
     }
@@ -223,4 +203,10 @@ enum ImagePreparation {
         guard let out = context.makeImage() else { throw Failure.cannotConvert }
         return out
     }
+}
+
+/// ImageIO as the package's image converter (`ImageConverting`).
+struct ImageIOConverter: ImageConverting {
+    func asPicked(_ data: Data) throws -> PreparedImage { try ImagePreparation.asPicked(data) }
+    func convert(_ data: Data, keepMetadata: Bool) throws -> Data { try ImagePreparation.convert(data, keepMetadata: keepMetadata) }
 }

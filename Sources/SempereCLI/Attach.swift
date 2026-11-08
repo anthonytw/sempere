@@ -311,7 +311,7 @@ struct AttachImage: ParsableCommand {
         let vault = try access.openVault(.required)
         let id = try vault.resolveNote(note)
         let data = try readInput(file, limit: ImageLimits.maxBlobBytes, what: "image (exports draw larger ones as placeholders)")
-        let image = try translating { try ImageIngest.prepare(data, keepMetadata: keepMetadata) }
+        let image = try translating { try ImageIngest.prepare(data, privacy: !keepMetadata, converter: nil) }
         let ref = BlobRef(content: image.data, type: image.mediaType)
         let r = try placeOnPage(vault, id, page: placement.page, dryRun: dryRun, writeBlobs: {
             try storeBlob(vault, id, image.data, type: image.mediaType, expect: ref)

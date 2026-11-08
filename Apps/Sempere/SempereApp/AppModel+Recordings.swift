@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereSpeech
+import SempereAppCore
 
 /// Transcribes a recording's audio file on device.
 protocol RecordingTranscribing: Sendable {

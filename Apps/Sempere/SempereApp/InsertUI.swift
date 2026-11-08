@@ -3,6 +3,8 @@ import Sempere
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import SempereAppCore
+import SempereRender
 
 /// Which ways of adding images and PDFs the editor offers (pure, tested on
 /// each platform): the camera only where there is one and never on a Mac,

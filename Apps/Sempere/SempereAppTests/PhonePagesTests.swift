@@ -5,6 +5,7 @@ import Testing
 import UIKit
 @testable import SempereApp
 import Sempere
+import SempereAppCore
 
 /// Gap audit GA-15 and GA-16: the iPhone's page actions, swipe to turn pages, search highlights
 /// at phone size and the paper picker's compact layout. The rules are plain values and run on

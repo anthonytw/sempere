@@ -6,6 +6,7 @@ import SempereRender
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import SempereAppCore
 
 /// A video item to play (a tap on it, or Play in its menu).
 struct VideoPlayRequest: Identifiable {

@@ -5,6 +5,7 @@ import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// "Convert to Math" (docs/attachments.md §14 G1 part 2): the lasso's pick,
 /// the one delta that replaces ink with a typeset equation (or adds it

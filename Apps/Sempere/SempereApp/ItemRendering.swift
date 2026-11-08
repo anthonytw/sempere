@@ -5,21 +5,6 @@ import Sempere
 import SempereRender
 import UIKit
 
-/// How sharp the item layer draws: pixels per page point as a power of two
-/// at or above what the screen shows (zoom × screen scale), so zooming in
-/// redraws an item only when it crosses a step. Pure, tested.
-enum ItemScale {
-    static let minimum = 1.0
-    static let maximum = 16.0
-
-    static func bucket(zoom: Double, screenScale: Double) -> Double {
-        let want = zoom * screenScale
-        guard want.isFinite, want > 0 else { return minimum }
-        let step = pow(2, (log2(want)).rounded(.up))
-        return min(max(step, minimum), maximum)
-    }
-}
-
 /// What the item layer draws for one item.
 enum ItemPicture {
     /// The item's pixels covering `bounds` (page points, the rotated frame's bounds).
@@ -32,32 +17,6 @@ enum ItemPicture {
         case loading
         /// It cannot be drawn (missing, unreadable, unknown kind).
         case unavailable(String)
-    }
-}
-
-/// Everything a picture depends on: when it changes, the item is drawn again.
-struct ItemRenderKey: Hashable, Sendable {
-    /// The item without its snapshot-only fields.
-    var item: Item
-    var scale: Double
-    /// Background items are filled with the paper (format.md §8.2.3).
-    var paper: Paper?
-    /// An `audio` item: the recording it shows (title, duration and
-    /// transcript are drawn, format.md §8.2.9); nil when it is missing.
-    var recording: Recording?
-
-    init(_ item: Item, scale: Double, paper: Paper, recording: Recording? = nil) {
-        var plain = item
-        plain.origin = nil
-        plain.clocks = nil
-        self.item = plain
-        self.scale = scale
-        self.paper = item.layer.isBackground ? paper : nil
-        if item.kind == .audio, var r = recording {
-            r.origin = nil
-            r.clocks = nil
-            self.recording = r
-        }
     }
 }
 
@@ -109,8 +68,7 @@ enum ItemRendering {
         // A Markdown box only from the renders of the formulas its source draws (§8.5.4); one that
         // cannot be read is that formula's placeholder, not the whole box's.
         let markdown = item.text.map { $0.isMarkdown } ?? false
-        let blobs = item.kind == .video ? (item.poster.map { [$0] } ?? [])
-            : markdown ? (item.text.map { MarkdownText.usedFormulas($0).compactMap(\.math.render) } ?? []) : item.blobReferences
+        let blobs = ItemRaster.drawnBlobs(of: item)
         if let cache {
             for ref in blobs {
                 do { files[ref.sha256] = try await cache.acquire(note: note, ref: ref) } catch {

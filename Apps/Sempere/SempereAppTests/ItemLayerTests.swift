@@ -4,6 +4,7 @@ import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// The canvas's item layer and selection (docs/attachments.md §13): pictures
 /// through `ItemRaster` from the blob cache, placeholders for missing blobs,

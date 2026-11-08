@@ -44,6 +44,15 @@ public enum RecognitionBasis {
     public static func digest(of page: Page) -> String { digest(of: page.strokes.map(\.id)) }
 }
 
+/// Reads the handwriting of one page (the app's Vision reader; tests substitute a fake). Implementations run
+/// off the main actor.
+public protocol PageRecognizing: Sendable {
+    /// The text of `strokes` (one page's live strokes), read in `language`
+    /// (the note's `meta.lang`, format.md §5.4; nil: the recognizer's
+    /// default). `basis` is left nil: the caller sets it from the stroke ids it passed.
+    func recognize(strokes: [Stroke], language: String?) async throws -> Recognition
+}
+
 /// When a page's recognition must be (re)computed.
 public enum RecognitionPolicy {
     /// True when `recognition` no longer describes `strokeIDs`.

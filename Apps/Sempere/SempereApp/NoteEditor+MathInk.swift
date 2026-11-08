@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import SempereRender
 import UIKit
+import SempereAppCore
 
 /// Ink picked with the math lasso, waiting in the equation sheet
 /// (`MathEditorView` in conversion mode).

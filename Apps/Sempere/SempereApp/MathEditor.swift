@@ -2,6 +2,7 @@ import Sempere
 import SempereRender
 import SwiftUI
 import UIKit
+import SempereAppCore
 
 /// An equation to add or change (Insert → Equation…, or "Edit Equation…" on
 /// a selected one).

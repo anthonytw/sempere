@@ -3,6 +3,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// The history browser's model: restore points, previews, and restore through
 /// the app's one write path (`NoteWriter`), with the open canvas following.

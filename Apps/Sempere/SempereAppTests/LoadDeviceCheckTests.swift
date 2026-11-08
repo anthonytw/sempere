@@ -7,6 +7,7 @@ import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Playback that reports whatever position the test sets, for a recording of any length.
 final class LongPlayback: AudioPlaybackBackend {

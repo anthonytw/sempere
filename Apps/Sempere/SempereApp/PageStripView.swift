@@ -2,6 +2,7 @@ import Sempere
 import PencilKit
 import SwiftUI
 import UIKit
+import SempereAppCore
 
 /// The pages of a paged note as thumbnails, top to bottom: tap to show a
 /// page, drag to reorder, swipe or context menu to delete, duplicate or add a

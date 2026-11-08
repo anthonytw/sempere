@@ -1,5 +1,6 @@
 import Sempere
 import SwiftUI
+import SempereAppCore
 
 /// Version history of one note: its restore points (time, device), a
 /// read-only preview of the note as of one, and "Restore this version".

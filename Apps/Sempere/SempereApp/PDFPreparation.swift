@@ -2,19 +2,7 @@ import CoreGraphics
 import Foundation
 import Sempere
 import SempereRender
-
-/// A PDF ready to be stored: an unencrypted file in the app's temporary
-/// folder (delete it once written) and its pages as the format sees them.
-struct PreparedPDF: Sendable {
-    /// The file to store (plaintext: never leave it behind, `PDFPreparation.discard`).
-    var file: URL
-    /// Every page: index and effective size (`PDFIngest`, shared with the CLI).
-    var pages: [PDFPageRef]
-    /// Whether the PDF was encrypted and is stored decrypted.
-    var decrypted: Bool
-    /// The picked file's name without `.pdf`, for a new note's title.
-    var name: String
-}
+import SempereAppCore
 
 /// File sizes in the "too large to add" messages (PDF, video, image), in
 /// binary units as the format states its limits: the 1 GiB blob cap

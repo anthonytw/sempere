@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// What deleting unused attachments did (`deleteUnusedAttachments`).
 struct AttachmentDeletion: Equatable, Sendable {
