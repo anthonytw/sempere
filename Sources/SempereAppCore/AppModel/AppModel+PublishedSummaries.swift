@@ -5,10 +5,10 @@ import Sempere
 /// `summaries/<device>.sealed`): a partial copy (a join, `AppModel+Join`) lists its pending notes from
 /// them (title, notebook, tags, page texts for search) when the server's own file does not name them.
 /// Only notes still to arrive use the rows (`reconcile`).
-extension AppModel {
+extension AppModelCore {
     /// Reads every device's published summaries into `publishedRows` when the files changed since the last
     /// read. Needs the key; only while a partial copy is open.
-    func refreshPublishedRows() async {
+    public func refreshPublishedRows() async {
         guard partialCopyRoot != nil, phase == .unlocked, let vault, vault.canRead else { return }
         let gen = generation
         let previous = publishedRowsSignature

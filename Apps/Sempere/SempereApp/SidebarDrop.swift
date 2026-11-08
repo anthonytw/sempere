@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import SwiftUI
 import UniformTypeIdentifiers
+import SempereAppCore
 
 extension UTType {
     /// Notes dragged inside the app (their ids; declared in `SempereInfo.plist`).

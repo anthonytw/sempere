@@ -603,21 +603,9 @@ extension AppModel {
     }
 }
 
-/// Why a join, an approval or a takeover could not go on.
-enum DeviceJoinError: Error, Equatable, CustomStringConvertible {
-    /// No request with the words, and no target a request could come through.
-    case noMatchingRequest
-    /// No request with the words in the copy even after syncing every target: it may not have arrived yet.
-    case requestNotArrived
-    /// No request with the words is in the copy yet, and a run left a request arriving: the provider has listed it
-    /// but not delivered it.
-    case requestArriving
-    case notARecoveryKey
-    case rootNeeded
-    case rootUnreadable
-    case otherVaultsRoot
-
-    var description: String {
+/// `DeviceJoinError` (SempereAppCore) worded.
+extension DeviceJoinError: CustomStringConvertible {
+    public var description: String {
         switch self {
         case .noMatchingRequest:
             return String(localized: "No device that asked to join has these words. Check them on the new device.")

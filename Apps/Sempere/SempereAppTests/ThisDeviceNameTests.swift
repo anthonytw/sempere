@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// The name a device gives itself in a vault's list (build 12: "When the Mac syncs, it shows up as iPad … Suppose
 /// I sync to multiple iPads or Macs"): its model and a short tag, never the computer's (the owner's) name, which

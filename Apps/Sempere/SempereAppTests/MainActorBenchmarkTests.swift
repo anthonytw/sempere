@@ -25,7 +25,7 @@ struct MainActorBenchmarkTests {
             _ = try vault.apply(NoteOps.newNote(title: "Note \(i)", notebook: "Course \(i % 7)", tags: ["t\(i % 5)"], pageId: page)
                                 + [.addStroke(page: page, stroke: TS.stroke())], to: UUID(), deviceState: device, app: "t/1")
         }
-        let cacheDir = IndexTests.tempDir()
+        let cacheDir = TestTemp.root.appendingPathComponent("sempere-index-\(UUID().uuidString)")
         for pass in ["first open", "reopen from the index"] {
             let beat = Heartbeat()
             beat.start()
@@ -52,7 +52,7 @@ struct MainActorBenchmarkTests {
 
     /// The main-actor steps of a listing, on a 640-note list, within budget.
     @Test func mainActorStepsStayWithinBudget() {
-        var rng = IndexTests.RNG(state: 5)
+        var rng = SplitMix(state: 5)
         let notes = (0..<640).map { i in
             NoteSummary(id: UUID(), title: "Lecture \(rng.next() % 900)", tags: ["t\(i % 9)", "Tag\(i % 4)"],
                         notebook: "Course \(i % 12)/Unit \(i % 5)", deleted: i % 31 == 0, pages: 3, strokes: 400,
@@ -74,5 +74,17 @@ struct MainActorBenchmarkTests {
         #expect(apply < .milliseconds(30))
         #expect(derive < .milliseconds(100))
         #expect(again < .milliseconds(2))
+    }
+}
+
+/// A seeded generator (SplitMix64), as the index suites' (`IndexTests.RNG`, which moved to SempereAppCoreTests).
+struct SplitMix: RandomNumberGenerator {
+    var state: UInt64
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
     }
 }

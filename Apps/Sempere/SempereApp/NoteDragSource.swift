@@ -1,6 +1,7 @@
 import Sempere
 import SwiftUI
 import UIKit
+import SempereAppCore
 
 /// How a row of the note list starts its drag (`NoteDragOut`).
 ///

@@ -12,18 +12,23 @@ import SempereSync
 // API: tested with plain folders.
 
 /// One note folder as a pass lists it: the revision file names, nothing else.
-struct NoteListing: Equatable, Sendable {
-    var id: UUID
+public struct NoteListing: Equatable, Sendable {
+    public var id: UUID
     /// Sorted canonical revision file names (`RevisionName.filename`);
     /// iCloud placeholders (`.<name>.icloud`) count under their real name.
-    var names: [String]
+    public var names: [String]
 
     /// The folder lists no revision: iCloud has not listed it yet (a note
     /// always has one), so it is never taken for an empty note.
-    var isUnlisted: Bool { names.isEmpty }
+    public var isUnlisted: Bool { names.isEmpty }
+
+    public init(id: UUID, names: [String]) {
+        self.id = id
+        self.names = names
+    }
 }
 
-enum VaultEnumeration {
+public enum VaultEnumeration {
     /// Lists the `notes/<id>/` folders of the vault at `root` (every folder,
     /// or only those of `ids`) by name. Asks iCloud nothing and reads no
     /// file: one directory listing per note.
@@ -31,7 +36,7 @@ enum VaultEnumeration {
     /// - Throws: when `notes/` (or a listed note folder) exists but cannot be
     ///   read; a missing `notes/` lists nothing, a missing folder of `ids` is
     ///   left out (the note is gone).
-    static func listNotes(vault root: URL, only ids: Set<UUID>? = nil,
+    public static func listNotes(vault root: URL, only ids: Set<UUID>? = nil,
                           fileManager fm: FileManager = .default) throws -> [NoteListing] {
         let notes = root.appendingPathComponent("notes", isDirectory: true)
         let candidates: [(UUID, String)]
@@ -62,7 +67,7 @@ enum VaultEnumeration {
 
     /// The canonical revision names among a folder's entries, placeholders
     /// mapped to their real names, sorted and without duplicates.
-    static func revisionNames(in entries: [String]) -> [String] {
+    public static func revisionNames(in entries: [String]) -> [String] {
         var names = Set<String>()
         for entry in entries {
             let real = CloudPlaceholder.realName(of: entry) ?? entry
@@ -74,13 +79,13 @@ enum VaultEnumeration {
 }
 
 /// How a listing compares with what the list shows.
-struct IndexDiff: Equatable, Sendable {
+public struct IndexDiff: Equatable, Sendable {
     /// Listed with exactly the names their summary was made from.
-    var unchanged: [UUID] = []
+    public var unchanged: [UUID] = []
     /// Listed with other names, or not in the index: to be read.
-    var changed: [UUID] = []
+    public var changed: [UUID] = []
     /// In the index or the list, in scope, but no longer listed.
-    var removed: [UUID] = []
+    public var removed: [UUID] = []
 
     /// Compares `listings` with `indexed` (note id → sorted names its shown
     /// summary was made from).
@@ -89,7 +94,7 @@ struct IndexDiff: Equatable, Sendable {
     ///   - known: notes shown or indexed before the listing; only these can
     ///     be `removed` (a note created meanwhile was not listed yet).
     ///   - scope: the notes the listing covered (nil: all of them).
-    static func compute(listings: [NoteListing], indexed: [UUID: [String]], known: Set<UUID>,
+    public static func compute(listings: [NoteListing], indexed: [UUID: [String]], known: Set<UUID>,
                         scope: Set<UUID>? = nil) -> IndexDiff {
         var diff = IndexDiff()
         var listed = Set<UUID>()
@@ -100,5 +105,11 @@ struct IndexDiff: Equatable, Sendable {
         let inScope = scope ?? known
         diff.removed = known.filter { inScope.contains($0) && !listed.contains($0) }.sorted { $0.uuidString < $1.uuidString }
         return diff
+    }
+
+    public init(unchanged: [UUID] = [], changed: [UUID] = [], removed: [UUID] = []) {
+        self.unchanged = unchanged
+        self.changed = changed
+        self.removed = removed
     }
 }

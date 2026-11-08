@@ -32,6 +32,9 @@ public protocol FolderBookmarks: Sendable {
     func startAccessing(_ url: URL) -> Bool
     /// Ends a scope `startAccessing` started.
     func stopAccessing(_ url: URL)
+    /// The path `bookmark` recorded, read without resolving it (no mount, no scope): nil when it holds none. Tells a
+    /// folder on a drive that is not there from one deleted (`FolderTargetAccess`).
+    func recordedPath(of bookmark: Data) -> String?
 }
 
 extension FolderBookmarks {
@@ -71,4 +74,10 @@ public struct PathBookmarks: FolderBookmarks {
 
     public func startAccessing(_ url: URL) -> Bool { false }
     public func stopAccessing(_ url: URL) {}
+
+    public func recordedPath(of bookmark: Data) -> String? {
+        guard let text = String(data: bookmark, encoding: .utf8), text.hasPrefix(Self.prefix) else { return nil }
+        let path = String(text.dropFirst(Self.prefix.count))
+        return path.isEmpty ? nil : path
+    }
 }

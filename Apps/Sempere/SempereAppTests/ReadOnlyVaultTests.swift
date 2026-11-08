@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Vaults of a newer format version in the app (format.md §7.3): the fixture
 /// `newer.sempere` (`sempere/2`, newer revisions) opens read-only, lists and

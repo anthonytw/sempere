@@ -1,5 +1,6 @@
 import Sempere
 import SwiftUI
+import SempereAppCore
 
 /// Opens the open vault on this device (key-hierarchy design §6; KH5): with this device's own key (Face ID first
 /// when the vault asks for it), which happens by itself; for a device without one, Join This Device (approved on

@@ -1,5 +1,6 @@
 import Sempere
 import SwiftUI
+import SempereAppCore
 
 /// What a notebook combo box offers (pure, tested).
 enum NotebookChoices {

@@ -2,6 +2,7 @@ import Sempere
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import SempereAppCore
 
 /// How a notebook row in the sidebar starts a drag.
 ///

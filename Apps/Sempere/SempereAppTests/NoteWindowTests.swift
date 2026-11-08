@@ -3,6 +3,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Hands the model to its own `afterIO` hook once, when armed.
 actor ModelBox {

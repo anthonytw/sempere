@@ -3,37 +3,47 @@ import Sempere
 
 /// One segment of a recording's transcript that matches the search (GA-06): the CLI's
 /// `search --transcripts` rules (`TranscriptSearch`).
-struct TranscriptSearchHit: Identifiable, Hashable, Sendable {
-    var note: UUID
-    var recording: UUID
-    var recordingTitle: String?
+public struct TranscriptSearchHit: Identifiable, Hashable, Sendable {
+    public var note: UUID
+    public var recording: UUID
+    public var recordingTitle: String?
     /// Seconds into the recording where the segment starts and ends.
-    var start: Double, end: Double
-    var snippet: String
-    var matches: Int
+    public var start: Double, end: Double
+    public var snippet: String
+    public var matches: Int
 
-    var id: String { "\(recording.uuidString)@\(start)" }
+    public var id: String { "\(recording.uuidString)@\(start)" }
 
     /// `m:ss` (or `h:mm:ss`) of the start; "?:??" for a time that is not a sensible number.
-    var timeText: String {
+    public var timeText: String {
         guard start.isFinite, start >= 0, start < 3.6e9 else { return "?:??" }
         return Transcript.clock(start)
+    }
+
+    public init(note: UUID, recording: UUID, recordingTitle: String? = nil, start: Double, end: Double, snippet: String, matches: Int) {
+        self.note = note
+        self.recording = recording
+        self.recordingTitle = recordingTitle
+        self.start = start
+        self.end = end
+        self.snippet = snippet
+        self.matches = matches
     }
 }
 
 /// "Search recording transcripts" (opt-in, like the CLI's flag: it reads and decrypts every
 /// transcript of the notes searched). The choice is per device.
-enum TranscriptSearchPreference {
-    static let key = "Sempere.searchTranscripts"
+public enum TranscriptSearchPreference {
+    public static let key = "Sempere.searchTranscripts"
 
-    static func isOn(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: key) }
-    static func set(_ on: Bool, _ defaults: UserDefaults = .standard) { defaults.set(on, forKey: key) }
+    public static func isOn(_ defaults: any KeyValueStore) -> Bool { defaults.bool(forKey: key) }
+    public static func set(_ on: Bool, _ defaults: any KeyValueStore) { defaults.set(on, forKey: key) }
 }
 
 /// Decoded transcripts of this vault session by blob hash, so typing a longer query does not read
 /// every transcript again. In memory only, at most `byteLimit` (counted as the blobs' sizes); the
 /// least recently used go first. Emptied when the vault closes.
-final class TranscriptSearchCache: @unchecked Sendable {
+public final class TranscriptSearchCache: @unchecked Sendable {
     private struct Entry {
         var transcript: Transcript
         var bytes: Int
@@ -46,11 +56,11 @@ final class TranscriptSearchCache: @unchecked Sendable {
     /// Bytes of transcripts kept at most. It used to be 500 transcripts, cleared all at once
     /// when full: a search over more than 500 walked them in the same order every keystroke,
     /// so it never found one cached.
-    let byteLimit: Int
+    public let byteLimit: Int
 
-    init(byteLimit: Int = 64 << 20) { self.byteLimit = byteLimit }
+    public init(byteLimit: Int = 64 << 20) { self.byteLimit = byteLimit }
 
-    func transcript(for sha256: String) -> Transcript? {
+    public func transcript(for sha256: String) -> Transcript? {
         lock.withLock {
             guard var e = entries[sha256] else { return nil }
             tick &+= 1
@@ -61,7 +71,7 @@ final class TranscriptSearchCache: @unchecked Sendable {
     }
 
     /// Keeps `transcript` (its blob holds `bytes`), dropping the least recently used past the limit.
-    func store(_ transcript: Transcript, for sha256: String, bytes: Int) {
+    public func store(_ transcript: Transcript, for sha256: String, bytes: Int) {
         lock.withLock {
             tick &+= 1
             if let old = entries[sha256] { self.bytes -= old.bytes }
@@ -76,9 +86,9 @@ final class TranscriptSearchCache: @unchecked Sendable {
         }
     }
 
-    var count: Int { lock.withLock { entries.count } }
+    public var count: Int { lock.withLock { entries.count } }
 
-    func removeAll() {
+    public func removeAll() {
         lock.withLock {
             entries.removeAll()
             bytes = 0
@@ -91,12 +101,12 @@ final class TranscriptSearchCache: @unchecked Sendable {
 /// `Vault.readBlob` checks framing, padding, the content hash and size against the reference
 /// and the keyed name before anything is decoded; the transcript must name its recording
 /// (format.md §8.3.2).
-struct TranscriptReader: Sendable {
-    let vault: Vault
+public struct TranscriptReader: Sendable {
+    public let vault: Vault
     /// A partial copy's blob fetch (`AppModel.partialBlobFetcher`); nil otherwise.
-    var fetch: (@Sendable (UUID, String) async throws -> Void)?
+    public var fetch: (@Sendable (UUID, String) async throws -> Void)?
 
-    func read(ref: BlobRef, recording: UUID, note: UUID) async -> Transcript? {
+    public func read(ref: BlobRef, recording: UUID, note: UUID) async -> Transcript? {
         guard ref.size <= Int64(Transcript.maxSize), let name = try? vault.blobFileName(for: ref) else { return nil }
         if let fetch { guard (try? await fetch(note, name)) != nil else { return nil } }
         let vault = self.vault
@@ -106,19 +116,30 @@ struct TranscriptReader: Sendable {
             return decoded
         }.value
     }
+
+    public init(vault: Vault, fetch: (@Sendable (UUID, String) async throws -> Void)? = nil) {
+        self.vault = vault
+        self.fetch = fetch
+    }
 }
 
 /// Where a tapped transcript hit goes: the recording, at the segment.
-struct RecordingJump: Equatable, Sendable {
-    var note: UUID
-    var recording: UUID
-    var time: Double
+public struct RecordingJump: Equatable, Sendable {
+    public var note: UUID
+    public var recording: UUID
+    public var time: Double
+
+    public init(note: UUID, recording: UUID, time: Double) {
+        self.note = note
+        self.recording = recording
+        self.time = time
+    }
 }
 
-extension AppModel {
+extension AppModelCore {
     /// Turns transcript search on or off and searches again.
-    func setSearchTranscripts(_ on: Bool) {
-        TranscriptSearchPreference.set(on)
+    public func setSearchTranscripts(_ on: Bool) {
+        TranscriptSearchPreference.set(on, services.settings)
         searchTranscripts = on
         updateSearch()
     }
@@ -127,7 +148,7 @@ extension AppModel {
     /// list (at most every `transcriptPublishInterval`, and once at the end); transcripts that cannot
     /// be read are counted in `transcriptSearchProblems`. Up to `transcriptSearchWidth` transcripts are
     /// read and searched at once, in memory (no decrypted file), through `transcriptCache`.
-    func runTranscriptSearch(_ query: String, in candidates: [NoteSummary], generation gen: Int) async {
+    public func runTranscriptSearch(_ query: String, in candidates: [NoteSummary], generation gen: Int) async {
         let jobs = candidates.filter { !$0.transcribed.isEmpty && !pendingNoteIDs.contains($0.id)
             && !placeholderNoteIDs.contains($0.id) }
             .flatMap { note in note.transcribed.map { (note: note.id, recording: $0) } }
@@ -176,13 +197,13 @@ extension AppModel {
     }
 
     /// Transcripts read and searched at once.
-    nonisolated static let transcriptSearchWidth = 4
+    public nonisolated static var transcriptSearchWidth: Int { 4 }
     /// The shortest time between two publications of partial transcript hits.
-    nonisolated static let transcriptPublishInterval = Duration.milliseconds(250)
+    public nonisolated static var transcriptPublishInterval: Duration { .milliseconds(250) }
 
     /// The hits of `query` in the transcript of `recording` (from `cache`, else read with `reader`
     /// and cached); nil when it cannot be read.
-    nonisolated static func transcriptSearchHits(_ query: String, note: UUID, _ recording: TranscribedRecording,
+    public nonisolated static func transcriptSearchHits(_ query: String, note: UUID, _ recording: TranscribedRecording,
                                                  cache: TranscriptSearchCache,
                                                  reader: TranscriptReader?) async -> [TranscriptSearchHit]? {
         var transcript = cache.transcript(for: recording.blob.sha256)
@@ -199,14 +220,14 @@ extension AppModel {
     }
 
     /// The in-memory transcript reader of the open, unlocked vault; nil otherwise.
-    func transcriptReader() -> TranscriptReader? {
+    public func transcriptReader() -> TranscriptReader? {
         guard let vault, phase == .unlocked else { return nil }
         return TranscriptReader(vault: vault, fetch: partialBlobFetcher())
     }
 
     /// Opens the note of `hit` and moves its player to the segment (paused: a search result does not
     /// start the sound).
-    func openTranscriptHit(_ hit: TranscriptSearchHit) {
+    public func openTranscriptHit(_ hit: TranscriptSearchHit) {
         recordSearch()
         pendingJump = nil
         pendingRecordingJump = RecordingJump(note: hit.note, recording: hit.recording, time: hit.start)
@@ -215,7 +236,7 @@ extension AppModel {
     }
 
     /// Plays the pending recording jump when its note is the one on the canvas.
-    func applyPendingRecordingJump() {
+    public func applyPendingRecordingJump() {
         guard let jump = pendingRecordingJump, let editor else { return }
         guard editor.noteID == jump.note else {
             if selectedNoteID != jump.note { pendingRecordingJump = nil }
@@ -223,6 +244,6 @@ extension AppModel {
         }
         pendingRecordingJump = nil
         guard let recording = editor.recording(jump.recording) else { return }
-        Task { await play(recording, in: editor, from: jump.time, start: false) }
+        Host.play(recording, in: editor, from: jump.time, model: self)
     }
 }

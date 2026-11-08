@@ -3,6 +3,7 @@ import SwiftUI
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Which model `@AppModelEnvironment` handed a view, and how often its body ran.
 @MainActor

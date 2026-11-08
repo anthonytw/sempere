@@ -3,6 +3,7 @@ import Sempere
 import SempereRender
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Share/export: what each format hands to the share sheet, the job around it
 /// (progress, cancel, clean-up) and the commands' targets. The renderers

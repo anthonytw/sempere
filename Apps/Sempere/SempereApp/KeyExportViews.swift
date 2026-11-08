@@ -3,6 +3,7 @@ import SempereRender
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import SempereAppCore
 
 /// A key file for "Save to Files": the text goes straight to the folder the
 /// user picks, with no copy anywhere else.

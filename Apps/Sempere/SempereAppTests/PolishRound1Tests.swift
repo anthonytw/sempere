@@ -4,6 +4,7 @@ import PencilKit
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// App polish round 1: the notebook combo box, the "Recognize All Notes"
 /// results list, and highlighting a search hit on the canvas.

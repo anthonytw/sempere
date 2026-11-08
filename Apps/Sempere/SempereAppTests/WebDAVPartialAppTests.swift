@@ -5,6 +5,7 @@ import SempereSync
 import SempereWebDAV
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// A read-only WebDAV server over a local folder (PROPFIND Depth 1 and GET),
 /// so the app tests run the library's real metadata pulls, fetches and

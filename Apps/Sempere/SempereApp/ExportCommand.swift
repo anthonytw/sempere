@@ -1,6 +1,7 @@
 import Sempere
 import SempereRender
 import SwiftUI
+import SempereAppCore
 
 /// The export actions, in one place: the note list's toolbar and context menu,
 /// the note's toolbar and the Catalyst menu bar all build their items from

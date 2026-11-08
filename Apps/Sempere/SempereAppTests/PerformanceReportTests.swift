@@ -3,6 +3,7 @@ import PencilKit
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Before and after timings on a generated vault: 600 ordinary notes and
 /// three of 15 554 strokes (the size of the largest real note: about 200 000

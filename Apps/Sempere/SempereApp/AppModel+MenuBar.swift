@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// New Note from the Mac menu-bar item (`StatusItemHost`): the app comes forward and a library
 /// window opens the New Note sheet (name, paper, notebook). A locked vault is unlocked first (the library window shows its unlock sheet), so the

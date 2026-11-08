@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 // Offline audit A-P1: automatic transcription jobs (a quick voice note, an adopted capture, a recording saved) never
 // download the language model; offline, a download fails or waits. Only the Transcribe button may. When the model

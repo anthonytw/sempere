@@ -1,6 +1,5 @@
 import Foundation
 import Sempere
-import SempereAppCore
 
 /// Revisions written elsewhere (another device through iCloud Drive, the CLI,
 /// or this device's browser edits) reach a note that is open in an editor
@@ -13,16 +12,16 @@ import SempereAppCore
 /// revision another device writes is merged within a poll interval of iCloud
 /// delivering it. Before the merge every revision of the note is made local
 /// (`downloadNote`): an editor never writes while any revision is missing.
-extension AppModel {
+extension AppModelCore {
     /// The editors showing a note now: the library window's and note windows'.
-    var openEditors: [NoteEditor] {
+    public var openEditors: [Editor] {
         ([editor] + Array(windowEditors.values)).compactMap { $0 }
     }
 
     /// Starts a merge for every open editor whose note folder, as just listed
     /// (`listedNames`: note id → revision file names), holds revisions it
     /// does not have.
-    func mergeIntoOpenEditors(listedNames: [UUID: [String]]) {
+    public func mergeIntoOpenEditors(listedNames: [UUID: [String]]) {
         for open in openEditors {
             guard let names = listedNames[open.noteID], open.hasUnmergedRevisions(names) else { continue }
             if let unreadable = unreadableMergeNames[open.noteID], unreadable == names.sorted() { continue }
@@ -33,7 +32,7 @@ extension AppModel {
     /// Merges revisions written elsewhere into `open` in the background; at
     /// most one merge per note runs (a revision arriving meanwhile is picked
     /// up by the next pass, whose listing still shows it unknown).
-    func scheduleRemoteMerge(_ open: NoteEditor) {
+    public func scheduleRemoteMerge(_ open: Editor) {
         let id = open.noteID
         guard remoteMerges[id] == nil else { return }
         let gen = generation
@@ -45,7 +44,7 @@ extension AppModel {
             } catch is CancellationError {
             } catch {
                 #if DEBUG
-                NSLog("SempereProbe remote merge %@ failed: %@", Perf.short(id), "\(error)")
+                NSLog("SempereProbe remote merge %@ failed: %@", id.perfShort, "\(error)")
                 #endif
             }
         }
@@ -53,7 +52,7 @@ extension AppModel {
     }
 
     /// Whether `open` is still the editor of its note.
-    func isOpenEditor(_ open: NoteEditor) -> Bool {
+    public func isOpenEditor(_ open: Editor) -> Bool {
         editor === open || windowEditors[open.noteID] === open
     }
 
@@ -61,12 +60,12 @@ extension AppModel {
     /// read-only editor (nothing unsaved) is reopened instead. The note's
     /// summary is re-read when anything changed.
     @discardableResult
-    func mergeRemoteRevisions(into open: NoteEditor) async throws -> NoteEditor.RemoteMergeOutcome {
+    public func mergeRemoteRevisions(into open: Editor) async throws -> Editor.RemoteMergeOutcome {
         let id = open.noteID
         let gen = generation
-        let interval = Perf.begin(.remoteMerge)
+        let interval = services.perf.begin("note.remoteMerge")
         var result = "skipped"
-        defer { Perf.end(interval, "\(Perf.short(id)) \(result)") }
+        defer { services.perf.end(interval, "\(id.perfShort) \(result)") }
         await open.loaded()
         try await downloadNote(id)
         try ensureCurrent(gen)
@@ -101,7 +100,7 @@ extension AppModel {
     }
 
     /// Stops merges in flight (the vault closes).
-    func cancelRemoteMerges() {
+    public func cancelRemoteMerges() {
         for task in remoteMerges.values { task.cancel() }
         remoteMerges = [:]
         unreadableMergeNames = [:]

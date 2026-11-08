@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 struct ZoomStepsTests {
     @Test func zoomInMovesThroughTheFactorsAndStopsAtTheMaximum() {

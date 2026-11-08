@@ -6,6 +6,7 @@ import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Device check c35 ("Portrait HEIC from Notability") without an iPhone photo: `notability/portrait-heic.note`
 /// holds a landscape HEIC whose `irot` turns it upright to portrait, red on top, blue below, a green square top

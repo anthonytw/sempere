@@ -1,5 +1,6 @@
 import Sempere
 import SwiftUI
+import SempereAppCore
 
 /// Re-encrypt Everything, the progress (on home; key-hierarchy design §7.2 "Progress"): this device's files under the
 /// new key, each sync target's confirmation, and Continue, which runs one step (`AppModel.advanceReencryption`: the

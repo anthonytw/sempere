@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import SempereAppCore
 
 /// The iPhone is a reader: the three-column split view collapses into one
 /// stack (vault, notebooks and tags, note list, note), and a note opens

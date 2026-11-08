@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Notebook names as `/`-separated paths (format.md §5.4): the sidebar tree,
 /// filtering a folder with its sub-folders, and renaming or moving a parent.

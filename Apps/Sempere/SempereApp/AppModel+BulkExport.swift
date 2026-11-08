@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// What "Export to Folder or Zip…" was asked to export (docs/io.md "Bulk export").
 struct BulkExportRequest: Identifiable, Equatable, WindowTargeted {

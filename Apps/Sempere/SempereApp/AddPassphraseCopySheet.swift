@@ -1,5 +1,6 @@
 import Sempere
 import SwiftUI
+import SempereAppCore
 
 /// Add Passphrase Copy (key-hierarchy design §8.2): the recovery key under a passphrase, kept in the vault, for a
 /// vault made without one. Add-only: sync never replaces a copy, so changing its passphrase is Replace Recovery Kit. No device keeps the recovery key, so it is given from the

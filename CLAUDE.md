@@ -216,10 +216,12 @@ there. Commit messages:
   every await before publishing. Security-scoped URLs from the picker need
   `startAccessingSecurityScopedResource()` for the whole time the vault is used;
   vault bookmarks use `options: []` (no `.withSecurityScope` on iOS/Catalyst).
-- The app's non-UI logic still in the app (`AppModel*.swift`, their tests)
-  can be typechecked and run on Linux with a scratch package that symlinks the
-  files and shims the Apple-only URL bookmark and scoped-resource APIs; SwiftUI
-  views cannot, only the app build does (`scripts/app.sh build-ios`, in the PR gate).
+- `AppModel` is the library's `AppModelCore<AppHost>` (`Sources/SempereAppCore/AppModel/`; the app's host, its
+  services and, until wave 5b part 3, the state and steps of the extensions still in the app are
+  `AppModel+Host.swift`; docs/design/thin-app.md "Wave 5b, part 2"). New model logic goes into the library and takes
+  its platform through `services` (`AppModelServices`), never `UserDefaults`, bookmarks or `os` directly; its tests go
+  in `Tests/SempereAppCoreTests/AppModel` on `TestHost`. SwiftUI views cannot run on Linux, only the app build checks
+  them (`scripts/app.sh build-ios`, in the PR gate).
 - Notebook names are `/`-separated display paths (`format.md` §5.4): use
   `NotebookPath` / `NotebookNode` (`Sources/Sempere/Notebooks.swift`), never
   `==` on raw names (`" A//B "` and `A/B` are the same notebook; `A/Bc` is not

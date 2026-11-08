@@ -89,8 +89,8 @@ app's implementations are in `Apps/Sempere/SempereApp/PlatformServices.swift`.
 The call sites that are left, by file in `Apps/Sempere/SempereApp/` (2026-11-07). Switch one when its code moves.
 View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the platform API.
 
-- **`KeyValueStore`** (`UserDefaults`/`@AppStorage`): `AppCommands`, `AppModel`, `AppModel+SettingsSync`,
-  `AppModel+Thinning`, `AppModel+TranscriptSearch`, `AppThemeWindows`, `AppearancePreferences`,
+- **`KeyValueStore`** (`UserDefaults`/`@AppStorage`): `AppCommands`, `AppModel+SettingsSync`,
+  `AppModel+Thinning`, `AppThemeWindows`, `AppearancePreferences`,
   `ColumnLayout`, `DragTestSettings`, `DrawingPaletteView`,
   `DrawingToolbox` (its `defaults:` parameter), `EraserPreference`,
   `ImagePreparation`, `InsertUI`, `MathEditor`, `MathModels`, `MathSettings`, `MouseInk`, `NoteCanvasView`,
@@ -98,13 +98,12 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
   `PageLayoutChoice`, `PageRecognizer`, `PaperPreference`, `RecordingPreferences`, `RenderCache`, `RootView`,
   `SettingsGroups`, `SettingsSyncBridge`, `SettingsView`, `StatusItemBridge`, `ToolPalette`
   (and `DebugLaunch`, debug only).
-- **`PerfSink`**: `Perf.begin`/`measure`/`event` in `AppModel`, `AppModel+Backup`, `+History`, `+ListUpdates`,
-  `+Loading`, `+Reconcile`, `+RemoteMerge`, `+Thinning`, `BackgroundSync`, `ItemLayerView`, `ItemRendering`,
-  `NoteEditor`, `PageCanvasView`; `os.Logger` in `AppModel+Inbox`, `+Notebooks`,
-  `+SettingsSync`, `+Suspension`, `+SyncTargets`, `AppModelEnvironment`, `DragLog`, `FolderPicker`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
+- **`PerfSink`**: `Perf.begin`/`measure`/`event` in `AppModel+Backup`, `+History`, `+Thinning`, `BackgroundSync`, `ItemLayerView`, `ItemRendering`,
+  `NoteEditor`, `PageCanvasView`; `os.Logger` in `AppModel+Inbox`,
+  `+SettingsSync`, `+Suspension`, `AppModelEnvironment`, `DragLog`, `FolderPicker`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
   becomes `perf.measure("x", …)`.
-- **`FolderBookmarks`** (bookmarks and security scopes): `AppModel`, `AppModel+Backup`, `+BulkExport`,
-  `+DeviceNotices`, `+Import`, `+SyncTargets` (`FolderTargetAccess.open` resolves with `mounting:`), `+VaultDetails`,
+- **`FolderBookmarks`** (bookmarks and security scopes): `AppModel+Backup`, `+BulkExport`,
+  `+DeviceNotices`, `+Import`, `+VaultDetails`,
   `+VaultStore`, `ExportSheet`, `FolderPicker`, `InsertUI`, `MathModels`, `NewVaultView`, `PDFPreparation`,
   `VaultLibrary+App` (`VaultBookmark`, the backup folder's).
 - **`FileCoordinating`**: the callers of `CloudVault.coordinatedRead`/`Write` (`AppModel+Backup`, `+Thinning`,
@@ -143,9 +142,10 @@ record) and `perf` (`AppPerfSink`). A run that waits for the device's first unlo
 `DeviceUnlockWaiting` protocol, which the app's `WebDAVPasswordError` adopts. The words stay in the app
 (`SyncStatus+Text.swift`: `SyncStatus.headline`, `SyncStatus.text(for:)`, `ProviderUploads.errorText`,
 `CertificateDate.reason`). `ProviderUploads` has no session state, so it went to `SempereSync`. The coordinator's
-and the sessions' tests are `Tests/SempereAppCoreTests/SyncCoordinatorTests.swift`. Two rules are still in
-`AppModel` and move in wave 5: a session's run closure is built by `AppModel+SyncTargets` and `AppModel+WebDAV`, and
-it decides two-way only for `phase == .unlocked && !syncVaultStale`.
+and the sessions' tests are `Tests/SempereAppCoreTests/SyncCoordinatorTests.swift`. The two rules that stayed in
+`AppModel` (a session's run closure, built by `AppModel+SyncTargets` and `AppModel+WebDAV`, decides two-way only for
+`phase == .unlocked && !syncVaultStale`) moved with it in wave 5b part 2 (below): both closures now read one rule,
+`AppModelCore.syncRunKeys(for:)`, pinned on Linux by `SyncRunRuleTests`.
 
 Wave 5 (editor half, 2026-11-07) moved the `NoteEditor`'s model half: `NoteEditorModel<Canvas: NoteCanvas>`
 (`Sources/SempereAppCore/NoteEditor/`), with loading and the drawing cache, autosave, page and item gestures,
@@ -216,6 +216,70 @@ Wave 5b, part 1 (capture, 2026-11-07) moved quick capture's state machine and wh
   `QuickCaptureStartTests`), on the fakes of `CaptureTestKit.swift` and one fixture vault copied per test. The app
   keeps what needs AVFoundation (ADTS cut-offs and merges, the zero-length segment, the real session's interruptions
   and file protection), ActivityKit, the intents (AppIntents), `AppActivation`, and the `AppModel` ones (wave 5b, part 2).
+
+Wave 5b, part 2 (the first half of the `AppModel` family, 2026-11-07) moved the class itself:
+
+- **`AppModelCore<Host: AppModelHost>`** (`Sources/SempereAppCore/AppModel/`): the stored state, opening, unlocking,
+  the editor's open and close, `close()`, and the extensions every other part calls: `+Loading`, `+ListUpdates`,
+  `+Reconcile`, `+RemoteMerge`, `+PublishedSummaries`, `+Join` (partial copies), `+Search` (search and Recognize All
+  Notes), `+TranscriptSearch`, `+Activity` (`RecentActivity`), `+Notebooks`, `+ReadOnly` (the rules; the banner's words
+  are the app's), `+Edits` (the sidebar's edits: create, rename, move, tags, delete; the drags stay in the app's
+  `AppModel+Browser`), `+SyncTargets` and `+WebDAV` (the run closures and `syncVaultStale`), with what they need:
+  `VaultIndex` (`VaultEnumeration`, `IndexDiff`), `UnlockKeys`, `ListAlert`, `DeviceWriteStores` (the Keychain-backed
+  `app(storeRoot:)` stays in the app), `DeviceJoinError`, and the WebDAV types (`WebDAVTypes.swift`: `WebDAVRemote`,
+  `WebDAVEndpoint`, `WebDAVLocationStore`, `WebDAVPasswordStore`, the download status; `LiveWebDAVRemote`,
+  `PinnedServerTrust`, `WebDAVReachability` and `KeychainWebDAVPasswordStore` stay in the app).
+- **Generic over a host**, as the editor is over its canvas: the app's `AppModel` is `AppModelCore<AppHost>`
+  (`AppModel+Host.swift`), so no view and no app extension changed its spelling. The host gives the canvas
+  (`NoteEditorModel<Host.Canvas>`), the platform services (`AppModelServices`: `PerfSink`, `KeyValueStore`,
+  `FolderBookmarks`, `PlatformServices`, the WebDAV remote and passwords, `CloudVault.Hooks`, the transcriber and the
+  revisions' `app` name; the app's are `UserDefaults.standard`, the Keychain, the network, as before; tests get
+  `AppModelServices.headless()`) and, until part 3, two seams for the extensions still in the app:
+  - `Host.State`: their stored state whose types are the app's (`AppModelAppState`: the drag payload, export and import
+    requests, background tasks, reachability, the render cache, the item clipboard, takeover and settings-sync alerts,
+    …), read through forwarding properties on `AppModel`. Stored state whose type is the library's is in the class even
+    when only app-side code uses it yet.
+  - the host's steps (`AppModelHost`'s requirements, no defaults: a host that forgets one does not compile): what
+    `didUnlock`, `adoptReopened`, `close()`, the editor's open, the listing and the sync runs call in the app's code
+    (quick-capture profile, inbox, takeovers and device state, backup reminder, settings sync, attachments and their
+    index, recordings, thinning, note windows).
+  `FolderBookmarks` gained `recordedPath(of:)` (a folder target on an absent drive is offline, not gone).
+- **Words**: `AppModel+Text.swift` words `AppModelError`, `AppModelNotice` (the two `errorMessage`s of a reopen),
+  `SyncTargetProblem`, `WebDAVVaultError`, `WebDAVPasswordError`, `NoteSort`, `SearchScope`, the progress headlines,
+  `WebDAVLeftover` and the read-only banner, unchanged.
+- **Public surface**: every member of the moved files that was internal is public, because the views and the app-side
+  extensions (part 3) use the class through another module. Part 3 can narrow it to what the views read once nothing
+  else is left in the app.
+- **Tests**: `Tests/SempereAppCoreTests/AppModel` (one `.serialized` parent suite, `AppModelSuites`; fixture vaults copied
+  off the main actor, `ModelFixture`) holds `IndexTests`, `ListEpochTests`, `MassChangeTests` and the parts of
+  `AppModelTests`, `BrowserTests`, `SearchTests` and `VaultOpeningTests` that need no app-side code, on a host of their
+  own (`TestHost`, `AppModelTestKit.swift`), plus `SyncRunRuleTests` (the two run rules, and that a stale open vault's
+  runs place nothing). The rest of those files stays in the app until what they touch moves.
+
+**Wave 5b, part 3 (the plan).** The rest of the family, in an order that empties `AppModelAppState` and the host's steps:
+
+1. Attachments and their index (`+Attachments`, `+AttachmentIndex`): `RenderCache`'s pure part into the library behind
+   a narrow `RenderCaching` protocol (the app keeps the CoreGraphics drawing), `ItemClipboard` (no platform code).
+2. Recordings and transcripts (`+Recordings`): `AudioPlaybackBackend` and the player's state into the library; the
+   AVFoundation backend stays. `TranscriptSearchAppTests`, `RecordingTests` (their non-AVFoundation parts) follow.
+3. Inbox and settings sync (`+Inbox`, `+SettingsSync`): `QuickCapture.shared` as a service, `SettingsSyncBridge`'s pure
+   part, the app icon behind `PlatformServices`; `SettingsSyncAppTests`.
+4. Devices, joins and re-encryption (`+Devices`, `+DeviceNotices`, `+JoinDevice`, `+Reencrypt`, `+Keys`, `+ListAlert`):
+   `OwnerAuthenticator` as a service, `TakeoverAlert`, `SightingRow`, `UndoneRemoval` into the library; with them
+   `WebDAVAppTests`, `TwoDeviceSyncAppTests`, `JoinAppTests`, `DevicesAppTests` and `JoinTakeoverAppTests`, whose shared
+   fakes (`FakeWebDAVRemote`, `EngineWebDAVRemote`) move as one.
+5. Vault store, backups, thinning, history, export and import (`+VaultStore`, `+Backup`, `+Thinning`, `+History`,
+   `+Export`, `+BulkExport`, `+Import`, `+OpenedFiles`, `+Storage`, `+VaultDetails`): `UTType` and `CGRect` uses become
+   library values; `FolderTargetAppTests`, `BackupAppTests`, `ReadOnlyVaultTests`, `VaultStoreAppTests`.
+6. App lifecycle and windows (`+Background`, `+Suspension`, `+Windows`, `+MenuBar`, the drags of `+Browser`): the
+   background-task and lifecycle protocols move, UIKit's implementations stay; `DragPayload`/`DropTarget` leave
+   `SidebarDrop.swift`. "Keep Screen On" (`editorsChanged`, the UIKit `IdleTimerKeeper`) follows the open editors
+   through `PlatformServices.setIdleTimerDisabled`.
+7. Then `AppModelAppState`, the host's steps and `Host.State` go; `AppHost` keeps only the canvas and the services, and
+   the public surface is narrowed to what the views use. The words still made for the model go with them:
+   `unreadableText` returns words, so `editorFailure` becomes a typed value the detail pane words; `errorMessage` and
+   `loadFailure` are strings today whose text comes from the app's `@retroactive CustomStringConvertible`
+   conformances (`AppModelError`, `AppModelNotice`, …), and become typed values the views word.
 
 The words stayed in the app, next to the views that show them, so the string catalog's checks still see them
 (`LocalizationCatalogTests` scans `Apps/`): `MenuCommand+Titles.swift` words `MenuCommand.titleKind(in:)`,

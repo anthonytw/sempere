@@ -1,5 +1,6 @@
 import Sempere
 import SwiftUI
+import SempereAppCore
 
 /// Settings ▸ Sync & Devices ▸ Devices, and the Mac's key window (key-hierarchy design §6.4): every device with
 /// its kind, "This Device", "Manages devices", who added it and when, and its last sync; the recovery kit; the

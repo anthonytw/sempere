@@ -1,23 +1,12 @@
 import Foundation
 import Security
 import Sempere
+import SempereAppCore
 
-/// This device's write ledger and set-aside store for each vault (key-hierarchy design §5.4, §5.8; phase KH3).
-/// Both live in the App Group container next to the in-app vault store (`VaultStoreRoot`), so quick capture
-/// can record a voice note while the device is locked; the ledger is sealed with one key in a this-device-only
-/// Keychain item of class `AfterFirstUnlockThisDeviceOnly` (`LedgerKeychain`). Tests pass none (no ledger:
-/// nothing is recorded or caught up) or one with a key in memory.
-struct DeviceWriteStores: Sendable {
-    /// `<…>/Ledger/<vault id>/` per vault (`FileWriteLedger`).
-    let ledgerDirectory: URL
-    let setAside: SetAsideStore
-    let key: @Sendable () throws -> Data
-
-    /// The ledger of `vaultId`.
-    func ledger(for vaultId: UUID) -> FileWriteLedger {
-        FileWriteLedger(directory: ledgerDirectory, vaultId: vaultId, keyBytes: key)
-    }
-
+/// The app's `DeviceWriteStores` (SempereAppCore): both live in the App Group container next to the in-app vault
+/// store (`VaultStoreRoot`), so quick capture can record a voice note while the device is locked; the ledger is
+/// sealed with one key in a this-device-only Keychain item of class `AfterFirstUnlockThisDeviceOnly` (`LedgerKeychain`).
+extension DeviceWriteStores {
     /// The app's: folders beside the vault store's `Vaults` folder, the key in the Keychain.
     static func app(storeRoot: URL) -> DeviceWriteStores {
         let base = storeRoot.deletingLastPathComponent()
@@ -27,14 +16,6 @@ struct DeviceWriteStores: Sendable {
                                  setAside: SetAsideStore(directory: base.appendingPathComponent("SetAside", isDirectory: true)),
                                  key: { try LedgerKeychain.key(items: KeychainLedgerKeyItems(), ledgerDirectory: ledger,
                                                                unsignedFallback: fallback) })
-    }
-
-    /// Stores under `root` with a fixed key (tests).
-    static func inMemoryKey(root: URL) -> DeviceWriteStores {
-        let key = LedgerKeychain.randomKey()
-        return DeviceWriteStores(ledgerDirectory: root.appendingPathComponent("Ledger", isDirectory: true),
-                                 setAside: SetAsideStore(directory: root.appendingPathComponent("SetAside", isDirectory: true)),
-                                 key: { key })
     }
 }
 
@@ -95,6 +76,9 @@ final class MemoryLedgerKeyItems: LedgerKeyItems, @unchecked Sendable {
 
 /// The write ledger's key (design §5.4): 32 random bytes in one this-device-only item, made on first use.
 enum LedgerKeychain {
+    /// 32 random bytes (`DeviceWriteStores.randomKey`).
+    static func randomKey() -> Data { DeviceWriteStores.randomKey() }
+
     enum Failure: Error, Equatable {
         case status(OSStatus)
         case badKey
@@ -130,7 +114,7 @@ enum LedgerKeychain {
             #endif
         }
         try moveOrphanedLedgersAside(ledgerDirectory, now: now)
-        let bytes = randomKey()
+        let bytes = DeviceWriteStores.randomKey()
         do { try items.add(bytes) } catch Failure.missingEntitlement {
             #if DEBUG
             return try fileKey(unsignedFallback, ledgerDirectory: ledgerDirectory, now: now)
@@ -155,18 +139,13 @@ enum LedgerKeychain {
         }
     }
 
-    /// 32 bytes from the system's secure generator.
-    static func randomKey() -> Data {
-        var g = SystemRandomNumberGenerator()
-        return Data((0..<32).map { _ in UInt8.random(in: .min ... .max, using: &g) })
-    }
 
     #if DEBUG
     private static func fileKey(_ url: URL, ledgerDirectory: URL, now: Date) throws -> Data {
         try moveOrphanedLedgersAside(ledgerDirectory, now: now)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
-        let bytes = randomKey()
+        let bytes = DeviceWriteStores.randomKey()
         do { try bytes.write(to: url, options: [.withoutOverwriting]) } catch {
             // Another writer made it first.
             if let data = try? BoundedRead.contents(of: url, maxBytes: 64), data.count == 32 { return data }

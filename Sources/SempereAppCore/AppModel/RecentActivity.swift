@@ -3,15 +3,17 @@ import Sempere
 
 /// Queries searched recently, newest first (the search field's suggestions).
 /// Pure, tested.
-struct RecentSearches: Codable, Equatable, Sendable {
-    static let limit = 10
+public struct RecentSearches: Codable, Equatable, Sendable {
+    public static let limit = 10
     /// Longest query remembered.
-    static let maxLength = 200
+    public static let maxLength = 200
 
-    private(set) var queries: [String] = []
+    public private(set) var queries: [String] = []
+
+    public init() {}
 
     /// Puts `query` (trimmed) first; one copy per query, ignoring case.
-    mutating func record(_ query: String) {
+    public mutating func record(_ query: String) {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, q.count <= Self.maxLength else { return }
         queries.removeAll { $0.caseInsensitiveCompare(q) == .orderedSame }
@@ -19,12 +21,12 @@ struct RecentSearches: Codable, Equatable, Sendable {
         if queries.count > Self.limit { queries.removeLast(queries.count - Self.limit) }
     }
 
-    mutating func remove(_ query: String) { queries.removeAll { $0 == query } }
+    public mutating func remove(_ query: String) { queries.removeAll { $0 == query } }
 
-    mutating func clear() { queries = [] }
+    public mutating func clear() { queries = [] }
 
     /// The list as read from a file: trimmed, bounded, without duplicates.
-    func sanitized() -> RecentSearches {
+    public func sanitized() -> RecentSearches {
         var clean = RecentSearches()
         for q in queries.prefix(Self.limit * 4).reversed() { clean.record(q) }
         return clean
@@ -37,22 +39,24 @@ struct RecentSearches: Codable, Equatable, Sendable {
 /// Application Support folder, never in the vault: searches can name what
 /// notes hold, so they are as private as the notes. A vault whose secret
 /// changes starts afresh.
-struct RecentActivity: Codable, Equatable, Sendable {
-    var searches = RecentSearches()
+public struct RecentActivity: Codable, Equatable, Sendable {
+    public var searches = RecentSearches()
+
+    public init(searches: RecentSearches = RecentSearches()) { self.searches = searches }
 
     /// `SMPA` then version 1.
-    static let magic: [UInt8] = [0x53, 0x4D, 0x50, 0x41, 0x01]
-    static let fileName = "activity"
+    public static let magic: [UInt8] = [0x53, 0x4D, 0x50, 0x41, 0x01]
+    public static let fileName = "activity"
     /// The largest file read.
-    static let maxFileBytes = 4 << 20
+    public static let maxFileBytes = 4 << 20
 
     /// The file of `vault` under `root` (the folder is named by the key).
-    static func location(root: URL, key: LocalCacheKey) -> URL {
+    public static func location(root: URL, key: LocalCacheKey) -> URL {
         root.appendingPathComponent(key.name, isDirectory: true).appendingPathComponent(fileName)
     }
 
     /// What `root` holds for `vault`; empty when nothing (or nothing usable) is stored.
-    static func load(root: URL, vault: Vault, now: Date = Date()) -> RecentActivity {
+    public static func load(root: URL, vault: Vault, now: Date = Date()) -> RecentActivity {
         guard let key = try? LocalCacheKey(vault: vault, purpose: "activity", magic: magic) else { return RecentActivity() }
         let url = location(root: root, key: key)
         guard FileManager.default.fileExists(atPath: url.path),
@@ -64,7 +68,7 @@ struct RecentActivity: Codable, Equatable, Sendable {
     }
 
     /// Stores `self` for `vault` under `root` (errors are ignored: it is a convenience).
-    func save(root: URL, vault: Vault) {
+    public func save(root: URL, vault: Vault) {
         guard let key = try? LocalCacheKey(vault: vault, purpose: "activity", magic: Self.magic),
               let plain = try? JSONEncoder().encode(self),
               let sealed = try? key.seal(plain, fileName: Self.fileName) else { return }

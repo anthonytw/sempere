@@ -5,6 +5,7 @@ import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// TestFlight build 6: reopening a note with PDF pages was as slow as the
 /// first open. Decrypted blobs (`BlobCache`), drawn pictures and PDF page

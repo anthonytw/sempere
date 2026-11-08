@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// One export run for the export sheet: runs `AppModel.exportNotes` in a task
 /// the sheet can cancel, and owns the scratch folder the files are written to

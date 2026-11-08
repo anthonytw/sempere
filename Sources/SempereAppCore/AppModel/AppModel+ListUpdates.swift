@@ -1,6 +1,5 @@
 import Foundation
 import Sempere
-import SempereAppCore
 
 /// The note list's updates: batched, throttled and applied as differences.
 ///
@@ -14,11 +13,11 @@ import SempereAppCore
 /// changes, never a re-sort of the whole list. The views' derived lists
 /// (`visibleNotes`, `tags`, `notebookTree`) are computed once per change of
 /// the list or the filters, not on every render (`DerivedLists`).
-extension AppModel {
+extension AppModelCore {
     /// Queues summaries to show and notes to drop; applied now when the last
     /// application was at least `listUpdateInterval` ago, else once that
     /// interval has passed.
-    func queueListUpdate(upserts: [NoteSummary] = [], removals: Set<UUID> = []) {
+    public func queueListUpdate(upserts: [NoteSummary] = [], removals: Set<UUID> = []) {
         for s in upserts {
             listUpserts[s.id] = s
             listRemovals.remove(s.id)
@@ -46,7 +45,7 @@ extension AppModel {
 
     /// Applies everything queued now (the end of a pass, so whoever awaited
     /// it sees the final list).
-    func flushListUpdates() {
+    public func flushListUpdates() {
         listFlushTask?.cancel()
         listFlushTask = nil
         guard !listUpserts.isEmpty || !listRemovals.isEmpty else { return }
@@ -58,9 +57,9 @@ extension AppModel {
 
     /// Changes `notes` by `upserts` and `removals` (`NoteListDiff`); assigns
     /// only when something differs.
-    func applyListChanges(upserts: [NoteSummary], removals: Set<UUID>) {
+    public func applyListChanges(upserts: [NoteSummary], removals: Set<UUID>) {
         lastListApply = .now
-        let interval = Perf.begin(.listUpdate)
+        let interval = services.perf.begin("list.update")
         var changed = false
         if let next = NoteListDiff.apply(upserts: upserts, removals: removals, to: notes) {
             listChangeIDs = Set(upserts.map(\.id)).union(removals)
@@ -68,11 +67,11 @@ extension AppModel {
             listChangeIDs = nil
             changed = true
         }
-        Perf.end(interval, "upserts=\(upserts.count) removals=\(removals.count) notes=\(notes.count) changed=\(changed)")
+        services.perf.end(interval, "upserts=\(upserts.count) removals=\(removals.count) notes=\(notes.count) changed=\(changed)")
     }
 
     /// Forgets queued updates (the vault closed).
-    func discardListUpdates() {
+    public func discardListUpdates() {
         listFlushTask?.cancel()
         listFlushTask = nil
         listUpserts = [:]
@@ -83,17 +82,27 @@ extension AppModel {
 
 /// Lists the views derive from `notes`, computed once per change: the
 /// sidebar and the list read them on every render.
-struct DerivedLists {
-    struct VisibleKey: Equatable {
-        var version: Int
-        var selection: SidebarItem?
-        var search: String
-        var sort: NoteSort
-        var favoritesFirst: Bool
+public struct DerivedLists {
+    public struct VisibleKey: Equatable {
+        public var version: Int
+        public var selection: SidebarItem?
+        public var search: String
+        public var sort: NoteSort
+        public var favoritesFirst: Bool
+
+        public init(version: Int, selection: SidebarItem?, search: String, sort: NoteSort, favoritesFirst: Bool) {
+            self.version = version
+            self.selection = selection
+            self.search = search
+            self.sort = sort
+            self.favoritesFirst = favoritesFirst
+        }
     }
 
-    var visible: (key: VisibleKey, value: [NoteSummary])?
-    var byID: (version: Int, value: [UUID: NoteSummary])?
-    var tags: (version: Int, value: [String])?
-    var tree: (version: Int, value: [NotebookNode])?
+    public var visible: (key: VisibleKey, value: [NoteSummary])?
+    public var byID: (version: Int, value: [UUID: NoteSummary])?
+    public var tags: (version: Int, value: [String])?
+    public var tree: (version: Int, value: [NotebookNode])?
+
+    public init() {}
 }

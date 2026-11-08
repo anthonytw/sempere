@@ -2,6 +2,7 @@ import PDFKit
 import Sempere
 import SempereRender
 import SwiftUI
+import SempereAppCore
 
 /// A small preview of a blob in Settings → Storage: images and the first
 /// page of a PDF are decrypted (verified, in memory only,

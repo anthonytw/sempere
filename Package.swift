@@ -107,7 +107,7 @@ let package = Package(
         // capture (its state machine, the platform behind protocols), the sync scheduling (`SyncCoordinator`,
         // `SyncSession`, `SyncStatus`) and the demo vault (DEBUG only).
         // Foundation and Observation only, and no user-facing text: the app words its values.
-        .target(name: "SempereAppCore", dependencies: ["Sempere", "Age", "SempereImporters", "SempereSync", "SempereRender",
+        .target(name: "SempereAppCore", dependencies: ["Sempere", "Age", "SempereImport", "SempereImporters", "SempereSync", "SempereRender",
                                                        "SempereWebDAV", "SempereCaptureShared"]),
         // What the quick voice note widgets, the control and the Live Activity share with the app (docs/design/thin-app.md
         // "Rules"): the status the widgets read, the links, the tap log and the intents' hooks. No dependencies (Foundation

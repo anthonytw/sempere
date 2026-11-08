@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import SempereSync
 import SempereWebDAV
+import SempereAppCore
 
 /// What Vault Details shows for one store vault (docs/design/device-first-sync.md §8.3, §8.4; P9): the copy's
 /// sizes and each target with its devices, quarantine and staging. The same as `sempere store info`.
@@ -22,25 +23,19 @@ enum RepairProblem: Error, Equatable, CustomStringConvertible {
     }
 }
 
-/// What the add-target sheet found at a server folder (`WebDAVConnection.checkTargetFolder`).
-enum WebDAVTargetProbe: Sendable {
-    case checked(WebDAVTargetFolder)
-    /// `certificate` is set when the server's certificate was not trusted.
-    case failed(WebDAVSyncProblem, message: String, certificate: ServerCertificate?)
-}
-
 extension AppModel {
     /// Vault Details for the store vault `vaultID`, read off the main actor from this device only.
     func vaultDetails(_ vaultID: UUID, measureFolders: Bool = false) async throws -> VaultDetailsSnapshot {
         let store = syncStore
         guard let entry = store.entry(id: vaultID) else { throw SyncTargetProblem.notAStoreVault }
         let device = try? deviceClockForWriting().device
+        let bookmarks = services.bookmarks
         return try await offMain(priority: .utility) {
             // A folder target is measured through its bookmark (its path alone is outside the sandbox on iOS).
             var opened: [FolderTargetAccess] = []
             defer { opened.forEach { $0.close() } }
             let targets = try store.targetDetails(entry, thisDevice: device, measureFolders: measureFolders) { target in
-                guard let access = try? FolderTargetAccess.open(target) else { return nil }
+                guard let access = try? FolderTargetAccess.open(target, bookmarks: bookmarks) else { return nil }
                 opened.append(access)
                 return access.folder
             }

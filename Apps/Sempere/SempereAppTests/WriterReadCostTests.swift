@@ -3,6 +3,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Counts the revision files a vault (and every copy of it) decrypted
 /// (`Vault.revisionDecryptCount`). Files are decrypted by the vault identity

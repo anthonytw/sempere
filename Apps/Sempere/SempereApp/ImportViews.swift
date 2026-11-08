@@ -1,6 +1,7 @@
 import SempereImport
 import SempereImporters
 import SwiftUI
+import SempereAppCore
 
 /// What the file picker returned for "Import from …", waiting for the options sheet.
 struct ImportPick: Identifiable, Equatable {

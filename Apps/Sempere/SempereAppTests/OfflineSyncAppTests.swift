@@ -22,7 +22,7 @@ struct OfflineSyncAppTests {
         var target = SyncTarget.folder(URL(fileURLWithPath: absent + "/Sync/Notes.sempere"), bookmark: Data("not a bookmark".utf8),
                                        subfolder: "Notes.sempere")
         target.path = absent + "/Sync/Notes.sempere"
-        do { _ = try FolderTargetAccess.open(target); Issue.record("opened") } catch let e as FolderTargetError {
+        do { _ = try FolderTargetAccess.open(target, bookmarks: SecurityScopedBookmarks()); Issue.record("opened") } catch let e as FolderTargetError {
             guard case .unavailable = e else { Issue.record("\(e)"); return }
         }
         let status = SyncStatus(syncing: false, problems: [SyncStatus.problem(from: FolderTargetError.unavailable("x"))],
@@ -42,7 +42,7 @@ struct OfflineSyncAppTests {
         var target = SyncTarget.folder(picked, bookmark: bookmark)
         target.path = nil   // only the bookmark knows where it was
         try FileManager.default.removeItem(at: parent)   // the folder and the one it was in
-        do { _ = try FolderTargetAccess.open(target); Issue.record("opened") } catch let e as FolderTargetError {
+        do { _ = try FolderTargetAccess.open(target, bookmarks: SecurityScopedBookmarks()); Issue.record("opened") } catch let e as FolderTargetError {
             guard case .missing = e else { Issue.record("\(e)"); return }
         }
     }

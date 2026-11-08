@@ -4,6 +4,7 @@ import Sempere
 import Testing
 import UniformTypeIdentifiers
 @testable import SempereApp
+import SempereAppCore
 
 /// Dragging notes and notebooks onto the sidebar, and "Move Notebook To…":
 /// the payloads, the rules (what a row accepts) and the moves they make.

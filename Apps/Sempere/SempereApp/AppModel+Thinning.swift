@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereSync
+import SempereAppCore
 
 /// How old autosaves must be before thinning removes them (format.md
 /// §5.8.4): kept in `UserDefaults` on this device. 0 means never.

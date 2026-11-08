@@ -3,6 +3,7 @@ import SempereSync
 import SempereWebDAV
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// A transport that only exists to be counted and to show when it is deallocated.
 private final class CountedTransport: WebDAVTransport, @unchecked Sendable {

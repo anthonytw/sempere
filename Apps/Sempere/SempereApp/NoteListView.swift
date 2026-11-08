@@ -3,6 +3,7 @@ import SempereImporters
 import SwiftUI
 import UniformTypeIdentifiers
 import SempereImport
+import SempereAppCore
 
 /// The notes matching the sidebar selection, with title search, sorting and
 /// per-note actions.

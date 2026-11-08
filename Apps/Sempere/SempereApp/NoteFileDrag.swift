@@ -1,5 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
+import SempereAppCore
 
 /// A note dragged out of the app to the Finder (or any app that takes files)
 /// as a PDF, or as Markdown or HTML when Settings ▸ General ▸ Drag to Finder

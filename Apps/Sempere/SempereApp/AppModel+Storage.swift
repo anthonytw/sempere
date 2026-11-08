@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// Sizes of this device's caches (all of it can be rebuilt from the vault).
 struct CacheSizes: Equatable, Sendable {

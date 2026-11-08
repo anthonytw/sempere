@@ -1,5 +1,6 @@
 import Sempere
 import SwiftUI
+import SempereAppCore
 
 /// Notebooks (a tree of `/`-separated paths) and tags of the open vault.
 /// Selecting a notebook shows the notes in it and in its sub-notebooks.

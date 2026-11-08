@@ -1,6 +1,7 @@
 import Foundation
 import SempereSync
 import SempereWebDAV
+import SempereAppCore
 
 /// What identifies one vault connection: operations with an equal key may share a transport (and so its
 /// TCP/TLS connections). The certificate pin is part of it, so a transport built for one pin is never used

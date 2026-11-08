@@ -1,41 +1,17 @@
 import Age
 import Foundation
-import SempereAppCore
-import os
 import Sempere
 import SempereSync
 
-private let syncTargetsLog = Logger(subsystem: "io.github.anthonytw.sempere", category: "syncTargets")
-
-/// Where the in-app vault store lives (docs/design/device-first-sync.md §2).
-enum VaultStoreRoot {
-    /// The app's App Group (entitled on iPhone and iPad builds only).
-    static let appGroup = "group.io.github.anthonytw.sempere"
-
-    /// The store's folder: `<App Group>/Library/Application Support/Sempere/Vaults` when the App Group
-    /// container is there, else `fallback` (the Mac's). The folder
-    /// is `completeUntilFirstUserAuthentication` (quick capture writes from the Lock Screen; every file
-    /// is age-encrypted anyway).
-    static func prepare(appGroup container: URL?, fallback: URL) -> URL {
-        guard let container else { return fallback }
-        let root = container.appendingPathComponent("Library/Application Support/Sempere/Vaults", isDirectory: true)
-        let fm = FileManager.default
-        try? fm.createDirectory(at: root, withIntermediateDirectories: true)
-        #if os(iOS)
-        try? fm.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: root.path)
-        #endif
-        return root
-    }
-}
-
 /// A folder target's folder, reachable for one run: its bookmark resolved (security scope held until
 /// `close`), else its path.
-struct FolderTargetAccess {
+public struct FolderTargetAccess: Sendable {
     /// The folder holding the vault's copy.
-    let folder: URL
+    public let folder: URL
     private let scoped: URL?
+    private let bookmarks: any FolderBookmarks
     /// A fresh bookmark when the stored one was stale (the folder moved or was renamed): the caller saves it.
-    var refreshedBookmark: Data?
+    public var refreshedBookmark: Data?
 
     /// - Parameter mount: may mount a share the bookmark names (a run the user started, Sync Now). Scheduled runs
     ///   pass false (`.withoutMounting`): the Mac would otherwise try to mount an absent share on every run.
@@ -43,68 +19,39 @@ struct FolderTargetAccess {
     ///   share is not there now (an unplugged USB drive, an unmounted share: offline audit A-P2; shown as offline,
     ///   the next run tries again); `.missing` when it does not resolve otherwise (review of #72, G5: the user
     ///   chooses the folder again) or no path names the folder.
-    static func open(_ target: SyncTarget, mount: Bool = false) throws -> FolderTargetAccess {
+    public static func open(_ target: SyncTarget, mount: Bool = false, bookmarks: any FolderBookmarks) throws -> FolderTargetAccess {
         if let bookmark = target.bookmark {
-            var stale = false
-            let options: URL.BookmarkResolutionOptions = mount ? [] : [.withoutMounting]
-            guard let picked = try? URL(resolvingBookmarkData: bookmark, options: options, relativeTo: nil, bookmarkDataIsStale: &stale) else {
+            guard let resolved = try? bookmarks.resolve(bookmark, mounting: mount) else {
                 // The folder the user picked, as the bookmark recorded it (else the stored path without the
                 // subfolder), tells an absent drive from a folder deleted: a picked folder deleted from a drive
                 // that is there is gone, and is chosen again (review of #72, G5).
-                let picked = FolderReach.recordedPath(bookmark) ?? target.path.map { p in
+                let picked = bookmarks.recordedPath(of: bookmark) ?? target.path.map { p in
                     target.subfolder == nil ? p : (p as NSString).deletingLastPathComponent
                 }
                 let shown = target.path ?? picked ?? target.name
-                if let picked, FolderReach.isOnAbsentDrive(picked) { throw FolderTargetError.unavailable(shown) }
+                if let picked, FolderReachability.isOnAbsentVolume(picked) { throw FolderTargetError.unavailable(shown) }
                 throw FolderTargetError.missing(shown)
             }
-            let scoped = picked.startAccessingSecurityScopedResource()
+            let picked = resolved.url
+            let scoped = bookmarks.startAccessing(picked)
             let folder = target.subfolder.map { picked.appendingPathComponent($0, isDirectory: true) } ?? picked
-            var access = FolderTargetAccess(folder: folder, scoped: scoped ? picked : nil)
-            if stale {
-                access.refreshedBookmark = try? picked.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+            var access = FolderTargetAccess(folder: folder, scoped: scoped ? picked : nil, bookmarks: bookmarks)
+            if resolved.isStale {
+                access.refreshedBookmark = try? bookmarks.bookmark(for: picked)
             }
             return access
         }
         guard let path = target.path else { throw FolderTargetError.missing(target.name) }
-        return FolderTargetAccess(folder: URL(fileURLWithPath: path, isDirectory: true), scoped: nil)
+        return FolderTargetAccess(folder: URL(fileURLWithPath: path, isDirectory: true), scoped: nil, bookmarks: bookmarks)
     }
 
-    func close() {
-        scoped?.stopAccessingSecurityScopedResource()
-    }
-}
-
-/// Telling a folder whose drive or share is not there now from one that is gone (offline audit A-P2; review of #91, M2),
-/// for folder targets and backups. Only a known removable root counts: a folder is on an absent drive when the volume
-/// it is on is not mounted (`/Volumes/<name>` on a Mac; `…/LiveFiles/com.apple.filesystems.<daemon>/<name>` on iPadOS
-/// and iOS, where USB drives and SMB shares appear) and that volume folder itself is absent. Anything else, a folder
-/// and its parent deleted included, is gone: the user chooses it again (review of #72, G5).
-///
-/// Assumed on iOS, not yet checked on a device: a USB drive or an SMB share opened in Files resolves to a path under
-/// `/private/var/mobile/Library/LiveFiles/com.apple.filesystems.userfsd/<volume>/` (or `….smbclientd/<share>/`, and
-/// for older drivers `….lifs/`), the bookmark records that path, and the app can tell whether the `<volume>` folder
-/// exists without its security scope (it lists only mounted volumes). If the app cannot see it, a mounted drive whose
-/// bookmark fails reads as unavailable (offline) rather than gone; a deleted folder elsewhere still reads as gone.
-enum FolderReach {
-    /// The path a bookmark recorded, read without resolving it (no mount, no scope): nil when it holds none.
-    static func recordedPath(_ bookmark: Data) -> String? {
-        (try? URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: bookmark))?.path
-    }
-
-    /// The removable volume `path` is on, nil when it is on none: the package's rule (`FolderReachability`, shared
-    /// with the CLI and `FolderTargetRun`).
-    static func removableRoot(of path: String) -> String? { FolderReachability.removableRoot(of: path) }
-
-    /// True when `path` is on a removable volume that is not mounted now: a drive not connected or a share not
-    /// mounted, which a later run may find (`FolderReachability.isOnAbsentVolume`).
-    static func isOnAbsentDrive(_ path: String, fileManager fm: FileManager = .default) -> Bool {
-        FolderReachability.isOnAbsentVolume(path, fileManager: fm)
+    public func close() {
+        if let scoped { bookmarks.stopAccessing(scoped) }
     }
 }
 
 /// Why a sync target could not be added in the app.
-enum SyncTargetProblem: Error, Equatable, CustomStringConvertible {
+public enum SyncTargetProblem: Error, Equatable, Sendable {
     case notAStoreVault
     case duplicate
     case overlapsStore
@@ -124,44 +71,14 @@ enum SyncTargetProblem: Error, Equatable, CustomStringConvertible {
     /// This account may not write to the folder (its name): another user's, or read-only.
     case notWritable(String)
     case other(String)
-
-    var description: String {
-        switch self {
-        case .notAStoreVault:
-            return String(localized: "Only a vault kept on this device can have sync targets. Open the vault from the list first.")
-        case .duplicate:
-            return String(localized: "This vault already syncs with that folder.")
-        case .overlapsStore:
-            return String(localized: "Choose a folder outside Sempere's own storage.")
-        case .isBackup:
-            return String(localized: "That folder is a backup. A sync would write into it and pass deletions on, so it is never a sync target. Restore it, or open it as a one-time copy.")
-        case .otherVault(let name):
-            return String(localized: "This folder holds another vault (\(name)). Choose an empty folder or the vault's own sync folder.",
-                          comment: "Sync targets: the picked folder is another vault's; %@ is that vault's name")
-        case .insideVault(let name):
-            return String(localized: "That folder is inside “\(name)”, a vault or a backup. A sync would write into it, so choose a folder outside it: for example the folder that holds “\(name)”.",
-                          comment: "Sync targets: the picked folder is inside a vault or backup folder; %@ is that folder's name")
-        case .notAVault(let name):
-            return String(localized: "“\(name)” is named like a vault's sync folder but holds no vault, and it is not empty. Choose the folder that holds it, or an empty folder.",
-                          comment: "Sync targets: a picked ….sempere folder with other files; %@ is its name")
-        case .notDownloaded(let name):
-            return String(localized: "“\(name)” is in iCloud Drive but not on this device yet. Sempere asked iCloud Drive to download it: wait a moment, then choose it again.",
-                          comment: "Sync targets: the picked sync folder is not downloaded yet; %@ is its name")
-        case .notWritable(let name):
-            return String(localized: "Sempere cannot write to “\(name)”: this account has no permission to change it (it belongs to another user, or is read-only). Choose a folder you can write to.",
-                          comment: "Sync targets: the picked folder is not writable; %@ is its name")
-        case .other(let message):
-            return String(localized: "The folder could not be added: \(message)", comment: "The value is the reason (English)")
-        }
-    }
 }
 
 /// Sync targets of store vaults in the app (docs/design/device-first-sync.md §2, §8.1; docs/io.md "Sync
 /// targets in the app"): folder targets (iCloud Drive, another provider, any folder) next to WebDAV ones,
 /// any number per vault, each a `SyncSession` of the `SyncCoordinator`.
-extension AppModel {
+extension AppModelCore {
     /// Every store vault's targets (the coordinator's list).
-    func allSyncTargets() -> [SyncTargetRef] {
+    public func allSyncTargets() -> [SyncTargetRef] {
         let store = syncStore
         return store.targets.all().flatMap { vault, targets -> [SyncTargetRef] in
             let entry = store.entry(id: vault)
@@ -174,23 +91,23 @@ extension AppModel {
     }
 
     /// The targets of the open vault, in the order they were added (the Sync Targets sheet).
-    var openVaultTargets: [SyncTarget] {
+    public var openVaultTargets: [SyncTarget] {
         guard let url = vaultURL, let entry = syncStore.entry(containing: url) else { return [] }
         return syncStore.targets.targets(of: entry.vaultId)
     }
 
     /// Whether this device can ask to join the open vault (Join This Device): a request and home's approval travel
     /// through a sync target, so a store vault without one (a backup opened as a one-time copy, an import) cannot.
-    var canJoinOpenVault: Bool { !openVaultIsStored || !openVaultTargets.isEmpty }
+    public var canJoinOpenVault: Bool { !openVaultIsStored || !openVaultTargets.isEmpty }
 
     /// True when the open vault is a store vault (it may have targets).
-    var openVaultIsStored: Bool {
+    public var openVaultIsStored: Bool {
         guard let url = vaultURL else { return false }
         return syncStore.entry(containing: url) != nil
     }
 
     /// The coordinator's session for a target.
-    func makeSession(for ref: SyncTargetRef) -> SyncSession? {
+    public func makeSession(for ref: SyncTargetRef) -> SyncSession? {
         let session: SyncSession?
         switch ref.target.kind {
         case .webdav:
@@ -224,6 +141,7 @@ extension AppModel {
         let lock = store.writeLock(for: vaultID)
         let cacheDirectory = summaryCacheDirectory, deviceState = deviceStateURL
         let provider = folderProvider, wait = folderArrivalWait, uploadCheck = providerUploadCheck
+        let bookmarks = services.bookmarks, perf = services.perf
         let stateDirectory = stateURL.deletingLastPathComponent()
         let undoneURL = UndoneRemovalsRecord.url(targets: store.targets, vaultId: vaultID)
         let counting = LocalCopy(folder: entry.url, stateDirectory: stateURL.deletingLastPathComponent())
@@ -231,16 +149,12 @@ extension AppModel {
             locationID: targetID, vaultID: vaultID, name: ref.vaultName, lastSuccess: ref.target.lastSuccess,
             run: { [weak self] request in
                 let (target, vault, join) = await MainActor.run { () -> (SyncTarget?, Vault?, NativeIdentity?) in
-                    // Two-way only with the open vault as the disk says it is (review of #70, F1).
-                    let mine = self?.syncSessions.contains { $0.locationID == targetID } == true
-                    let open = mine && self?.phase == .unlocked && self?.syncVaultStale == false
-                    // A device joining the open, locked vault takes home's approval (key-hierarchy KH5).
-                    let joining = mine && self?.phase == .locked ? self?.joinIdentity : nil
-                    return (store.targets.targets(of: vaultID).first { $0.id == targetID }, open ? self?.vault : nil, joining)
+                    let run = self?.syncRunKeys(for: targetID)
+                    return (store.targets.targets(of: vaultID).first { $0.id == targetID }, run?.vault, run?.join)
                 }
                 guard let target else { throw SyncTargetError.notFound(targetID.uuidString) }
                 return try await Task.detached(priority: .utility) { () throws -> SyncReport in
-                    let access = try FolderTargetAccess.open(target, mount: request.interactive)
+                    let access = try FolderTargetAccess.open(target, mount: request.interactive, bookmarks: bookmarks)
                     defer { access.close() }
                     if let fresh = access.refreshedBookmark {
                         // The folder moved or was renamed: keep reaching it (review of #72, G5).
@@ -264,7 +178,7 @@ extension AppModel {
                     // Removals a takeover undid are kept for the banner (offline audit P16, `undoneRemovals`).
                     options.undoneRemovalsURL = undoneURL
                     // An upload-only run honors this device's sightings by epoch number (KH4, J5b).
-                    options.epochTrust = AppModel.defaultTrust
+                    options.epochTrust = Self.defaultTrust
                     let twoWay = request.mode == .twoWay && vault?.canRead == true
                     // A complete copy keeps the target's sealed summaries current, so a device joining lists
                     // the notes before they arrive; never a partial copy (its list is not whole).
@@ -272,9 +186,9 @@ extension AppModel {
                     let folderProvider = provider?(access.folder)
                     // Vault folders are never packages (`BundleBitRepair`, owner's build 12): the store's copy and the
                     // target before each run, and the target again after it (a first run makes it).
-                    BundleBitRepair.clear(entry.url, .storeVault)
-                    BundleBitRepair.clear(access.folder, .syncTarget)
-                    defer { BundleBitRepair.clear(access.folder, .syncTarget) }
+                    BundleBitRepair.clear(entry.url, .storeVault, log: perf)
+                    BundleBitRepair.clear(access.folder, .syncTarget, log: perf)
+                    defer { BundleBitRepair.clear(access.folder, .syncTarget, log: perf) }
                     if let join {
                         // A join run (design §6.2): the request goes out, home's approval comes in, keyless.
                         var joinOptions = options
@@ -314,7 +228,7 @@ extension AppModel {
             guard let target = store.targets.targets(of: vaultID).first(where: { $0.id == targetID }) else {
                 throw SyncTargetError.notFound(targetID.uuidString)
             }
-            let access = try FolderTargetAccess.open(target)
+            let access = try FolderTargetAccess.open(target, bookmarks: bookmarks)
             // The runs' rule before anything is written through it (a re-encryption's claim; review of #119).
             do { try FolderTargetRun.check(access.folder, stateURL: stateURL) } catch { access.close(); throw error }
             let remote: any SyncRemote = FolderRemote(root: access.folder, provider: provider?(access.folder))
@@ -336,8 +250,21 @@ extension AppModel {
         return session
     }
 
+    /// The two rules every target's run starts from (folder and WebDAV alike), read on the main actor when the run
+    /// starts:
+    /// - two-way only for a session of the open vault while it is unlocked and as the disk says it is: while a reopen
+    ///   after another device's key change is pending, or failed, its runs only upload (`syncVaultStale`, review of
+    ///   #70, F1). `vault` is the open vault then, nil for an upload-only run.
+    /// - a device joining the open, locked vault takes home's approval through its runs (key-hierarchy KH5): `join` is
+    ///   its key then.
+    public func syncRunKeys(for target: UUID) -> (vault: Vault?, join: NativeIdentity?) {
+        let mine = syncSessions.contains { $0.locationID == target }
+        let open = mine && phase == .unlocked && !syncVaultStale
+        return (open ? vault : nil, mine && phase == .locked ? joinIdentity : nil)
+    }
+
     /// Two runs' local changes as one report's (a placing of staged files, then the run).
-    nonisolated static func union(_ a: LocalChanges?, _ b: LocalChanges?) -> LocalChanges? {
+    public nonisolated static func union(_ a: LocalChanges?, _ b: LocalChanges?) -> LocalChanges? {
         guard var merged = a else { return b }
         if let b { merged.formUnion(b) }
         return merged.isEmpty ? nil : merged
@@ -345,7 +272,7 @@ extension AppModel {
 
     /// The vault just opened: when it is a store vault, its targets' sessions become the open ones (two-way
     /// once it is unlocked), and what their runs change arrives in the model.
-    func attachSyncTargets(vaultID: UUID, at url: URL) {
+    public func attachSyncTargets(vaultID: UUID, at url: URL) {
         guard syncStore.entry(containing: url)?.vaultId == vaultID else { return }
         webdavLocations.reload()
         syncCoordinator.attachOpen(vaultID)
@@ -374,7 +301,7 @@ extension AppModel {
     }
 
     /// The targets changed (added, removed): sessions follow, and the open vault's list with them.
-    func syncTargetsChanged() {
+    public func syncTargetsChanged() {
         webdavLocations.reload()
         syncCoordinator.refresh()
         if let open = syncCoordinator.openVault { adoptOpenSessions(open) }
@@ -386,16 +313,17 @@ extension AppModel {
     /// picked (its bookmark is kept; `folder` is it or inside it). The first run copies the vault into an
     /// empty or missing folder, or makes a union with the same vault already there; nothing is deleted.
     @discardableResult
-    func addFolderTarget(_ folder: URL, scope: URL, to vaultID: UUID) throws -> SyncTarget {
+    public func addFolderTarget(_ folder: URL, scope: URL, to vaultID: UUID) throws -> SyncTarget {
         let store = syncStore
         guard store.entry(id: vaultID) != nil else { throw SyncTargetProblem.notAStoreVault }
-        let scoped = scope.startAccessingSecurityScopedResource()
-        defer { if scoped { scope.stopAccessingSecurityScopedResource() } }
+        let bookmarks = services.bookmarks
+        let scoped = bookmarks.startAccessing(scope)
+        defer { if scoped { bookmarks.stopAccessing(scope) } }
         try Self.checkFolderTarget(folder, in: store)
         // Every run would fail to write there (build 12: "errno 13" for the demo vault another account made).
         guard Self.isWritableFolder(folder) else { throw SyncTargetProblem.notWritable(folder.lastPathComponent) }
-        BundleBitRepair.clear(folder, .syncTarget)
-        let bookmark = try? scope.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        BundleBitRepair.clear(folder, .syncTarget, log: services.perf)
+        let bookmark = try? bookmarks.bookmark(for: scope)
         let subfolder = Self.subfolder(of: folder, in: scope)
         if subfolder == nil, !Self.samePlace(folder, scope) {
             // Never a target whose runs would write somewhere else than `folder` (TestFlight build 10).
@@ -417,7 +345,7 @@ extension AppModel {
     /// Whether this account may create and replace files in `folder`, or (not made yet) in the nearest folder above it
     /// that exists: `access(W_OK)`, which says no for a folder another user owns without write permission for others,
     /// or a read-only one.
-    nonisolated static func isWritableFolder(_ folder: URL) -> Bool {
+    public nonisolated static func isWritableFolder(_ folder: URL) -> Bool {
         var u = folder.standardizedFileURL
         while !FileManager.default.fileExists(atPath: u.path), u.pathComponents.count > 1 { u = u.deletingLastPathComponent() }
         return FileManager.default.isWritableFile(atPath: u.path)
@@ -430,20 +358,21 @@ extension AppModel {
     /// came out as `/var/mobile/…` and the copy's folder inside it (not made yet) kept `/private`, so no subfolder was
     /// recorded, and the bookmark of the picked folder sent every run into the picked folder itself (TestFlight build
     /// 10: "junk/Wompa.sempere" listed, the vault's files written into "junk").
-    nonisolated static func subfolder(of inner: URL, in base: URL) -> String? { SyncTarget.subfolder(of: inner, in: base) }
+    public nonisolated static func subfolder(of inner: URL, in base: URL) -> String? { SyncTarget.subfolder(of: inner, in: base) }
 
     /// True when `a` and `b` name the same folder (`SyncTarget.comparablePath`).
-    nonisolated static func samePlace(_ a: URL, _ b: URL) -> Bool {
+    public nonisolated static func samePlace(_ a: URL, _ b: URL) -> Bool {
         SyncTarget.comparablePath(a) == SyncTarget.comparablePath(b)
     }
 
     /// "Add Folder…": the folder the user picked holds the vault's copy when it is a vault folder;
     /// otherwise the copy goes into `<picked>/<vault name>.sempere` (made by the first run).
     @discardableResult
-    func addPickedFolderTarget(_ picked: URL, to vaultID: UUID) throws -> SyncTarget {
+    public func addPickedFolderTarget(_ picked: URL, to vaultID: UUID) throws -> SyncTarget {
         guard let entry = syncStore.entry(id: vaultID) else { throw SyncTargetProblem.notAStoreVault }
-        let scoped = picked.startAccessingSecurityScopedResource()
-        defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
+        let bookmarks = services.bookmarks
+        let scoped = bookmarks.startAccessing(picked)
+        defer { if scoped { bookmarks.stopAccessing(picked) } }
         let folder = try pickedTargetLocation(picked, vaultFolderName: entry.url.lastPathComponent, vaultId: vaultID)
         return try addFolderTarget(folder, scope: picked, to: vaultID)
     }
@@ -452,10 +381,11 @@ extension AppModel {
     /// `addPickedFolderTarget` would give once it exists (a sync folder not on this device yet, asked of iCloud Drive
     /// meanwhile; another vault's folder; a backup), so a refused pick never leaves a new vault without its target.
     /// Nothing is written. A name the store refuses is left to the creation, which says so.
-    func checkPickedFolderTarget(_ picked: URL, vaultName: String, vaultId: UUID) throws {
+    public func checkPickedFolderTarget(_ picked: URL, vaultName: String, vaultId: UUID) throws {
         guard let folderName = try? VaultStore.folderName(for: vaultName) else { return }
-        let scoped = picked.startAccessingSecurityScopedResource()
-        defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
+        let bookmarks = services.bookmarks
+        let scoped = bookmarks.startAccessing(picked)
+        defer { if scoped { bookmarks.stopAccessing(picked) } }
         _ = try pickedTargetLocation(picked, vaultFolderName: folderName, vaultId: vaultId)
     }
 
@@ -472,13 +402,13 @@ extension AppModel {
     }
 
     /// Asks iCloud Drive for `item` (a package downloads whole), off the main actor, under `scope`'s security scope.
-    func requestDownload(of item: URL, scope: URL) {
-        let hooks = iCloudHooks
+    public func requestDownload(of item: URL, scope: URL) {
+        let hooks = iCloudHooks, bookmarks = services.bookmarks, perf = services.perf
         pickedDownloadRequest = Task.detached(priority: .userInitiated) {
-            let scoped = scope.startAccessingSecurityScopedResource()
-            defer { if scoped { scope.stopAccessingSecurityScopedResource() } }
+            let scoped = bookmarks.startAccessing(scope)
+            defer { if scoped { bookmarks.stopAccessing(scope) } }
             do { try hooks.request(CloudScan.Item(url: item, placeholder: true)) } catch {
-                syncTargetsLog.error("download request failed")
+                perf.log(.error, "syncTargets", "download request failed")
             }
         }
     }
@@ -486,7 +416,7 @@ extension AppModel {
     /// Where New Vault's "Sync With", "Add Folder…", "Choose Again…" and "Keep syncing with this folder" put the copy
     /// of the vault `vaultId` for the folder the user picked: `FolderTargetPlacement.location` (SempereSync, the rule
     /// `sempere store target add --folder` follows too), its refusals worded for the app.
-    nonisolated static func folderTargetLocation(picked: URL, vaultFolderName: String, vaultId: UUID,
+    public nonisolated static func folderTargetLocation(picked: URL, vaultFolderName: String, vaultId: UUID,
                                                  fileManager fm: FileManager = .default) throws -> URL {
         do {
             return try FolderTargetPlacement.location(picked: picked, vaultFolderName: vaultFolderName, vaultId: vaultId,
@@ -503,7 +433,7 @@ extension AppModel {
     }
 
     /// `VaultStore.checkFolderTarget`, its refusals worded for the app.
-    nonisolated static func checkFolderTarget(_ folder: URL, in store: VaultStore) throws {
+    public nonisolated static func checkFolderTarget(_ folder: URL, in store: VaultStore) throws {
         do { try store.checkFolderTarget(folder) } catch SyncTargetError.isBackup {
             throw SyncTargetProblem.isBackup
         } catch SyncTargetError.insideVault(_, let holder) {
@@ -518,17 +448,18 @@ extension AppModel {
     /// "Choose Again…" for a folder target the app can no longer reach (a dead bookmark, a folder that went
     /// away): it now points at `picked` (its vault folder, or `<picked>/<vault name>.sempere`), and its sync
     /// state starts over, so the next run is a union that deletes nothing (its quarantine stays).
-    func rechooseFolderTarget(_ id: UUID, of vaultID: UUID, picked: URL) throws {
+    public func rechooseFolderTarget(_ id: UUID, of vaultID: UUID, picked: URL) throws {
         let store = syncStore
         guard let entry = store.entry(id: vaultID) else { throw SyncTargetProblem.notAStoreVault }
-        let scoped = picked.startAccessingSecurityScopedResource()
-        defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
+        let bookmarks = services.bookmarks
+        let scoped = bookmarks.startAccessing(picked)
+        defer { if scoped { bookmarks.stopAccessing(picked) } }
         let folder = try pickedTargetLocation(picked, vaultFolderName: entry.url.lastPathComponent, vaultId: vaultID)
         let isVault = Self.samePlace(folder, picked)
         try Self.checkFolderTarget(folder, in: store)
         // Every run would fail to write there (build 12: "errno 13" for the demo vault another account made).
         guard Self.isWritableFolder(folder) else { throw SyncTargetProblem.notWritable(folder.lastPathComponent) }
-        let bookmark = try? picked.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        let bookmark = try? bookmarks.bookmark(for: picked)
         if store.targets.targets(of: vaultID).contains(where: { $0.id != id && $0.kind == .folder
             && $0.path == folder.standardizedFileURL.path }) {
             throw SyncTargetProblem.duplicate
@@ -550,7 +481,7 @@ extension AppModel {
 
     /// Removes a target of the store vault `vaultID`: never anything at the target itself. A WebDAV
     /// target's Keychain password goes too.
-    func removeSyncTarget(_ id: UUID, of vaultID: UUID) async throws {
+    public func removeSyncTarget(_ id: UUID, of vaultID: UUID) async throws {
         await syncCoordinator.stop(id)?.value
         await stoppingWebDAV[id]?.value
         let target = syncStore.targets.targets(of: vaultID).first { $0.id == id }
@@ -565,7 +496,7 @@ extension AppModel {
     }
 
     /// "Sync Now" for every target of the open vault.
-    func syncAllTargetsNow() async {
+    public func syncAllTargetsNow() async {
         for s in syncSessions { await s.syncNow() }
     }
 }

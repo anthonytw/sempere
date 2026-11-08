@@ -2,6 +2,7 @@ import Age
 import Sempere
 import SempereRender
 import SwiftUI
+import SempereAppCore
 
 /// Replace Recovery Kit (on home: key-hierarchy design §6.5): device-owner authentication, then every device is
 /// kept or removed (takeovers since the current kit marked), then the new kit is printed and one of its lines

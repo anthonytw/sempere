@@ -99,6 +99,7 @@ struct SecurityScopedBookmarks: FolderBookmarks {
 
     func startAccessing(_ url: URL) -> Bool { url.startAccessingSecurityScopedResource() }
     func stopAccessing(_ url: URL) { url.stopAccessingSecurityScopedResource() }
+    func recordedPath(of bookmark: Data) -> String? { FolderReach.recordedPath(bookmark) }
 }
 
 // MARK: - FileCoordinating

@@ -3,6 +3,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// The vault browser's edits (3b) together with the canvas editor (3c): one
 /// device clock, the generation token on browser awaits, delete/restore of

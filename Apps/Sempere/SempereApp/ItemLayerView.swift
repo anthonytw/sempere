@@ -1,6 +1,7 @@
 import Sempere
 import SempereRender
 import UIKit
+import SempereAppCore
 
 /// Where the item layer gets a note's attachments from (the model's).
 struct ItemLayerSource {

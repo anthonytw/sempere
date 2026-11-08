@@ -147,3 +147,47 @@ actor Gate {
         while arrivals < count { try? await Task.sleep(for: .milliseconds(5)) }
     }
 }
+
+/// Counts from any thread.
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var value: Int { lock.withLock { count } }
+    func add(_ n: Int) { lock.withLock { count += n } }
+}
+
+/// Watches the main actor with a 2 ms tick: the longest gap between ticks
+/// (`longest`, which also counts the main thread waiting for a CPU while
+/// other threads decrypt), and the most main-thread CPU time spent between
+/// two ticks (`longestBusy`): main-actor work that blocked the UI.
+@MainActor
+final class Heartbeat {
+    private var task: Task<Void, Never>?
+    private(set) var longest = Duration.zero
+    private(set) var longestBusy = Duration.zero
+
+    static func threadCPU() -> Duration {
+        var ts = timespec()
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts)
+        return .seconds(ts.tv_sec) + .nanoseconds(ts.tv_nsec)
+    }
+
+    func start() {
+        task = Task { @MainActor [weak self] in
+            var last = ContinuousClock.now
+            var lastCPU = Heartbeat.threadCPU()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(2))
+                let now = ContinuousClock.now, cpu = Heartbeat.threadCPU()
+                if let self {
+                    self.longest = max(self.longest, now - last)
+                    self.longestBusy = max(self.longestBusy, cpu - lastCPU)
+                }
+                last = now
+                lastCPU = cpu
+            }
+        }
+    }
+
+    func stop() { task?.cancel() }
+}

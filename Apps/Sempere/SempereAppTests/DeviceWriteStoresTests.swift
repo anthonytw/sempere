@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// The app's write ledger and set-aside store (key-hierarchy design §5.4, §5.8; phase KH3): every note the app
 /// writes is recorded in the ledger before it is placed, so a device change it has not seen is caught up.

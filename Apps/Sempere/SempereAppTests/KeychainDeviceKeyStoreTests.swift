@@ -4,6 +4,7 @@ import Security
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// An in-memory `KeychainItems`: generic passwords by (service, account), each with its attributes; it answers
 /// `kSecReturnData` and `kSecReturnAttributes`, refuses data of an access-controlled item to a context that may not

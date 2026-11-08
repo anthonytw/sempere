@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereSync
+import SempereAppCore
 
 // What the app says about this device's place in the vault (key-hierarchy design §4.3, §5.5, §5.6; KH5): the
 // banners over the note list (not on the newest device list; sync held back for more than a day; a home
@@ -141,13 +142,6 @@ extension AppModel {
 
     /// True when this device is not on the newest device list (design §5.5): every write is refused.
     var isUnlisted: Bool { unlistedNotice != nil }
-
-    /// Why this device is not on the newest device list: the open vault's state at open, or what a run of one of
-    /// its targets met since (the vault is opened again then, `reopenIfUnlisted`). Nil while listed.
-    var unlistedNotice: String? {
-        guard let vault, !vault.isRecoveryOpen else { return nil }
-        return vault.unlistedNotice ?? syncSessions.lazy.compactMap { $0.lastReport?.epoch?.unlisted }.first
-    }
 
     /// After a two-way run: when a target reported this device unlisted and the open vault does not know it yet,
     /// the vault is opened again, so its own refusal of writes and the unlisted screen's facts follow.

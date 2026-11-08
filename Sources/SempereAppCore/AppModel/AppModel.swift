@@ -1,32 +1,23 @@
 import Age
 import Foundation
+import Observation
 import Sempere
-import SempereAppCore
 import SempereImport
 import SempereSync
 import SempereWebDAV
-import Observation
 
 /// How the note list is ordered (the field; "Favorites at Top" is `AppModel.favoritesFirst`).
-/// The order itself is the package's `NoteOrder`, which `sempere notes list --sort` uses too.
-enum NoteSort: String, CaseIterable, Identifiable, Sendable {
+/// The order itself is the package's `NoteOrder`, which `sempere notes list --sort` uses too. The picker's label is
+/// the app's (`NoteSort.title`, `AppModel+Text.swift`).
+public enum NoteSort: String, CaseIterable, Identifiable, Sendable {
     case modified = "Date Modified"
     case created = "Date Created"
     case title = "Title"
 
-    var id: String { rawValue }
-
-    /// The picker's label (`rawValue` is not localized).
-    var title: String {
-        switch self {
-        case .modified: return String(localized: "Date Modified", comment: "Note list sort order")
-        case .created: return String(localized: "Date Created", comment: "Note list sort order: by creation date, newest first")
-        case .title: return String(localized: "Title", comment: "Note list sort order: by title")
-        }
-    }
+    public var id: String { rawValue }
 
     /// The package's key for this order.
-    var key: NoteOrder.Key {
+    public var key: NoteOrder.Key {
         switch self {
         case .modified: return .modified
         case .created: return .created
@@ -38,13 +29,13 @@ enum NoteSort: String, CaseIterable, Identifiable, Sendable {
 /// The note list's order on this device (`UserDefaults`): kept by the list's
 /// view (`NoteListView`), which hands it to the model, so tests start from the
 /// model's defaults.
-enum NoteSortPreference {
-    static let sortKey = "Sempere.noteSort"
-    static let favoritesFirstKey = "Sempere.noteSortFavoritesFirst"
+public enum NoteSortPreference {
+    public static let sortKey = "Sempere.noteSort"
+    public static let favoritesFirstKey = "Sempere.noteSortFavoritesFirst"
 }
 
 /// What the sidebar has selected; filters the note list.
-enum SidebarItem: Hashable, Sendable {
+public enum SidebarItem: Hashable, Sendable {
     case allNotes
     case notebook(String)
     case tag(String)
@@ -55,91 +46,72 @@ enum SidebarItem: Hashable, Sendable {
     case recentlyRecognized
 }
 
-/// Window-level state: the open vault, its note summaries and the current
-/// selection. Vault I/O runs off the main actor; results land here.
+/// Where the open vault is (`AppModel.phase`).
+public enum AppModelPhase: Equatable, Sendable {
+    /// No vault chosen.
+    case noVault
+    /// A vault is open by name only; notes need a key.
+    case locked
+    /// Notes are readable.
+    case unlocked
+}
+
+/// Errors the shell reports to the user (`AppModel.ModelError`); worded by the app (`AppModel+Text.swift`).
+public enum AppModelError: Error, Equatable, Sendable {
+    case noVaultOpen
+    case notAnIdentity
+    case noStoredKeys
+    case passphraseMatchesNoKey
+    /// None of the given keys is listed in `vault.json`: this device has not joined the vault.
+    case notJoined
+    case noteNotFound
+    /// A note of a partial copy (a join) not downloaded yet, its server unknown.
+    case noteNotDownloaded
+    /// The same, from the WebDAV server (host) of a partial copy.
+    case noteNotDownloadedFromServer(String)
+    /// An edit over many notes while some are still downloading (a join), its server unknown.
+    case notesStillDownloading
+    /// The same, from the WebDAV server (host) of a partial copy.
+    case notesStillDownloadingFromServer(String)
+    /// The open note's pending canvas changes could not be saved first.
+    case unsavedChanges(String)
+    /// A notebook dropped into itself or a notebook inside it.
+    case invalidNotebookMove
+    /// Delete Notebook on a notebook a note is still in.
+    case notebookNotEmpty
+    /// A new notebook's name is longer than a notebook record allows.
+    case notebookNameTooLong
+
+    /// A note not downloaded yet: a fetch may bring it.
+    public var isNotDownloaded: Bool {
+        switch self {
+        case .noteNotDownloaded, .noteNotDownloadedFromServer: return true
+        default: return false
+        }
+    }
+}
+
+/// Window-level state: the open vault, its note summaries and the current selection. Vault I/O runs off the main
+/// actor; results land here. The app's `AppModel` is `AppModelCore<AppHost>` (docs/design/thin-app.md "Wave 5b,
+/// part 2"): the host supplies the canvas, the platform services and, until part 3, the state and steps of the
+/// extensions still in the app (`AppModelHost`).
 @MainActor
 @Observable
-final class AppModel {
-    enum Phase: Equatable {
-        /// No vault chosen.
-        case noVault
-        /// A vault is open by name only; notes need a key.
-        case locked
-        /// Notes are readable.
-        case unlocked
-    }
+public final class AppModelCore<Host: AppModelHost> {
+    public typealias Phase = AppModelPhase
+    public typealias ModelError = AppModelError
+    /// The editor of a note on this host's canvas.
+    public typealias Editor = NoteEditorModel<Host.Canvas>
 
-    /// Errors the shell reports to the user.
-    enum ModelError: Error, Equatable, CustomStringConvertible {
-        case noVaultOpen
-        case notAnIdentity
-        case noStoredKeys
-        case passphraseMatchesNoKey
-        /// None of the given keys is listed in `vault.json`: this device has not joined the vault.
-        case notJoined
-        case noteNotFound
-        /// A note of a partial copy (a join) not downloaded yet, its server unknown.
-        case noteNotDownloaded
-        /// The same, from the WebDAV server (host) of a partial copy.
-        case noteNotDownloadedFromServer(String)
-        /// An edit over many notes while some are still downloading (a join), its server unknown.
-        case notesStillDownloading
-        /// The same, from the WebDAV server (host) of a partial copy.
-        case notesStillDownloadingFromServer(String)
-        /// The open note's pending canvas changes could not be saved first.
-        case unsavedChanges(String)
-        /// A notebook dropped into itself or a notebook inside it.
-        case invalidNotebookMove
-        /// Delete Notebook on a notebook a note is still in.
-        case notebookNotEmpty
-        /// A new notebook's name is longer than a notebook record allows.
-        case notebookNameTooLong
-
-        /// A note not downloaded yet: a fetch may bring it.
-        var isNotDownloaded: Bool {
-            switch self {
-            case .noteNotDownloaded, .noteNotDownloadedFromServer: return true
-            default: return false
-            }
-        }
-
-        var description: String {
-            switch self {
-            case .noVaultOpen: return String(localized: "No vault is open.")
-            case .notAnIdentity: return String(localized: "That text holds no device key file and no AGE-SECRET-KEY-PQ-1… identity.")
-            case .noStoredKeys: return String(localized: "This vault has no passphrase copy of its recovery key.")
-            case .passphraseMatchesNoKey: return String(localized: "The passphrase does not open this vault's recovery key copy.")
-            case .notJoined:
-                return String(localized: "This device has not joined the vault: the key is neither one of its devices' keys nor its recovery key.")
-            case .noteNotFound: return String(localized: "That note is no longer in the vault.")
-            case .noteNotDownloaded:
-                return String(localized: "iCloud Drive has not delivered all of this note's files yet. Try again in a moment.")
-            case .noteNotDownloadedFromServer(let server):
-                return String(localized: "\(server) has not delivered all of this note's files yet. Try again in a moment.",
-                              comment: "%@ is a server's host name")
-            case .notesStillDownloadingFromServer(let server):
-                return String(localized: "Some notes are still loading or downloading from \(server). Try again once the list has finished loading.",
-                              comment: "%@ is a server's host name")
-            case .notesStillDownloading:
-                return String(localized: "Some notes are still loading or downloading from iCloud Drive. Try again once the list has finished loading.")
-            case .invalidNotebookMove: return String(localized: "A notebook cannot be moved into itself or into a notebook inside it.")
-            case .notebookNotEmpty: return String(localized: "Only an empty notebook can be deleted. Move or delete its notes first.")
-            case .notebookNameTooLong: return String(localized: "That notebook name is too long.")
-            case .unsavedChanges(let reason):
-                return String(localized: "The note's latest changes could not be saved first, so nothing was restored. \(reason)")
-            }
-        }
-    }
-
-    private(set) var phase: Phase = .noVault
+    public private(set) var phase: Phase = .noVault
     /// The open vault's folder.
-    private(set) var vaultURL: URL?
+    public private(set) var vaultURL: URL?
     /// The open vault was handed to the app from outside (AirDrop, Files, another
     /// app: `handleOpened`), not opened in it.
-    private(set) var vaultOpenedExternally = false
+    public private(set) var vaultOpenedExternally = false
     /// Every note in the vault, deleted ones included, sorted by title
     /// (`byTitle`). Passes change it in batches (`queueListUpdate`).
-    var notes: [NoteSummary] = [] {
+    public var notes: [NoteSummary] = [] {
         didSet {
             listVersion &+= 1
             updateSearch(changed: listChangeIDs)
@@ -147,252 +119,216 @@ final class AppModel {
     }
     /// While `applyListChanges` assigns `notes`: the ids it may have changed, so
     /// that an open search re-tests only those (`updateSearch(changed:)`).
-    @ObservationIgnored var listChangeIDs: Set<UUID>?
+    @ObservationIgnored public var listChangeIDs: Set<UUID>?
     /// Bumped on every change of `notes` (and of `declaredNotebooks`); keys the derived lists (`derived`).
-    private(set) var listVersion = 0
+    public private(set) var listVersion = 0
     /// Empty notebooks kept by notebook records (format.md §14), canonical paths
     /// (`refreshNotebookRecords`). The sidebar shows them with the notes' notebooks.
-    var declaredNotebooks: [String] = [] {
+    public var declaredNotebooks: [String] = [] {
         didSet { if declaredNotebooks != oldValue { listVersion &+= 1 } }
     }
     /// The record file names `declaredNotebooks` was read from: a pass that
     /// lists the same names reads nothing.
-    @ObservationIgnored var notebookRecordNamesRead: [String]?
+    @ObservationIgnored public var notebookRecordNamesRead: [String]?
     /// `visibleNotes`, `tags` and `notebookTree`, computed once per change.
-    @ObservationIgnored var derived = DerivedLists()
+    @ObservationIgnored public var derived = DerivedLists()
     /// True while vault I/O is in flight.
-    private(set) var isBusy = false
+    public private(set) var isBusy = false
     /// The last error, as a sentence for an alert; cleared by the view.
-    var errorMessage: String?
+    public var errorMessage: String?
     /// Reading note summaries (opening or refreshing the vault), for the
     /// list's "Opening vault: N of M"; nil when no read is running.
-    var loading: NoteLoading?
+    public var loading: NoteLoading?
     /// True once a listing of the open vault has completed (the list is
     /// then what the vault holds, not a partial or cached view).
-    var listLoaded = false
+    public var listLoaded = false
     /// Why the last listing failed, shown in an empty list (cleared by the next one).
-    var loadFailure: String?
+    public var loadFailure: String?
     /// Notes whose summary in `notes` was read (or confirmed from the cache)
     /// in this session. A summary shown from an earlier launch's cache, or a
     /// placeholder, is not: edits that decide from a summary re-read the
     /// note first, and a notebook rename waits until every note is verified.
-    var verifiedNoteIDs: Set<UUID> = []
+    public var verifiedNoteIDs: Set<UUID> = []
     /// Bumped per note by `refresh` (an edit's own re-read): a listing batch
     /// read before it must not merge its older summary over the newer one.
-    var summaryEpochs: [UUID: Int] = [:]
+    public var summaryEpochs: [UUID: Int] = [:]
     /// The newest summary-cache save (`saveSummaryCache`).
-    @ObservationIgnored var summaryCacheSave: Task<Void, Never>?
+    @ObservationIgnored public var summaryCacheSave: Task<Void, Never>?
 
     /// The sidebar row shown. Choosing another one scopes a running search to
     /// it (TestFlight build 6: the title changed but the results stayed those
     /// of All Notes); the query is kept.
-    var sidebarSelection: SidebarItem? = .allNotes {
+    public var sidebarSelection: SidebarItem? = .allNotes {
         didSet {
             if sidebarSelection != oldValue, searchScope != .list { searchScope = .list }
             updateSearch()
         }
     }
-    var selectedNoteID: UUID?
+    public var selectedNoteID: UUID?
     /// The search field's text. `visibleNotes` filters by title with it; the
     /// note list shows `searchResults` (`AppModel+Search`) while it is not empty.
-    var searchText = "" { didSet { updateSearch() } }
-    var searchScope = SearchScope.list { didSet { updateSearch() } }
+    public var searchText = "" { didSet { updateSearch() } }
+    public var searchScope = SearchScope.list { didSet { updateSearch() } }
     /// Notes matching `searchText` (title, notebook, tag, recognized handwriting), best first.
-    var searchResults: [NoteSearchHit] = []
+    public var searchResults: [NoteSearchHit] = []
     /// True from a change of the query until its results are in.
-    var isSearching = false
+    public var isSearching = false
     /// Also search the transcripts of recordings (`AppModel+TranscriptSearch`; per device, off by default).
-    var searchTranscripts = TranscriptSearchPreference.isOn()
+    public var searchTranscripts: Bool
     /// Transcript segments matching `searchText` while `searchTranscripts` is on.
-    var transcriptHits: [TranscriptSearchHit] = []
+    public var transcriptHits: [TranscriptSearchHit] = []
     /// Transcripts the last transcript search could not read.
-    var transcriptSearchProblems = 0
-    @ObservationIgnored let transcriptCache = TranscriptSearchCache()
+    public var transcriptSearchProblems = 0
+    @ObservationIgnored public let transcriptCache = TranscriptSearchCache()
     /// The recording to show once its note is open (a tapped transcript hit).
-    var pendingRecordingJump: RecordingJump?
+    public var pendingRecordingJump: RecordingJump?
     /// The page to show once the note is open (a tapped search hit).
-    var pendingJump: PageJump?
-    @ObservationIgnored var searchTask: Task<Void, Never>?
+    public var pendingJump: PageJump?
+    @ObservationIgnored public var searchTask: Task<Void, Never>?
     /// Lowercased page text kept between searches (`NoteSearchIndex`).
-    @ObservationIgnored let searchIndex = NoteSearchIndex()
+    @ObservationIgnored public let searchIndex = NoteSearchIndex()
     /// What `searchResults` answer, and the notes changed since (`updateSearch(changed:)`);
     /// nil while no search has completed for the current query, scope and selection.
-    @ObservationIgnored var completedSearch: CompletedSearch?
+    @ObservationIgnored public var completedSearch: CompletedSearch?
     /// The title of a note created at a date with no title typed, as Settings
     /// → New Notes says (`NewNoteSettings`; "" for Blank: the note stays
     /// untitled). Tests replace it.
-    @ObservationIgnored var defaultTitle: (Date) -> String = { NewNoteSettings.defaultTitle(UserDefaults.standard, now: $0) }
+    @ObservationIgnored public var defaultTitle: (Date) -> String
     /// Pause after typing before the search runs.
-    @ObservationIgnored var searchDebounce = Duration.milliseconds(200)
+    @ObservationIgnored public var searchDebounce = Duration.milliseconds(200)
     /// Reads handwriting on pages as they change and when notes open; nil = off.
-    var recognizer: (any PageRecognizing)? {
+    public var recognizer: (any PageRecognizing)? {
         didSet {
             editor?.recognizer = recognizer
             for window in windowEditors.values { window.recognizer = recognizer }
         }
     }
     /// Transcribes recordings on device (`AppModel+Recordings`); tests inject a fake.
-    @ObservationIgnored var transcriber: (any RecordingTranscribing)? = SpeechRecordingTranscriber()
+    @ObservationIgnored public var transcriber: (any RecordingTranscribing)?
     /// Recordings being transcribed now, by id.
-    var transcribing: Set<UUID> = []
-    /// Makes the players' audio backends; nil: AVFoundation's (tests pass fakes).
-    @ObservationIgnored var playbackBackend: (@MainActor () -> AudioPlaybackBackend)?
-    /// Where recordings in progress keep their files (tests pass their own).
-    @ObservationIgnored var recordingRoot = RecordingSession.root
-    /// Quick voice notes (`QuickCapture`, `AppModel+Inbox`); tests pass their own.
-    @ObservationIgnored var quickCapture = QuickCapture.shared
+    public var transcribing: Set<UUID> = []
     /// Voice notes adopted from the inbox in this session (for the UI).
-    var capturesAdopted = 0
+    public var capturesAdopted = 0
     /// Why the last inbox adoption failed, if it did.
-    var inboxProblem: String?
+    public var inboxProblem: String?
     /// Inbox files that failed to read, so they are not decrypted again at
     /// every unlock (format.md §11.3, security review 2026-10, C5); next to
     /// the device state.
-    let inboxBackoff: InboxBackoff
-    @ObservationIgnored var inboxAdoption: Task<Void, Never>?
+    public let inboxBackoff: InboxBackoff
+    @ObservationIgnored public var inboxAdoption: Task<Void, Never>?
     /// A trigger arrived while an adoption ran: it looks again before it ends (`startInboxAdoption`).
-    @ObservationIgnored var inboxAdoptionAgain = false
+    @ObservationIgnored public var inboxAdoptionAgain = false
     /// Quick capture delivered a file into a vault's inbox (`installInboxDeliveryObserver`).
-    @ObservationIgnored var inboxDeliveryObserver: (any NSObjectProtocol)?
+    @ObservationIgnored public var inboxDeliveryObserver: (any NSObjectProtocol)?
     /// Progress of "Recognize All Notes" (`AppModel+Search`).
-    var recognitionProgress: RecognitionProgress?
+    public var recognitionProgress: RecognitionProgress?
     /// What the last "Recognize All Notes" run changed, kept (also after it
     /// ends) until the next run starts; the "Recently Recognized" filter lists it.
-    var recognitionResults: RecognitionResults?
+    public var recognitionResults: RecognitionResults?
     /// What this device remembers of the open vault between launches: the
     /// recent searches (`RecentActivity`, `AppModel+Activity`). "Recently
     /// Recognized" is in the vault (`meta.recognized`, shared by every device).
-    var activity = RecentActivity()
+    public var activity = RecentActivity()
     /// Where `activity` is kept (a folder per vault secret inside it).
-    @ObservationIgnored var activityRoot: URL
+    @ObservationIgnored public var activityRoot: URL
     /// The clock "Recently Recognized" is measured with (tests move it).
-    @ObservationIgnored var activityNow: () -> Date = { Date() }
+    @ObservationIgnored public var activityNow: () -> Date = { Date() }
     /// Bumped when "Recently Recognized" changes by the clock alone (a run
     /// leaves the 7-day window, `recentlyRecognizedNextChange`), so what
     /// reads it is drawn again.
-    var activityClockTick = 0
+    public var activityClockTick = 0
     /// The unused-attachments index (`AppModel+AttachmentIndex`, docs/attachments.md §4):
     /// the entries read or updated this session, by note.
-    @ObservationIgnored var attachmentIndex: [UUID: AttachmentIndexEntry] = [:]
+    @ObservationIgnored public var attachmentIndex: [UUID: AttachmentIndexEntry] = [:]
     /// Bumped whenever `attachmentIndex` changes, so Settings re-derives its numbers.
-    var attachmentIndexVersion = 0
+    public var attachmentIndexVersion = 0
     /// Notes waiting for their index update (latest current-state hashes, if known).
-    @ObservationIgnored var attachmentIndexQueue: [UUID: Set<String>?] = [:]
+    @ObservationIgnored public var attachmentIndexQueue: [UUID: Set<String>?] = [:]
     /// How many notes are queued or being indexed (Settings shows progress).
-    var attachmentIndexPending = 0
+    public var attachmentIndexPending = 0
     /// The task working through `attachmentIndexQueue`, owned by the model.
-    @ObservationIgnored var attachmentIndexTask: Task<Void, Never>?
+    @ObservationIgnored public var attachmentIndexTask: Task<Void, Never>?
     /// True once every stored entry of the open vault was read (`loadAttachmentIndex`).
-    @ObservationIgnored var attachmentIndexLoaded = false
+    @ObservationIgnored public var attachmentIndexLoaded = false
     /// The open vault's sealed index files, made on first use.
-    @ObservationIgnored var attachmentIndexStoreCache: AttachmentIndexStore?
+    @ObservationIgnored public var attachmentIndexStoreCache: AttachmentIndexStore?
     /// Where the index is kept (a folder per vault secret inside it): the app's
     /// Application Support; without one (tests) a folder of this model alone.
-    @ObservationIgnored var attachmentIndexRoot: URL
+    @ObservationIgnored public var attachmentIndexRoot: URL
     /// Waited before working through queued updates, so an editor's burst of
     /// autosaves is indexed once. Tests set zero.
-    @ObservationIgnored var attachmentIndexDelay: Duration = .seconds(2)
+    @ObservationIgnored public var attachmentIndexDelay: Duration = .seconds(2)
     /// The clock the 30-day window is measured with (tests move it).
-    @ObservationIgnored var attachmentNow: () -> Date = { Date() }
+    @ObservationIgnored public var attachmentNow: () -> Date = { Date() }
     /// Test seam: what an index update reads (a counting wrapper of the vault).
-    @ObservationIgnored var attachmentIndexSource: (@Sendable (Vault) -> any AttachmentIndexSource)?
-    /// What is being dragged inside the app (set when a drag starts), so the
-    /// sidebar can tell whether a row would accept it while the drag is still over it.
-    var draggedPayload: DragPayload?
-    /// The sidebar row a drag is over that would accept it (highlighted).
-    var dropTarget: DropTarget?
-    /// The sidebar row a drop just moved notes or a notebook into: flashed for
-    /// `landedDropDuration` so it is clear where they went (`move(_:to:undoManager:)`).
-    var landedDrop: LandedDrop?
+    @ObservationIgnored public var attachmentIndexSource: (@Sendable (Vault) -> any AttachmentIndexSource)?
     /// How long `landedDrop` stays set (tests shorten it).
-    @ObservationIgnored var landedDropDuration: Duration = .seconds(1.6)
-    @ObservationIgnored var recognitionTask: Task<Void, Never>?
+    @ObservationIgnored public var landedDropDuration: Duration = .seconds(1.6)
+    @ObservationIgnored public var recognitionTask: Task<Void, Never>?
     /// Pause after the last stroke change before the open note's pages are recognized.
-    let recognitionDelay: Duration
+    public let recognitionDelay: Duration
     /// True while the note list ticks several notes (to export them); the
     /// open note (`selectedNoteID`) is untouched meanwhile.
-    var isSelectingNotes = false
+    public var isSelectingNotes = false
     /// The ticked notes while `isSelectingNotes`.
-    var multiSelection: Set<UUID> = []
-    /// The export sheet's request (`AppModel+Export`).
-    var exportRequest: ExportRequest?
-    /// PDFs opened from outside the app (Finder's Open With, the share sheet),
-    /// waiting to be imported as new notes (`AppModel+OpenedFiles`). App
-    /// state, not the vault's: they wait while a vault is opened or unlocked.
-    var openedPDFs: [OpenedPDF] = []
+    public var multiSelection: Set<UUID> = []
     /// An import from another app is running (`AppModel+Import`).
-    var isImporting = false
-    /// What the last import did, until the alert is dismissed.
-    var importSummary: ImportSummary?
+    public var isImporting = false
     /// How far the running import is (nil when none runs): the window's progress overlay.
-    var importProgress: ImporterProgress?
+    public var importProgress: ImporterProgress?
     /// Stops the running import between notes (`cancelImport`); nil when the importer cannot stop safely.
-    var importCancellation: ImporterCancellation?
-    /// The report of the last import of this vault, for File > Last Import Report (until the vault closes).
-    var lastImportReport: ImportDetails?
-    /// The "Export to Folder or Zip…" sheet's request (`AppModel+BulkExport`).
-    var bulkExportRequest: BulkExportRequest?
-    var sortOrder = NoteSort.modified
+    public var importCancellation: ImporterCancellation?
+    public var sortOrder = NoteSort.modified
     /// Favorites at the top of the note list, under any `sortOrder`.
-    var favoritesFirst = false
+    public var favoritesFirst = false
     /// True while an edit is being written.
-    var isEditing = false
+    public var isEditing = false
     /// Serializes edits (`commit`).
-    let editGate = EditGate()
+    public let editGate = EditGate()
     /// Thin old autosaves once a day after a vault's notes are listed
     /// (`thinIfDue`, format.md §5.8.4). The app turns it on; tests leave it
     /// off so nothing is written that they did not ask for.
-    var automaticThinning = false
-    /// How far a thinning run (or its preview) has got, counted per note;
-    /// nil when none is running (`thinVault`).
-    var thinningProgress: ThinningProgress?
+    public var automaticThinning = false
     /// Notes thinning works on at once (`thinVault`).
-    var thinningConcurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
+    public var thinningConcurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
     /// Notes of a partial copy (a join, `AppModel+Join`) not downloaded yet.
-    var pendingNoteIDs: Set<UUID> = []
+    public var pendingNoteIDs: Set<UUID> = []
     /// The pending notes that have no summary yet (listed as placeholders).
-    var placeholderNoteIDs: Set<UUID> = []
+    public var placeholderNoteIDs: Set<UUID> = []
     /// Per note shown, the sorted revision file names its summary was made
     /// from: from the index on open, then from every read. A pass reads only
     /// notes whose names on disk differ (`reconcile`).
-    @ObservationIgnored var indexedNames: [UUID: [String]] = [:]
+    @ObservationIgnored public var indexedNames: [UUID: [String]] = [:]
     /// Summary changes waiting for the next list update (`queueListUpdate`).
-    @ObservationIgnored var listUpserts: [UUID: NoteSummary] = [:]
-    @ObservationIgnored var listRemovals: Set<UUID> = []
-    @ObservationIgnored var listFlushTask: Task<Void, Never>?
-    @ObservationIgnored var lastListApply: ContinuousClock.Instant?
+    @ObservationIgnored public var listUpserts: [UUID: NoteSummary] = [:]
+    @ObservationIgnored public var listRemovals: Set<UUID> = []
+    @ObservationIgnored public var listFlushTask: Task<Void, Never>?
+    @ObservationIgnored public var lastListApply: ContinuousClock.Instant?
     /// The shortest time between two list updates while notes are read.
-    var listUpdateInterval = Duration.milliseconds(250)
+    public var listUpdateInterval = Duration.milliseconds(250)
     /// How far a join's fill got (`AppModel+Join`), for the list's bar; nil when no partial copy is open.
-    var joinProgress: JoinProgress?
+    public var joinProgress: JoinProgress?
     /// The note `downloadNote` is fetching (a partial copy), for the note pane's wait and its Cancel.
-    var noteDownload: UUID?
+    public var noteDownload: UUID?
     /// Cancels that wait (`cancelNoteDownload`); the fetch itself goes on.
-    @ObservationIgnored var noteDownloadCancel: (() -> Void)?
-    /// Background time and scheduled tasks for the sync (`AppModel+Background`); tests pass fakes.
-    @ObservationIgnored var backgroundTasks: any BackgroundTaskRunning = UIKitBackgroundTasks()
-    @ObservationIgnored var syncScheduler: any BackgroundSyncScheduling = BGTaskSyncScheduler()
-    /// The assertion held while sync targets' runs finish off screen (`finishTargetRunsInBackground`), and its wait.
-    @ObservationIgnored var targetsBackgroundToken: BackgroundTaskToken?
-    @ObservationIgnored var targetsBackgroundWait: Task<Void, Never>?
-    /// Watches the network for the WebDAV targets (`startReachability`); nil until started.
-    @ObservationIgnored var reachability: WebDAVReachability?
+    @ObservationIgnored public var noteDownloadCancel: (() -> Void)?
+    @ObservationIgnored public var targetsBackgroundWait: Task<Void, Never>?
     /// The iCloud calls for copying a vault in from iCloud Drive (`copyIn`, a restore); tests replace them.
-    @ObservationIgnored var iCloudHooks = CloudVault.Hooks.live
+    @ObservationIgnored public var iCloudHooks: CloudVault.Hooks
     /// The download a sync folder pick asked iCloud for (`requestDownload(of:scope:)`); tests wait for it.
-    @ObservationIgnored var pickedDownloadRequest: Task<Void, Never>?
+    @ObservationIgnored public var pickedDownloadRequest: Task<Void, Never>?
     /// The last on-demand fetch into the open partial copy (`joinFetch`): the next waits for it.
-    @ObservationIgnored var joinFetchTail: Task<Void, Never>?
+    @ObservationIgnored public var joinFetchTail: Task<Void, Never>?
     /// The rows of notes not downloaded yet, by note id, from published summaries
     /// (format.md §12): a partial WebDAV copy's from the server's file (`webdavUnlocked`).
-    @ObservationIgnored var publishedRows: [UUID: NoteSummary] = [:]
+    @ObservationIgnored public var publishedRows: [UUID: NoteSummary] = [:]
     /// The published summary files the rows were last read from (name, size, date), so they are
     /// read again only when one changes.
-    @ObservationIgnored var publishedRowsSignature: [String] = []
+    @ObservationIgnored public var publishedRowsSignature: [String] = []
     /// The WebDAV locations of this device (`AppModel+WebDAV`, docs/io.md
     /// "WebDAV vaults in the app"). The app passes the default store; without
     /// one (tests) a store in a folder of this model alone.
-    @ObservationIgnored var webdavLocations: WebDAVLocationStore
+    @ObservationIgnored public var webdavLocations: WebDAVLocationStore
 
     /// The folder holding this model's default (not injected) scratch locations; nothing is created in it until
     /// one is used, and `deinit` removes it.
@@ -401,262 +337,230 @@ final class AppModel {
     deinit { try? FileManager.default.removeItem(at: ownedScratch) }
     /// The sync session of the open vault when it is a WebDAV location's local copy (the
     /// coordinator's, two-way while the vault is unlocked); nil for any other vault.
-    var webdav: SyncSession?
+    public var webdav: SyncSession?
     /// The open vault's sync sessions, one per target (folder and WebDAV), in the order they were added
     /// (`AppModel+SyncTargets`); empty for a vault without targets.
-    var syncSessions: [SyncSession] = []
+    public var syncSessions: [SyncSession] = []
     /// The open vault's `vault.json` changed on disk (a sync took another device's key change) and the
     /// open `Vault` has not been opened again under it yet: its runs only upload (review of #70, F1).
-    var syncVaultStale = false
+    public var syncVaultStale = false
     /// A previous copy kept at launch (`recoverWebDAVLeftovers`), for its alert; nil when there is none.
-    var webdavLeftover: WebDAVLeftover?
+    public var webdavLeftover: WebDAVLeftover?
     /// The coordinator once made (tests set their own).
-    @ObservationIgnored var coordinatorStorage: SyncCoordinator?
+    @ObservationIgnored public var coordinatorStorage: SyncCoordinator?
     /// Every in-app vault's sync sessions (`SyncCoordinator`, made on first use).
-    var syncCoordinator: SyncCoordinator {
+    public var syncCoordinator: SyncCoordinator {
         if let coordinatorStorage { return coordinatorStorage }
         let made = SyncCoordinator(targets: { [weak self] in self?.allSyncTargets() ?? [] },
                                    makeSession: { [weak self] ref in self?.makeSession(for: ref) },
-                                   deliveries: QuickCapture.deliveredNotification, settings: UserDefaults.standard,
-                                   perf: AppPerfSink())
+                                   deliveries: QuickCapture.deliveredNotification, settings: services.settings,
+                                   perf: services.perf)
         made.tick = webdavTick
         coordinatorStorage = made
         return made
     }
     /// The WebDAV vault being downloaded and how far it is, for the overlay; nil when none is.
-    var webdavDownload: WebDAVDownloadStatus?
+    public var webdavDownload: WebDAVDownloadStatus?
     /// The Cancel of that download (`cancelWebDAVDownload`).
-    @ObservationIgnored var webdavDownloadCancel: WebDAVCancelFlag?
-    /// The server calls (`LiveWebDAVRemote`); tests pass a fake.
-    @ObservationIgnored var webdavRemote: any WebDAVRemote = LiveWebDAVRemote()
-    /// WebDAV passwords (the Keychain); tests pass `MemoryWebDAVPasswordStore`.
-    @ObservationIgnored var webdavPasswords: any WebDAVPasswordStore = KeychainWebDAVPasswordStore()
+    @ObservationIgnored public var webdavDownloadCancel: WebDAVCancelFlag?
+    /// The server calls (`LiveWebDAVRemote` in the app); tests pass a fake.
+    @ObservationIgnored public var webdavRemote: any WebDAVRemote
+    /// WebDAV passwords (the Keychain in the app); tests pass `MemoryWebDAVPasswordStore`.
+    @ObservationIgnored public var webdavPasswords: any WebDAVPasswordStore
     /// How often a WebDAV session looks at its schedule, and how long after a
     /// write it pushes (`WebDAVPushSchedule.writeDelay`); tests shorten both.
-    @ObservationIgnored var webdavTick = Duration.seconds(1)
-    @ObservationIgnored var webdavWriteDelay: TimeInterval = 10
+    @ObservationIgnored public var webdavTick = Duration.seconds(1)
+    @ObservationIgnored public var webdavWriteDelay: TimeInterval = 10
     /// How long after a write a folder target syncs (`AppModel+SyncTargets`); tests shorten it.
-    @ObservationIgnored var folderWriteDelay: TimeInterval = 2
+    @ObservationIgnored public var folderWriteDelay: TimeInterval = 2
     /// Longest a folder target's run waits for files a provider is downloading.
-    @ObservationIgnored var folderArrivalWait: TimeInterval = 10
+    @ObservationIgnored public var folderArrivalWait: TimeInterval = 10
     /// How often Add Device and the join screen look again while they wait (each look syncs); tests shorten it.
-    @ObservationIgnored var joinLookInterval = Duration.seconds(10)
+    @ObservationIgnored public var joinLookInterval = Duration.seconds(10)
     /// The provider of a folder target's folder; nil detects it (`FolderProviders.detect`). Tests pass
     /// `EvictingFolderProvider`s.
-    @ObservationIgnored var folderProvider: (@Sendable (URL) -> (any FolderProvider)?)?
+    @ObservationIgnored public var folderProvider: (@Sendable (URL) -> (any FolderProvider)?)?
     /// Whether a provider (iCloud Drive) has uploaded a file a folder target's run wrote (`ProviderUploads`, offline
     /// audit P15); tests pass fakes.
-    @ObservationIgnored var providerUploadCheck: ProviderUploads.Check = ProviderUploads.system
+    @ObservationIgnored public var providerUploadCheck: ProviderUploads.Check = ProviderUploads.system
     /// An automatic transcription already said this launch that the language model is missing (offline audit A-P1).
-    @ObservationIgnored var modelMissingReported = false
-    /// The devices whose removal by this device a takeover undid (offline audit P16; `AppModel+DeviceNotices`): the
-    /// record the vault's sync runs keep beside its targets' states (`UndoneRemovalsRecord`, from the run that took the
-    /// takeover, `SyncOptions.undoneRemovalsURL`). Tests pass fakes.
-    @ObservationIgnored var undoneRemovalsSource: @Sendable (Vault) -> [UndoneRemoval] = AppModel.recordedUndoneRemovals
+    @ObservationIgnored public var modelMissingReported = false
 
-    /// The store vault's record of removals a takeover undid; none for a vault elsewhere.
-    nonisolated static func recordedUndoneRemovals(_ vault: Vault) -> [UndoneRemoval] {
-        guard let url = UndoneRemovalsRecord.url(storeVault: vault.url, vaultId: vault.vaultId) else { return [] }
-        return UndoneRemovalsRecord.load(url).map { UndoneRemoval(id: $0.id, name: $0.name.map(DeviceName.display) ?? $0.id) }
-    }
     /// Listings and downloads at once in a WebDAV download (`SyncOptions.concurrency`).
-    @ObservationIgnored var webdavConcurrency = TransferPool.defaultWidth
+    @ObservationIgnored public var webdavConcurrency = TransferPool.defaultWidth
     /// The running Back Up Now, Verify Backup or restore (`AppModel+Backup`),
     /// nil when none runs.
-    var backupProgress: BackupProgress?
+    public var backupProgress: BackupProgress?
     /// Cancels the running backup (`cancelBackup`).
-    @ObservationIgnored var backupControl: BackupRunControl?
-    /// Per-vault backup folders and results (`UserDefaults`; tests use a scratch suite).
-    @ObservationIgnored var backupStore = BackupStore(defaults: UserDefaults.standard)
+    @ObservationIgnored public var backupControl: BackupRunControl?
+    /// Per-vault backup folders and results (`services.settings`: `UserDefaults` in the app; tests use a scratch suite).
+    @ObservationIgnored public var backupStore: BackupStore
     /// Delivers backup reminders; the app installs `UserNotificationBackupNotifier`.
-    @ObservationIgnored var backupNotifier: any BackupNotifying = NoBackupNotifier()
+    @ObservationIgnored public var backupNotifier: any BackupNotifying = NoBackupNotifier()
     /// Settings sync with the open vault (`AppModel+SettingsSync`, docs/settings-sync.md):
     /// this device's state for it, kept per vault in `settingsDefaults`.
-    var settingsSync = SettingsSyncState()
-    /// Why settings sync is paused or failed; nil while it works (or is off).
-    var settingsSyncProblem: SettingsSyncProblem?
-    /// Turning sync on found settings that differ: the choice to ask for.
-    var settingsSyncPrompt: SettingsSyncPrompt?
+    public var settingsSync = SettingsSyncState()
     /// Bumped whenever values from the vault were applied, so the Settings
     /// sections that hold copies of their values reload them.
-    var settingsAppliedRevision = 0
-    /// Where settings are read and written (tests use a scratch suite).
-    @ObservationIgnored var settingsDefaults: UserDefaults = .standard
+    public var settingsAppliedRevision = 0
     /// Tests: the device type to sync as (nil: this device's).
-    @ObservationIgnored var settingsDeviceTypeOverride: SettingsDeviceType?
+    @ObservationIgnored public var settingsDeviceTypeOverride: SettingsDeviceType?
     /// How long after the last local change a pass runs.
-    @ObservationIgnored var settingsSyncDebounce: Duration = .seconds(1)
-    @ObservationIgnored var settingsSyncObserver: (any NSObjectProtocol)?
-    @ObservationIgnored var settingsSyncScheduled: Task<Void, Never>?
-    @ObservationIgnored var settingsSyncRunning = false
+    @ObservationIgnored public var settingsSyncDebounce: Duration = .seconds(1)
+    @ObservationIgnored public var settingsSyncObserver: (any NSObjectProtocol)?
+    @ObservationIgnored public var settingsSyncScheduled: Task<Void, Never>?
+    @ObservationIgnored public var settingsSyncRunning = false
     /// How long a copy-in or restore from iCloud Drive waits without progress, and how often it looks
     /// (`downloadSourceFolder`); tests shorten them.
-    var cloudPollInterval = Duration.seconds(1)
-    var cloudStallTimeout = Duration.seconds(90)
+    public var cloudPollInterval = Duration.seconds(1)
+    public var cloudStallTimeout = Duration.seconds(90)
     /// How long opening a note waits for its fetch in a partial copy before it says "not downloaded yet"
     /// (the fetch goes on; opening it again shows it once it is in).
-    var noteFetchTimeout = Duration.seconds(60)
+    public var noteFetchTimeout = Duration.seconds(60)
     /// The shortest time between two summary-cache saves while notes arrive.
-    var summaryCacheSaveInterval = Duration.seconds(20)
-    @ObservationIgnored var lastSummaryCacheSave: ContinuousClock.Instant?
+    public var summaryCacheSaveInterval = Duration.seconds(20)
+    @ObservationIgnored public var lastSummaryCacheSave: ContinuousClock.Instant?
     /// Summary-cache saves started (each re-encodes and seals the whole index): check c20 counts them.
-    @ObservationIgnored var summaryCacheSaves = 0
+    @ObservationIgnored public var summaryCacheSaves = 0
     /// Test seam: awaited before an editor opened from the drawing cache
     /// takes the note it read in the background.
-    @ObservationIgnored var editorLoadHook: (@Sendable () async -> Void)?
+    @ObservationIgnored public var editorLoadHook: (@Sendable () async -> Void)?
     /// Test seam: told how many notes each listing batch read.
-    @ObservationIgnored var onSummaryRead: (@Sendable (Int) -> Void)?
+    @ObservationIgnored public var onSummaryRead: (@Sendable (Int) -> Void)?
     /// Notes read per published batch, and threads reading them (`AppModel+Loading`).
-    var loadBatchSize = 24
+    public var loadBatchSize = 24
     /// The largest batch `readSummaries` makes when many notes changed.
-    var loadBatchLimit = 96
-    var loadConcurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
+    public var loadBatchLimit = 96
+    public var loadConcurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
     /// Where summaries are cached between launches (`SummaryCache`); nil (the
     /// default, for tests): no cache. The app passes `defaultSummaryCacheDirectory`.
-    let summaryCacheDirectory: URL?
+    public let summaryCacheDirectory: URL?
     /// The open vault's summary cache, once unlocked.
-    @ObservationIgnored var summaryCache: SummaryCache?
+    @ObservationIgnored public var summaryCache: SummaryCache?
     /// The load of `summaryCache` in progress (`openSummaryCache`).
-    @ObservationIgnored var summaryCacheOpening: Task<Void, any Error>?
+    @ObservationIgnored public var summaryCacheOpening: Task<Void, any Error>?
     /// Where page drawings are cached between note opens (`DrawingCache`);
     /// nil (the default, for tests): no cache. The app passes
     /// `DrawingCache.defaultRoot`.
-    let drawingCacheRoot: URL?
+    public let drawingCacheRoot: URL?
     /// The open vault's drawing cache, opened with the first note; deleted
     /// when the vault closes.
-    @ObservationIgnored var drawingCache: DrawingCache?
+    @ObservationIgnored public var drawingCache: DrawingCache?
     /// The listing started by `unlock`, owned by the model so that no view
     /// (an unlock sheet going away) can cancel it.
-    @ObservationIgnored var loadTask: Task<Void, any Error>?
+    @ObservationIgnored public var loadTask: Task<Void, any Error>?
     /// Serializes listings: a reload, the iCloud sync loop and a pull to
     /// refresh never read the same notes at once.
-    let loadGate = EditGate()
+    public let loadGate = EditGate()
 
 
     /// Where this install keeps its device id and hybrid clock.
-    let deviceStateURL: URL
+    public let deviceStateURL: URL
     /// Why the selected note could not be opened (`showSelectedNote`).
-    var editorFailure: (id: UUID, message: String)?
+    public var editorFailure: (id: UUID, message: String)?
     /// The note open on the canvas, if any (`openEditor(for:)`).
-    private(set) var editor: NoteEditor? {
-        didSet { idleTimer?.update() }   // "Keep Screen On" counts open notes, whichever scene shows them
+    public private(set) var editor: Editor? {
+        didSet { Host.editorsChanged(self) }   // "Keep Screen On" counts open notes, whichever scene shows them
     }
 
-    private(set) var vault: Vault? {
+    public private(set) var vault: Vault? {
         // Decrypted attachments and copied items belong to the vault (and the
         // secret) they came from.
-        didSet { dropAttachments() }
+        didSet { Host.vaultChanged(self) }
     }
     /// Decrypted attachments of the open vault (`AppModel+Attachments`),
     /// created on first use, deleted whenever `vault` changes or closes.
-    @ObservationIgnored var blobCache: BlobCache?
+    @ObservationIgnored public var blobCache: BlobCache?
     /// Where this model's attachment caches go (a folder per vault secret
     /// inside): the app's `BlobCache.folder`, kept across launches; without
     /// one (tests) a folder of this model alone. Tests may set their own.
-    @ObservationIgnored var blobCacheFolder: URL
+    @ObservationIgnored public var blobCacheFolder: URL
     /// Whether decrypted attachments are reused by a later launch
     /// (`BlobCache.keepsAcrossLaunches`: not on a Mac). Tests may set it.
-    @ObservationIgnored var blobCacheAcrossLaunches = BlobCache.keepsAcrossLaunches
+    @ObservationIgnored public var blobCacheAcrossLaunches = BlobCache.keepsAcrossLaunches
     /// Where drawn attachments (pictures, PDF page previews) are cached
     /// between note opens and launches (`RenderCache`); nil (the default, for
     /// tests): kept in memory only. The app passes `RenderCache.defaultRoot`.
-    let renderCacheRoot: URL?
-    /// The open vault's render cache, made on first use; closed with the vault.
-    @ObservationIgnored var renderCache: RenderCache?
-    /// Items copied for pasting (`ItemClipboard`), within the open vault.
-    let itemClipboard = ItemClipboard()
+    public let renderCacheRoot: URL?
     /// Merges of revisions written elsewhere into open editors, by note id
     /// (`AppModel+RemoteMerge`).
-    @ObservationIgnored var remoteMerges: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored public var remoteMerges: [UUID: Task<Void, Never>] = [:]
     /// Per note, the revision names a merge could not read: not tried again
     /// until the names change.
-    @ObservationIgnored var unreadableMergeNames: [UUID: [String]] = [:]
+    @ObservationIgnored public var unreadableMergeNames: [UUID: [String]] = [:]
     /// Editors of note windows (Mac), by note id: one per note, each with its
     /// own canvas (`AppModel+Windows`).
-    var windowEditors: [UUID: NoteEditor] = [:] {
-        didSet { idleTimer?.update() }
+    public var windowEditors: [UUID: Editor] = [:] {
+        didSet { Host.editorsChanged(self) }
     }
     /// Notes shown by a window of their own; the library window's detail pane
     /// does not open an editor for them.
-    var windowClaims: Set<UUID> = []
+    public var windowClaims: Set<UUID> = []
     /// Notes `openEditor` is reading (its editor not assigned yet), with how
     /// many opens are under way: open for thinning (`isNoteOpen`).
-    @ObservationIgnored var openingNoteIDs: [UUID: Int] = [:]
+    @ObservationIgnored public var openingNoteIDs: [UUID: Int] = [:]
     /// Bumped when the vault's keys changed under the open editors
     /// (`AppModel+Keys`): views reopen their notes.
-    var keyEpoch = 0
+    public var keyEpoch = 0
     /// True while a recipient change re-encrypts the vault (`AppModel+Keys`):
     /// no editor opens meanwhile, since it would hold the old vault and secret.
-    var isChangingKeys = false
+    public var isChangingKeys = false
     /// The library window whose detail pane shows `editor` (`WindowUI.id`).
     /// One canvas per editor: a second canvas on the same editor would report
     /// a drawing without the first one's new strokes, which the ledger takes
     /// as erasures.
-    var canvasWindow: UUID?
+    public var canvasWindow: UUID?
     /// When a note window last asked for a library window (coalesces the
     /// requests of several restored note windows).
-    var libraryWindowRequested: Date?
-    /// Where this model's PDF exports (drag to Finder) are written; emptied when the vault closes.
-    let exportFolder = NotePDFExport.folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
-    /// Bumped when the vault closes: a drag-out export prepared before it writes nothing.
-    let exportEpoch = ExportEpoch()
+    public var libraryWindowRequested: Date?
     /// Library windows on screen (a note window restored alone opens one).
-    var libraryWindowCount = 0
+    public var libraryWindowCount = 0
     /// "New Note" was chosen in the Mac menu-bar item at this time and has not been carried out yet
     /// (`AppModel+MenuBar`).
-    var menuBarNewNoteRequest: Date?
+    public var menuBarNewNoteRequest: Date?
     /// This device's trust records of the vaults' device lists (format.md
     /// §15.10). The app keeps them in Application Support (`defaultTrustDirectory`);
     /// without one (tests) none is kept, and a list that checks under the
     /// vault's key is taken as it is (`ListStatus.Verification.firstUse`).
-    let trust: (any EpochTrustStore)?
+    public let trust: (any EpochTrustStore)?
     /// This device's write ledger and set-aside store per vault (key-hierarchy design §5.4, §5.8): the app
     /// sets them at launch (`DeviceWriteStores.app`); without them (tests) nothing is recorded and a device
     /// change is not caught up.
-    @ObservationIgnored var writeStores: DeviceWriteStores?
+    @ObservationIgnored public var writeStores: DeviceWriteStores?
     /// The open vault's `vault.json` did not check at unlock (design §4.3): the
     /// blocking alert (`ListAlert`). Nothing is written to the vault meanwhile.
-    var listAlert: ListAlert?
+    public var listAlert: ListAlert?
     /// The Confirm Vault sheet is shown (`needsVaultConfirmation`: the kit's root confirms the vault here).
-    var confirmingVault = false
-    /// A takeover by another device that this device has not acknowledged (key-hierarchy design §6.3): a
-    /// banner until dismissed (`AppModel+Devices`).
-    var takeoverAlert: TakeoverAlert?
+    public var confirmingVault = false
     /// While this device is joining the open, locked vault (key-hierarchy design §6.2): its key, so the vault's
     /// runs are keyless two-way runs that take home's approval (`SyncOptions.firstPullIdentities`).
-    var joinIdentity: NativeIdentity?
-    /// Where acknowledged takeovers are remembered (per vault, the epoch); tests pass their own.
-    @ObservationIgnored var takeoverDefaults: UserDefaults = .standard
+    public var joinIdentity: NativeIdentity?
     /// Each target's run before a device change is bounded by this (design §5.2 step 2); tests shorten it.
-    @ObservationIgnored var deviceChangeRunBound: TimeInterval = AppModel.defaultDeviceChangeRunBound
-    /// Asks for the device owner before a list change that needs them at the device (Replace Recovery Kit, design
-    /// §6.5); tests inject a fake.
-    @ObservationIgnored var ownerAuthenticator: any OwnerAuthenticator = SystemOwnerAuthenticator()
+    @ObservationIgnored public var deviceChangeRunBound: TimeInterval = EpochChangePull.defaultBound
     /// The targets run before a device change (the sheets' "Syncing…" with its Cancel).
-    var isSyncingBeforeChange = false
+    public var isSyncingBeforeChange = false
     /// Set while they run: Cancel skips the rest (`cancelDeviceChangeSync`).
-    @ObservationIgnored var deviceChangeCancel: SyncRunCancel?
-    @ObservationIgnored var deviceChangeWaitCancel: (() -> Void)?
+    @ObservationIgnored public var deviceChangeCancel: SyncRunCancel?
+    @ObservationIgnored public var deviceChangeWaitCancel: (() -> Void)?
     /// A re-encryption step is going (`advanceReencryption`): the progress sheet and the Devices row bind to it, so a
     /// second one is never queued behind it (review of #89, S7).
-    var isAdvancingReencryption = false
+    public var isAdvancingReencryption = false
     /// Set while it goes: Cancel stops it between files and steps (`cancelReencryptionStep`).
-    @ObservationIgnored var reencryptCancel: SyncRunCancel?
+    @ObservationIgnored public var reencryptCancel: SyncRunCancel?
     /// This device's state as last read off the main actor (`refreshDeviceState`): since when a change it cannot
     /// verify holds its sync back, and the sightings Repair lists.
-    var heldSinceAtOpen: Date?
-    var sightingRowsState: [SightingRow] = []
+    public var heldSinceAtOpen: Date?
     /// The clock the device banners judge "more than a day" by; tests set it.
-    @ObservationIgnored var deviceNoticeNow: () -> Date = { Date() }
+    @ObservationIgnored public var deviceNoticeNow: () -> Date = { Date() }
     /// The keys the vault was unlocked with, for opening it again (a WebDAV
     /// copy downloaded again, a backup check).
-    var unlockKeys = UnlockKeys()
+    public var unlockKeys = UnlockKeys()
     /// The identities the vault was unlocked with.
-    var unlockIdentities: [any AgeIdentity] { unlockKeys.identities }
+    public var unlockIdentities: [any AgeIdentity] { unlockKeys.identities }
     private var scopedURL: URL?
     /// The in-app vault store (`VaultLibrary.vaultStore`): the app sets it, so an open store vault
     /// holds a lease (`storeLease`); nil in tests that need none.
-    @ObservationIgnored var vaultStore: VaultStore? {
+    @ObservationIgnored public var vaultStore: VaultStore? {
         didSet {
             // WebDAV targets live in the store's target registry.
             if let vaultStore, vaultStore.root != webdavLocations.store.root {
@@ -665,49 +569,48 @@ final class AppModel {
         }
     }
     /// The store whose vaults have sync targets: the app's, else (tests) the model's own scratch store.
-    var syncStore: VaultStore { vaultStore ?? webdavLocations.store }
+    public var syncStore: VaultStore { vaultStore ?? webdavLocations.store }
     /// Held while a vault of `vaultStore` is open: removing it from the store is refused meanwhile
     /// (by the app, or `sempere store remove`). Released once the editors' last saves are written, and
     /// on iOS while the app is in the background (`prepareForSuspension`, AppModel+Suspension).
-    @ObservationIgnored var storeLease: VaultStore.Lease?
+    @ObservationIgnored public var storeLease: VaultStore.Lease?
     /// The open store vault `storeLease` is for: kept while the lease is let go in the background, so it
     /// is taken again when the app comes back (`resumeAfterSuspension`).
-    @ObservationIgnored var storeLeaseVault: UUID?
+    @ObservationIgnored public var storeLeaseVault: UUID?
     /// Whether the store lease is let go while the app is in the background (iOS, where the store is in
     /// the App Group container and a suspended app holding a lock there is killed: 0xdead10cc). Off on a
     /// Mac, which suspends nothing; tests turn it on.
-    @ObservationIgnored var releasesLocksInBackground = !Platform.isMac
+    @ObservationIgnored public var releasesLocksInBackground: Bool
     /// The app is in the background with its locks let go (`prepareForSuspension`).
-    @ObservationIgnored var locksSuspended = false
-    /// The assertion held while the last saves finish before the lease is let go, and its wait.
-    @ObservationIgnored var suspensionToken: BackgroundTaskToken?
-    @ObservationIgnored var suspensionWait: Task<Void, Never>?
-    /// Applies "Keep Screen On" app-wide (`IdleTimerKeeper`); the app sets it, tests need none.
-    @ObservationIgnored var idleTimer: IdleTimerKeeper?
+    @ObservationIgnored public var locksSuspended = false
+    @ObservationIgnored public var suspensionWait: Task<Void, Never>?
     /// The app-lifecycle observers (`observeAppLifecycle`).
-    @ObservationIgnored var lifecycleObservers: [any NSObjectProtocol] = []
-    /// "Open Vault…" copying a vault onto this device (`copyIn`), for the progress overlay.
-    var vaultCopy: VaultCopyProgress?
+    @ObservationIgnored public var lifecycleObservers: [any NSObjectProtocol] = []
     /// Bumped by `close()` (and so by every `openVault`): async work started
     /// under an older generation must not publish its result (the vault it
     /// read is gone).
-    private(set) var generation = 0
+    public private(set) var generation = 0
     /// The save of the editor `close()` dropped; awaited before any note is
     /// opened again, so a reopened note is read after its last delta landed.
-    var closingEditor: Task<Void, Never>?
+    public var closingEditor: Task<Void, Never>?
     /// Per WebDAV location: the push its closed session left running.
     /// Awaited before that copy is synced, replaced or removed again.
-    var stoppingWebDAV: [UUID: Task<Void, Never>] = [:]
+    public var stoppingWebDAV: [UUID: Task<Void, Never>] = [:]
     /// This installation's device id and clock, created on first write
     /// access. Every write (canvas autosave and browser edits) ticks this one
     /// clock, so the state file has a single writer.
     private var deviceClock: DeviceClock?
-    let editorDebounce: Duration
+    public let editorDebounce: Duration
     /// Test seam: awaited after each piece of off-main vault work.
     private let afterIO: (@Sendable () async -> Void)?
 
-    init(deviceStateURL: URL = DeviceClock.defaultURL, editorDebounce: Duration = NoteEditor.defaultDebounce,
-         recognizer: (any PageRecognizing)? = nil, recognitionDelay: Duration = NoteEditor.defaultRecognitionDelay,
+    /// The platform services this model was made with (`Host.makeServices()` unless given).
+    @ObservationIgnored public let services: AppModelServices
+    /// The state of the extensions still in the app (`Host.State`, wave 5b part 3).
+    @ObservationIgnored public let appState: Host.State
+
+    public init(deviceStateURL: URL = DeviceClock.defaultURL, editorDebounce: Duration = NoteEditorDefaults.debounce,
+         recognizer: (any PageRecognizing)? = nil, recognitionDelay: Duration = NoteEditorDefaults.recognitionDelay,
          summaryCacheDirectory: URL? = nil, drawingCacheRoot: URL? = nil,
          blobCacheRoot: URL? = nil, renderCacheRoot: URL? = nil,
          attachmentIndexRoot: URL? = nil,
@@ -715,7 +618,19 @@ final class AppModel {
          trust: (any EpochTrustStore)? = nil,
          backupNotifier: (any BackupNotifying)? = nil,
          webdavLocations: WebDAVLocationStore? = nil,
+         services: AppModelServices? = nil,
          afterIO: (@Sendable () async -> Void)? = nil) {
+        let services = services ?? Host.makeServices()
+        self.services = services
+        appState = Host.makeState()
+        defaultTitle = { [settings = services.settings] in NewNoteSettings.defaultTitle(settings, now: $0) }
+        transcriber = services.transcriber
+        iCloudHooks = services.iCloudHooks
+        webdavRemote = services.webdavRemote
+        webdavPasswords = services.webdavPasswords
+        backupStore = BackupStore(defaults: services.settings)
+        releasesLocksInBackground = !services.platform.isMac
+        searchTranscripts = TranscriptSearchPreference.isOn(services.settings)
         self.trust = trust
         // One private scratch folder for every default location below, removed when the model goes away: a model
         // built without explicit roots (tests, previews) would otherwise leave three folders per instance in tmp.
@@ -742,16 +657,17 @@ final class AppModel {
         if let backupNotifier { self.backupNotifier = backupNotifier }
     }
 
+
     // MARK: - Derived
 
     /// The vault's display name (folder name without `.sempere`).
-    var vaultName: String? {
+    public var vaultName: String? {
         vaultURL.map { $0.deletingPathExtension().lastPathComponent }
     }
 
     /// The notebook hierarchy of live notes and of the empty notebooks records
     /// keep (names are `/`-separated paths, format.md §5.4, §14).
-    var notebookTree: [NotebookNode] {
+    public var notebookTree: [NotebookNode] {
         let version = listVersion
         if let t = derived.tree, t.version == version { return t.value }
         let tree = NotebookRecords.tree(noteNotebooks: notes.filter { !$0.deleted }.map(\.notebook), declared: declaredNotebooks)
@@ -760,13 +676,13 @@ final class AppModel {
     }
 
     /// Every notebook path in use by live notes or declared, parents included, in tree order.
-    var notebooks: [String] {
+    public var notebooks: [String] {
         NotebookNode.flatten(notebookTree)
     }
 
     /// Tags in use by live notes, sorted. Tags match case-insensitively
     /// ("Math" and "math" are one); the spelling shown is the first seen.
-    var tags: [String] {
+    public var tags: [String] {
         let version = listVersion
         if let t = derived.tags, t.version == version { return t.value }
         let tags = NoteOps.vaultTags(notes)
@@ -775,7 +691,7 @@ final class AppModel {
     }
 
     /// The note list for the current sidebar selection, title search and sort order.
-    var visibleNotes: [NoteSummary] {
+    public var visibleNotes: [NoteSummary] {
         // Recently Recognized depends on the time too (`activityNow`), which no key holds: never cached.
         if sidebarSelection == .recentlyRecognized { return computeVisibleNotes() }
         let key = DerivedLists.VisibleKey(version: listVersion, selection: sidebarSelection, search: searchText,
@@ -794,7 +710,7 @@ final class AppModel {
     }
 
     /// The notes the sidebar selection shows, before any search.
-    var notesInSelection: [NoteSummary] {
+    public var notesInSelection: [NoteSummary] {
         switch sidebarSelection ?? .allNotes {
         case .allNotes: return notes.filter { !$0.deleted }
         case .notebook(let n): return notes.filter { !$0.deleted && NotebookPath.name($0.notebook, isWithin: n) }
@@ -806,11 +722,11 @@ final class AppModel {
         }
     }
 
-    static func sorted(_ list: [NoteSummary], by order: NoteSort, favoritesFirst: Bool = false) -> [NoteSummary] {
+    public static func sorted(_ list: [NoteSummary], by order: NoteSort, favoritesFirst: Bool = false) -> [NoteSummary] {
         NoteOrder(order.key, favoritesFirst: favoritesFirst).sorted(list)
     }
 
-    var selectedNote: NoteSummary? {
+    public var selectedNote: NoteSummary? {
         selectedNoteID.flatMap { notesByID[$0] }
     }
 
@@ -825,15 +741,16 @@ final class AppModel {
     ///   not `url` itself (the folder the user picked, when `url` was found
     ///   inside it). Held instead of `url`'s own.
     ///   - external: the URL came from outside the app (`vaultOpenedExternally`).
-    func openVault(at url: URL, accessing scope: URL? = nil, external: Bool = false) async throws {
+    public func openVault(at url: URL, accessing scope: URL? = nil, external: Bool = false) async throws {
         close()
         vaultOpenedExternally = external
         let gen = generation
         let holder = scope ?? url
-        let scoped = holder.startAccessingSecurityScopedResource()
+        let bookmarks = services.bookmarks
+        let scoped = bookmarks.startAccessing(holder)
         // A vault folder is never a package (`BundleBitRepair`): a copy-in keeps the source's Finder flags.
-        BundleBitRepair.clear(url, .openedVault)
-        let interval = Perf.begin(.vaultOpen)
+        BundleBitRepair.clear(url, .openedVault, log: services.perf)
+        let interval = services.perf.begin("vault.open")
         do {
             // A sandboxed Mac refuses a folder whose saved permission did not come back.
             #if DEBUG
@@ -843,7 +760,7 @@ final class AppModel {
             try FolderAccess.check(url, scoped: scoped)
             let opened = try await offMain { try Vault.open(at: url) }
             try ensureCurrent(gen)
-            Perf.end(interval, "")
+            services.perf.end(interval, "")
             if scoped { scopedURL = holder }
             if let store = vaultStore, let stored = store.entry(containing: url) {
                 storeLeaseVault = stored.vaultId
@@ -856,27 +773,27 @@ final class AppModel {
             // A store vault's targets: their sessions are the open ones (two-way once unlocked).
             attachSyncTargets(vaultID: opened.vaultId, at: url)
         } catch {
-            Perf.end(interval, "failed")
-            if scoped { holder.stopAccessingSecurityScopedResource() }
+            services.perf.end(interval, "failed")
+            if scoped { bookmarks.stopAccessing(holder) }
             throw error
         }
     }
 
     /// Opens the vault at `url` and unlocks it with `identities` in one step.
-    func openVault(at url: URL, identities: [any AgeIdentity]) async throws {
+    public func openVault(at url: URL, identities: [any AgeIdentity]) async throws {
         try await openVault(at: url)
         try await unlock(with: identities)
     }
 
     /// Unlocks the open vault with age identities (a listed device's key
     /// without its signing keys, or the recovery key: read-only).
-    func unlock(with identities: [any AgeIdentity], awaitNotes: Bool = true) async throws {
+    public func unlock(with identities: [any AgeIdentity], awaitNotes: Bool = true) async throws {
         try await unlock(with: UnlockKeys(identities: identities), awaitNotes: awaitNotes)
     }
 
     /// Unlocks the open vault as the device `device` (its decryption key and
     /// its signing keys, which home needs for list changes).
-    func unlock(device: DeviceKeys, awaitNotes: Bool = true) async throws {
+    public func unlock(device: DeviceKeys, awaitNotes: Bool = true) async throws {
         try await unlock(with: UnlockKeys(identities: [device.nativeIdentity], signing: device.signing, device: device),
                          awaitNotes: awaitNotes)
     }
@@ -894,7 +811,7 @@ final class AppModel {
     /// - Parameter awaitNotes: wait for the listing (and throw its error)
     ///   before returning. The UI passes false, so the unlock sheet closes as
     ///   soon as the key is accepted; failures then go to `errorMessage`.
-    func unlock(with keys: UnlockKeys, awaitNotes: Bool = true) async throws {
+    public func unlock(with keys: UnlockKeys, awaitNotes: Bool = true) async throws {
         guard let url = vaultURL else { throw ModelError.noVaultOpen }
         let gen = generation
         let trust = self.trust
@@ -923,17 +840,13 @@ final class AppModel {
     /// The vault opened again after its `vault.json` changed (`syncedVaultFileArrived`): its list is
     /// checked again (`listAlert`), the quick-capture profile follows the list's capture keys, and the
     /// views open their notes again (`keyEpoch`).
-    func adoptReopened(_ next: Vault) {
+    public func adoptReopened(_ next: Vault) {
         guard phase == .unlocked, next.vaultId == vault?.vaultId else { return }
         vault = next
         listAlert = ListAlert(vault: next)
-        refreshQuickCaptureProfile()
+        // The quick-capture profile follows the list's capture keys; takeovers, the device state and settings sync.
+        Host.didReopen(self)
         keyEpoch += 1
-        Task {
-            await checkTakeovers()
-            await refreshDeviceState()
-        }
-        scheduleSettingsSync()
     }
 
     /// What every unlock does once the vault is open: lists the notes
@@ -947,13 +860,8 @@ final class AppModel {
         loadActivity()
         startLoadingNotes(reportErrors: !awaitNotes)
         if awaitNotes { try await notesLoaded() }
-        refreshQuickCaptureProfile()
-        installInboxDeliveryObserver()
-        startInboxAdoption()
-        await checkTakeovers()
-        await refreshDeviceState()
-        Task { await rescheduleBackupReminder() }
-        startSettingsSync()
+        // The quick-capture profile, the inbox, takeovers, the device state, the backup reminder, settings sync.
+        await Host.didUnlock(self)
     }
 
     /// Unlocks with the text of a key: a device key file (`DeviceKeys`, with
@@ -962,7 +870,7 @@ final class AppModel {
     /// Returns the device keys when it was a device key file
     /// (a device key file made with `sempere`; the app's own keys are in `DeviceKeyStore`).
     @discardableResult
-    func unlock(identityText: String, awaitNotes: Bool = true) async throws -> DeviceKeys? {
+    public func unlock(identityText: String, awaitNotes: Bool = true) async throws -> DeviceKeys? {
         if DeviceKeys.isDeviceKeyFile(identityText) {
             let device: DeviceKeys
             do { device = try DeviceKeys.parse(identityText) } catch { throw ModelError.notAnIdentity }
@@ -978,7 +886,7 @@ final class AppModel {
     /// Unlocks with the passphrase of the recovery key's passphrase copy
     /// (`keys/recovery-….key.age`, format.md §15.11): the vault opens
     /// read-only, checked against the root the copy carries.
-    func unlock(passphrase: String, awaitNotes: Bool = true) async throws {
+    public func unlock(passphrase: String, awaitNotes: Bool = true) async throws {
         guard let locked = vault else { throw ModelError.noVaultOpen }
         let gen = generation
         let copy: RecoveryPassphraseCopy = try await offMain { () throws -> RecoveryPassphraseCopy in
@@ -1001,7 +909,7 @@ final class AppModel {
     /// yet are listed as placeholders (or their cached summary) and fill in
     /// as they arrive (`startCloudSync`), instead of the call waiting for all
     /// of them.
-    func reload() async throws {
+    public func reload() async throws {
         guard let vault else { throw ModelError.noVaultOpen }
         let gen = generation
         isBusy = true
@@ -1026,7 +934,7 @@ final class AppModel {
     /// saved first. Needs an unlocked vault; the device clock is created on
     /// first use. In iCloud Drive the note is read, and its deltas written,
     /// under file coordination.
-    func openEditor(for noteID: UUID?) async throws {
+    public func openEditor(for noteID: UUID?) async throws {
         guard editor?.noteID != noteID || noteID == nil else { return }
         let gen = generation
         let previous = editor
@@ -1044,22 +952,23 @@ final class AppModel {
         }
         let epoch = keyEpoch
         guard let vault, phase == .unlocked else { throw ModelError.noVaultOpen }
-        let interval = Perf.begin(.noteOpen)
-        let render = Perf.begin(.noteFirstRender)
+        let perf = services.perf
+        let interval = perf.begin("note.open")
+        let render = perf.begin("note.firstRender")
         var shown = false
         defer {
             if !shown {
-                Perf.end(interval, "\(Perf.short(noteID)) not shown")
-                Perf.end(render, "\(Perf.short(noteID)) not shown")
+                perf.end(interval, "\(noteID.perfShort) not shown")
+                perf.end(render, "\(noteID.perfShort) not shown")
             }
         }
         // A partial copy: this note first, before the rest of the fill.
-        let download = Perf.begin(.noteDownload)
+        let download = perf.begin("note.download")
         do { try await downloadNote(noteID) } catch {
-            Perf.end(download, "\(Perf.short(noteID)) failed")
+            perf.end(download, "\(noteID.perfShort) failed")
             throw error
         }
-        Perf.end(download, "\(Perf.short(noteID))")
+        perf.end(download, "\(noteID.perfShort)")
         let clock = try deviceClockForWriting()
         let cache = await openDrawingCache()
         let url = vault.url
@@ -1068,7 +977,7 @@ final class AppModel {
             try VaultEnumeration.listNotes(vault: url, only: [noteID]).first?.names
         }
         let verify = partialNoteVerifier(noteID)
-        let opened = try await NoteEditor.open(vault: vault, noteID: noteID, clock: clock, debounce: editorDebounce,
+        let opened = try await Editor.open(vault: vault, noteID: noteID, clock: clock, debounce: editorDebounce,
                                                recognizer: recognizer, recognitionDelay: recognitionDelay,
                                                verify: verify, cache: cache,
                                                listedNames: listed, beforeFinishing: editorLoadHook,
@@ -1076,7 +985,7 @@ final class AppModel {
                                                    guard let self else { throw CancellationError() }
                                                    try self.ensureCurrent(gen)   // never into another vault
                                                    try await self.downloadNote(noteID)
-                                               }, perf: AppPerfSink())
+                                               }, perf: perf)
         await afterIO?()
         guard gen == generation, selectedNoteID == noteID,   // closed, or the selection moved on meanwhile
               editor?.noteID != noteID else {                // a concurrent open won; keep its edits
@@ -1100,19 +1009,18 @@ final class AppModel {
         }
         if opened.loadFailed {   // it failed before the callback was set
             if let stale = editor { editor = nil; Task { await stale.close() } }
-            editorFailure = (noteID, opened.readOnlyReason ?? String(localized: "This note could not be read."))
+            editorFailure = (noteID, Host.unreadableText(opened))
             Task { await opened.close() }
             return
         }
         let stale = editor
-        opened.prepareBlobWrite = blobWritePreparer(note: noteID)
-        configureRecordings(opened)
+        Host.prepareEditor(opened, of: noteID, in: self)   // blob writes and recordings (the app's, part 3)
         opened.onRecognized = { [weak self] id in
             guard let self else { return }
             Task { try? await self.refresh([id]) }   // search sees the new text
         }
-        Perf.end(interval, "\(Perf.short(noteID)) pages=\(opened.pages.count) fromCache=\(opened.isPreparing)")
-        opened.openInterval = PerfInterval(render)   // ended by the canvas when the ink is on screen
+        perf.end(interval, "\(noteID.perfShort) pages=\(opened.pages.count) fromCache=\(opened.isPreparing)")
+        opened.openInterval = render   // ended by the canvas when the ink is on screen
         shown = true
         editor = opened
         applyPendingJump()
@@ -1120,11 +1028,11 @@ final class AppModel {
     }
 
     /// Opens the open vault's drawing cache (`DrawingCache`) once.
-    func openDrawingCache() async -> DrawingCache? {
+    public func openDrawingCache() async -> DrawingCache? {
         if let drawingCache { return drawingCache }
         guard let root = drawingCacheRoot, let vault, vault.canRead else { return nil }
         let gen = generation
-        let cap = DrawingCache.configuredCapBytes(in: UserDefaults.standard)
+        let cap = DrawingCache.configuredCapBytes(in: services.settings)
         let cache = try? await offMain(priority: .utility) { try DrawingCache(root: root, vault: vault, capBytes: cap) }
         // A newer session may already use the same folder (the vault closed and
         // reopened meanwhile): drop this instance without deleting anything; the
@@ -1136,7 +1044,7 @@ final class AppModel {
 
     /// Opens the selected note on the canvas for the detail pane, keeping a
     /// failure next to the note (`editorFailure`) instead of a blank canvas.
-    func showSelectedNote() async {
+    public func showSelectedNote() async {
         var id = phase == .unlocked ? selectedNoteID : nil
         if let claimed = id, windowClaims.contains(claimed) { id = nil }   // a window of its own has it
         editorFailure = nil
@@ -1151,20 +1059,21 @@ final class AppModel {
     /// Reloads the open editor when it shows `id` (after a browser edit that
     /// changes whether it may be edited, e.g. delete or restore). Pending
     /// canvas changes are saved first.
-    func reopenEditor(ifShowing id: UUID) async throws {
-        if windowEditors[id] != nil { await reopenWindowNote(id) }
+    public func reopenEditor(ifShowing id: UUID) async throws {
+        if windowEditors[id] != nil { await Host.reopenWindowNote(id, in: self) }
         guard editor?.noteID == id else { return }
         try await openEditor(for: nil)
         try await openEditor(for: id)
     }
 
-    func deviceClockForWriting() throws -> DeviceClock {
+    public func deviceClockForWriting() throws -> DeviceClock {
         if let deviceClock { return deviceClock }
         // Every delta any `NoteWriter` writes with this clock updates that note's attachment index.
-        let clock = try DeviceClock(url: deviceStateURL) { [weak self] id in
+        let clock = try DeviceClock(url: deviceStateURL, app: services.appName, perf: services.perf) { [weak self] id in
             Task { @MainActor in
-                self?.noteWritten(id)
-                self?.syncSessions.forEach { $0.noteWrite() }   // every target syncs shortly after a write
+                guard let self else { return }
+                Host.noteWritten(id, in: self)
+                self.syncSessions.forEach { $0.noteWrite() }   // every target syncs shortly after a write
             }
         }
         deviceClock = clock
@@ -1175,9 +1084,11 @@ final class AppModel {
 
     /// Forgets the vault (and its keys). Folder access ends once the open
     /// note's pending changes and any edit already being written are saved.
-    func close() {
+    public func close() {
         generation += 1
-        stopSettingsSync()
+        // Settings sync stops and the app-side state of the vault is forgotten (the extensions still in the app, wave 5b
+        // part 3); a backup, inbox adoption or import still running is canceled below.
+        Host.willClose(self)
         stopJoin()
         stopWebDAV()
         cancelRemoteMerges()
@@ -1188,7 +1099,6 @@ final class AppModel {
         if let o = inboxDeliveryObserver { NotificationCenter.default.removeObserver(o) }
         inboxDeliveryObserver = nil
         importCancellation?.cancel()   // a running import stops after its current note
-        lastImportReport = nil
         publishedRows = [:]
         publishedRowsSignature = []
         isBusy = false
@@ -1197,6 +1107,7 @@ final class AppModel {
         windowEditors = [:]
         windowClaims = []
         let scoped = scopedURL
+        let bookmarks = services.bookmarks
         let lease = storeLease
         storeLease = nil
         storeLeaseVault = nil
@@ -1204,8 +1115,6 @@ final class AppModel {
         // background time (`prepareForSuspension` awaits only the closing task it saw).
         if locksSuspended { lease?.release() }
         self.editor = nil
-        exportEpoch.bump()
-        NotePDFExport.purge(in: exportFolder, olderThan: 0)   // plaintext PDFs dragged out of this vault
         if editor != nil || scoped != nil || !windowed.isEmpty || lease != nil {
             let earlier = closingEditor
             let gate = editGate
@@ -1216,7 +1125,7 @@ final class AppModel {
                 // A browser edit already writing (`commit`) finishes first.
                 await gate.acquire()
                 gate.release()
-                scoped?.stopAccessingSecurityScopedResource()
+                if let scoped { bookmarks.stopAccessing(scoped) }
                 lease?.release()
             }
             closingEditor = closing
@@ -1250,10 +1159,8 @@ final class AppModel {
         // Nor do decrypted attachments and their pictures (`dropAttachments`, when `vault` goes).
         vault = nil
         unlockKeys = UnlockKeys()
-        takeoverAlert = nil
         joinIdentity = nil
         heldSinceAtOpen = nil
-        sightingRowsState = []
         vaultURL = nil
         vaultOpenedExternally = false
         notes = []
@@ -1261,17 +1168,12 @@ final class AppModel {
         selectedNoteID = nil
         isSelectingNotes = false
         multiSelection = []
-        exportRequest = nil
-        bulkExportRequest = nil
         editorFailure = nil
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionProgress = nil
         recognitionResults = nil
-        resetAttachmentIndex()
         activity = RecentActivity()
-        draggedPayload = nil
-        dropTarget = nil
         pendingJump = nil
         pendingRecordingJump = nil
         transcriptHits = []
@@ -1282,18 +1184,18 @@ final class AppModel {
     }
 
     /// Runs `body` and records its error for the UI instead of throwing.
-    func report(_ body: () async throws -> Void) async {
+    public func report(_ body: () async throws -> Void) async {
         do { try await body() } catch is CancellationError {} catch { errorMessage = "\(error)" }
     }
 
     /// Throws `CancellationError` when `close()` or another `openVault` ran
     /// since `gen` was taken, so a late result cannot resurrect a closed vault.
-    func ensureCurrent(_ gen: Int) throws {
+    public func ensureCurrent(_ gen: Int) throws {
         guard gen == generation else { throw CancellationError() }
     }
 
     /// Runs blocking vault work (file I/O, decryption) on a background thread.
-    func offMain<T: Sendable>(priority: TaskPriority = .userInitiated,
+    public func offMain<T: Sendable>(priority: TaskPriority = .userInitiated,
                               _ work: @escaping @Sendable () throws -> T) async throws -> T {
         let value = try await Task.detached(priority: priority) { try work() }.value
         await afterIO?()
@@ -1301,9 +1203,9 @@ final class AppModel {
     }
 }
 
-extension AppModel {
+extension AppModelCore {
     /// The open, locked vault as read again (a joining device's run may have taken home's approval).
-    func replaceLockedVault(_ fresh: Vault) {
+    public func replaceLockedVault(_ fresh: Vault) {
         guard phase == .locked, fresh.url == vault?.url else { return }
         vault = fresh
     }

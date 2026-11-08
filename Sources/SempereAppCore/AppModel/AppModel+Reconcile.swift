@@ -13,7 +13,7 @@ import Sempere
 /// decrypted for those notes. Only changed notes are read, and their
 /// summaries reach the list in throttled batches (`queueListUpdate`). In a
 /// partial copy (a join, `AppModel+Join`) notes marked incomplete are pending.
-extension AppModel {
+extension AppModelCore {
     /// One pass over the note folders: every folder, or only `scope`.
     ///
     /// - Parameters:
@@ -24,16 +24,16 @@ extension AppModel {
     ///     ("pull to refresh") gives such notes another chance.
     /// - Returns: how many notes are still pending (a partial copy).
     @discardableResult
-    func reconcile(scope: Set<UUID>? = nil, full: Bool = false) async throws -> Int {
+    public func reconcile(scope: Set<UUID>? = nil, full: Bool = false) async throws -> Int {
         guard let vault else { throw ModelError.noVaultOpen }
         let gen = generation
         await loadGate.acquire()
         defer { loadGate.release() }
         try ensureCurrent(gen)
         try Task.checkCancellation()
-        let interval = Perf.begin(.reconcile)
+        let interval = services.perf.begin("reconcile")
         var readCount = 0
-        defer { Perf.end(interval, "scope=\(scope.map { "\($0.count)" } ?? "all") read=\(readCount)") }
+        defer { services.perf.end(interval, "scope=\(scope.map { "\($0.count)" } ?? "all") read=\(readCount)") }
 
         let url = vault.url
         let partialRoot = partialCopyRoot
@@ -56,8 +56,9 @@ extension AppModel {
         var pendingElsewhere = scope.map { pendingNoteIDs.subtracting($0) } ?? []
 
         // 1. Names only.
+        let perf = services.perf
         let listings = try await offMain(priority: .utility) {
-            try Perf.measure(.reconcileEnumerate, "") { try VaultEnumeration.listNotes(vault: url, only: scope) }
+            try perf.measure("reconcile.enumerate", "") { try VaultEnumeration.listNotes(vault: url, only: scope) }
         }
         try ensureCurrent(gen)
         try Task.checkCancellation()
@@ -103,7 +104,7 @@ extension AppModel {
         if !gone.isEmpty {
             queueListUpdate(removals: gone)
             for id in gone { indexedNames[id] = nil }
-            forgetAttachmentIndex(gone)
+            Host.notesRemoved(gone, in: self)
         }
         verifiedNoteIDs.formUnion(diff.unchanged)
         let shown = before.subtracting(gone)
@@ -163,7 +164,7 @@ extension AppModel {
     }
 
     /// The row of a pending note nothing is known about yet (no published summary).
-    nonisolated static func placeholderSummary(_ id: UUID) -> NoteSummary {
+    public nonisolated static func placeholderSummary(_ id: UUID) -> NoteSummary {
         NoteSummary(id: id, title: "", tags: [], notebook: nil, deleted: false, pages: 0, strokes: 0, modified: nil,
                     problem: nil)
     }
@@ -175,7 +176,7 @@ extension AppModel {
     /// pass then fetches nothing, since the index will show the notes and
     /// say which changed. Without one (the vault is new on this device) the
     /// notes are downloaded while the key is typed.
-    var hasLocalIndex: Bool {
+    public var hasLocalIndex: Bool {
         guard let marker = indexMarkerURL else { return false }
         return FileManager.default.fileExists(atPath: marker.path)
     }
@@ -183,13 +184,13 @@ extension AppModel {
     /// `<summary cache dir>/indexed-<SHA-256 of the vault id>`: an empty file
     /// saying an index of this vault exists (the index's own name needs the
     /// vault secret). Nil without a cache directory (tests).
-    var indexMarkerURL: URL? {
+    public var indexMarkerURL: URL? {
         guard let dir = summaryCacheDirectory, let vault else { return nil }
         return dir.appendingPathComponent("indexed-" + LocalCacheKey.digestHex(vault.vaultId.uuidString.lowercased()))
     }
 
     /// Records that the open vault has an index on this device.
-    func markIndexed() {
+    public func markIndexed() {
         guard summaryCache != nil, let marker = indexMarkerURL, !FileManager.default.fileExists(atPath: marker.path) else { return }
         _ = FileManager.default.createFile(atPath: marker.path, contents: Data())
     }

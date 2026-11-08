@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// One entry of the open vault's list (format.md §15.3), as the key window
 /// shows it: a device, or the recovery key.

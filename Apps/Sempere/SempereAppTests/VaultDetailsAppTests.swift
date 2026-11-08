@@ -3,6 +3,7 @@ import Sempere
 import SempereSync
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// P9 of docs/design/device-first-sync.md in the app: Vault Details (storage, devices per target), Repair's
 /// adopt, export and delete, and Add WebDAV Server…, on two devices syncing through a folder.

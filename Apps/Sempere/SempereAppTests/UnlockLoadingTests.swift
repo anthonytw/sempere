@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// The unlock sheet goes away as soon as the key is accepted, while the
 /// notes are still being read.

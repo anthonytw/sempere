@@ -5,6 +5,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Records from an audio file instead of the microphone: each segment is a copy of a real AAC file of
 /// silence written once per run (`seconds` long), so the recorder's segments, the assembly into one file,

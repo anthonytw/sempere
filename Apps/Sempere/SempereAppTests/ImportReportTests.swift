@@ -3,6 +3,7 @@ import Sempere
 import SempereImport
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// An importer that writes nothing: a double for the app's generic import path.
 struct FakeImporter: VaultImporter {

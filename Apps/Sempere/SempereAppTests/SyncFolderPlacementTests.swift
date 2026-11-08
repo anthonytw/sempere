@@ -3,6 +3,7 @@ import Sempere
 import SempereSync
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Owner's test of TestFlight build 10 (iPad): New Vault's Sync With and Sync Targets' Add Folder… listed
 /// "junk/Wompa.sempere", but the runs wrote the vault's files straight into "junk". The subfolder was lost when the

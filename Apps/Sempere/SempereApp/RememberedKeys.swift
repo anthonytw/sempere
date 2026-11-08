@@ -3,6 +3,7 @@ import Foundation
 import LocalAuthentication
 import Observation
 import Sempere
+import SempereAppCore
 
 /// The keys this device keeps per vault (key-hierarchy design §6.1; KH5): its own device keys, in the Keychain
 /// with the signing pair in the Secure Enclave (`DeviceKeyStore`). It unlocks a vault with them when it opens

@@ -3,6 +3,7 @@ import Sempere
 import Testing
 import UIKit
 @testable import SempereApp
+import SempereAppCore
 
 /// Device checks c27 (a Mac quit leaves no decrypted files and the saved window
 /// state names no note) and c28 (the owner check a UI test can answer), the

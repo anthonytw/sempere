@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import UIKit
+import SempereAppCore
 
 /// Where the app is running. The Mac behavior (menus, windows, pointer input)
 /// is gated on this at run time, or on `#if targetEnvironment(macCatalyst)`

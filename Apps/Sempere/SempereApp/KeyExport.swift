@@ -3,6 +3,7 @@ import Foundation
 import LocalAuthentication
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// A secret key on its way out of the app (a new vault's recovery key, shown
 /// once): the `age-keygen` style text `sempere vault init --recovery-out`

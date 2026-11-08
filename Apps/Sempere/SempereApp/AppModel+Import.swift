@@ -3,6 +3,7 @@ import Sempere
 import SempereImport
 import SempereRender
 import UniformTypeIdentifiers
+import SempereAppCore
 
 /// What the app asks of an import (the importer's own flags and the two the app handles itself).
 /// The defaults are the CLI's (`docs/cli.md`): everything is imported, image metadata stripped, PDF page

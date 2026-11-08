@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Renaming, tags (case-insensitive) and same-titled notes in the model.
 @MainActor

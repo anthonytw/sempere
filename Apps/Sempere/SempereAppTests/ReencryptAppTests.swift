@@ -4,6 +4,7 @@ import Sempere
 import SempereSync
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// Re-encrypt Everything in the app (key-hierarchy design §7; phase KH6): the start through the model (claims on
 /// the vault's sync targets, the `reencrypt` epoch) and the progress sheet's steps (`advanceReencryption`) until

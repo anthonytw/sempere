@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereRender
+import SempereAppCore
 
 /// The formats a note dragged out of the list can become besides PDF
 /// (Settings ▸ General ▸ Drag to Finder, `DragExportFormat`): Markdown and

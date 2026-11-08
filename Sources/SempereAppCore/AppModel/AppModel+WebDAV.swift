@@ -1,51 +1,53 @@
 import Age
 import Foundation
 import Sempere
-import SempereAppCore
 import SempereSync
 import SempereWebDAV
 
 /// A previous copy an interrupted "Download Again" left that holds files the copy lacks (kept, never
 /// deleted): the alert names it, and offers Show in Finder on a Mac, Share… elsewhere.
-struct WebDAVLeftover: Identifiable, Equatable, Sendable {
-    var folder: URL
-    var message: String
-    var id: URL { folder }
+/// The alert's text is the app's (`WebDAVLeftover.message`).
+public struct WebDAVLeftover: Identifiable, Equatable, Sendable {
+    public var folder: URL
+    /// The vault's name.
+    public var name: String
+    public var id: URL { folder }
+
+    public init(folder: URL, name: String) {
+        self.folder = folder
+        self.name = name
+    }
+}
+
+/// What the model reports in `errorMessage` that is not a thrown error's own text: worded by the app
+/// (`AppModel+Text.swift`).
+public enum AppModelNotice: Sendable, Equatable {
+    /// This device's key is no longer one of the vault's keys, so the vault was closed.
+    case keyNoLongerListed
+    /// The vault's device list changed on another device and could not be read here (the error, in English).
+    case deviceListUnreadable(String)
 }
 
 /// Why a WebDAV vault could not be opened or changed.
-enum WebDAVVaultError: Error, Equatable, CustomStringConvertible {
+public enum WebDAVVaultError: Error, Equatable, Sendable {
     case noSuchLocation
     /// The download stopped before every file arrived (the first problems);
     /// opening it again continues.
     case downloadIncomplete(String)
     /// Another vault now lives at a location whose copy holds changes the server never confirmed.
     case replacedWithChanges(Int)
-
-    var description: String {
-        switch self {
-        case .noSuchLocation:
-            return String(localized: "That WebDAV vault is no longer set up on this device. Connect to it again.")
-        case .downloadIncomplete(let detail):
-            return String(localized: "The vault was not completely downloaded: \(detail)\n\nOpen it again to continue the download.",
-                          comment: "The value is the first problems (English)")
-        case .replacedWithChanges(let n):
-            return String(localized: "Another vault is now at this address, and this device has \(n) changes of the vault that was there which were never uploaded. Nothing was changed. To start over, remove that WebDAV vault on the welcome screen first.",
-                          comment: "Connect to WebDAV: the folder holds another vault; the count is files not uploaded")
-        }
-    }
 }
 
 /// WebDAV vaults (docs/io.md, "WebDAV vaults in the app", "Sync targets in the app"): a local copy in
 /// the app's container, opened like any vault folder, and a two-way sync with the server (a
 /// `SyncSession` of the app's `SyncCoordinator`): the open vault's runs take what other devices wrote
 /// while it is unlocked here, and every other copy's runs upload what this device wrote.
-extension AppModel {
+extension AppModelCore {
     /// True when the open vault is a WebDAV location's local copy.
-    var isWebDAVVault: Bool { webdav != nil }
+    public var isWebDAVVault: Bool { webdav != nil }
 
     /// The endpoint of `location`, with its password from the Keychain.
-    nonisolated static func endpoint(_ location: WebDAVLocation, passwords: any WebDAVPasswordStore) throws -> WebDAVEndpoint {
+    public nonisolated static func endpoint(_ location: WebDAVLocation, passwords: any WebDAVPasswordStore) throws -> WebDAVEndpoint {
         guard let url = URL(string: location.url) else { throw WebDAVError.insecureURL("not a usable URL") }
         let password = location.user == nil ? nil : try passwords.password(for: location.id)
         return WebDAVEndpoint(url: url, user: location.user, password: password, pinnedCertificate: location.pinnedCertificate)
@@ -54,7 +56,7 @@ extension AppModel {
     // MARK: - Connecting
 
     /// "Test Connection": lists `url` with these credentials (never stored by this).
-    func probeWebDAV(url: URL, user: String?, password: String, pin: String?) async -> WebDAVProbe {
+    public func probeWebDAV(url: URL, user: String?, password: String, pin: String?) async -> WebDAVProbe {
         let remote = webdavRemote
         let endpoint = WebDAVEndpoint(url: url, user: user, password: user == nil ? nil : password, pinnedCertificate: pin)
         return await Task.detached(priority: .userInitiated) { remote.check(endpoint) }.value
@@ -64,7 +66,7 @@ extension AppModel {
     /// goes to the Keychain only), downloads it and opens it locked. A
     /// location for the same folder and user is reused, never duplicated.
     @discardableResult
-    func connectWebDAV(_ listing: WebDAVVaultListing, user: String?, password: String, pin: String?,
+    public func connectWebDAV(_ listing: WebDAVVaultListing, user: String?, password: String, pin: String?,
                        library: VaultLibrary) async throws -> UUID {
         var location = webdavLocations.location(url: listing.url, user: user)
             ?? WebDAVLocation(id: UUID(), url: listing.url, user: user, vaultId: listing.vaultId, name: listing.name,
@@ -107,7 +109,7 @@ extension AppModel {
 
     /// Changes a location's password and certificate pin (the edit sheet),
     /// then pushes if it is the open vault.
-    func updateWebDAVLocation(_ id: UUID, password: String?, pin: String?) async throws {
+    public func updateWebDAVLocation(_ id: UUID, password: String?, pin: String?) async throws {
         guard let location = webdavLocations.location(id) else { throw WebDAVVaultError.noSuchLocation }
         if let password, location.user != nil {
             let passwords = webdavPasswords, label = "\(location.name) (\(location.host))"
@@ -126,7 +128,7 @@ extension AppModel {
     /// size); the notes and attachments then arrive while it is open
     /// (`WebDAVFetcher`, through the iCloud machinery). Works offline once
     /// the copy is usable.
-    func openWebDAV(_ id: UUID, library: VaultLibrary) async throws {
+    public func openWebDAV(_ id: UUID, library: VaultLibrary) async throws {
         close()
         await stoppingWebDAV[id]?.value   // a push or fetch of this copy still running ends first
         let gen = generation
@@ -160,7 +162,7 @@ extension AppModel {
 
     /// The WebDAV target of store vault `vault` whose join is not finished (its first download, or a
     /// partial copy still filling): opening the vault goes through `openWebDAV`, which continues it.
-    func joiningWebDAVLocation(of vault: UUID) -> UUID? {
+    public func joiningWebDAVLocation(of vault: UUID) -> UUID? {
         webdavLocations.locations.first { location in
             UUID(uuidString: location.vaultId) == vault
                 && (!location.downloaded || webdavLocations.copy(of: location).isPartial)
@@ -172,7 +174,7 @@ extension AppModel {
     /// The vault was unlocked: a partial copy's notes not downloaded yet get their rows
     /// from the server's sealed summaries (opened with the key, format.md §12;
     /// a missing or unreadable file only means they are listed as they arrive).
-    func webdavUnlocked() async {
+    public func webdavUnlocked() async {
         guard let root = partialCopyRoot, let vault, vault.canRead else { return }
         let gen = generation
         let url = PartialCopyState.summariesURL(root)
@@ -187,7 +189,7 @@ extension AppModel {
 
     /// The row of a note not downloaded yet, from its published summary. It
     /// is only shown (and searched) until the note arrives and is read.
-    nonisolated static func pendingSummary(_ id: UUID, _ e: PublishedSummaries.Entry) -> NoteSummary {
+    public nonisolated static func pendingSummary(_ id: UUID, _ e: PublishedSummaries.Entry) -> NoteSummary {
         var s = NoteSummary(id: id, title: e.title, tags: e.tags, notebook: e.notebook, deleted: e.deleted, pages: e.pages,
                             strokes: 0, modified: e.modified, problem: nil)
         s.favorite = e.favorite
@@ -200,7 +202,7 @@ extension AppModel {
     /// Builds the session of `location` for the coordinator: two-way runs with the vault the model has
     /// open and unlocked (only for the open location), upload-only runs otherwise. Every run reads the
     /// location as stored at that moment (an edited password or pin applies at once).
-    func makeSyncSession(_ location: WebDAVLocation) -> SyncSession? {
+    public func makeSyncSession(_ location: WebDAVLocation) -> SyncSession? {
         let remote = webdavRemote, passwords = webdavPasswords, cacheDirectory = summaryCacheDirectory
         let store = webdavLocations, id = location.id
         let copy = webdavLocations.copy(of: location)
@@ -212,13 +214,8 @@ extension AppModel {
             lastSuccess: location.lastPush,
             run: { [weak self] request in
                 let (current, vault, join) = await MainActor.run { () -> (WebDAVLocation?, Vault?, NativeIdentity?) in
-                    // Two-way only with the open vault as the disk says it is: while a reopen after another
-                    // device's key change is pending (or failed), runs only upload (review of #70, F1).
-                    let mine = self?.syncSessions.contains { $0.locationID == id } == true
-                    let open = mine && self?.phase == .unlocked && self?.syncVaultStale == false
-                    // A device joining the open, locked vault takes home's approval (key-hierarchy KH5).
-                    let joining = mine && self?.phase == .locked ? self?.joinIdentity : nil
-                    return (store.location(id), open ? self?.vault : nil, joining)
+                    let run = self?.syncRunKeys(for: id)
+                    return (store.location(id), run?.vault, run?.join)
                 }
                 guard let current else { throw WebDAVVaultError.noSuchLocation }
                 return try await Task.detached(priority: .utility) { () throws -> SyncReport in
@@ -234,7 +231,7 @@ extension AppModel {
                     // Removals a takeover undid are kept for the banner (offline audit P16, `undoneRemovals`).
                     options.undoneRemovalsURL = undoneURL
                     // An upload-only run honors this device's sightings by epoch number (KH4, J5b).
-                    options.epochTrust = AppModel.defaultTrust
+                    options.epochTrust = Self.defaultTrust
                     request.apply(to: &options)
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }
@@ -281,13 +278,13 @@ extension AppModel {
     /// The open vault's write lock when it is a store vault (`VaultStore.writeLock`: the one lock every
     /// writer of its mutable files takes, the sync engine's runs of each target included); nil for a
     /// vault opened in place.
-    var vaultWriteLock: VaultFileLock? {
+    public var vaultWriteLock: VaultFileLock? {
         guard let url = vaultURL, let entry = syncStore.entry(containing: url) else { return nil }
         return syncStore.writeLock(for: entry.vaultId)
     }
 
     /// Runs `body` holding `lock` (none: just runs it), waiting at most 30 seconds for a sync run.
-    nonisolated static func withWriteLock<T>(_ lock: VaultFileLock?, _ body: () throws -> T) throws -> T {
+    public nonisolated static func withWriteLock<T>(_ lock: VaultFileLock?, _ body: () throws -> T) throws -> T {
         guard let lock else { return try body() }
         return try lock.withLock(timeout: 30, body)
     }
@@ -296,7 +293,7 @@ extension AppModel {
     /// touched are listed again, and an open editor of one merges the new revisions in place
     /// (`reconcile`, then `AppModel+RemoteMerge`); settings, the inbox, notebooks and the published
     /// summaries follow; a new `vault.json` (a device approved or renamed by home) reopens the vault.
-    func applySyncChanges(_ changes: LocalChanges) {
+    public func applySyncChanges(_ changes: LocalChanges) {
         guard phase == .unlocked, vault != nil else { return }
         if changes.manifest || changes.journal {
             // Upload-only until the vault is opened again under what arrived (F1).
@@ -313,8 +310,8 @@ extension AppModel {
                 _ = try? await self.reconcile(scope: ids)
             }
         }
-        if changes.settings { scheduleSettingsSync() }
-        if changes.inbox { startInboxAdoption() }
+        if changes.settings { Host.scheduleSettingsSync(self) }
+        if changes.inbox { Host.startInboxAdoption(self) }
         if changes.notebooks { Task { await refreshNotebookRecords() } }
         if changes.summaries, !pendingNoteIDs.isEmpty { Task { await refreshPublishedRows() } }
     }
@@ -326,7 +323,7 @@ extension AppModel {
     /// after a key change (`keyEpoch`). A device whose key is no longer listed closes it and says so.
     /// TODO(KH3): a new epoch (a removal rotates the key) arrives the same way and is refused as
     /// `otherEpoch` by this single-epoch reader until KH3 follows chains.
-    func syncedVaultFileArrived() async {
+    public func syncedVaultFileArrived() async {
         guard let start = vault, phase == .unlocked, !isChangingKeys else { return }
         let same = (try? await offMain { !Self.manifestChangedOnDisk(start) }) ?? false
         if same {
@@ -341,7 +338,7 @@ extension AppModel {
         let shown = editor?.noteID
         let windows = Array(windowEditors.keys)
         try? await openEditor(for: nil)
-        await closeWindowEditors()
+        await Host.closeWindowEditors(self)
         guard generation == gen else { return }
         let keys = unlockKeys
         let trust = keys.root == nil ? self.trust : nil
@@ -357,7 +354,7 @@ extension AppModel {
                 }
             } catch VaultError.keyNotListed {
                 guard generation == gen else { return }
-                errorMessage = String(localized: "This device's key is no longer one of the vault's keys, so the vault was closed. Ask a device that still has the vault to add this device again.")
+                errorMessage = "\(AppModelNotice.keyNoLongerListed)"
                 close()
                 return
             }
@@ -370,27 +367,26 @@ extension AppModel {
                 editor?.noteReopenedForRemoteChange()
             }
             for id in windows {
-                _ = try? await openWindowNote(id)
+                try? await Host.openWindowNote(id, in: self)
                 windowEditors[id]?.noteReopenedForRemoteChange()
             }
         } catch {
             // Never two-way again under the old keys: runs stay upload-only until the vault is opened anew.
-            errorMessage = String(localized: "The vault's device list changed on another device and could not be read here: \(String(describing: error))",
-                                  comment: "The value is the error (English)")
+            errorMessage = "\(AppModelNotice.deviceListUnreadable(String(describing: error)))"
         }
     }
 
     /// Whether `vault.json` on disk is not the manifest `vault` holds (or cannot be read).
-    nonisolated static func manifestChangedOnDisk(_ vault: Vault) -> Bool {
+    public nonisolated static func manifestChangedOnDisk(_ vault: Vault) -> Bool {
         guard let disk = try? Vault.open(at: vault.url).manifest else { return true }
         return disk != vault.manifest
     }
 
     /// After a two-way run of the open vault: when its `vault.json` no longer matches the open `Vault`
     /// (whatever the run reported), runs go upload-only and the vault is opened again (review of #70, F6).
-    func checkOpenVaultAgainstDisk() async {
-        await reopenIfUnlisted()
-        await refreshDeviceState()
+    public func checkOpenVaultAgainstDisk() async {
+        await Host.reopenIfUnlisted(self)
+        await Host.refreshDeviceState(self)
         guard let start = vault, phase == .unlocked, !syncVaultStale else { return }
         let changed = (try? await offMain { Self.manifestChangedOnDisk(start) }) ?? true
         guard changed else { return }
@@ -401,7 +397,7 @@ extension AppModel {
     /// Puts the open vault's sessions back to upload-only (the coordinator
     /// keeps it running when every vault syncs). Whatever run is in progress finishes; nothing replaces
     /// or removes the copy before it has (`stoppingWebDAV`).
-    func stopWebDAV() {
+    public func stopWebDAV() {
         syncVaultStale = false
         if !syncSessions.isEmpty {
             for session in syncSessions { session.afterTwoWayRun = {} }
@@ -430,7 +426,7 @@ extension AppModel {
     /// - Throws: `CancellationError` when Cancel was pressed (what arrived is
     ///   kept; a first download continues when the vault is opened again),
     ///   else what `work` throws.
-    func withWebDAVDownload<T: Sendable>(name: String,
+    public func withWebDAVDownload<T: Sendable>(name: String,
                                          _ work: @escaping @Sendable (SyncOptions) throws -> T) async throws -> T {
         let flag = WebDAVCancelFlag()
         let relay = WebDAVProgressRelay { [weak self] progress in self?.webdavDownload?.progress = progress }
@@ -460,7 +456,7 @@ extension AppModel {
     }
 
     /// The overlay's Cancel: the download stops after the transfers in flight.
-    func cancelWebDAVDownload() {
+    public func cancelWebDAVDownload() {
         guard let flag = webdavDownloadCancel else { return }
         flag.cancel()
         webdavDownload?.cancelling = true
@@ -469,13 +465,13 @@ extension AppModel {
     // MARK: - Commands
 
     /// "Sync Now": a two-way run now (it takes what other devices wrote, so there is no "Download Again").
-    func webdavSyncNow() async {
+    public func webdavSyncNow() async {
         await webdav?.syncNow()
     }
 
     /// Forgets a location: closes it if open, deletes its local copy, sync
     /// state and Keychain password, and its recent entry.
-    func removeWebDAVLocation(_ id: UUID, library: VaultLibrary) async throws {
+    public func removeWebDAVLocation(_ id: UUID, library: VaultLibrary) async throws {
         if webdav?.locationID == id {
             close()
             await closingEditor?.value
@@ -495,28 +491,26 @@ extension AppModel {
     /// At launch, before any copy syncs: what an interrupted "Download Again" left in
     /// each copy is recovered or removed (`LocalCopy.recoverInterruptedRedownload`). A previous copy that
     /// holds files the copy lacks is kept where it is and named in an alert, never deleted.
-    func recoverWebDAVLeftovers() async {
+    public func recoverWebDAVLeftovers() async {
         let copies = webdavLocations.locations.map { (name: $0.name, copy: webdavLocations.copy(of: $0)) }
         guard !copies.isEmpty else { return }
         let found = await Task.detached(priority: .utility) {
             copies.map { (name: $0.name, leftovers: $0.copy.recoverInterruptedRedownload()) }
         }.value
         guard let kept = found.first(where: { $0.leftovers.keptOld != nil }), let folder = kept.leftovers.keptOld else { return }
-        webdavLeftover = WebDAVLeftover(folder: folder, message: String(
-            localized: "An earlier “Download Again” of “\(kept.name)” was interrupted. The previous copy holds notes or attachments that are not in the vault, so it was kept, at \(folder.path). Merge it in with the sempere command-line tool (vault merge-copy) before removing it.",
-            comment: "First %@ is the vault's name, the second a folder path"))
+        webdavLeftover = WebDAVLeftover(folder: folder, name: kept.name)
     }
 
     /// Files of the location's copy the server has not confirmed (the remove
     /// confirmation warns about them).
-    func unconfirmedWebDAVChanges(_ id: UUID) async -> Int {
+    public func unconfirmedWebDAVChanges(_ id: UUID) async -> Int {
         guard let location = webdavLocations.location(id) else { return 0 }
         let copy = webdavLocations.copy(of: location)
         guard copy.exists else { return 0 }
         return await Task.detached(priority: .userInitiated) { copy.unconfirmedChanges() }.value
     }
 
-    nonisolated static func firstProblems(_ report: SyncReport) -> String {
+    public nonisolated static func firstProblems(_ report: SyncReport) -> String {
         let lines = report.errors.prefix(3).map { "\($0.path): \($0.message)" } + [report.stoppedEarly].compactMap { $0 }
         return lines.isEmpty ? "?" : lines.joined(separator: "; ")
     }
