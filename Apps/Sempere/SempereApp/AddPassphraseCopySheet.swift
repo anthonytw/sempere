@@ -102,7 +102,7 @@ struct AddPassphraseCopySheet: View {
         Task {
             defer { working = false }
             do {
-                try await model.addPassphraseCopy(recoveryKey: key, passphrase: passphrase)
+                try await model.addPassphraseCopy(recoveryKey: key.identity, passphrase: passphrase)
                 passphrase = ""; confirmation = ""; keyText = ""
                 done(String(localized: "The recovery key's passphrase copy is in the vault. The passphrase alone can now open the vault read-only or take it over: keep it as safe as the kit."))
                 dismiss()

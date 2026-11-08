@@ -103,8 +103,6 @@ final class RememberedKeys {
         isUnlocking = true
         defer { isUnlocking = false }
         keyProblem = nil
-        let reason = model.vaultName.map { String(localized: "Unlock “\($0)”", comment: "Face ID prompt") }
-            ?? String(localized: "Unlock the vault", comment: "Face ID prompt")
         guard await store.hasKeys(for: id) else {
             if model.vault?.vaultId == id { hasKeysVaultID = nil }
             return .noKey
@@ -112,7 +110,7 @@ final class RememberedKeys {
         hasKeysVaultID = id
         let keys: DeviceKeys
         do {
-            keys = try await store.keys(for: id, reason: reason)
+            keys = try await store.keys(for: id, reason: .unlock(vaultName: model.vaultName))
         } catch {
             switch Self.readOutcome(error) {
             case .keyProblem:

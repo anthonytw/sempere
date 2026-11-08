@@ -7,9 +7,9 @@ import SempereWebDAV
 import Testing
 @testable import SempereApp
 
-/// The device list in the app (key-hierarchy design §5.5, §6.3 to §6.5; phase KH5): rows and history, rename,
-/// removal, Make Home and Replace Recovery Kit through the model (the vault opened again under each new epoch),
-/// takeover alerts and the words the sheets show. One shared vault folder, devices in process (no sync).
+/// The device list's words in the app (key-hierarchy design §5.5, §6.3 to §6.5; phase KH5): what the sheets, the
+/// history and the banners say. The model's half moved to `SempereAppCoreTests` (`DevicesTests`); `World` stays for
+/// the app suites that still build a model of a vault with devices (wave 5b part 3, step 4b moves them).
 @Suite(.serialized)
 @MainActor
 struct DevicesAppTests {
@@ -90,7 +90,7 @@ struct DevicesAppTests {
         @MainActor func model(_ name: String? = nil, defaults: UserDefaults? = nil) async throws -> AppModel {
             let (keys, trust) = name.flatMap { others[$0] } ?? (home, homeTrust)
             let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: trust)
-            model.takeoverDefaults = defaults ?? DevicesAppTests.defaults()
+            model.deviceMemory = defaults ?? DevicesAppTests.defaults()
             try await model.openVault(at: url)
             try await model.unlock(device: keys)
             return model
@@ -102,172 +102,51 @@ struct DevicesAppTests {
     }
 
     struct PassingOwner: OwnerAuthenticator {
-        func authenticate(reason: String) async throws {}
+        func authenticate(reason: OwnerCheckReason) async throws {}
     }
 
-    @Test func theListShowsEveryDeviceWhoAddedItAndTheHistory() async throws {
-        let w = try World(others: ["Phone"])
+    /// The history's lines name the devices (`DeviceChangeText.history`), after a removal, a handoff and the creation.
+    @Test func theHistoryLinesNameTheDevices() async throws {
+        let w = try World(others: ["Phone", "Old Mac", "Mac"])
         let model = try await w.model()
         defer { model.close() }
-        let list = try await model.loadDeviceList()
-        #expect(list.thisIsHome)
-        #expect(list.homeName == "Home iPad")
-        #expect(list.devices.map(\.name) == ["Home iPad", "Phone"])
-        let home = try #require(list.devices.first)
-        #expect(home.isHome && home.isThisDevice)
-        #expect(home.addedBy == .creation)
-        #expect(home.symbol == "ipad")
-        let phone = try #require(list.devices.last)
-        #expect(phone.addedBy == .device("Home iPad"))
-        #expect(!phone.isHome && !phone.isThisDevice)
-        #expect(phone.lastSynced == nil)
-        #expect(list.history.map(\.reason) == [.create])
-        #expect(DeviceChangeText.history(try #require(list.history.first)).contains("Home iPad"))
-        #expect(list.recoveryAdded != nil)
-        #expect(!list.passphraseCopy)
+        #expect(DeviceChangeText.history(try #require(try await model.loadDeviceList().history.first)).contains("Home iPad"))
+        _ = try await model.removeDevices([try #require(w.others["Old Mac"]?.keys.id)])
+        #expect(DeviceChangeText.history(try #require(try await model.loadDeviceList().history.first)).contains("Old Mac"))
+        _ = try await model.makeHome(try #require(w.others["Mac"]?.keys.id))
+        #expect(DeviceChangeText.history(try #require(try await model.loadDeviceList().history.first)).contains("Mac"))
     }
 
-    @Test func homeRenamesAndAnotherDeviceSeesWhoManagesDevices() async throws {
-        let w = try World(others: ["Phone"])
-        let model = try await w.model()
-        defer { model.close() }
-        let phoneID = try #require(w.others["Phone"]?.keys.id)
-        try await model.renameDevice(phoneID, to: "Alex's iPhone")
-        #expect(try await model.loadDeviceList().devices.last?.name == "Alex's iPhone")
-
-        let phone = try await w.model("Phone")
-        defer { phone.close() }
-        let seen = try await phone.loadDeviceList()
-        #expect(!seen.thisIsHome)
-        #expect(seen.homeName == "Home iPad")
-        await #expect(throws: VaultError.self, "only home renames") { try await phone.renameDevice(phoneID, to: "Mine") }
+    /// The takeover banner names the device and says what to do (`TakeoverAlert.message`).
+    @Test func theTakeoverAlertNamesTheDevice() {
+        let alert = TakeoverAlert(vaultID: UUID(), epochIds: [Data(count: 32)], vaultName: "Mine", by: "New iPad", date: Date())
+        #expect(alert.message.contains("New iPad"))
+        #expect(alert.message.contains("Mine"))
+        #expect(alert.message.contains("replace the recovery kit"))
+        #expect(!TakeoverAlert(vaultID: UUID(), epochIds: [], vaultName: "Mine", by: nil, date: nil).message.isEmpty)
     }
 
-    @Test func aRemovalStartsANewEpochReopensTheVaultAndShowsInTheHistory() async throws {
-        let w = try World(others: ["Phone", "Old Mac"])
-        let model = try await w.model()
-        defer { model.close() }
-        _ = try await model.createNote(title: "Before", paper: Paper(kind: .ruled), notebook: nil)
-        let oldMac = try #require(w.others["Old Mac"]?.keys.id)
-        let review = try #require(try await model.removalReview([oldMac]).first)
-        #expect(review.stale, "no recorded sync")
-        #expect(review.approved.isEmpty)
-        let epochBefore = model.keyEpoch
-        let done = try await model.removeDevices([oldMac])
-        #expect(done.report.epoch == 2)
-        #expect(done.report.reason == .remove)
-        #expect(done.unreachable.isEmpty, "no targets")
-        #expect(model.vault?.manifest.epoch == 2)
-        #expect(model.keyEpoch > epochBefore, "editors reopened under the new key")
-        #expect(!model.isChangingKeys)
-        let list = try await model.loadDeviceList()
-        #expect(list.devices.map(\.name) == ["Home iPad", "Phone"])
-        #expect(list.history.map(\.reason) == [.remove, .create])
-        #expect(DeviceChangeText.history(try #require(list.history.first)).contains("Old Mac"))
-        // Writes go on under the new key; the phone follows.
-        _ = try await model.createNote(title: "After", paper: Paper(kind: .ruled), notebook: nil)
-        let phone = try await w.model("Phone")
-        defer { phone.close() }
-        #expect(phone.notes.count == 2)
-        #expect(phone.vault?.manifest.epoch == 2)
+    /// The sheets' messages for the library's typed errors (`DeviceChangeText.message`): the re-encryption's refusals
+    /// say which target and why, as before they were typed.
+    @Test func theTypedRefusalsHaveTheirWords() {
+        let refused = DeviceChangeText.message(ReencryptRefusal.targetUnreachable(name: "nas", error: AppModel.KeyError.notUnlocked))
+        #expect(refused.contains("“nas” cannot be reached (") && refused.contains("Unlock the vault first."), "\(refused)")
+        #expect(refused.contains("every sync target must be, to start"))
+        #expect(DeviceChangeText.message(ReencryptRefusal.targetCannotBeOpened) == "This target cannot be opened for re-encryption.")
+        #expect(DeviceChangeText.message(KeyProblem.recoveryKeyNeeded).contains("AGE-SECRET-KEY-PQ-1"))
+        #expect(DeviceChangeText.message(DeviceJoinError.rootNeeded).contains("root fingerprint"))
+        #expect(AppModel.KeyError.vaultChanged.description.contains("Another vault"))
+        #expect(DeviceKeyReason.unlock(vaultName: "Mine").text.contains("Mine"))
+        #expect(DeviceKeyReason.withdrawJoin.text.isEmpty)
+        #expect(OwnerCheckReason.approveDevice.text == "Let a new device into the vault")
     }
 
-    @Test func makeHomeHandsTheRoleOver() async throws {
-        let w = try World(others: ["Mac"])
-        let model = try await w.model()
-        defer { model.close() }
-        let mac = try #require(w.others["Mac"]?.keys.id)
-        let done = try await model.makeHome(mac)
-        #expect(done.report.reason == .handoff)
-        let list = try await model.loadDeviceList()
-        #expect(!list.thisIsHome)
-        #expect(list.homeName == "Mac")
-        #expect(list.history.first?.reason == .handoff)
-        #expect(DeviceChangeText.history(try #require(list.history.first)) .contains("Mac"))
-        await #expect(throws: VaultError.self, "not home any more") { _ = try await model.makeHome(mac) }
-    }
-
-    @Test func replacingTheKitNeedsEveryDeviceAnsweredAndRetiresTheOldKit() async throws {
-        let w = try World(others: ["Phone", "Lost iPad"])
-        let model = try await w.model()
-        defer { model.close() }
-        model.ownerAuthenticator = PassingOwner()
-        let review = try await model.kitReview()
-        #expect(Set(review.compactMap(\.device.id)) == Set(w.others.values.map(\.keys.id)))
-        let phone = try #require(w.others["Phone"]?.keys.id), lost = try #require(w.others["Lost iPad"]?.keys.id)
-        let newKit = try MLKEM768X25519Identity()
-        await #expect(throws: VaultError.self, "every device must be answered") {
-            _ = try await model.replaceRecoveryKit(newKit, keep: [phone], remove: [], oldKit: nil, passphrase: nil)
-        }
-        let done = try await model.replaceRecoveryKit(newKit, keep: [phone], remove: [lost], oldKit: w.recovery, passphrase: "a")
-        #expect(try model.vault?.openPassphraseCopy(passphrase: "a").identity.recipient.string == newKit.recipient.string,
-                "any passphrase is taken for the new kit's copy")
-        #expect(done.report.reason == .recovery)
-        #expect(model.vault?.manifest.recoveryEntry?.key == newKit.recipient.string)
-        let list = try await model.loadDeviceList()
-        #expect(list.devices.map(\.name) == ["Home iPad", "Phone"])
-        #expect(list.history.first?.reason == .recovery)
-    }
-
-    /// Review of #87, M1: a takeover whose parent is below this device's frontier gets an epoch number at or below
-    /// the one it had seen; it is still reported (acknowledged by id, not by number).
-    @Test func aTakeoverFromBelowTheFrontierIsStillReported() async throws {
-        let w = try World(others: ["Phone", "Pad"])
-        let defaults = Self.defaults()
-        let home = try await w.model(defaults: defaults)
-        let x = try #require(w.others["Pad"]?.keys.id)
-        _ = try await home.removeDevices([x])   // epoch 2: the home (as a thief would) removes the pad
-        home.close()
-        let phone = try await w.model("Phone", defaults: defaults)
-        #expect(phone.vault?.manifest.epoch == 2)
-        #expect(phone.takeoverAlert == nil, "first sight")
-        phone.close()
-        // Someone with the kit takes over on the pad, from epoch 1 (its frontier): the takeover is epoch 2 too.
-        let pad = try #require(w.others["Pad"])
-        let (taken, _) = try Vault.takeover(at: w.url, device: pad.keys, recovery: w.recovery,
-                                            keep: [try #require(w.others["Phone"]?.keys.fingerprint)], name: "Pad", kind: "ipad",
-                                            trust: pad.trust, root: nil)
-        #expect(taken.manifest.epoch == 2)
-        let again = try await w.model("Phone", defaults: defaults)
-        defer { again.close() }
-        #expect(again.vault?.manifest.epochId == taken.manifest.epochId, "the phone follows the takeover")
-        let alert = try #require(again.takeoverAlert, "reported although its number is the one seen before")
-        #expect(alert.by == "Pad")
-        again.dismissTakeoverAlert()
-        await again.checkTakeovers()
-        #expect(again.takeoverAlert == nil)
-    }
-
-    /// Re-check of #87, M1: a device that first runs the alerts with no stored set (an upgrade) is told of a
-    /// takeover made after it was added; one added after the takeover is not.
-    @Test func firstSightReportsTakeoversAfterTheDeviceWasAdded() async throws {
-        let w = try World(others: ["Phone"])
-        let phone = try #require(w.others["Phone"])
-        let newcomer = try DeviceKeys.generate()
-        let newcomerTrust = MemoryEpochTrustStore()
-        let root = try Vault.open(at: w.url).root
-        _ = try Vault.takeover(at: w.url, device: newcomer, recovery: w.recovery, keep: [phone.keys.fingerprint],
-                               name: "New iPad", kind: "ipad", trust: newcomerTrust, root: root)
-        let upgraded = try await w.model("Phone", defaults: Self.defaults())
-        let alert = try #require(upgraded.takeoverAlert, "added at epoch 1, before the takeover: reported")
-        #expect(alert.by == "New iPad")
-        upgraded.close()
-
-        // A device the new home adds afterwards: the takeover is history from before it.
-        let late = try DeviceKeys.generate()
-        let lateTrust = MemoryEpochTrustStore()
-        var home = try Vault.open(at: w.url, identities: [newcomer.nativeIdentity], signing: newcomer.signing, trust: newcomerTrust)
-        let words = try home.approveDevice(late.joinRequest(vaultId: home.vaultId, name: "Late", kind: "iphone"))
-        var joined = try Vault.open(at: w.url, identities: [late.nativeIdentity], signing: late.signing, trust: lateTrust)
-        try joined.confirmJoin(words: words)
-        #expect(joined.deviceAddedEpoch == joined.manifest.epoch)
-        let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: lateTrust)
-        model.takeoverDefaults = Self.defaults()
-        try await model.openVault(at: w.url)
-        try await model.unlock(device: late)
-        defer { model.close() }
-        await model.checkTakeovers()
-        #expect(model.takeoverAlert == nil, "added after the takeover: not reported")
+    /// The sheet's "Lost or Stolen" removes the device and the ones it approved; its storage advice names the servers.
+    @Test func theRemovalSheetAddsTheApprovedDevicesAndNamesTheServers() {
+        #expect(Set(RemoveDeviceSheet.ids(removing: "aaaaaaaa", approved: ["bbbbbbbb"])) == ["aaaaaaaa", "bbbbbbbb"])
+        #expect(RemoveDeviceSheet.storageAdvice(servers: [], hasFolder: false).contains("no sync targets"))
+        #expect(RemoveDeviceSheet.storageAdvice(servers: ["nas"], hasFolder: false).contains("nas"))
+        #expect(!RemoveDeviceSheet.storageAdvice(servers: ["nas"], hasFolder: false).contains("iCloud"))
     }
 
     /// Review of #87, M2: the line typed back is never the fixed prefix line.
@@ -284,79 +163,6 @@ struct DevicesAppTests {
         #expect(!ReplaceKitSheet.lineMatches("AGE-SECRET-KEY-PQ-1", line: 2, of: kit.string))
     }
 
-    /// Review of #87, S1: a change that fails leaves the editors open again and the vault following the disk, also
-    /// when it failed after writing its `vault.json`.
-    @Test func aFailedChangeReopensTheEditorAndFollowsTheDisk() async throws {
-        struct Boom: Error {}
-        let w = try World(others: ["Phone", "Old Mac"])
-        let model = try await w.model()
-        defer { model.close() }
-        let note = try await model.createNote(title: "Open", paper: Paper(kind: .ruled), notebook: nil)
-        try await model.openEditor(for: note)
-        await #expect(throws: Boom.self) { _ = try await model.performDeviceChange { _ in throw Boom() } }
-        #expect(model.editor?.noteID == note, "the editor is back")
-        #expect(!model.isChangingKeys)
-        let oldMac = try #require(w.others["Old Mac"]?.keys.id)
-        await #expect(throws: Boom.self) {
-            _ = try await model.performDeviceChange { v in
-                _ = try v.removeDevices([oldMac])
-                throw Boom()
-            }
-        }
-        #expect(model.vault?.manifest.epoch == 2, "the vault follows what was written")
-        #expect(model.editor?.noteID == note)
-        _ = try await model.createNote(title: "Under the new key", paper: Paper(kind: .ruled), notebook: nil)
-    }
-
-    /// The sheet's "Lost or Stolen": the devices the removed one approved go too (the current home never).
-    @Test func removingAFormerHomeAlsoRemovesTheDevicesItApproved() async throws {
-        let w = try World(others: ["Mac", "Spare"])
-        let first = try await w.model()
-        let mac = try #require(w.others["Mac"]?.keys.id)
-        _ = try await first.makeHome(mac)
-        first.close()
-        let model = try await w.model("Mac")
-        defer { model.close() }
-        let homePad = try #require(model.vault?.manifest.devices.first { $0.name == "Home iPad" }?.id)
-        let review = try #require(try await model.removalReview([homePad]).first)
-        #expect(review.approved.map(\.name) == ["Spare"], "the Mac manages devices now and is never offered")
-        let ids = RemoveDeviceSheet.ids(removing: homePad, approved: Set(review.approved.compactMap(\.id)))
-        _ = try await model.removeDevices(ids)
-        #expect(try await model.loadDeviceList().devices.map(\.name) == ["Mac"])
-        #expect(RemoveDeviceSheet.storageAdvice(servers: [], hasFolder: false).contains("no sync targets"))
-        #expect(RemoveDeviceSheet.storageAdvice(servers: ["nas"], hasFolder: false).contains("nas"))
-        #expect(!RemoveDeviceSheet.storageAdvice(servers: ["nas"], hasFolder: false).contains("iCloud"))
-    }
-
-    /// Repair through the model (design §5.8): Export copies a set-aside file, Keep of a body the vault holds changes
-    /// nothing, Delete removes it from this device.
-    @Test func repairExportsKeepsAndClearsSetAsideFiles() async throws {
-        let w = try World(others: [])
-        let root = try TestTemp.directory("repair")
-        let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: w.homeTrust)
-        model.takeoverDefaults = Self.defaults()
-        let setAside = SetAsideStore(directory: root.appendingPathComponent("SetAside"))
-        model.writeStores = DeviceWriteStores(ledgerDirectory: root.appendingPathComponent("Ledger"), setAside: setAside,
-                                              key: { Data(repeating: 7, count: 32) })
-        try await model.openVault(at: w.url)
-        try await model.unlock(device: w.home)
-        defer { model.close() }
-        let note = try await model.createNote(title: "Kept", paper: Paper(kind: .ruled), notebook: nil)
-        let vault = try #require(model.vault)
-        let name = try #require(try vault.revisionNames(of: note).first).description
-        let path = "notes/\(note.uuidString.lowercased())/\(name)"
-        _ = try setAside.keep(try Data(contentsOf: w.url.appendingPathComponent(path)), path: path, vaultId: vault.vaultId,
-                              reason: .notSealed, epoch: 1)
-        let items = await model.setAsideItems()
-        #expect(items.count == 1)
-        let out = try TestTemp.directory("repair-out")
-        #expect(try await model.exportSetAside(items.map(\.item), to: out) == 1)
-        #expect(FileManager.default.fileExists(atPath: out.appendingPathComponent(path).path))
-        try await model.keepSetAside(items.map(\.item))
-        try await model.clearSetAside(items.map(\.item))
-        #expect(await model.setAsideItems().isEmpty)
-    }
-
     @Test func theKitLineCheckTakesAnyCaseAndSpacesButOnlyThatLine() throws {
         let kit = try MLKEM768X25519Identity()
         let lines = PaperKey.identityLines(kit.string)
@@ -368,58 +174,11 @@ struct DevicesAppTests {
         #expect(!ReplaceKitSheet.lineMatches(line2.text, line: lines.count + 1, of: kit.string))
     }
 
-    @Test func aTakeoverByAnotherDeviceRaisesTheAlertUntilDismissed() async throws {
-        let w = try World(others: ["Phone"])
-        let defaults = Self.defaults()
-        let model = try await w.model("Phone", defaults: defaults)
-        #expect(model.takeoverAlert == nil, "first sight: nothing before it is reported")
-        model.close()
-        // The owner's new iPad takes over with the kit, keeping the phone.
-        let newcomer = try DeviceKeys.generate()
-        let phone = try #require(w.others["Phone"])
-        let root = try Vault.open(at: w.url).root
-        _ = try Vault.takeover(at: w.url, device: newcomer, recovery: w.recovery, keep: [phone.keys.fingerprint],
-                               name: "New iPad", kind: "ipad", trust: MemoryEpochTrustStore(), root: root)
-        let again = try await w.model("Phone", defaults: defaults)
-        defer { again.close() }
-        let alert = try #require(again.takeoverAlert)
-        #expect(alert.by == "New iPad")
-        #expect(alert.message.contains("New iPad"))
-        #expect(alert.message.contains("replace the recovery kit"))
-        again.dismissTakeoverAlert()
-        #expect(again.takeoverAlert == nil)
-        await again.checkTakeovers()
-        #expect(again.takeoverAlert == nil, "acknowledged")
-        let list = try await again.loadDeviceList()
-        #expect(list.homeName == "New iPad")
-        #expect(list.history.first?.reason == .takeover)
-        #expect(list.devices.first { $0.name == "New iPad" }?.addedBy == .recoveryKit)
-    }
-
-    @Test func theUnlistedFactsNameTheNotesOfTheUnsyncedFiles() {
-        let a = UUID(), b = UUID()
-        let facts = UnlistedFacts(by: "Home iPad", seen: Date(), unsynced: [
-            "notes/\(a.uuidString.lowercased())/x.delta.age", "notes/\(a.uuidString.lowercased())/att/y.image.age",
-            "notes/\(b.uuidString.lowercased())/z.delta.age", "settings.age", "inbox/c.capture.age",
-        ])
-        #expect(facts.notes == [a, b])
-    }
-
     @Test func theNoticesHaveTheirWords() {
         for notice in [DeviceNotice.unlisted, .heldBack(since: Date()), .homeConflict] {
             #expect(!notice.text.isEmpty)
             #expect(!notice.symbol.isEmpty)
         }
-    }
-
-    @Test func anOpenVaultWithNoDeviceProblemsShowsNoBanner() async throws {
-        let w = try World(others: [])
-        let model = try await w.model()
-        defer { model.close() }
-        #expect(model.deviceNotices.isEmpty)
-        #expect(!model.isUnlisted)
-        #expect(model.sightingRows.isEmpty)
-        #expect(await model.setAsideItems().isEmpty)
     }
 }
 
@@ -459,7 +218,7 @@ struct UnlistedOverSyncAppTests {
         let listing = WebDAVVaultListing(path: [], name: "Shared", vaultId: vaultId, format: "sempere/1",
                                          url: "https://dav.example.org/shared/")
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50), trust: trust)
-        model.takeoverDefaults = DevicesAppTests.defaults()
+        model.deviceMemory = DevicesAppTests.defaults()
         if let writeStores {
             model.writeStores = DeviceWriteStores(ledgerDirectory: writeStores.appendingPathComponent("Ledger"),
                                                   setAside: SetAsideStore(directory: writeStores.appendingPathComponent("SetAside")),
@@ -590,7 +349,7 @@ struct UnlistedOverSyncAppTests {
         let s = try await Self.setUp(trust: nil)
         s.model.close()
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50))
-        model.takeoverDefaults = DevicesAppTests.defaults()
+        model.deviceMemory = DevicesAppTests.defaults()
         model.webdavRemote = s.server
         model.webdavPasswords = MemoryWebDAVPasswordStore()
         model.webdavTick = .milliseconds(20)

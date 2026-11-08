@@ -155,6 +155,27 @@ extension AppModelSuites {
             #expect(model.inboxProblem == nil)
         }
 
+        /// Review of #25: a delivery posted off the main thread (the widget's intents and the recorder post from
+        /// theirs) is adopted too; the observer hops to the main actor itself (no observer queue, which waits for
+        /// ever on Linux).
+        @Test func aCaptureDeliveredFromAnotherThreadIsAdopted() async throws {
+            let (url, key, qc) = try await Self.setUp()
+            let writer = try CaptureWriter(profile: try #require(try qc.store.load()).profile)
+            let model = try await unlocked(url, key, qc)
+            let inbox = url.appendingPathComponent(CaptureFile.folderName, isDirectory: true)
+            let vaultId = try #require(model.vault).vaultId
+            let id = UUID()
+            try CaptureWriter.store(try writer.seal(audio: try Self.audio(), started: Date(), id: id), in: inbox)
+            await Task.detached {
+                NotificationCenter.default.post(name: QuickCapture.deliveredNotification, object: nil, userInfo: ["vault": vaultId])
+            }.value
+            let note = CaptureAdoption.ids(for: id).note
+            #expect(await TS.waitUntil(timeout: .seconds(60)) { model.notes.contains { $0.id == note } })
+            // The count goes up after the note is listed.
+            #expect(await TS.waitUntil(timeout: .seconds(60)) { model.capturesAdopted == 1 })
+            #expect(model.inboxProblem == nil)
+        }
+
         /// iCloud Drive uploads files in any order, so a voice note's transcript
         /// can reach a device before its capture. The transcript waits and nothing
         /// is written: a transcript blob alone would make a note folder without

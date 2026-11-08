@@ -1,16 +1,15 @@
 import Foundation
 import Sempere
 import SempereSync
-import SempereAppCore
 
-// What the app says about this device's place in the vault (key-hierarchy design §4.3, §5.5, §5.6; KH5): the
+// This device's place in the vault (key-hierarchy design §4.3, §5.5, §5.6; KH5): the
 // banners over the note list (not on the newest device list; sync held back for more than a day; a home
 // conflict), the unlisted screen's facts (who removed it, its own changes no target holds), and Repair's
 // set-aside files and sightings (design §5.8; review of #86: forget is detached-only unless the user chooses
-// all, with the warning).
+// all, with the warning). The banners' words and symbols are the app's (`DeviceNotice.text`, `symbol`).
 
 /// A banner over the note list.
-enum DeviceNotice: Hashable, Identifiable, Sendable {
+public enum DeviceNotice: Hashable, Identifiable, Sendable {
     /// This device is not on the newest device list it verified (design §5.5): it writes nothing.
     case unlisted
     /// A sync met a later device list it cannot verify, more than a day ago: it uploads nothing new until the
@@ -24,7 +23,7 @@ enum DeviceNotice: Hashable, Identifiable, Sendable {
     /// is told to ask home.
     case removalsUndone(names: [String], home: Bool)
 
-    var id: String {
+    public var id: String {
         switch self {
         case .unlisted: return "unlisted"
         case .heldBack: return "held"
@@ -32,62 +31,47 @@ enum DeviceNotice: Hashable, Identifiable, Sendable {
         case .removalsUndone: return "undone"
         }
     }
-
-    /// The banner's line.
-    var text: String {
-        switch self {
-        case .unlisted:
-            return String(localized: "This device is not on the vault's newest device list. Nothing is written or synced.",
-                          comment: "Banner: this device was removed from the vault")
-        case .heldBack(let since):
-            // The date is when this device first met the change it waits for (its sighting), not its last sync
-            // (offline audit P10).
-            return String(localized: "Since \(since.formatted(date: .abbreviated, time: .omitted)), this device has been waiting for a device change from the device that manages devices. Until it arrives, nothing new is uploaded.",
-                          comment: "Banner: sync held back; the value is the date the wait began")
-        case .homeConflict:
-            return String(localized: "The vault has two conflicting device lists. This device keeps its own until a takeover settles it.",
-                          comment: "Banner: a home conflict")
-        case .removalsUndone(let names, let home):
-            let list = ListFormatter.localizedString(byJoining: names)
-            return home
-                ? String(localized: "A takeover undid this device's removal of \(list). They are on the device list again: remove them again if they should not be.",
-                         comment: "Banner on the device that manages devices; the value lists device names")
-                : String(localized: "A takeover undid this device's removal of \(list). They are on the device list again: ask the device that manages devices to remove them again if they should not be.",
-                         comment: "Banner; the value lists device names")
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .unlisted: return "person.crop.circle.badge.xmark"
-        case .heldBack: return "pause.circle"
-        case .homeConflict: return "exclamationmark.triangle"
-        case .removalsUndone: return "person.crop.circle.badge.exclamationmark"
-        }
-    }
 }
 
 /// A device this device had removed whose removal a takeover undid (offline audit P16): it is on the list again.
-struct UndoneRemoval: Hashable, Sendable {
+public struct UndoneRemoval: Hashable, Sendable {
     /// The device's id (8 hex digits).
-    var id: String
-    var name: String
+    public var id: String
+    public var name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+
+    /// The store vault's record of removals a takeover undid (`AppModel.undoneRemovalsSource`); none for a vault
+    /// elsewhere.
+    public static func recorded(_ vault: Vault) -> [UndoneRemoval] {
+        guard let url = UndoneRemovalsRecord.url(storeVault: vault.url, vaultId: vault.vaultId) else { return [] }
+        return UndoneRemovalsRecord.load(url).map { UndoneRemoval(id: $0.id, name: $0.name.map(DeviceName.display) ?? $0.id) }
+    }
 }
 
 /// The unlisted screen's facts (design §5.5).
-struct UnlistedFacts: Equatable, Sendable {
+public struct UnlistedFacts: Equatable, Sendable {
     /// Who made the change that removed this device (nil: no list here names it).
-    var by: String?
+    public var by: String?
     /// When this device first saw it.
-    var seen: Date?
+    public var seen: Date?
     /// This device's own files that no target holds (its write ledger's).
-    var unsynced: [String]
+    public var unsynced: [String]
+
+    public init(by: String? = nil, seen: Date? = nil, unsynced: [String]) {
+        self.by = by
+        self.seen = seen
+        self.unsynced = unsynced
+    }
 
     /// Voice notes recorded here that are not in a note yet (`inbox/` captures): only the files keep them.
-    var captures: Int { unsynced.filter { $0.hasPrefix("inbox/") }.count }
+    public var captures: Int { unsynced.filter { $0.hasPrefix("inbox/") }.count }
 
     /// The notes those files belong to.
-    var notes: [UUID] {
+    public var notes: [UUID] {
         var seen = Set<UUID>(), out: [UUID] = []
         for p in unsynced {
             let parts = p.split(separator: "/")
@@ -99,23 +83,31 @@ struct UnlistedFacts: Equatable, Sendable {
 }
 
 /// One sighting as Repair lists it (`Vault.sightings`).
-struct SightingRow: Identifiable, Equatable, Sendable {
-    var epoch: Int
-    var epochId: Data
+public struct SightingRow: Identifiable, Equatable, Sendable {
+    public var epoch: Int
+    public var epochId: Data
     /// Its parent is an epoch this device verified: it holds every sync back (a real change whose record has not
     /// arrived, or this device's removal). Detached ones (nothing verifies them) hold back only the targets that
     /// show them.
-    var anchored: Bool
-    var sources: [String]
-    var seen: Date
-    var id: Data { epochId }
+    public var anchored: Bool
+    public var sources: [String]
+    public var seen: Date
+    public var id: Data { epochId }
+
+    public init(epoch: Int, epochId: Data, anchored: Bool, sources: [String], seen: Date) {
+        self.epoch = epoch
+        self.epochId = epochId
+        self.anchored = anchored
+        self.sources = sources
+        self.seen = seen
+    }
 }
 
-extension AppModel {
+extension AppModelCore {
     // MARK: - Banners
 
     /// The banners for the open vault, from its state at open and its targets' last runs.
-    var deviceNotices: [DeviceNotice] {
+    public var deviceNotices: [DeviceNotice] {
         guard phase == .unlocked, let vault, !vault.isRecoveryOpen else { return [] }
         var out: [DeviceNotice] = []
         let reports = syncSessions.compactMap { $0.lastReport?.epoch }
@@ -134,18 +126,18 @@ extension AppModel {
     }
 
     /// The devices whose removal by this device a takeover undid and that are still listed (offline audit P16).
-    var undoneRemovals: [UndoneRemoval] {
+    public var undoneRemovals: [UndoneRemoval] {
         guard phase == .unlocked, let vault, !vault.isRecoveryOpen else { return [] }
         let listed = Set(vault.manifest.devices.compactMap(\.id))
         return undoneRemovalsSource(vault).filter { listed.contains($0.id) }
     }
 
     /// True when this device is not on the newest device list (design §5.5): every write is refused.
-    var isUnlisted: Bool { unlistedNotice != nil }
+    public var isUnlisted: Bool { unlistedNotice != nil }
 
     /// After a two-way run: when a target reported this device unlisted and the open vault does not know it yet,
     /// the vault is opened again, so its own refusal of writes and the unlisted screen's facts follow.
-    func reopenIfUnlisted() async {
+    public func reopenIfUnlisted() async {
         guard phase == .unlocked, !isChangingKeys, let vault, vault.unlistedNotice == nil,
               syncSessions.contains(where: { $0.lastReport?.epoch?.unlisted != nil }) else { return }
         await reopenUnderSameKeys()
@@ -154,7 +146,7 @@ extension AppModel {
     // MARK: - The unlisted screen
 
     /// Who removed this device, when it saw it, and its own changes no target holds.
-    func unlistedFacts() async -> UnlistedFacts {
+    public func unlistedFacts() async -> UnlistedFacts {
         guard let vault else { return UnlistedFacts(unsynced: []) }
         let store = syncStore
         let targets = store.targets.targets(of: vault.vaultId).map { t -> (state: URL, directory: URL) in
@@ -172,34 +164,35 @@ extension AppModel {
     /// Copies this device's own files that no target holds, as they are (encrypted, under their vault paths), into
     /// `folder` the user picked: the unlisted screen's Save Files (everything, voice notes not yet in a note
     /// included; review of #87, M3). They open with this vault's keys (`sempere`, or the kit and stock `age`).
-    func exportUnsyncedFiles(_ paths: [String], to folder: URL) async throws -> Int {
+    public func exportUnsyncedFiles(_ paths: [String], to folder: URL) async throws -> Int {
         guard let vault else { throw ModelError.noVaultOpen }
         let source = vault.url
+        let bookmarks = services.bookmarks
         return try await offMain {
-            let scoped = folder.startAccessingSecurityScopedResource()
-            defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
-            let dir = folder.appendingPathComponent("Sempere unsynced \(RFC3339.string(Date()).prefix(10))", isDirectory: true)
-            return try UnsyncedChanges.export(paths, from: source, to: dir).count
+            try bookmarks.withAccess(to: folder) {
+                let dir = folder.appendingPathComponent("Sempere unsynced \(RFC3339.string(Date()).prefix(10))", isDirectory: true)
+                return try UnsyncedChanges.export(paths, from: source, to: dir).count
+            }
         }
     }
 
     // MARK: - Repair: set-aside files (design §5.8)
 
     /// The set-aside files of the open vault on this device, each with whether it is superseded.
-    func setAsideItems() async -> [SetAsideStatus] {
+    public func setAsideItems() async -> [SetAsideStatus] {
         guard let vault, phase == .unlocked else { return [] }
         return await Task.detached(priority: .userInitiated) { vault.setAsideReport() }.value
     }
 
     /// This device's own files under changes a takeover dropped (the bulk Keep, design §5.4).
-    func ownDroppedSetAside() async -> [SetAsideItem] {
+    public func ownDroppedSetAside() async -> [SetAsideItem] {
         guard let vault, phase == .unlocked else { return [] }
         return await Task.detached(priority: .userInitiated) { vault.ownDroppedSetAside() }.value
     }
 
     /// Keeps `items` in the vault, re-encrypted under the current key (on the user's word: they may come from a
     /// removed device). Each item stays set aside until cleared.
-    func keepSetAside(_ items: [SetAsideItem]) async throws {
+    public func keepSetAside(_ items: [SetAsideItem]) async throws {
         guard let vault, phase == .unlocked else { throw KeyError.notUnlocked }
         try requireWritableVault()
         let lock = vaultWriteLock
@@ -213,18 +206,19 @@ extension AppModel {
     }
 
     /// Copies `items` as they are (age files) under their vault paths into `folder` (the user picked it).
-    func exportSetAside(_ items: [SetAsideItem], to folder: URL) async throws -> Int {
+    public func exportSetAside(_ items: [SetAsideItem], to folder: URL) async throws -> Int {
         guard let vault else { throw KeyError.notUnlocked }
+        let bookmarks = services.bookmarks
         return try await offMain {
-            let scoped = folder.startAccessingSecurityScopedResource()
-            defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
-            for item in items { try vault.exportSetAside(item, to: folder) }
-            return items.count
+            try bookmarks.withAccess(to: folder) {
+                for item in items { try vault.exportSetAside(item, to: folder) }
+                return items.count
+            }
         }
     }
 
     /// Deletes `items` from this device's set-aside store (the user's choice; "Clear Superseded").
-    func clearSetAside(_ items: [SetAsideItem]) async throws {
+    public func clearSetAside(_ items: [SetAsideItem]) async throws {
         guard let store = vault?.setAsideStore else { return }
         try await offMain { for item in items { try store.remove(item) } }
     }
@@ -232,11 +226,11 @@ extension AppModel {
     // MARK: - Repair: sightings (KH4 §16.10)
 
     /// The device lists a sync met and this device did not take (as last read, `refreshDeviceState`).
-    var sightingRows: [SightingRow] { sightingRowsState }
+    public var sightingRows: [SightingRow] { sightingRowsState }
 
     /// Reads, off the main actor, since when this device's sync is held back and its sightings (each judged
     /// anchored or detached, which can verify signatures): after an unlock, a reopen, a run and a Forget.
-    func refreshDeviceState() async {
+    public func refreshDeviceState() async {
         guard let vault, phase == .unlocked else { return }
         let gen = generation
         let (since, rows) = await Task.detached(priority: .utility) { () -> (Date?, [SightingRow]) in
@@ -255,7 +249,7 @@ extension AppModel {
     /// removal marker among them, after which this device writes and uploads again until a sync meets the change
     /// again. The vault is opened again so its state follows. Returns how many were forgotten.
     @discardableResult
-    func forgetSightings(anchoredToo: Bool) async throws -> Int {
+    public func forgetSightings(anchoredToo: Bool) async throws -> Int {
         guard let vault, phase == .unlocked else { throw KeyError.notUnlocked }
         let gen = generation
         let n = try await offMain { try vault.forgetSightings(anchoredToo: anchoredToo) }
@@ -268,7 +262,7 @@ extension AppModel {
 
     /// Opens the vault again with the keys it was unlocked with (its state at open follows what changed in the
     /// trust store), as after a list change from elsewhere.
-    func reopenUnderSameKeys() async {
+    public func reopenUnderSameKeys() async {
         guard let start = vault, phase == .unlocked else { return }
         let keys = unlockKeys
         let trust = keys.root == nil ? self.trust : nil

@@ -319,23 +319,64 @@ Wave 5b, part 3, step 3 (inbox and settings sync, 2026-11-08) moved:
   that need no recorder) in `Tests/SempereAppCoreTests/AppModel`. The app keeps `AppSettingsStorage`'s round trips
   (`SettingsSyncAppTests`) and what records with the app's recorder (`QuickCaptureTests`).
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 3 are done (above). The rest of the family, in an order that
+Wave 5b, part 3, step 4a (devices, joins and re-encryption: the model's code, 2026-11-08) moved:
+
+- **`+Devices`, `+DeviceNotices`, `+JoinDevice`, `+Reencrypt`, `+Keys` and the model's half of `+ListAlert`** into
+  `Sources/SempereAppCore/AppModel/`: the device list and its changes (`performDeviceChange` and the pull before it),
+  takeover alerts, the banners, the unlisted screen's facts, Repair (set-aside files, sightings), joins and takeovers,
+  Re-encrypt Everything's start and steps, and their types (`DeviceRow`, `DeviceListSnapshot`, `DeviceChangeOutcome`,
+  `UnreachableTarget`, `DeviceNotice`, `UndoneRemoval`, `UnlistedFacts`, `SightingRow`, `JoinStage`, `JoinReply`,
+  `JoinRequestLookout`, `JoinDelivery`, `TakeoverDraft`, `ReencryptProgress`, `VaultDevice`). Note windows go through the
+  host's existing `closeWindowEditors`/`openWindowNote` steps.
+- **This device's keys and the owner check, as protocols** (`Sources/SempereAppCore/DeviceKeyStore.swift`):
+  `DeviceKeyStore` with `MemoryDeviceKeyStore` and `DeviceKeyStoreError`; `OwnerAuthenticator` with `ScriptedOwnerCheck`
+  (tests; it records what it was asked) and `OwnerCheckUnavailable`. Reads and checks take typed reasons
+  (`DeviceKeyReason`: unlock, join, takeover, a withdrawn join; `OwnerCheckReason`: a passphrase copy, an approval, a
+  kit replacement, a re-encryption), worded as the prompts by the app (`DeviceKeyReason.text` in `DeviceKeyStore.swift`,
+  `OwnerCheckReason.text` in `KeyExport.swift`), same strings. The Keychain store, the Secure Enclave signer and
+  `SystemOwnerAuthenticator` stay in the app. The owner check is `AppModelServices.ownerAuthenticator` (headless: none can
+  be asked, every check fails), copied to the model's `ownerAuthenticator`, which tests replace.
+- **`ThisDevice` behind `PlatformServices`**: `deviceKind` and `deviceName` (the app's `AppPlatform` answers with
+  `ThisDevice`; `HeadlessPlatform` with its flags and a name it is given). The kind's rule is `DeviceKind.of` (Sempere),
+  which `ThisDevice.kind(isMac:isPhone:)` calls.
+- **Typed values the app words** (`Devices+Text.swift`): `AppModelKeyError` (`AppModel.KeyError`), `KeyProblem`
+  (`.recoveryKeyNeeded`: Add Passphrase Copy now takes the identity, `nil` when none was given; the sheet passes
+  `ExistingKeyInput.Status.identity`), `DeviceNotice.text`/`symbol`, `DeviceRow.symbol`, `JoinDelivery.text`,
+  `DeviceJoinError.description` and `TakeoverAlert`'s words. Re-encryption's refusals are `ReencryptRefusal`
+  (`.targetUnreachable(name:error:)`, `.targetCannotBeOpened`), worded by `DeviceChangeText.message`, so no localized
+  text sits inside an English `VaultError` any more. `AddDeviceApproval` stays in the app as the sheet's model
+  (`AddDeviceApproval.swift`); `ListAlert`'s words are `ListAlert+Text.swift`.
+- **`takeoverDefaults` is `deviceMemory`**: `services.settings` copied to a model property (acknowledged takeovers,
+  remembered device names, the join marker; read with `object(forKey:) as? [String]`), which tests replace.
+- **Host steps gone**: `didUnlock`, `didReopen`, `reopenIfUnlisted` and `refreshDeviceState` (the core checks takeovers
+  and reads the device state itself). `willClose` keeps only the app's own state. `AppModelAppState` lost
+  `takeoverAlert`, `takeoverDefaults`, `ownerAuthenticator`, `sightingRowsState` and `undoneRemovalsSource` (now
+  `UndoneRemoval.recorded` by default).
+- **Tests**: `DevicesTests` in `Tests/SempereAppCoreTests/AppModel` (the model's half of `DevicesAppTests`, the
+  passphrase copy of `PassphraseCopyAppTests`, the three vault-without-targets cases of `ReencryptAppTests`, the
+  memory store of `JoinTakeoverAppTests`; new: a join named from the platform, the owner check's and the key store's
+  reasons, a failed owner check, removals a takeover undid, the takeover notification), on `DeviceWorld` (made off the
+  main actor). The app keeps the words (`DevicesAppTests`: history lines, the takeover alert, the typed refusals, the
+  removal sheet, the kit line check) and every suite that needs `RememberedKeys` or the WebDAV fakes (below).
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4a are done (above). The rest of the family, in an order that
 empties `AppModelAppState` and the host's steps:
 
-4. Devices, joins and re-encryption (`+Devices`, `+DeviceNotices`, `+JoinDevice`, `+Reencrypt`, `+Keys`, `+ListAlert`):
-   `OwnerAuthenticator` as a service, `SightingRow`, `UndoneRemoval` into the library (`TakeoverAlert` moved in step 3);
-   with them `WebDAVAppTests`, `TwoDeviceSyncAppTests`, `JoinAppTests`, `DevicesAppTests` and `JoinTakeoverAppTests`,
-   whose shared fakes (`FakeWebDAVRemote`, `EngineWebDAVRemote`) move as one. Found while preparing it (step 3's PR
-   stopped before it, for size): `WebDAVPartialAppTests` and `VaultDetailsAppTests` use the same fakes, so they move
-   with them or the fakes need a home both test targets can reach (the app's test target cannot import
-   `SempereAppCoreTests`); the owner check's and the device-key store's `reason:` strings are words, so they become
-   typed reasons the app's `SystemOwnerAuthenticator` and `KeychainDeviceKeyStore` word; `DeviceKeyStore` (with
-   `MemoryDeviceKeyStore`) moves as a protocol; `ThisDevice.kind`/`name` come from `PlatformServices`; `KeyError` and
-   `KeyProblem` become typed values; `takeoverDefaults` becomes `services.settings` (copied to a model property the
-   tests replace; `KeyValueStore` has no `stringArray`, read `object(forKey:) as? [String]`); `openReencryptTargets`
-   puts the app's localized `DeviceChangeText.message` inside an English `VaultError.epochChangeRefused`, which a
-   typed refusal should replace; `AddDeviceApproval` (an `@Observable` sheet model with a worded `failure`) can stay in
-   the app as view glue or move with a typed failure.
+4b. `RememberedKeys` (the unlock sheet's model: unlocking with this device's keys, the join stage, the key problems,
+   which become typed values the sheet words, as `unreadableText`, `strayText` and `expiredText` are today) into the
+   library, and with it every suite that uses the shared WebDAV and two-device fakes, which then move as one into
+   `SempereAppCoreTests` (the app's test target cannot import it, and a test-support product linked into both the app
+   and its hosted tests would put two copies of `SempereAppCore` in one process): `FakeWebDAVRemote` and
+   `FolderDAVTransport` (`WebDAVAppTests`, `WebDAVPartialAppTests`), `EngineWebDAVRemote` (`TwoDeviceSyncAppTests`,
+   `JoinAppTests`, `UnlistedOverSyncAppTests` in `DevicesAppTests.swift`, `JoinOverSyncAppTests` in
+   `JoinTakeoverAppTests.swift`), plus `JoinTakeoverAppTests` itself (`RememberedKeys`) and the WebDAV case of
+   `VaultDetailsAppTests` (`aWebDAVServerIsAddedOnceAsATarget`, whose Add WebDAV Server is the library's; the rest of
+   that suite is step 5). Their words stay (`WebDAVDownloadStatus.description`, `SyncStatus.headline`, the connect
+   sheet, `StorageLocationTests`). `UnlistedOverSyncAppTests` also needs `QuickCapture.testing()` and
+   `QuickCaptureTests.crashLeftRecording`, which are the app's: their capture parts get core equivalents
+   (`CaptureTestKit.swift`). `DevicesAppTests.World` then goes (its core copy is `DeviceWorld`), and so do
+   `DevicesAppTests.defaults()` and `PassingOwner` (`MemoryKeyValueStore`, `ScriptedOwnerCheck`), which the app suites
+   that stay (`JoinThroughProviderTests`, `OfflineModeTests`, `KeychainDeviceKeyStoreTests`) use today.
 5. Vault store, backups, thinning, history, export and import (`+VaultStore`, `+Backup` (its reminder moved in step
    3), `+Thinning`, `+History`, `+Export`, `+BulkExport`, `+Import`, `+OpenedFiles`, `+Storage`, `+VaultDetails`):
    `UTType` and `CGRect` uses become library values; `FolderTargetAppTests`, `BackupAppTests`, `ReadOnlyVaultTests`,

@@ -571,6 +571,21 @@ public final class AppModelCore<Host: AppModelHost> {
     public var heldSinceAtOpen: Date?
     /// The clock the device banners judge "more than a day" by; tests set it.
     @ObservationIgnored public var deviceNoticeNow: () -> Date = { Date() }
+    /// The sightings Repair lists, as last read off the main actor (`refreshDeviceState`).
+    public var sightingRowsState: [SightingRow] = []
+    /// A takeover by another device that this device has not acknowledged (key-hierarchy design §6.3): a banner until
+    /// dismissed (`AppModel+Devices`).
+    public var takeoverAlert: TakeoverAlert?
+    /// Where acknowledged takeovers, the names of devices no list holds any more and this device's open join are
+    /// remembered per vault (`services.settings`: `UserDefaults` in the app); tests pass their own.
+    @ObservationIgnored public var deviceMemory: any KeyValueStore
+    /// Asks for the device owner before a list change that needs them at the device (`services.ownerAuthenticator`);
+    /// tests replace it.
+    @ObservationIgnored public var ownerAuthenticator: any OwnerAuthenticator
+    /// The devices whose removal by this device a takeover undid (offline audit P16; `AppModel+DeviceNotices`): the
+    /// record the vault's sync runs keep beside its targets' states (`UndoneRemovalsRecord`, from the run that took the
+    /// takeover, `SyncOptions.undoneRemovalsURL`). Tests pass fakes.
+    @ObservationIgnored public var undoneRemovalsSource: @Sendable (Vault) -> [UndoneRemoval] = UndoneRemoval.recorded
     /// The keys the vault was unlocked with, for opening it again (a WebDAV
     /// copy downloaded again, a backup check).
     public var unlockKeys = UnlockKeys()
@@ -648,6 +663,8 @@ public final class AppModelCore<Host: AppModelHost> {
         iCloudHooks = services.iCloudHooks
         webdavRemote = services.webdavRemote
         webdavPasswords = services.webdavPasswords
+        deviceMemory = services.settings
+        ownerAuthenticator = services.ownerAuthenticator
         backupStore = BackupStore(defaults: services.settings)
         releasesLocksInBackground = !services.platform.isMac
         searchTranscripts = TranscriptSearchPreference.isOn(services.settings)
@@ -868,7 +885,10 @@ public final class AppModelCore<Host: AppModelHost> {
         listAlert = ListAlert(vault: next)
         // The quick-capture profile follows the list's capture keys; takeovers and the device state; settings sync.
         refreshQuickCaptureProfile()
-        Host.didReopen(self)
+        Task {
+            await checkTakeovers()
+            await refreshDeviceState()
+        }
         scheduleSettingsSync()
         keyEpoch += 1
     }
@@ -884,12 +904,12 @@ public final class AppModelCore<Host: AppModelHost> {
         loadActivity()
         startLoadingNotes(reportErrors: !awaitNotes)
         if awaitNotes { try await notesLoaded() }
-        // The quick-capture profile, the inbox, takeovers and the device state (the host's), the backup reminder,
-        // settings sync.
+        // The quick-capture profile, the inbox, takeovers and the device state, the backup reminder, settings sync.
         refreshQuickCaptureProfile()
         installInboxDeliveryObserver()
         startInboxAdoption()
-        await Host.didUnlock(self)
+        await checkTakeovers()
+        await refreshDeviceState()
         Task { await rescheduleBackupReminder() }
         startSettingsSync()
     }
@@ -1122,6 +1142,8 @@ public final class AppModelCore<Host: AppModelHost> {
         // part 3); a backup, inbox adoption or import still running is canceled below.
         stopSettingsSync()
         Host.willClose(self)
+        takeoverAlert = nil
+        sightingRowsState = []
         resetAttachmentIndex()
         stopJoin()
         stopWebDAV()

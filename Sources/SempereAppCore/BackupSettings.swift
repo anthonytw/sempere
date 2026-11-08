@@ -238,7 +238,7 @@ public enum BackupReminder {
 }
 
 /// What a local notification the model schedules says, as a typed value the front end words
-/// (`BackupNotifying.schedule`; the app's `LocalNotice+Text`).
+/// (`BackupNotifying.schedule`; the app's `LocalNotice.text`, in `Apps/Sempere/SempereApp/BackupNotifications.swift`).
 public enum LocalNotice: Equatable, Sendable {
     /// The open vault's backup reminder is due (`BackupReminder`): names the vault, never a note.
     case backupReminder(vaultName: String, record: BackupRecord)

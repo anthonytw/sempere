@@ -119,6 +119,16 @@ final class PlatformServicesTests: TempDirTestCase {
         phone.setAppIcon("inkWind")
         XCTAssertEqual(phone.appIcon, "inkWind")
     }
+
+    /// The `kind` a device names in a vault's list (format.md §15.3), and the name a headless device gives itself.
+    @MainActor
+    func testTheDeviceKindFollowsTheFlags() {
+        XCTAssertEqual(DeviceKind.of(isMac: true, isPhone: false), "mac")
+        XCTAssertEqual(DeviceKind.of(isMac: false, isPhone: true), "iphone")
+        XCTAssertEqual(DeviceKind.of(isMac: false, isPhone: false), "ipad")
+        XCTAssertEqual(HeadlessPlatform(isPhone: true).deviceKind, "iphone")
+        XCTAssertEqual(HeadlessPlatform(isMac: true, deviceName: "Test Mac").deviceName, "Test Mac")
+    }
 }
 
 private final class ChangeCounter: @unchecked Sendable {

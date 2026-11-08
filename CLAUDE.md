@@ -551,7 +551,9 @@ there. Commit messages:
   Capture profiles hold their device's capture key (`CaptureKey.derive(from:device:)`, §11.1, keyed by
   `fingerprint(of:)` of the device's `age1pq1…` key, not the §15.4 fingerprint) and `v_e`;
   `Vault.captureKeyRing` is what verifies inbox files, never one key alone.
-- This device's keys (`DeviceKeyStore.swift`, `RememberedKeys.swift`; key-hierarchy design §6.1, §16.12): per vault, the
+- This device's keys (`DeviceKeyStore.swift`, `RememberedKeys.swift`; key-hierarchy design §6.1, §16.12; the
+  `DeviceKeyStore` and `OwnerAuthenticator` protocols, `MemoryDeviceKeyStore` and the typed prompt reasons are
+  SempereAppCore's, the Keychain, the Secure Enclave and the prompts' words the app's): per vault, the
   X-Wing device key in a Keychain item `WhenUnlockedThisDeviceOnly` (with "Require Face ID to Open":
   `.biometryCurrentSet`, or `.userPresence` without biometrics) and the signing pair in the Secure Enclave
   (`SecureEnclaveSigner`, an `AuthorSigner`; its blobs in a second item `AfterFirstUnlockThisDeviceOnly`, software

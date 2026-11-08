@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
 
 /// Removing a device (on home: key-hierarchy design §5.2, §5.5): the stale warning and what the removal cannot do;

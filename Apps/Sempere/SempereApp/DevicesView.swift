@@ -411,11 +411,17 @@ enum DeviceChangeText {
             return String(localized: "This vault's device list does not check on this device, so nothing is changed.")
         case VaultError.epochChangeRefused(let why):
             return String(localized: "The change was refused: \(why)", comment: "The value is the reason (English)")
+        case ReencryptRefusal.targetUnreachable(let name, let error):
+            // The reason in English, as the package's refusals are, with the target's problem in the app's words.
+            let why = "“\(name)” cannot be reached (\(message(error))): every sync target must be, to start"
+            return String(localized: "The change was refused: \(why)", comment: "The value is the reason (English)")
+        case ReencryptRefusal.targetCannotBeOpened:
+            return String(localized: "This target cannot be opened for re-encryption.")
         case let e as VaultFileLock.LockError:
             return String(localized: "Another sync is writing to this vault. Try again in a moment. (\(String(describing: e)))",
                           comment: "The value is the error (English)")
         case let e as KeyProblem:
-            return e.message
+            return e.description
         case let e as DeviceJoinError:
             return e.description
         case is CancellationError:

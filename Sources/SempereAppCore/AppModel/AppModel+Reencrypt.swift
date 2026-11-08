@@ -1,36 +1,59 @@
 import Age
 import Foundation
 import Sempere
-import SempereAppCore
 import SempereSync
 
 /// Where a re-encryption stands, for the progress sheet (key-hierarchy design §7.2 "Progress").
-struct ReencryptProgress: Equatable, Sendable {
+public struct ReencryptProgress: Equatable, Sendable {
     /// This device's files (derived from them, never stored); nil when they could not be read after the step (the sheet
     /// keeps what it showed and reads again).
-    var status: ReencryptStatus?
+    public var status: ReencryptStatus?
     /// Each target as its last confirmation left it (none before one ran).
-    var targets: [TargetLine] = []
+    public var targets: [TargetLine] = []
     /// The last step's problems (files the pass could not do, set-aside files), for the sheet.
-    var problems: [String] = []
+    public var problems: [String] = []
     /// The finish happened in the last step.
-    var finished = false
+    public var finished = false
 
-    struct TargetLine: Equatable, Sendable, Identifiable {
-        var name: String
-        var reached: Bool
-        var confirmed: Bool
-        var files: Int
-        var current: Int
-        var id: String { name }
+    public init(status: ReencryptStatus?, targets: [TargetLine] = [], problems: [String] = [], finished: Bool = false) {
+        self.status = status
+        self.targets = targets
+        self.problems = problems
+        self.finished = finished
+    }
+
+    public struct TargetLine: Equatable, Sendable, Identifiable {
+        public var name: String
+        public var reached: Bool
+        public var confirmed: Bool
+        public var files: Int
+        public var current: Int
+        public var id: String { name }
         /// 0…1 of the target's files under the new keys.
-        var fraction: Double { files == 0 ? (confirmed ? 1 : 0) : Double(current) / Double(files) }
+        public var fraction: Double { files == 0 ? (confirmed ? 1 : 0) : Double(current) / Double(files) }
+
+        public init(name: String, reached: Bool, confirmed: Bool, files: Int, current: Int) {
+            self.name = name
+            self.reached = reached
+            self.confirmed = confirmed
+            self.files = files
+            self.current = current
+        }
     }
 }
 
-extension AppModel {
+/// Why Re-encrypt Everything did not start, or why a target could not be opened for it; worded by the app
+/// (`DeviceChangeText.message`).
+public enum ReencryptRefusal: Error, Sendable {
+    /// The target cannot be opened as the sync engine's remote.
+    case targetCannotBeOpened
+    /// A target could not be reached, and every one must be at the start (design §7.1 step 2): its name and why.
+    case targetUnreachable(name: String, error: any Error)
+}
+
+extension AppModelCore {
     /// The open vault's re-encryption status (off the main actor).
-    func reencryptStatus() async throws -> ReencryptStatus {
+    public func reencryptStatus() async throws -> ReencryptStatus {
         guard let vault, phase == .unlocked else { throw KeyError.notUnlocked }
         return try await offMain { try vault.reencryptStatus() }
     }
@@ -39,7 +62,7 @@ extension AppModel {
     /// device review): the targets run first (bounded), the journal is made and claims every target the open vault
     /// syncs with, then the `reencrypt` epoch is written (a new vault key and `newKit`). A refused claim releases the
     /// claims made and changes nothing. The progress sheet then advances it (`advanceReencryption`).
-    func startReencryption(_ newKit: MLKEM768X25519Identity, keep: Set<String>, remove: Set<String>,
+    public func startReencryption(_ newKit: MLKEM768X25519Identity, keep: Set<String>, remove: Set<String>,
                            passphrase: String?) async throws -> DeviceChangeOutcome {
         let (targets, close) = try await openReencryptTargets(requireAll: true)
         defer { close() }
@@ -71,7 +94,7 @@ extension AppModel {
 
     /// Stops the step going (between files of a confirmation, and before the next run or confirmation); what it did
     /// stays done, and the next Continue goes on from there.
-    func cancelReencryptionStep() {
+    public func cancelReencryptionStep() {
         reencryptCancel?.cancel()
     }
 
@@ -82,7 +105,7 @@ extension AppModel {
     /// (`isAdvancingReencryption`), cancellable (`cancelReencryptionStep`, throws `CancellationError`); the confirm
     /// memo persists beside the claim sightings and is seeded from the targets' sync states, so no step reads again
     /// what an earlier one found current (review of #89, S7, S8; offline audit P17).
-    func advanceReencryption() async throws -> ReencryptProgress {
+    public func advanceReencryption() async throws -> ReencryptProgress {
         guard phase == .unlocked, let before = vault else { throw KeyError.notUnlocked }
         try requireWritableVault()
         guard before.isHome else { throw VaultError.notHome("only the home device re-encrypts the vault") }
@@ -103,7 +126,7 @@ extension AppModel {
         let shown = editor?.noteID
         let windows = Array(windowEditors.keys)
         try? await openEditor(for: nil)
-        await closeWindowEditors()
+        await Host.closeWindowEditors(self)
         guard generation == gen, let start = vault else { throw KeyError.vaultChanged }
         let store = syncStore, vaultId = start.vaultId
         let memoURL = ReencryptCoordinator.confirmMemoURL(store: store, vaultId: vaultId)
@@ -201,12 +224,12 @@ extension AppModel {
 
     /// The open vault's targets as the sync engine's remotes; `close` ends their access. With `requireAll`, a target
     /// that cannot be reached refuses (design §7.1 step 2: every target reachable at the start).
-    func openReencryptTargets(requireAll: Bool) async throws -> (targets: [ReencryptCoordinator.Target], close: @Sendable () -> Void) {
+    public func openReencryptTargets(requireAll: Bool) async throws -> (targets: [ReencryptCoordinator.Target], close: @Sendable () -> Void) {
         var targets: [ReencryptCoordinator.Target] = []
         var closers: [@Sendable () -> Void] = []
         for session in syncSessions {
             do {
-                guard let open = session.openRemote else { throw SyncTargetProblem.other(String(localized: "This target cannot be opened for re-encryption.")) }
+                guard let open = session.openRemote else { throw ReencryptRefusal.targetCannotBeOpened }
                 let (remote, close, syncedBefore) = try await open()
                 _ = try await offMain { try remote.list([]) }
                 targets.append(.init(name: session.targetName, remote: remote, syncedBefore: syncedBefore))
@@ -215,7 +238,7 @@ extension AppModel {
                 continue
             } catch {
                 closers.forEach { $0() }
-                throw VaultError.epochChangeRefused("“\(session.targetName)” cannot be reached (\(DeviceChangeText.message(error))): every sync target must be, to start")
+                throw ReencryptRefusal.targetUnreachable(name: session.targetName, error: error)
             }
         }
         let all = closers

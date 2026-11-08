@@ -24,14 +24,8 @@ public protocol AppModelHost: Sendable {
 
     // MARK: Steps of the extensions still in the app (wave 5b part 3)
 
-    /// After an unlock listed the notes (`didUnlock`), between the quick-capture profile and the inbox before it and
-    /// the backup reminder and settings sync after it: takeovers and the device state.
-    @MainActor static func didUnlock(_ model: AppModelCore<Self>) async
-    /// After the open vault was opened again under a new `vault.json` (`adoptReopened`), after the quick-capture
-    /// profile's refresh and before settings sync: takeovers and the device state.
-    @MainActor static func didReopen(_ model: AppModelCore<Self>)
     /// At the start of `close()`, once settings sync stopped: the app-side state of the vault (the last import's
-    /// report, drag-out exports, export requests, drags, takeover and sighting notices) is forgotten.
+    /// report, drag-out exports, export requests, drags) is forgotten.
     /// The core's `close()` itself cancels a running backup, inbox adoption and import.
     @MainActor static func willClose(_ model: AppModelCore<Self>)
     /// The open editors changed ("Keep Screen On" follows them).
@@ -47,9 +41,6 @@ public protocol AppModelHost: Sendable {
     @MainActor static func closeWindowEditors(_ model: AppModelCore<Self>) async
     @MainActor static func openWindowNote(_ id: UUID, in model: AppModelCore<Self>) async throws
     @MainActor static func reopenWindowNote(_ id: UUID, in model: AppModelCore<Self>) async
-    /// The device notices: whether this device is still listed, and the state Repair reads.
-    @MainActor static func reopenIfUnlisted(_ model: AppModelCore<Self>) async
-    @MainActor static func refreshDeviceState(_ model: AppModelCore<Self>) async
 }
 
 /// The platform services the moved `AppModel` code takes (docs/design/thin-app.md "The platform protocols"). Each
@@ -57,7 +48,7 @@ public protocol AppModelHost: Sendable {
 ///
 /// One rule for how the model reads them: a service tests replace on a model after it is made is copied into a model
 /// property at init and read from there (`transcriber`, `playbackBackend`, `recordingRoot`, `iCloudHooks`, the WebDAV
-/// remote and passwords, `quickCapture`); every other one is read from `services` when used (`perf`, `settings`,
+/// remote and passwords, `quickCapture`, `ownerAuthenticator`, and `settings` as `deviceMemory`); every other one is read from `services` when used (`perf`, `settings`,
 /// `bookmarks`, `platform`, `makeRenderCache`, `recordingsInUse`, `audioFiles`, `settingsStorage`,
 /// `makePageRecognizer`), and a test passes its own at init.
 public struct AppModelServices {
@@ -98,6 +89,10 @@ public struct AppModelServices {
     /// Reads handwriting when recognition is turned on (`setHandwritingRecognition`; the app's Vision recognizer;
     /// headless, none).
     public var makePageRecognizer: @MainActor () -> (any PageRecognizing)?
+    /// Asks for the device owner before a list change that needs them at the device (Add Device, Replace Recovery Kit,
+    /// a passphrase copy: design §6.5): the app's Face ID, Touch ID or passcode check; headless, none can be asked,
+    /// and every check fails (`OwnerCheckUnavailable`).
+    public var ownerAuthenticator: any OwnerAuthenticator
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,
@@ -108,7 +103,8 @@ public struct AppModelServices {
                 audioFiles: any CaptureAudioFiles = ByteCaptureAudioFiles(),
                 makeQuickCapture: @escaping @MainActor (_ scratch: URL) -> QuickCapture = AppModelServices.scratchQuickCapture,
                 settingsStorage: any SettingsSyncStorage = StoredSettingsSyncStorage(),
-                makePageRecognizer: @escaping @MainActor () -> (any PageRecognizing)? = { nil }) {
+                makePageRecognizer: @escaping @MainActor () -> (any PageRecognizing)? = { nil },
+                ownerAuthenticator: any OwnerAuthenticator = ScriptedOwnerCheck(.refuse(OwnerCheckUnavailable()))) {
         self.perf = perf
         self.settings = settings
         self.bookmarks = bookmarks
@@ -126,6 +122,7 @@ public struct AppModelServices {
         self.makeQuickCapture = makeQuickCapture
         self.settingsStorage = settingsStorage
         self.makePageRecognizer = makePageRecognizer
+        self.ownerAuthenticator = ownerAuthenticator
     }
 
     /// A quick capture that records nothing (`QuickCapture`'s defaults), its folders under `scratch`.

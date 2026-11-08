@@ -91,7 +91,7 @@ struct OfflineModeTests {
         let library = VaultLibrary(storeURL: root.appendingPathComponent("recents.json"))
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50), trust: MemoryEpochTrustStore())
         model.vaultStore = library.vaultStore
-        model.takeoverDefaults = DevicesAppTests.defaults()
+        model.deviceMemory = DevicesAppTests.defaults()
         model.folderWriteDelay = 0.05
         model.folderArrivalWait = 0.5
         try await model.copyIn(picked: shared, library: library, followUp: .keepSyncing)
@@ -112,7 +112,7 @@ struct OfflineModeTests {
         await model.refreshLockedManifest()
         #expect(await keys.unlockWithDeviceKey(model) == .joining)
         #expect(keys.joinStage == .confirming)
-        let device = try await keys.store.keys(for: try #require(model.vault?.vaultId), reason: "")
+        let device = try await keys.store.keys(for: try #require(model.vault?.vaultId), reason: .unlock(vaultName: nil))
         try await model.confirmJoin(words: reply, keys: device)
         #expect(model.phase == .unlocked)
         let note = try await model.createNote(title: "Joined offline", paper: Paper(kind: .ruled), notebook: nil)

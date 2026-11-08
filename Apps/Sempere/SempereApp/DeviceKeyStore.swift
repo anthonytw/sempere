@@ -3,6 +3,7 @@ import CryptoKit
 import Foundation
 import LocalAuthentication
 import Sempere
+import SempereAppCore
 import Security
 
 // This device's own keys per vault (key-hierarchy design §4.1, §6.1; phase KH5): the X-Wing device key that opens
@@ -11,20 +12,9 @@ import Security
 // kept in a Keychain item `AfterFirstUnlockThisDeviceOnly` so a locked run can sign. Nothing is synchronizable,
 // nothing is exported: a device whose keys are lost leaves and joins again.
 
-/// Why this device's keys could not be stored or read.
-enum DeviceKeyStoreError: Error, Equatable, CustomStringConvertible {
-    /// No keys for the vault here (or Face ID re-enrollment invalidated them).
-    case notFound
-    /// The user canceled Face ID or the passcode.
-    case cancelled
-    case authenticationFailed
-    /// This build cannot use the Keychain (unsigned).
-    case missingEntitlement
-    /// A stored item does not read as keys.
-    case malformed
-    case keychain(Int32)
-
-    var description: String {
+/// `DeviceKeyStoreError` (SempereAppCore) worded.
+extension DeviceKeyStoreError: @retroactive CustomStringConvertible {
+    public var description: String {
         switch self {
         case .notFound: return String(localized: "This device has no key for this vault.")
         case .cancelled: return String(localized: "Authentication was canceled.")
@@ -38,25 +28,17 @@ enum DeviceKeyStoreError: Error, Equatable, CustomStringConvertible {
     }
 }
 
-/// This device's keys per vault id. The model talks to this protocol; tests use `MemoryDeviceKeyStore`.
-protocol DeviceKeyStore: Sendable {
-    /// Whether this device holds keys for `vaultID` (no prompt).
-    func hasKeys(for vaultID: UUID) async -> Bool
-    /// Whether reading them asks for Face ID ("Require Face ID to open this vault").
-    func requiresBiometry(for vaultID: UUID) async -> Bool
-    /// The keys, after Face ID when the vault asks for it; `reason` is the prompt.
-    func keys(for vaultID: UUID, reason: String) async throws -> DeviceKeys
-    /// New keys: the signing pair in the Secure Enclave where there is one (else in software, in the Keychain).
-    func generate() throws -> DeviceKeys
-    /// Stores `keys` for `vaultID`; refuses to replace keys stored for it.
-    func save(_ keys: DeviceKeys, for vaultID: UUID, vaultName: String) async throws
-    /// Turns "Require Face ID" on or off (the device key is read first, which asks when it is on).
-    func setRequiresBiometry(_ on: Bool, for vaultID: UUID, vaultName: String) async throws
-    /// Deletes the keys (the vault removed from this device, or a join given up).
-    func delete(for vaultID: UUID) async throws
-    /// The device fingerprint of the keys stored for `vaultID`, without a prompt (whether this device is a vault's
-    /// home, before its copy is deleted); nil when there are none.
-    func fingerprint(for vaultID: UUID) async -> Data?
+extension DeviceKeyReason {
+    /// The Face ID prompt's reason.
+    var text: String {
+        switch self {
+        case .unlock(let name?): return String(localized: "Unlock “\(name)”", comment: "Face ID prompt")
+        case .unlock(nil): return String(localized: "Unlock the vault", comment: "Face ID prompt")
+        case .join(let name): return String(localized: "Join “\(name)”")
+        case .takeover: return String(localized: "Take over with the recovery kit")
+        case .withdrawJoin: return ""
+        }
+    }
 }
 
 /// A signing pair in the Secure Enclave (design §4.1): the enclave's key blobs, which only this device's enclave
@@ -256,9 +238,9 @@ struct KeychainDeviceKeyStore: DeviceKeyStore {
         return seed
     }
 
-    func keys(for vaultID: UUID, reason: String) async throws -> DeviceKeys {
+    func keys(for vaultID: UUID, reason: DeviceKeyReason) async throws -> DeviceKeys {
         let context = LAContext()
-        context.localizedReason = reason
+        context.localizedReason = reason.text
         let box = KeychainContextBox(context)
         return try await Task.detached(priority: .userInitiated) { () throws -> DeviceKeys in
             let seed: Data
@@ -405,52 +387,4 @@ struct KeychainDeviceKeyStore: DeviceKeyStore {
 final class KeychainContextBox: @unchecked Sendable {
     let context: LAContext
     init(_ context: LAContext) { self.context = context }
-}
-
-/// `DeviceKeyStore` in memory (tests, previews): software signing pairs.
-final class MemoryDeviceKeyStore: DeviceKeyStore, @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: [UUID: (keys: DeviceKeys, biometry: Bool)] = [:]
-    /// Reads made (tests count Face ID prompts).
-    private(set) var reads = 0
-    /// Set: every read fails as an unreadable key would (Face ID re-enrolled), tests.
-    var unreadable = false
-
-    init() {}
-
-    func hasKeys(for vaultID: UUID) async -> Bool { lock.withLock { stored[vaultID] != nil } }
-    func requiresBiometry(for vaultID: UUID) async -> Bool { lock.withLock { stored[vaultID]?.biometry ?? false } }
-    func fingerprint(for vaultID: UUID) async -> Data? { lock.withLock { stored[vaultID]?.keys.fingerprint } }
-
-    func keys(for vaultID: UUID, reason: String) async throws -> DeviceKeys {
-        try lock.withLock {
-            reads += 1
-            if unreadable { throw DeviceKeyStoreError.notFound }
-            guard let k = stored[vaultID]?.keys else { throw DeviceKeyStoreError.notFound }
-            return k
-        }
-    }
-
-    func generate() throws -> DeviceKeys { try DeviceKeys.generate() }
-
-    func save(_ keys: DeviceKeys, for vaultID: UUID, vaultName: String) async throws {
-        try lock.withLock {
-            guard stored[vaultID] == nil else { throw DeviceKeyStoreError.keychain(errSecDuplicateItem) }
-            stored[vaultID] = (keys, false)
-        }
-    }
-
-    func setRequiresBiometry(_ on: Bool, for vaultID: UUID, vaultName: String) async throws {
-        try lock.withLock {
-            guard stored[vaultID] != nil else { throw DeviceKeyStoreError.notFound }
-            stored[vaultID]?.biometry = on
-        }
-    }
-
-    func delete(for vaultID: UUID) async throws {
-        lock.withLock {
-            stored[vaultID] = nil
-            unreadable = false
-        }
-    }
 }

@@ -252,7 +252,7 @@ struct JoinDeviceView: View {
             defer { working = false }
             do {
                 guard let id = model.vault?.vaultId else { return }
-                let device = try await keys.store.keys(for: id, reason: String(localized: "Join “\(model.vaultName ?? "")”"))
+                let device = try await keys.store.keys(for: id, reason: .join(vaultName: model.vaultName ?? ""))
                 var words = TypedWords.split(reply)
                 if let qr {
                     guard let w = model.replyWords(fromQR: qr, keys: device) else {

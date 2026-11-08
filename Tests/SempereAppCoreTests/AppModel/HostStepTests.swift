@@ -15,16 +15,18 @@ extension AppModelSuites {
             let text = try await ModelFixture.keyText(key)
             let model = AppModel(deviceStateURL: TS.deviceStateURL())
             try await model.openVault(at: url)
-            #expect(!model.appState.steps.contains("didUnlock"), "no step before the unlock")
             try await model.unlock(identityText: text)
-            #expect(model.appState.steps.last == "didUnlock", "\(model.appState.steps)")
+            #expect(await TS.waitUntil(timeout: .seconds(60)) { model.appState.steps.contains("listingFinished") },
+                    "\(model.appState.steps)")
 
-            // A vault opened again under its `vault.json`: didReopen, and the views reopen their notes once.
+            // A vault opened again under its `vault.json`: no host step any more (takeovers and the device state are
+            // the core's), and the views reopen their notes once.
             let identity = try IdentityFile.parse(text)
             let reopened = try await Self.open(url, identity)
             let epoch = model.keyEpoch
+            let steps = model.appState.steps
             model.adoptReopened(reopened)
-            #expect(model.appState.steps.last == "didReopen")
+            #expect(model.appState.steps == steps)
             #expect(model.keyEpoch == epoch + 1)
 
             // A delta written with the model's clock reaches the attachment index (`noteWritten`).

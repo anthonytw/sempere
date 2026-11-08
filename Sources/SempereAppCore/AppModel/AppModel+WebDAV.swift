@@ -399,8 +399,8 @@ extension AppModelCore {
     /// After a two-way run of the open vault: when its `vault.json` no longer matches the open `Vault`
     /// (whatever the run reported), runs go upload-only and the vault is opened again (review of #70, F6).
     public func checkOpenVaultAgainstDisk() async {
-        await Host.reopenIfUnlisted(self)
-        await Host.refreshDeviceState(self)
+        await reopenIfUnlisted()
+        await refreshDeviceState()
         guard let start = vault, phase == .unlocked, !syncVaultStale else { return }
         let changed = (try? await offMain { Self.manifestChangedOnDisk(start) }) ?? true
         guard changed else { return }

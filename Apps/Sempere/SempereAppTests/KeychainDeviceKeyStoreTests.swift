@@ -105,7 +105,7 @@ struct KeychainDeviceKeyStoreTests {
         #expect(await store.hasKeys(for: id))
         #expect(!(await store.requiresBiometry(for: id)))
         #expect(await store.fingerprint(for: id) == keys.fingerprint)
-        #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint)
+        #expect(try await store.keys(for: id, reason: .unlock(vaultName: nil)).fingerprint == keys.fingerprint)
         await #expect(throws: DeviceKeyStoreError.self, "never over stored keys") { try await store.save(keys, for: id, vaultName: "V") }
         try await store.delete(for: id)
         #expect(!(await store.hasKeys(for: id)))
@@ -131,7 +131,7 @@ struct KeychainDeviceKeyStoreTests {
         #expect(!(await store.hasKeys(for: id)))
         let fresh = try DeviceKeys.generate()
         try await store.save(fresh, for: id, vaultName: "V")
-        #expect(try await store.keys(for: id, reason: "").fingerprint == fresh.fingerprint)
+        #expect(try await store.keys(for: id, reason: .unlock(vaultName: nil)).fingerprint == fresh.fingerprint)
     }
 
     @Test func turningFaceIDOnAddsBeforeItDeletesAndIsReadWithoutAPrompt() async throws {
@@ -145,7 +145,7 @@ struct KeychainDeviceKeyStoreTests {
         #expect(await store.requiresBiometry(for: id))
         try store.replaceSeed(id, vaultName: "V", biometry: false, canBiometrics: true, context: nil)
         #expect(!(await store.requiresBiometry(for: id)), "the marker, not the presence of an access control object")
-        #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint)
+        #expect(try await store.keys(for: id, reason: .unlock(vaultName: nil)).fingerprint == keys.fingerprint)
     }
 
     @Test func aToggleThatFailsNeverLosesTheKey() async throws {
@@ -160,7 +160,7 @@ struct KeychainDeviceKeyStoreTests {
             }
             fake.failing = []
             #expect(await store.hasKeys(for: id), "\(step)")
-            #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint, "\(step): the key reads")
+            #expect(try await store.keys(for: id, reason: .unlock(vaultName: nil)).fingerprint == keys.fingerprint, "\(step): the key reads")
             #expect(fake.has(KeychainDeviceKeyStore.service, account), "\(step): back under its account after a read")
         }
     }
@@ -178,12 +178,12 @@ struct KeychainDeviceKeyStoreTests {
         leftover[kSecAttrAccount as String] = pending
         leftover[kSecValueData as String] = Data("junk".utf8)
         #expect(fake.add(leftover) == errSecSuccess)
-        #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint)
+        #expect(try await store.keys(for: id, reason: .unlock(vaultName: nil)).fingerprint == keys.fingerprint)
         #expect(!fake.has(KeychainDeviceKeyStore.service, pending), "deleted after the main item read")
         // The main item there but unreadable (a Face ID change): the pending one is never read in its place.
         #expect(fake.add(leftover) == errSecSuccess)
         fake.dataStatus = [account: errSecItemNotFound]
-        await #expect(throws: DeviceKeyStoreError.notFound) { _ = try await store.keys(for: id, reason: "") }
+        await #expect(throws: DeviceKeyStoreError.notFound) { _ = try await store.keys(for: id, reason: .unlock(vaultName: nil)) }
         #expect(fake.has(KeychainDeviceKeyStore.service, pending))
         // The main item gone: the pending one is the key, renamed back.
         fake.dataStatus = [:]
@@ -192,7 +192,7 @@ struct KeychainDeviceKeyStoreTests {
         moved[kSecAttrAccount as String] = pending
         _ = fake.delete(KeychainDeviceKeyStore.query(KeychainDeviceKeyStore.service, account))
         #expect(fake.add(moved) == errSecSuccess)
-        #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint)
+        #expect(try await store.keys(for: id, reason: .unlock(vaultName: nil)).fingerprint == keys.fingerprint)
         #expect(fake.has(KeychainDeviceKeyStore.service, account))
         #expect(!fake.has(KeychainDeviceKeyStore.service, pending))
     }
@@ -212,14 +212,14 @@ struct KeychainDeviceKeyStoreTests {
         ]
         let w = try await JoinTakeoverAppTests.world()
         let vaultID = try #require(w.home.vault?.vaultId)
-        let home = try await w.homeKeys.store.keys(for: vaultID, reason: "")
+        let home = try await w.homeKeys.store.keys(for: vaultID, reason: .unlock(vaultName: nil))
         w.home.close()
         for (label, breakIt, expected) in cases {
             let fake = FakeKeychainItems()
             let keys = RememberedKeys(store: KeychainDeviceKeyStore(items: fake))
             try await keys.store.save(home, for: vaultID, vaultName: "Mine")
             let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: w.home.trust)
-            model.takeoverDefaults = DevicesAppTests.defaults()
+            model.deviceMemory = DevicesAppTests.defaults()
             try await model.openVault(at: w.url)
             breakIt(fake, KeychainDeviceKeyStore.account(vaultID))
             let attempt = await keys.unlockWithDeviceKey(model)
@@ -242,7 +242,7 @@ struct KeychainDeviceKeyStoreTests {
         let keys = try DeviceKeys.generate()
         try await store.save(keys, for: id, vaultName: "V")
         fake.hiddenOnce = [account]   // the first look misses it; the pending item is already gone
-        #expect(try await store.keys(for: id, reason: "").fingerprint == keys.fingerprint)
+        #expect(try await store.keys(for: id, reason: .unlock(vaultName: nil)).fingerprint == keys.fingerprint)
         #expect(fake.hiddenOnce.isEmpty)
     }
 }

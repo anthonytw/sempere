@@ -81,13 +81,13 @@ struct QuitPurgeAndOwnerCheckTests {
     @Test func theDebugOwnerCheckAnswersAsAsked() async throws {
         defer { unsetenv("SEMPERE_DEBUG_OWNER_CHECK") }
         setenv("SEMPERE_DEBUG_OWNER_CHECK", "pass", 1)
-        try await SystemOwnerAuthenticator().authenticate(reason: "test")
+        try await SystemOwnerAuthenticator().authenticate(reason: .approveDevice)
         setenv("SEMPERE_DEBUG_OWNER_CHECK", "fail", 1)
         await #expect(throws: AppModel.KeyExportError.notAuthenticated) {
-            try await SystemOwnerAuthenticator().authenticate(reason: "test")
+            try await SystemOwnerAuthenticator().authenticate(reason: .approveDevice)
         }
         setenv("SEMPERE_DEBUG_OWNER_CHECK", "cancel", 1)
-        await #expect(throws: CancellationError.self) { try await SystemOwnerAuthenticator().authenticate(reason: "test") }
+        await #expect(throws: CancellationError.self) { try await SystemOwnerAuthenticator().authenticate(reason: .approveDevice) }
         // An unknown value is no answer: the real check would run.
         setenv("SEMPERE_DEBUG_OWNER_CHECK", "yes", 1)
         #expect(DebugLaunch.ownerCheck == nil)

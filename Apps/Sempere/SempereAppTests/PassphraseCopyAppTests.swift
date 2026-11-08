@@ -6,52 +6,12 @@ import Testing
 import UIKit
 @testable import SempereApp
 
-/// Build 10: a vault made without a passphrase copy can get one later (Devices ▸ Add Passphrase Copy…, from the
-/// printed kit), and each vault's passphrase is saved by AutoFill under the vault's name.
+/// Build 10: each vault's passphrase is saved by AutoFill under the vault's name, and a new vault takes Suggest a
+/// Passphrase's words. Adding a copy later (Devices ▸ Add Passphrase Copy…) is the model's: `DevicesTests` in
+/// `SempereAppCoreTests`.
 @Suite(.serialized)
 @MainActor
 struct PassphraseCopyAppTests {
-    @Test func aCopyIsAddedLaterFromTheKitAndOpensTheVault() async throws {
-        let w = try DevicesAppTests.World(others: [])
-        let model = try await w.model()
-        defer { model.close() }
-        model.ownerAuthenticator = DevicesAppTests.PassingOwner()
-        #expect(model.vault?.passphraseCopyNames().isEmpty == true)
-        let strong = "Wafwi4-nokmoj-jykpuf"
-        let kit = ExistingKeyInput.status(ofText: IdentityFile.render(.mlkem768x25519(w.recovery), created: Date()))
-        await #expect(throws: KeyProblem.self, "no key given") {
-            try await model.addPassphraseCopy(recoveryKey: .empty, passphrase: strong)
-        }
-        let other = ExistingKeyInput.status(ofText: IdentityFile.render(.mlkem768x25519(try MLKEM768X25519Identity()), created: Date()))
-        await #expect(throws: VaultError.self, "not the current kit") {
-            try await model.addPassphraseCopy(recoveryKey: other, passphrase: strong)
-        }
-        try await model.addPassphraseCopy(recoveryKey: kit, passphrase: strong)
-        let vault = try #require(model.vault)
-        #expect(vault.passphraseCopyNames().count == 1)
-        let copy = try vault.openPassphraseCopy(passphrase: strong)
-        #expect(copy.identity.recipient.string == w.recovery.recipient.string)
-        let list = try await model.loadDeviceList()
-        #expect(list.passphraseCopy)
-        await #expect(throws: VaultError.self, "add-only: sync never replaces a copy") {
-            try await model.addPassphraseCopy(recoveryKey: kit, passphrase: "tedPes-6fiqre-rynbid")
-        }
-        #expect(try model.vault?.openPassphraseCopy(passphrase: strong) != nil, "the first copy is untouched")
-    }
-
-    /// Any passphrase is taken, a one-letter one too; Suggest a Passphrase's words are one more passphrase.
-    @Test func anyPassphraseIsTaken() async throws {
-        let w = try DevicesAppTests.World(others: [])
-        let model = try await w.model()
-        defer { model.close() }
-        model.ownerAuthenticator = DevicesAppTests.PassingOwner()
-        let kit = ExistingKeyInput.status(ofText: IdentityFile.render(.mlkem768x25519(w.recovery), created: Date()))
-        try await model.addPassphraseCopy(recoveryKey: kit, passphrase: "a")
-        let vault = try #require(model.vault)
-        #expect(vault.passphraseCopyNames().count == 1)
-        #expect(try vault.openPassphraseCopy(passphrase: "a").identity.recipient.string == w.recovery.recipient.string)
-    }
-
     /// A vault made in the New Vault sheet with the suggestion gets its copy under it.
     @Test func newVaultTakesTheSuggestion() throws {
         let parent = try BrowserTests.tempDir()

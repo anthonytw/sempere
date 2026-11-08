@@ -145,6 +145,8 @@ struct SystemFileCoordinator: FileCoordinating {
 struct AppPlatform: PlatformServices {
     var isMac: Bool { Platform.isMac }
     @MainActor var isPhone: Bool { Platform.isPhone }
+    @MainActor var deviceKind: String { ThisDevice.kind }
+    @MainActor var deviceName: String { ThisDevice.name }
 
     @MainActor func setIdleTimerDisabled(_ disabled: Bool) { UIApplication.shared.isIdleTimerDisabled = disabled }
 

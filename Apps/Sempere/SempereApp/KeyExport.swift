@@ -30,11 +30,16 @@ struct KeyFile: Sendable, Equatable {
     var fileName: String { IdentityFile.exportFileName(label: label) }
 }
 
-/// Asks the device owner to prove they are there before a secret key leaves
-/// the app, or a list change that needs the owner at the device (Replace Recovery Kit, key-hierarchy design
-/// §6.5; `AppModel.ownerAuthenticator`). Tests inject a fake.
-protocol OwnerAuthenticator: Sendable {
-    func authenticate(reason: String) async throws
+extension OwnerCheckReason {
+    /// The Face ID or passcode prompt's reason (`OwnerAuthenticator` is SempereAppCore's).
+    var text: String {
+        switch self {
+        case .addPassphraseCopy: return String(localized: "Add a passphrase copy of the recovery key")
+        case .approveDevice: return String(localized: "Let a new device into the vault")
+        case .replaceRecoveryKit: return String(localized: "Replace the recovery kit")
+        case .reencrypt: return String(localized: "Re-encrypt the vault")
+        }
+    }
 }
 
 /// Which check `SystemOwnerAuthenticator` asks for.
@@ -57,7 +62,7 @@ enum OwnerCheck: Equatable {
 /// after a lockout; the passcode (or the Mac's password) only on a device
 /// without biometrics.
 struct SystemOwnerAuthenticator: OwnerAuthenticator {
-    func authenticate(reason: String) async throws {
+    func authenticate(reason: OwnerCheckReason) async throws {
         #if DEBUG
         // UI tests: a scripted answer instead of Touch ID, which XCTest cannot give (`DebugLaunch`).
         if let answer = DebugLaunch.ownerCheck {
@@ -81,7 +86,7 @@ struct SystemOwnerAuthenticator: OwnerAuthenticator {
         }
         guard context.canEvaluatePolicy(policy, error: nil) else { throw AppModel.KeyExportError.noDeviceLock }
         do {
-            _ = try await context.evaluatePolicy(policy, localizedReason: reason)
+            _ = try await context.evaluatePolicy(policy, localizedReason: reason.text)
         } catch let error as LAError where error.code == .userCancel || error.code == .appCancel || error.code == .systemCancel {
             throw CancellationError()
         } catch {

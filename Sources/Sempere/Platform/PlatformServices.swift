@@ -24,6 +24,19 @@ public protocol PlatformServices: Sendable {
     /// Switches the home-screen icon to `name` (an `appIcon` name; unknown names change nothing). The system tells
     /// the user; a failure leaves the current icon.
     @MainActor func setAppIcon(_ name: String)
+    /// How this device names its kind in a vault's device list (format.md §15.3 `kind`): `DeviceKind.of`.
+    @MainActor var deviceKind: String { get }
+    /// The name this device gives itself in a vault's device list (a new vault, a join, a takeover). Never the
+    /// user's or the computer's name (it is stored unencrypted in `vault.json`).
+    @MainActor var deviceName: String { get }
+}
+
+/// The `kind` a device of the vault's list names (format.md §15.3) for the app's devices.
+public enum DeviceKind {
+    /// `mac`, `iphone` or `ipad`.
+    public static func of(isMac: Bool, isPhone: Bool) -> String {
+        isMac ? "mac" : isPhone ? "iphone" : "ipad"
+    }
 }
 
 /// `PlatformServices` with no device behind it (tests, the CLI): the flags it was made with, and a record of
@@ -39,11 +52,18 @@ public final class HeadlessPlatform: PlatformServices {
     /// The icon `setAppIcon` last chose; nil (a device with no icons to switch) unless made with one.
     public private(set) var appIcon: String?
 
-    public nonisolated init(isMac: Bool = false, isPhone: Bool = false, appIcon: String? = nil) {
+    /// The name the device gives itself (`deviceName`).
+    public let deviceName: String
+
+    public nonisolated init(isMac: Bool = false, isPhone: Bool = false, appIcon: String? = nil,
+                            deviceName: String = "Headless Device") {
         self.isMac = isMac
         self.isPhone = isPhone
         self.appIcon = appIcon
+        self.deviceName = deviceName
     }
+
+    public var deviceKind: String { DeviceKind.of(isMac: isMac, isPhone: isPhone) }
 
     /// The last idle-timer setting (nil before the first).
     public var idleTimerDisabled: Bool? { idleTimerSettings.last }

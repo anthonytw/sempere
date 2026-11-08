@@ -11,7 +11,7 @@ enum ThisDevice {
     }
 
     nonisolated static func kind(isMac: Bool, isPhone: Bool) -> String {
-        isMac ? "mac" : isPhone ? "iphone" : "ipad"
+        DeviceKind.of(isMac: isMac, isPhone: isPhone)
     }
 
     /// The name this device gives itself, told apart from the user's other devices (build 12: "When the Mac syncs, it

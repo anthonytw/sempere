@@ -134,8 +134,7 @@ struct ReplaceKitSheet: View {
             defer { working = false }
             do {
                 // The one list change that needs the owner at the device (design §6.5 step 0).
-                try await model.ownerAuthenticator.authenticate(reason: mode == .reencrypt ? String(localized: "Re-encrypt the vault")
-                                                                                           : String(localized: "Replace the recovery kit"))
+                try await model.ownerAuthenticator.authenticate(reason: mode == .reencrypt ? .reencrypt : .replaceRecoveryKit)
                 let kit = try MLKEM768X25519Identity()
                 newKit = kit
                 lineNumber = Self.checkLine(of: kit.string)

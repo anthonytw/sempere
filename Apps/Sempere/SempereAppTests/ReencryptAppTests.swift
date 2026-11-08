@@ -8,34 +8,14 @@ import SempereAppCore
 
 /// Re-encrypt Everything in the app (key-hierarchy design §7; phase KH6): the start through the model (claims on
 /// the vault's sync targets, the `reencrypt` epoch) and the progress sheet's steps (`advanceReencryption`) until
-/// the finish, with the vault opened again under the new key each time; a vault without targets finishes at once.
+/// the finish, with the vault opened again under the new key each time, on a vault copied in with a folder target
+/// (`copyIn`, the app's until wave 5b part 3, step 5). A vault without targets, one step at a time and only home:
+/// `DevicesTests` in `SempereAppCoreTests`.
 @Suite(.serialized)
 @MainActor
 struct ReencryptAppTests {
     static func everyDeviceKept(_ model: AppModel) async throws -> Set<String> {
         Set(try await model.kitReview().compactMap(\.device.id))
-    }
-
-    @Test func aVaultWithoutTargetsFinishesInOneStep() async throws {
-        let w = try DevicesAppTests.World(others: ["Phone"])
-        let model = try await w.model()
-        defer { model.close() }
-        let titles = Set(model.notes.map(\.id))
-        let before = try #require(model.vault?.manifest.epoch)
-        let newKit = try MLKEM768X25519Identity()
-        let started = try await model.startReencryption(newKit, keep: try await Self.everyDeviceKept(model), remove: [], passphrase: nil)
-        #expect(started.report.reason == .reencrypt)
-        #expect(model.vault?.manifest.epoch == before + 1)
-        #expect(try await model.reencryptStatus().pending)
-        let step = try await model.advanceReencryption()
-        #expect(step.finished)
-        #expect(step.status?.pending == false)
-        #expect(step.status?.remaining == 0)
-        #expect(!FileManager.default.fileExists(atPath: try #require(model.vaultURL).appendingPathComponent("reencrypt-journal.age").path))
-        #expect(Set(model.notes.map(\.id)) == titles)
-        #expect(model.vault?.manifest.recoveryEntry?.key == newKit.recipient.string)
-        let list = try await model.loadDeviceList()
-        #expect(list.history.first?.reason == .reencrypt)
     }
 
     @Test func aFolderTargetIsClaimedCarriedAndConfirmed() async throws {
@@ -104,36 +84,5 @@ struct ReencryptAppTests {
         close()
         _ = try await a.model.startReencryption(try MLKEM768X25519Identity(), keep: keep, remove: [], passphrase: nil)
         #expect(a.model.vault?.isReencryptPending == true)
-    }
-
-    /// Review of #89, S7: one step at a time; Stop ends it with `CancellationError`, and a later step goes on.
-    @Test func oneStepAtATimeAndStopEndsIt() async throws {
-        let w = try DevicesAppTests.World(others: ["Phone"])
-        let model = try await w.model()
-        defer { model.close() }
-        _ = try await model.startReencryption(try MLKEM768X25519Identity(), keep: try await Self.everyDeviceKept(model), remove: [],
-                                              passphrase: nil)
-        model.isAdvancingReencryption = true
-        await #expect(throws: VaultError.self, "a second step is refused while one goes") { _ = try await model.advanceReencryption() }
-        model.isAdvancingReencryption = false
-        let step = Task { try await model.advanceReencryption() }
-        await Task.yield()
-        model.cancelReencryptionStep()
-        let first = await step.result
-        #expect(!model.isAdvancingReencryption)
-        switch first {
-        case .success(let p):
-            #expect(p.finished, "not stopped in time: the step ran to its end")
-        case .failure(let e):
-            #expect(e is CancellationError, "\(e)")
-            #expect(try await model.advanceReencryption().finished, "the next step goes on and finishes")
-        }
-    }
-
-    @Test func onlyHomeAdvances() async throws {
-        let w = try DevicesAppTests.World(others: ["Phone"])
-        let phone = try await w.model("Phone")
-        defer { phone.close() }
-        await #expect(throws: VaultError.self) { _ = try await phone.advanceReencryption() }
     }
 }

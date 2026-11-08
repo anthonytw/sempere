@@ -33,7 +33,7 @@ struct JoinThroughProviderTests {
         model.folderWriteDelay = 0.05
         model.folderArrivalWait = 0.5
         model.folderProvider = { _ in provider }
-        model.takeoverDefaults = DevicesAppTests.defaults()
+        model.deviceMemory = DevicesAppTests.defaults()
         return FolderTargetAppTests.Device(model: model, library: library)
     }
 
@@ -48,7 +48,7 @@ struct JoinThroughProviderTests {
         // Home (the Mac): the vault, unlocked with its device key, synced into the shared folder.
         let home = FolderTargetAppTests.device(provider)
         home.model.ownerAuthenticator = JoinTakeoverAppTests.PassingOwner()
-        home.model.takeoverDefaults = DevicesAppTests.defaults()
+        home.model.deviceMemory = DevicesAppTests.defaults()
         try await home.model.copyIn(picked: vault, library: home.library)
         _ = try await home.model.unlock(identityText: key)
         try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)
@@ -105,7 +105,7 @@ struct JoinThroughProviderTests {
         await pad.model.refreshLockedManifest()
         #expect(await padKeys.unlockWithDeviceKey(pad.model) == .joining)
         #expect(padKeys.joinStage == .confirming, "\(String(describing: pad.model.syncSessions.first?.lastReport))")
-        let device = try await padKeys.store.keys(for: try #require(pad.model.vault?.vaultId), reason: "")
+        let device = try await padKeys.store.keys(for: try #require(pad.model.vault?.vaultId), reason: .unlock(vaultName: nil))
         try await pad.model.confirmJoin(words: reply.words, keys: device)
         #expect(pad.model.phase == .unlocked)
     }
@@ -141,7 +141,7 @@ struct JoinThroughProviderTests {
     /// An owner check that closes the sheet while it asks (the user dismissed Add Device during Touch ID).
     struct ClosingOwner: OwnerAuthenticator {
         let close: @MainActor @Sendable () -> Void
-        func authenticate(reason: String) async throws { await close() }
+        func authenticate(reason: OwnerCheckReason) async throws { await close() }
     }
 
     /// Home and an iPad that asked to join; on home's side the request is a stand-in the provider has not delivered.
@@ -161,7 +161,7 @@ struct JoinThroughProviderTests {
         let provider = EvictingFolderProvider(root: shared, cloud: drive.appendingPathComponent(".cloud"))
         let home = FolderTargetAppTests.device(provider)
         home.model.ownerAuthenticator = JoinTakeoverAppTests.PassingOwner()
-        home.model.takeoverDefaults = DevicesAppTests.defaults()
+        home.model.deviceMemory = DevicesAppTests.defaults()
         try await home.model.copyIn(picked: vault, library: home.library)
         _ = try await home.model.unlock(identityText: key)
         try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)

@@ -19,7 +19,7 @@ enum AppHost: AppModelHost {
     static func makeState() -> AppModelAppState { AppModelAppState() }
 
     /// The platform's: signposts and `os.Logger`, `UserDefaults.standard`, security-scoped bookmarks, the device,
-    /// the network and the Keychain for WebDAV, iCloud, on-device speech, quick capture, Vision.
+    /// the network and the Keychain for WebDAV, iCloud, on-device speech, quick capture, Vision, the owner check.
     static func makeServices() -> AppModelServices {
         AppModelServices(perf: AppPerfSink(), settings: UserDefaults.standard, bookmarks: SecurityScopedBookmarks(),
                          platform: AppPlatform(), webdavRemote: LiveWebDAVRemote(),
@@ -28,19 +28,8 @@ enum AppHost: AppModelHost {
                          makeRenderCache: AppModel.makeRenderCache, makePlaybackBackend: { AVAudioPlaybackBackend() },
                          recordingRoot: RecordingSession.root, recordingsInUse: AppModel.recordingsInUse,
                          audioFiles: AVCaptureAudioFiles(), makeQuickCapture: { _ in QuickCapture.shared },
-                         settingsStorage: AppSettingsStorage(), makePageRecognizer: { VisionPageRecognizer() })
-    }
-
-    static func didUnlock(_ model: AppModel) async {
-        await model.checkTakeovers()
-        await model.refreshDeviceState()
-    }
-
-    static func didReopen(_ model: AppModel) {
-        Task {
-            await model.checkTakeovers()
-            await model.refreshDeviceState()
-        }
+                         settingsStorage: AppSettingsStorage(), makePageRecognizer: { VisionPageRecognizer() },
+                         ownerAuthenticator: SystemOwnerAuthenticator())
     }
 
     static func willClose(_ model: AppModel) {
@@ -51,8 +40,6 @@ enum AppHost: AppModelHost {
         model.bulkExportRequest = nil
         model.draggedPayload = nil
         model.dropTarget = nil
-        model.takeoverAlert = nil
-        model.sightingRowsState = []
     }
 
     static func editorsChanged(_ model: AppModel) { model.idleTimer?.update() }
@@ -69,8 +56,6 @@ enum AppHost: AppModelHost {
     static func closeWindowEditors(_ model: AppModel) async { await model.closeWindowEditors() }
     static func openWindowNote(_ id: UUID, in model: AppModel) async throws { _ = try await model.openWindowNote(id) }
     static func reopenWindowNote(_ id: UUID, in model: AppModel) async { await model.reopenWindowNote(id) }
-    static func reopenIfUnlisted(_ model: AppModel) async { await model.reopenIfUnlisted() }
-    static func refreshDeviceState(_ model: AppModel) async { await model.refreshDeviceState() }
 }
 
 /// The state of the `AppModel` extensions still in the app, whose types are the app's (wave 5b part 3 moves each
@@ -121,29 +106,11 @@ final class AppModelAppState {
     /// Watches the network for the WebDAV targets (`startReachability`); nil until started.
     @ObservationIgnored var reachability: WebDAVReachability?
 
-    /// The devices whose removal by this device a takeover undid (offline audit P16; `AppModel+DeviceNotices`): the
-    /// record the vault's sync runs keep beside its targets' states (`UndoneRemovalsRecord`, from the run that took the
-    /// takeover, `SyncOptions.undoneRemovalsURL`). Tests pass fakes.
-    @ObservationIgnored var undoneRemovalsSource: @Sendable (Vault) -> [UndoneRemoval] = AppModelAppState.recordedUndoneRemovals
-
     /// Where this model's PDF exports (drag to Finder) are written; emptied when the vault closes.
     let exportFolder: URL = NotePDFExport.folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
 
     /// Bumped when the vault closes: a drag-out export prepared before it writes nothing.
     let exportEpoch = ExportEpoch()
-
-    /// A takeover by another device that this device has not acknowledged (key-hierarchy design §6.3): a
-    /// banner until dismissed (`AppModel+Devices`).
-    var takeoverAlert: TakeoverAlert?
-
-    /// Where acknowledged takeovers are remembered (per vault, the epoch); tests pass their own.
-    @ObservationIgnored var takeoverDefaults: UserDefaults = .standard
-
-    /// Asks for the device owner before a list change that needs them at the device (Replace Recovery Kit, design
-    /// §6.5); tests inject a fake.
-    @ObservationIgnored var ownerAuthenticator: any OwnerAuthenticator = SystemOwnerAuthenticator()
-
-    var sightingRowsState: [SightingRow] = []
 
     /// The assertion held while the last saves finish before the lease is let go, and its wait.
     @ObservationIgnored var suspensionToken: BackgroundTaskToken?
@@ -153,12 +120,6 @@ final class AppModelAppState {
 
     /// "Open Vault…" copying a vault onto this device (`copyIn`), for the progress overlay.
     var vaultCopy: VaultCopyProgress?
-
-    /// The store vault's record of removals a takeover undid; none for a vault elsewhere.
-    nonisolated static func recordedUndoneRemovals(_ vault: Vault) -> [UndoneRemoval] {
-        guard let url = UndoneRemovalsRecord.url(storeVault: vault.url, vaultId: vault.vaultId) else { return [] }
-        return UndoneRemovalsRecord.load(url).map { UndoneRemoval(id: $0.id, name: $0.name.map(DeviceName.display) ?? $0.id) }
-    }
 }
 
 extension AppModel {
@@ -214,28 +175,8 @@ extension AppModel {
         get { appState.reachability }
         set { appState.reachability = newValue }
     }
-    var undoneRemovalsSource: @Sendable (Vault) -> [UndoneRemoval] {
-        get { appState.undoneRemovalsSource }
-        set { appState.undoneRemovalsSource = newValue }
-    }
     var exportFolder: URL { appState.exportFolder }
     var exportEpoch: ExportEpoch { appState.exportEpoch }
-    var takeoverAlert: TakeoverAlert? {
-        get { appState.takeoverAlert }
-        set { appState.takeoverAlert = newValue }
-    }
-    var takeoverDefaults: UserDefaults {
-        get { appState.takeoverDefaults }
-        set { appState.takeoverDefaults = newValue }
-    }
-    var ownerAuthenticator: any OwnerAuthenticator {
-        get { appState.ownerAuthenticator }
-        set { appState.ownerAuthenticator = newValue }
-    }
-    var sightingRowsState: [SightingRow] {
-        get { appState.sightingRowsState }
-        set { appState.sightingRowsState = newValue }
-    }
     var suspensionToken: BackgroundTaskToken? {
         get { appState.suspensionToken }
         set { appState.suspensionToken = newValue }

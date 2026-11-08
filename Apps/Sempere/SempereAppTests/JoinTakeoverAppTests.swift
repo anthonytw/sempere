@@ -14,7 +14,7 @@ import Testing
 @MainActor
 struct JoinTakeoverAppTests {
     struct PassingOwner: OwnerAuthenticator {
-        func authenticate(reason: String) async throws {}
+        func authenticate(reason: OwnerCheckReason) async throws {}
     }
 
     /// A vault created by "home" (its keys in its own store), plus a second device's model on the same folder.
@@ -38,7 +38,7 @@ struct JoinTakeoverAppTests {
         try await keys.saveCreatedVaultKeys(created.device, vaultID: created.vaultID, vaultName: "Mine")
         guard case .mlkem768x25519(let r)? = try created.secretKey.map(IdentityFile.parse) else { throw CancellationError() }
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: trust)
-        model.takeoverDefaults = DevicesAppTests.defaults()
+        model.deviceMemory = DevicesAppTests.defaults()
         model.ownerAuthenticator = PassingOwner()
         try await model.openVault(at: created.url)
         #expect(await keys.unlockWithDeviceKey(model) == .unlocked)
@@ -47,7 +47,7 @@ struct JoinTakeoverAppTests {
 
     static func newDevice(_ url: URL) async throws -> (AppModel, RememberedKeys) {
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: MemoryEpochTrustStore())
-        model.takeoverDefaults = DevicesAppTests.defaults()
+        model.deviceMemory = DevicesAppTests.defaults()
         let keys = RememberedKeys(store: MemoryDeviceKeyStore())
         try await model.openVault(at: url)
         return (model, keys)
@@ -81,7 +81,7 @@ struct JoinTakeoverAppTests {
         await phone.refreshLockedManifest()
         #expect(await phoneKeys.unlockWithDeviceKey(phone) == .joining)
         #expect(phoneKeys.joinStage == .confirming)
-        let device = try await phoneKeys.store.keys(for: try #require(phone.vault?.vaultId), reason: "")
+        let device = try await phoneKeys.store.keys(for: try #require(phone.vault?.vaultId), reason: .unlock(vaultName: nil))
         await #expect(throws: VaultError.self, "other words never confirm") {
             try await phone.confirmJoin(words: Array(reply.words.reversed()), keys: device)
         }
@@ -99,7 +99,7 @@ struct JoinTakeoverAppTests {
         guard case .waiting(_, let qr) = try await mac.startJoin(store: macKeys.store) else { Issue.record("not waiting"); return }
         let reply = try await w.home.approveDevice(words: nil, qr: qr)
         await mac.refreshLockedManifest()
-        let device = try await macKeys.store.keys(for: try #require(mac.vault?.vaultId), reason: "")
+        let device = try await macKeys.store.keys(for: try #require(mac.vault?.vaultId), reason: .unlock(vaultName: nil))
         #expect(mac.replyWords(fromQR: "sempere-reply:\(UUID().uuidString.lowercased()):00:00", keys: device) == nil)
         let words = try #require(mac.replyWords(fromQR: reply.qr, keys: device))
         #expect(words == reply.words)
@@ -187,7 +187,7 @@ struct JoinTakeoverAppTests {
             guard case .waiting(let words, _) = try await d.startJoin(store: k.store) else { return }
             let reply = try await w.home.approveDevice(words: words, qr: nil)
             await d.refreshLockedManifest()
-            let keys = try await k.store.keys(for: homeID, reason: "")
+            let keys = try await k.store.keys(for: homeID, reason: .unlock(vaultName: nil))
             try await d.confirmJoin(words: reply.words, keys: keys)
             joined.append(keys)
             d.close()
@@ -259,7 +259,7 @@ struct JoinTakeoverAppTests {
         #expect(await phoneKeys.unlockWithDeviceKey(phone) == .joining)
         #expect(phoneKeys.keyProblem == nil)
         await phone.cancelJoin(store: phoneKeys.store)
-        #expect(phone.takeoverDefaults.string(forKey: AppModel.joinRequestedKey(id)) == nil)
+        #expect(phone.deviceMemory.string(forKey: AppModel.joinRequestedKey(id)) == nil)
         // The same keys with no open join here: a stray.
         let keys = try phoneKeys.store.generate()
         try await phoneKeys.store.save(keys, for: id, vaultName: "Mine")
@@ -276,7 +276,7 @@ struct JoinTakeoverAppTests {
         defer { phone.close() }
         let id = try #require(phone.vault?.vaultId)
         _ = try await phone.startJoin(store: phoneKeys.store)
-        let keys = try await phoneKeys.store.keys(for: id, reason: "")
+        let keys = try await phoneKeys.store.keys(for: id, reason: .unlock(vaultName: nil))
         #expect(phone.joinRequested(keys, vaultID: id) == .open)
         phone.setJoinRequested(keys, vaultID: id, at: Date().addingTimeInterval(-8 * 86_400))
         #expect(phone.joinRequested(keys, vaultID: id) == .lapsed)
@@ -287,7 +287,7 @@ struct JoinTakeoverAppTests {
         #expect(phoneKeys.joinStage == nil, "no longer waiting")
         try await phoneKeys.forgetKeys(phone)
         guard case .waiting = try await phone.startJoin(store: phoneKeys.store) else { Issue.record("cannot join again"); return }
-        #expect(phone.joinRequested(try await phoneKeys.store.keys(for: id, reason: ""), vaultID: id) == .open)
+        #expect(phone.joinRequested(try await phoneKeys.store.keys(for: id, reason: .unlock(vaultName: nil)), vaultID: id) == .open)
     }
 
     @Test func theTakeoverScreenTellsTheKitsCodesApart() {
@@ -300,19 +300,6 @@ struct JoinTakeoverAppTests {
 
     @Test func theTypedWordsIgnoreNumbersAndPunctuation() {
         #expect(TypedWords.split("1. Abandon 2. ability, able\n4.about above  absent") == ["abandon", "ability", "able", "about", "above", "absent"])
-    }
-
-    @Test func theMemoryStoreKeepsOneSetPerVault() async throws {
-        let store = MemoryDeviceKeyStore()
-        let id = UUID()
-        let k = try store.generate()
-        try await store.save(k, for: id, vaultName: "V")
-        await #expect(throws: DeviceKeyStoreError.self) { try await store.save(k, for: id, vaultName: "V") }
-        #expect(try await store.keys(for: id, reason: "").key == k.key)
-        try await store.setRequiresBiometry(true, for: id, vaultName: "V")
-        #expect(await store.requiresBiometry(for: id))
-        try await store.delete(for: id)
-        #expect(!(await store.hasKeys(for: id)))
     }
 
     @Test func storedSigningRoundTripsASoftwarePair() throws {
@@ -364,7 +351,7 @@ struct JoinOverSyncAppTests {
         let listing = WebDAVVaultListing(path: [], name: "Shared", vaultId: vaultId, format: "sempere/1",
                                          url: "https://dav.example.org/shared/")
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50), trust: MemoryEpochTrustStore())
-        model.takeoverDefaults = DevicesAppTests.defaults()
+        model.deviceMemory = DevicesAppTests.defaults()
         model.webdavRemote = server
         model.webdavPasswords = MemoryWebDAVPasswordStore()
         model.webdavTick = .milliseconds(20)
@@ -389,7 +376,7 @@ struct JoinOverSyncAppTests {
         await model.refreshLockedManifest()
         #expect(await keys.unlockWithDeviceKey(model) == .joining)
         #expect(keys.joinStage == .confirming, "\(String(describing: model.webdav?.lastReport))")
-        let device = try await keys.store.keys(for: try #require(model.vault?.vaultId), reason: "")
+        let device = try await keys.store.keys(for: try #require(model.vault?.vaultId), reason: .unlock(vaultName: nil))
         try await model.confirmJoin(words: reply, keys: device)
         #expect(model.phase == .unlocked)
         #expect(model.joinIdentity == nil)

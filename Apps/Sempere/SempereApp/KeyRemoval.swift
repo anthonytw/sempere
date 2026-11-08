@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// What deleting this device's keys for a vault costs (re-check of #88, R2 and SHOULD): the one check behind
 /// Delete from This Device (a store vault), Remove from This Device (a WebDAV vault) and Forget Key (the unlock
