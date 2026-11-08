@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import PencilKit
 import Sempere
+import SempereAppCore
 import SempereRender
 import UIKit
 import Vision
@@ -14,17 +15,10 @@ enum RecognitionFailure: Error, CustomStringConvertible {
     var description: String { String(localized: "The page could not be drawn for reading.") }
 }
 
-/// Whether the app recognizes handwriting on its own (default on). It is
-/// on-device only: Vision runs here and nothing leaves the device.
-enum RecognitionPreference {
-    static let key = "Sempere.recognizeHandwriting"
-    /// On until the user turns it off (docs/attachments.md §15).
-    static let defaultValue = true
-
-    /// The stored choice, `defaultValue` when never set.
-    static func isEnabled(_ defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: key) as? Bool ?? defaultValue
-    }
+/// Whether the app recognizes handwriting on its own (`RecognitionPreference`, SempereAppCore), in
+/// `UserDefaults.standard`.
+extension RecognitionPreference {
+    static func isEnabled() -> Bool { isEnabled(UserDefaults.standard) }
 
     static var enabled: Bool {
         get { isEnabled() }

@@ -1,8 +1,9 @@
 import Foundation
+import Sempere
 
 /// Settings ▸ General ▸ Appearance: the app's theme (System, Light, Dark),
 /// applied to every window (`AppThemeWindows`). Synced as `appearance.theme`
-/// (docs/settings-sync.md §5.1). Pure Foundation, like `SettingsSyncBridge`.
+/// (docs/settings-sync.md §5.1). Pure Foundation, read through `KeyValueStore` like `AppSettingsStorage`.
 enum AppTheme: String, CaseIterable, Identifiable, Sendable {
     case system, light, dark
 
@@ -13,11 +14,11 @@ enum AppTheme: String, CaseIterable, Identifiable, Sendable {
     static let defaultValue = AppTheme.system
 
     /// The stored choice, `defaultValue` when never set or unreadable.
-    static func load(from defaults: UserDefaults = .standard) -> AppTheme {
+    static func load(from defaults: any KeyValueStore = UserDefaults.standard) -> AppTheme {
         defaults.string(forKey: key).flatMap(AppTheme.init(rawValue:)) ?? defaultValue
     }
 
-    static func save(_ theme: AppTheme, to defaults: UserDefaults = .standard) {
+    static func save(_ theme: AppTheme, to defaults: any KeyValueStore = UserDefaults.standard) {
         defaults.set(theme.rawValue, forKey: key)
     }
 
@@ -53,11 +54,11 @@ enum NotePagesAppearance: String, CaseIterable, Identifiable, Sendable {
     static let key = "Sempere.notePages"
     static let defaultValue = NotePagesAppearance.light
 
-    static func load(from defaults: UserDefaults = .standard) -> NotePagesAppearance {
+    static func load(from defaults: any KeyValueStore = UserDefaults.standard) -> NotePagesAppearance {
         defaults.string(forKey: key).flatMap(NotePagesAppearance.init(rawValue:)) ?? defaultValue
     }
 
-    static func save(_ value: NotePagesAppearance, to defaults: UserDefaults = .standard) {
+    static func save(_ value: NotePagesAppearance, to defaults: any KeyValueStore = UserDefaults.standard) {
         defaults.set(value.rawValue, forKey: key)
     }
 
@@ -94,11 +95,11 @@ enum DragExportFormat: String, CaseIterable, Identifiable, Sendable {
     static let key = "Sempere.dragFormat"
     static let defaultValue = DragExportFormat.pdf
 
-    static func load(from defaults: UserDefaults = .standard) -> DragExportFormat {
+    static func load(from defaults: any KeyValueStore = UserDefaults.standard) -> DragExportFormat {
         defaults.string(forKey: key).flatMap(DragExportFormat.init(rawValue:)) ?? defaultValue
     }
 
-    static func save(_ value: DragExportFormat, to defaults: UserDefaults = .standard) {
+    static func save(_ value: DragExportFormat, to defaults: any KeyValueStore = UserDefaults.standard) {
         defaults.set(value.rawValue, forKey: key)
     }
 

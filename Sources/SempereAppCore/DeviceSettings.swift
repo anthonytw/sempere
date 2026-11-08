@@ -307,3 +307,16 @@ public enum UnusedAttachmentGroups {
             .sorted { ($0.title.lowercased(), $0.note.uuidString) < ($1.title.lowercased(), $1.note.uuidString) }
     }
 }
+
+/// Whether the app recognizes handwriting on its own (default on). It is
+/// on-device only: Vision runs in the app and nothing leaves the device.
+public enum RecognitionPreference {
+    public static let key = "Sempere.recognizeHandwriting"
+    /// On until the user turns it off (docs/attachments.md §15).
+    public static let defaultValue = true
+
+    /// The stored choice, `defaultValue` when never set.
+    public static func isEnabled(_ defaults: any KeyValueStore) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? defaultValue
+    }
+}

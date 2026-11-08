@@ -1,43 +1,42 @@
 import Foundation
-import SempereSync
-import os
 import Sempere
-import SempereAppCore
+import SempereSync
 
-let inboxLog = Logger(subsystem: "io.github.anthonytw.sempere", category: "capture")
+/// Quick voice notes on this device, as Settings shows them (`AppModelCore.quickCaptureSetting`).
+public enum QuickCaptureSetting: Equatable, Sendable {
+    /// No profile is stored: quick voice notes are off.
+    case off
+    case on(StoredCaptureProfile)
+    /// A profile may be stored but cannot be read now
+    /// (`QuickCaptureError.profileUnreadable`): neither on nor off.
+    case unreadable
+}
 
 /// Quick voice notes on the model's side (docs/quick-capture.md): turning
 /// them on for the open vault (the capture profile into the Keychain), keeping
 /// the profile current after the vault's keys change, and adopting the
 /// inbox's captures as notes once the vault is unlocked (format.md §11.3),
-/// transcribing on device those that came without a transcript.
-extension AppModel {
+/// transcribing on device those that came without a transcript. The capture itself is `quickCapture`
+/// (`AppModelServices.makeQuickCapture`: the app's `QuickCapture.shared`).
+extension AppModelCore {
+    public typealias QuickCaptureSetting = SempereAppCore.QuickCaptureSetting
+
     /// The stored quick-capture profile, if this device has one. Throws
     /// `QuickCaptureError.profileUnreadable` when one may be stored but cannot
     /// be read now (the Keychain before the first unlock after a restart):
     /// not the same as none.
-    func storedQuickCaptureProfile() throws -> StoredCaptureProfile? {
+    public func storedQuickCaptureProfile() throws -> StoredCaptureProfile? {
         do { return try quickCapture.storedProfile() } catch QuickCaptureError.notSetUp { return nil }
-    }
-
-    /// Quick voice notes on this device, as Settings shows them.
-    enum QuickCaptureSetting: Equatable {
-        /// No profile is stored: quick voice notes are off.
-        case off
-        case on(StoredCaptureProfile)
-        /// A profile may be stored but cannot be read now
-        /// (`QuickCaptureError.profileUnreadable`): neither on nor off.
-        case unreadable
     }
 
     /// `storedQuickCaptureProfile()` with its error as a case: every reader
     /// says which of "off" and "cannot be read" it is, never a nil for both.
-    var quickCaptureSetting: QuickCaptureSetting {
+    public var quickCaptureSetting: QuickCaptureSetting {
         do { return try storedQuickCaptureProfile().map { .on($0) } ?? .off } catch { return .unreadable }
     }
 
     /// Whether quick voice notes go into the open vault.
-    var quickCaptureIsForOpenVault: Bool {
+    public var quickCaptureIsForOpenVault: Bool {
         guard let vault, case .on(let stored) = quickCaptureSetting else { return false }
         return stored.profile.vaultId == vault.vaultId
     }
@@ -46,7 +45,7 @@ extension AppModel {
     /// vault, or with a profile that cannot be read (as far as anyone knows it
     /// is on, and turning it off and on again replaces it, as
     /// `profileUnreadable` suggests). Never "off" for a profile that is there.
-    var quickCaptureSwitchIsOn: Bool {
+    public var quickCaptureSwitchIsOn: Bool {
         quickCaptureSetting == .unreadable || quickCaptureIsForOpenVault
     }
 
@@ -58,12 +57,12 @@ extension AppModel {
     /// the first unlock after a restart, or one a failed seal kept). Returns
     /// the sweep (tests wait for it); sweeps never overlap.
     @discardableResult
-    func quickCaptureBecameActive() -> Task<Void, Never> {
+    public func quickCaptureBecameActive() -> Task<Void, Never> {
         quickCapture.publishStatus(forceReload: true)
         quickCapture.refreshTaps()   // the widget extension may have kept a tap meanwhile
         do { try quickCapture.flushStoredQueue() } catch {
             // They stay queued; unlocking the vault moves them too.
-            inboxLog.error("voice notes stay queued: \(String(describing: error), privacy: .public)")
+            services.perf.log(.error, "capture", "voice notes stay queued: \(String(describing: error))")
         }
         let capture = quickCapture
         return Task {
@@ -77,13 +76,13 @@ extension AppModel {
     /// its inbox, adopted into `notebook`. Needs the vault unlocked (the
     /// capture key comes from its secret); afterwards capture needs nothing.
     /// Without a `notebook`, voice notes go to "Inbox".
-    func enableQuickCapture(notebook: String? = nil, transcribe: Bool = true) throws {
+    public func enableQuickCapture(notebook: String? = nil, transcribe: Bool = true) throws {
         guard let vault, vault.canRead, let url = vaultURL, phase == .unlocked else { throw ModelError.noVaultOpen }
         try requireWritableVault()
         let clock = try deviceClockForWriting()
         let profile = try vault.captureProfile(device: clock.device,
                                                notebook: notebook ?? CaptureProfile.defaultNotebook)
-        let bookmark = try SecurityScopedBookmarks().bookmark(for: url)
+        let bookmark = try services.bookmarks.bookmark(for: url)
         try quickCapture.store.save(StoredCaptureProfile(profile: profile, vaultName: vaultName ?? "Vault", bookmark: bookmark,
                                                          transcribe: transcribe))
         // The widgets and the control stop showing "Set Up".
@@ -92,7 +91,7 @@ extension AppModel {
 
     /// Turns quick voice notes off on this device (what is in the inbox stays
     /// and is still adopted when the vault is unlocked).
-    func disableQuickCapture() throws {
+    public func disableQuickCapture() throws {
         try quickCapture.store.delete()
         quickCapture.publishStatus()
     }
@@ -101,18 +100,18 @@ extension AppModel {
     /// the current recipients and this device's capture key (a removed key
     /// rotates both), attributed to the key this device unlocked with
     /// (format.md §11.1, security review 2026-10, C2).
-    func refreshQuickCaptureProfile() {
+    public func refreshQuickCaptureProfile() {
         syncQuickCaptureSuspension()
         // Never a list that does not check (format.md §2.1, §11.1): captures are sealed to it.
         let current: StoredCaptureProfile?
         do { current = try storedQuickCaptureProfile() } catch {
             // Left as it is: Settings and a start say it cannot be read; turning it off and on again replaces it.
-            inboxLog.error("quick capture profile not refreshed: \(String(describing: error), privacy: .public)")
+            services.perf.log(.error, "capture", "quick capture profile not refreshed: \(String(describing: error))")
             return
         }
         guard let vault, vault.canRead, !vault.isRecoveryOpen, vault.listStatus.allowsWriting, var stored = current,
               stored.profile.vaultId == vault.vaultId, let device = DeviceID(stored.profile.device),
-              let here = vaultURL, Self.isProfileFolder(stored.bookmark, here),
+              let here = vaultURL, Self.isProfileFolder(stored.bookmark, here, bookmarks: services.bookmarks),
               let fresh = try? vault.captureProfile(device: device, notebook: stored.profile.notebook) else { return }
         guard stored.profile.recipients != fresh.recipients || stored.profile.key != fresh.key
               || stored.profile.recipient != fresh.recipient else { return }
@@ -123,12 +122,29 @@ extension AppModel {
         try? quickCapture.store.save(stored)
     }
 
+    /// An unlisted device takes no new voice notes for this vault (review of #87, M3 and R1): they could never
+    /// reach it. Its quick-capture profile is marked suspended, not deleted: a start says why it is refused, while
+    /// a recording in progress, leftovers and the queue still seal into `inbox/` with ledger entries (the unlisted
+    /// screen's Save Files covers them). Listed again, the suspension is lifted with the notebook choice kept.
+    public func syncQuickCaptureSuspension() {
+        guard let vault, phase == .unlocked, !vault.isRecoveryOpen,
+              var stored = try? storedQuickCaptureProfile(), stored.profile.vaultId == vault.vaultId else { return }
+        let unlisted = vault.unlistedNotice != nil || unlistedNotice != nil
+        guard unlisted != (stored.suspended == true) else { return }
+        stored.suspended = unlisted ? true : nil
+        do {
+            try quickCapture.store.save(stored)
+            quickCapture.publishStatus()
+        } catch {
+            services.perf.log(.error, "capture", "quick capture suspension not saved: \(String(describing: error))")
+        }
+    }
+
     /// Whether the profile's `bookmark` resolves to the open vault's folder
     /// `here` (security review 2026-10 stage 4, S16): a lookalike folder with
     /// the same vault id, opened from outside, must not take over the profile
     /// (its recipients, its key and where voice notes go).
-    nonisolated static func isProfileFolder(_ bookmark: Data, _ here: URL,
-                                            bookmarks: any FolderBookmarks = SecurityScopedBookmarks()) -> Bool {
+    public nonisolated static func isProfileFolder(_ bookmark: Data, _ here: URL, bookmarks: any FolderBookmarks) -> Bool {
         guard let target = try? bookmarks.resolve(bookmark).url else { return false }
         func path(_ u: URL) -> String { u.standardizedFileURL.resolvingSymlinksInPath().path }
         return path(target) == path(here)
@@ -137,7 +153,7 @@ extension AppModel {
     /// Starts adopting the inbox (a task the model owns; one at a time).
     /// `close` cancels it; a task of a vault closed meanwhile never clears
     /// the next vault's.
-    func startInboxAdoption() {
+    public func startInboxAdoption() {
         // A trigger during a run is not lost (build 10: a transcript or a second note that arrived while
         // the first was being adopted waited until the vault was closed and opened again): the run looks
         // at the inbox once more before it ends.
@@ -155,25 +171,34 @@ extension AppModel {
     /// A voice note recorded on this device lands in the open vault's inbox from outside the model
     /// (`QuickCapture.deliver` posts `deliveredNotification`): adopt it now, not when the app next
     /// becomes active or the vault is reopened.
-    func installInboxDeliveryObserver() {
+    public func installInboxDeliveryObserver() {
         guard inboxDeliveryObserver == nil else { return }
+        // No observer queue (as `SyncCoordinator`'s): on Linux a post to an observer of `OperationQueue.main` waits for
+        // that queue for ever. On the main thread the adoption starts at once, from anywhere else through the main actor.
         inboxDeliveryObserver = NotificationCenter.default.addObserver(
-            forName: QuickCapture.deliveredNotification, object: nil, queue: .main) { [weak self] note in
+            forName: QuickCapture.deliveredNotification, object: nil, queue: nil) { [weak self] note in
             let id = note.userInfo?["vault"] as? UUID
-            MainActor.assumeIsolated {
-                guard let self, self.phase == .unlocked, let open = self.vault?.vaultId, id == nil || id == open else { return }
-                // An intent can deliver while the app is in the background with its locks released: writing
-                // then risks 0xdead10cc and skips the store lease. Coming back to the foreground adopts.
-                guard !self.locksSuspended else { return }
-                self.startInboxAdoption()
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { self?.inboxDelivered(vault: id) }
+            } else {
+                Task { @MainActor in self?.inboxDelivered(vault: id) }
             }
         }
+    }
+
+    /// A capture was delivered into vault `id` (nil: unnamed): the open vault's inbox is adopted.
+    private func inboxDelivered(vault id: UUID?) {
+        guard phase == .unlocked, let open = vault?.vaultId, id == nil || id == open else { return }
+        // An intent can deliver while the app is in the background with its locks released: writing
+        // then risks 0xdead10cc and skips the store lease. Coming back to the foreground adopts.
+        guard !locksSuspended else { return }
+        startInboxAdoption()
     }
 
     /// Adopts every capture in the open vault's inbox (queued captures are
     /// moved in first). Returns how many captures were adopted or updated.
     @discardableResult
-    func adoptInbox() async -> Int {
+    public func adoptInbox() async -> Int {
         // A read-only vault (format.md §7.3) adopts nothing: the captures wait in the inbox.
         guard let vault, vault.canRead, phase == .unlocked, !isVaultReadOnly, !locksSuspended, let url = vaultURL else { return 0 }
         let gen = generation
@@ -198,9 +223,7 @@ extension AppModel {
             }
         } catch is CancellationError {
         } catch {
-            if gen == generation {
-                inboxProblem = String(localized: "Voice notes could not be read from the inbox: \(String(describing: error))")
-            }
+            if gen == generation { inboxProblem = "\(AppModelNotice.inboxUnreadable(String(describing: error)))" }
         }
         return done
     }
@@ -257,7 +280,8 @@ extension AppModel {
                     e.adoptTranscript(r.transcript, for: r.id)
                 }
                 // Captured without a transcript (no time left, or the model was missing): transcribe now.
-                if r.transcript == nil, (try? storedQuickCaptureProfile())?.transcribe ?? TranscriptionPreference.isOn() {
+                if r.transcript == nil,
+                   (try? storedQuickCaptureProfile())?.transcribe ?? TranscriptionSettings.isEnabled(services.settings) {
                     Task { await self.transcribeStored(r, note: ids.note, meta: after?.meta) }
                 }
             }
@@ -267,20 +291,20 @@ extension AppModel {
             return false
         } catch {
             let reason = (error as? CaptureError)?.description ?? "\(error)"
-            inboxProblem = String(localized: "A voice note could not be added: \(reason)")
+            inboxProblem = "\(AppModelNotice.voiceNoteNotAdded(reason))"
             return false
         }
     }
 
     /// Transcribes a recording already in the vault (from the blob cache).
-    func transcribeStored(_ recording: Recording, note: UUID, meta: NoteMeta?) async {
+    public func transcribeStored(_ recording: Recording, note: UUID, meta: NoteMeta?) async {
         guard let cache = attachmentCache() else { return }
         do {
             let url = try await cache.acquire(note: note, ref: recording.blob)
             await transcribe(recording, note: note, file: url, meta: meta, automatic: true)
             await cache.release(note: note, ref: recording.blob, discard: true)
         } catch {
-            errorMessage = String(localized: "Could not read the voice note to transcribe it: \(String(describing: error))")
+            errorMessage = "\(AppModelNotice.voiceNoteUnreadable(String(describing: error)))"
         }
     }
 }

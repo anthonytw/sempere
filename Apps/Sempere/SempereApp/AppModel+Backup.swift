@@ -258,38 +258,6 @@ extension AppModel {
         backupProgress = BackupProgress(stage: .downloading(done: p.downloaded, total: p.total), server: p.source.serverName)
     }
 
-    // MARK: - Reminder
-
-    /// Sets "remind me after `days` without a backup" (0: off) and asks for
-    /// permission to notify when it is switched on. Returns false when
-    /// notifications are not allowed (the setting is kept: Settings still
-    /// shows an overdue backup).
-    @discardableResult
-    func setBackupReminder(days: Int, now: Date = Date()) async -> Bool {
-        guard let vault else { return false }
-        var record = backupStore.record(for: vault.vaultId)
-        record.reminderDays = max(days, 0)
-        record.reminderSince = days > 0 ? (record.reminderSince ?? now) : nil
-        backupStore.save(record, for: vault.vaultId)
-        let allowed = days > 0 ? await backupNotifier.authorize() : true
-        await rescheduleBackupReminder(now: now)
-        return allowed
-    }
-
-    /// Replaces the open vault's pending reminder with one for its current
-    /// due date (after a backup, a setting change, unlocking), or removes it.
-    func rescheduleBackupReminder(now: Date = Date()) async {
-        guard let vault, let name = vaultName else { return }
-        let record = backupStore.record(for: vault.vaultId)
-        let id = BackupReminder.identifier(vault.vaultId)
-        guard let date = BackupReminder.fireDate(record, now: now) else {
-            await backupNotifier.cancel(id: id)
-            return
-        }
-        let text = BackupReminder.message(vaultName: name, record: record)
-        await backupNotifier.schedule(id: id, at: date, title: text.title, body: text.body)
-    }
-
     // MARK: - Restore
 
     /// What restoring from `picked` (a backup folder, a folder holding one,

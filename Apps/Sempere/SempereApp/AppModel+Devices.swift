@@ -382,7 +382,7 @@ extension AppModel {
         Task {
             guard await notifier.authorize() else { return }
             await notifier.schedule(id: "takeover-\(alert.vaultID.uuidString)", at: Date().addingTimeInterval(1),
-                                    title: TakeoverAlert.title, body: alert.message)
+                                    notice: .takeover(alert))
         }
     }
 
@@ -409,15 +409,7 @@ extension AppModel {
 
 /// "<name> took over managing devices of <vault> with the recovery kit" (design §6.3): a banner that stays
 /// until it is dismissed, and a notification.
-struct TakeoverAlert: Equatable, Sendable {
-    var vaultID: UUID
-    /// The takeovers it reports (newest first): acknowledged by Dismiss.
-    var epochIds: [Data]
-    var vaultName: String
-    /// The device that took over, by name; nil when no list here names it.
-    var by: String?
-    var date: Date?
-
+extension TakeoverAlert {
     static let title = String(localized: "Takeover with the recovery kit", comment: "Notification and banner title")
 
     var message: String {

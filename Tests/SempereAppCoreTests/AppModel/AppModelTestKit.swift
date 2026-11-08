@@ -27,8 +27,6 @@ enum TestHost: AppModelHost {
     static func reopenWindowNote(_ id: UUID, in model: AppModel) async {}
     static func reopenIfUnlisted(_ model: AppModel) async {}
     static func refreshDeviceState(_ model: AppModel) async {}
-    static func scheduleSettingsSync(_ model: AppModel) { model.appState.steps.append("scheduleSettingsSync") }
-    static func startInboxAdoption(_ model: AppModel) { model.appState.steps.append("startInboxAdoption") }
 }
 
 /// What the test host's steps were asked.

@@ -31,11 +31,11 @@ enum NewNoteLayout: String, CaseIterable, Identifiable {
         return PageSize(width: sheet.width, height: sheet.height, infinite: true, breakHeight: sheet.height)
     }
 
-    static func load(from defaults: UserDefaults = .standard) -> NewNoteLayout {
+    static func load(from defaults: any KeyValueStore = UserDefaults.standard) -> NewNoteLayout {
         defaults.string(forKey: defaultsKey).flatMap(NewNoteLayout.init(rawValue:)) ?? fallback
     }
 
-    static func save(_ layout: NewNoteLayout, to defaults: UserDefaults = .standard) {
+    static func save(_ layout: NewNoteLayout, to defaults: any KeyValueStore = UserDefaults.standard) {
         defaults.set(layout.rawValue, forKey: defaultsKey)
     }
 }

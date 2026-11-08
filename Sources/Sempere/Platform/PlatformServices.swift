@@ -7,8 +7,8 @@ public enum HapticFeedback: String, Sendable, CaseIterable {
 }
 
 /// What the device is and the few device-wide switches the app's logic uses: in the app `AppPlatform` (the
-/// `Platform.isMac` flags, `UIApplication.isIdleTimerDisabled`, UIKit's feedback generators); `HeadlessPlatform`
-/// in tests and the CLI, which records what it was asked.
+/// `Platform.isMac` flags, `UIApplication.isIdleTimerDisabled`, UIKit's feedback generators and home-screen icons);
+/// `HeadlessPlatform` in tests and the CLI, which records what it was asked.
 public protocol PlatformServices: Sendable {
     /// The Mac (Catalyst) build.
     var isMac: Bool { get }
@@ -18,6 +18,12 @@ public protocol PlatformServices: Sendable {
     @MainActor func setIdleTimerDisabled(_ disabled: Bool)
     /// Plays `feedback` where the device has haptics (never on a Mac).
     @MainActor func play(_ feedback: HapticFeedback)
+    /// The home-screen icon in use, by the name settings sync stores (`appearance.icon`); nil where the device
+    /// cannot switch icons (a Mac).
+    @MainActor var appIcon: String? { get }
+    /// Switches the home-screen icon to `name` (an `appIcon` name; unknown names change nothing). The system tells
+    /// the user; a failure leaves the current icon.
+    @MainActor func setAppIcon(_ name: String)
 }
 
 /// `PlatformServices` with no device behind it (tests, the CLI): the flags it was made with, and a record of
@@ -30,10 +36,13 @@ public final class HeadlessPlatform: PlatformServices {
     public private(set) var idleTimerSettings: [Bool] = []
     /// Every `play`, in order.
     public private(set) var played: [HapticFeedback] = []
+    /// The icon `setAppIcon` last chose; nil (a device with no icons to switch) unless made with one.
+    public private(set) var appIcon: String?
 
-    public nonisolated init(isMac: Bool = false, isPhone: Bool = false) {
+    public nonisolated init(isMac: Bool = false, isPhone: Bool = false, appIcon: String? = nil) {
         self.isMac = isMac
         self.isPhone = isPhone
+        self.appIcon = appIcon
     }
 
     /// The last idle-timer setting (nil before the first).
@@ -44,5 +53,10 @@ public final class HeadlessPlatform: PlatformServices {
     public func play(_ feedback: HapticFeedback) {
         guard !isMac else { return }
         played.append(feedback)
+    }
+
+    public func setAppIcon(_ name: String) {
+        guard appIcon != nil else { return }
+        appIcon = name
     }
 }

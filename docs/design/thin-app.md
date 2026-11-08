@@ -286,18 +286,60 @@ Wave 5b, part 3, steps 1 and 2 (attachments and recordings, 2026-11-08) moved:
   (`AttachmentPersistenceTests`), the recording session (`RecordingTests`), the missing-model sentence
   (`OfflineTranscriptionTests`) and the 600-transcript device check (`TranscriptSearchDeviceCheckTests`).
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 and 2 are done (above). The rest of the family, in an order that
+Wave 5b, part 3, step 3 (inbox and settings sync, 2026-11-08) moved:
+
+- **Inbox** (`AppModel+Inbox`): the quick-capture profile on the model's side (`QuickCaptureSetting`, the switch's
+  states, turning it on and off, the refresh after a key change, `syncQuickCaptureSuspension` from `+DeviceNotices`,
+  `isProfileFolder` on `services.bookmarks`), `quickCaptureBecameActive`, and adoption of the inbox (the delivery
+  observer, `adoptInbox`, transcription of captures without a transcript). The capture is `quickCapture`, made by
+  `AppModelServices.makeQuickCapture` (the app's `QuickCapture.shared`; headless, `QuickCapture`'s defaults in the
+  model's scratch folder) and copied to the model property, which tests replace. Its sentences are new
+  `AppModelNotice` cases (`inboxUnreadable`, `voiceNoteNotAdded`, `voiceNoteUnreadable`), worded by the app as before.
+- **Settings sync** (`AppModel+SettingsSync`): the passes, the switch and the rows, on `services.settings` (the
+  `UserDefaults` observer became `KeyValueStore.observeChanges`; the `settingsDefaults` seam and its
+  "standard or not" branches are gone). `SettingsSyncProblem` and `SettingsSyncPrompt` are the library's; the
+  problem's sentence (`text`) is the app's. `SettingsSyncBridge`'s pure part is the library's (`SettingsSyncBridge`:
+  the device type, `Extras`, `modelKeys`, the values loop and the split of `apply`), and it reads the model's own keys
+  itself (`RecognitionPreference` moved into the library for that); every other key goes through
+  `SettingsSyncStorage`, a service (`AppModelServices.settingsStorage`): the app's `AppSettingsStorage` (the
+  `UserDefaults` table of 1.0.0, unchanged; its preference types now read `any KeyValueStore`), headless
+  `StoredSettingsSyncStorage` (JSON per key, the catalog default when unset). The app icon is behind
+  `PlatformServices` (`appIcon`, `setAppIcon`; `AppPlatform` wraps `UIApplication`'s alternate icons), and
+  `setHandwritingRecognition` is the model's, its Vision recognizer from `AppModelServices.makePageRecognizer`.
+- **Pulled forward from step 5**: the backup reminder (`AppModel+BackupReminder`: `setBackupReminder`,
+  `rescheduleBackupReminder`), because settings sync applies `backup.reminderDays`. `BackupNotifying.schedule` takes a
+  typed `LocalNotice` (`.backupReminder(vaultName:record:)`, `.takeover(TakeoverAlert)`), worded by the app's notifier
+  (`LocalNotice.text`); so `TakeoverAlert` moved into the library now too (its `title` and `message` stay the app's).
+  The backups themselves stay in the app until step 5.
+- **Host steps gone**: `scheduleSettingsSync` and `startInboxAdoption`; `didUnlock`, `didReopen` and `willClose` keep
+  only takeovers and the device state (step 4) and the app-side state of the vault. `AppModelAppState` lost
+  `quickCapture`, `settingsSyncProblem`, `settingsSyncPrompt` and `settingsDefaults`.
+- **Tests**: `SettingsSyncTests` (the model's passes of the former `SettingsSyncAppTests`, on `StoredSettingsSyncStorage`,
+  plus the model's own keys and a change picked up without being asked) and `InboxTests` (the parts of `QuickCaptureTests`
+  that need no recorder) in `Tests/SempereAppCoreTests/AppModel`. The app keeps `AppSettingsStorage`'s round trips
+  (`SettingsSyncAppTests`) and what records with the app's recorder (`QuickCaptureTests`).
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 3 are done (above). The rest of the family, in an order that
 empties `AppModelAppState` and the host's steps:
 
-3. Inbox and settings sync (`+Inbox`, `+SettingsSync`): `QuickCapture.shared` as a service, `SettingsSyncBridge`'s pure
-   part, the app icon behind `PlatformServices`; `SettingsSyncAppTests`.
 4. Devices, joins and re-encryption (`+Devices`, `+DeviceNotices`, `+JoinDevice`, `+Reencrypt`, `+Keys`, `+ListAlert`):
-   `OwnerAuthenticator` as a service, `TakeoverAlert`, `SightingRow`, `UndoneRemoval` into the library; with them
-   `WebDAVAppTests`, `TwoDeviceSyncAppTests`, `JoinAppTests`, `DevicesAppTests` and `JoinTakeoverAppTests`, whose shared
-   fakes (`FakeWebDAVRemote`, `EngineWebDAVRemote`) move as one.
-5. Vault store, backups, thinning, history, export and import (`+VaultStore`, `+Backup`, `+Thinning`, `+History`,
-   `+Export`, `+BulkExport`, `+Import`, `+OpenedFiles`, `+Storage`, `+VaultDetails`): `UTType` and `CGRect` uses become
-   library values; `FolderTargetAppTests`, `BackupAppTests`, `ReadOnlyVaultTests`, `VaultStoreAppTests`.
+   `OwnerAuthenticator` as a service, `SightingRow`, `UndoneRemoval` into the library (`TakeoverAlert` moved in step 3);
+   with them `WebDAVAppTests`, `TwoDeviceSyncAppTests`, `JoinAppTests`, `DevicesAppTests` and `JoinTakeoverAppTests`,
+   whose shared fakes (`FakeWebDAVRemote`, `EngineWebDAVRemote`) move as one. Found while preparing it (step 3's PR
+   stopped before it, for size): `WebDAVPartialAppTests` and `VaultDetailsAppTests` use the same fakes, so they move
+   with them or the fakes need a home both test targets can reach (the app's test target cannot import
+   `SempereAppCoreTests`); the owner check's and the device-key store's `reason:` strings are words, so they become
+   typed reasons the app's `SystemOwnerAuthenticator` and `KeychainDeviceKeyStore` word; `DeviceKeyStore` (with
+   `MemoryDeviceKeyStore`) moves as a protocol; `ThisDevice.kind`/`name` come from `PlatformServices`; `KeyError` and
+   `KeyProblem` become typed values; `takeoverDefaults` becomes `services.settings` (copied to a model property the
+   tests replace; `KeyValueStore` has no `stringArray`, read `object(forKey:) as? [String]`); `openReencryptTargets`
+   puts the app's localized `DeviceChangeText.message` inside an English `VaultError.epochChangeRefused`, which a
+   typed refusal should replace; `AddDeviceApproval` (an `@Observable` sheet model with a worded `failure`) can stay in
+   the app as view glue or move with a typed failure.
+5. Vault store, backups, thinning, history, export and import (`+VaultStore`, `+Backup` (its reminder moved in step
+   3), `+Thinning`, `+History`, `+Export`, `+BulkExport`, `+Import`, `+OpenedFiles`, `+Storage`, `+VaultDetails`):
+   `UTType` and `CGRect` uses become library values; `FolderTargetAppTests`, `BackupAppTests`, `ReadOnlyVaultTests`,
+   `VaultStoreAppTests`.
 6. App lifecycle and windows (`+Background`, `+Suspension`, `+Windows`, `+MenuBar`, the drags of `+Browser`): the
    background-task and lifecycle protocols move, UIKit's implementations stay; `DragPayload`/`DropTarget` leave
    `SidebarDrop.swift`. "Keep Screen On" (`editorsChanged`, the UIKit `IdleTimerKeeper`) follows the open editors

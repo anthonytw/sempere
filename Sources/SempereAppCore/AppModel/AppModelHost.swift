@@ -24,13 +24,14 @@ public protocol AppModelHost: Sendable {
 
     // MARK: Steps of the extensions still in the app (wave 5b part 3)
 
-    /// After an unlock listed the notes (`didUnlock`): the quick-capture profile, the inbox, takeovers, the
-    /// device state, the backup reminder and settings sync, in that order.
+    /// After an unlock listed the notes (`didUnlock`), between the quick-capture profile and the inbox before it and
+    /// the backup reminder and settings sync after it: takeovers and the device state.
     @MainActor static func didUnlock(_ model: AppModelCore<Self>) async
-    /// After the open vault was opened again under a new `vault.json` (`adoptReopened`).
+    /// After the open vault was opened again under a new `vault.json` (`adoptReopened`), after the quick-capture
+    /// profile's refresh and before settings sync: takeovers and the device state.
     @MainActor static func didReopen(_ model: AppModelCore<Self>)
-    /// At the start of `close()`: settings sync stops and the app-side state of the vault (the last import's report,
-    /// drag-out exports, export requests, drags, takeover and sighting notices) is forgotten.
+    /// At the start of `close()`, once settings sync stopped: the app-side state of the vault (the last import's
+    /// report, drag-out exports, export requests, drags, takeover and sighting notices) is forgotten.
     /// The core's `close()` itself cancels a running backup, inbox adoption and import.
     @MainActor static func willClose(_ model: AppModelCore<Self>)
     /// The open editors changed ("Keep Screen On" follows them).
@@ -49,9 +50,6 @@ public protocol AppModelHost: Sendable {
     /// The device notices: whether this device is still listed, and the state Repair reads.
     @MainActor static func reopenIfUnlisted(_ model: AppModelCore<Self>) async
     @MainActor static func refreshDeviceState(_ model: AppModelCore<Self>) async
-    /// A sync brought settings, or the inbox, of the open vault.
-    @MainActor static func scheduleSettingsSync(_ model: AppModelCore<Self>)
-    @MainActor static func startInboxAdoption(_ model: AppModelCore<Self>)
 }
 
 /// The platform services the moved `AppModel` code takes (docs/design/thin-app.md "The platform protocols"). Each
@@ -59,8 +57,9 @@ public protocol AppModelHost: Sendable {
 ///
 /// One rule for how the model reads them: a service tests replace on a model after it is made is copied into a model
 /// property at init and read from there (`transcriber`, `playbackBackend`, `recordingRoot`, `iCloudHooks`, the WebDAV
-/// remote and passwords); every other one is read from `services` when used (`perf`, `settings`, `bookmarks`,
-/// `platform`, `makeRenderCache`, `recordingsInUse`, `audioFiles`), and a test passes its own at init.
+/// remote and passwords, `quickCapture`); every other one is read from `services` when used (`perf`, `settings`,
+/// `bookmarks`, `platform`, `makeRenderCache`, `recordingsInUse`, `audioFiles`, `settingsStorage`,
+/// `makePageRecognizer`), and a test passes its own at init.
 public struct AppModelServices {
     /// Timing and log lines (`AppPerfSink` in the app).
     public var perf: any PerfSink
@@ -90,6 +89,15 @@ public struct AppModelServices {
     public var recordingsInUse: @MainActor () -> Set<UUID>
     /// What a recording's segment files hold, and their merge (`AVCaptureAudioFiles`; headless, bytes).
     public var audioFiles: any CaptureAudioFiles
+    /// Quick voice notes (the app's `QuickCapture.shared`; headless, a capture that records nothing, its folders in
+    /// the model's own scratch folder, which it is given).
+    public var makeQuickCapture: @MainActor (_ scratch: URL) -> QuickCapture
+    /// Where this device keeps the shared settings that are not the model's (`SettingsSyncBridge`; the app's
+    /// `AppSettingsStorage`, `UserDefaults` through the settings' own types; headless, `StoredSettingsSyncStorage`).
+    public var settingsStorage: any SettingsSyncStorage
+    /// Reads handwriting when recognition is turned on (`setHandwritingRecognition`; the app's Vision recognizer;
+    /// headless, none).
+    public var makePageRecognizer: @MainActor () -> (any PageRecognizing)?
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,
@@ -97,7 +105,10 @@ public struct AppModelServices {
                 makeRenderCache: @escaping @MainActor (_ root: URL?, _ vault: Vault) -> any RenderCaching = AppModelServices.dataRenderCache,
                 makePlaybackBackend: @escaping @MainActor () -> any AudioPlaybackBackend = { SilentPlaybackBackend() },
                 recordingRoot: URL? = nil, recordingsInUse: @escaping @MainActor () -> Set<UUID> = { [] },
-                audioFiles: any CaptureAudioFiles = ByteCaptureAudioFiles()) {
+                audioFiles: any CaptureAudioFiles = ByteCaptureAudioFiles(),
+                makeQuickCapture: @escaping @MainActor (_ scratch: URL) -> QuickCapture = AppModelServices.scratchQuickCapture,
+                settingsStorage: any SettingsSyncStorage = StoredSettingsSyncStorage(),
+                makePageRecognizer: @escaping @MainActor () -> (any PageRecognizing)? = { nil }) {
         self.perf = perf
         self.settings = settings
         self.bookmarks = bookmarks
@@ -112,6 +123,15 @@ public struct AppModelServices {
         self.recordingRoot = recordingRoot
         self.recordingsInUse = recordingsInUse
         self.audioFiles = audioFiles
+        self.makeQuickCapture = makeQuickCapture
+        self.settingsStorage = settingsStorage
+        self.makePageRecognizer = makePageRecognizer
+    }
+
+    /// A quick capture that records nothing (`QuickCapture`'s defaults), its folders under `scratch`.
+    @MainActor public static func scratchQuickCapture(_ scratch: URL) -> QuickCapture {
+        QuickCapture(root: scratch.appendingPathComponent("QuickCapture", isDirectory: true),
+                     queueRoot: scratch.appendingPathComponent("CaptureQueue", isDirectory: true))
     }
 
     /// A render cache of plain bytes (`DataPictureCodec`), for tests and front ends that draw nothing.

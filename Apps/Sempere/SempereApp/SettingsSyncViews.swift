@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
 
 /// Settings ▸ Sync Settings with This Vault (docs/settings-sync.md §4, §9): the

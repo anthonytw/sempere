@@ -12,7 +12,7 @@ enum MathRecognitionPreference {
     /// The id of the installed model to read with (nothing: the first installed).
     static let modelKey = "Sempere.mathModelID"
 
-    static func isEnabled(_ defaults: UserDefaults = .standard) -> Bool {
+    static func isEnabled(_ defaults: any KeyValueStore = UserDefaults.standard) -> Bool {
         defaults.object(forKey: key) as? Bool ?? defaultValue
     }
 }

@@ -34,6 +34,12 @@ public enum AppModelNotice: Sendable, Equatable {
     case recordingNotTranscribed(String)
     /// An automatic transcription found no language model on the device (said once per launch).
     case transcriptionModelMissing
+    /// The open vault's inbox could not be listed (`inboxProblem`; the error, in English).
+    case inboxUnreadable(String)
+    /// A voice note in the inbox could not be adopted (`inboxProblem`; the reason, in English).
+    case voiceNoteNotAdded(String)
+    /// An adopted voice note's audio could not be read to transcribe it (the error, in English).
+    case voiceNoteUnreadable(String)
 }
 
 /// Why a WebDAV vault could not be opened or changed.
@@ -318,8 +324,8 @@ extension AppModelCore {
                 _ = try? await self.reconcile(scope: ids)
             }
         }
-        if changes.settings { Host.scheduleSettingsSync(self) }
-        if changes.inbox { Host.startInboxAdoption(self) }
+        if changes.settings { scheduleSettingsSync() }
+        if changes.inbox { startInboxAdoption() }
         if changes.notebooks { Task { await refreshNotebookRecords() } }
         if changes.summaries, !pendingNoteIDs.isEmpty { Task { await refreshPublishedRows() } }
     }

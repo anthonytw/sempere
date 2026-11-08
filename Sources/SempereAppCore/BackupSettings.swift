@@ -237,14 +237,23 @@ public enum BackupReminder {
     }
 }
 
-/// Delivers backup reminders (`UNUserNotificationCenter` in the app,
+/// What a local notification the model schedules says, as a typed value the front end words
+/// (`BackupNotifying.schedule`; the app's `LocalNotice+Text`).
+public enum LocalNotice: Equatable, Sendable {
+    /// The open vault's backup reminder is due (`BackupReminder`): names the vault, never a note.
+    case backupReminder(vaultName: String, record: BackupRecord)
+    /// Another device took over managing devices with the recovery kit (key-hierarchy design §6.3).
+    case takeover(TakeoverAlert)
+}
+
+/// Delivers backup reminders and the takeover notice (`UNUserNotificationCenter` in the app,
 /// `BackupNotifications.swift`; a fake in tests).
 @MainActor
 public protocol BackupNotifying: AnyObject {
     /// Asks for permission to notify; true when granted.
     func authorize() async -> Bool
     /// Replaces the pending notification `id` with one at `date`.
-    func schedule(id: String, at date: Date, title: String, body: String) async
+    func schedule(id: String, at date: Date, notice: LocalNotice) async
     func cancel(id: String) async
 }
 
@@ -253,8 +262,28 @@ public protocol BackupNotifying: AnyObject {
 public final class NoBackupNotifier: BackupNotifying {
     public init() {}
     public func authorize() async -> Bool { false }
-    public func schedule(id: String, at date: Date, title: String, body: String) async {}
+    public func schedule(id: String, at date: Date, notice: LocalNotice) async {}
     public func cancel(id: String) async {}
+}
+
+/// A takeover by another device that this device has not acknowledged (key-hierarchy design §6.3): a banner until
+/// dismissed, and a notification (`AppModel+Devices`). Worded by the app (`title`, `message`).
+public struct TakeoverAlert: Equatable, Sendable {
+    public var vaultID: UUID
+    /// The takeovers it reports (newest first): acknowledged by Dismiss.
+    public var epochIds: [Data]
+    public var vaultName: String
+    /// The device that took over, by name; nil when no list here names it.
+    public var by: String?
+    public var date: Date?
+
+    public init(vaultID: UUID, epochIds: [Data], vaultName: String, by: String?, date: Date?) {
+        self.vaultID = vaultID
+        self.epochIds = epochIds
+        self.vaultName = vaultName
+        self.by = by
+        self.date = date
+    }
 }
 
 /// A running Back Up Now or Verify Backup, for Settings' progress line (the app's `headline`).

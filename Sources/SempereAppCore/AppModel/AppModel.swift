@@ -214,6 +214,9 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored public var recoveringNotes: Set<UUID> = []
     /// Recordings being transcribed now, by id.
     public var transcribing: Set<UUID> = []
+    /// Quick voice notes (`AppModel+Inbox`; `services.makeQuickCapture`, the app's `QuickCapture.shared`); tests pass
+    /// their own.
+    @ObservationIgnored public var quickCapture: QuickCapture
     /// Voice notes adopted from the inbox in this session (for the UI).
     public var capturesAdopted = 0
     /// Why the last inbox adoption failed, if it did.
@@ -405,8 +408,12 @@ public final class AppModelCore<Host: AppModelHost> {
     /// Delivers backup reminders; the app installs `UserNotificationBackupNotifier`.
     @ObservationIgnored public var backupNotifier: any BackupNotifying = NoBackupNotifier()
     /// Settings sync with the open vault (`AppModel+SettingsSync`, docs/settings-sync.md):
-    /// this device's state for it, kept per vault in `settingsDefaults`.
+    /// this device's state for it, kept per vault in `services.settings`.
     public var settingsSync = SettingsSyncState()
+    /// Why settings sync is paused or failed; nil while it works (or is off).
+    public var settingsSyncProblem: SettingsSyncProblem?
+    /// Turning sync on found settings that differ: the choice to ask for.
+    public var settingsSyncPrompt: SettingsSyncPrompt?
     /// Bumped whenever values from the vault were applied, so the Settings
     /// sections that hold copies of their values reload them.
     public var settingsAppliedRevision = 0
@@ -414,7 +421,8 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored public var settingsDeviceTypeOverride: SettingsDeviceType?
     /// How long after the last local change a pass runs.
     @ObservationIgnored public var settingsSyncDebounce: Duration = .seconds(1)
-    @ObservationIgnored public var settingsSyncObserver: (any NSObjectProtocol)?
+    /// Follows changes to `services.settings` while a vault is open (`startSettingsSync`).
+    @ObservationIgnored public var settingsSyncObserver: KeyValueObservation?
     @ObservationIgnored public var settingsSyncScheduled: Task<Void, Never>?
     @ObservationIgnored public var settingsSyncRunning = false
     /// How long a copy-in or restore from iCloud Drive waits without progress, and how often it looks
@@ -649,6 +657,7 @@ public final class AppModelCore<Host: AppModelHost> {
         let scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("SempereModel-\(UUID().uuidString)", isDirectory: true)
         ownedScratch = scratch
+        quickCapture = services.makeQuickCapture(scratch)
         recordingRoot = services.recordingRoot ?? scratch.appendingPathComponent("Recordings", isDirectory: true)
         self.webdavLocations = webdavLocations
             ?? WebDAVLocationStore(store: VaultStore(root: scratch.appendingPathComponent("Vaults", isDirectory: true)))
@@ -857,8 +866,10 @@ public final class AppModelCore<Host: AppModelHost> {
         guard phase == .unlocked, next.vaultId == vault?.vaultId else { return }
         vault = next
         listAlert = ListAlert(vault: next)
-        // The quick-capture profile follows the list's capture keys; takeovers, the device state and settings sync.
+        // The quick-capture profile follows the list's capture keys; takeovers and the device state; settings sync.
+        refreshQuickCaptureProfile()
         Host.didReopen(self)
+        scheduleSettingsSync()
         keyEpoch += 1
     }
 
@@ -873,8 +884,14 @@ public final class AppModelCore<Host: AppModelHost> {
         loadActivity()
         startLoadingNotes(reportErrors: !awaitNotes)
         if awaitNotes { try await notesLoaded() }
-        // The quick-capture profile, the inbox, takeovers, the device state, the backup reminder, settings sync.
+        // The quick-capture profile, the inbox, takeovers and the device state (the host's), the backup reminder,
+        // settings sync.
+        refreshQuickCaptureProfile()
+        installInboxDeliveryObserver()
+        startInboxAdoption()
         await Host.didUnlock(self)
+        Task { await rescheduleBackupReminder() }
+        startSettingsSync()
     }
 
     /// Unlocks with the text of a key: a device key file (`DeviceKeys`, with
@@ -1103,6 +1120,7 @@ public final class AppModelCore<Host: AppModelHost> {
         generation += 1
         // Settings sync stops and the app-side state of the vault is forgotten (the extensions still in the app, wave 5b
         // part 3); a backup, inbox adoption or import still running is canceled below.
+        stopSettingsSync()
         Host.willClose(self)
         resetAttachmentIndex()
         stopJoin()

@@ -19,7 +19,7 @@ enum AppHost: AppModelHost {
     static func makeState() -> AppModelAppState { AppModelAppState() }
 
     /// The platform's: signposts and `os.Logger`, `UserDefaults.standard`, security-scoped bookmarks, the device,
-    /// the network and the Keychain for WebDAV, iCloud, on-device speech.
+    /// the network and the Keychain for WebDAV, iCloud, on-device speech, quick capture, Vision.
     static func makeServices() -> AppModelServices {
         AppModelServices(perf: AppPerfSink(), settings: UserDefaults.standard, bookmarks: SecurityScopedBookmarks(),
                          platform: AppPlatform(), webdavRemote: LiveWebDAVRemote(),
@@ -27,30 +27,23 @@ enum AppHost: AppModelHost {
                          transcriber: SpeechRecordingTranscriber(), appName: NoteWriter.appName,
                          makeRenderCache: AppModel.makeRenderCache, makePlaybackBackend: { AVAudioPlaybackBackend() },
                          recordingRoot: RecordingSession.root, recordingsInUse: AppModel.recordingsInUse,
-                         audioFiles: AVCaptureAudioFiles())
+                         audioFiles: AVCaptureAudioFiles(), makeQuickCapture: { _ in QuickCapture.shared },
+                         settingsStorage: AppSettingsStorage(), makePageRecognizer: { VisionPageRecognizer() })
     }
 
     static func didUnlock(_ model: AppModel) async {
-        model.refreshQuickCaptureProfile()
-        model.installInboxDeliveryObserver()
-        model.startInboxAdoption()
         await model.checkTakeovers()
         await model.refreshDeviceState()
-        Task { await model.rescheduleBackupReminder() }
-        model.startSettingsSync()
     }
 
     static func didReopen(_ model: AppModel) {
-        model.refreshQuickCaptureProfile()
         Task {
             await model.checkTakeovers()
             await model.refreshDeviceState()
         }
-        model.scheduleSettingsSync()
     }
 
     static func willClose(_ model: AppModel) {
-        model.stopSettingsSync()
         model.lastImportReport = nil
         model.exportEpoch.bump()
         NotePDFExport.purge(in: model.exportFolder, olderThan: 0)   // plaintext PDFs dragged out of this vault
@@ -78,8 +71,6 @@ enum AppHost: AppModelHost {
     static func reopenWindowNote(_ id: UUID, in model: AppModel) async { await model.reopenWindowNote(id) }
     static func reopenIfUnlisted(_ model: AppModel) async { await model.reopenIfUnlisted() }
     static func refreshDeviceState(_ model: AppModel) async { await model.refreshDeviceState() }
-    static func scheduleSettingsSync(_ model: AppModel) { model.scheduleSettingsSync() }
-    static func startInboxAdoption(_ model: AppModel) { model.startInboxAdoption() }
 }
 
 /// The state of the `AppModel` extensions still in the app, whose types are the app's (wave 5b part 3 moves each
@@ -87,9 +78,6 @@ enum AppHost: AppModelHost {
 @MainActor
 @Observable
 final class AppModelAppState {
-    /// Quick voice notes (`QuickCapture`, `AppModel+Inbox`); tests pass their own.
-    @ObservationIgnored var quickCapture: QuickCapture = QuickCapture.shared
-
     /// What is being dragged inside the app (set when a drag starts), so the
     /// sidebar can tell whether a row would accept it while the drag is still over it.
     var draggedPayload: DragPayload?
@@ -138,15 +126,6 @@ final class AppModelAppState {
     /// takeover, `SyncOptions.undoneRemovalsURL`). Tests pass fakes.
     @ObservationIgnored var undoneRemovalsSource: @Sendable (Vault) -> [UndoneRemoval] = AppModelAppState.recordedUndoneRemovals
 
-    /// Why settings sync is paused or failed; nil while it works (or is off).
-    var settingsSyncProblem: SettingsSyncProblem?
-
-    /// Turning sync on found settings that differ: the choice to ask for.
-    var settingsSyncPrompt: SettingsSyncPrompt?
-
-    /// Where settings are read and written (tests use a scratch suite).
-    @ObservationIgnored var settingsDefaults: UserDefaults = .standard
-
     /// Where this model's PDF exports (drag to Finder) are written; emptied when the vault closes.
     let exportFolder: URL = NotePDFExport.folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
 
@@ -183,10 +162,6 @@ final class AppModelAppState {
 }
 
 extension AppModel {
-    var quickCapture: QuickCapture {
-        get { appState.quickCapture }
-        set { appState.quickCapture = newValue }
-    }
     var draggedPayload: DragPayload? {
         get { appState.draggedPayload }
         set { appState.draggedPayload = newValue }
@@ -242,18 +217,6 @@ extension AppModel {
     var undoneRemovalsSource: @Sendable (Vault) -> [UndoneRemoval] {
         get { appState.undoneRemovalsSource }
         set { appState.undoneRemovalsSource = newValue }
-    }
-    var settingsSyncProblem: SettingsSyncProblem? {
-        get { appState.settingsSyncProblem }
-        set { appState.settingsSyncProblem = newValue }
-    }
-    var settingsSyncPrompt: SettingsSyncPrompt? {
-        get { appState.settingsSyncPrompt }
-        set { appState.settingsSyncPrompt = newValue }
-    }
-    var settingsDefaults: UserDefaults {
-        get { appState.settingsDefaults }
-        set { appState.settingsDefaults = newValue }
     }
     var exportFolder: URL { appState.exportFolder }
     var exportEpoch: ExportEpoch { appState.exportEpoch }

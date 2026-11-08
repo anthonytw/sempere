@@ -109,6 +109,16 @@ final class PlatformServicesTests: TempDirTestCase {
         mac.play(.selection)
         XCTAssertEqual(mac.played, [], "a Mac has no haptics")
     }
+
+    @MainActor
+    func testHeadlessPlatformSwitchesIconsOnlyWhereItHasThem() {
+        let none = HeadlessPlatform()
+        none.setAppIcon("inkWind")
+        XCTAssertNil(none.appIcon, "no icons to switch")
+        let phone = HeadlessPlatform(isPhone: true, appIcon: "keyholeNib")
+        phone.setAppIcon("inkWind")
+        XCTAssertEqual(phone.appIcon, "inkWind")
+    }
 }
 
 private final class ChangeCounter: @unchecked Sendable {

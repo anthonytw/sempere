@@ -154,6 +154,20 @@ struct AppPlatform: PlatformServices {
         case .selection: UISelectionFeedbackGenerator().selectionChanged()
         }
     }
+
+    /// `AppIconChoice`'s raw value of the icon iOS shows, where icons can be switched (`AppIconSettingsSection`).
+    @MainActor var appIcon: String? {
+        guard AppIconSettingsSection.isSupported else { return nil }
+        return AppIconChoice(alternateName: UIApplication.shared.alternateIconName).rawValue
+    }
+
+    @MainActor func setAppIcon(_ name: String) {
+        guard AppIconSettingsSection.isSupported, let choice = AppIconChoice(rawValue: name),
+              choice != AppIconChoice(alternateName: UIApplication.shared.alternateIconName) else { return }
+        UIApplication.shared.setAlternateIconName(choice.alternateName) { error in
+            if let error { AppPerfSink().log(.error, "settings", "icon not changed: \(error.localizedDescription)") }
+        }
+    }
 }
 
 extension BundleBitRepair {

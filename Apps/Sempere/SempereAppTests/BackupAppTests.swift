@@ -19,8 +19,9 @@ final class FakeBackupNotifier: BackupNotifying {
         return allow
     }
 
-    func schedule(id: String, at date: Date, title: String, body: String) async {
-        scheduled[id] = (date, title, body)
+    func schedule(id: String, at date: Date, notice: LocalNotice) async {
+        let text = notice.text
+        scheduled[id] = (date, text.title, text.body)
     }
 
     func cancel(id: String) async {

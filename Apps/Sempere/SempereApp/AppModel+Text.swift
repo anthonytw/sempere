@@ -63,6 +63,29 @@ extension AppModelNotice: @retroactive CustomStringConvertible {
             return String(localized: "Could not transcribe the recording: \(detail)")
         case .transcriptionModelMissing:
             return RecordingTranscriptionError.modelNotDownloaded.message
+        case .inboxUnreadable(let detail):
+            return String(localized: "Voice notes could not be read from the inbox: \(detail)")
+        case .voiceNoteNotAdded(let reason):
+            return String(localized: "A voice note could not be added: \(reason)")
+        case .voiceNoteUnreadable(let detail):
+            return String(localized: "Could not read the voice note to transcribe it: \(detail)")
+        }
+    }
+}
+
+extension SettingsSyncProblem {
+    /// Settings ▸ Sync Settings' line.
+    var text: String {
+        switch self {
+        case .readOnly:
+            return String(localized: "Settings sync is paused: this vault is read-only on this device.")
+        case .untrustedRecipients:
+            return String(localized: "Settings sync is paused until the vault's device list is checked.")
+        case .needsNewerApp:
+            return String(localized: "Settings sync is paused: this vault's settings need a newer Sempere. Update the app to resume.")
+        case .failed(let detail):
+            return String(localized: "Settings could not be synced: \(detail)",
+                          comment: "Settings ▸ Sync Settings; the error text follows (English)")
         }
     }
 }
@@ -264,15 +287,5 @@ extension AppModel {
             out.append(String(localized: "\(reasons.newerNotes.count) notes hold revisions written by a newer version"))
         }
         return out
-    }
-
-    // MARK: - Recognition (Vision is the app's)
-
-    /// Turns handwriting recognition on or off (remembered), for the open
-    /// note and every note opened from now on.
-    func setHandwritingRecognition(_ on: Bool) {
-        RecognitionPreference.enabled = on
-        recognizer = on ? VisionPageRecognizer() : nil
-        if !on { cancelRecognizingNotes() }
     }
 }
