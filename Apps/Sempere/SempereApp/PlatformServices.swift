@@ -99,7 +99,17 @@ struct SecurityScopedBookmarks: FolderBookmarks {
 
     func startAccessing(_ url: URL) -> Bool { url.startAccessingSecurityScopedResource() }
     func stopAccessing(_ url: URL) { url.stopAccessingSecurityScopedResource() }
-    func recordedPath(of bookmark: Data) -> String? { FolderReach.recordedPath(bookmark) }
+    /// Read without resolving (no mount, no scope), for `FolderReachability` (offline audit A-P2).
+    ///
+    /// Assumed on iOS, not yet checked on a device: a USB drive or an SMB share opened in Files resolves to a path
+    /// under `/private/var/mobile/Library/LiveFiles/com.apple.filesystems.userfsd/<volume>/` (or `….smbclientd/<share>/`,
+    /// and for older drivers `….lifs/`), the bookmark records that path, and the app can tell whether the `<volume>`
+    /// folder exists without its security scope (it lists only mounted volumes). If the app cannot see it, a mounted
+    /// drive whose bookmark fails reads as unavailable (offline) rather than gone; a deleted folder elsewhere still
+    /// reads as gone.
+    func recordedPath(of bookmark: Data) -> String? {
+        (try? URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: bookmark))?.path
+    }
 }
 
 // MARK: - FileCoordinating

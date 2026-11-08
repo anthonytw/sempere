@@ -29,7 +29,7 @@ struct SuspensionLockTests {
     static func openStoreVault(launchedInBackground: Bool = false) async throws
         -> (AppModel, VaultLibrary, UUID, FakeBackgroundTasks, NotificationCenter) {
         let library = try BrowserTests.library()
-        let model = try VaultStoreAppTests.model()
+        let model = AppModel(deviceStateURL: try BrowserTests.tempDir().appendingPathComponent("device.json"))
         model.vaultStore = library.vaultStore
         model.releasesLocksInBackground = true
         let tasks = FakeBackgroundTasks()

@@ -59,7 +59,8 @@ struct BrowserTests {
 
     @Test func bookmarkRoundTrips() throws {
         let dir = try Self.tempDir()
-        let resolved = try VaultBookmark.resolve(try VaultBookmark.make(for: dir))
+        let bookmarks = SecurityScopedBookmarks()
+        let resolved = try bookmarks.resolve(try bookmarks.bookmark(for: dir))
         #expect(resolved.url.standardizedFileURL.resolvingSymlinksInPath().path
                 == dir.standardizedFileURL.resolvingSymlinksInPath().path)
     }

@@ -911,8 +911,8 @@ there. Commit messages:
   (an evicted package) is arriving, never made beside it: one rule, `FolderRemote.absentBase`, applied by
   `FolderTargetRun.check` and by the engine before it makes a base (`SyncRemote.checkAbsentBase`, `listBase`).
   The model's sync tests (SempereAppCoreTests, `WebDAVTestKit.swift`) use `FakeWebDAVRemote` (scripted),
-  `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`: `TwoDeviceSyncTests`); app tests use folders under `EvictingFolderProvider` (`AppModel.folderProvider`:
-  `FolderTargetAppTests`) and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav
+  `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`: `TwoDeviceSyncTests`) and folders under
+  `EvictingFolderProvider` (`AppModel.folderProvider`: `FolderTargetTests`), with `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav
   (`scripts/test-webdav.sh`).
 - A folder copied in from another app's provider storage (`StorageLocation`) is read under one coordinated
   read, even when the provider does not report its files as ubiquitous.

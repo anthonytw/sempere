@@ -39,13 +39,19 @@ struct SempereApp: App {
         RememberedKeys.current = keys
         _library = State(initialValue: library)
         _keys = State(initialValue: keys)
+        // Scripted runs (screenshots, device probes) must not change the vault they open: no automatic thinning.
+        #if DEBUG
+        let scriptedLaunch = DemoLaunch.isActive || DebugLaunch.isActive
+        #else
+        let scriptedLaunch = false
+        #endif
         let model = AppModel(recognizer: RecognitionPreference.enabled ? VisionPageRecognizer() : nil,
                              summaryCacheDirectory: AppModel.defaultSummaryCacheDirectory,
                              drawingCacheRoot: AppModel.drawingCacheEnabled ? DrawingCache.defaultRoot : nil,
                              blobCacheRoot: BlobCache.folder,
                              renderCacheRoot: AppModel.drawingCacheEnabled ? RenderCache.defaultRoot : nil,
                              attachmentIndexRoot: AppModel.defaultAttachmentIndexRoot,
-                             automaticThinning: true,
+                             automaticThinning: !scriptedLaunch,
                              trust: AppModel.defaultTrust,
                              backupNotifier: UserNotificationBackupNotifier())
         // An open vault of the in-app store holds a lease, so it is never removed while open. Its sync

@@ -125,7 +125,9 @@ connection, and `SEMPERE_OFFLINE_TEST=1` turns on `OfflineModeTests`. Those fail
 unless `outboundConnectionsAreRefused` ran and passed (a variable that no longer reaches the runner would skip it).
 They then walk the journeys
 that must work offline (a vault copied in and unlocked, a folder target, transcription's availability).
-`aDeviceJoinsThroughAFolderOnADrive` (two devices joined through a plain folder) runs in every mode. It is a step
+The join of two devices through a plain folder, which needs no network either, is the model's
+(`JoinThroughProviderTests.aDeviceJoinsThroughAFolderOnADrive` in SempereAppCoreTests, with the package tests, on Linux
+too; wave 5b part 3, step 5a). `test-mac-offline` is a step
 of `local-ci.sh --testflight` and `--release` (`mac-offline`, no screen needed), not of the gate. It is a Mac job
 for the build lock (`xc-lock.sh scripts/app.sh test-mac-offline`).
 

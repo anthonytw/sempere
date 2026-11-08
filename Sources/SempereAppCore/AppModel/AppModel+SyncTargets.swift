@@ -347,11 +347,7 @@ extension AppModelCore {
     /// Whether this account may create and replace files in `folder`, or (not made yet) in the nearest folder above it
     /// that exists: `access(W_OK)`, which says no for a folder another user owns without write permission for others,
     /// or a read-only one.
-    public nonisolated static func isWritableFolder(_ folder: URL) -> Bool {
-        var u = folder.standardizedFileURL
-        while !FileManager.default.fileExists(atPath: u.path), u.pathComponents.count > 1 { u = u.deletingLastPathComponent() }
-        return FileManager.default.isWritableFile(atPath: u.path)
-    }
+    public nonisolated static func isWritableFolder(_ folder: URL) -> Bool { FolderAccess.isWritableFolder(folder) }
 
     /// The path of `inner` below `base` ("Wompa.sempere"), nil when it is `base` itself or not below it.
     ///

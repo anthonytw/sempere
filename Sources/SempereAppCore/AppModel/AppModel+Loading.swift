@@ -127,7 +127,7 @@ extension AppModelCore {
             guard let self else { return }
             do {
                 try await self.reload()
-                if self.generation == gen { Host.listingFinished(self) }   // automatic thinning
+                if self.generation == gen { self.thinIfDue() }   // automatic thinning
             } catch is CancellationError {
                 throw CancellationError()
             } catch {

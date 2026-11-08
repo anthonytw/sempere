@@ -301,6 +301,13 @@ public final class AppModelCore<Host: AppModelHost> {
     public var automaticThinning = false
     /// Notes thinning works on at once (`thinVault`).
     public var thinningConcurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
+    /// The last automatic run `thinIfDue` started (tests wait for it).
+    @ObservationIgnored public var automaticThinningRun: Task<Void, Never>?
+    /// How far a thinning run (or its preview) has got, counted per note;
+    /// nil when none is running (`thinVault`).
+    public var thinningProgress: ThinningProgress?
+    /// "Open Vault…" copying a vault onto this device (`copyIn`), for the progress overlay.
+    public var vaultCopy: VaultCopyProgress?
     /// Notes of a partial copy (a join, `AppModel+Join`) not downloaded yet.
     public var pendingNoteIDs: Set<UUID> = []
     /// The pending notes that have no summary yet (listed as placeholders).

@@ -19,7 +19,6 @@ enum TestHost: AppModelHost {
     static func editorsChanged(_ model: AppModel) {}
     static func prepareEditor(_ editor: TestEditor, of note: UUID, in model: AppModel) {}
     static func unreadableText(_ editor: TestEditor) -> String { "unreadable" }
-    static func listingFinished(_ model: AppModel) { model.appState.steps.append("listingFinished") }
     static func closeWindowEditors(_ model: AppModel) async {}
     static func openWindowNote(_ id: UUID, in model: AppModel) async throws {}
     static func reopenWindowNote(_ id: UUID, in model: AppModel) async {}

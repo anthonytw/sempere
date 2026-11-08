@@ -2,28 +2,8 @@ import Foundation
 import Sempere
 import SempereAppCore
 
-/// Opening a recent vault (`copyIn`, `openWebDAV`), and the sidebar's drags and drops. The edits themselves are the
-/// library's (`AppModel+Edits.swift` in SempereAppCore).
-extension AppModel {
-    /// Reopens a recent vault: a store vault by its id, a WebDAV one by its location.
-    ///
-    /// - Throws: `VaultLibrary.LibraryError.cannotResolve` when the store no longer holds the vault;
-    ///   otherwise whatever opening throws. The entry is kept either way.
-    func open(recent entry: RecentVault, library: VaultLibrary) async throws {
-        if let location = entry.webdav {
-            guard webdavLocations.location(location) != nil else {
-                library.forget(entry)
-                throw VaultLibrary.LibraryError.cannotResolve(name: entry.name)
-            }
-            return try await openWebDAV(location, library: library)
-        }
-        if let id = entry.storeID, let joining = joiningWebDAVLocation(of: id) {
-            return try await openWebDAV(joining, library: library)
-        }
-        let url = try library.resolve(entry)
-        try await copyIn(picked: url, library: library)
-    }
-}
+// The sidebar's drags and drops. Opening a recent vault (`open(recent:)`) and the edits themselves are the library's
+// (`AppModel+VaultStore.swift`, `AppModel+Edits.swift` in SempereAppCore).
 
 // MARK: - Moving notes and notebooks (drag and drop, Move Notebook To…)
 

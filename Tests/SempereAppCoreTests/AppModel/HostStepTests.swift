@@ -16,8 +16,7 @@ extension AppModelSuites {
             let model = AppModel(deviceStateURL: TS.deviceStateURL())
             try await model.openVault(at: url)
             try await model.unlock(identityText: text)
-            #expect(await TS.waitUntil(timeout: .seconds(60)) { model.appState.steps.contains("listingFinished") },
-                    "\(model.appState.steps)")
+            try await model.notesLoaded()   // the listing ends in the core's own automatic thinning: no host step
 
             // A vault opened again under its `vault.json`: no host step any more (takeovers and the device state are
             // the core's), and the views reopen their notes once.

@@ -277,7 +277,7 @@ Folder targets' bookmarks are a different thing (`SyncTarget.bookmark`, "Sync ta
 ## Saved folder access (sandboxed Mac)
 
 The app remembers a folder the user picked (a sync folder target, the backup folder) as a
-bookmark (`VaultBookmark`). Whether a
+bookmark (`FolderBookmarks`; the app's `SecurityScopedBookmarks`). Whether a
 remembered folder is still usable after a relaunch is the platform's decision:
 
 * **iPadOS:** a bookmark made from a picker URL carries its security scope;
@@ -287,7 +287,7 @@ remembered folder is still usable after a relaunch is the platform's decision:
   calls return false and nothing depends on them.
 * **Mac Catalyst, sandboxed (Mac App Store, `Sempere.entitlements`):**
   `.withSecurityScope` is AppKit-only and is not in the Catalyst SDK, so
-  bookmarks are made with plain options, as on iOS (`VaultBookmark.make`).
+  bookmarks are made with plain options, as on iOS (`SecurityScopedBookmarks.bookmark(for:)`).
   Apple documents security-scoped bookmarks for sandboxed apps with the
   `com.apple.security.files.bookmarks.app-scope` entitlement (set) and
   `files.user-selected.read-write` (set); whether a plain bookmark of a
@@ -305,7 +305,8 @@ What the code does so that either answer is safe:
   waiting for iCloud, above) into a message and the folder picker, so a lost permission ends with the user choosing the
   folder again, and `remember` saves a fresh bookmark from that scope.
   At launch (`pickOnFailure: false`) only the message shows.
-* A stale bookmark is re-saved while its scope is held (`VaultBookmark.resolve`).
+* A stale bookmark is re-saved while its scope is held (`ResolvedBookmark.isStale`; the backup folder's in
+  `AppModel+Backup`, a folder target's in `FolderTargetAccess`).
 * DEBUG builds log `SempereDebug folderAccess scoped=<0|1> listable=<0|1>` for
   every open (no names), to read the answer off a real sandboxed build: after
   choosing a folder and relaunching, `scoped=0 listable=0` means the plain
@@ -740,7 +741,7 @@ maps each control to its command.
   itself, or the one in a picked folder that holds no `.sempere` (the sync folder wins);
   the copy is named after the vault (`VaultStore.displayName` drops
   `.sempere-backup`), and a restore suggests "<vault> (Restored)". The app keeps a bookmark of the picked
-  folder (`VaultBookmark`, plain options as for vaults, see "Saved folder
+  folder (`services.bookmarks`, plain options as for vaults, see "Saved folder
   access") plus the subfolder name, per vault and per device
   (`BackupRecord` in `UserDefaults` under `Sempere.backup.<vault id>`); access
   granted to the picked folder covers the subfolder. Picking an existing
@@ -1614,7 +1615,7 @@ syncs with both ways.
   user picked is on a removable volume that is not mounted now (`/Volumes/<name>` on a Mac,
   `…/LiveFiles/com.apple.filesystems.<daemon>/<name>` on iPadOS and iOS: an unplugged USB drive, an unmounted share)
   is offline too, "can't be reached now", never "choose it again"; anything else, a folder deleted with the folder
-  it was in included, is gone (`FolderReach`, offline audit A-P2; backups say the same). Scheduled runs resolve
+  it was in included, is gone (`FolderReachability`, offline audit A-P2; backups say the same). Scheduled runs resolve
   bookmarks `.withoutMounting`, so a Mac does not try to mount an absent share every minute; Sync Now, and a run
   asked for by the unlock, the app becoming active or the network coming back (at most every 5 minutes), may mount
   it, and the offline text says Sync Now connects it. A stale bookmark (the folder moved or was renamed) is
@@ -1698,7 +1699,7 @@ syncs with both ways.
   notes) is dropped from the shadow first, so nothing comes back. What it placed reaches the model with the
   run's arrivals; the staging is removed after every placing attempt. The place needs no network: a vault
   opened offline is current up to its last staging. Tests: `LockedStagingTests` (package),
-  `FolderTargetAppTests.aClosedVaultStages…`.
+  `FolderTargetTests.aClosedVaultStages…` (SempereAppCoreTests).
 - **Details, Storage and Repair** (P9; `TargetInspection.swift`, `AppModel+VaultDetails`, `VaultDetailsViews`;
   `sempere store info`, `sempere store quarantine`). Vault Details (Sync Targets ▸ Details and Repair, and
   Settings ▸ Storage) reads this device only: the copy's sizes and, per target, its last sync, files in step,
@@ -1765,7 +1766,7 @@ syncs with both ways.
   real engine: a note and a rename reaching the other device's list and open editor, edits made
   offline on both, settings, a 6 MB attachment, runs cut midway, a server folder that vanishes and
   comes back empty, a vault reopened while a run goes, a closed vault that only uploads);
-  `FolderTargetAppTests` (two devices through one folder under `EvictingFolderProvider`: notes and an
+  `FolderTargetTests` (SempereAppCoreTests; two devices through one folder under `EvictingFolderProvider`: notes and an
   open editor's merge, a target folder deleted or unreachable, files evicted while runs go, a
   provider's conflict copy, two targets bridged by one device and a new target that gets every note,
   a voice note recorded while its vault is closed, the store's move and old WebDAV copies carried

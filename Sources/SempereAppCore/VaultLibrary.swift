@@ -110,6 +110,15 @@ public enum FolderAccess {
         return false
     }
 
+    /// Whether this account may create and replace files in `folder`, or (not made yet) in the nearest folder above it
+    /// that exists: `access(W_OK)`, which says no for a folder another user owns without write permission for others,
+    /// or a read-only one.
+    public static func isWritableFolder(_ folder: URL) -> Bool {
+        var u = folder.standardizedFileURL
+        while !FileManager.default.fileExists(atPath: u.path), u.pathComponents.count > 1 { u = u.deletingLastPathComponent() }
+        return FileManager.default.isWritableFile(atPath: u.path)
+    }
+
     /// Throws `Problem.noAccess` when the folder at `url` cannot be listed for
     /// lack of permission. Other failures (not there, not a folder) are left
     /// to opening the vault, which reports them.
@@ -361,5 +370,70 @@ public final class VaultLibrary {
                             generatedRecovery: generated ? identity : nil, created: vault.created ?? Date(),
                             kitVault: RecoveryKit.VaultInfo(vault: vault, name: displayName(of: url)),
                             unlockKey: testKeyFile(keys.device), device: keys.device)
+    }
+}
+
+// MARK: - The in-app vault store's list
+
+extension VaultLibrary {
+    /// Lists the store again (off the main actor), after removing what interrupted operations left. A Finder flag
+    /// cleared on the way is logged to `log`.
+    public func refreshStoredVaults(log: any PerfSink) async {
+        let store = vaultStore
+        let listed = await Task.detached(priority: .utility) { () -> [VaultStore.Entry] in
+            store.sweep()
+            let listed = store.list()
+            // Every store vault, at launch and after each change to the store (a create, copy-in or restore keeps
+            // the source's Finder flags): never a package (`BundleBitRepair`).
+            for entry in listed { BundleBitRepair.clear(entry.url, .storeVault, log: log) }
+            return listed
+        }.value
+        // Only a real change is published: an `@Observable` property notifies on every write, and a list that
+        // redraws under a finger drops the row's swipe (build 10).
+        if listed != storedVaults { storedVaults = listed }
+    }
+
+    /// Copies the vault folder `source` into the store (`VaultStore.importVault`), off the main actor;
+    /// `coordinated` reads it under one coordinated read of `files` (iCloud Drive, another provider).
+    public func copyIn(_ source: URL, coordinated: Bool, files: any FileCoordinating,
+                       progress: @escaping @Sendable (Int, Int) -> Void) async throws -> VaultStore.Entry {
+        let store = vaultStore
+        let entry = try await Task.detached(priority: .userInitiated) {
+            try files.coordinatedRead(coordinated ? source : nil) {
+                try store.importVault(from: source, options: VaultStore.ImportOptions(progress: progress))
+            }
+        }.value
+        if !storedVaults.contains(where: { $0.vaultId == entry.vaultId }) { storedVaults.append(entry) }
+        return entry
+    }
+
+    /// Deletes a store vault from this device, permanently (`VaultStore.remove`), and forgets it.
+    public func removeStored(_ entry: VaultStore.Entry) async throws {
+        let store = vaultStore
+        do {
+            try await Task.detached(priority: .userInitiated) { try store.remove(entry.vaultId) }.value
+        } catch let error as VaultStoreError {
+            throw VaultStoreProblem(error: error)
+        }
+        storedVaults.removeAll { $0.vaultId == entry.vaultId }
+        let gone = recents.filter { $0.storeID == entry.vaultId }.map(\.id)
+        if !gone.isEmpty {
+            recents.removeAll { gone.contains($0.id) }
+            save()
+        }
+    }
+
+    /// The store's vaults, the most recently opened first, then the others by name.
+    public var storedVaultsByUse: [VaultStore.Entry] {
+        let order = Dictionary(recents.enumerated().compactMap { i, r in r.storeID.map { ($0, i) } },
+                               uniquingKeysWith: { a, _ in a })
+        return storedVaults.sorted { a, b in
+            switch (order[a.vaultId], order[b.vaultId]) {
+            case let (x?, y?): return x < y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return a.name.localizedStandardCompare(b.name) == .orderedAscending
+            }
+        }
     }
 }

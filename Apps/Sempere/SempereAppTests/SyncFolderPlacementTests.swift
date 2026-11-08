@@ -12,11 +12,40 @@ import SempereAppCore
 /// These run the real `FolderTargetRun` through the model's sessions.
 @MainActor
 struct SyncFolderPlacementTests {
+    /// A device with its own store, device state and sync state (`FolderTargetTests.Device` in `SempereAppCoreTests`).
+    struct Device {
+        let model: AppModel
+        let library: VaultLibrary
+        @MainActor var store: VaultStore { library.vaultStore }
+        @MainActor var vaultID: UUID { model.vault?.vaultId ?? UUID() }
+        @MainActor var folder: URL { model.vaultURL ?? URL(fileURLWithPath: "/") }
+    }
+
+    static func device() -> Device {
+        let root = TestTemp.root.appendingPathComponent("device-\(UUID().uuidString)", isDirectory: true)
+        let library = VaultLibrary(storeURL: root.appendingPathComponent("recents.json"))
+        let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50))
+        model.vaultStore = library.vaultStore
+        model.webdavTick = .milliseconds(20)
+        model.folderWriteDelay = 0.05
+        model.folderArrivalWait = 0.5
+        return Device(model: model, library: library)
+    }
+
+    /// The revision and blob files under `folder`'s `notes/`.
+    static func noteFiles(_ folder: URL) -> Set<String> {
+        let notes = folder.appendingPathComponent("notes")
+        guard let e = FileManager.default.enumerator(atPath: notes.path) else { return [] }
+        return Set(e.compactMap { $0 as? String }.filter {
+            !($0 as NSString).lastPathComponent.hasPrefix(".") && $0.hasSuffix(".age")
+        })
+    }
+
     /// A store vault, unlocked, on a device of its own; and an empty folder the user picks, holding one file of theirs.
-    static func setUp() async throws -> (FolderTargetAppTests.Device, picked: URL) {
+    static func setUp() async throws -> (Device, picked: URL) {
         let (vault, keyURL) = try AppModelTests.fixtureVault()
         let key = try String(contentsOf: keyURL, encoding: .utf8)
-        let device = FolderTargetAppTests.device(nil)
+        let device = Self.device()
         try await device.model.copyIn(picked: vault, library: device.library)
         try await device.model.unlock(identityText: key)
         let picked = TestTemp.root.appendingPathComponent("junk-\(UUID().uuidString)", isDirectory: true)
@@ -60,8 +89,8 @@ struct SyncFolderPlacementTests {
         #expect(try String(contentsOf: picked.appendingPathComponent("keep.txt"), encoding: .utf8) == "mine")
         let copy = picked.appendingPathComponent(name)
         #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("vault.json").path))
-        #expect(!FolderTargetAppTests.noteFiles(copy).isEmpty)
-        #expect(FolderTargetAppTests.noteFiles(copy) == FolderTargetAppTests.noteFiles(device.folder))
+        #expect(!Self.noteFiles(copy).isEmpty)
+        #expect(Self.noteFiles(copy) == Self.noteFiles(device.folder))
     }
 
     /// A picked `.sempere` folder is the target itself; one holding other files and no vault is refused, an empty one

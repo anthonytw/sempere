@@ -1,0 +1,537 @@
+import Foundation
+import Sempere
+import SempereAppCore
+import SempereSync
+import TempDirSupport
+import Testing
+
+/// Records what the model asked the notification center to do (the notice as the typed value the app words).
+@MainActor
+final class FakeBackupNotifier: BackupNotifying {
+    var allow = true
+    private(set) var authorizations = 0
+    private(set) var scheduled: [String: (date: Date, notice: LocalNotice)] = [:]
+    private(set) var cancelled: [String] = []
+
+    func authorize() async -> Bool {
+        authorizations += 1
+        return allow
+    }
+
+    func schedule(id: String, at date: Date, notice: LocalNotice) async { scheduled[id] = (date, notice) }
+
+    func cancel(id: String) async {
+        scheduled[id] = nil
+        cancelled.append(id)
+    }
+}
+
+/// The downloads a test's iCloud hooks were asked for (the request runs off the main actor).
+final class RequestedDownloads: @unchecked Sendable {
+    private let lock = NSLock()
+    private var urls: [URL] = []
+    func add(_ url: URL) { lock.withLock { urls.append(url) } }
+    var paths: [String] { lock.withLock { urls.map(\.standardizedFileURL.path) } }
+}
+
+extension AppModelSuites {
+    /// Settings → Backups and Restore from Backup through the model (`AppModel+Backup`, `BackupSettings.swift`; moved
+    /// from the app's `BackupAppTests`, which keeps the words): folder choice and bookmarks, incremental runs on the CLI's
+    /// core, verify failures, the reminder, and restores that never touch the open vault.
+    @MainActor
+    struct BackupTests {
+        /// A settings store and a folder of its own (removed by `cleanUp`).
+        final class Scratch {
+            let defaults = MemoryKeyValueStore()
+            let dir = TestTemp.root.appendingPathComponent("BackupTests-\(UUID().uuidString)")
+
+            init() throws { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
+
+            func folder(_ name: String) throws -> URL {
+                let url = dir.appendingPathComponent(name, isDirectory: true)
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                return url
+            }
+
+            func cleanUp() { try? FileManager.default.removeItem(at: dir) }
+        }
+
+        /// iCloud Drive as the app's live hooks see it (`CloudVault.Hooks.live`): every folder ubiquitous, a file there
+        /// is current, one with only its stand-in (`.name.icloud`) is missing, else gone. Tests set `request`.
+        static func iCloudHooks() -> CloudVault.Hooks {
+            CloudVault.Hooks(isUbiquitous: { _ in true }, state: { item in
+                let fm = FileManager.default
+                if fm.fileExists(atPath: item.url.path) { return .current }
+                let standIn = item.url.deletingLastPathComponent()
+                    .appendingPathComponent(UbiquitousPlaceholder.standInName(for: item.url.lastPathComponent))
+                return fm.fileExists(atPath: standIn.path) ? .missing : .gone
+            }, request: { _ in })
+        }
+
+        /// The fixture vault, unlocked, with a scratch backup store and a fake notifier.
+        func model(_ scratch: Scratch) async throws -> (AppModel, FakeBackupNotifier, URL, URL) {
+            let (url, key) = try await ModelFixture.vault()
+            let notifier = FakeBackupNotifier()
+            let model = AppModel(deviceStateURL: TS.deviceStateURL(), backupNotifier: notifier)
+            model.backupStore = BackupStore(defaults: scratch.defaults)
+            try await model.openVault(at: url)
+            try await model.unlock(identityText: try await ModelFixture.keyText(key))
+            return (model, notifier, url, key)
+        }
+
+        /// Review of #108: a backup never becomes a sync target. Opening one is a one-time import (keep-syncing off,
+        /// even in iCloud Drive), Add Folder… on its parent skips it, and picking the backup itself is refused.
+        @Test func aBackupIsNeverASyncTarget() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (fixture, _) = try await ModelFixture.vault()
+            let vaultId = try Vault.open(at: fixture).vaultId
+            let drive = try scratch.folder("Drive")
+            // Named like the sync folder (#108's backups were), so Add Folder… on its parent meets it.
+            let backup = drive.appendingPathComponent("sample.sempere")
+            _ = try Backup.run(source: try Vault.open(at: fixture), to: backup)
+            let cloud = CloudVault.Hooks(isUbiquitous: { _ in true }, state: { _ in .current }, request: { _ in })
+            let bookmarks = PathBookmarks()
+            #expect(CopyInFollowUp.suggested(for: backup, hooks: cloud, bookmarks: bookmarks) == .importOnly)
+            #expect(CopyInFollowUp.suggested(for: drive, hooks: cloud, bookmarks: bookmarks) == .importOnly,
+                    "a folder holding one backup")
+            #expect(CopyInFollowUp.suggested(for: fixture, hooks: cloud, bookmarks: bookmarks) == .keepSyncing,
+                    "a vault in iCloud Drive")
+            #expect(CopyInFollowUp.isBackup(backup, bookmarks: bookmarks) && !CopyInFollowUp.isBackup(fixture, bookmarks: bookmarks))
+            #expect(CopyInFollowUp.isWritable(fixture, bookmarks: bookmarks))
+            // Add Folder… on the backup's parent: the next free name, never the backup.
+            #expect(try AppModel.folderTargetLocation(picked: drive, vaultFolderName: "sample.sempere", vaultId: vaultId)
+                    .lastPathComponent == "sample 2.sempere")
+            #expect(try AppModel.folderTargetLocation(picked: try scratch.folder("Empty"), vaultFolderName: "sample.sempere",
+                                                      vaultId: vaultId).lastPathComponent == "sample.sempere")
+            #expect(throws: SyncTargetProblem.isBackup) {
+                _ = try AppModel.folderTargetLocation(picked: backup, vaultFolderName: "sample.sempere", vaultId: vaultId)
+            }
+            #expect(throws: SyncTargetProblem.isBackup) {
+                try AppModel.checkFolderTarget(backup, in: VaultStore(root: scratch.dir.appendingPathComponent("store")))
+            }
+        }
+
+        /// Open Vault… takes a `.sempere-backup`, picked itself or as the one backup in the picked folder; a sync
+        /// folder (`.sempere`) next to it wins, since opening that is how a device joins. A backup is copied in once.
+        @Test func openVaultTakesABackupAsAOneTimeCopy() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (fixture, _) = try await ModelFixture.vault()
+            let drive = try scratch.folder("Drive")
+            let backup = drive.appendingPathComponent("Notes.sempere-backup")
+            _ = try Backup.run(source: try Vault.open(at: fixture), to: backup)
+            #expect(try VaultLocator.resolve(backup).path == backup.path)
+            #expect(try VaultLocator.resolve(drive).lastPathComponent == "Notes.sempere-backup")
+            let local = CloudVault.Hooks(isUbiquitous: { _ in false }, state: { _ in .current }, request: { _ in })
+            #expect(CopyInFollowUp.isBackup(drive, bookmarks: PathBookmarks())
+                    && CopyInFollowUp.suggested(for: backup, hooks: local, bookmarks: PathBookmarks()) == .importOnly)
+            #expect(VaultLibrary.displayName(of: backup) == "Notes")
+            #expect(VaultStore.displayName(of: backup) == "Notes")
+            try FileManager.default.copyItem(at: fixture, to: drive.appendingPathComponent("Notes.sempere"))
+            #expect(try VaultLocator.resolve(drive).lastPathComponent == "Notes.sempere", "the sync folder wins")
+            _ = try Backup.run(source: try Vault.open(at: fixture), to: drive.appendingPathComponent("Notes 2.sempere-backup"))
+            let lone = try scratch.folder("Two")
+            for name in ["A.sempere-backup", "B.sempere-backup"] {
+                try FileManager.default.copyItem(at: backup, to: lone.appendingPathComponent(name))
+            }
+            #expect(throws: VaultLocator.LocatorError.severalVaults(["A.sempere-backup", "B.sempere-backup"])) {
+                _ = try VaultLocator.resolve(lone)
+            }
+            // Opened: copied into the store under the vault's name, and never kept in sync, even when asked.
+            let library = VaultLibrary(storeURL: scratch.dir.appendingPathComponent("recents.json"))
+            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            defer { model.close() }
+            model.vaultStore = library.vaultStore
+            try await model.copyIn(picked: backup, library: library, followUp: .keepSyncing)
+            let entry = try #require(library.vaultStore.list().first)
+            #expect(entry.url.lastPathComponent == "Notes.sempere")
+            #expect(model.openVaultTargets.isEmpty, "a backup is never a sync target")
+            #expect(FileManager.default.fileExists(atPath: backup.appendingPathComponent("backup.json").path))
+        }
+
+        @Test func backUpNowThroughTheBookmarkIsIncremental() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (model, _, url, key) = try await model(scratch)
+            defer { model.close() }
+            await #expect(throws: AppModel.BackupAppError.noFolder) { _ = try await model.backUpNow() }
+
+            let drive = try scratch.folder("Drive")
+            try Data("x".utf8).write(to: drive.appendingPathComponent("other file"))
+            try model.chooseBackupFolder(drive)
+            var record = try #require(model.backupRecord())
+            #expect(record.bookmark != nil)
+            #expect(record.subfolder == "sample.sempere-backup")
+            #expect(record.displayPath == "Drive/sample.sempere-backup")
+            #expect(record.lastBackup == nil)
+
+            let first = try await model.backUpNow()
+            #expect(first.errors.isEmpty)
+            #expect(first.copied.count == 11)   // 7 revisions, the passphrase copy, blob, vault.json, the epoch record
+            #expect(model.backupProgress == nil)
+            let dest = drive.appendingPathComponent("sample.sempere-backup")
+            #expect(Backup.verify(at: dest).isHealthy)
+            record = try #require(model.backupRecord())
+            let status = try Backup.status(at: dest)
+            #expect(record.lastBackup == status.updated)
+            #expect(record.lastBytes == status.totalBytes)
+            #expect(record.lastNotes == status.notes)
+            #expect(record.lastErrors == 0)
+
+            // Nothing new: nothing copied. A revision from another device: just that one.
+            let second = try await model.backUpNow()
+            #expect(second.copied.isEmpty && second.replaced.isEmpty)
+            #expect(second.unchanged == 11)
+            let note = try #require(model.notes.first?.id)
+            try await TS.writeAsAnotherDevice([.setMeta(.title("Backed up later"))], to: note, vault: url, key: key)
+            let third = try await model.backUpNow()
+            #expect(third.copied.count == 1)
+            #expect(third.copied.first?.hasPrefix("notes/\(note.uuidString.lowercased())/") == true)
+
+            // Choosing the same backup again (picked itself) picks up its last run.
+            model.forgetBackupFolder()
+            #expect(model.backupRecord()?.bookmark == nil)
+            try model.chooseBackupFolder(dest)
+            record = try #require(model.backupRecord())
+            #expect(record.subfolder == nil)
+            #expect(record.lastBackup == (try Backup.status(at: dest)).updated)
+        }
+
+        /// An existing backup's last run counts only when it completed: a run
+        /// cut short or with file errors is no backup (`BackupStatus.completed`,
+        /// the base of `sempere backup status --max-age`).
+        @Test func choosingABackupPicksUpItsLastCompleteRun() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (model, _, url, key) = try await model(scratch)
+            defer { model.close() }
+            let vault = try #require(model.vault)
+            let dest = try scratch.folder("Backup.sempere-backup")
+            struct Stop: Error {}
+            let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+            #expect(throws: Stop.self) {
+                try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0, afterEachFile: { _ in throw Stop() }))
+            }
+            try model.chooseBackupFolder(dest)
+            #expect(model.backupRecord()?.lastBackup == nil, "an interrupted first run is no backup")
+
+            _ = try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0.addingTimeInterval(60)))
+            // A new revision to copy, and a run cut short while copying it.
+            let note = try #require(model.notes.first?.id)
+            try await TS.writeAsAnotherDevice([.setMeta(.title("Backed up later"))], to: note, vault: url, key: key)
+            #expect(throws: Stop.self) {
+                try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0.addingTimeInterval(120),
+                                                                               afterEachFile: { _ in throw Stop() }))
+            }
+            #expect(try Backup.status(at: dest).updated == t0.addingTimeInterval(120))
+            model.forgetBackupFolder()
+            try model.chooseBackupFolder(dest)
+            #expect(model.backupRecord()?.lastBackup == t0.addingTimeInterval(60))
+        }
+
+        @Test func aFolderThatIsGoneIsReportedByName() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (model, _, _, _) = try await model(scratch)
+            defer { model.close() }
+            let drive = try scratch.folder("Gone")
+            try model.chooseBackupFolder(drive)
+            try FileManager.default.removeItem(at: drive)
+            await #expect(throws: AppModel.BackupAppError.folderGone("Gone/sample.sempere-backup")) { _ = try await model.backUpNow() }
+            await #expect(throws: AppModel.BackupAppError.folderGone("Gone/sample.sempere-backup")) { _ = try await model.verifyBackup() }
+            #expect(model.backupRecord()?.lastBackup == nil)
+        }
+
+        /// Offline audit A-P2 (review of #91, M2): a backup folder on a removable volume that is not mounted now is "can't
+        /// be reached now"; a folder deleted together with the folder it was in, on a disk that is there, is gone.
+        @Test func aFolderOnAnUnpluggedDriveIsUnavailableAndADeletedOneGone() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (model, _, _, _) = try await model(scratch)
+            defer { model.close() }
+            let parent = try scratch.folder("Sync")
+            let drive = parent.appendingPathComponent("Backups", isDirectory: true)
+            try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
+            try model.chooseBackupFolder(drive)
+            try FileManager.default.removeItem(at: parent)   // the folder and the one it was in, deleted
+            // Named by the picked folder and the backup inside it ("<vault>.sempere-backup").
+            await #expect(throws: AppModel.BackupAppError.folderGone("Backups/sample.sempere-backup")) { _ = try await model.backUpNow() }
+            let record = try #require(model.backupRecord())
+            let absent = "/Volumes/Sempere-absent-\(UUID().uuidString)/Backups"
+            #expect(AppModel.unresolvedBackupFolder(record, recordedPath: absent) == .folderUnavailable("Backups/sample.sempere-backup"))
+            #expect(AppModel.unresolvedBackupFolder(record, recordedPath: drive.path) == .folderGone("Backups/sample.sempere-backup"))
+        }
+
+        @Test func theOpenVaultIsRefusedAsABackupFolder() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (model, _, url, _) = try await model(scratch)
+            defer { model.close() }
+            #expect(throws: BackupLocation.Problem.insideOpenVault) { try model.chooseBackupFolder(url) }
+            #expect(throws: BackupLocation.Problem.insideOpenVault) {
+                try model.chooseBackupFolder(url.appendingPathComponent("notes"))
+            }
+            #expect(model.backupRecord()?.bookmark == nil)
+        }
+
+        @Test func verifyReportsDamageAndMissingFiles() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (model, _, _, _) = try await model(scratch)
+            defer { model.close() }
+            let dest = try scratch.folder("Backup.sempere-backup")
+            try model.chooseBackupFolder(dest)
+            try await model.backUpNow()
+            let healthy = try await model.verifyBackup()
+            #expect(healthy.isHealthy)
+            #expect(healthy.decrypted, "unlocked: every revision is decrypted")
+            #expect(model.backupRecord()?.lastVerifyHealthy == true)
+
+            let files = try FileManager.default.subpathsOfDirectory(atPath: dest.path)
+                .filter { $0.hasPrefix("notes/") && $0.hasSuffix(".age") }.sorted()
+            let damaged = dest.appendingPathComponent(files[0])
+            var bytes = try Data(contentsOf: damaged)
+            bytes[bytes.count - 3] ^= 0xFF
+            try bytes.write(to: damaged)
+            try FileManager.default.removeItem(at: dest.appendingPathComponent(files[1]))
+
+            let report = try await model.verifyBackup()
+            #expect(!report.isHealthy)
+            #expect(report.problemLines.contains { $0.hasPrefix("modified  \(files[0])") })
+            #expect(report.problemLines.contains { $0.hasPrefix("missing  \(files[1])") })
+            #expect(model.backupRecord()?.lastVerifyHealthy == false)
+
+            // Back Up Now repairs it: after a failed check every file is compared by hash,
+            // so the missing file is copied again and the damaged one replaced.
+            let repair = try await model.backUpNow()
+            #expect(repair.copied.contains(files[1]))
+            #expect(repair.replaced.contains(files[0]))
+            #expect(model.backupRecord()?.lastVerifyHealthy == nil)
+            #expect(try await model.verifyBackup().isHealthy)
+        }
+
+        @Test func reminderIsScheduledMovedByABackupAndCancelled() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (model, notifier, _, _) = try await model(scratch)
+            defer { model.close() }
+            let id = BackupReminder.identifier(try #require(model.vault).vaultId)
+            let now = Date()
+            #expect(await model.setBackupReminder(days: 7, now: now))
+            #expect(notifier.authorizations == 1)
+            let first = try #require(notifier.scheduled[id])
+            #expect(abs(first.date.timeIntervalSince(now.addingTimeInterval(7 * 86_400))) < 1)
+            guard case .backupReminder(let vaultName, let record) = first.notice else {
+                Issue.record("not a backup reminder: \(first.notice)")
+                return
+            }
+            #expect(vaultName == "sample")
+            #expect(record.reminderDays == 7)
+
+            let dest = try scratch.folder("Backup.sempere-backup")
+            try model.chooseBackupFolder(dest)
+            try await model.backUpNow()
+            let lastBackup = try #require(model.backupRecord()?.lastBackup)
+            let moved = try #require(notifier.scheduled[id])
+            #expect(abs(moved.date.timeIntervalSince(lastBackup.addingTimeInterval(7 * 86_400))) < 1)
+
+            // Denied notifications keep the setting (Settings still shows "overdue").
+            notifier.allow = false
+            #expect(await model.setBackupReminder(days: 3) == false)
+            #expect(model.backupRecord()?.reminderDays == 3)
+
+            #expect(await model.setBackupReminder(days: 0))
+            #expect(notifier.scheduled[id] == nil)
+            #expect(notifier.cancelled.last == id)
+            #expect(model.backupRecord()?.reminderSince == nil)
+        }
+
+        /// Audit B38: the vault is closed just as a backup finishes: the
+        /// backup it made is still recorded.
+        @Test func aBackupThatFinishesAsTheVaultClosesIsRecorded() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let dest = try scratch.folder("Backup.sempere-backup")
+            let closer = CloseAfterBackup(dest: dest)
+            let (url, key) = try await ModelFixture.vault()
+            let model = AppModel(deviceStateURL: TS.deviceStateURL(), backupNotifier: FakeBackupNotifier(),
+                                 afterIO: { await closer.closeIfBackedUp() })
+            defer { model.close() }
+            model.backupStore = BackupStore(defaults: scratch.defaults)
+            try await model.openVault(at: url)
+            try await model.unlock(identityText: try await ModelFixture.keyText(key))
+            let vaultId = try #require(model.vault).vaultId
+            try model.chooseBackupFolder(dest)
+            closer.model = model
+            _ = try? await model.backUpNow()
+            #expect(closer.closed, "closed right after the run")
+            #expect(model.phase != .unlocked)
+            #expect(Backup.verify(at: dest).isHealthy)
+            let record = model.backupStore.record(for: vaultId)
+            #expect(record.lastBackup != nil)
+            #expect(record.lastErrors == 0)
+        }
+
+        @Test func restoreGoesIntoTheStoreAndAsksBeforeReplacing() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (model, _, url, _) = try await model(scratch)
+            defer { model.close() }
+            let library = VaultLibrary(storeURL: scratch.dir.appendingPathComponent("recents.json"))
+            let backup = try scratch.folder("Backup")
+            _ = try Backup.run(source: try #require(model.vault), to: backup)
+            let before = try FileManager.default.subpathsOfDirectory(atPath: url.path).sorted()
+
+            let found = try await model.previewRestore(from: backup)
+            #expect(found.source.path == backup.path)
+            #expect(found.preview.revisions == 7)
+            #expect(found.preview.attachments == 1)
+            #expect(found.preview.newestRevision != nil)
+
+            // Into the in-app store, remembered, opening with the same key; the open vault is not touched.
+            #expect(await model.restoreConflict(source: backup, picked: backup, library: library) == nil)
+            let outcome = try await model.restoreBackup(picked: backup, source: backup, name: "Notes (Restored)",
+                                                        library: library)
+            #expect(outcome.isComplete)
+            #expect(outcome.url.lastPathComponent == "Notes (Restored).sempere")
+            #expect(outcome.url.path.hasPrefix(library.vaultStore.root.path + "/"))
+            #expect(library.recents.first?.id == outcome.recentID)
+            #expect(library.recents.first?.storeID == model.vault?.vaultId)
+            #expect(try Vault.open(at: outcome.url).vaultId == model.vault?.vaultId)
+            #expect(try FileManager.default.subpathsOfDirectory(atPath: url.path).sorted() == before, "nothing written")
+            #expect(model.phase == .unlocked, "the open vault stays open")
+
+            // Again: the vault is on this device now. Without replace it is refused; the sheet asks first.
+            let existing = try #require(await model.restoreConflict(source: backup, picked: backup, library: library))
+            #expect(existing.url == outcome.url)
+            await #expect(throws: VaultStoreProblem(error: .alreadyInStore(vaultId: existing.vaultId, name: "Notes (Restored)"))) {
+                _ = try await model.restoreBackup(picked: backup, source: backup, name: "Other", library: library)
+            }
+            // Replacing the store copy while it is open: it is closed first, and keeps its name.
+            let entry = try #require(library.storedVaults.first)
+            try await model.openStored(entry, library: library)
+            let replaced = try await model.restoreBackup(picked: backup, source: backup, name: "Other", replace: true,
+                                                         library: library)
+            #expect(replaced.isComplete)
+            #expect(replaced.url == outcome.url)
+            #expect(model.phase == .noVault)
+            #expect(library.vaultStore.list().count == 1)
+            #expect(library.storedVaults.count == 1)
+        }
+
+        /// Review of #115 (R2): a backup in iCloud Drive that is not downloaded yet (its `backup.json` and `vault.json`
+        /// only stand-ins) is found by its stand-ins and previewed after they are downloaded, never "holds no backup".
+        @Test func restorePreviewDownloadsABackupNotOnTheDeviceYet() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let fm = FileManager.default
+            let (fixture, _) = try await ModelFixture.vault()
+            let drive = try scratch.folder("Drive")
+            let backup = drive.appendingPathComponent("Notes.sempere-backup", isDirectory: true)
+            _ = try Backup.run(source: try Vault.open(at: fixture), to: backup)
+            // iCloud's copies of the two files, away from the picked folder.
+            let server = try scratch.folder("Server")
+            for name in [BackupManifest.fileName, "vault.json"] {
+                try fm.moveItem(at: backup.appendingPathComponent(name), to: server.appendingPathComponent(name))
+                try Data().write(to: backup.appendingPathComponent(".\(name).icloud"))
+            }
+            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            defer { model.close() }
+            model.cloudPollInterval = .milliseconds(20)
+            let requested = RequestedDownloads()
+            var hooks = Self.iCloudHooks()
+            hooks.request = { item in
+                requested.add(item.url)
+                let name = item.url.lastPathComponent
+                try? FileManager.default.moveItem(at: server.appendingPathComponent(name), to: item.url)
+                try? FileManager.default.removeItem(at: item.url.deletingLastPathComponent().appendingPathComponent(".\(name).icloud"))
+            }
+            model.iCloudHooks = hooks
+            #expect(BackupLocation.isBackup(backup, fm) && BackupLocation.isVault(backup, fm), "stand-ins count")
+
+            let found = try await model.previewRestore(from: drive)
+            #expect(found.source.standardizedFileURL.path == backup.standardizedFileURL.path)
+            #expect(found.preview.isBackup)
+            #expect(found.preview.revisions > 0)
+            #expect(Set(requested.paths.map { URL(fileURLWithPath: $0).lastPathComponent })
+                    == [BackupManifest.fileName, "vault.json"])
+        }
+
+        /// Review of #115 (F3): the plain folder picked holds the backup only as iCloud's stand-in for the whole package
+        /// (`.Notes.sempere-backup.icloud`, not downloaded on this iPhone): the restore finds it, downloads it, and previews.
+        @Test func restoreFindsABackupPackageNotDownloadedInThePickedFolder() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let fm = FileManager.default
+            let (fixture, _) = try await ModelFixture.vault()
+            let drive = try scratch.folder("Drive")
+            let server = try scratch.folder("Server")
+            let held = server.appendingPathComponent("Notes.sempere-backup", isDirectory: true)
+            _ = try Backup.run(source: try Vault.open(at: fixture), to: held)
+            let standIn = drive.appendingPathComponent(".Notes.sempere-backup.icloud")
+            try Data().write(to: standIn)
+            let backup = drive.appendingPathComponent("Notes.sempere-backup", isDirectory: true)
+            #expect(try BackupLocation.restoreSource(drive).standardizedFileURL.path == backup.standardizedFileURL.path)
+
+            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            defer { model.close() }
+            model.cloudPollInterval = .milliseconds(20)
+            let requested = RequestedDownloads()
+            var hooks = Self.iCloudHooks()
+            hooks.request = { item in
+                requested.add(item.url)
+                // The package comes down whole.
+                if item.url.lastPathComponent == "Notes.sempere-backup" {
+                    try? FileManager.default.moveItem(at: held, to: item.url)
+                    try? FileManager.default.removeItem(at: standIn)
+                }
+            }
+            model.iCloudHooks = hooks
+            let found = try await model.previewRestore(from: drive)
+            #expect(found.source.standardizedFileURL.path == backup.standardizedFileURL.path)
+            #expect(found.preview.isBackup)
+            #expect(found.preview.revisions > 0)
+            #expect(requested.paths.first == backup.standardizedFileURL.path, "the package was asked for")
+            #expect(fm.fileExists(atPath: backup.appendingPathComponent(BackupManifest.fileName).path))
+        }
+
+        @Test func restoreWorksWithoutAnOpenVault() async throws {
+            let scratch = try Scratch()
+            defer { scratch.cleanUp() }
+            let (fixture, _) = try await ModelFixture.vault()
+            let backup = try scratch.folder("Backup")
+            _ = try Backup.run(source: try Vault.open(at: fixture), to: backup)
+            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            defer { model.close() }
+            let library = VaultLibrary(storeURL: scratch.dir.appendingPathComponent("recents.json"))
+            let found = try await model.previewRestore(from: scratch.dir)
+            let outcome = try await model.restoreBackup(picked: scratch.dir, source: found.source, name: "Mine",
+                                                        library: library)
+            #expect(outcome.isComplete)
+            let entry = try #require(library.recents.first)
+            try await model.open(recent: entry, library: library)
+            #expect(model.phase == .locked)
+            #expect(model.vaultName == "Mine")
+        }
+    }
+
+    /// Closes the model once a backup run has written `backup.json` (from the
+    /// model's I/O hook, so between the run and what the model does with it).
+    final class CloseAfterBackup: @unchecked Sendable {
+        let dest: URL
+        @MainActor weak var model: AppModel?
+        @MainActor private(set) var closed = false
+
+        init(dest: URL) { self.dest = dest }
+
+        func closeIfBackedUp() async {
+            guard (try? Backup.status(at: dest)) != nil else { return }
+            await MainActor.run {
+                guard let model, !closed else { return }
+                closed = true
+                model.close()
+            }
+        }
+    }
+}

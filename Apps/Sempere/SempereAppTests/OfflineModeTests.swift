@@ -12,7 +12,8 @@ import Testing
 /// host is signed with `SempereOfflineTests.entitlements` (no `network.client`), so the sandbox refuses every
 /// outbound connection, and `SEMPERE_OFFLINE_TEST=1` is set. These tests then check that the mode is in force (a
 /// run that sets the variable without the entitlements fails), and walk journeys that must not need the network.
-/// Without the variable they are skipped, except the join over a drive, which runs in every mode.
+/// Without the variable they are skipped. The join over a drive, which needs no network either, is
+/// `JoinThroughProviderTests.aDeviceJoinsThroughAFolderOnADrive` in `SempereAppCoreTests` (it runs in every mode).
 @MainActor
 struct OfflineModeTests {
     nonisolated static var offline: Bool { ProcessInfo.processInfo.environment["SEMPERE_OFFLINE_TEST"] == "1" }
@@ -68,57 +69,6 @@ struct OfflineModeTests {
         #expect(FileManager.default.fileExists(atPath: shared.appendingPathComponent("vault.json").path))
         let status = try #require(model.syncSessions.first?.status)
         #expect(!status.needsAttention, "\(status.headline)")
-    }
-
-    /// Two devices that never go online, joined through a plain folder (a USB drive carried between them): the
-    /// joining device opens the drive's copy with "Keep syncing", its runs carry its request to the drive and take
-    /// home's approval back, it confirms with the reply words, writes, and home sees the note. Runs in every mode:
-    /// nothing here may need the network (no app test covered a join over a folder target).
-    @Test func aDeviceJoinsThroughAFolderOnADrive() async throws {
-        let (vault, keyURL) = try AppModelTests.fixtureVault()
-        let drive = try TestTemp.directory("usb")
-        let shared = drive.appendingPathComponent("Notes.sempere", isDirectory: true)
-        let homeKeys = try DeviceKeys.parse(try String(contentsOf: keyURL, encoding: .utf8))
-        let homeState = vault.deletingLastPathComponent().appendingPathComponent("home-folder-sync.json")
-        func homeSync() throws {
-            let v = try Vault.open(at: vault, identities: [homeKeys.nativeIdentity], signing: homeKeys.signing)
-            _ = try FolderTargetRun.run(vaultFolder: vault, folder: shared, vault: v, stateURL: homeState, twoWay: true)
-        }
-        try homeSync()
-        #expect(FileManager.default.fileExists(atPath: shared.appendingPathComponent("vault.json").path))
-
-        let root = try TestTemp.directory("joiner")
-        let library = VaultLibrary(storeURL: root.appendingPathComponent("recents.json"))
-        let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50), trust: MemoryEpochTrustStore())
-        model.vaultStore = library.vaultStore
-        model.deviceMemory = MemoryKeyValueStore()
-        model.folderWriteDelay = 0.05
-        model.folderArrivalWait = 0.5
-        try await model.copyIn(picked: shared, library: library, followUp: .keepSyncing)
-        defer { model.close() }
-        #expect(model.phase == .locked)
-        #expect(model.syncSessions.count == 1)
-        let keys = RememberedKeys(store: MemoryDeviceKeyStore())
-        guard case .waiting(let words, _) = try await model.startJoin(store: keys.store) else { Issue.record("not waiting"); return }
-        _ = await model.syncSessions.first?.syncNow()   // the request goes to the drive
-
-        try homeSync()
-        var home = try Vault.open(at: vault, identities: [homeKeys.nativeIdentity], signing: homeKeys.signing)
-        let request = try #require(home.joinRequest(matching: words), "the request did not reach home through the drive")
-        let reply = try home.approveDevice(request)
-        try homeSync()
-
-        _ = await model.syncSessions.first?.syncNow()
-        await model.refreshLockedManifest()
-        #expect({ if case .joining = $0 { true } else { false } }(await keys.unlockWithDeviceKey(model)))
-        #expect(keys.joinStage == .confirming)
-        let device = try await keys.store.keys(for: try #require(model.vault?.vaultId), reason: .unlock(vaultName: nil))
-        try await model.confirmJoin(words: reply, keys: device)
-        #expect(model.phase == .unlocked)
-        let note = try await model.createNote(title: "Joined offline", paper: Paper(kind: .ruled), notebook: nil)
-        _ = await model.syncSessions.first?.syncNow()
-        try homeSync()
-        #expect(try Vault.open(at: vault, identities: [homeKeys.nativeIdentity]).noteIDs().contains(note))
     }
 
     /// Transcription availability is asked without any download (Settings ▸ Transcription), and returns at once.

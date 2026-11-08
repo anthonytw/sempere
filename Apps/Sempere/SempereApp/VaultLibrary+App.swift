@@ -5,8 +5,8 @@ import SempereAppCore
 import SempereSync
 import UniformTypeIdentifiers
 
-// The app's side of `VaultLibrary` (SempereAppCore): the vault folder types, the app's own folders, bookmarks of
-// picked folders, and the wording of the library's errors and of a generated recovery key.
+// The app's side of `VaultLibrary` (SempereAppCore): the vault folder types, the app's own folders, and the wording
+// of the library's errors and of a generated recovery key.
 
 extension UTType {
     /// A `.sempere` folder. Declared as an exported type in `SempereInfo.plist`, as a
@@ -38,6 +38,9 @@ extension VaultLibrary {
         self.init(storeURL: Self.defaultStoreURL, vaultStore: VaultStore(root: Self.defaultVaultStoreRoot))
     }
 
+    /// Lists the store again (`refreshStoredVaults(log:)`), logging to the app's `AppPerfSink`.
+    func refreshStoredVaults() async { await refreshStoredVaults(log: AppPerfSink()) }
+
     /// `Application Support/Sempere/recents.json`.
     static var defaultStoreURL: URL { AppSupport.sempere.appendingPathComponent("recents.json") }
 
@@ -59,34 +62,6 @@ extension CreatedVault {
                                                 comment: "Label of a vault's recovery key; the value is the vault's name"),
                     created: created)
         }
-    }
-}
-
-/// Security-scoped bookmarks of vault folders.
-///
-/// Mac Catalyst has no `.withSecurityScope` (AppKit only), so bookmarks are
-/// made with plain options, as on iOS. `docs/io.md` "Saved folder access"
-/// says what is and is not verified about that in a sandboxed Mac build.
-enum VaultBookmark {
-    struct Resolved {
-        var url: URL
-        /// A fresh bookmark when the stored one was stale.
-        var refreshed: Data?
-    }
-
-    /// Bookmarks `url`. Access to it (or a parent) must be active.
-    static func make(for url: URL) throws -> Data {
-        try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-    }
-
-    /// Resolves a bookmark; when it is stale, tries to re-save it.
-    static func resolve(_ data: Data) throws -> Resolved {
-        var stale = false
-        let url = try URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
-        guard stale else { return Resolved(url: url, refreshed: nil) }
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        return Resolved(url: url, refreshed: try? make(for: url))
     }
 }
 
@@ -134,16 +109,11 @@ extension VaultCreation.CreationError: @retroactive CustomStringConvertible {
     }
 }
 
-/// A vault name `VaultStore.folderName` refuses (`VaultStoreError.invalidName`), worded for the app: New Vault and
+/// The words of a vault name `VaultStore.folderName` refuses (`InvalidVaultName`, SempereAppCore): New Vault and
 /// Restore from Backup.
-struct InvalidVaultName: Error, Equatable, CustomStringConvertible {
-    var description: String {
+extension InvalidVaultName: @retroactive CustomStringConvertible {
+    public var description: String {
         String(localized: "Give the vault a name without slashes, leading dots or control characters.")
-    }
-
-    /// Throws `InvalidVaultName` for a name the store would refuse.
-    static func check(_ name: String) throws {
-        do { _ = try VaultStore.folderName(for: name) } catch { throw InvalidVaultName() }
     }
 
     /// `error` worded for the app: the name rule's own sentence for `VaultStoreError.invalidName`.

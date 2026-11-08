@@ -29,7 +29,7 @@ enum AppHost: AppModelHost {
                          recordingRoot: RecordingSession.root, recordingsInUse: AppModel.recordingsInUse,
                          audioFiles: AVCaptureAudioFiles(), makeQuickCapture: { _ in QuickCapture.shared },
                          settingsStorage: AppSettingsStorage(), makePageRecognizer: { VisionPageRecognizer() },
-                         ownerAuthenticator: SystemOwnerAuthenticator())
+                         ownerAuthenticator: SystemOwnerAuthenticator(), files: SystemFileCoordinator())
     }
 
     static func willClose(_ model: AppModel) {
@@ -52,7 +52,6 @@ enum AppHost: AppModelHost {
         editor.readOnlyReason ?? String(localized: "This note could not be read.")
     }
 
-    static func listingFinished(_ model: AppModel) { model.thinIfDue() }
     static func closeWindowEditors(_ model: AppModel) async { await model.closeWindowEditors() }
     static func openWindowNote(_ id: UUID, in model: AppModel) async throws { _ = try await model.openWindowNote(id) }
     static func reopenWindowNote(_ id: UUID, in model: AppModel) async { await model.reopenWindowNote(id) }
@@ -91,10 +90,6 @@ final class AppModelAppState {
     /// The "Export to Folder or Zip…" sheet's request (`AppModel+BulkExport`).
     var bulkExportRequest: BulkExportRequest?
 
-    /// How far a thinning run (or its preview) has got, counted per note;
-    /// nil when none is running (`thinVault`).
-    var thinningProgress: ThinningProgress?
-
     /// Background time and scheduled tasks for the sync (`AppModel+Background`); tests pass fakes.
     @ObservationIgnored var backgroundTasks: any BackgroundTaskRunning = UIKitBackgroundTasks()
 
@@ -117,9 +112,6 @@ final class AppModelAppState {
 
     /// Applies "Keep Screen On" app-wide (`IdleTimerKeeper`); the app sets it, tests need none.
     @ObservationIgnored var idleTimer: IdleTimerKeeper?
-
-    /// "Open Vault…" copying a vault onto this device (`copyIn`), for the progress overlay.
-    var vaultCopy: VaultCopyProgress?
 }
 
 extension AppModel {
@@ -155,10 +147,6 @@ extension AppModel {
         get { appState.bulkExportRequest }
         set { appState.bulkExportRequest = newValue }
     }
-    var thinningProgress: ThinningProgress? {
-        get { appState.thinningProgress }
-        set { appState.thinningProgress = newValue }
-    }
     var backgroundTasks: any BackgroundTaskRunning {
         get { appState.backgroundTasks }
         set { appState.backgroundTasks = newValue }
@@ -184,9 +172,5 @@ extension AppModel {
     var idleTimer: IdleTimerKeeper? {
         get { appState.idleTimer }
         set { appState.idleTimer = newValue }
-    }
-    var vaultCopy: VaultCopyProgress? {
-        get { appState.vaultCopy }
-        set { appState.vaultCopy = newValue }
     }
 }

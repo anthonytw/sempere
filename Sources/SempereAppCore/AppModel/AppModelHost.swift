@@ -35,8 +35,6 @@ public protocol AppModelHost: Sendable {
     @MainActor static func prepareEditor(_ editor: NoteEditorModel<Canvas>, of note: UUID, in model: AppModelCore<Self>)
     /// What the detail pane says for a note whose read failed before it was shown.
     @MainActor static func unreadableText(_ editor: NoteEditorModel<Canvas>) -> String
-    /// A listing `unlock` started finished (automatic thinning).
-    @MainActor static func listingFinished(_ model: AppModelCore<Self>)
     /// The note windows' editors (Mac): close them all, open one, reopen one.
     @MainActor static func closeWindowEditors(_ model: AppModelCore<Self>) async
     @MainActor static func openWindowNote(_ id: UUID, in model: AppModelCore<Self>) async throws
@@ -50,7 +48,7 @@ public protocol AppModelHost: Sendable {
 /// property at init and read from there (`transcriber`, `playbackBackend`, `recordingRoot`, `iCloudHooks`, the WebDAV
 /// remote and passwords, `quickCapture`, `ownerAuthenticator`, and `settings` as `deviceMemory`); every other one is read from `services` when used (`perf`, `settings`,
 /// `bookmarks`, `platform`, `makeRenderCache`, `recordingsInUse`, `audioFiles`, `settingsStorage`,
-/// `makePageRecognizer`), and a test passes its own at init.
+/// `makePageRecognizer`, `files`), and a test passes its own at init.
 public struct AppModelServices {
     /// Timing and log lines (`AppPerfSink` in the app).
     public var perf: any PerfSink
@@ -93,6 +91,9 @@ public struct AppModelServices {
     /// a passphrase copy: design §6.5): the app's Face ID, Touch ID or passcode check; headless, none can be asked,
     /// and every check fails (`OwnerCheckUnavailable`).
     public var ownerAuthenticator: any OwnerAuthenticator
+    /// Coordinated reads of a folder a provider may touch while it is read (a copy-in, a restore from iCloud Drive):
+    /// the app's `SystemFileCoordinator` (`NSFileCoordinator`); headless, none (`UncoordinatedFiles`).
+    public var files: any FileCoordinating
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,
@@ -104,7 +105,8 @@ public struct AppModelServices {
                 makeQuickCapture: @escaping @MainActor (_ scratch: URL) -> QuickCapture = AppModelServices.scratchQuickCapture,
                 settingsStorage: any SettingsSyncStorage = StoredSettingsSyncStorage(),
                 makePageRecognizer: @escaping @MainActor () -> (any PageRecognizing)? = { nil },
-                ownerAuthenticator: any OwnerAuthenticator = NoOwnerCheck()) {
+                ownerAuthenticator: any OwnerAuthenticator = NoOwnerCheck(),
+                files: any FileCoordinating = UncoordinatedFiles()) {
         self.perf = perf
         self.settings = settings
         self.bookmarks = bookmarks
@@ -123,6 +125,7 @@ public struct AppModelServices {
         self.settingsStorage = settingsStorage
         self.makePageRecognizer = makePageRecognizer
         self.ownerAuthenticator = ownerAuthenticator
+        self.files = files
     }
 
     /// A quick capture that records nothing (`QuickCapture`'s defaults), its folders under `scratch`.

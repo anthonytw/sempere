@@ -90,7 +90,7 @@ The call sites that are left, by file in `Apps/Sempere/SempereApp/` (2026-11-07)
 View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the platform API.
 
 - **`KeyValueStore`** (`UserDefaults`/`@AppStorage`): `AppCommands`, `AppModel+SettingsSync`,
-  `AppModel+Thinning`, `AppThemeWindows`, `AppearancePreferences`,
+  `AppThemeWindows`, `AppearancePreferences`,
   `ColumnLayout`, `DragTestSettings`, `DrawingPaletteView`,
   `DrawingToolbox` (its `defaults:` parameter), `EraserPreference`,
   `ImagePreparation`, `InsertUI`, `MathEditor`, `MathModels`, `MathSettings`, `MouseInk`, `NoteCanvasView`,
@@ -98,16 +98,15 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
   `PageLayoutChoice`, `PageRecognizer`, `PaperPreference`, `RecordingPreferences`, `RenderCache`, `RootView`,
   `SettingsGroups`, `SettingsSyncBridge`, `SettingsView`, `StatusItemBridge`, `ToolPalette`
   (and `DebugLaunch`, debug only).
-- **`PerfSink`**: `Perf.begin`/`measure`/`event` in `AppModel+Backup`, `+History`, `+Thinning`, `BackgroundSync`, `ItemLayerView`, `ItemRendering`,
+- **`PerfSink`**: `Perf.begin`/`measure`/`event` in `AppModel+History`, `BackgroundSync`, `ItemLayerView`, `ItemRendering`,
   `NoteEditor`, `PageCanvasView`; `os.Logger` in `AppModel+Inbox`,
   `+SettingsSync`, `+Suspension`, `AppModelEnvironment`, `DragLog`, `FolderPicker`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
   becomes `perf.measure("x", …)`.
-- **`FolderBookmarks`** (bookmarks and security scopes): `AppModel+Backup`, `+BulkExport`,
-  `+DeviceNotices`, `+Import`, `+VaultDetails`,
-  `+VaultStore`, `ExportSheet`, `FolderPicker`, `InsertUI`, `MathModels`, `NewVaultView`, `PDFPreparation`,
-  `VaultLibrary+App` (`VaultBookmark`, the backup folder's).
-- **`FileCoordinating`**: the callers of `CloudVault.coordinatedRead`/`Write` (`AppModel+Backup`, `+Thinning`,
-  `+VaultStore`, `NewVaultView`, `NoteEditor`) pass `files:` once their code is in the library. Quick capture
+- **`FolderBookmarks`** (bookmarks and security scopes): `AppModel+BulkExport`,
+  `+DeviceNotices`, `+Import`, `ExportSheet`, `FolderPicker`, `InsertUI`, `MathModels`, `NewVaultView`, `PDFPreparation`.
+  (`VaultBookmark` went in step 5a: the backup folder's bookmark is `services.bookmarks`.)
+- **`FileCoordinating`**: the callers of `CloudVault.coordinatedRead`/`Write` (`NewVaultView`, `NoteEditor`) pass
+  `files:` once their code is in the library; the model's copy-in, restore and thinning read `services.files` (step 5a). Quick capture
   takes one (`QuickCapture.files`, for `CaptureDelivery.flushQueue(…files:)`; the app passes `SystemFileCoordinator`).
   `Sources/SempereSync/UbiquitousFolderHooks.swift` calls `NSFileCoordinator` itself (Darwin only, already in the
   library): it can take a `FileCoordinating` when a second implementation is wanted.
@@ -396,15 +395,51 @@ Wave 5b, part 3, step 4b (the unlock sheet's model and the sync suites, 2026-11-
   `StoredSigning`, the Secure Enclave), `KeychainDeviceKeyStoreTests`, `JoinThroughProviderTests`, `OfflineModeTests`.
   `DeviceHistoryEvent` and `EpochChangeReport` (Sempere) got public initializers for the word tests.
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b are done (above). The rest of the family, in an order that
-empties `AppModelAppState` and the host's steps:
+Wave 5b, part 3, step 5a (vault store, backups, thinning, storage and Vault Details, 2026-11-08) moved:
 
-5. Vault store, backups, thinning, history, export and import (`+VaultStore`, `+Backup` (its reminder moved in step
-   3), `+Thinning`, `+History`, `+Export`, `+BulkExport`, `+Import`, `+OpenedFiles`, `+Storage`, `+VaultDetails` (its
-   Add WebDAV Server moved in step 4b), and `open(recent:)` of `+Browser`, which calls `copyIn`):
-   `UTType` and `CGRect` uses become library values; `FolderTargetAppTests`, `BackupAppTests`, `ReadOnlyVaultTests`,
-   `VaultStoreAppTests`, `VaultDetailsAppTests`, `ReencryptAppTests` (its folder-target cases), and the model halves of
-   `JoinThroughProviderTests` and `OfflineModeTests` (they build their vaults with `copyIn`).
+- **`+VaultStore`, `open(recent:)` of `+Browser`, `+Backup`, `+Thinning`, `+Storage` and `+VaultDetails`** into
+  `Sources/SempereAppCore/AppModel/`: Open Vault… (`copyIn`, `openStored`, `downloadSourceFolder`), the store's list
+  (`VaultLibrary.refreshStoredVaults(log:)`, `copyIn(_:coordinated:files:progress:)`, `removeStored`,
+  `storedVaultsByUse`), backups and restores, thinning (`NoteWriter.thin`, `thinVault`, `thinIfDue`), the cache sizes
+  and Vault Details' Repair, with their types (`CopyInFollowUp`, `VaultCopyProgress`, `VaultStoreProblem`,
+  `InvalidVaultName`, `RestoreOutcome`, `ThinningPreference`, `ThinningReport`, `NoteThinning`, `ThinningProgress`,
+  `CacheSizes`, `VaultDetailsSnapshot`, `RepairProblem`). `AppModel.BackupAppError` is `AppModelBackupError`.
+  `vaultCopy` and `thinningProgress` are the model's stored properties.
+- **Services, not the platform**: every security scope and bookmark goes through `services.bookmarks` (the backup
+  folder's stale bookmark is made again with its scope held, as `VaultBookmark.resolve` did), the coordinated reads of
+  a copy-in, a restore and thinning through `services.files` (new: `AppModelServices.files`, the app's
+  `SystemFileCoordinator`, headless `UncoordinatedFiles`), the signposts through `services.perf` ("backup", "thin",
+  "thin.note"), and thinning's window and last runs through `services.settings`
+  (`ThinningPreference.days(in:)`). The Open Vault sheet asks `CopyInFollowUp` on the app's services (glue in
+  `AppModel+VaultStore.swift`: `.live`, `SecurityScopedBookmarks`, `SystemFileCoordinator`). "Can this account write
+  here" is `FolderAccess.isWritableFolder` (the model's `isWritableFolder` calls it).
+- **Words** stay in the app, same strings: `VaultCopyProgress.text`, `VaultStoreProblem`, `InvalidVaultName` and
+  `AppModelBackupError` (retroactive `CustomStringConvertible`), `ThinningPreference.label`, `ThinningProgress.headline`,
+  `RepairProblem`.
+- **Seams gone**: the host step `listingFinished` (the listing ends in the core's `thinIfDue`; the app's scripted
+  launches, demo and debug, turn `automaticThinning` off instead of `thinIfDue` asking `DemoLaunch`), and
+  `AppModelAppState`'s `thinningProgress` and `vaultCopy`. In the app, `VaultBookmark` (its last callers moved) and
+  `FolderReach` (`SecurityScopedBookmarks.recordedPath(of:)` reads the path itself; the rule is `FolderReachability`).
+  New test seam: `automaticThinningRun`, the task `thinIfDue` started.
+- **Tests** in `Tests/SempereAppCoreTests/AppModel`: `VaultStoreTests`, `BackupTests` (with `FakeBackupNotifier` on
+  `LocalNotice`), `FolderTargetTests`, `VaultDetailsTests` (with `ReencryptOverFolderTests`, all of the former
+  `ReencryptAppTests`), `ThinningTests` (the cases of `VersionHistoryAppTests` that need no Save Version, and the
+  automatic run after a listing), `JoinThroughProviderTests` (the model's half, and the join over a drive of
+  `OfflineModeTests`). The app keeps the words (`VaultStoreAppTests`, `BackupAppTests`, the words' case of
+  `JoinThroughProviderTests`), the vault types it declares (`theVaultTypeIsAFolderNeverAPackage`), what needs the
+  system's bookmarks (`FolderTargetAppTests.aMovedTargetFolderIsFollowed`), Add Device's sheet model
+  (`JoinThroughProviderTests`: `AddDeviceApproval`) and the two thinning runs after a Save Version
+  (`VersionHistoryAppTests`, until `+History` moves).
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b and 5a are done (above). The rest of the family, in an
+order that empties `AppModelAppState` and the host's steps:
+
+5. b. History, export and import (`+History`, `+Export`, `+BulkExport`, `+Import`, `+OpenedFiles`): `UTType` and
+   `CGRect` uses become library values; `HistoryEntry`'s labels become typed values the app words. Tests:
+   `ReadOnlyVaultTests` (it saves a version), the two thinning runs after a Save Version in `VersionHistoryAppTests`,
+   and the export, bulk-export and import suites that need no PDFKit. Host state that goes: `exportRequest`,
+   `bulkExportRequest`, `openedPDFs`, `importSummary`, `lastImportReport`, `exportFolder`, `exportEpoch` (and
+   `willClose` with them).
 6. App lifecycle and windows (`+Background`, `+Suspension`, `+Windows`, `+MenuBar`, the drags of `+Browser`): the
    background-task and lifecycle protocols move, UIKit's implementations stay; `DragPayload`/`DropTarget` leave
    `SidebarDrop.swift`. "Keep Screen On" (`editorsChanged`, the UIKit `IdleTimerKeeper`) follows the open editors
