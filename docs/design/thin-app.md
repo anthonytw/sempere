@@ -210,8 +210,8 @@ Wave 5b, part 1 (capture, 2026-11-07) moved quick capture's state machine and wh
   and the app's on the real recorder and AVFoundation. `VoiceNoteActivityState.saving` and
   `StoredCaptureProfile.suspended` stay optional: 1.0.0 compatibility. `StatusItemProtocol` stays a file the app and
   the Mac menu-bar bundle both compile: the bundle is a native macOS plug-in in the app's process, and linking a
-  package product into both would put two copies of the module in one process. Accepting `segment-NNN.m4a` in
-  quick-capture leftovers (build 6 and earlier) is a separate follow-up.
+  package product into both would put two copies of the module in one process. Quick capture no longer accepts
+  `segment-NNN.m4a` leftovers (build 6 and earlier; no such data exists from 1.0.0 on).
 - **Tests**: the state machine's are `Tests/SempereAppCoreTests/QuickCapture` (`QuickCaptureFlowTests`,
   `QuickCaptureStartTests`), on the fakes of `CaptureTestKit.swift` and one fixture vault copied per test. The app
   keeps what needs AVFoundation (ADTS cut-offs and merges, the zero-length segment, the real session's interruptions

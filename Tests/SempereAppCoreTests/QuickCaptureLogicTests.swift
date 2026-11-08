@@ -20,26 +20,25 @@ struct QuickCaptureLogicTests {
     // MARK: - Segments
 
     @Test func segmentFilesAreTheSessionsOwnInOrder() throws {
-        #expect(CaptureSegments.number("segment-007.m4a") == 7)
         #expect(CaptureSegments.number("segment-007.aac") == 7)
-        #expect(CaptureSegments.number("segment-1000.m4a") == 1000)
-        for name in ["capture.m4a", "manifest.json", "segment-.m4a", "segment-1a.m4a", "segment-+1.m4a", "segment-001.caf",
-                     "../segment-001.m4a"] {
+        #expect(CaptureSegments.number("segment-1000.aac") == 1000)
+        for name in ["capture.m4a", "manifest.json", "segment-.aac", "segment-1a.aac", "segment-+1.aac", "segment-001.caf",
+                     "segment-001.m4a", "../segment-001.aac"] {
             #expect(CaptureSegments.number(name) == nil, "\(name)")
         }
         let folder = try Self.tempDir("segments")
-        for name in ["segment-1000.m4a", "segment-999.m4a", "segment-001.m4a", "capture.m4a", "manifest.json"] {
+        for name in ["segment-1000.aac", "segment-999.aac", "segment-001.aac", "segment-002.m4a", "capture.m4a", "manifest.json"] {
             try Data([1]).write(to: folder.appendingPathComponent(name))
         }
-        let listed = [folder.appendingPathComponent("segment-001.m4a")]
+        let listed = [folder.appendingPathComponent("segment-001.aac")]
         #expect(CaptureSegments.files(listed: listed, in: folder).map(\.lastPathComponent)
-                == ["segment-001.m4a", "segment-999.m4a", "segment-1000.m4a"])
+                == ["segment-001.aac", "segment-999.aac", "segment-1000.aac"])
         let manifest = RecordingManifest(note: UUID(), recording: UUID(), started: nil, codec: "aac",
-                                         segments: ["../../escape.m4a", "segment-001.m4a"], finished: 5)
+                                         segments: ["../../escape.aac", "segment-001.aac"], finished: 5)
         try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
         let leftover = try #require(CaptureSegments.Leftover(folder: folder))
         #expect(leftover.id == manifest.recording)
-        #expect(leftover.segments.map(\.lastPathComponent) == ["segment-001.m4a", "segment-999.m4a", "segment-1000.m4a"])
+        #expect(leftover.segments.map(\.lastPathComponent) == ["segment-001.aac", "segment-999.aac", "segment-1000.aac"])
         #expect(leftover.finished == 1, "never more than the manifest lists")
     }
 

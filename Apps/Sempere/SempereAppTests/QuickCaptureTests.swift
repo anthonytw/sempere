@@ -337,9 +337,9 @@ struct QuickCaptureTests {
         let id = UUID()
         let folder = root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: RecordingTests.tone, to: folder.appendingPathComponent("segment-001.m4a"))
+        try FileManager.default.copyItem(at: TestAudio.adtsTone(), to: folder.appendingPathComponent("segment-001.aac"))
         let manifest = RecordingManifest(note: UUID(), recording: id, started: Date(), codec: "aac",
-                                         segments: ["segment-001.m4a"], finished: 1)
+                                         segments: ["segment-001.aac"], finished: 1)
         try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingRecovery.manifestName))
         return folder
     }

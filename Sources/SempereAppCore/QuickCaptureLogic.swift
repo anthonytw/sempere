@@ -140,7 +140,7 @@ public enum CaptureSegments {
 
     /// The segment files of a recording folder, in order: those `listed`
     /// (the session's, or its manifest's), then every other
-    /// `segment-NNN.aac` (or, from build 6 and earlier, `.m4a`) in `folder` by number. A segment begun just before
+    /// `segment-NNN.aac` in `folder` by number. A segment begun just before
     /// the app died may be missing from the manifest (its write failed or had
     /// not happened yet); sealing without it and deleting the folder would
     /// lose its audio.
@@ -154,11 +154,11 @@ public enum CaptureSegments {
         return listed + extra.map { folder.appendingPathComponent($0.1) }
     }
 
-    /// The number of a segment file name (`segment-007.aac` or, from build 6 and
-    /// earlier, `segment-007.m4a` is 7, as `RecordingSession` names them); nil for any other name.
+    /// The number of a segment file name (`segment-007.aac` is 7, as `RecordingSession` names them); nil for any
+    /// other name.
     public static func number(_ name: String) -> Int? {
-        guard name.hasPrefix("segment-"), name.hasSuffix(".m4a") || name.hasSuffix(".aac") else { return nil }
-        let digits = name.dropFirst("segment-".count).dropLast(".m4a".count)
+        guard name.hasPrefix("segment-"), name.hasSuffix(".aac") else { return nil }
+        let digits = name.dropFirst("segment-".count).dropLast(".aac".count)
         guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
         return Int(digits)
     }

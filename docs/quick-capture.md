@@ -74,7 +74,7 @@ vault, and the vault's integrity.
   the inbox or the queue, or when no segment holds any audio (not a byte, or
   only finished files of no length): a voice note whose audio was not sealed
   into an inbox file is never deleted. Every
-  `segment-NNN.aac` (`segment-NNN.m4a` from build 6 and earlier) in the folder is sealed, also one the recording's
+  `segment-NNN.aac` in the folder is sealed, also one the recording's
   manifest does not name yet (begun just before the app died), and a folder
   whose manifest is missing or does not decode is sealed from its segment
   files under the id it is named by. Kept, and the "Not Saved" message says
