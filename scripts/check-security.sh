@@ -26,7 +26,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 cd "$root"
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: $root is not a git work tree" >&2; exit 2; }
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  # A CI container runs as another user than the checkout's owner ("dubious ownership"): trust this one directory.
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$root"
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: $root is not a git work tree" >&2; exit 2; }
+fi
 
 failures=0
 fail() { echo "FAIL  $*"; failures=$((failures + 1)); }
