@@ -20,10 +20,10 @@ A target's hash covers everything its result can be shown to depend on:
   - Package.swift, Package.resolved, scripts/ci-targets.json, the files the job runs the tests with (JOB_FILES, checked
     against the scripts they invoke by the self-test), the job's name;
   - the toolchain: `swift --version`, OS, kernel release and architecture; macOS build and SDK version; on Linux
-    /etc/os-release and the Docker image id ($SEMPERE_CI_IMAGE_ID, set by `ci-linux.sh docker`; the runner's image is
-    pinned by digest in the workflow file, which is in the Linux hashes); `--toolchain TEXT` overrides.
-Not covered, and bounded by the forced runs (SEMPERE_CI_FORCE_ALL=1: --testflight, --release, --cli, and the planned
-weekly run): tools installed from apt on Linux, the clock, the network, and reads the guard cannot see (a path built at run
+    /etc/os-release and the Docker image id ($SEMPERE_CI_IMAGE_ID, set by `ci-linux.sh docker`; the image's id, so a
+    moved tag changes the hashes); `--toolchain TEXT` overrides.
+Not covered, and bounded by the forced runs (SEMPERE_CI_FORCE_ALL=1: --testflight, --release, and --cli;
+there is no scheduled or post-merge full run): tools installed from apt on Linux, the clock, the network, and reads the guard cannot see (a path built at run
 time from data). Benchmark targets (`...Benchmarks`) are never planned: they gate nothing.
 
 `plan` prints one line per target on stderr and writes PLAN (tab-separated: run|skip, target, hash, job, commit, why). A target is
@@ -57,9 +57,9 @@ FORMAT = "ci-hash/1"
 # The files each job runs its tests with: a change to any of them changes every hash of the job.
 COMMON = ["Package.swift", "Package.resolved", "scripts/ci-hash.py", "scripts/ci-targets.json"]
 JOB_FILES = {
-    "linux-test": COMMON + ["scripts/ci-linux.sh", "scripts/test-offline.sh", ".gitea/workflows/linux.yml"],
+    "linux-test": COMMON + ["scripts/ci-linux.sh", "scripts/test-offline.sh"],
     "linux-webdav": COMMON + ["scripts/ci-linux.sh", "scripts/test-webdav.sh", "scripts/dav-fault-proxy.py",
-                              "scripts/webdav-server-requirements.txt", ".gitea/workflows/linux.yml"],
+                              "scripts/webdav-server-requirements.txt"],
     "mac-package": COMMON + ["scripts/local-ci.sh", "scripts/test-runner.py"],
 }
 IGNORED_NAMES = {".DS_Store"}
@@ -69,7 +69,7 @@ IGNORED_NAMES = {".DS_Store"}
 # SEMPERE_NOTABILITY_SAMPLES, SEMPERE_REQUIRE_* ...), so the result is not the one the hash names.
 ENV_ALLOWED = {
     "SEMPERE_BUILD_JOBS", "SEMPERE_CI_PASS_DIR", "SEMPERE_CI_FORCE_ALL", "SEMPERE_CI_MAC_PACKAGE", "SEMPERE_CI_IMAGE_ID",
-    "SEMPERE_LOCAL_CI_CAFFEINATED", "SEMPERE_LINUX_BUILD_VOLUME", "SEMPERE_LINUX_IMAGE", "SEMPERE_FAIL_FAST",
+    "SEMPERE_LOCAL_CI_CAFFEINATED", "SEMPERE_CI_LINUX_LANE", "SEMPERE_CI_RUN_ID", "SEMPERE_CI_HOST", "SEMPERE_LINUX_BUILD_VOLUME", "SEMPERE_LINUX_IMAGE", "SEMPERE_FAIL_FAST",
     "SEMPERE_RERUNS", "SEMPERE_RERUN_LIMIT", "SEMPERE_STALL_SECS", "SEMPERE_TMP_GUARD_FAIL", "SEMPERE_FORGE_TOKEN",
     "SEMPERE_FORGE_REPO", "SEMPERE_FORGE_URL", "SEMPERE_RUN_TMP",
 }
@@ -303,7 +303,7 @@ def cmd_record(a: argparse.Namespace) -> int:
         p.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".rec-")
         with os.fdopen(fd, "w") as f:
-            f.write(json.dumps({"commit": commit, "date": when, "host": platform.node(), "target": n}) + "\n")
+            f.write(json.dumps({"commit": commit, "date": when, "host": os.environ.get("SEMPERE_CI_HOST") or platform.node(), "target": n}) + "\n")
         os.replace(tmp, p)
         print(f"ci-hash: recorded {n} {h[:12]} passed at {commit}", file=sys.stderr)
     return 0
@@ -469,6 +469,8 @@ def cmd_check_reads(a: argparse.Namespace) -> int:
 
 
 def self_test() -> int:
+    # Hermetic: the test stores its records in a folder of its own, whatever store the caller's environment names.
+    os.environ.pop("SEMPERE_CI_PASS_DIR", None)
     failures = []
 
     def check(name: str, ok: bool) -> None:
@@ -480,7 +482,7 @@ def self_test() -> int:
         root = Path(d)
         for rel, text in {
             "Package.swift": "pkg", "Package.resolved": "pins", "scripts/ci-hash.py": "x", "scripts/ci-linux.sh": "x",
-            "scripts/test-offline.sh": "x", ".gitea/workflows/linux.yml": "x",
+            "scripts/test-offline.sh": "x", 
             "Sources/A/a.swift": "a", "Sources/B/b.swift": "b", "Sources/C/c.swift": "c",
             "Tests/ATests/t.swift": "t", "Tests/ATests/Fixtures/f.txt": "fx", "Tests/BTests/t.swift": "t",
             "Tests/ABenchmarks/x.swift": "x", "docs/shared.txt": "s",

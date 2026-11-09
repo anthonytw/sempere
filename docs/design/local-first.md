@@ -8,7 +8,7 @@ public source and the CLI binaries, once per release.
 | What | Where |
 | --- | --- |
 | Source of truth: branches, pull requests, reviews, tags | Gitea, `git.lab:awertz/sempere` (the `origin` remote) |
-| CI | Gitea Actions. Linux jobs run on a runner on the Orin. Mac work runs on the Mac through the agents' `xc-lock`, as now. There is no Mac CI runner. |
+| CI | Commit statuses on Gitea. The whole PR gate, Linux jobs included (in Docker), runs on the Mac through the agents' `xc-lock` (`scripts/local-ci.sh`). The Orin runner proved too slow (2026-11-09) and runs no job for a pull request. |
 | Public source | GitHub, `anthonytw/sempere`: **one squashed commit per release** |
 | CLI binaries, Homebrew formula | GitHub Releases and `anthonytw/homebrew-tap`, built locally and uploaded by the owner |
 | Public feature issues | GitHub issues (#8 onward). Bugs and maintenance stay in the private `data/TODO.md`. |
@@ -43,12 +43,12 @@ Consequences:
 
 ## CI on Gitea
 
-- The PR gate is the lean set from the test sweep: Linux package tests, the web viewer, a compile check
+- The PR gate is the lean set from the test sweep: the Linux package and WebDAV tests (Docker, on the Mac), a compile check
   of the app, and the release checks. The suites that need a simulator or the screen run only in the
   release sweep, on the Mac.
-- The Orin runner takes one job at a time, under a CPU quota, so CI never slows the inference services
-  on the same host.
-- Benchmarks, long fuzz runs and stress runs go in their own targets and run on a schedule (Gitea Actions
-  `schedule`) and in the release sweep, never in the gate.
+- The Orin runner took one job at a time, under a CPU quota (about 42 minutes for the Linux package job, against
+  about six in Docker on the Mac), so the Linux jobs moved to the Mac gate on 2026-11-09; the Gitea Linux workflow is deleted.
+- Benchmarks, long fuzz runs and stress runs go in their own targets and run in the release sweep, never in the
+  gate. A scheduled run is not set up (no workflow exists; see ci-lean.md).
 - Scripts that called `gh api` (commit statuses, check runs, release-tag, release-verify, local-ci)
   use the Gitea API instead.

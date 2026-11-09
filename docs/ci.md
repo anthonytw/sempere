@@ -2,10 +2,10 @@
 
 Development and CI run on the LAN (docs/design/local-first.md): pull requests and commit statuses are on Gitea
 (`git.lab:awertz/sempere`), and GitHub runs nothing. The Linux jobs are one script, `scripts/ci-linux.sh`, which
-Gitea Actions runs on the lab's Linux runner (`.gitea/workflows/linux.yml`) and anyone can run in Docker
-(`just ci-linux test webdav static`).
-The Mac work runs on the Mac through `scripts/local-ci.sh`, with the agents sharing it through `xc-lock`; there is
-no Mac CI runner.
+the PR gate runs on the Mac in Docker, in a lane beside the Mac steps (`scripts/local-ci.sh`; `just ci-linux test webdav static` runs them by hand).
+Since 2026-11-09 no Linux job runs on Gitea Actions: the Orin runner needed ~42 minutes for the package job that takes
+about six in Docker on the Mac, so `linux.yml` was deleted. The Mac work runs through `scripts/local-ci.sh`, with the agents sharing the Mac through `xc-lock`;
+there is no CI runner of any kind in the loop.
 
 ## Policy: what runs where
 
@@ -15,7 +15,7 @@ step passed; `scripts/forge.sh`), and something enforces each one:
 
 | Layer | Command | Runs | Status | Enforced by |
 |---|---|---|---|---|
-| PR gate | `scripts/local-ci.sh` | the tooltip lint (`scripts/check-help.py`), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run), Mac Catalyst unit tests (`scripts/app.sh test-mac`, the pseudo-language layout check `PseudoLanguageLayoutTests` among them), package tests (`swift build --build-tests && swift test --parallel`) | `local/app-tests` | merging (required) |
+| PR gate | `scripts/local-ci.sh` | the tooltip lint (`scripts/check-help.py`), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run), Mac Catalyst unit tests (`scripts/app.sh test-mac`, the pseudo-language layout check `PseudoLanguageLayoutTests` among them), package tests (`swift build --build-tests && swift test --parallel`), then in Docker the Linux package tests (offline, portability, removable importers: `scripts/ci-linux.sh docker test`) and the WebDAV tests (`docker webdav`), each skipping targets whose hash already passed | `local/app-tests` | merging (required) |
 | Author's targeted tests | whatever the change calls for | e.g. `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacItemUITests` | the PR's `## Tests run` section | review (the PR template has the section) |
 | Pre-TestFlight | `scripts/local-ci.sh --testflight` | the gate, then the dense-note performance suite (`test-mac-perf`, [Performance tests](#performance-tests)), the Mac unit tests with no network ([Offline mode](#offline-mode)), the Mac launch smoke tests (`test-mac-smoke`) and every Mac UI test (`test-mac-ui`) | `local/testflight-suite` | `scripts/testflight.sh` (`just testflight`) checks it on the commit it builds (`local/release-sweep` also counts) |
 | Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, with the iPad unit suite (`test`), the iPhone suites (`test-phone`) and the pseudo-language UI test on the iPad (`pseudo`) before the Mac UI tests, then the iPad UI tests (`test-ui`) and the iPhone canvas UI tests (`test-phone-ui`: tap selects, hold menu, finger draws, reading mode) | `local/release-sweep` | the App Store submission; then the release checks (`release-tag.sh`, `release-build.sh`): a `vX.Y.Z` tag needs it on the commit or on a swept ancestor with only release-neutral changes since (`scripts/release-sweep-check.sh`; a `-rc` prerelease only warns) |
@@ -153,17 +153,19 @@ then say so.
 ## What runs when
 
 - **Every pull request** needs `local/app-tests` (`just ci` on its pushed head). The Linux jobs
-  (`scripts/ci-linux.sh test`, `webdav`) run on the Gitea runner (`.gitea/workflows/linux.yml`, label
-  `orin-aarch64-sempere`, sysadmin `docs/fil-ci-runner.md` §2) on every pull request and push to `main`, with
-  `SEMPERE_BUILD_JOBS=4`: the runner's memory is shared with other CI. The web viewer's checks (`cd web &&
+  (`scripts/ci-linux.sh docker test`, `docker webdav`) are steps of that gate, run in Docker on the Mac, beside the Mac steps (about 10 minutes cold, 5-9 warm: [design/ci-lean.md](design/ci-lean.md)); nothing
+  runs on Gitea for a pull request or a push to `main`. The web viewer's checks (`cd web &&
   npm ci && npm run lint && npm run typecheck && npm test`, and `web/scripts/golden.sh` when the CLI's export
   changes) are run by the author for now. **Unchanged test targets are skipped** ([design/ci-lean.md](design/ci-lean.md)): `scripts/ci-hash.py`
   hashes each target's inputs (the whole folders of the target and its dependencies, the docs, sources and other targets' fixtures its tests read (`check-reads` fails for an undeclared read), `Package.swift`, `Package.resolved`, the
-  toolchain, the scripts that run the tests) and the Linux jobs and the gate's `package` step skip a target whose
-  hash already passed, logging the hash and the commit that passed it (`ci-hash: SKIP ...`). The records are in the
-  build volume (`.build/ci-pass`) and `~/.cache/sempere-ci-pass`. `SEMPERE_CI_FORCE_ALL=1` runs everything; `--testflight`,
+  toolchain, the scripts that run the tests) and the gate's `package`, `linux` and `webdav` steps skip a target whose
+  hash already passed, logging the hash and the commit that passed it (`ci-hash: SKIP ...`). The records are
+  files in `~/.cache/sempere-ci-pass` (the Docker jobs mount it), keyed by job, target and hash, not by commit: a pass
+  recorded on a pull request's head is honored by any later commit with the same hashes, so the push to `main` of a squash
+  whose files the pull request already passed runs nothing. There is no weekly or post-merge full run; only the release
+  modes force one. `SEMPERE_CI_FORCE_ALL=1` runs everything; `--testflight`,
   `--release` and `--cli` set it. `scripts/ci-targets.json` classifies targets as logic or OS-dependent (the Mac gate
-  skips the logic ones with `SEMPERE_CI_MAC_PACKAGE=os-dependent`; off for now). The scheduled runs are still to come.
+  skips the logic ones with `SEMPERE_CI_MAC_PACKAGE=os-dependent`; off for now).
 - **The static (musl) Linux release build** is `scripts/ci-linux.sh static`; `release-build.sh` builds both
   architectures from the tag.
 - **WebDAV integration tests:** `scripts/ci-linux.sh webdav` runs `scripts/test-webdav.sh` against wsgidav

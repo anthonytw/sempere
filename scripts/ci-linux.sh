@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The Linux CI jobs as one script, so Gitea Actions and a local run do exactly the same thing
-# (docs/design/local-first.md). Each JOB runs inside the swift:6.4-noble image and installs what it needs.
+# The Linux CI jobs as one script (docs/design/local-first.md). The PR gate runs `docker test` and `docker webdav`
+# on the Mac (scripts/local-ci.sh); the Gitea workflow is manual only. Each JOB runs inside the swift:6.4-noble image and installs what it needs.
 #
 #   scripts/ci-linux.sh test           build, then the package tests with no network (scripts/test-offline.sh; the benchmark
 #                                      targets are skipped, scripts/bench.sh runs them),
@@ -14,7 +14,9 @@
 #                                      ~/.swiftpm (the Static Linux SDK) is the volume sempere-linux-swiftpm.
 #
 # test and webdav skip a test target whose inputs hash to one that already passed (scripts/ci-hash.py, docs/design/ci-lean.md),
-# say which commit passed it, and record what they ran once it passed. SEMPERE_CI_FORCE_ALL=1 runs everything.
+# say which commit passed it, and record what they ran once it passed (in Docker, in the host's ~/.cache/sempere-ci-pass,
+# or $SEMPERE_CI_PASS_DIR; run bare, in .build/ci-pass: the build volume). docker marks its containers with the label
+# sempere-ci-run=$SEMPERE_CI_RUN_ID (local-ci.sh removes its own when it stops early) and runs them with --init. SEMPERE_CI_FORCE_ALL=1 runs everything.
 # test: SEMPERE_REQUIRE_AGE_PQ, SEMPERE_REQUIRE_POPPLER and SEMPERE_REQUIRE_TOOLS make a missing tool fail its test
 # instead of skipping it. webdav: SEMPERE_WEBDAV_LARGE_MB defaults to 64 here. SEMPERE_BUILD_JOBS=N caps the
 # build's and the tests' parallelism (the Orin runner's memory is shared with other CI, sysadmin
@@ -52,7 +54,18 @@ install_age() {   # age 1.3 (post-quantum interop; Ubuntu's package is 1.1)
 # (.build/ci-pass), so they are as durable as the build cache. SEMPERE_CI_FORCE_ALL=1 runs everything.
 ci_store() { echo "${SEMPERE_CI_PASS_DIR:-$PWD/.build/ci-pass}"; }
 
+# One job at a time per build volume. The volume is shared by every checkout on this Docker host, and a job builds in one
+# process and runs `swift test --skip-build` in another: without the lock, another checkout's build could replace .build in
+# between, and this job would record passes for code it never tested. The lock is held (fd 9) until the job's process ends,
+# so it is released with it, even when the container is removed.
+lock_build() {
+  mkdir -p .build
+  exec 9>.build/.ci-job.lock
+  if ! flock -n 9; then echo "ci-linux: another Linux job is using this build volume; waiting for it"; flock 9; fi
+}
+
 job_test() {
+  lock_build
   # zbar (QR decode), zip (archive interop), poppler (PDF text and background pixel checks), jq (the recovery
   # kit script), the UCD (BidiTest.txt), iproute2 (the offline guard), util-linux (setpriv), python3 (ci-hash.py)
   apt_install zlib1g-dev curl zbar-tools zip poppler-utils unicode-data jq iproute2 util-linux python3
@@ -80,6 +93,7 @@ job_test() {
 }
 
 job_webdav() {
+  lock_build
   apt_install zlib1g-dev curl python3-venv python3
   export SEMPERE_CI_PASS_DIR; SEMPERE_CI_PASS_DIR=$(ci_store)
   # The job runs the tests whose name says Wsgidav, which live in these two targets (docs/ci.md "What runs when").
@@ -109,9 +123,14 @@ in_docker() {   # JOB or JOB:ARG (static:x86_64)
   [[ $job == test ]] && caps=(--cap-add=SYS_ADMIN --cap-add=NET_ADMIN)   # test-offline's network namespace
   local volume="${SEMPERE_LINUX_BUILD_VOLUME:-sempere-linux-build-${image//[:.]/-}}"   # a name of your own when another run shares the Docker host
   local tty=(); [[ -t 1 ]] && tty=(-t)
+  # The pass records (docs/design/ci-lean.md) live on the host, in the Mac gate's store, not in the build volume: a record is
+  # the content hash of a target, so a pass recorded for one commit is honored for any later commit with the same hashes, and
+  # it survives a new or pruned build volume. test and webdav use it; the build volume stays only a build cache.
+  local store=() store_dir=${SEMPERE_CI_PASS_DIR:-$HOME/.cache/sempere-ci-pass}
+  if [[ $job == test || $job == webdav ]]; then mkdir -p "$store_dir"; store=(-v "$store_dir:/ci-pass" -e SEMPERE_CI_PASS_DIR=/ci-pass); fi
   # The image's id goes into the target hashes: the local default tag floats (the runner's is pinned by digest in the workflow).
   local image_id; image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || { docker pull -q "$image" >/dev/null && docker image inspect --format '{{.Id}}' "$image"; })
-  docker run --rm -e SEMPERE_CI_FORCE_ALL -e "SEMPERE_CI_IMAGE_ID=$image_id" ${tty[@]+"${tty[@]}"} ${caps[@]+"${caps[@]}"} -v "$PWD:/src" -v "$volume:/src/.build" -v sempere-linux-swiftpm:/root/.swiftpm -w /src "$image" \
+  docker run --rm --init --label "sempere-ci-run=${SEMPERE_CI_RUN_ID:-manual}" -e SEMPERE_CI_FORCE_ALL -e SEMPERE_CI_HOST -e "SEMPERE_CI_IMAGE_ID=$image_id" ${tty[@]+"${tty[@]}"} ${caps[@]+"${caps[@]}"} ${store[@]+"${store[@]}"} -v "$PWD:/src" -v "$volume:/src/.build" -v sempere-linux-swiftpm:/root/.swiftpm -w /src "$image" \
     scripts/ci-linux.sh "$job" ${arg:+"$arg"}
 }
 

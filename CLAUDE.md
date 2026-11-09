@@ -123,8 +123,8 @@ there. Commit messages:
   that commit or on a later one whose changes since are release-neutral, `scripts/release-sweep-check.sh`). A
   CLI-only release (`release-prep --no-app`) needs no sweep, only `local/cli-suite` on the tagged commit
   (`scripts/local-ci.sh --cli`).
-- **Linux jobs**: `scripts/ci-linux.sh` (`test`, `webdav`, `static`), the same script for the Gitea runner and
-  for `scripts/ci-linux.sh docker JOB` on a Mac.
+- **Linux jobs**: `scripts/ci-linux.sh` (`test`, `webdav`, `static`), the PR gate runs `docker test` and `docker webdav`
+  on the Mac (hash skipping; no Gitea run is needed to merge); there is no Linux workflow on Gitea.
 
 ### Parallel agents
 
