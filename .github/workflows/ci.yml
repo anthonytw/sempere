@@ -157,12 +157,11 @@ jobs:
       - name: Build the app, its unit tests and its UI tests for an iOS simulator (no tests)
         shell: bash
         run: mkdir -p build && scripts/app.sh build-ios 2>&1 | tee build/ios-build.log
-      # PROBE (watch PR 1, removed or made unconditional in the next push): does this image have the watchOS device SDK?
+      # The device SDK only (no runtime): the watch's package targets must keep compiling for watchOS, arm64 and arm64_32
+      # (docs/ci.md "watchOS compile"). The xcode-27 image has the watchOS SDK (checked 2026-11-09: watchOS 27.0).
       - name: Compile the watch's package targets for watchOS (no tests)
         shell: bash
-        run: |
-          xcodebuild -showsdks | grep -i watch || true
-          if xcodebuild -showsdks | grep -q -- '-sdk watchos'; then scripts/build-watchos-package.sh; else echo "no watchOS SDK on this image"; fi
+        run: scripts/build-watchos-package.sh
       - name: Save the build cache
         if: ${{ success() && env.SAVE_BUILD_CACHE == 'true' }}
         uses: actions/cache/save@v4
