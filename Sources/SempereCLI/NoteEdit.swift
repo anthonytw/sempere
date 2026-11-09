@@ -259,39 +259,75 @@ struct NotesFavorite: ParsableCommand {
     }
 }
 
+/// What `notes move --json` prints for several notes (one note prints `EditJSON`, as every single-note edit).
+struct MoveJSON: Encodable {
+    /// The notebook path they were put into; absent for `--none`.
+    var notebook: String?
+    /// One entry per note given, in order: the note as it is after the move, whether it was written, the delta.
+    var notes: [EditJSON]
+}
+
 struct NotesMove: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "move",
-        abstract: "Put a note into a notebook, or out of every notebook.",
+        abstract: "Put one or several notes into a notebook, or out of every notebook.",
         discussion: """
             The notebook is a /-separated display path (format.md §5.4), stored in canonical form:
-            " A//B " is A/B. --none (or an empty name) takes the note out of any notebook.
+            " A//B " is A/B. --none (or an empty name) takes the notes out of any notebook. With one \
+            note the last argument is the notebook; with several, every argument but the last names \
+            a note (id, id prefix or title), and every one is resolved before anything is written: \
+            when one does not resolve, or cannot be read, nothing is moved. A note that already is there is left alone. \
+            With --none every argument is a note, so `notes move X Dest --none` moves a note titled "Dest" too. A write \
+            that fails partway (I/O) leaves the notes before it moved: run the command again to finish.
             """
     )
 
-    @Argument(help: ArgumentHelp("Note id or title.", valueName: "id|title"))
-    var note: String
+    @Argument(help: ArgumentHelp("Note ids or titles, then the notebook path (no path with --none).",
+                                 valueName: "id|title... notebook"))
+    var items: [String] = []
 
-    @Argument(help: ArgumentHelp("The notebook path.", valueName: "notebook"))
-    var notebook: String?
-
-    @Flag(name: .long, help: "Take the note out of any notebook.")
+    @Flag(name: .long, help: "Take the notes out of any notebook.")
     var none = false
 
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
-        if none == (notebook != nil) { throw ValidationError("give a notebook or --none") }
+        if items.count < (none ? 1 : 2) { throw ValidationError("give a note and a notebook, or a note and --none") }
     }
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
-        let target = none ? nil : NotebookPath.canonical(notebook)
-        let r = try editNote(vault, id) { NoteOps.move(toNotebook: target, state: $0) }
-        try reportEdit(vault, id, r, output: output, done: target.map { "Moved to \($0)" } ?? "Moved out of its notebook",
-                       unchanged: "The note is already there.")
+        let queries = none ? items : Array(items.dropLast())
+        let target = none ? nil : NotebookPath.canonical(items.last)
+        let ids = try queries.map { try vault.resolveNote($0) }
+        if ids.count == 1 {
+            let r = try editNote(vault, ids[0]) { NoteOps.move(toNotebook: target, state: $0) }
+            try reportEdit(vault, ids[0], r, output: output,
+                           done: target.map { "Moved to \($0)" } ?? "Moved out of its notebook",
+                           unchanged: "The note is already there.")
+            return
+        }
+        let results = try vault.moveNotes(ids, toNotebook: target, deviceState: DeviceState.defaultURL(), app: appName)
+        if output.json {
+            var seen = Set<UUID>()
+            let entries = try results.filter { seen.insert($0.id).inserted }.map {
+                EditJSON(note: NoteJSON(try vault.summary(of: $0.id)), changed: $0.revision != nil,
+                         file: $0.revision?.name.filename)
+            }
+            try output.emitJSON(MoveJSON(notebook: target, notes: entries))
+            return
+        }
+        let moved = results.compactMap(\.revision).count
+        let unique = Set(ids).count
+        let where_ = target.map { "to \($0)" } ?? "out of their notebooks"
+        if moved == 0 {
+            output.info("The notes are already there.")
+        } else {
+            let rest = unique - moved
+            output.info("Moved \(moved) note\(moved == 1 ? "" : "s") \(where_)"
+                        + (rest > 0 ? " (\(rest) already there)" : ""))
+        }
     }
 }
 

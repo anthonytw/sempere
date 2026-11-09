@@ -209,6 +209,85 @@ final class CLINoteEditTests: CLITestCase {
         XCTAssertEqual(out.status, 2, out.err)
     }
 
+    func testMoveSeveralNotes() throws {
+        func new(_ title: String, _ notebook: String? = nil) throws -> String {
+            try XCTUnwrap(try note(try json(["notes", "new", title] + (notebook.map { ["--notebook", $0] } ?? [])))["id"] as? String)
+        }
+        let a = try new("move-a"), b = try new("move-b", "Old"), c = try new("move-c", "Archive/2026")
+        let before = try [a, b, c].map { try revisions($0).count }
+
+        // By id and by title, in one call; c is there already and is left alone.
+        let r = try cli(["notes", "move", a, "move-b", c, " Archive // 2026 "] + access)
+        XCTAssertEqual(r.status, 0, r.err)
+        XCTAssertTrue(r.out.contains("Moved 2 notes to Archive/2026 (1 already there)"), r.out)
+        XCTAssertEqual(try [a, b, c].map { try revisions($0).count }, [before[0] + 1, before[1] + 1, before[2]])
+        for id in [a, b, c] {
+            XCTAssertEqual(try note(try json(["notes", "show", id]))["notebook"] as? String, "Archive/2026")
+        }
+
+        // --json: one entry per note given.
+        let obj = try json(["notes", "move", a, b, "Elsewhere"])
+        XCTAssertEqual(obj["notebook"] as? String, "Elsewhere")
+        let entries = try XCTUnwrap(obj["notes"] as? [[String: Any]])
+        XCTAssertEqual(entries.map { ($0["note"] as? [String: Any])?["id"] as? String }, [a, b])
+        XCTAssertEqual(entries.map { $0["changed"] as? Bool }, [true, true])
+        XCTAssertTrue(entries.allSatisfy { ($0["file"] as? String)?.hasSuffix(".delta.age") == true })
+        let again = try json(["notes", "move", a, b, "Elsewhere"])
+        XCTAssertEqual((again["notes"] as? [[String: Any]])?.map { $0["changed"] as? Bool }, [false, false])
+
+        // --none takes them all out.
+        let none = try cli(["notes", "move", a, b, "--none"] + access)
+        XCTAssertEqual(none.status, 0, none.err)
+        XCTAssertTrue(none.out.contains("Moved 2 notes out of their notebooks"), none.out)
+        for id in [a, b] { XCTAssertNil(try note(try json(["notes", "show", id]))["notebook"] as? String) }
+    }
+
+    func testMoveSeveralWritesNothingWhenOneDoesNotResolve() throws {
+        let a = try XCTUnwrap(try note(try json(["notes", "new", "keep-a"]))["id"] as? String)
+        let before = try revisions(a)
+        let r = try cli(["notes", "move", a, "no such note anywhere", "Dest"] + access)
+        XCTAssertNotEqual(r.status, 0)
+        XCTAssertFalse(r.err.isEmpty)
+        XCTAssertEqual(try revisions(a), before)
+        XCTAssertNil(try note(try json(["notes", "show", a]))["notebook"] as? String)
+        // Only a notebook, no note: a usage error.
+        XCTAssertEqual(try cli(["notes", "move", "Dest"] + access).status, 2)
+    }
+
+    func testMoveSeveralMovesADeletedNoteAndPrintsNoNotebookKeyForNone() throws {
+        func new(_ title: String) throws -> String {
+            try XCTUnwrap(try note(try json(["notes", "new", title, "--notebook", "Old"]))["id"] as? String)
+        }
+        let a = try new("del-a"), b = try new("del-b")
+        _ = try json(["notes", "delete", b])
+        let obj = try json(["notes", "move", a, b, b, "--none"])
+        XCTAssertNil(obj["notebook"])
+        XCTAssertEqual((obj["notes"] as? [[String: Any]])?.count, 2)   // distinct notes, in order
+        let listed = try cli(["notes", "list", "--deleted", "-q"] + access)
+        XCTAssertTrue(listed.out.contains(b), listed.out)
+        XCTAssertNil(try note(try json(["notes", "show", b]))["notebook"] as? String)
+    }
+
+    func testMoveSeveralWritesNothingWhenALaterNoteCannotBeReconstructed() throws {
+        func new(_ title: String) throws -> String {
+            try XCTUnwrap(try note(try json(["notes", "new", title]))["id"] as? String)
+        }
+        let a = try new("dmg-a"), b = try new("dmg-b")
+        _ = try json(["notes", "rename", b, "dmg-b2"])
+        // Garbage in b's second delta: it loads, but does not reconstruct.
+        let dir = vault + "/notes/\(b)"
+        let second = try XCTUnwrap(try FileManager.default.contentsOfDirectory(atPath: dir).filter { $0.hasSuffix(".age") }
+            .sorted().last)
+        let size = try Data(contentsOf: URL(fileURLWithPath: dir + "/" + second)).count
+        try Data(repeating: 0x41, count: size).write(to: URL(fileURLWithPath: dir + "/" + second))
+        let before = try revisions(a)
+        for args in [["notes", "move", a, b, "Dest"], ["notes", "move", a, b, "--none"]] {
+            let r = try cli(args + access)
+            XCTAssertEqual(r.status, 1, r.err)
+            XCTAssertEqual(try revisions(a), before)
+        }
+    }
+
     /// `notebooks move`: what dragging a notebook onto another does in the app.
     func testNotebookMoveNestsUnnestsAndRefusesCycles() throws {
         func new(_ title: String, _ notebook: String) throws -> String {

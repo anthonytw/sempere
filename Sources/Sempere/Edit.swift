@@ -127,6 +127,24 @@ extension NoteOps {
         return state.meta.notebook == target ? [] : [.setMeta(.notebook(target))]
     }
 
+    /// The notes of `ids` a move into the notebook path `notebook` (nil or blank: none) has to change, in order and
+    /// without repeats, each with the notebook it is in now: the decision `Vault.moveNotes` and the app's
+    /// `moveNotes` share. `state` gives a note's current notebook and whether it is deleted (nil: unknown note).
+    /// Unknown notes, notes already in the notebook (compared in canonical form) and, unless `includeDeleted`,
+    /// deleted notes are left out.
+    public static func notesToMove(_ ids: [UUID], toNotebook notebook: String?, includeDeleted: Bool = false,
+                                   state: (UUID) -> (notebook: String?, deleted: Bool)?) -> [(id: UUID, previous: String?)] {
+        let target = NotebookPath.canonical(notebook)
+        var seen = Set<UUID>()
+        var moving: [(id: UUID, previous: String?)] = []
+        for id in ids where seen.insert(id).inserted {
+            guard let note = state(id), includeDeleted || !note.deleted,
+                  NotebookPath.canonical(note.notebook) != target else { continue }
+            moving.append((id, note.notebook))
+        }
+        return moving
+    }
+
     /// The op that moves a note in `state` to Recently Deleted, or none when
     /// it is there already.
     public static func delete(_ state: NoteState) -> [Op] { state.deleted ? [] : [.deleteNote] }
@@ -176,6 +194,32 @@ extension NoteOps {
 }
 
 extension Vault {
+    /// Puts every note of `ids` into the notebook path `notebook` (nil or blank: none), one `setMeta` delta
+    /// each, as this device. Every note is loaded and reconstructed strictly first (the way `apply` will read it;
+    /// deleted notes included, `NoteOps.notesToMove`), so a note that cannot be read stops the call before anything
+    /// is written. Reading is all-or-none; a write that fails partway (I/O) leaves the notes before it moved: run it
+    /// again to finish (notes already there are skipped). Returns the revision written for each id of `ids`, nil
+    /// for a note that was there already.
+    ///
+    /// - Throws: `VaultError.locked`, `VaultError.revision` and what `apply` throws.
+    public func moveNotes(_ ids: [UUID], toNotebook notebook: String?, deviceState: URL, app: String,
+                          wall: Date = Date()) throws -> [(id: UUID, revision: Revision?)] {
+        guard canRead else { throw VaultError.locked }
+        var states: [UUID: NoteState] = [:]
+        for id in ids where states[id] == nil {
+            states[id] = try reconstruct(try loadNote(id, detail: .withoutStrokePoints))
+        }
+        let moving = Set(NoteOps.notesToMove(ids, toNotebook: notebook, includeDeleted: true,
+                                             state: { states[$0].map { ($0.meta.notebook, $0.deleted) } }).map(\.id))
+        var written: [UUID: Revision] = [:]
+        for id in ids where moving.contains(id) && written[id] == nil {
+            written[id] = try apply(to: id, deviceState: deviceState, app: app, wall: wall) {
+                NoteOps.move(toNotebook: notebook, state: $0)
+            }
+        }
+        return ids.map { ($0, written[$0]) }
+    }
+
     /// This device's id in the vault, the first 8 hex digits of its fingerprint (format.md §15.4;
     /// key-hierarchy design §3): it names its published summaries file and sync state. Nil unless the vault
     /// was opened as a listed device. Revision names keep the machine's state-file id (`writeDelta`).

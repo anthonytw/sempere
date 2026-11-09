@@ -24,16 +24,10 @@ extension AppModelCore {
             try ensureCurrent(gen)
             try await verifySummary(id)
         }
-        var previous: [UUID: String?] = [:]
-        var moving: [UUID] = []
-        for id in unique {
-            guard let note = notes.first(where: { $0.id == id }), !note.deleted,
-                  NotebookPath.canonical(note.notebook) != target else { continue }
-            moving.append(id)
-            previous[id] = note.notebook
-        }
-        guard !moving.isEmpty else { return nil }
-        let batch = moving
+        let plan = NoteOps.notesToMove(unique, toNotebook: notebook, state: { id in notes.first(where: { $0.id == id }).map { ($0.notebook, $0.deleted) } })
+        guard !plan.isEmpty else { return nil }
+        let previous = Dictionary(plan.map { ($0.id, $0.previous) }, uniquingKeysWith: { a, _ in a })
+        let batch = plan.map(\.id)
         try await commit(ids: batch) { vault, clock, verifier in
             for id in batch {
                 try await NoteWriter.append(to: id, vault: vault, clock: clock, detail: .withoutStrokePoints,

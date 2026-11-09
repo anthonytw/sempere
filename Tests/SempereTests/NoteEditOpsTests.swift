@@ -18,6 +18,27 @@ final class NoteEditOpsTests: VaultTestCase {
         XCTAssertEqual(NoteOps.rename(to: "", state: state()), [.setMeta(.title(""))])
     }
 
+    func testNotesToMoveDecidesFromTheCurrentState() {
+        let a = UUID(), b = UUID(), c = UUID(), d = UUID(), unknown = UUID()
+        let states: [UUID: (notebook: String?, deleted: Bool)] = [
+            a: (nil, false), b: (" Archive // 2026 ", false), c: ("Old", true), d: ("Old", false)]
+        func plan(_ ids: [UUID], _ nb: String?, deleted: Bool = false) -> [UUID] {
+            NoteOps.notesToMove(ids, toNotebook: nb, includeDeleted: deleted, state: { states[$0] }).map(\.id)
+        }
+        // Repeats count once, an unknown id is left out, order is kept.
+        XCTAssertEqual(plan([d, a, d, unknown, a], "Archive/2026"), [d, a])
+        // A stored non-canonical notebook that equals the target is already there.
+        XCTAssertEqual(plan([b], "Archive/2026"), [])
+        XCTAssertEqual(plan([b], " Archive//2026 "), [])
+        // Deleted notes: left alone unless asked for.
+        XCTAssertEqual(plan([c, d], "New"), [d])
+        XCTAssertEqual(plan([c, d], "New", deleted: true), [c, d])
+        // Blank target means no notebook; the previous notebook is reported as stored.
+        let moved = NoteOps.notesToMove([a, b, d], toNotebook: " ", state: { states[$0] })
+        XCTAssertEqual(moved.map(\.id), [b, d])
+        XCTAssertEqual(moved.map(\.previous), [" Archive // 2026 ", "Old"])
+    }
+
     func testMoveCanonicalisesTheNotebook() {
         XCTAssertEqual(NoteOps.move(toNotebook: " A//B / ", state: state()), [.setMeta(.notebook("A/B"))])
         XCTAssertEqual(NoteOps.move(toNotebook: "A/B", state: state(notebook: "A/B")), [])

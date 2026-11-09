@@ -973,12 +973,19 @@ the editor's `NoteCanvas` already carries in `SempereAppCore`, so most should be
 layout stays, the placement and editing rules go). Each file is read first; the part that turns out to be only
 drawing stays and is listed as such in the PR.
 
-**Part 7: `notes move` for several notes (about 120 lines).** `notes move ID|TITLE... (NOTEBOOK | --none)`: every note
+**Part 7 (done, wave 6 part 7): `notes move` for several notes (about 120 lines).** `notes move ID|TITLE... (NOTEBOOK | --none)`: every note
 is resolved first (`Vault.resolveNote`), then one all-or-none move goes through the library. The loop of
 `AppModelCore.moveNotes` moves into `Sources/Sempere` if it is not there already, one implementation for the app and the
 CLI; the undo step (`NotebookMoveRecord`, `restoreNotebooks`) stays the app's. With `--json`, `docs/cli.md`, `CLITests`
 (several notes, one unresolvable note writes nothing, `--none`) and a changelog fragment. Nothing else is left: the
 passphrase copy already has `recovery add-passphrase`, and the other model edits are one note at a time.
+
+Result: the decision half of `AppModelCore.moveNotes` (dedupe, skip notes already there, skip deleted ones) is now
+`NoteOps.notesToMove` in `Sources/Sempere/Edit.swift`, which the app's loop and the new `Vault.moveNotes` both call; the
+app keeps its own write loop (it writes through the editor's `NoteWriter` and device clock) and the undo step. `notes move`
+takes `ID|TITLE... (NOTEBOOK | --none)`: one note prints exactly what it did, several go through `Vault.moveNotes` after
+every note resolves, and `--json` prints `{notebook, notes: [EditJSON]}` for several. Deleted notes move from the CLI, as the
+one-note command always did; the app's drag leaves them alone.
 
 **Part 8: the app's test target.** After parts 2 to 6 move the logic, `AppSettingsStorage` (`SettingsSyncBridge.swift`, the
 storage half of settings sync, which reads the types parts 2 and 3 move) moves with its `SettingsSyncAppTests`, and sweep `SempereAppTests`: of its 143 files, 61

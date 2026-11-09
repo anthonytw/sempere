@@ -1292,7 +1292,7 @@ sempere notes show ID|TITLE
 sempere notes new [TITLE] [--title-format PATTERN] [--notebook PATH] [--tag T]... [--paper KIND] [PAPER OPTIONS] [--page-size letter|a4] [--no-cache]
 sempere notes rename ID|TITLE NEW-TITLE
 sempere notes tag ID|TITLE [--add T]... [--remove T]... [--no-cache]
-sempere notes move ID|TITLE (NOTEBOOK | --none)
+sempere notes move ID|TITLE... (NOTEBOOK | --none)
 sempere notes paper ID|TITLE [KIND] [--page N] [PAPER OPTIONS]
 sempere notes language ID|TITLE [TAG | --none]
 sempere notes markers ID|TITLE behind|above
@@ -1455,7 +1455,18 @@ absent).
   removing the same tag is a usage error.
 - `move` puts the note in a notebook, a `/`-separated path stored in
   canonical form (`" A//B "` is `A/B`); `--none` (or an empty name) takes it
-  out of any notebook.
+  out of any notebook. Give several notes (ids, id prefixes or titles) and the
+  last argument is the notebook (none with `--none`): every note is resolved
+  first and read in full, so when one does not resolve or cannot be read nothing
+  is written (reading is all-or-none; a write that fails partway (I/O) leaves the
+  notes before it moved, exit 1: run it again to finish, notes already there are
+  skipped), and a note that is there already is left alone; with `--none` every
+  argument is a note (`notes move X Dest --none` moves a note titled `Dest` too); one `setMeta notebook` delta per note moved, deleted
+  notes included. It prints `Moved N notes to PATH` (with `(M already there)`
+  when some were). `--json` prints `{notebook, notes: [...]}` (`notebook` is absent with
+  `--none`) with one entry per distinct note, in the order given (`note`,
+  `changed`, `file`, as a one-note edit prints). With
+  one note the output is that of a one-note edit.
 - `paper` sets the paper. Without `--page` the note's paper is set and every
   page with its own paper follows the note again (`setMeta paper` plus
   `setPagePaper null`); `--page N` (1 is the first page) gives only that page
