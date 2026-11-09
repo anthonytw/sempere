@@ -1,162 +1,40 @@
 import Foundation
-import Sempere
 import SempereAppCore
 
-/// Item gestures with undo: each change is one delta through the editor and
-/// one step on `undoManager` (the canvas's, so the system undo gestures and
-/// ⌘Z reach it). Undoing a delete puts the items back under new ids
-/// (`NoteEditor.restoreItems`); redoing deletes those.
-@MainActor
-final class ItemActions {
-    let editor: NoteEditor
-    weak var undoManager: UndoManager?
+/// Item gestures with undo on the app's canvas (`ItemActionsCore`, `SempereAppCore`): the app words the undo steps' names.
+typealias ItemActions = ItemActionsCore<PencilCanvas>
 
-    init(editor: NoteEditor, undoManager: UndoManager?) {
-        self.editor = editor
-        self.undoManager = undoManager
-    }
-
-    /// Moves or resizes an item to `frame`.
-    func setFrame(_ id: UUID, to frame: Rect, on page: UUID, name: String = String(localized: "Move", comment: "Undo action name (Edit menu: Undo …)")) {
-        guard let old = editor.setItemFrame(id, to: frame, on: page) else { return }
-        register(name) { $0.setFrame(id, to: old, on: page, name: name) }
-    }
-
-    /// Sets a text box's text and frame (an edit in its editor).
-    func setText(_ id: UUID, to content: TextContent, frame: Rect, on page: UUID) {
-        guard let old = editor.setItemText(id, to: content, frame: frame, on: page) else { return }
-        register(String(localized: "Typing", comment: "Undo action name (Edit menu: Undo …)")) { $0.setText(id, to: old.content, frame: old.frame, on: page) }
-    }
-
-    /// Adds a new text box. Returns it (nil for an empty one).
-    @discardableResult
-    func addText(_ content: TextContent, frame: Rect, on page: UUID) -> Item? {
-        guard let item = editor.addTextBox(content, frame: frame, on: page) else { return nil }
-        return added([item], on: page, name: String(localized: "Add Text", comment: "Undo action name (Edit menu: Undo …)")).first
-    }
-
-    /// Deletes items. Returns the ones deleted.
-    @discardableResult
-    func delete(_ ids: [UUID], on page: UUID) -> [Item] {
-        let gone = editor.removeItems(ids, from: page)
-        guard !gone.isEmpty else { return [] }
-        register(String(localized: "Delete", comment: "Undo action name (Edit menu: Undo …)")) { $0.restore(gone, on: page) }
-        return gone
-    }
-
-    /// Puts deleted items back (as undo does). Returns the new items.
-    @discardableResult
-    func restore(_ items: [Item], on page: UUID) -> [Item] {
-        let back = editor.restoreItems(items, on: page)
-        guard !back.isEmpty else { return [] }
-        register(String(localized: "Delete", comment: "Undo action name (Edit menu: Undo …)")) { $0.delete(back.map(\.id), on: page) }
-        return back
-    }
-
-    /// Duplicates items on their page. Returns the copies.
-    @discardableResult
-    func duplicate(_ ids: [UUID], on page: UUID) -> [Item] {
-        added(editor.duplicateItems(ids, on: page), on: page, name: String(localized: "Duplicate", comment: "Undo action name (Edit menu: Undo …)"))
-    }
-
-    /// Registers the undo of a replacement made elsewhere (Replace Image:
-    /// `old` was replaced by `new`, already written).
-    func replaced(_ old: Item, by new: Item, on page: UUID) {
-        register("Replace Image") { $0.swap(new.id, back: old, on: page) }
-    }
-
-    /// Puts `content` back in place of the item `current` (undo or redo of
-    /// a replacement): one delta, the item under a new id whose `parent`
-    /// names `content` (tombstones are permanent, format.md §8.2.2). Returns
-    /// the item put back.
-    @discardableResult
-    func swap(_ current: UUID, back content: Item, on page: UUID) -> Item? {
-        var back = content
-        back.id = UUID()
-        back.parent = content.id
-        back.origin = nil
-        back.clocks = nil
-        guard let was = editor.replaceItem(current, with: back, on: page) else { return nil }
-        register("Replace Image") { $0.swap(back.id, back: was, on: page) }
-        return back
-    }
-
-    /// Turns an item by `degrees` clockwise (counterclockwise when negative) from the
-    /// rotation it has; `snapping` rounds the result as a two-finger turn does
-    /// (`NoteOps.snappedRotation`). One delta, one undo step.
-    func rotate(_ id: UUID, by degrees: Double, on page: UUID, snapping: Bool = false) {
-        guard let item = editor.item(id, on: page) else { return }
-        let turned = NoteOps.rotation(item.rotation, turnedBy: degrees)
-        setRotation(id, to: snapping ? NoteOps.snappedRotation(turned) : turned, on: page)
-    }
-
-    /// Sets an item's rotation (degrees clockwise; also undo and redo of `rotate`).
-    func setRotation(_ id: UUID, to degrees: Double, on page: UUID) {
-        guard let old = editor.setItemRotation(id, to: degrees, on: page) else { return }
-        register(String(localized: "Rotate", comment: "Undo action name (Edit menu: Undo …)")) {
-            $0.setRotation(id, to: old ?? 0, on: page)
+extension ItemActionsCore {
+    /// The names of the undo steps, in the app's words (Edit menu: Undo …).
+    nonisolated static func undoName(_ name: UndoName) -> String {
+        switch name {
+        case .move: return String(localized: "Move", comment: "Undo action name (Edit menu: Undo …)")
+        case .typing: return String(localized: "Typing", comment: "Undo action name (Edit menu: Undo …)")
+        case .addText: return String(localized: "Add Text", comment: "Undo action name (Edit menu: Undo …)")
+        case .delete: return String(localized: "Delete", comment: "Undo action name (Edit menu: Undo …)")
+        case .duplicate: return String(localized: "Duplicate", comment: "Undo action name (Edit menu: Undo …)")
+        // Not localized, as it never was (a plain string, not a catalog key).
+        case .replaceImage: return "Replace Image"
+        case .rotate: return String(localized: "Rotate", comment: "Undo action name (Edit menu: Undo …)")
+        case .bringToFront: return String(localized: "Bring to Front", comment: "Undo action name (Edit menu: Undo …)")
+        case .paste: return String(localized: "Paste", comment: "Undo action name (Edit menu: Undo …)")
+        case .crop: return String(localized: "Crop", comment: "Undo action name (Edit menu: Undo …)")
         }
     }
 
-    /// Draws an item above the others of its layer.
-    func bringToFront(_ id: UUID, on page: UUID) {
-        guard let old = editor.bringItemToFront(id, on: page) else { return }
-        register(String(localized: "Bring to Front", comment: "Undo action name (Edit menu: Undo …)")) { $0.setZ(id, to: old, on: page) }
+    /// Item gestures on `editor`, undone on `undoManager`.
+    convenience init(editor: Editor, undoManager: UndoManager?) {
+        self.init(editor: editor, undoStack: undoManager, wording: Self.undoName)
     }
 
-    /// Sets an item's order key (undo and redo of `bringToFront`).
-    func setZ(_ id: UUID, to z: String, on page: UUID) {
-        guard let now = editor.item(id, on: page)?.z, editor.setItemZ(id, to: z, on: page) else { return }
-        register(String(localized: "Bring to Front", comment: "Undo action name (Edit menu: Undo …)")) { $0.setZ(id, to: now, on: page) }
-    }
-
-    /// Pastes the clipboard onto the page (copying blobs from another note
-    /// first). Returns the new items.
-    @discardableResult
-    func paste(_ entry: ItemClipboard.Entry, on page: UUID, offset: Double,
-               prepare: @escaping @Sendable (BlobRef) async throws -> Void = { _ in }) async throws -> [Item] {
-        let pasted = try await editor.pasteItems(entry.items, from: entry.note, on: page, dx: offset, dy: offset,
-                                                 prepare: prepare)
-        return added(pasted, on: page, name: String(localized: "Paste", comment: "Undo action name (Edit menu: Undo …)"))
-    }
-
-    /// Registers the undo of adding `items` (removing them; redo restores).
-    @discardableResult
-    func added(_ items: [Item], on page: UUID, name: String) -> [Item] {
-        guard !items.isEmpty else { return [] }
-        register(name) { actions in
-            let gone = actions.editor.removeItems(items.map(\.id), from: page)
-            guard !gone.isEmpty else { return }
-            actions.register(name) { $0.added($0.editor.restoreItems(gone, on: page), on: page, name: name) }
-        }
-        return items
-    }
-
-    /// One undo step: `body` runs on the main actor with this object.
-    func register(_ name: String, _ body: @escaping @MainActor @Sendable (ItemActions) -> Void) {
-        undoManager?.registerUndo(withTarget: self) { target in
-            MainActor.assumeIsolated { body(target) }
-        }
-        undoManager?.setActionName(name)
-    }
+    /// The canvas's undo manager the steps are registered on.
+    var undoManager: UndoManager? { undoStack as? UndoManager }
 }
 
-extension ItemActions {
-    /// Crops an item (one delta, one undo step that puts the old crop back).
-    func setCrop(_ id: UUID, to crop: Rect?, on page: UUID) {
-        guard let old = editor.setItemCrop(id, to: crop, on: page) else { return }
-        register(String(localized: "Crop", comment: "Undo action name (Edit menu: Undo …)")) { $0.setCrop(id, to: old, on: page) }
-    }
-}
-
-extension AppModel {
-    /// Replace Image with its undo step on `actions` (the core's `replaceImage` writes the delta). Returns the new
-    /// image.
-    @discardableResult
-    func replaceImage(_ item: UUID, on page: UUID, with data: Data, in editor: NoteEditor, actions: ItemActions?,
-                      privacy: Bool? = nil) async -> Item? {
-        guard let (old, new) = await replaceImage(item, on: page, with: data, in: editor, privacy: privacy) else { return nil }
-        actions?.replaced(old, by: new, on: page)
-        return new
+extension UndoManager: @retroactive ItemUndoStack {
+    public func registerStep<Target: AnyObject>(for target: Target, name: String,
+                                                _ step: @escaping @MainActor @Sendable (Target) -> Void) {
+        registerUndo(withTarget: target) { target in MainActor.assumeIsolated { step(target) } }
+        setActionName(name)
     }
 }

@@ -150,6 +150,20 @@ extension AppModelSuites {
             }
         }
 
+        /// Closing the vault removes the plaintext PDFs dragged out of it (GA-59; moved from the app's `KeyExportGapTests`,
+        /// wave 6 follow-up F1).
+        @Test func closingTheVaultDeletesItsDraggedOutPDFs() async throws {
+            let model = try await Self.unlockedModel()
+            let pdf = try await model.exportPDF(noteID: Self.lecture)
+            #expect(FileManager.default.fileExists(atPath: pdf.path))
+            #expect(pdf.path.hasPrefix(model.exportFolder.path))
+            model.close()
+            #expect(!FileManager.default.fileExists(atPath: pdf.path))
+            // `purge` empties the model's folder; the empty folder itself may remain.
+            let left = (try? FileManager.default.contentsOfDirectory(atPath: model.exportFolder.path)) ?? []
+            #expect(left.isEmpty)
+        }
+
         @Test func oldExportsArePurgedAndNewOnesKept() throws {
             let folder = TestTemp.root.appendingPathComponent("purge-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: folder) }

@@ -30,7 +30,8 @@ extension CanvasStrokeInfo {
     /// (`isUnchanged(id:ink:color:transform:created:seed:count:ranges:point:)`).
     func isUnchanged(_ pk: PKStroke) -> Bool {
         let path = pk.path
-        return isUnchanged(id: pk.id, ink: pk.ink.inkType.rawValue, color: { Sempere.Color(pk.ink.color) },
+        let ink = pk.ink
+        return isUnchanged(id: pk.id, ink: ink.inkType.rawValue, color: { Sempere.Color(ink.color) },
                            transform: Transform(pk.transform),
                            created: path.creationDate.timeIntervalSinceReferenceDate, seed: pk.randomSeed, count: path.count,
                            ranges: { Self.maskRanges(pk) }, point: { Self.read(path[$0]) })

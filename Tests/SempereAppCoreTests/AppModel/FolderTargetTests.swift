@@ -284,15 +284,14 @@ extension AppModelSuites {
 
         // MARK: Quick capture
 
-        /// A voice note recorded while its vault is closed goes into the vault's in-app inbox (found by id,
-        /// whatever the profile's bookmark says), and the vault's target uploads it at once (upload-only).
+        /// A voice note recorded while its vault is closed goes into the vault's in-app inbox (found by id), and the vault's target uploads it at once (upload-only).
         @Test func aCaptureWhileTheVaultIsClosedIsUploaded() async throws {
             let w = try await Self.world()
             defer { w.a.model.close(); w.b.model.close() }
             let vault = try #require(w.b.model.vault)
             let profile = try vault.captureProfile(device: DeviceID("0badf00d")!)
             let qc = Self.quickCapture()
-            try qc.store.save(StoredCaptureProfile(profile: profile, vaultName: "Shared", bookmark: Data(), transcribe: false))
+            try qc.store.save(StoredCaptureProfile(profile: profile, vaultName: "Shared", transcribe: false))
             qc.vaultStore = w.b.store
             let coordinator = w.b.model.syncCoordinator
             coordinator.start()   // every vault syncs, as in the app

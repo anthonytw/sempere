@@ -21,20 +21,21 @@ struct QuickCaptureTests {
         TestTemp.root.appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
     }
 
-    /// A fixture vault copy, its key, and a quick-capture instance whose
-    /// stored profile was made from it while unlocked.
+    /// A fixture vault copy in a store of its own (a capture finds its vault by id there, as the app's does), its key, and
+    /// a quick-capture instance whose stored profile was made from it while unlocked.
     static func setUp(transcribe: Bool = true, transcriber: (any RecordingTranscribing)? = FakeTranscriber())
         throws -> (url: URL, key: URL, identity: NativeIdentity, capture: QuickCapture, center: NotificationCenter) {
-        let (url, key) = try AppModelTests.fixtureVault()
+        let (source, key) = try AppModelTests.fixtureVault()
+        let vaultStore = VaultStore(root: temp("store"))
+        let url = try vaultStore.importVault(from: source).url
         let identity = try IdentityFile.parse(try String(contentsOf: key, encoding: .utf8))
         let vault = try Vault.open(at: url, identities: [identity])
         let profile = try vault.captureProfile(device: DeviceID("0badf00d")!)
         let store = MemoryCaptureProfileStore()
-        try store.save(StoredCaptureProfile(profile: profile, vaultName: "sample",
-                                            bookmark: try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil),
-                                            transcribe: transcribe))
+        try store.save(StoredCaptureProfile(profile: profile, vaultName: "sample", transcribe: transcribe))
         let center = NotificationCenter()
         let qc = QuickCapture.testing(store: store, center: center, transcriber: transcriber)
+        qc.vaultStore = vaultStore
         return (url, key, identity, qc, center)
     }
 

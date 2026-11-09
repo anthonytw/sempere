@@ -1078,34 +1078,86 @@ Counts (`@Test` and `func test` declarations): `SempereAppTests` 868 before, 819
 
 **Done when, checked 2026-11-09 against `main` plus this PR:**
 
-1. *`Apps/Sempere/SempereApp` holds views, glue and the platform implementations of the protocols, and nothing else.* **Not met.**
-   169 files; those that import no Apple framework are almost all the words (`*+Text`) and thin extensions, but some rules are
-   still app code: `LibraryCommands` (the library window's menu outcomes, 90 lines), `VoiceNoteMenu` (the Mac voice-note menu's
-   decisions, 61), `PhoneNotebookRows` (`SidebarView.swift`), `PointerCursor` (`MacSupport.swift`, a 28-line diameter rule),
-   `ThisDevice` (64), the `CommandRouter`, `RecentItem` and `WindowUI` types of `AppCommands.swift`, `VoiceNoteBannerRule`
-   (`VoiceNoteBanner.swift`), `ItemActions` (162, undo glue over the editor), the file and key types of `DeviceKeyStore.swift`
-   (`KeyFile`, `StoredSigning`) and `DragLog`. Follow-up F1.
+1. *`Apps/Sempere/SempereApp` holds views, glue and the platform implementations of the protocols, and nothing else.* **Not met
+   when this was checked; met after F1 (below).** It listed `LibraryCommands`, `VoiceNoteMenu`, `PhoneNotebookRows`,
+   `PointerCursor`, `ThisDevice`, `CommandRouter`/`RecentItem`/`WindowUI`, `VoiceNoteBannerRule`, `ItemActions`, `KeyFile` and
+   `StoredSigning`, `DragLog` and `preparedMarkdown` as rules still in the app. F1 moved every one of them (what each left behind
+   is glue, named in the F1 result).
 2. *No logic exists in both the app and the CLI.* **Met**, as far as it was checked: duplicates 1 to 6 are removed (the
    bulk-export driver was the last, part 2; `moveNotes` has one decision function, part 7; `devices approve --qr`, part 1); wave 6
    part 1 checked every other capability the app has against `docs/cli.md`. The two things the CLI cannot do on purpose
    (recording recovery, cache sizes) are decided in part 1. Not re-audited line by line here.
-3. *The app's test target holds only tests that need UIKit, SwiftUI, PencilKit or the screen.* **Not met.** 60 files that import
-   none of the listed frameworks were swept and 49 tests moved; what remains is the words (they need the app bundle's catalog,
-   a documented exception), platform code (`URLSession`, PDFKit, the intents, the sandbox) and tests of rules that are still in
-   the app (item 1). Follow-ups F1 and F2.
+3. *The app's test target holds only tests that need UIKit, SwiftUI, PencilKit or the screen.* **Not met as worded; met with
+   three named exceptions after F2 and F3 (below).** The sentence was never literally true and is corrected here: the app's test
+   target holds the tests that need the screen, **and** the tests of the words (they read the app bundle's catalog, an exception
+   the plan documents from part 8), **and** the tests of platform code (`URLSession`, PDFKit, the intents, the sandbox, the
+   Keychain), **and** the tests of the glue itself (`EditorCommands`, `WindowCommands`, the Keychain-backed stores). A test of a
+   rule is in `Tests/SempereAppCoreTests`. 60 files that import none of the listed frameworks were swept in part 8 and 49 tests
+   moved; F2 and F3 moved the tests of the rules F1 moved (below).
 
 **Follow-ups left by wave 6 (explicit, none silent):**
-- **F1** Move the rules listed under item 1 into `SempereAppCore` with their words left behind, and then the tests of
+- **F1** (done 2026-11-09, below) Move the rules listed under item 1 into `SempereAppCore` with their words left behind, and then the tests of
   `MenuHandlerTests`, `VoiceNoteMenuTests`, `PhoneSidebarTests`, `ThisDeviceNameTests` (rules), `KeyExportGapTests` and
   `DeviceWriteStoresTests` follow. Each is a part-3-sized PR.
-- **F2** The tests that stay for a helper another suite owns (`NoteWindowTests`, `EditorRecognitionTests`,
+- **F2** (done 2026-11-09, below) The tests that stay for a helper another suite owns (`NoteWindowTests`, `EditorRecognitionTests`,
   `AttachmentEditorTests`, `DrawingCacheTests`): once the rules above move, the suites of the model that use those helpers
   can move with a core copy.
-- **F3** Mixed words-and-rule tests (`SearchTests`, `SettingsTests`, `ListAlertTests`, `OfflineSyncAppTests`, …) assert a
+- **F3** (done 2026-11-09, below) Mixed words-and-rule tests (`SearchTests`, `SettingsTests`, `ListAlertTests`, `OfflineSyncAppTests`, …) assert a
   rule and its words in one test. Splitting each into a rule test (core) and a words test (app) would move about 40 more
   assertions; no test is wrong where it is.
 
-**Wave 6 is closed** with the above: its eight parts are merged or in review (part 8 is this PR), and what is not met is F1 to F3.
+**Wave 6 is closed** with the above: its eight parts are merged, and what was not met, F1 to F3, is done in the next section.
+
+**F1 to F3 done (2026-11-09): the remaining rules and their tests.** Each rule moved with its words left behind; the
+app's side is the glue named in the second column.
+
+| Rule (was in the app) | Now | Left in the app, and why it is glue |
+| --- | --- | --- |
+| `LibraryCommands` | `SempereAppCore/LibraryCommands.swift`, generic over the host; `reopen` returns the error | the alert's words (`LibraryCommands+Text.swift`) |
+| `WindowUI`, `InsertRequest`, `ToolRequest`, `ImportPick`, `NewNotebookRequest`, `ExpectationsSheet` | `WindowUI.swift`: `WindowUICore<Host>` (its `pdfPassword` is the host's `PDFImportRequest`) | `typealias WindowUI = WindowUICore<AppHost>` |
+| `CommandRouter`, `RecentItem` | `CommandRouter.swift` | the `FocusedValues` key and `eventModifiers` (SwiftUI) |
+| `VoiceNoteMenu`, `VoiceNoteBannerRule`, `toggleVoiceNote` | `QuickCapture/VoiceNoteMenu.swift` | `VoiceNoteBanner`'s views |
+| `PhoneNotebookRows` | `PhoneNotebookRows.swift` | the sidebar's rows (SwiftUI) |
+| `PointerCursor` | `Canvas/PointerCursor.swift` | drawing the pointer |
+| `ThisDevice` | `ThisDevice.swift`: `kind(isMac:isPhone:)`, `name(kind:systemName:hardwareModel:vendorID:)`, `macFamily` | reading `UIDevice` and `sysctl hw.model` (an extension in the app) |
+| `KeyFile` | `KeyFile.swift` | `KeyShareFile`'s staging of the file (file protection, share sheet) |
+| `StoredSigning` | `StoredSigning.swift`, with `EnclaveBackedSigner`, which the app's `SecureEnclaveSigner` adopts | `SecureEnclaveSigner` and the Keychain (`DeviceKeyStore.swift`) |
+| `DragLog` | `DragLogFormat.swift`: `classify`, `id`, `thread`, `describe(file:)` | the `Logger` and the release sentinel (`OSLog`, `objc_setAssociatedObject`) |
+| `ItemActions` | `Editor/ItemActions.swift`: `ItemActionsCore<Canvas>` on `ItemUndoStack`, with `UndoName` typed names; `replaceImage(…actions:)` | the names' words, `UndoManager`'s conformance to `ItemUndoStack`, and the app's math undo steps (`NoteEditor+Math.swift`) |
+| `NoteEditor.preparedMarkdown` | `NoteEditor/NoteEditor+Markdown.swift`: the formula dedupe key, skip-on-problem, the already-typeset check and the `TextContent.Limits.formulas` cap, over `FormulaTypesetting` | `FormulaTypesetting.swiftMath` (`MathTypesetter`, SwiftMath) |
+
+Not moved, and why: `EditorCommands`, `WindowCommands` and `AppCommands` (they act on the canvas target, `UserDefaults`
+and SwiftUI scenes: glue, not in F1's list); `LedgerKeychain` and `KeyShareFile` (Keychain and file protection).
+`ItemActions` could not take `UndoManager`: Foundation on Linux has none, so the core has a one-method protocol
+(`registerStep`) and the app makes `UndoManager` conform. The undo step of Replace Image is registered under a plain,
+untranslated "Replace Image", as before (the app's `undoName` keeps that, a quirk to fix in its own change).
+
+The tests moved with their rules (no test was deleted without a twin; same name unless noted):
+`PhoneSidebarTests` to `PhoneNotebookRowsTests` (4); `MacSupportTests` to `PointerCursorTests` (1, one assertion added);
+`ThisDeviceNameTests` to `ThisDeviceTests` (2 of 3; the third, `theNoticesWaitForTheVaultAlert`, is split into
+`OnboardingHoldTests` (core, the rule) and `VaultNoticeTextTests` (app, the alert's words)); `VoiceNoteMenuTests` (8) to the
+same suites in core, on `CaptureRig`'s fakes; `MenuHandlerTests`: 14 of its tests to `LibraryCommandsTests`, the reopen
+alert's words stay (twin: `aRecentThatCannotBeReopenedReturnsItsError`), the three editor-command tests stay (`EditorCommands`);
+`KeyExportGapTests.closingTheVaultDeletesItsDraggedOutPDFs` to `DragExportTests`;
+`JoinTakeoverPlatformTests.storedSigningRoundTripsASoftwarePair` to `StoredSigningTests`;
+`MacCatalystTests.aLoggedDragErrorKeepsOnlyItsClassifierPublic` split into `DragLogFormatTests` (core, an `NSError`) and
+`aDragErrorOfTheAppIsClassifiedByItsType` (app, `NoteFileDrag.DragError`); five tests of `AttachmentEditorTests`
+(`duplicateAndBringToFrontWithUndo`, `rotatingAnItemIsOneUndoStep`, `pastingIntoAnotherNoteCopiesTheBlobFirst`,
+`readOnlyEditorsRefuseItems`, `itemsSurviveAPageLayoutSwitch`) to `ItemActionsTests`, on a fake undo stack; the sixth,
+`eachGestureIsOneDeltaAndUndoRedoWork`, has a twin there and stays on the real `UndoManager`. New in core: `KeyFileTests`,
+`MarkdownFormulaTests` (the app's `MarkdownBoxTests` keeps the SwiftMath one), three more `StoredSigningTests`, two more
+`ItemActionsTests`.
+
+Counts (`@Test` and `func test` declarations, as part 8 counted): `SempereAppTests` 822 before, 786 after (136 files, 133
+after); `SempereAppCoreTests` 817 before, 875 after (100 files, 111 after). Run: the app target (`app.sh test-mac`) 778 tests in
+152 suites; the core, on the Mac, 838 tests in 118 suites with the neighbouring targets in the filter; on Linux the moved and
+new core tests (618 tests in 84 suites with the model, editor and quick-capture suites around them).
+
+**Done when, re-checked after F1 to F3:** (1) *met*: what remains in `SempereApp` is views, the words, platform code and the
+glue in the table above; the 36 files that import none of the frameworks listed under part 8 are the words (`*+Text`), the canvas's and the
+services' thin extensions (`AppModel+Attachments`, `AppModel+Drags`, `MathModels`, `CloudVault+Live`, …) and the typealiases. (2) unchanged,
+met. (3) *met as corrected above*: the app's test target holds the screen's tests, the words' tests, the platform's tests and
+the glue's tests, and no rule's.
 
 **Decisions taken in the review of #35 (2026-11-09).** (1) `DemoVault.denseOps` stays as it is. (2) No CLI command for
 recording recovery or cache sizes. (3) `NoteWriter.thin` stays in `Sempere`. (4) Part 2's driver is one async

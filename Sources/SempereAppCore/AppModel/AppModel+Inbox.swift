@@ -77,13 +77,12 @@ extension AppModelCore {
     /// capture key comes from its secret); afterwards capture needs nothing.
     /// Without a `notebook`, voice notes go to "Inbox".
     public func enableQuickCapture(notebook: String? = nil, transcribe: Bool = true) throws {
-        guard let vault, vault.canRead, let url = vaultURL, phase == .unlocked else { throw ModelError.noVaultOpen }
+        guard let vault, vault.canRead, vaultURL != nil, phase == .unlocked else { throw ModelError.noVaultOpen }
         try requireWritableVault()
         let clock = try deviceClockForWriting()
         let profile = try vault.captureProfile(device: clock.device,
                                                notebook: notebook ?? CaptureProfile.defaultNotebook)
-        let bookmark = try services.bookmarks.bookmark(for: url)
-        try quickCapture.store.save(StoredCaptureProfile(profile: profile, vaultName: vaultName ?? "Vault", bookmark: bookmark,
+        try quickCapture.store.save(StoredCaptureProfile(profile: profile, vaultName: vaultName ?? "Vault",
                                                          transcribe: transcribe))
         // The widgets and the control stop showing "Set Up".
         quickCapture.publishStatus()
@@ -111,14 +110,14 @@ extension AppModelCore {
         }
         guard let vault, vault.canRead, !vault.isRecoveryOpen, vault.listStatus.allowsWriting, var stored = current,
               stored.profile.vaultId == vault.vaultId, let device = DeviceID(stored.profile.device),
-              let here = vaultURL, Self.isProfileFolder(stored.bookmark, here, bookmarks: services.bookmarks),
+              let here = vaultURL, Self.isProfileFolder(stored.profile.vaultId, here, store: vaultStore),
               let fresh = try? vault.captureProfile(device: device, notebook: stored.profile.notebook) else { return }
         guard stored.profile.recipients != fresh.recipients || stored.profile.key != fresh.key
               || stored.profile.recipient != fresh.recipient else { return }
         stored.profile.recipients = fresh.recipients
         stored.profile.key = fresh.key
         stored.profile.recipient = fresh.recipient
-        // The bookmark is never pointed elsewhere: only the folder the profile was made for is refreshed.
+        // Only the vault the profile was made for is refreshed (`isProfileFolder`).
         try? quickCapture.store.save(stored)
     }
 
@@ -140,12 +139,12 @@ extension AppModelCore {
         }
     }
 
-    /// Whether the profile's `bookmark` resolves to the open vault's folder
+    /// Whether the store's copy of vault `vaultId` (the one the profile delivers into) is the open vault's folder
     /// `here` (security review 2026-10 stage 4, S16): a lookalike folder with
     /// the same vault id, opened from outside, must not take over the profile
     /// (its recipients, its key and where voice notes go).
-    nonisolated static func isProfileFolder(_ bookmark: Data, _ here: URL, bookmarks: any FolderBookmarks) -> Bool {
-        guard let target = try? bookmarks.resolve(bookmark).url else { return false }
+    nonisolated static func isProfileFolder(_ vaultId: UUID, _ here: URL, store: VaultStore?) -> Bool {
+        guard let target = store?.entry(id: vaultId)?.url else { return false }
         func path(_ u: URL) -> String { u.standardizedFileURL.resolvingSymlinksInPath().path }
         return path(target) == path(here)
     }
