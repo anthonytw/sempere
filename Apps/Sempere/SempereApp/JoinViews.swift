@@ -117,15 +117,6 @@ private struct QRScanner: UIViewControllerRepresentable {
 }
 #endif
 
-/// Six words typed into one field: lowercased, split on spaces, commas and newlines.
-enum TypedWords {
-    static func split(_ text: String) -> [String] {
-        text.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "," || $0 == "." })
-            .map { $0.trimmingCharacters(in: CharacterSet.decimalDigits.union(.punctuationCharacters)) }
-            .filter { !$0.isEmpty }
-    }
-}
-
 /// Join This Device (design §6.2), on the new device: makes its keys and asks to join, shows its six words and
 /// QR code for the device that manages devices, waits for the approval (each sync looks for it), then asks for
 /// that device's six reply words (or its QR code), which confirm that this is the vault it approved.

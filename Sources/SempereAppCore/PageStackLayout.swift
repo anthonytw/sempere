@@ -13,20 +13,20 @@ import Foundation
 /// positive, and scales that are not finite or not positive are clamped (a
 /// corrupt page size or a huge page count must never trap or produce an
 /// absurd frame). Index lookups are O(1).
-struct PageStackLayout: Equatable, Sendable {
+public struct PageStackLayout: Equatable, Sendable {
     /// Space between two pages, and above the first, in page points.
-    static let gap = 24.0
+    public static let gap = 24.0
     /// More pages than any note has; keeps every index exact as a `Double`.
-    static let maxCount = 1 << 32
+    public static let maxCount = 1 << 32
 
-    let pageWidth: Double
-    let pageHeight: Double
-    let count: Int
+    public let pageWidth: Double
+    public let pageHeight: Double
+    public let count: Int
     /// Room below the last page (the Add Page button), in screen points:
     /// it keeps its size when zooming.
-    let footerScreenHeight: Double
+    public let footerScreenHeight: Double
 
-    init(pageWidth: Double, pageHeight: Double, count: Int, footerScreenHeight: Double = 0) {
+    public init(pageWidth: Double, pageHeight: Double, count: Int, footerScreenHeight: Double = 0) {
         self.pageWidth = Self.positive(pageWidth, fallback: 612)
         self.pageHeight = Self.positive(pageHeight, fallback: 792)
         self.count = min(max(count, 0), Self.maxCount)
@@ -34,7 +34,7 @@ struct PageStackLayout: Equatable, Sendable {
     }
 
     /// One page and the gap after it, page points.
-    var pitch: Double { pageHeight + Self.gap }
+    public var pitch: Double { pageHeight + Self.gap }
 
     /// Top of page `index`, page points.
     func pageTop(_ index: Int) -> Double {
@@ -42,7 +42,7 @@ struct PageStackLayout: Equatable, Sendable {
     }
 
     /// Frame of page `index` at `scale`, in screen points of the scroll's content.
-    func pageFrame(_ index: Int, scale: Double) -> CGRect {
+    public func pageFrame(_ index: Int, scale: Double) -> CGRect {
         let s = Self.validScale(scale)
         return CGRect(x: 0, y: pageTop(index) * s, width: pageWidth * s, height: pageHeight * s)
     }
@@ -53,20 +53,20 @@ struct PageStackLayout: Equatable, Sendable {
     }
 
     /// The scroll's content size at `scale`, screen points.
-    func contentSize(scale: Double) -> CGSize {
+    public func contentSize(scale: Double) -> CGSize {
         let s = Self.validScale(scale)
         return CGSize(width: pageWidth * s, height: pagesHeight * s + footerScreenHeight)
     }
 
     /// Where the Add Page button's band starts (below the last page's gap), screen points.
-    func footerTop(scale: Double) -> Double {
+    public func footerTop(scale: Double) -> Double {
         pagesHeight * Self.validScale(scale)
     }
 
     /// The pages any part of which lies within `margin` (screen points) of
     /// the visible band `top ..< top + height` (screen points): the pages
     /// that get a canvas. Empty when there are none.
-    func pages(visibleTop top: Double, height: Double, scale: Double, margin: Double = 0) -> Range<Int> {
+    public func pages(visibleTop top: Double, height: Double, scale: Double, margin: Double = 0) -> Range<Int> {
         guard count > 0, top.isFinite, height.isFinite else { return 0..<0 }
         let s = Self.validScale(scale)
         let m = margin.isFinite ? max(margin, 0) : 0
@@ -86,7 +86,7 @@ struct PageStackLayout: Equatable, Sendable {
     /// page owning half of the gaps around it. A page brought into view with
     /// `offset(toShow:)` is the current page whatever the window's shape. Nil
     /// without pages.
-    func currentPage(visibleTop top: Double, height: Double, scale: Double) -> Int? {
+    public func currentPage(visibleTop top: Double, height: Double, scale: Double) -> Int? {
         guard count > 0 else { return nil }
         guard top.isFinite, height.isFinite else { return 0 }
         let s = Self.validScale(scale)
@@ -97,7 +97,7 @@ struct PageStackLayout: Equatable, Sendable {
     /// The content offset (screen points) that shows page `index` at the top
     /// of the screen with half a gap above it (the first page: the very top),
     /// within the scrollable range.
-    func offset(toShow index: Int, scale: Double, viewportHeight: Double) -> Double {
+    public func offset(toShow index: Int, scale: Double, viewportHeight: Double) -> Double {
         let s = Self.validScale(scale)
         let i = min(max(index, 0), max(count - 1, 0))
         let target = i == 0 ? 0 : (pageTop(i) - Self.gap / 2) * s
@@ -110,7 +110,7 @@ struct PageStackLayout: Equatable, Sendable {
     /// the offset that centers it, within the scrollable range. `offset` and
     /// `viewport` are the scroll's current offset and size. A box that is not
     /// finite gives nil.
-    func revealOffset(of box: (x: Double, y: Double, w: Double, h: Double), onPage index: Int, scale: Double,
+    public func revealOffset(of box: (x: Double, y: Double, w: Double, h: Double), onPage index: Int, scale: Double,
                       offset: (x: Double, y: Double), viewport: (width: Double, height: Double)) -> (x: Double, y: Double)? {
         guard [box.x, box.y, box.w, box.h].allSatisfy(\.isFinite) else { return nil }
         let s = Self.validScale(scale)
@@ -131,7 +131,7 @@ struct PageStackLayout: Equatable, Sendable {
     /// The part of page `index` inside `visible` (screen points of the
     /// content at `scale`), in that page's own points; nil when none of it is
     /// on screen or the input is not finite.
-    func visiblePart(ofPage index: Int, visible: CGRect, scale: Double) -> CGRect? {
+    public func visiblePart(ofPage index: Int, visible: CGRect, scale: Double) -> CGRect? {
         guard index >= 0, index < count, [visible.minX, visible.minY, visible.width, visible.height].allSatisfy(\.isFinite)
         else { return nil }
         let s = Self.validScale(scale)
@@ -142,7 +142,7 @@ struct PageStackLayout: Equatable, Sendable {
     }
 
     /// The scale at which a page fills `viewWidth` (the smallest zoom), nil before layout.
-    func fitScale(viewWidth: Double) -> Double? {
+    public func fitScale(viewWidth: Double) -> Double? {
         guard viewWidth.isFinite, viewWidth > 0 else { return nil }
         return viewWidth / pageWidth
     }
@@ -150,7 +150,7 @@ struct PageStackLayout: Equatable, Sendable {
     /// The offset that keeps the content point under `anchor` (screen points
     /// from the viewport's edge) in place when the scale goes `from` → `to`,
     /// within the scrollable range of `contentLength` (at `to`).
-    static func rescaledOffset(_ offset: Double, anchor: Double, from: Double, to: Double,
+    public static func rescaledOffset(_ offset: Double, anchor: Double, from: Double, to: Double,
                                contentLength: Double, viewport: Double) -> Double {
         let a = anchor.isFinite ? anchor : 0
         let o = offset.isFinite ? offset : 0
@@ -159,7 +159,7 @@ struct PageStackLayout: Equatable, Sendable {
     }
 
     /// `offset` within `0 ... contentLength - viewport` (0 when the content is shorter).
-    static func clampedOffset(_ offset: Double, contentLength: Double, viewport: Double) -> Double {
+    public static func clampedOffset(_ offset: Double, contentLength: Double, viewport: Double) -> Double {
         let length = contentLength.isFinite ? contentLength : 0
         let view = viewport.isFinite ? viewport : 0
         let maxOffset = max(length - view, 0)
@@ -190,18 +190,20 @@ struct PageStackLayout: Equatable, Sendable {
 /// position decides again (`PageStackLayout.currentPage`). Without this, a
 /// page that cannot reach the top of the screen (near the end of the note)
 /// would hand "current" to the page above it as soon as it was shown.
-struct PageScrollTracker: Equatable, Sendable {
+public struct PageScrollTracker: Equatable, Sendable {
     /// The page shown by the last jump and the offset it scrolled to.
     private(set) var pinned: (page: Int, offset: Double)?
 
+    public init() {}
+
     /// A jump scrolled to `offset` to show `page`.
-    mutating func jumped(to page: Int, offset: Double) {
+    public mutating func jumped(to page: Int, offset: Double) {
         pinned = (page, offset)
     }
 
     /// The current page at `offset`: the pinned page while the offset stays
     /// within half a point of the jump's, else `positional` (and the pin is dropped).
-    mutating func current(at offset: Double, positional: Int?) -> Int? {
+    public mutating func current(at offset: Double, positional: Int?) -> Int? {
         if let pin = pinned {
             if abs(pin.offset - offset) <= 0.5 { return pin.page }
             pinned = nil
@@ -209,7 +211,7 @@ struct PageScrollTracker: Equatable, Sendable {
         return positional
     }
 
-    static func == (a: PageScrollTracker, b: PageScrollTracker) -> Bool {
+    public static func == (a: PageScrollTracker, b: PageScrollTracker) -> Bool {
         a.pinned?.page == b.pinned?.page && a.pinned?.offset == b.pinned?.offset
     }
 }

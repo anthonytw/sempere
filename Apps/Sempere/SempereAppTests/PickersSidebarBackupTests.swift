@@ -208,18 +208,8 @@ struct PickersSidebarBackupTests {
         for purpose in [PickedFolderRules.Purpose.openVault, .syncFolder, .writeFolder, .exportFolder] {
             #expect(!rules(purpose).panel(NSObject(), shouldEnable: bundle))
             #expect(throws: (any Error).self) { try rules(purpose).panel(NSObject(), validate: bundle) }
-            let library = URL(fileURLWithPath: "/Users/me/Pictures/Photos Library.photoslibrary", isDirectory: true)
-            #expect(!PickedFolderRules.canChoose(library, kind: .package, for: purpose))
-            #expect(PickedFolderRules.canChoose(plain, kind: .unknown, for: purpose), "unknown in the panel: enabled")
-            #expect(!PickedFolderRules.canChoose(vault.appendingPathComponent("notes"), kind: .unknown, for: purpose),
-                    "unknown but inside a vault: greyed out")
-            #expect(!PickedFolderRules.canChoose(plain, kind: .file, for: purpose))
-            #expect(PickedFolderRules.canChoose(plain, kind: .folder, for: purpose))
         }
-        // After the pick: only a plain folder is taken; unknown, a package or a file is refused.
-        #expect(PickedFolderRules.accepts(.folder, at: plain))
-        #expect(!PickedFolderRules.accepts(.unknown, at: plain) && !PickedFolderRules.accepts(.package, at: bundle)
-                && !PickedFolderRules.accepts(.file, at: file))
+        // The rules behind the panel (what each purpose refuses, packages, the pick): `PickedFolderRulesTests` (Linux).
     }
 
     /// Owner's test of build 11: iCloud Drive held "Wompa.sempere" as a package (an early build declared the vault type

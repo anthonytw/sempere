@@ -7,6 +7,9 @@ import Foundation
 /// (`BulkExportSession`): `--layout notebooks`, `--zip`, re-runs that skip
 /// unchanged notes, `--overwrite`, and failures that do not stop the batch.
 /// The app's "Export Notes…" writes the same files (docs/cli.md "Bulk export").
+/// What a subprocess's stderr reader thread read, handed over after `group.wait()`.
+private final class ErrorText: @unchecked Sendable { var data = Data() }
+
 final class CLIBulkExportTests: CLITestCase {
     func files(_ dir: String) -> [String] { FileTree.regularFiles(under: URL(fileURLWithPath: dir), skipHidden: true) }
 
@@ -114,6 +117,65 @@ final class CLIBulkExportTests: CLITestCase {
         XCTAssertTrue(r.err.contains("1 note(s) could not be exported"), r.err)
         XCTAssertEqual(files(out), ["Groceries-bbbbbbbb.pdf"])
         XCTAssertEqual((r.json as? [[String: Any]])?.count, 1)
+    }
+
+    /// Ctrl-C ends `export --all` after the note being written (nothing half-written is left), says how many
+    /// notes were exported, and the same command resumes where it stopped (the shared `BulkExportDriver`'s stop).
+    func testInterruptStopsAfterTheCurrentNoteAndResumes() throws {
+        let (_, _, key) = try makeVault()
+        let args = ["--vault", path("mine.sempere"), "--identity", key]
+        let out = path("sigint")
+        // Eight more notes sort after the two of the fixture, so a note is still to come when the signal arrives.
+        for n in 1...8 { XCTAssertEqual(try cli(["notes", "new", "Zeta \(n)"] + args).status, 0) }
+        // PNG at a high resolution keeps each note busy long enough to be interrupted.
+        let export = ["export", "--all", "--format", "png", "--dpi", "300", "--out", out] + args
+        var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("SEMPERE_") }
+        environment["XDG_STATE_HOME"] = tmp.appendingPathComponent("state").path
+        environment["XDG_CACHE_HOME"] = tmp.appendingPathComponent("cache").path
+        let p = Process()
+        p.executableURL = Self.binary
+        p.arguments = export
+        p.environment = environment
+        p.standardInput = FileHandle.nullDevice
+        let stdout = Pipe(), stderr = Pipe()
+        p.standardOutput = stdout
+        p.standardError = stderr
+        try p.run()
+        let errBox = ErrorText()
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global().async { errBox.data = stderr.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+        // The first note's first page on disk says the loop is running (and Ctrl-C is handled); the CLI's own
+        // output is buffered while it writes to a pipe.
+        let first = URL(fileURLWithPath: out).appendingPathComponent("Groceries-bbbbbbbb/p001.png").path
+        let deadline = Date().addingTimeInterval(60)
+        while !FileManager.default.fileExists(atPath: first), p.isRunning, Date() < deadline { usleep(1000) }
+        kill(p.processIdentifier, SIGINT)
+        _ = stdout.fileHandleForReading.readDataToEndOfFile()
+        group.wait()
+        p.waitUntilExit()
+        let err = String(decoding: errBox.data, as: UTF8.self)
+        if p.terminationStatus == 0 {
+            // Exit 0 with the stop message printed is a stop that did not stop; without it the export just won the race.
+            XCTAssertFalse(err.contains("Stopping after the current note"), "stopped but finished everything: \(err)")
+            throw XCTSkip("the export finished before the signal arrived: \(files(out))")
+        }
+        XCTAssertEqual(p.terminationStatus, 1, err)
+        let prefix = "sempere: interrupted: "
+        let line = try XCTUnwrap(err.split(separator: "\n").first { $0.hasPrefix(prefix) }, err)
+        let exported = try XCTUnwrap(Int(line.components(separatedBy: prefix)[1].prefix { $0.isNumber }), String(line))
+        XCTAssertTrue(line.hasSuffix(" note(s) exported into \(out); run the same command again to resume"), String(line))
+        XCTAssertTrue((1...9).contains(exported), "\(exported)")
+        XCTAssertTrue(err.contains("Stopping after the current note"), err)
+        XCTAssertTrue(files(out).contains("Groceries-bbbbbbbb/p001.png"))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out).filter { $0.hasSuffix(".partial") }, [],
+                       "nothing half-written is left")
+
+        let again = try cli(export)
+        XCTAssertEqual(again.status, 0, again.err)
+        XCTAssertTrue(again.out.contains("\(10 - exported) note(s) exported, \(exported) unchanged since the last export into \(out)"),
+                      again.out)
+        XCTAssertEqual(files(out).count, 3 + 8)
     }
 
     func testBulkOptionsNeedAllAndPDFOrPNG() throws {

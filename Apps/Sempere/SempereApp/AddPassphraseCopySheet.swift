@@ -42,8 +42,8 @@ struct AddPassphraseCopySheet: View {
                                      comment: "%@ is the abbreviated public key of the recovery key"),
                               systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green).font(.footnote)
-                    case .problem(let message):
-                        Text(message).font(.footnote).foregroundStyle(.red)
+                    case .problem(let issue):
+                        Text(ExistingKeyInput.message(issue)).font(.footnote).foregroundStyle(.red)
                     case .needsPassphrase:
                         Text("That key file is protected by a passphrase. Paste the plain recovery key from the printed kit instead.")
                             .font(.footnote).foregroundStyle(.red)

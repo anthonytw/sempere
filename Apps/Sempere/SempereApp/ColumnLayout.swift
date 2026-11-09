@@ -1,33 +1,33 @@
 import SwiftUI
+import SempereAppCore
 
 /// Which columns of the three-column split view are shown, remembered in
-/// `UserDefaults` (`@AppStorage(ColumnLayout.key)`). A note open on the canvas
-/// can go full width (`detailOnly`); the toolbar button and the system's
-/// sidebar gestures bring the list (`doubleColumn`) or both columns (`all`) back.
+/// `UserDefaults` (`@AppStorage(ColumnLayout.key)`): SwiftUI's side of `ColumnChoice` (`SempereAppCore`, which
+/// holds the stored string and its rules).
 enum ColumnLayout {
-    static let key = "Sempere.columns"
+    static let key = ColumnChoice.key
 
     static func visibility(from stored: String) -> NavigationSplitViewVisibility {
-        switch stored {
-        case "detailOnly": return .detailOnly
-        case "doubleColumn": return .doubleColumn
-        default: return .all
+        switch ColumnChoice(stored: stored) {
+        case .detailOnly: return .detailOnly
+        case .doubleColumn: return .doubleColumn
+        case .all: return .all
         }
     }
 
     static func stored(_ visibility: NavigationSplitViewVisibility) -> String {
+        choice(visibility).stored
+    }
+
+    private static func choice(_ visibility: NavigationSplitViewVisibility) -> ColumnChoice {
         switch visibility {
-        case .detailOnly: return "detailOnly"
-        case .doubleColumn: return "doubleColumn"
-        default: return "all"
+        case .detailOnly: return .detailOnly
+        case .doubleColumn: return .doubleColumn
+        default: return .all
         }
     }
 
-    /// What the show/hide notes button does from `stored`: full-width canvas
-    /// unless it already is, then the note list next to it.
-    static func toggled(_ stored: String) -> String {
-        visibility(from: stored) == .detailOnly ? "doubleColumn" : "detailOnly"
-    }
+    static func toggled(_ stored: String) -> String { ColumnChoice.toggled(stored) }
 
     /// The columns the split view gets. An iPhone leaves them to the system (a
     /// stack when compact, columns in a wide landscape) whatever is stored, so
@@ -36,16 +36,9 @@ enum ColumnLayout {
         isPhone ? .automatic : visibility(from: stored)
     }
 
-    /// The stored layout after the split view changed its columns: an iPhone
-    /// never stores one (its columns are the system's).
     static func storing(_ visibility: NavigationSplitViewVisibility, over stored: String, isPhone: Bool) -> String {
-        isPhone ? stored : Self.stored(visibility)
+        ColumnChoice.storing(choice(visibility), over: stored, isPhone: isPhone)
     }
 
-    /// The layout to keep when a window has no note to show: the full-width canvas of nothing
-    /// ("No Note Selected" over the whole window, with the list hidden) is no layout, so it
-    /// becomes the list next to the canvas. Anything else stays.
-    static func withoutNote(_ stored: String) -> String {
-        visibility(from: stored) == .detailOnly ? "doubleColumn" : stored
-    }
+    static func withoutNote(_ stored: String) -> String { ColumnChoice.withoutNote(stored) }
 }

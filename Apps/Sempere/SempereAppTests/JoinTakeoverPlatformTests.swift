@@ -7,32 +7,22 @@ import Testing
 @testable import SempereApp
 
 /// What of joining and taking over is the app's (key-hierarchy design §6.2, §6.3; phase KH5 part 2): what deleting
-/// this device's key costs (`KeyRemoval`'s check and words), the takeover screen's codes, the typed words, and the
+/// this device's key costs (`KeyRemoval`'s words), the takeover screen's codes, and the
 /// Keychain's signing items (the Secure Enclave). The joins and takeovers themselves are `SempereAppCoreTests`
 /// (`JoinTakeoverTests`, `JoinOverSyncTests`).
 @MainActor
 struct JoinTakeoverAppTests {
-    /// Review of #88, M4, and its re-check (R2, SHOULD): the one check behind every removal of this device's keys
-    /// tells home alone from home with others, and says what each costs.
-    @Test func deletingTheHomesCopyIsRecognized() async throws {
-        let homeStore = MemoryDeviceKeyStore()
-        let (url, id, home) = try await Self.vault(device: try homeStore.generate())
-        try await homeStore.save(home, for: id, vaultName: "Mine")
-        let alone = await KeyRemoval.check(vaultID: id, at: url, store: homeStore)
-        #expect(alone.home == .alone)
+    /// Review of #88, M4, and its re-check (R2, SHOULD): what each case of the check (`KeyRemovalTests`, Linux) costs, in words.
+    @Test func removingTheHomesKeySaysWhatItCosts() {
+        let alone = KeyRemoval(home: .alone)
         #expect(alone.removalWarning()?.contains("recovery kit") == true)
         #expect(alone.forgetWarning?.contains("recovery kit") == true)
         #expect(!alone.offersMakeHome)
-        let phoneStore = MemoryDeviceKeyStore()
-        let phone = try phoneStore.generate()
-        try await phoneStore.save(phone, for: id, vaultName: "Mine")
-        try await Self.approve(phone, in: url, home: home)
-        let withOthers = await KeyRemoval.check(vaultID: id, at: url, store: homeStore)
-        #expect(withOthers.home == .withOthers)
+        let withOthers = KeyRemoval(home: .withOthers)
         #expect(withOthers.offersMakeHome)
+        #expect(withOthers.removalWarning()?.contains("make another device home") == true)
         #expect(withOthers.forgetWarning != nil)
-        let member = await KeyRemoval.check(vaultID: id, at: url, store: phoneStore)
-        #expect(member.home == .no)
+        let member = KeyRemoval()
         #expect(member.removalWarning() == nil)
         #expect(member.forgetWarning == nil)
     }
@@ -61,10 +51,6 @@ struct JoinTakeoverAppTests {
         #expect(TakeoverView.kitCode(" age-secret-key-1qqq\n") == .key)
         #expect(TakeoverView.kitCode("sempere-reply:xyz") == nil)
         #expect(TakeoverView.kitCode("https://example.com") == nil)
-    }
-
-    @Test func theTypedWordsIgnoreNumbersAndPunctuation() {
-        #expect(TypedWords.split("1. Abandon 2. ability, able\n4.about above  absent") == ["abandon", "ability", "able", "about", "above", "absent"])
     }
 
     @Test func storedSigningRoundTripsASoftwarePair() throws {

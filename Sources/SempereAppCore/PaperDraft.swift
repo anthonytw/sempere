@@ -4,26 +4,12 @@ import Observation
 
 /// One adjustable number of a paper, with the range and step the picker's
 /// slider uses (ranges are `Paper.Limits`).
-enum PaperParameter: String, CaseIterable, Identifiable {
+public enum PaperParameter: String, CaseIterable, Identifiable, Sendable {
     case spacing, lineWidth, dotRadius, marginLeft, marginTop, cueWidth, summaryHeight, staffSpacing, staffGap
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .spacing: return String(localized: "Spacing")
-        case .lineWidth: return String(localized: "Line width")
-        case .dotRadius: return String(localized: "Dot size")
-        case .marginLeft: return String(localized: "Left margin")
-        case .marginTop: return String(localized: "Top margin")
-        case .cueWidth: return String(localized: "Cue column")
-        case .summaryHeight: return String(localized: "Summary area")
-        case .staffSpacing: return String(localized: "Staff line spacing")
-        case .staffGap: return String(localized: "Space between staves")
-        }
-    }
-
-    var range: ClosedRange<Double> {
+    public var range: ClosedRange<Double> {
         switch self {
         case .spacing: return Paper.Limits.spacing
         case .lineWidth: return Paper.Limits.lineWidth
@@ -36,7 +22,7 @@ enum PaperParameter: String, CaseIterable, Identifiable {
         }
     }
 
-    var step: Double {
+    public var step: Double {
         switch self {
         case .lineWidth, .dotRadius: return 0.05
         case .staffSpacing: return 0.5
@@ -45,7 +31,7 @@ enum PaperParameter: String, CaseIterable, Identifiable {
     }
 
     /// Where the value lives in a `Paper`.
-    var keyPath: WritableKeyPath<Paper, Double> {
+    public var keyPath: WritableKeyPath<Paper, Double> {
         switch self {
         case .spacing: return \.spacing
         case .lineWidth: return \.lineWidth
@@ -74,38 +60,13 @@ enum PaperParameter: String, CaseIterable, Identifiable {
     }
 }
 
-extension PaperKind {
-    /// The kind's name in the interface language (`title` is the library's English name).
-    var localizedTitle: String {
-        switch self {
-        case .blank: return String(localized: "Blank", comment: "Paper kind")
-        case .ruled: return String(localized: "Ruled", comment: "Paper kind")
-        case .marginRuled: return String(localized: "Ruled with margin", comment: "Paper kind")
-        case .grid: return String(localized: "Grid", comment: "Paper kind")
-        case .dot: return String(localized: "Dots", comment: "Paper kind")
-        case .isoDot: return String(localized: "Isometric dots", comment: "Paper kind")
-        case .isoGrid: return String(localized: "Isometric grid", comment: "Paper kind")
-        case .cornell: return String(localized: "Cornell", comment: "Paper kind: Cornell notes layout")
-        case .staff: return String(localized: "Music staff", comment: "Paper kind")
-        }
-    }
-}
-
 /// Page backgrounds the picker offers as presets; any color can still be chosen.
-enum PaperBackground: CaseIterable, Identifiable {
+public enum PaperBackground: CaseIterable, Identifiable, Sendable {
     case white, cream, dark
 
-    var id: Self { self }
+    public var id: Self { self }
 
-    var title: String {
-        switch self {
-        case .white: return String(localized: "White", comment: "Paper color preset")
-        case .cream: return String(localized: "Cream", comment: "Paper color preset")
-        case .dark: return String(localized: "Dark", comment: "Paper color preset")
-        }
-    }
-
-    var color: Sempere.Color {
+    public var color: Sempere.Color {
         switch self {
         case .white: return .white
         case .cream: return Paper.cream
@@ -118,20 +79,20 @@ enum PaperBackground: CaseIterable, Identifiable {
 /// kept inside the valid ranges (`Paper.Limits`).
 @MainActor
 @Observable
-final class PaperDraft {
+public final class PaperDraft {
     /// Line color used on the dark background preset.
     static let darkLineColor = Sempere.Color(r: 0x4A, g: 0x4F, b: 0x5C)
 
-    private(set) var paper: Paper
+    public private(set) var paper: Paper
 
-    init(paper: Paper) { self.paper = paper.validated() }
+    public init(paper: Paper) { self.paper = paper.validated() }
 
-    var kind: PaperKind { paper.kind }
-    var parameters: [PaperParameter] { PaperParameter.applicable(to: paper.kind) }
+    public var kind: PaperKind { paper.kind }
+    public var parameters: [PaperParameter] { PaperParameter.applicable(to: paper.kind) }
     /// Whether the line / dot color applies to this kind.
-    var hasLineColor: Bool { paper.kind != .blank }
+    public var hasLineColor: Bool { paper.kind != .blank }
     /// Whether the margin color applies to this kind.
-    var hasMarginColor: Bool { paper.kind.supportsMargins && (paper.marginLeft > 0 || paper.marginTop > 0) }
+    public var hasMarginColor: Bool { paper.kind.supportsMargins && (paper.marginLeft > 0 || paper.marginTop > 0) }
 
     /// Whether `color` is one the app itself chose (a kind's or the dark
     /// preset's line color), as opposed to one the user picked.
@@ -141,7 +102,7 @@ final class PaperDraft {
 
     /// Switches to `kind` with that kind's own defaults, keeping the page
     /// background and a line color the user picked.
-    func select(_ kind: PaperKind) {
+    public func select(_ kind: PaperKind) {
         guard kind != paper.kind else { return }
         var next = Paper.template(kind)
         next.background = paper.background
@@ -153,31 +114,31 @@ final class PaperDraft {
         paper = next.validated()
     }
 
-    func value(of parameter: PaperParameter) -> Double { paper[keyPath: parameter.keyPath] }
+    public func value(of parameter: PaperParameter) -> Double { paper[keyPath: parameter.keyPath] }
 
     /// Sets a parameter, clamped to its range.
-    func set(_ parameter: PaperParameter, to value: Double) {
+    public func set(_ parameter: PaperParameter, to value: Double) {
         var next = paper
         next[keyPath: parameter.keyPath] = value
         paper = next.validated()
     }
 
-    func setLineColor(_ color: Sempere.Color) { paper.lineColor = color }
-    func setMarginColor(_ color: Sempere.Color) { paper.marginColor = color }
-    func setBackgroundColor(_ color: Sempere.Color) { paper.background = color }
+    public func setLineColor(_ color: Sempere.Color) { paper.lineColor = color }
+    public func setMarginColor(_ color: Sempere.Color) { paper.marginColor = color }
+    public func setBackgroundColor(_ color: Sempere.Color) { paper.background = color }
 
     /// The preset matching the current background, if any.
-    var background: PaperBackground? { PaperBackground.allCases.first { $0.color == paper.background } }
+    public var background: PaperBackground? { PaperBackground.allCases.first { $0.color == paper.background } }
 
     /// Picks a background preset; a stock line color follows to the preset's.
-    func select(_ preset: PaperBackground) {
+    public func select(_ preset: PaperBackground) {
         let stock = Self.isStock(paper.lineColor)
         paper.background = preset.color
         if stock { paper.lineColor = preset == .dark ? Self.darkLineColor : Paper.template(paper.kind).lineColor }
     }
 
     /// Back to the kind's defaults on the same background.
-    func reset() {
+    public func reset() {
         var next = Paper.template(paper.kind)
         next.background = paper.background
         if background == .dark { next.lineColor = Self.darkLineColor }

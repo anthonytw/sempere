@@ -329,26 +329,6 @@ struct MenuHandlerTests {
 
     // MARK: Scene restoration gating
 
-    @Test func theSavedSelectionIsAppliedOncePerVaultOnAMacOnly() {
-        let vault = UUID(), other = UUID()
-        #expect(SelectionStorage.shouldRestore(isMac: true, vault: vault, restored: nil))
-        #expect(SelectionStorage.shouldRestore(isMac: true, vault: vault, restored: other), "another vault was restored before")
-        #expect(!SelectionStorage.shouldRestore(isMac: true, vault: vault, restored: vault), "already applied")
-        #expect(!SelectionStorage.shouldRestore(isMac: true, vault: nil, restored: nil))
-        #expect(!SelectionStorage.shouldRestore(isMac: false, vault: vault, restored: nil), "the iPad keeps starting empty")
-    }
-
-    @Test func nothingIsSavedBeforeTheStoredSelectionWasApplied() {
-        let vault = UUID()
-        #expect(!SelectionStorage.shouldSave(isMac: true, unlocked: true, vault: vault, restored: nil),
-                "the first selections must not overwrite the stored one")
-        #expect(SelectionStorage.shouldSave(isMac: true, unlocked: true, vault: vault, restored: vault))
-        #expect(!SelectionStorage.shouldSave(isMac: true, unlocked: true, vault: vault, restored: UUID()))
-        #expect(!SelectionStorage.shouldSave(isMac: true, unlocked: false, vault: vault, restored: vault))
-        #expect(!SelectionStorage.shouldSave(isMac: true, unlocked: true, vault: nil, restored: nil))
-        #expect(!SelectionStorage.shouldSave(isMac: false, unlocked: true, vault: vault, restored: vault))
-    }
-
     @Test func aStoredSelectionRoundTripsThroughTheSceneStorageString() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
         let vaultID = try #require(model.vault?.vaultId)

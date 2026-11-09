@@ -121,9 +121,9 @@ extension AppModelCore {
             progress(ExportProgress(phase: .reading, done: i, total: ids.count))
             do {
                 if unsaved.contains(id) { throw UnsavedChangesError() }
-                let item = try await loadNoteForExport(id, vault: vault)
+                let item = try await loadNoteForExport(id, vault: vault, withSummary: true)
                 try ensureCurrent(gen)
-                loaded.append((item.summary, item.state))
+                if let summary = item.summary { loaded.append((summary, item.state)) }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -212,27 +212,9 @@ extension AppModelCore {
 
     /// Reads one note for an export: fetched first in a partial copy (`downloadNote`), which refuses a note
     /// still incomplete (an export of a partial note would be an older note without a word).
-    func loadNoteForExport(_ id: UUID, vault: Vault) async throws -> LoadedForExport {
+    func loadNoteForExport(_ id: UUID, vault: Vault, withSummary: Bool = false) async throws -> LoadedForExport {
         try await downloadNote(id)
         let verify = partialNoteVerifier(id)
-        return try await offMain { () throws -> LoadedForExport in
-            try verify?()
-            let note = try vault.loadNote(id)
-            return LoadedForExport(summary: vault.summary(of: id, loaded: note), state: try vault.reconstruct(note),
-                                   version: BulkExportPlan.version(of: note))
-        }
-    }
-}
-
-struct LoadedForExport: Sendable {
-    let summary: NoteSummary
-    let state: NoteState
-    /// `BulkExportPlan.version` of the revisions read.
-    var version = ""
-
-    init(summary: NoteSummary, state: NoteState, version: String = "") {
-        self.summary = summary
-        self.state = state
-        self.version = version
+        return try await offMain { try LoadedForExport.read(id, from: vault, withSummary: withSummary, verify: verify) }
     }
 }

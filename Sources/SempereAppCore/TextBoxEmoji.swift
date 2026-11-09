@@ -5,25 +5,25 @@ import Sempere
 /// `EmojiCompletionModifier`), on the package's `EmojiCompletion`. A box is completed at the
 /// caret, not at the end of its text: every function takes the text and the caret (UTF-16).
 /// Pure, tested.
-enum TextBoxEmoji {
+public enum TextBoxEmoji {
     /// Suggestions shown at most.
-    static let shown = 6
+    public static let shown = 6
 
     /// The query being typed just before `caret`, or nil.
-    static func query(in text: String, caret: Int) -> String? {
+    public static func query(in text: String, caret: Int) -> String? {
         guard let prefix = prefix(of: text, caret: caret) else { return nil }
         return EmojiCompletion.activeQuery(in: prefix)
     }
 
     /// The suggestions for the query before the caret, none while `dismissed` is that query.
-    static func suggestions(in text: String, caret: Int, dismissed: String?) -> [EmojiCompletion.Suggestion] {
+    public static func suggestions(in text: String, caret: Int, dismissed: String?) -> [EmojiCompletion.Suggestion] {
         guard let q = query(in: text, caret: caret), q != dismissed else { return [] }
         return EmojiCompletion.suggestions(for: q, limit: shown)
     }
 
     /// The edit that puts `emoji` in place of the `:query` before the caret: the UTF-16 range to
     /// replace and the caret afterwards. Nil when no query is active.
-    static func accepting(_ emoji: String, in text: String, caret: Int) -> (range: NSRange, caret: Int)? {
+    public static func accepting(_ emoji: String, in text: String, caret: Int) -> (range: NSRange, caret: Int)? {
         guard let q = query(in: text, caret: caret) else { return nil }
         let length = q.utf16.count + 1   // the colon and the query (ASCII)
         guard length <= caret else { return nil }
@@ -32,7 +32,7 @@ enum TextBoxEmoji {
 
     /// The edit that turns a closed `:name:` ending at the caret into its emoji: the range to
     /// replace, the emoji and the caret afterwards. Nil when the caret is not after one.
-    static func closing(in text: String, caret: Int) -> (range: NSRange, emoji: String, caret: Int)? {
+    public static func closing(in text: String, caret: Int) -> (range: NSRange, emoji: String, caret: Int)? {
         guard let prefix = prefix(of: text, caret: caret), prefix.hasSuffix(":") else { return nil }
         let ns = prefix as NSString
         var start = ns.length - 2

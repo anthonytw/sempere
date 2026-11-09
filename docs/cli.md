@@ -2347,10 +2347,13 @@ summary names no audio, video, image or PDF are skipped without being read.
 #### Bulk export
 
 `--all` with `--format pdf`, `png` or `media` (not `--merge` or `--at`) runs the bulk
-export the app's "Export to Folder or Zip…" uses (`BulkExportSession`, docs/io.md "Bulk
+export the app's "Export to Folder or Zip…" uses (`BulkExportDriver` and `BulkExportSession`, docs/io.md "Bulk
 export"): notes are planned from the summaries (the summary cache unless
-`--no-cache`), then read, rendered and written **one at a time**, so memory is
-that of the largest note, not of the vault.
+`--no-cache`), then rendered and written **one note at a time**. The next notes are
+read ahead while one renders, within an estimated 256 MiB of notes held at once (a note
+bigger than that is read on its own), so memory is bounded by that budget or the largest
+note, not by the vault. Ctrl-C stops after the note being written; it can also wait for a
+read-ahead already in flight.
 
 - `--layout notebooks` puts each note in a folder per notebook level
   (`School/Math/Week-1-0d1c6a1e.pdf`); with `--notebook NAME` the folders

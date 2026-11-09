@@ -43,13 +43,6 @@ struct SceneRestorationTests {
         #expect(fate(cloud: true) == .waiting, "the note may still arrive from another device")
     }
 
-    /// The library window restored with its note list hidden and nothing selected shows the list.
-    @Test func aHiddenListWithoutANoteComesBack() {
-        #expect(ColumnLayout.withoutNote("detailOnly") == "doubleColumn")
-        #expect(ColumnLayout.withoutNote("doubleColumn") == "doubleColumn")
-        #expect(ColumnLayout.withoutNote("all") == "all")
-    }
-
     @Test func sceneIDsAreDistinctAndTheMenusUseThem() {
         let ids = [SceneRestoration.Kind.library, .note, .settings, .keys].map(\.sceneID)
         #expect(Set(ids).count == ids.count)

@@ -66,23 +66,6 @@ public enum BulkExportTarget: Equatable, Sendable {
     case zip
 }
 
-/// How far a bulk export has come, in notes. Its line (`description`) is the app's.
-public struct BulkExportProgress: Equatable, Sendable {
-    public var done: Int
-    public var total: Int
-    public var skipped: Int = 0
-    public var failed: Int = 0
-
-    public init(done: Int, total: Int, skipped: Int = 0, failed: Int = 0) {
-        self.done = done
-        self.total = total
-        self.skipped = skipped
-        self.failed = failed
-    }
-
-    public var fraction: Double { total > 0 ? min(1, Double(done) / Double(total)) : 0 }
-}
-
 /// Bulk export: many notes, one at a time (`BulkExportSession`, shared with
 /// `sempere export --all`).
 extension AppModelCore {
@@ -110,29 +93,8 @@ extension AppModelCore {
         return BulkExportPlan.jobs(for: scope, from: listed, format: options.format, layout: options.layout)
     }
 
-    /// What reading a note ahead found (`LoadAhead`): the revision names it listed, and the note
-    /// when it was read.
-    struct BulkPrefetched: Sendable {
-        var names: [String]?
-        /// nil: not read here (the consumer reads it, in turn).
-        var item: Result<LoadedForExport, any Error>?
-    }
-
-    /// In memory, a note is several times its revision files (they are compressed and encrypted).
-    nonisolated static var bulkDecodeFactor: Int { 8 }
-    /// Assumed size of a note whose files cannot be measured (evicted from iCloud): in memory.
-    nonisolated static var bulkUnknownNoteBytes: Int { 64 << 20 }
-    /// Most estimated bytes of notes held by a bulk export at once: the note being rendered plus
-    /// those read ahead. A note over it is read and rendered on its own, as one note always was.
-    nonisolated static var bulkMemoryBudget: Int { 256 << 20 }
-    /// How many notes after the current one are read ahead.
-    nonisolated public static var bulkReadAheadDepth: Int { 2 }
-
-    /// The estimated bytes of `id` in memory once read.
-    nonisolated static func bulkEstimate(of id: UUID, vault: Vault) -> Int {
-        guard let disk = vault.revisionBytes(of: id) else { return bulkUnknownNoteBytes }
-        return max(1 << 20, disk * bulkDecodeFactor)
-    }
+    /// How many notes after the current one are read ahead (`BulkExportDriver`).
+    nonisolated public static var bulkReadAheadDepth: Int { BulkExportDriver.defaultReadAheadDepth }
 
     /// The revision names the skip check and the version come from: the listing's (an iCloud
     /// listing knows evicted revisions too), a plain listing for a note just saved, which may
@@ -142,38 +104,12 @@ extension AppModelCore {
         return try? await offMain { try vault.revisionNames(of: id).map(\.filename) }
     }
 
-    /// Downloads, reads and prepares one note for `session.export`: iCloud fetches the
-    /// recordings and clips only when they are embedded (one that cannot be fetched is left out
-    /// of the PDF and reported there), or every blob of a media export.
-    private func bulkLoad(_ id: UUID, vault: Vault, session: BulkExportSession, gen: Int) async throws -> LoadedForExport {
-        let item = try await loadNoteForExport(id, vault: vault)
-        try ensureCurrent(gen)
-        if session.options.format == .pdfAttachments {
-            await ensurePDFAttachmentsLocal(item.state, of: id)
-            try ensureCurrent(gen)
-        } else if session.options.format == .media {
-            await ensureMediaLocal(item.state, of: id)
-            try ensureCurrent(gen)
-        }
-        return item
-    }
-
-    /// Exports `jobs` into `session`: skipped when the destination already holds a note
-    /// unchanged, else downloaded (iCloud), read, rendered and written, then let go. A note that
-    /// cannot be read or rendered is recorded and the rest go on. An open note's pending
-    /// changes are saved first (`flushEditors`), and one whose changes cannot be saved is
-    /// recorded as failed; nothing else is written to the vault.
-    ///
-    /// Notes are rendered one at a time, in order, but the next ones are downloaded and read
-    /// while the current one renders (`LoadAhead`: in order, one read at a time, at most
-    /// `bulkReadAheadDepth` notes after the current one, and the estimated bytes of all the
-    /// notes held at once stay under `bulkMemoryBudget`). Everything that records an outcome
-    /// (`skip`, `fail`, `export`) still happens in job order from this loop; reading ahead
-    /// never touches the session, except to ask `wouldSkip` so an up-to-date note is not read.
-    ///
-    /// Canceling the calling task stops between notes (and between a PDF's
-    /// pages): the result then says `cancelled`, and what was written stays
-    /// in a folder (a zip is deleted).
+    /// Exports `jobs` into `session` with the shared loop (`BulkExportDriver`: order, skips, read-ahead, the
+    /// memory budget, one failed note not stopping the rest, cancel between notes). What is the app's: an
+    /// open note's pending changes are saved first (`flushEditors`) and one whose changes cannot be saved is
+    /// recorded as failed; iCloud notes are downloaded (`loadNoteForExport`) and their media fetched when the
+    /// format embeds it (one that cannot be fetched is left out of the PDF and reported there); and the run
+    /// stops when the vault closes. Nothing else is written to the vault.
     ///
     /// - Throws: `ModelError.noVaultOpen`, `CancellationError` when the vault
     ///   closes meanwhile, or `BulkExportError` when the zip cannot be written.
@@ -185,118 +121,36 @@ extension AppModelCore {
         let open = Set([editor?.noteID].compactMap { $0 } + windowEditors.keys)
         let unsaved = await flushEditors(for: Set(jobs.map(\.noteId)))
         try ensureCurrent(gen)
-        let budget = ByteBudget(limit: Self.bulkMemoryBudget)
-        let ahead = LoadAhead<BulkPrefetched>(count: jobs.count, depth: Self.bulkReadAheadDepth) { [weak self] index in
-            guard let self, !Task.isCancelled else { return .declined }
-            let id = jobs[index].noteId
-            if unsaved.contains(id) { return .nothing }
-            let names = await self.bulkNames(of: id, isOpen: open.contains(id), vault: vault)
-            if let names, session.wouldSkip(jobs[index], version: BulkExportPlan.version(ofFileNames: names)) {
-                // Declined, not ready: reads after it wait until the consumer has decided (and, if the
-                // note turns out not to be skippable after all, reserved it), so the budget holds.
-                return .declined
-            }
-            let estimate = Self.bulkEstimate(of: id, vault: vault)
-            guard budget.tryReserve(estimate) else { return .declined }
-            do {
-                let item = try await self.bulkLoad(id, vault: vault, session: session, gen: gen)
-                return .ready(BulkPrefetched(names: names, item: .success(item)), bytes: estimate)
-            } catch {
-                budget.release(estimate)
-                return .ready(BulkPrefetched(names: names, item: .failure(error)), bytes: 0)
+        var driver = BulkExportDriver(vault: vault, session: session, jobs: jobs)
+        driver.failedBeforeReading = Dictionary(uniqueKeysWithValues: unsaved.map { ($0, UnsavedChangesError() as any Error) })
+        driver.describeError = services.describeError
+        driver.revisionNames = { [weak self] id in
+            await self?.bulkNames(of: id, isOpen: open.contains(id), vault: vault)
+        }
+        driver.read = { [weak self] id in
+            guard let self else { throw CancellationError() }
+            return try await self.loadNoteForExport(id, vault: vault)
+        }
+        driver.prepare = { [weak self] id, item in
+            guard let self else { throw CancellationError() }
+                        if session.options.format == .pdfAttachments {
+                await self.ensurePDFAttachmentsLocal(item.state, of: id)
+            } else if session.options.format == .media {
+                await self.ensureMediaLocal(item.state, of: id)
             }
         }
-        do {
-            let result = try await exportJobs(jobs, session: session, ahead: ahead, budget: budget, vault: vault,
-                                              gen: gen, open: open, unsaved: unsaved, progress: progress)
-            await ahead.cancelAndWait()
-            return result
-        } catch {
-            await ahead.cancelAndWait()
-            throw error
+        driver.check = { [weak self] in
+            guard let self else { throw CancellationError() }
+            try await self.ensureCurrent(gen)
         }
-    }
-
-    private func exportJobs(_ jobs: [BulkExportJob], session: BulkExportSession, ahead: LoadAhead<BulkPrefetched>,
-                            budget: ByteBudget, vault: Vault, gen: Int, open: Set<UUID>, unsaved: Set<UUID>,
-                            progress: @escaping @MainActor (BulkExportProgress) -> Void) async throws -> BulkExportResult {
-        var state = BulkExportProgress(done: 0, total: jobs.count)
-        ahead.schedule(after: -1)
-        for (index, job) in jobs.enumerated() {
-            progress(state)
-            if Task.isCancelled { return try await finishBulk(session, cancelled: true) }
-            try ensureCurrent(gen)
-            let id = job.noteId
-            // What was read ahead of this job, and the bytes it holds in the budget.
-            let early = await withTaskCancellationHandler { await ahead.take(index) } onCancel: { ahead.cancel() }
-            var held = 0
-            var prefetched: BulkPrefetched?
-            if case .ready(let p, let bytes)? = early { prefetched = p; held = bytes }
-            defer { budget.release(held) }
-            // Reads go on after this job (`schedule(after:)`) only once it holds its bytes in the
-            // budget, so a read ahead never reserves room this job is about to need.
-            if unsaved.contains(id) {
-                ahead.schedule(after: index)
-                session.fail(job, UnsavedChangesError(), text: services.describeError)
-                state.failed += 1
-                state.done += 1
-                continue
-            }
-            // An unchanged note is skipped before anything is downloaded or read.
-            var names = prefetched?.names
-            if names == nil { names = await bulkNames(of: id, isOpen: open.contains(id), vault: vault) }
-            if let names, session.skip(job, version: BulkExportPlan.version(ofFileNames: names)) {
-                ahead.schedule(after: index)
-                state.done += 1; state.skipped += 1
-                continue
-            }
-            // Not read ahead (over the budget, never started, or read ahead as "up to date" and no
-            // longer so): reserved here and read in turn.
-            if held == 0, prefetched?.item.map({ _ in true }) == nil {
-                held = Self.bulkEstimate(of: id, vault: vault)
-                budget.force(held)
-            }
-            ahead.schedule(after: index)
-            do {
-                let item: LoadedForExport
-                if let early = prefetched?.item {
-                    item = try early.get()
-                } else {
-                    item = try await bulkLoad(id, vault: vault, session: session, gen: gen)
-                }
-                try ensureCurrent(gen)
-                let describe = services.describeError
-                let render = Task.detached(priority: .userInitiated) { [session] in
-                    try session.export(job, state: item.state, version: item.version, blobs: vault.blobSource(note: id),
-                                       text: describe)
-                }
-                let outcome = try await withTaskCancellationHandler { try await render.value } onCancel: { render.cancel() }
-                if case .failed = outcome.status { state.failed += 1 }
-            } catch is CancellationError {
-                try ensureCurrent(gen)
-                return try await finishBulk(session, cancelled: true)
-            } catch let e as BulkExportError {
-                _ = try? await finishBulk(session, cancelled: true)
-                throw e
-            } catch {
-                session.fail(job, error, text: services.describeError)
-                state.failed += 1
-            }
-            state.done += 1
-        }
-        progress(state)
-        try ensureCurrent(gen)
-        return try await finishBulk(session, cancelled: false)
+        driver.progress = progress
+        return try await driver.run()
     }
 
     /// True when `url` is the vault folder or inside it.
     func isInsideVault(_ url: URL) -> Bool {
         guard let root = vault?.url ?? vaultURL else { return false }
         return url.isSameOrInside(root)
-    }
-
-    private func finishBulk(_ session: BulkExportSession, cancelled: Bool) async throws -> BulkExportResult {
-        try await offMain { try session.finish(cancelled: cancelled) }
     }
 }
 

@@ -865,7 +865,7 @@ the model does: notes, notebooks, pages, items, attachments, history, export, im
 **Part 1 (done, #35).** This inventory, duplicate 6's check (above) with its three small unifications, `devices approve
 --qr`, and the two #34 folds-in (the `onLoadFailed` doc comment, `QuickCapture.app()`'s `describeError`).
 
-**Part 2: the bulk-export driver, and the leaves with no editor edge (about 1,150 lines).**
+**Part 2 (done, wave 6 part 2): the bulk-export driver, and the leaves with no editor edge (about 1,150 lines).**
 - The driver (duplicate 6's last item): `AppModelCore.exportJobs`/`runBulkExport` (about 120 lines of
   `AppModel+BulkExport.swift`) and `ExportCommand.runBulk`'s loop (`ExportBulk.swift`, about 50) both run, per job:
   names, skip when unchanged, load, export, `fail` on an error, `finish(cancelled:)` on a `BulkExportError` or a
@@ -884,6 +884,22 @@ the model does: notes, notebooks, pages, items, attachments, history, export, im
   (`stored`, `toggled`, `withoutNote`; the `NavigationSplitViewVisibility` mapping stays), `NoteTitle` (`NoteCanvasView`
   780-786, the trimming), `SearchSnippetText` and `RecognitionResultsText` (`NoteListView` 705-717, 797-817: their words
   stay), `TypedWords` (`JoinViews` 121-131), `ExportHandOffState` (`ExportSheet` 322-333).
+
+  *Result.* `BulkExportDriver`, `LoadedForExport` and `BulkExportProgress` are in `SempereRender`
+  (`BulkExportDriverTests`, Linux: order, skips without reading, a failed note not stopping the rest, stop between
+  notes, a `BulkExportError` ending the run, the progress sequence, the memory budget). Only `LoadedForExport.read` (the
+  blocking read; the summary only on request, for the share export) moved: `loadNoteForExport` stays in the app because
+  it downloads first (`downloadNote`, the partial-copy check). The app's `runBulkExport` sets the driver's hooks (open
+  notes saved first, iCloud downloads, the vault closing, progress) and the CLI's `runBulk` its event printer and
+  Ctrl-C (`CLIBulkExportTests`, including a real SIGINT). The leaves moved to `SempereAppCore` with their rules and
+  tests (Linux), the words staying in `*+Text.swift` files of the app: `PageStackLayout` (with `PageScrollTracker`),
+  `ZoomDetent` (with `ZoomSteps`, which it needs), `NewNoteLayout` and `PageStrip`, `PaperDraft`, `PaperParameter`,
+  `PaperBackground` and `PaperPreference`, `TextBoxEmoji`, `PickedFolderRules` (rules return a `Violation`),
+  `SelectionStorage`, `KeyRemoval`, `ExistingKeyInput` (the status carries an `Issue`), `AddDeviceApprovalCore`
+  (generic over the host as `AppModelCore`; the app's `AddDeviceApproval` is its alias), `ColumnChoice` (the stored
+  string; `ColumnLayout` keeps the SwiftUI mapping), `NoteTitle.trimmed`, `SearchSnippetText`, `RecognitionPagesRead`,
+  `RecognitionResults.detailParts` and `TypedWords`. Left in the app: `ExportHandOffState` (it holds the UIKit
+  `PresentationAnchor.Box`; its fields are view state, not rules).
 
 **Part 3: the editor's interaction models (done, #38).** The pure types inside the gesture files moved to
 `Sources/SempereAppCore/Editor/`; the controllers keep the recognizers and call them.

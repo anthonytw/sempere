@@ -34,46 +34,52 @@ extension ExportCommand {
         } catch {
             throw CLIError.failure("\(error)")
         }
-        let errorText: (Error) -> String = { CLIError.from($0).message }
+        let errorText: @Sendable (Error) -> String = { CLIError.from($0).message }
         // Ctrl-C stops after the note being written, so no half-written `.partial` is left behind (a second
         // Ctrl-C ends the process at once; the next run sweeps what that leaves).
         let cancellation = ImporterCancellation()
         let interrupt = ImportInterrupt(cancellation)
         defer { interrupt.stop() }
-        for job in jobs {
-            if cancellation.isCancelled {
-                let result = try? session.finish(cancelled: true)
-                throw CLIError.failure("interrupted: \(result?.exported.count ?? 0) note(s) exported into \(out); "
-                                       + "run the same command again to resume")
-            }
-            let id = job.noteId
-            let short = String(id.uuidString.lowercased().prefix(8))
-            do {
-                let version = BulkExportPlan.version(of: try vault.revisionNames(of: id))
-                if !overwrite && !zip && session.skip(job, version: version) {
-                    if !output.json { output.info("Unchanged \(outURL.appendingPathComponent(job.path(options.format)).path)") }
-                    continue
-                }
-                let loaded = try vault.loadNote(id)
-                let state = try vault.reconstruct(loaded)
-                let outcome = try session.export(job, state: state, version: version, blobs: vault.blobSource(note: id),
-                                                 text: errorText)
+        // The shared loop (`BulkExportDriver`: skip, read, render, write, one failed note not stopping the rest).
+        // Its events print as the notes go; Ctrl-C ends it between notes.
+        var driver = BulkExportDriver(vault: vault, session: session, jobs: jobs)
+        driver.skipUnchanged = !overwrite && !zip
+        driver.describeError = errorText
+        driver.stopRequested = { cancellation.isCancelled }
+        let format = self.format
+        let output = self.output
+        let json = output.json
+        let out = self.out
+        let zip = self.zip
+        driver.onEvent = { event in
+            switch event {
+            case .skipped(let job):
+                if !json { output.info("Unchanged \(outURL.appendingPathComponent(job.path(options.format)).path)") }
+            case .failed(let job, let message):
+                printError("\(job.noteId.uuidString.lowercased()): \(message)")
+            case .written(let outcome):
+                let id = outcome.job.noteId
                 if case .failed(let why) = outcome.status {
                     printError("\(id.uuidString.lowercased()): \(why)")
-                    continue
+                    return
                 }
+                let short = String(id.uuidString.lowercased().prefix(8))
                 for w in Self.warnings(outcome.report, format: format) { printStderr("sempere: warning: \(short): \(w)") }
                 if !zip { for f in outcome.files { output.info("Wrote \(outURL.appendingPathComponent(f).path)") } }
-            } catch let e as BulkExportError {
-                _ = try? session.finish(cancelled: true)
-                throw CLIError.failure("\(e)")
-            } catch {
-                session.fail(job, error, text: errorText)
-                printError("\(id.uuidString.lowercased()): \(errorText(error))")
             }
         }
-        let result: BulkExportResult
-        do { result = try session.finish(cancelled: false) } catch { throw CLIError.failure("\(error)") }
+        let ready = driver
+        let driven: BulkExportResult
+        do {
+            driven = try blockingThrowing { try await ready.run() }
+        } catch {
+            throw CLIError.failure("\(error)")
+        }
+        if driven.cancelled {
+            throw CLIError.failure("interrupted: \(driven.exported.count) note(s) exported into \(out); "
+                                   + "run the same command again to resume")
+        }
+        let result = driven
         let written = result.notes.compactMap { o -> Written? in
             let files = o.files.map { zip ? $0 : outURL.appendingPathComponent($0).path }
             switch o.status {

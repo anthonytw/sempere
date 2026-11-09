@@ -44,24 +44,6 @@ struct IPadCanvasTests {
         await editor.flush()
     }
 
-    // MARK: Zoom detent
-
-    @Test func aPinchNearTheFitSettlesOnIt() {
-        let fit = 1.2
-        #expect(ZoomDetent.settle(fit * 1.1, fit: fit) == fit)
-        #expect(ZoomDetent.settle(fit * 0.9, fit: fit) == fit)
-        #expect(ZoomDetent.settle(fit * 1.11, fit: fit) == fit)
-        #expect(abs(ZoomDetent.settle(fit * 1.5, fit: fit) - fit * 1.5) < 1e-9, "beyond the band it stays")
-        // Paged and pageless alike, on every device (an iPhone's pageless note too: build 8).
-        #expect(abs(ZoomDetent.settle(fit * 0.7, fit: fit) - fit * 0.7) < 1e-9, "below the fit it zooms out")
-        #expect(ZoomDetent.settle(fit * 0.2, fit: fit) == fit * 0.5)
-        #expect(ZoomDetent.minimum(fit: fit) == fit * 0.5)
-        #expect(ZoomDetent.settle(fit * 9, fit: fit) == fit * ZoomSteps.maxFactor)
-        #expect(ZoomDetent.settle(.nan, fit: fit) == fit)
-        #expect(ZoomDetent.settle(2, fit: .infinity) == 1)
-        #expect(ZoomDetent.isFit(fit, fit: fit) && !ZoomDetent.isFit(fit * 1.01, fit: fit))
-    }
-
     /// The page stack bakes a pinch through the detent: near the fit it lands on the fit, below
     /// it the pages zoom out to half the fit, centered; a big pinch stays.
     @Test func aPinchOnThePagesSettlesOnTheFit() async throws {

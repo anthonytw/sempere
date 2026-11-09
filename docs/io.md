@@ -398,7 +398,8 @@ sidebar's notebook, else the vault). iPad, iPhone and Mac share the sheet
   zip archive (the default on iPad and iPhone), staged under
   `tmp/SempereBulkExports/<uuid>` (file protection "complete"), then Share…
   or Save to Files…; deleted when the sheet closes and at launch.
-- **One note at a time, bounded memory.** `AppModel.runBulkExport` loops over
+- **One note at a time, bounded memory.** `BulkExportDriver` (SempereRender; the app's `AppModel.runBulkExport` and
+  `sempere export --all` both run it) loops over
   the jobs: fetch (a partial copy), read (as for the share export), fetch embedded media for PDF + attachments
   (every file it writes for Media),
   render and write in a detached task, then let go. Only one note's state is
@@ -435,9 +436,11 @@ sidebar's notebook, else the vault). iPad, iPhone and Mac share the sheet
   after Stop), so an interrupted run redoes at most ten notes. It is untrusted
   when read back: a path that would leave the folder is ignored, and it can
   only make a run skip, never delete. A zip is never resumed.
-- **Shared core.** `BulkExportPlan` (selection → jobs), `BulkExportSession`
+- **Shared core.** `BulkExportPlan` (selection → jobs), `BulkExportDriver` (the loop: order, skips, read-ahead,
+  the memory budget, one failed note not stopping the rest, stopping between notes), `BulkExportSession`
   (skip, render, write, manifest, zip) and `ZipWriter` live in
-  `SempereRender`; `sempere export --all --format pdf|png` runs the same
+  `SempereRender`; the app passes its own steps as hooks (saving open notes first, the iCloud downloads, the vault
+  closing, progress) and the CLI its Ctrl-C; `sempere export --all --format pdf|png` runs the same
   session (docs/cli.md "Bulk export"), and the sheet shows the equivalent
   command for a notebook or the vault.
 

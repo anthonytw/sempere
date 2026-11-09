@@ -776,11 +776,10 @@ private struct Banner: View {
     }
 }
 
-/// How a note's title is shown.
-enum NoteTitle {
+/// How a note's title is shown: the library trims it (`NoteTitle.trimmed`), the app words an empty one.
+extension NoteTitle {
     static func display(_ title: String) -> String {
-        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? String(localized: "Untitled", comment: "Shown for a note without a title") : t
+        trimmed(title) ?? String(localized: "Untitled", comment: "Shown for a note without a title")
     }
 }
 

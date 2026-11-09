@@ -27,12 +27,6 @@ struct NoteWindowTests {
         return (model, url)
     }
 
-    /// The saved selection is cleared once no vault is open.
-    @Test func theSelectionStorageIsClearedWithoutAVault() {
-        #expect(SelectionStorage.shouldClear(phase: .noVault))
-        #expect(!SelectionStorage.shouldClear(phase: .unlocked))
-    }
-
     // MARK: - PDF export (drag to Finder)
 
     /// Step 6b: the drag-out PDF is drawn through `services.exportRendering`. A note with a PDF background and a text

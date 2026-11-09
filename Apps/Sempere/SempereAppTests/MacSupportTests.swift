@@ -3,50 +3,6 @@ import Testing
 @testable import SempereApp
 import SempereAppCore
 
-struct ZoomStepsTests {
-    @Test func zoomInMovesThroughTheFactorsAndStopsAtTheMaximum() {
-        let fit = 0.5
-        var scale = fit
-        var visited: [Double] = []
-        for _ in 0..<12 {
-            scale = ZoomSteps.step(from: scale, fit: fit, zoomingIn: true)
-            visited.append(scale / fit)
-        }
-        #expect(Array(visited.prefix(6)) == [1.25, 1.5, 2, 2.5, 3, 4])
-        #expect(visited.last == 4)
-        #expect(scale <= fit * ZoomSteps.maxFactor + 1e-12)
-    }
-
-    @Test func zoomOutStopsAtTheFittedWidth() {
-        let fit = 0.75
-        var scale = fit * 4
-        for _ in 0..<12 { scale = ZoomSteps.step(from: scale, fit: fit, zoomingIn: false) }
-        #expect(scale == fit)
-        #expect(ZoomSteps.step(from: fit * 1.6, fit: fit, zoomingIn: false) == fit * 1.5)
-        #expect(ZoomSteps.step(from: fit * 1.6, fit: fit, zoomingIn: true) == fit * 2)
-    }
-
-    @Test func aPinchedScaleBetweenFactorsSteps() {
-        let fit = 1.0
-        #expect(ZoomSteps.step(from: 1.3, fit: fit, zoomingIn: true) == 1.5)
-        #expect(ZoomSteps.step(from: 1.3, fit: fit, zoomingIn: false) == 1.25)
-    }
-
-    @Test func badInputGivesTheFittedScale() {
-        #expect(ZoomSteps.step(from: .nan, fit: 0.5, zoomingIn: true) == 0.5)
-        #expect(ZoomSteps.step(from: -1, fit: 0.5, zoomingIn: false) == 0.5)
-        #expect(ZoomSteps.step(from: 1, fit: 0, zoomingIn: true) == 1)
-        #expect(ZoomSteps.step(from: 1, fit: .infinity, zoomingIn: true) == 1)
-        #expect(ZoomSteps.clamped(.infinity, fit: 0.5) == 0.5)
-    }
-
-    @Test func actualSizeStaysInRange() {
-        #expect(ZoomSteps.actualSize(fit: 0.5) == 1)
-        #expect(ZoomSteps.actualSize(fit: 2) == 2)        // already wider than 100%
-        #expect(ZoomSteps.actualSize(fit: 0.1) == 0.4)    // 4x the fit is the most the canvas allows
-    }
-}
-
 struct PointerCursorTests {
     @Test func diameterFollowsWidthAndZoomWithinBounds() {
         #expect(PointerCursor.diameter(toolWidth: 10, zoom: 2) == 20)

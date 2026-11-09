@@ -256,8 +256,8 @@ struct NewVaultView: View {
             }
             .disabled(keyFilePassphrase.isEmpty || opening)
             .accessibilityIdentifier("newVault.openKeyFile")
-        case .problem(let message):
-            Text(message)
+        case .problem(let issue):
+            Text(ExistingKeyInput.message(issue))
                 .foregroundStyle(.red)
                 .font(.footnote)
                 .accessibilityIdentifier("newVault.existingStatus")
@@ -274,9 +274,9 @@ struct NewVaultView: View {
             }
             existing = ExistingKeyInput.status(ofFile: data)
         } catch VaultError.fileTooLarge {
-            existing = .problem(ExistingKeyInput.message(.tooLarge(KeyText.maximumBytes + 1)))
+            existing = .problem(.key(.tooLarge(KeyText.maximumBytes + 1)))
         } catch {
-            existing = .problem(String(localized: "Sempere could not read that file: \(AppModel.describe(error))"))
+            existing = .problem(.unreadable(AppModel.describe(error)))
         }
         existingFile = url.lastPathComponent
     }
@@ -291,8 +291,8 @@ struct NewVaultView: View {
             }.value
             opening = false
             // A wrong passphrase keeps the file: ask again.
-            if case .problem(let message) = status {
-                failure = message
+            if case .problem(let issue) = status {
+                failure = ExistingKeyInput.message(issue)
             } else {
                 failure = nil
                 existing = status

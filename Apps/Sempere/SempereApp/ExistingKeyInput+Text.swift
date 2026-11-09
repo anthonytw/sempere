@@ -1,57 +1,15 @@
-import Age
 import Foundation
 import Sempere
+import SempereAppCore
 
-/// "Use an existing key" in the New Vault sheet: what the pasted text or the
-/// picked file is (`KeyText`, shared with the CLI's `--store-key`), in words
-/// the sheet shows as the user types.
-enum ExistingKeyInput {
-    enum Status: Equatable {
-        /// Nothing given yet.
-        case empty
-        /// A post-quantum secret key: it becomes the vault's recovery key.
-        case ready(NativeIdentity)
-        /// A passphrase-wrapped key file: its passphrase opens it (`unwrap`).
-        case needsPassphrase(Data)
-        /// Not usable; the message says what it is.
-        case problem(String)
-
-        var identity: NativeIdentity? {
-            if case .ready(let id) = self { return id }
-            return nil
+/// The words of "Use an existing key" (`ExistingKeyInput`, in `SempereAppCore`, holds the status rules).
+extension ExistingKeyInput {
+    /// The words for an issue.
+    static func message(_ issue: Issue) -> String {
+        switch issue {
+        case .key(let problem): return message(problem)
+        case .unreadable(let detail): return String(localized: "Sempere could not read that file: \(detail)")
         }
-    }
-
-    /// The status of pasted text.
-    static func status(ofText text: String) -> Status {
-        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .empty }
-        return status(KeyText.classify(text))
-    }
-
-    /// The status of a picked file's bytes.
-    static func status(ofFile data: Data) -> Status { status(KeyText.classify(data)) }
-
-    /// Opens a passphrase-wrapped key file (scrypt: run it off the main actor).
-    static func unwrap(_ data: Data, passphrase: String) -> Status {
-        switch KeyText.unwrap(data, passphrase: passphrase) {
-        case .success(let id): return .ready(id)
-        case .failure(let problem): return .problem(message(problem))
-        }
-    }
-
-    private static func status(_ result: Result<KeyText.Content, KeyText.Problem>) -> Status {
-        switch result {
-        case .success(.identity(let id)): return .ready(id)
-        case .success(.passphraseWrapped(let data)): return .needsPassphrase(data)
-        case .failure(.empty): return .empty
-        case .failure(let problem): return .problem(message(problem))
-        }
-    }
-
-    /// The recipient a key encrypts to, abbreviated for the sheet (`age1pq1abcd…wxyz`).
-    static func shortRecipient(_ identity: NativeIdentity) -> String {
-        let key = identity.recipient.string
-        return key.count > 24 ? "\(key.prefix(14))…\(key.suffix(6))" : key
     }
 
     /// What the sheet says for each problem; `KeyText.Problem.description` is the CLI's English.

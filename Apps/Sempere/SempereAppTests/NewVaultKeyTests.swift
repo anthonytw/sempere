@@ -43,11 +43,9 @@ struct NewVaultKeyTests {
     @Test func whatWasPastedIsNamed() throws {
         let identity = try NativeIdentity.generate(.postQuantum)
         func message(_ text: String) -> String? {
-            if case .problem(let m) = ExistingKeyInput.status(ofText: text) { return m }
+            if case .problem(let issue) = ExistingKeyInput.status(ofText: text) { return ExistingKeyInput.message(issue) }
             return nil
         }
-        #expect(ExistingKeyInput.status(ofText: "") == .empty)
-        #expect(ExistingKeyInput.status(ofText: " \n ") == .empty)
         #expect(message(identity.recipient.string)?.contains("public key") == true)
         #expect(message(identity.recipient.string)?.contains("…") == true, "abbreviated")
         #expect(message(try NativeIdentity.generate(.x25519).string)?.contains("AGE-SECRET-KEY-1") == true)
@@ -59,38 +57,14 @@ struct NewVaultKeyTests {
                                            .damagedSecretKey, .mismatchedPublicKey("k"), .severalSecretKeys(2),
                                            .encryptedToKeys, .damagedFile, .wrongPassphrase, .workFactorTooHigh,
                                            .postQuantumUnavailable, .notAKey]
-        #expect(Set(problems.map(ExistingKeyInput.message)).count == problems.count)
+        #expect(Set(problems.map { ExistingKeyInput.message($0) }).count == problems.count)
     }
 
-    @Test func aPassphraseWrappedKeyFileOpensWithItsPassphrase() throws {
-        let identity = try NativeIdentity.generate(.postQuantum)
-        // Another vault's passphrase copy of its recovery key (format.md §15.11).
-        var request = NewVaultRequest(name: "Other", keySource: .identity(identity), passphrase: Self.strong)
-        request.workFactor = 10
-        let other = try VaultLibrary.createVault(request, folder: "Other.sempere", in: try BrowserTests.tempDir())
-        let name = try #require(try Vault.open(at: other.url).passphraseCopyNames().first)
-        let data = try Data(contentsOf: other.url.appendingPathComponent("keys").appendingPathComponent(name))
-        guard case .needsPassphrase(let wrapped) = ExistingKeyInput.status(ofFile: data) else {
-            Issue.record("not recognised as a wrapped key file")
-            return
-        }
-        #expect(ExistingKeyInput.unwrap(wrapped, passphrase: Self.strong) == .ready(identity))
-        if case .problem(let m) = ExistingKeyInput.unwrap(wrapped, passphrase: "orbit") {
-            #expect(m.contains("passphrase"))
-        } else {
-            Issue.record("a wrong passphrase opened it")
-        }
-        // A vault file encrypted to keys is no key file.
-        let note = try AgeFile.encrypt(Data("x".utf8), to: [identity.recipient])
-        if case .problem = ExistingKeyInput.status(ofFile: note) {} else { Issue.record("an encrypted note was accepted") }
-    }
-
-    @Test func recipientsAreAbbreviatedForTheSheet() throws {
-        let identity = try NativeIdentity.generate(.postQuantum)
-        let short = ExistingKeyInput.shortRecipient(identity)
-        #expect(short.hasPrefix("age1pq1"))
-        #expect(short.count < 30)
-        #expect(identity.recipient.string.hasSuffix(String(short.suffix(6))))
+    /// The rules of a wrapped key file are `ExistingKeyInputTests` (Linux); these are the sheet's words for them.
+    @Test func aWrongPassphraseAndAnEncryptedNoteAreExplained() {
+        #expect(ExistingKeyInput.message(.key(.wrongPassphrase)).contains("passphrase"))
+        #expect(ExistingKeyInput.message(.key(.encryptedToKeys)).contains("not a key file"))
+        #expect(ExistingKeyInput.message(.unreadable("disk error")).contains("disk error"))
     }
 
     /// Review of #109: a pick goes to the section whose button opened the picker (the role is kept apart from the

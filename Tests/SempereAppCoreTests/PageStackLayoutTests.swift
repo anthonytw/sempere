@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import SempereApp
+@testable import SempereAppCore
 
 /// The paged canvas's layout math (`PageStackLayout`): page frames, the
 /// pages that get a canvas (lazy drawing), the current page and zoom anchoring.

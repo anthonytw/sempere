@@ -701,15 +701,16 @@ private struct TranscriptHitRow: View {
     }
 }
 
-/// What a search result's snippet says when the match is inside an equation (tested).
-enum SearchSnippetText {
+/// What a search result's snippet says when the match is inside an equation (tested): the rule is
+/// `SearchSnippetText.display(_:equationMarker:)` in the library, the marker is the app's word.
+extension SearchSnippetText {
     static var equationMarker: String {
         String(localized: "[equation]", comment: "Search result: the match is inside an equation (its source is not quoted)")
     }
 
     /// The snippet as a plain string: the localized marker for an equation, else its text.
     static func display(_ snippet: NoteSearchHit.Snippet) -> String {
-        snippet.isEquation ? equationMarker : snippet.text
+        display(snippet, equationMarker: equationMarker)
     }
 }
 
@@ -793,22 +794,30 @@ struct RecognitionBar: View {
     }
 }
 
-/// Wording of the recognition results (tested).
+/// Wording of the recognition results (tested); what the numbers and flags are is the library's
+/// (`RecognitionPagesRead`, `RecognitionResults.detailParts`).
 enum RecognitionResultsText {
     static let sectionHeadline = String(localized: "Read by Recognize All in the last 7 days", comment: "Header above the Recently Recognized list")
 
     /// "Read 2 of 5 pages", "Read 1 page".
     static func pagesRead(_ read: Int, of pages: Int) -> String {
-        read >= pages ? String(localized: "Read \(read) pages", comment: "Pages of a note whose handwriting was read")
-            : String(localized: "Read \(read) of \(String(localized: "\(pages) pages", comment: "A number of pages"))", comment: "%@ is a number of pages, e.g. “5 pages”")
+        switch RecognitionPagesRead(read: read, of: pages) {
+        case .all(let n):
+            return String(localized: "Read \(n) pages", comment: "Pages of a note whose handwriting was read")
+        case .some(let read, let pages):
+            return String(localized: "Read \(read) of \(String(localized: "\(pages) pages", comment: "A number of pages"))", comment: "%@ is a number of pages, e.g. “5 pages”")
+        }
     }
 
     /// The line under the headline: what is still going on, or what went wrong.
     static func detail(_ results: RecognitionResults, running: Bool) -> String? {
-        var parts: [String] = []
-        if running { parts.append(String(localized: "Still reading…", comment: "Recognize All is still running")) }
-        if results.failed > 0 { parts.append(String(localized: "\(results.failed) could not be read", comment: "A number of notes whose handwriting could not be read")) }
-        if results.stopped { parts.append(String(localized: "Stopped early", comment: "Recognize All was stopped before the end")) }
+        let parts = results.detailParts(running: running).map { part -> String in
+            switch part {
+            case .running: return String(localized: "Still reading…", comment: "Recognize All is still running")
+            case .failed(let n): return String(localized: "\(n) could not be read", comment: "A number of notes whose handwriting could not be read")
+            case .stopped: return String(localized: "Stopped early", comment: "Recognize All was stopped before the end")
+            }
+        }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
