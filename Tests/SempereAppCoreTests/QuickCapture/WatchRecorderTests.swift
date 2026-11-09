@@ -40,7 +40,7 @@ struct WatchRecorderTests {
 
         init(limits: WatchOutbox.Limits = .init(), profile: Bool = true, maxDuration: TimeInterval = WatchRecorder.defaultMaxDuration,
              freeBytes: Int64? = nil) throws {
-            let (url, identity, stored) = try CaptureFixture.vault()
+            let (url, identity, stored, _) = try CaptureFixture.vault()
             vault = url
             self.identity = identity
             payload = profile ? WatchProfilePayload(profile: stored.profile, vaultName: "sample", seq: 1, issued: Date()) : nil
