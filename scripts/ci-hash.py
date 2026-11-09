@@ -60,7 +60,7 @@ JOB_FILES = {
     "linux-test": COMMON + ["scripts/ci-linux.sh", "scripts/test-offline.sh"],
     "linux-webdav": COMMON + ["scripts/ci-linux.sh", "scripts/test-webdav.sh", "scripts/dav-fault-proxy.py",
                               "scripts/webdav-server-requirements.txt"],
-    "mac-package": COMMON + ["scripts/local-ci.sh", "scripts/test-runner.py"],
+    "mac-package": COMMON + ["scripts/ci-mac-package.sh", "scripts/test-runner.py"],
 }
 IGNORED_NAMES = {".DS_Store"}
 

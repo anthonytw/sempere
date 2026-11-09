@@ -1,0 +1,288 @@
+name: CI
+
+# The lean PR gate (docs/ci.md, docs/design/ci-lean.md): the same checks scripts/local-ci.sh runs on a Mac, on GitHub Actions.
+# - Draft PRs run nothing; "Ready for review" starts CI, and later pushes to a ready PR run it again.
+# - A newer push to the same PR cancels the older run.
+# - Test targets whose hash already passed are skipped (scripts/ci-hash.py); the records live in actions/cache.
+# - Pushes to main run the same jobs, save the iOS derived-data cache that pull requests restore, and carry the merged
+#   PR's pass records into main's cache.
+# - Run it on any branch on demand: `gh workflow run CI --ref <branch>` (the workflow must be on main). A manual run also
+#   runs the Mac Catalyst app tests, which are not part of the PR gate.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+concurrency:
+  # A push run's group has the commit in it: quick merges to main must not cancel one another (each carries its bridge).
+  group: ci-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # The Linux jobs' image, by digest: the digest goes into every Linux hash (SEMPERE_CI_IMAGE_ID), so a moved tag cannot
+  # reuse a record. Bump it here and in the `container:` lines when the image is updated (docs/ci.md).
+  SEMPERE_CI_IMAGE_ID: swift:6.4-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
+  # Stop a test step at the first failed test and rerun it to tell FAILING from FLAKY (docs/ci.md "Fail fast").
+  SEMPERE_FAIL_FAST: "1"
+  # Only pushes (main) save the iOS build's derived data; pull requests restore it. The SwiftPM `.build` folders are not cached:
+  # a fresh checkout's file times rebuild everything anyway (measured: the Linux job took as long with a restored cache).
+  SAVE_BUILD_CACHE: ${{ github.event_name == 'push' }}
+
+jobs:
+  # Main's pass records come from the merged pull request's run (an artifact), because a cache saved by a pull request is not
+  # readable from main. The job is quick, does nothing on a pull request, and never fails the run.
+  records:
+    name: Pass records (${{ matrix.job }})
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [linux-test, linux-webdav, mac-package]
+    steps:
+      - name: Records of the merged pull request (push to main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dir=$RUNNER_TEMP/ci-pass; mkdir -p "$dir"
+          # The PR whose squash is this commit (merged, with this merge commit), nothing looser.
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[] | select(.merged_at != null and .merge_commit_sha == env.GITHUB_SHA) | .number' | head -1 || true)
+          [[ -n $pr ]] || { echo "no merged pull request for $GITHUB_SHA"; exit 0; }
+          # Only a PR from this repository: a fork's run must never put records into main's cache.
+          same=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq '.head.repo.full_name == .base.repo.full_name')
+          [[ $same == true ]] || { echo "pull request #$pr is from a fork: no records taken"; exit 0; }
+          head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .head.sha)
+          run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$head" --event pull_request --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)
+          [[ -n $run ]] || { echo "no successful pull request run for $head"; exit 0; }
+          gh run download -R "$GITHUB_REPOSITORY" "$run" -n "ci-pass-${{ matrix.job }}" -D "$dir" || { echo "no records artifact in run $run"; exit 0; }
+          echo "ci-hash: records of pull request #$pr (run $run) are in $dir"
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/ci-pass
+          key: ci-pass-${{ matrix.job }}-main-${{ github.sha }}
+          restore-keys: ci-pass-${{ matrix.job }}-
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/ci-pass
+          key: ci-pass-${{ matrix.job }}-main-${{ github.sha }}
+
+  # npm ci, lint, typecheck, unit tests (which also compare the TypeScript renderer with the committed Swift goldens) and
+  # the strict-CSP build. The golden files themselves are checked against the CLI in `Linux package tests`.
+  web:
+    name: Web viewer
+    needs: records
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install (lockfile only)
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests and cross-check against the committed Swift goldens
+        run: npm test
+      - name: Build (strict CSP)
+        run: |
+          npm run build
+          grep -q 'Content-Security-Policy' dist/index.html
+
+  help:
+    name: Help and portability checks
+    needs: records
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container: swift:6.4-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install python3
+        run: apt-get update -q >/dev/null && apt-get install -y -q python3 >/dev/null
+      # scripts/local-ci.sh's `help` step, then the portability guard (also run again by the Linux package job).
+      - name: Help checks
+        run: |
+          scripts/check-help.py --self-test
+          python3 -I scripts/ci-hash.py --self-test
+          scripts/test-ci-hash-guard.sh
+          python3 -I scripts/ci-hash.py check-reads
+          scripts/check-help.py
+          scripts/check-test-defaults.sh
+          scripts/check-ui-tests.sh
+          scripts/test-mirror-gitea.sh
+          python3 -I scripts/test-runner.py --self-test
+      - name: Portability
+        run: scripts/check-portability.sh
+
+  ios-build:
+    name: iOS build
+    needs: records
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/select-xcode
+      - id: cache
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: ios
+          version-cmd: xcodebuild -version
+          path: .build/xcode.noindex
+      - name: Build the app, its unit tests and its UI tests for an iOS simulator (no tests)
+        shell: bash
+        run: mkdir -p build && scripts/app.sh build-ios 2>&1 | tee build/ios-build.log
+      - name: Save the build cache
+        if: ${{ success() && env.SAVE_BUILD_CACHE == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .build/xcode.noindex
+          key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
+
+  # Not part of the PR gate: run on demand only (docs/ci.md, The Mac runner).
+  mac-app:
+    name: Mac app tests
+    needs: records
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/select-xcode
+      - id: cache
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: mac-app
+          version-cmd: xcodebuild -version
+          path: .build/xcode.noindex
+      - name: Mac Catalyst unit tests (the pseudo-language layout check among them)
+        shell: bash
+        run: mkdir -p build && scripts/app.sh test-mac 2>&1 | tee build/mac-app.log
+      - name: Save the build cache
+        if: ${{ success() && env.SAVE_BUILD_CACHE == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .build/xcode.noindex
+          key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
+
+  mac-package:
+    name: Mac package tests
+    needs: records
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/select-xcode
+      - id: pass
+        uses: ./.github/actions/pass-records
+        with:
+          job: mac-package
+      - name: Package tests (swift build --build-tests, swift test --parallel)
+        run: scripts/ci-mac-package.sh
+      - name: Save the pass records
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/ci-pass
+          key: ${{ steps.pass.outputs.key }}
+      - name: Records for main (pull requests)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-pass-mac-package
+          path: ${{ runner.temp }}/ci-pass
+          retention-days: 14
+          if-no-files-found: ignore
+
+  linux-test:
+    name: Linux package tests
+    needs: records
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: swift:6.4-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
+      # The tests run with no network but loopback (scripts/test-offline.sh, docs/ci.md "Offline guard"): a network
+      # namespace of their own, which needs these two capabilities.
+      options: --cap-add=SYS_ADMIN --cap-add=NET_ADMIN
+    steps:
+      - uses: actions/checkout@v4
+      - id: pass
+        uses: ./.github/actions/pass-records
+        with:
+          job: linux-test
+      # Offline package tests, the portability guard and the removable-importers check.
+      - name: scripts/ci-linux.sh test
+        run: scripts/ci-linux.sh test
+      - name: Save the pass records
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/ci-pass
+          key: ${{ steps.pass.outputs.key }}
+      - name: Records for main (pull requests)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-pass-linux-test
+          path: ${{ runner.temp }}/ci-pass
+          retention-days: 14
+          if-no-files-found: ignore
+
+  linux-webdav:
+    name: Linux WebDAV tests
+    needs: records
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: swift:6.4-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
+    steps:
+      - uses: actions/checkout@v4
+      - id: pass
+        uses: ./.github/actions/pass-records
+        with:
+          job: linux-webdav
+      # WebDAV integration tests against wsgidav.
+      - name: scripts/ci-linux.sh webdav
+        run: scripts/ci-linux.sh webdav
+      - name: Save the pass records
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/ci-pass
+          key: ${{ steps.pass.outputs.key }}
+      - name: Records for main (pull requests)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-pass-linux-webdav
+          path: ${{ runner.temp }}/ci-pass
+          retention-days: 14
+          if-no-files-found: ignore

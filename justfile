@@ -40,7 +40,7 @@ app-test:
 app-catalyst:
     scripts/app.sh catalyst
 
-# The PR gate on this pushed, clean commit; posts local/app-tests (about 10 min, no screen)
+# The PR gate's local twin, optional (GitHub Actions runs the gate): about 10 min, no screen; --status posts local/app-tests to Gitea
 ci *ARGS:
     scripts/local-ci.sh {{ARGS}}
 
@@ -56,7 +56,7 @@ ci-release *ARGS:
 ci-cli *ARGS:
     scripts/local-ci.sh --cli {{ARGS}}
 
-# A Linux CI job in Docker, exactly as Gitea Actions runs it: test, webdav, static (scripts/ci-linux.sh)
+# A Linux CI job in Docker, the way the workflow runs it (.github/workflows/ci.yml): test, webdav, static (scripts/ci-linux.sh)
 ci-linux *JOBS="test":
     scripts/ci-linux.sh docker {{JOBS}}
 
@@ -91,7 +91,7 @@ release-ready VERSION ref="origin/main":
 release-tag VERSION ref="origin/main":
     scripts/release-tag.sh {{VERSION}} {{ref}}
 
-# Push an existing local tag vVERSION to Gitea (asks first)
+# Push an existing local tag vVERSION to origin (asks first)
 release-push VERSION:
     scripts/release-tag.sh --push {{VERSION}}
 

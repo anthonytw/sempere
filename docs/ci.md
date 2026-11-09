@@ -1,21 +1,85 @@
 # Continuous integration
 
-Development and CI run on the LAN (docs/design/local-first.md): pull requests and commit statuses are on Gitea
-(`git.lab:awertz/sempere`), and GitHub runs nothing. The Linux jobs are one script, `scripts/ci-linux.sh`, which
-the PR gate runs on the Mac in Docker, in a lane beside the Mac steps (`scripts/local-ci.sh`; `just ci-linux test webdav static` runs them by hand).
-Since 2026-11-09 no Linux job runs on Gitea Actions: the Orin runner needed ~42 minutes for the package job that takes
-about six in Docker on the Mac, so `linux.yml` was deleted. The Mac work runs through `scripts/local-ci.sh`, with the agents sharing the Mac through `xc-lock`;
-there is no CI runner of any kind in the loop.
+The PR gate runs on **GitHub Actions** (`.github/workflows/ci.yml`); pull requests and merges are on GitHub
+(`anthonytw/sempere`), and Gitea is a mirror ([design/local-first.md](design/local-first.md)). Gitea Actions runs nothing: `.gitea/workflows/` holds only a README, which stops Gitea from falling back to `.github/workflows/`. The same checks run on a
+Mac with `scripts/local-ci.sh`, which is optional for a pull request (reproduce a failure, check before pushing) and is what
+the release-bound suites use (the UI tests need a screen and a simulator). Both run the same scripts: the Linux jobs are one
+script, `scripts/ci-linux.sh` (`just ci-linux test webdav static` runs them by hand in Docker), the Mac package tests are
+`scripts/ci-mac-package.sh`, the app steps `scripts/app.sh`.
+
+## The GitHub workflow
+
+`ci.yml` runs on every pull request that is not a draft (a push to a ready PR runs it again and cancels the older run), on
+pushes to `main`, and on demand (`gh workflow run CI --ref <branch>`). Its jobs run in parallel; these names are the
+**required checks** of the `main` ruleset (a job's name is its check name: renaming one blocks merging until the ruleset
+is updated):
+
+| Check (job name) | Runs on | What it runs | Local equivalent |
+|---|---|---|---|
+| `Help and portability checks` | `swift:6.4-noble` container | the tooltip lint, the hash tool's self-test, the cross-read guard, the test-defaults and UI-test-list checks, the mirror script's test, `scripts/check-portability.sh` | `local-ci.sh` step `help` |
+| `iOS build` | `xcode-27` (macOS 27.0.1, Xcode 27.1, iOS 27 SDK) | `scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run | step `ios-build` |
+| `Mac package tests` | `xcode-27` | `scripts/ci-mac-package.sh`: `swift build --build-tests` and `swift test --parallel`, skipping targets whose hash passed | step `package` |
+| (not required) `Mac app tests` | `xcode-27`, on demand only | `scripts/app.sh test-mac`: the Mac Catalyst unit tests, the pseudo-language layout check among them. A manual run (`gh workflow run CI --ref <branch>`) includes it. | step `mac`, the gate for these |
+| `Linux package tests` | `swift:6.4-noble` container, offline (`NET_ADMIN`, `SYS_ADMIN`) | `scripts/ci-linux.sh test`: package tests with no network, portability, removable importers | step `linux` |
+| `Linux WebDAV tests` | `swift:6.4-noble` container | `scripts/ci-linux.sh webdav`: the WebDAV integration tests against wsgidav | step `webdav` |
+| `Web viewer` | `ubuntu-24.04`, Node 22 | `cd web`: `npm ci`, lint, typecheck, `npm test` (which cross-checks the renderer with the committed Swift goldens), the strict-CSP build. The goldens themselves are checked against the CLI inside `Linux package tests` (`web/scripts/golden.sh`, every run, never skipped by hash). | none |
+| `PR lists tests run` | `ubuntu-24.04` | `pr-description.yml`: the description has a non-empty `## Tests run` section; **a PR that changes files under `Apps/` must also name a run of `scripts/local-ci.sh` or `scripts/app.sh test-mac` with its result** (`check-tests-run.py --app-changed`), because the hosted gate does not run the Mac Catalyst tests | none |
+
+`Pass records (...)` (three jobs) are bookkeeping and not required (the gate jobs wait for them and run even when they fail, `!cancelled()`: a failed bookkeeping job never turns a gate job into a skipped, passing check). Jobs of a draft pull request are skipped.
+
+Wall times on the hosted runners (the first run on the branch that added the workflow, 2026-11-09). Cold: every test ran, no
+cache. Warm: every test target skipped by hash, the iOS cache restored. The build always runs: `Linux package tests` builds
+twice (the package, then `check-removable-importers.sh` without the importers), so skipping tests saves ~12 of its ~24 minutes.
+
+| Job | Cold | Warm |
+|---|---|---|
+| `Help and portability checks` | 1 min | 1 min |
+| `iOS build` | 7 min | 3 min |
+| `Mac package tests` | 21 min | 6 min |
+| `Linux package tests` | 24 min | 12 min |
+| `Linux WebDAV tests` | 10 min | 1 min (the whole job is skipped when both targets passed) |
+| the run (jobs in parallel) | ~24 min | ~12 min |
+
+- **The Mac runner.** GitHub's `macos-26` images have only Xcode 26. The `xcode-27` image (preview; `xcode-27-xlarge` for
+  more cores; macOS 27.0.1, Xcode 27.0, 27.1 (default) and 27.2, the iOS 27 simulators) has the iOS 27 SDK, so `iOS build` and
+  `Mac package tests` run there. `.github/actions/select-xcode` keeps the default Xcode and fails unless the iOS SDK is 27 or
+  later: Xcode 27.2 refuses to test a Mac Catalyst target on the image's macOS 27.0.1 ("doesn't match 27.2's deployment target").
+  **The Mac Catalyst app tests are not part of the gate.** On the VM (no foreground session) the suite is not reliable:
+  `CanvasFocusTests` need a key window and fail on every rerun, and the pseudo-language layout check reports a sheet that is
+  still moving as an overflow about once per run (`FLAKY`, which fails a step). Two runs (cold, 14 and 16 minutes) both failed
+  that way. They stay on the local gate (`scripts/local-ci.sh`, step `mac`), which an author runs for a change that touches the
+  app, and on demand on Actions (a manual run). Revisit when the image's macOS catches up with the Xcode.
+  The two handwriting tests in `CLIRecognizeTests` that run a real Vision recognition skip themselves in a virtual machine
+  (`kern.hv_vmm_present`: Vision cannot read there); a Mac runs them.
+- **The Linux image** is pinned by digest (`env.SEMPERE_CI_IMAGE_ID` and the `container:` lines of `ci.yml`). The digest goes into every
+  Linux hash, so a moved tag cannot reuse a record. To update: `docker buildx imagetools inspect swift:6.4-noble`, change the
+  digest in all four places, and the next run runs every Linux target once.
+- **Pass records** (hash skipping, [design/ci-lean.md](design/ci-lean.md)) live in `actions/cache` (`ci-pass-<job>-<run>`,
+  restored by prefix, so the newest wins, saved after the job passed) and as an artifact of each pull request run. A
+  cache saved by a pull request is readable only by that PR, so a later push to the same PR skips what already passed. The
+  push to `main` of the squash starts with the merged PR's artifact (the `Pass records` jobs) and saves it in main's scope, where every
+  later PR restores it: the squash reruns no test whose hash the PR passed. The honesty rules are the script's, not the
+  workflow's: a record is written only for a clean tree equal to the planned commit, and never when a `SEMPERE_*` variable
+  outside the allow-list is set (the workflow sets only allowed ones).
+- **Build cache**: only the iOS build's derived data (`.build/xcode.noindex`): pushes to `main` save it, pull requests restore
+  it (`.github/actions/build-cache`; 7 minutes cold, 4 warm). The SwiftPM `.build` folders are not cached: a fresh checkout's
+  file times make SwiftPM rebuild everything, and the Linux job took as long with a restored cache as without.
+- `SEMPERE_FAIL_FAST=1` is set, so a test step stops at the first failed test and reruns it twice ([Fail fast](#fail-fast)).
+- The App Store screenshots job and the web viewer's browser smoke tests of the old workflow are not part of this gate.
+- `release.yml` is gone: releases are local builds ([releasing.md](releasing.md)).
+- The old `PR description` check stays: the gate runs no UI test, so `## Tests run` is how a reviewer sees which targeted
+  tests the author ran; it costs a few seconds.
 
 ## Policy: what runs where
 
-The app is tested on a developer's Mac by `scripts/local-ci.sh`, in layers. Each layer posts a commit status on
-Gitea for the exact commit it ran on (a clean checkout of a commit Gitea has; a status is posted only after every
-step passed; `scripts/forge.sh`), and something enforces each one:
+The layers beyond the GitHub gate run on a developer's Mac by `scripts/local-ci.sh`. Each posts a commit status on
+Gitea for the exact commit it ran on (a clean checkout of a commit the mirror has copied; a status is posted only after every
+step passed; `scripts/forge.sh`), and something enforces each one. The gate's own status (`local/app-tests`) is posted only with
+`--status` and nothing requires it:
 
 | Layer | Command | Runs | Status | Enforced by |
 |---|---|---|---|---|
-| PR gate | `scripts/local-ci.sh` | the tooltip lint (`scripts/check-help.py`), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run), Mac Catalyst unit tests (`scripts/app.sh test-mac`, the pseudo-language layout check `PseudoLanguageLayoutTests` among them), package tests (`swift build --build-tests && swift test --parallel`), then in Docker the Linux package tests (offline, portability, removable importers: `scripts/ci-linux.sh docker test`) and the WebDAV tests (`docker webdav`), each skipping targets whose hash already passed | `local/app-tests` | merging (required) |
+| PR gate (GitHub: the checks above; here: its local twin, optional) | `scripts/local-ci.sh` | the tooltip lint (`scripts/check-help.py`), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run), Mac Catalyst unit tests (`scripts/app.sh test-mac`, the pseudo-language layout check `PseudoLanguageLayoutTests` among them), package tests (`swift build --build-tests && swift test --parallel`), then in Docker the Linux package tests (offline, portability, removable importers: `scripts/ci-linux.sh docker test`) and the WebDAV tests (`docker webdav`), each skipping targets whose hash already passed | `local/app-tests` (with `--status`) | nothing: GitHub's checks gate merging |
 | Author's targeted tests | whatever the change calls for | e.g. `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacItemUITests` | the PR's `## Tests run` section | review (the PR template has the section) |
 | Pre-TestFlight | `scripts/local-ci.sh --testflight` | the gate, then the dense-note performance suite (`test-mac-perf`, [Performance tests](#performance-tests)), the Mac unit tests with no network ([Offline mode](#offline-mode)), the Mac launch smoke tests (`test-mac-smoke`) and every Mac UI test (`test-mac-ui`) | `local/testflight-suite` | `scripts/testflight.sh` (`just testflight`) checks it on the commit it builds (`local/release-sweep` also counts) |
 | Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, with the iPad unit suite (`test`), the iPhone suites (`test-phone`) and the pseudo-language UI test on the iPad (`pseudo`) before the Mac UI tests, then the iPad UI tests (`test-ui`) and the iPhone canvas UI tests (`test-phone-ui`: tap selects, hold menu, finger draws, reading mode) | `local/release-sweep` | the App Store submission; then the release checks (`release-tag.sh`, `release-build.sh`): a `vX.Y.Z` tag needs it on the commit or on a swept ancestor with only release-neutral changes since (`scripts/release-sweep-check.sh`; a `-rc` prerelease only warns) |
@@ -152,15 +216,13 @@ then say so.
 
 ## What runs when
 
-- **Every pull request** needs `local/app-tests` (`just ci` on its pushed head). The Linux jobs
-  (`scripts/ci-linux.sh docker test`, `docker webdav`) are steps of that gate, run in Docker on the Mac, beside the Mac steps (about 10 minutes cold, 5-9 warm: [design/ci-lean.md](design/ci-lean.md)); nothing
-  runs on Gitea for a pull request or a push to `main`. The web viewer's checks (`cd web &&
-  npm ci && npm run lint && npm run typecheck && npm test`, and `web/scripts/golden.sh` when the CLI's export
-  changes) are run by the author for now. **Unchanged test targets are skipped** ([design/ci-lean.md](design/ci-lean.md)): `scripts/ci-hash.py`
+- **Every pull request** needs the GitHub checks above. Locally the same steps are `just ci` (the Linux jobs in Docker on the
+  Mac, beside the Mac steps: about 10 minutes cold, 5-9 warm: [design/ci-lean.md](design/ci-lean.md)); nothing
+  runs on Gitea. The web viewer's checks are the `Web viewer` job and the golden diff in `Linux package tests`. **Unchanged test targets are skipped** ([design/ci-lean.md](design/ci-lean.md)): `scripts/ci-hash.py`
   hashes each target's inputs (the whole folders of the target and its dependencies, the docs, sources and other targets' fixtures its tests read (`check-reads` fails for an undeclared read), `Package.swift`, `Package.resolved`, the
   toolchain, the scripts that run the tests) and the gate's `package`, `linux` and `webdav` steps skip a target whose
   hash already passed, logging the hash and the commit that passed it (`ci-hash: SKIP ...`). The records are
-  files in `~/.cache/sempere-ci-pass` (the Docker jobs mount it), keyed by job, target and hash, not by commit: a pass
+  files in `~/.cache/sempere-ci-pass` on a Mac (the Docker jobs mount it; on GitHub, `actions/cache`, above), keyed by job, target and hash, not by commit: a pass
   recorded on a pull request's head is honored by any later commit with the same hashes, so the push to `main` of a squash
   whose files the pull request already passed runs nothing. There is no weekly or post-merge full run; only the release
   modes force one. `SEMPERE_CI_FORCE_ALL=1` runs everything; `--testflight`,

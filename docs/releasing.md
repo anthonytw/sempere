@@ -5,6 +5,11 @@ a TestFlight build ([A](#a-testflight-build)), a release such as v1.0.0 ([B](#b-
 and a hotfix ([C](#c-a-hotfix)). Everything runs through `just` in this repo (or `just sempere::…` from the
 `dev/` workspace root); each recipe is a thin wrapper around a script you can also run directly.
 
+> **Since 2026-11-09 GitHub is the primary remote** and Gitea a mirror ([design/local-first.md](design/local-first.md)).
+> The steps below that tag on Gitea, open pull requests with `tea`, or build the one-commit GitHub squash were written for
+> the Gitea-first arrangement and **must be reworked before the next release** (`release-tag.sh` and the checks use
+> `origin/main`, which is GitHub now; a follow-up, not done in the move to GitHub); the build, sweep and smoke-test steps are unchanged.
+
 Steps marked **[you]** need the maintainer personally: Apple's web UI, signing into Xcode, submitting for App
 Store review, the release date in `CHANGELOG.md`, and approving anything that publishes (tag push, deploys,
 uploads). No recipe does any of those silently: tagging, pushing a tag, uploading a build and deploying a

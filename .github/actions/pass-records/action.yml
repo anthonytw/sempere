@@ -1,0 +1,26 @@
+name: Pass records
+description: >
+  Restores the folder of pass records that scripts/ci-hash.py skips by (docs/design/ci-lean.md). A record names a job, a
+  test target and a hash, so a record from any earlier run is as good as one from this run. The workflow saves the folder
+  after the job passed, under the key this action returns.
+inputs:
+  job:
+    description: The job's name in the key (linux-test, linux-webdav, mac-package)
+    required: true
+outputs:
+  key:
+    description: The key to save the folder under
+    value: ci-pass-${{ inputs.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+runs:
+  using: composite
+  steps:
+    - name: The folder is ${{ runner.temp }}/ci-pass (SEMPERE_CI_PASS_DIR, for the later steps)
+      shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP/ci-pass"
+        echo "SEMPERE_CI_PASS_DIR=$RUNNER_TEMP/ci-pass" >> "$GITHUB_ENV"
+    - uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/ci-pass
+        key: ci-pass-${{ inputs.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: ci-pass-${{ inputs.job }}-

@@ -468,7 +468,9 @@ struct SyncCoordinatorTests {
         let clock = ContinuousClock.now
         let ran = await coordinator.runBackgroundRefresh(cancel: SyncRunCancel())
         #expect(ran == [other.id], "the busy session is skipped")
-        #expect(ContinuousClock.now - clock < .seconds(2), "the task did not wait for the foreground run")
+        // A bound, not a benchmark: the busy run only ends by cancel, so waiting for it would never return. 2 s failed on a
+        // loaded hosted runner (2.8 s).
+        #expect(ContinuousClock.now - clock < .seconds(20), "the task did not wait for the foreground run")
         #expect(stopped.value == 0)
         coordinator.cancelAllRuns()   // the task's expiry
         _ = await foreground.value

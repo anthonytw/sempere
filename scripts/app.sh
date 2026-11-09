@@ -154,11 +154,12 @@ ui_suites() {
 # SEMPERE_TMP_GUARD_FAIL=1 (local-ci sets it). The iOS simulator runs are not covered: their tmp is
 # inside a throwaway simulator clone.
 container_tmp="${SEMPERE_CONTAINER_TMP:-$HOME/Library/Containers/io.github.anthonytw.sempere/Data/tmp}"
-tmp_count() { ls -A "$container_tmp" 2>/dev/null | wc -l | tr -d ' '; }
+# `|| true`: with pipefail a folder that does not exist yet (a fresh CI runner's app container) must count 0, not stop the script.
+tmp_count() { { ls -A "$container_tmp" 2>/dev/null || true; } | wc -l | tr -d ' '; }
 # The same for the container's Preferences: a test that makes a UserDefaults suite without TestDefaults leaves a
 # plist per run there (21,000 piled up once). SEMPERE_PREFS_LEAK_MAX (default 20); SEMPERE_CONTAINER_PREFS moves it.
 container_prefs="${SEMPERE_CONTAINER_PREFS:-$HOME/Library/Containers/io.github.anthonytw.sempere/Data/Library/Preferences}"
-prefs_count() { ls -A "$container_prefs" 2>/dev/null | wc -l | tr -d ' '; }
+prefs_count() { { ls -A "$container_prefs" 2>/dev/null || true; } | wc -l | tr -d ' '; }
 # The test host is ended without its exit handlers, so the last suites TestDefaults made are still on disk: remove
 # the ones named in the ledgers of host processes that are gone (exact names the run itself recorded, nothing else).
 # cfprefsd can write an emptied domain back seconds after the host ends, after both passes: a dead host's ledger is

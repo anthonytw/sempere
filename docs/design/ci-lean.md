@@ -2,7 +2,9 @@
 
 Status: part 1 is built (the hash tool, skipping on Linux and on the Mac, the classification). Part 2 as decided by
 the owner on 2026-11-09 is built too: the Linux jobs run in the Mac gate, in Docker, and Gitea runs nothing for a pull
-request. The policy tables in [ci.md](../ci.md) describe what runs today.
+request. Part 3 (2026-11-09, the move back to GitHub): the same gate runs as a GitHub Actions workflow, the pass records
+live in `actions/cache`, and the Mac gate is optional ([ci.md](../ci.md) "The GitHub workflow"; the Mac and Linux
+timings below are the local ones). The policy tables in [ci.md](../ci.md) describe what runs today.
 
 ## Why
 
@@ -66,7 +68,7 @@ is off in part 1 (see "Decisions for the reviewer" in the pull request).
 - the toolchain: `swift --version`, OS, kernel release, architecture; on macOS the OS build and SDK version; on Linux
   `/etc/os-release` and the Docker image id (`ci-linux.sh docker` passes it: the local default tag floats, so a moved tag changes the hashes);
 - the files the job runs the tests with (`scripts/ci-linux.sh`, `test-offline.sh`, `test-webdav.sh`,
-  `dav-fault-proxy.py`, `webdav-server-requirements.txt`, `ci-hash.py`; for the Mac job, `local-ci.sh` and `test-runner.py`
+  `dav-fault-proxy.py`, `webdav-server-requirements.txt`, `ci-hash.py`; for the Mac job, `ci-mac-package.sh` and `test-runner.py`
   instead), so changing how tests run reruns them all; the self-test fails if a script those test scripts invoke is not listed;
 - the job's name, so the Mac's and Linux's results never stand in for each other.
 

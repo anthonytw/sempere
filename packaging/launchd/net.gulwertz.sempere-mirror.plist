@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Mirrors GitHub to Gitea every ten minutes (scripts/mirror-gitea.sh, docs/design/local-first.md). Not installed by the
+  repository: copy it to ~/Library/LaunchAgents/ on the Mac that does the mirroring, fix the path below to a checkout whose
+  scripts/ folder is on main (the script only reads itself; it works in its own bare clone), and load it:
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/net.gulwertz.sempere-mirror.plist
+  Remove it: launchctl bootout gui/$(id -u)/net.gulwertz.sempere-mirror. Run once by hand: launchctl kickstart gui/$(id -u)/net.gulwertz.sempere-mirror.
+  The log is ~/Library/Logs/sempere-mirror.log; a refusal (diverged branch, moved tag) exits 1 and says so there.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>net.gulwertz.sempere-mirror</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/claude/dev/sempere/scripts/mirror-gitea.sh</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>600</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/claude/Library/Logs/sempere-mirror.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/claude/Library/Logs/sempere-mirror.log</string>
+</dict>
+</plist>

@@ -22,6 +22,17 @@ final class CLIRecognizeTests: CLITestCase {
         return (vault, keyPath, note, pages)
     }
 
+    #if canImport(Vision)
+    /// Vision's handwriting recognition needs the GPU or Neural Engine, which a virtual machine (GitHub's hosted macOS
+    /// runners, docs/ci.md) does not have: there every `recognize` run reports its notes as unrecognized. The tests that
+    /// run a real recognition skip on one (`kern.hv_vmm_present`); a Mac runs them.
+    static var recognitionUnavailable: Bool {
+        var vm: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        return sysctlbyname("kern.hv_vmm_present", &vm, &size, nil, 0) == 0 && vm == 1
+    }
+    #endif
+
     func args(_ vault: Vault, _ keyPath: String) -> [String] { ["--vault", vault.url.path, "--identity", keyPath] }
 
     func revisionCount(_ vault: Vault) throws -> Int {
@@ -155,6 +166,10 @@ final class CLIRecognizeTests: CLITestCase {
                                                                         recognition: Recognition(engine: "test-1", text: "x"))])))
         XCTAssertEqual(try listed(), before)
         #if canImport(Vision)
+        guard !Self.recognitionUnavailable else {   // the real recognition below needs a Mac's hardware
+            print("NOTICE: the real `recognize --all` part of this test is skipped: Vision cannot read in a virtual machine")
+            return
+        }
         let r = try cli(["recognize", "--all", "--json"] + args(vault, key))
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertFalse(((r.json as? [String: Any])?["notes"] as? [[String: Any]] ?? []).isEmpty, r.out)
@@ -164,6 +179,7 @@ final class CLIRecognizeTests: CLITestCase {
 
     #if canImport(Vision)
     func testRecognizeStoresOneDeltaPerNoteWithABasis() throws {
+        try XCTSkipIf(Self.recognitionUnavailable, "Vision cannot read handwriting in a virtual machine")
         let (vault, key, note, pages) = try vaultWithImportedText()
         let r = try cli(["recognize", "--all", "--json"] + args(vault, key))
         XCTAssertEqual(r.status, 0, r.err)

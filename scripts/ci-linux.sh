@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The Linux CI jobs as one script (docs/design/local-first.md). The PR gate runs `docker test` and `docker webdav`
-# on the Mac (scripts/local-ci.sh); the Gitea workflow is manual only. Each JOB runs inside the swift:6.4-noble image and installs what it needs.
+# The Linux CI jobs as one script (docs/design/local-first.md). The GitHub workflow (.github/workflows/ci.yml) runs `test` and `webdav`
+# in the pinned swift image; scripts/local-ci.sh runs `docker test` and `docker webdav` on a Mac. Each JOB runs inside the swift:6.4-noble image and installs what it needs.
 #
 #   scripts/ci-linux.sh test           build, then the package tests with no network (scripts/test-offline.sh; the benchmark
 #                                      targets are skipped, scripts/bench.sh runs them),
@@ -88,6 +88,12 @@ job_test() {
       scripts/test-offline.sh --skip-build --parallel --skip 'Benchmarks\.' ${skips[@]+"${skips[@]}"} ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
     python3 scripts/ci-hash.py record --plan "$plan"   # only after the whole run passed (set -e)
   fi
+  # The web viewer's golden files are what the CLI writes now (web/scripts/golden.sh). Runs every time, after any skip: a skipped
+  # target cannot hide a mismatch. The CLI is built above.
+  local golden; golden=$(mktemp -d)
+  SEMPERE="$PWD/.build/debug/sempere" web/scripts/golden.sh "$golden" >/dev/null
+  diff -r web/test/golden "$golden" >/dev/null || { echo "ci-linux: web/test/golden differs from the CLI's output (web/scripts/golden.sh)"; diff -rq web/test/golden "$golden" | head; exit 1; }
+  rm -rf "$golden"
   scripts/check-portability.sh
   scripts/check-removable-importers.sh
 }

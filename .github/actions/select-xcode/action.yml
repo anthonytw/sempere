@@ -1,0 +1,15 @@
+name: Select Xcode 27
+description: >
+  Uses the xcode-27 runner image's default Xcode (27.1: its macOS 27.0 SDK matches the runner's macOS 27.0.1, which Mac Catalyst
+  tests need: Xcode 27.2 refuses to test on it, "macOS 27.0.1 doesn't match 27.2's deployment target") and fails unless it has the
+  iOS 27 SDK (the app's minimum).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        xcode-select -p
+        xcodebuild -version
+        sw_vers -productVersion
+        sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+        if [[ ${sdk%%.*} -lt 27 ]]; then echo "::error::the app needs the iOS 27 SDK (Xcode 27); this runner has $sdk"; exit 1; fi

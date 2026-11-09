@@ -15,7 +15,7 @@ scripts/test-linux.sh       # on a Mac with Docker, or in a cloud VM: run tests 
 scripts/app.sh test         # iPad app: xcodebuild test on the newest iPadOS 27+ simulator
 scripts/app.sh test -only-testing:SempereAppTests/FooTests   # one suite (any test-* subcommand)
 scripts/app.sh catalyst     # iPad app: unsigned Mac Catalyst build
-scripts/local-ci.sh         # the PR gate (package, Mac Catalyst unit tests, iOS compile check); see Workflow
+scripts/local-ci.sh         # the PR gate's local twin, optional (GitHub Actions runs the gate); see Workflow
 SEMPERE_FUZZ_LONG=1 swift test --filter Fuzz   # deep fuzz run (quick mode runs in every swift test)
 (cd web && npm ci && npm run lint && npm run typecheck && npm test)   # web viewer
 ```
@@ -98,15 +98,20 @@ the CLI).
 
 ## Workflow
 
-Branch per task, PR to `main` on Gitea (`origin`, `tea pr create`), squash merge, CI green. GitHub is only the
-public mirror: one squashed commit per release, pushed by the owner (docs/design/local-first.md); never push
-there. Commit messages:
+Branch per task, PR to `main` on GitHub (`origin`: `git push -u origin <branch>`, `gh pr create`), squash merge,
+GitHub's checks green (docs/ci.md). GitHub is the primary remote since 2026-11-09; Gitea (the `gitea` remote) is a
+mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitHub access is lost
+(docs/design/local-first.md): do not push to it by hand. Commit messages:
 `area: imperative summary`. Co-author line as the harness instructs. Testing layers (docs/ci.md):
 
-- **PR gate**: `scripts/local-ci.sh` (a Mac with Xcode) runs the package tests, the Mac Catalyst
-  unit tests and an iOS compile check (no simulator, no screen, about ten minutes) on a pushed,
-  clean commit and posts `local/app-tests`, which a PR needs to merge. Logs in `build/local-ci/`;
-  `--list` prints the steps.
+- **PR gate**: GitHub Actions (`.github/workflows/ci.yml`) runs the help checks, the iOS compile check, the Mac
+  package tests, the Linux package and WebDAV tests, the portability guard and the web viewer's checks (plus the golden
+  diff against the CLI); its jobs are the required checks
+  (docs/ci.md). The Mac Catalyst app tests do not run reliably on the hosted VM. **A PR that changes files under `Apps/`
+  must run `scripts/local-ci.sh` (a Mac with Xcode, no simulator, no screen, about ten minutes; the same steps plus those)
+  or `scripts/app.sh test-mac` and name it, with its result, under `## Tests run`**: the `PR lists tests run` check fails
+  without it. Otherwise the local gate is optional (reproduce a failure, check before pushing). It posts nothing unless `--status`. Logs in
+  `build/local-ci/`; `--list` prints the steps.
 - **Your targeted tests**: the gate runs no UI test and nothing on a simulator. Pick the tests
   your change calls for, run them, and list each with its result under `## Tests run` in the PR
   description (the template has the section).
@@ -123,8 +128,8 @@ there. Commit messages:
   that commit or on a later one whose changes since are release-neutral, `scripts/release-sweep-check.sh`). A
   CLI-only release (`release-prep --no-app`) needs no sweep, only `local/cli-suite` on the tagged commit
   (`scripts/local-ci.sh --cli`).
-- **Linux jobs**: `scripts/ci-linux.sh` (`test`, `webdav`, `static`), the PR gate runs `docker test` and `docker webdav`
-  on the Mac (hash skipping; no Gitea run is needed to merge); there is no Linux workflow on Gitea.
+- **Linux jobs**: `scripts/ci-linux.sh` (`test`, `webdav`, `static`); the workflow runs `test` and `webdav` in the pinned
+  swift image, and `local-ci.sh` runs them in Docker (hash skipping on both). Nothing runs on Gitea.
 
 ### Parallel agents
 

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# The app suites, run on a developer's Mac and recorded on Gitea as commit statuses (docs/ci.md).
+# The CI suites on a developer's Mac (docs/ci.md). GitHub Actions runs the PR gate (.github/workflows/ci.yml); this script
+# is optional for it: reproduce a failure, or check a change before pushing. The --testflight, --release and --cli modes are
+# the release-bound suites and post their results to Gitea as commit statuses (scripts/testflight.sh and release-tag.sh read them).
 #
-#   scripts/local-ci.sh               # the PR gate: iOS compile check, Mac Catalyst unit tests (the
+#   scripts/local-ci.sh               # the PR gate (posts nothing unless --status): iOS compile check, Mac Catalyst unit tests (the
 #                                     # pseudo-language layout check among them), package tests, then in Docker the
 #                                     # Linux package tests and the WebDAV tests; targets whose hash already passed
-#                                     # are skipped (docs/design/ci-lean.md); posts `local/app-tests` (merging needs it)
+#                                     # are skipped (docs/design/ci-lean.md)
 #   scripts/local-ci.sh --testflight  # the gate, then the dense-note performance suite, the Mac unit tests with no network,
 #                                     # the Mac launch smoke tests and every Mac UI test;
 #                                     # posts `local/testflight-suite`
@@ -14,7 +16,8 @@
 #   scripts/local-ci.sh --cli         # a CLI-only release's checks, no app: the package tests on this Mac, then in
 #                                     # Docker the Linux tests, the WebDAV integration tests and the static
 #                                     # release build (scripts/ci-linux.sh); posts `local/cli-suite`
-#   scripts/local-ci.sh --no-status   # with any mode: run, but post nothing to Gitea
+#   scripts/local-ci.sh --status      # the gate: also post `local/app-tests` to Gitea (informational; nothing requires it)
+#   scripts/local-ci.sh --no-status   # with any other mode: run, but post nothing to Gitea
 #   scripts/local-ci.sh --list        # with any mode: print its steps and status, run nothing
 #
 # The gate never needs the screen and runs no simulator: a Mac someone is using can run it. The
@@ -27,8 +30,8 @@
 # (scripts/test-runner.py, docs/ci.md "Fail fast"); a flaky test fails the step too. SEMPERE_FAIL_FAST=0 runs every
 # test of a step.
 #
-# A status is posted only for a clean checkout of a commit Gitea has, after every step passed, so
-# it names exactly what was tested. The script holds a caffeinate assertion (it re-runs itself
+# A status is posted only for a clean checkout of a commit Gitea has (the mirror, scripts/mirror-gitea.sh, must have copied it),
+# after every step passed, so it names exactly what was tested. The script holds a caffeinate assertion (it re-runs itself
 # under `caffeinate -dimsu`) so the Mac cannot sleep in the middle of a run.
 #
 # Logs: build/local-ci/<step>.log.
@@ -38,11 +41,12 @@ cd "$(dirname "$0")/.."
 source scripts/forge.sh
 gate_context=local/app-tests
 mode=gate
-post=true
+post=""
 list=false
-usage="usage: $0 [--testflight | --release | --cli] [--no-status] [--list]"
+usage="usage: $0 [--testflight | --release | --cli] [--status | --no-status] [--list]"
 for arg in "$@"; do
   case "$arg" in
+    --status) post=true ;;
     --testflight) mode=testflight ;;
     --release) mode=release ;;
     --cli) mode=cli ;;
@@ -52,6 +56,9 @@ for arg in "$@"; do
     *) echo "$usage" >&2; exit 2 ;;
   esac
 done
+
+# The gate posts nothing unless asked (GitHub Actions is the gate now); the release-bound modes post, as the release checks read them.
+[[ -n $post ]] || { [[ $mode == gate ]] && post=false || post=true; }
 
 # Cheapest first, so a failure shows early (each step stands alone; `iphone` reuses `ipad`'s build).
 gate_steps=(help ios-build mac package linux webdav)
@@ -99,7 +106,7 @@ describe() {   # step: what it runs
 }
 
 if [[ $list == true ]]; then
-  echo "local-ci $mode: posts $context$([[ $context != "$gate_context" && ${#gate_steps[@]} -gt 0 ]] && echo " (and $gate_context after the gate)")"
+  echo "local-ci $mode: $([[ $post == true ]] && echo "posts $context$([[ $context != "$gate_context" && ${#gate_steps[@]} -gt 0 ]] && echo " (and $gate_context after the gate)")" || echo "posts nothing")"
   for step in "${steps[@]}"; do printf '  %-11s %s\n' "$step" "$(describe "$step")"; done
   for step in ${lane[@]+"${lane[@]}"}; do printf '  %-11s %s   [beside the steps above]\n' "$step" "$(describe "$step")"; done
   exit 0
@@ -131,29 +138,10 @@ status() {   # context, state, description
   forge_post_status "$sha" "$1" "$2" "$3"
 }
 
-# The package tests, skipping every target that already passed with the same hash (scripts/ci-hash.py,
-# docs/design/ci-lean.md): the log names each skip's hash and the commit that passed it. SEMPERE_CI_FORCE_ALL=1 runs
-# everything. SEMPERE_CI_MAC_PACKAGE=os-dependent also leaves the logic targets to the Linux job (scripts/ci-targets.json).
-package_step() {
-  export SEMPERE_CI_PASS_DIR=${SEMPERE_CI_PASS_DIR:-$HOME/.cache/sempere-ci-pass}
-  local plan=build/local-ci/package.plan split=() skips=() t
-  [[ ${SEMPERE_CI_MAC_PACKAGE:-all} == os-dependent ]] && split=(--os-dependent-only)
-  /usr/bin/python3 -I scripts/ci-hash.py plan --job mac-package --out "$plan" ${split[@]+"${split[@]}"} || return 1
-  while read -r t; do skips+=(--skip "^$t\\."); done < <(/usr/bin/python3 -I scripts/ci-hash.py skips "$plan")
-  # The build always runs (incremental, cheap when warm): the benchmark targets are never tested but must still compile.
-  swift build --build-tests || return 1
-  if [[ $(/usr/bin/python3 -I scripts/ci-hash.py runs "$plan" | wc -l) -eq 0 ]]; then
-    echo "package: every test target skipped (each passed with its current hash, or is left to Linux)"
-    return 0
-  fi
-  /usr/bin/python3 -I scripts/test-runner.py --kind swiftpm -- swift test --parallel --skip 'Benchmarks\.' ${skips[@]+"${skips[@]}"} || return 1
-  /usr/bin/python3 -I scripts/ci-hash.py record --plan "$plan"
-}
-
 run_step() {
   case "$1" in
-    help)       scripts/check-help.py --self-test && /usr/bin/python3 -I scripts/ci-hash.py --self-test && scripts/test-ci-hash-guard.sh && /usr/bin/python3 -I scripts/ci-hash.py check-reads && scripts/check-help.py && scripts/check-test-defaults.sh && scripts/check-ui-tests.sh && /usr/bin/python3 -I scripts/test-runner.py --self-test ;;
-    package)    package_step ;;
+    help)       scripts/check-help.py --self-test && /usr/bin/python3 -I scripts/ci-hash.py --self-test && scripts/test-ci-hash-guard.sh && /usr/bin/python3 -I scripts/ci-hash.py check-reads && scripts/check-help.py && scripts/check-test-defaults.sh && scripts/check-ui-tests.sh && scripts/test-mirror-gitea.sh >/dev/null && /usr/bin/python3 -I scripts/test-runner.py --self-test ;;
+    package)    scripts/ci-mac-package.sh ;;
     mac)        scripts/app.sh test-mac ;;
     ios-build)  scripts/app.sh build-ios ;;
     mac-offline) scripts/app.sh test-mac-offline ;;
