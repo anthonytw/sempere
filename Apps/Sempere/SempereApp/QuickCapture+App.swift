@@ -65,16 +65,20 @@ struct KeychainCaptureProfileStore: CaptureProfileStore {
 extension QuickCapture {
     /// The app's quick capture: the Keychain profile, AVFoundation, ActivityKit, UIKit, the App Group's status
     /// file and the widgets' reload. `register()` hooks it up at launch.
-    static let shared = QuickCapture.app()
+    /// It finds its vault by id in the in-app store from the start (`vaultStore`), so a voice note started by an intent
+    /// before any `AppModel` exists is still sealed into the vault's inbox, not queued.
+    static let shared = QuickCapture.app(vaultStore: VaultStore(root: VaultLibrary.defaultVaultStoreRoot))
 
     /// A quick capture on the app's platform services; tests pass their own store and folders.
     static func app(store: any CaptureProfileStore = KeychainCaptureProfileStore(), root: URL = QuickCapture.defaultRoot,
-                    queueRoot: URL = QuickCapture.defaultQueueRoot, statusStore: VoiceNoteStatusStore? = .shared) -> QuickCapture {
+                    queueRoot: URL = QuickCapture.defaultQueueRoot, statusStore: VoiceNoteStatusStore? = .shared,
+                    vaultStore: VaultStore? = nil) -> QuickCapture {
         let capture = QuickCapture(store: store, audio: AppCaptureAudio(), audioFiles: AVCaptureAudioFiles(),
                                    transcriber: SpeechRecordingTranscriber(), liveActivity: SystemLiveActivity(),
                                    app: UIKitCaptureApp(), backgroundTime: UIKitBackgroundTime(), bookmarks: SecurityScopedBookmarks(),
                                    files: SystemFileCoordinator(), perf: AppPerfSink(), root: root, queueRoot: queueRoot)
         capture.statusStore = statusStore
+        capture.vaultStore = vaultStore
         // The app's words for errors even when no `AppModel` exists yet (a start from a widget before any is made).
         capture.describeError = { AppModel.describe($0) }
         capture.noteTitle = { QuickCapture.title($0) }

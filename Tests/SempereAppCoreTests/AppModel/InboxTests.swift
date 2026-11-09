@@ -14,21 +14,34 @@ extension AppModelSuites {
     struct InboxTests {
         /// A fixture vault copy, its key's text, and a quick capture whose stored profile was made from it.
         static func setUp(transcribe: Bool = false) async throws -> (url: URL, key: String, capture: QuickCapture) {
-            let (url, key) = try await ModelFixture.vault()
+            let (source, key) = try await ModelFixture.vault()
+            let url = try Self.intoStore(source)
             let text = try await ModelFixture.keyText(key)
             let stored = try await Self.profile(url, text, transcribe: transcribe)
             let store = MemoryCaptureProfileStore()
             try store.save(stored)
             let qc = QuickCapture(store: store, root: TestTemp.root.appendingPathComponent("qc-\(UUID().uuidString)"),
                                   queueRoot: TestTemp.root.appendingPathComponent("qcq-\(UUID().uuidString)"))
+            qc.vaultStore = Self.store(of: url)
             return (url, text, qc)
+        }
+
+        /// The vault at `source` copied into a store beside it (the app's vaults all are, and a capture finds its vault by id
+        /// there): its folder in the store.
+        static func intoStore(_ source: URL) throws -> URL {
+            let store = VaultStore(root: source.deletingLastPathComponent().appendingPathComponent("store", isDirectory: true))
+            return try store.importVault(from: source).url
+        }
+
+        /// The store a vault folder made by `intoStore` is in (`<store>/<vault id>/<name>.sempere`).
+        static func store(of url: URL) -> VaultStore {
+            VaultStore(root: url.deletingLastPathComponent().deletingLastPathComponent())
         }
 
         @concurrent static func profile(_ url: URL, _ text: String, transcribe: Bool) async throws -> StoredCaptureProfile {
             let vault = try Vault.open(at: url, identities: [try IdentityFile.parse(text)])
             let profile = try vault.captureProfile(device: DeviceID("0badf00d")!)
-            return StoredCaptureProfile(profile: profile, vaultName: "sample", bookmark: try PathBookmarks().bookmark(for: url),
-                                        transcribe: transcribe)
+            return StoredCaptureProfile(profile: profile, vaultName: "sample", transcribe: transcribe)
         }
 
         static func inbox(_ vault: URL) -> [String] {
@@ -89,15 +102,20 @@ extension AppModelSuites {
         @Test func onlyTheProfilesOwnFolderIsTheProfilesFolder() async throws {
             let (url, _, qc) = try await Self.setUp()
             let stored = try #require(try qc.store.load())
-            #expect(AppModel.isProfileFolder(stored.bookmark, url, bookmarks: PathBookmarks()))
+            let store = Self.store(of: url)
+            #expect(AppModel.isProfileFolder(stored.profile.vaultId, url, store: store))
             let lookalike = url.deletingLastPathComponent().appendingPathComponent("other.sempere")
-            #expect(!AppModel.isProfileFolder(stored.bookmark, lookalike, bookmarks: PathBookmarks()))
+            #expect(!AppModel.isProfileFolder(stored.profile.vaultId, lookalike, store: store))
+            #expect(!AppModel.isProfileFolder(stored.profile.vaultId, url, store: nil), "no store, no copy to deliver into")
+            #expect(!AppModel.isProfileFolder(UUID(), url, store: store), "another vault's id is not this profile's")
         }
 
         @Test func enablingStoresAProfileWithoutTheIdentityAndRefreshFollowsKeyChanges() async throws {
-            let (url, key) = try await ModelFixture.vault()
+            let (source, key) = try await ModelFixture.vault()
+            let url = try Self.intoStore(source)
             let keyText = try await ModelFixture.keyText(key)
             let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            model.vaultStore = Self.store(of: url)
             let qc = model.quickCapture
             try await model.openVault(at: url)
             try await model.unlock(identityText: keyText)

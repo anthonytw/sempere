@@ -227,14 +227,9 @@ struct MacDragOutTests {
         #expect(delivery.data.map { String(decoding: $0, as: UTF8.self).hasPrefix("Sempere drag control") } == true)
     }
 
-    @Test func aLoggedDragErrorKeepsOnlyItsClassifierPublic() {
-        let path = "/Users/someone/Secret plans.pdf"
-        let error = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError,
-                            userInfo: [NSFilePathErrorKey: path, NSLocalizedDescriptionKey: "Secret plans could not be saved"])
-        let kind = DragLog.classify(error)
-        #expect(kind.contains("domain=\(NSCocoaErrorDomain)"))
-        #expect(kind.contains("code=\(NSFileWriteNoPermissionError)"))
-        #expect(!kind.contains("Secret"), "no title or path in the public part")
+    /// The classifier's own rule (an NSError keeps only its domain and code public) is `DragLogFormatTests` in
+    /// `SempereAppCoreTests`; this is the app's error type.
+    @Test func aDragErrorOfTheAppIsClassifiedByItsType() {
         #expect(DragLog.classify(NoteFileDrag.DragError.timedOut).contains("DragError"))
     }
 

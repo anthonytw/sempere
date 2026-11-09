@@ -128,11 +128,8 @@ struct QuickCaptureFlowTests {
     @Test func anUnreachableVaultQueuesTheCapture() async throws {
         let rig = try CaptureRig()
         let qc = rig.capture
-        let other = CaptureFixture.temp("not-the-vault")
-        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
-        var stored = try rig.stored
-        stored.bookmark = try PathBookmarks().bookmark(for: other)
-        try rig.store.save(stored)
+        let stored = try rig.stored
+        qc.vaultStore = VaultStore(root: CaptureFixture.temp("not-the-store"))   // no copy of the vault there
         try await qc.start()
         let outcome = try await qc.stop()
         #expect(outcome.delivery == .queued)
@@ -173,8 +170,7 @@ struct QuickCaptureFlowTests {
         qc.ledger = { _ in ledger }
         var stored = try rig.stored
         let sealedEpoch = stored.profile.epoch
-        stored.bookmark = Data("not a bookmark".utf8)
-        try rig.store.save(stored)
+        qc.vaultStore = nil   // no copy of the vault to deliver into
         try await qc.start()
         let outcome = try await qc.stop()
         #expect(outcome.delivery == .queued)
@@ -594,8 +590,8 @@ struct QuickCaptureFlowTests {
     @Test func sealKeepsTheRecordingWhenTheSealedCaptureCannotBeWritten() async throws {
         let rig = try CaptureRig()
         let folder = try rig.crashLeftRecording()
-        var stored = try rig.stored
-        stored.bookmark = Data("not a bookmark".utf8)
+        let stored = try rig.stored
+        rig.capture.vaultStore = nil   // no copy of the vault to deliver into
         // The queue's folder is a file: the queued write fails too.
         try FileManager.default.createDirectory(at: rig.capture.queueRoot.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("not a folder".utf8).write(to: rig.capture.queueRoot)

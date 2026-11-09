@@ -46,9 +46,10 @@ enum DrawingPreparation {
 
     private static func shape(_ pk: PKStroke) -> DrawingPreparationRules.CanvasShape {
         let path = pk.path
+        let type = pk.ink.inkType
         func location(_ p: PKStrokePoint) -> (x: Double, y: Double) { (Double(p.location.x), Double(p.location.y)) }
         return DrawingPreparationRules.CanvasShape(
-            id: pk.id, seed: pk.randomSeed, ink: InkTool.allCases.first { $0.pkInkType == pk.ink.inkType }, pointCount: path.count,
+            id: pk.id, seed: pk.randomSeed, ink: InkTool.allCases.first { $0.pkInkType == type }, pointCount: path.count,
             first: path.count > 0 ? location(path[0]) : nil, last: path.count > 0 ? location(path[path.count - 1]) : nil,
             transform: Transform(pk.transform))
     }

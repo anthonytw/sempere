@@ -95,6 +95,8 @@ struct AttachmentEditorTests {
         try expectSaved(editor, vault, page: page)
     }
 
+    /// The rest of the item gestures' tests (duplicate, bring to front, rotate, paste, read-only, layout switch) are
+    /// `ItemActionsTests` in `SempereAppCoreTests`, on a fake undo stack; this one runs the real `UndoManager`.
     @Test func eachGestureIsOneDeltaAndUndoRedoWork() async throws {
         let (vault, _) = try TS.unlockedFixture()
         let (editor, clock) = try await NoteEditorTests.open(vault, debounce: .seconds(60))
@@ -140,120 +142,6 @@ struct AttachmentEditorTests {
         _ = try await step(grouped: false) { undo.redo() }
         #expect(editor.items(on: page).isEmpty)
         try expectSaved(editor, vault, page: page)
-    }
-
-    @Test func duplicateAndBringToFrontWithUndo() async throws {
-        let (vault, _) = try TS.unlockedFixture()
-        let (editor, _) = try await NoteEditorTests.open(vault)
-        let page = try #require(editor.currentPage).id
-        let undo = Self.undoManager()
-        let actions = ItemActions(editor: editor, undoManager: undo)
-        let a = try editor.addItems([Self.textItem("a")], on: page)[0]
-        let b = try editor.addItems([Self.textItem("b")], on: page)[0]
-        #expect(editor.items(on: page).map(\.id) == [a.id, b.id])
-        Self.grouped(undo) { actions.bringToFront(a.id, on: page) }
-        #expect(editor.items(on: page).map(\.id) == [b.id, a.id])
-        undo.undo()
-        #expect(editor.items(on: page).map(\.id) == [a.id, b.id])
-        undo.redo()
-        #expect(editor.items(on: page).map(\.id) == [b.id, a.id])
-        var copies: [Item] = []
-        Self.grouped(undo) { copies = actions.duplicate([a.id], on: page) }
-        #expect(copies.count == 1)
-        #expect(copies[0].frame.x == a.frame.x + 20)
-        #expect(editor.items(on: page).last?.id == copies[0].id, "the copy is on top")
-        undo.undo()
-        #expect(editor.items(on: page).count == 2)
-        await editor.flush()
-        try expectSaved(editor, vault, page: page)
-    }
-
-    /// Rotate (GA-02): the menu's quarter turns and the two-finger turn are one delta and one
-    /// undo step each; undo and redo restore the rotation.
-    @Test func rotatingAnItemIsOneUndoStep() async throws {
-        let (vault, _) = try TS.unlockedFixture()
-        let (editor, _) = try await NoteEditorTests.open(vault)
-        let page = try #require(editor.currentPage).id
-        let undo = Self.undoManager()
-        let actions = ItemActions(editor: editor, undoManager: undo)
-        let a = try editor.addItems([Self.textItem("a")], on: page)[0]
-        Self.grouped(undo) { actions.rotate(a.id, by: 90, on: page) }
-        #expect(editor.item(a.id, on: page)?.rotation == 90)
-        Self.grouped(undo) { actions.rotate(a.id, by: -90, on: page) }   // back to upright: stored as none
-        #expect(editor.item(a.id, on: page)?.rotation == nil)
-        Self.grouped(undo) { actions.rotate(a.id, by: -90, on: page) }   // Rotate Left from upright
-        #expect(editor.item(a.id, on: page)?.rotation == 270)
-        undo.undo()
-        #expect(editor.item(a.id, on: page)?.rotation == nil)
-        undo.redo()
-        #expect(editor.item(a.id, on: page)?.rotation == 270)
-        // A two-finger turn ending near a multiple of 15° snaps to it; no change writes nothing.
-        Self.grouped(undo) { actions.rotate(a.id, by: 88.5, on: page, snapping: true) }
-        #expect(editor.item(a.id, on: page)?.rotation == 0 || editor.item(a.id, on: page)?.rotation == nil)
-        let steps = editor.items(on: page).count
-        actions.rotate(a.id, by: 0, on: page, snapping: true)   // already upright: nothing to undo
-        #expect(editor.items(on: page).count == steps)
-        await editor.flush()
-        try expectSaved(editor, vault, page: page)
-    }
-
-    @Test func pastingIntoAnotherNoteCopiesTheBlobFirst() async throws {
-        let (vault, _) = try TS.unlockedFixture()
-        let (source, _) = try await NoteEditorTests.open(vault)
-        let sourcePage = try #require(source.currentPage).id
-        let image = try await source.addAttachment(data: Self.png(), type: "image/png", on: sourcePage) { Self.imageItem($0) }
-        await source.close()
-        // The other note (in Recently Deleted in the fixture: restore it first so it is editable).
-        _ = try vault.apply([.restoreNote], to: Self.other, deviceState: TS.deviceStateURL(), app: "test/1")
-        let clock = try DeviceClock(url: TS.deviceStateURL())
-        let target = try await NoteEditor.open(vault: vault, noteID: Self.other, clock: clock)
-        #expect(!target.isReadOnly)
-        let page = try #require(target.currentPage).id
-        let undo = Self.undoManager()
-        let actions = ItemActions(editor: target, undoManager: undo)
-        undo.beginUndoGrouping()
-        let pasted = try await actions.paste(ItemClipboard.Entry(note: Self.lecture, items: [image]), on: page, offset: 0)
-        undo.endUndoGrouping()
-        await target.flush()
-        #expect(pasted.count == 1)
-        #expect(pasted[0].id != image.id)
-        let ref = try #require(image.blob)
-        #expect(try vault.readBlob(note: Self.other, ref) == Self.png(), "the blob is in the target note's att/")
-        let deltas = try NoteEditorTests.myDeltas(vault, clock, note: Self.other)
-        #expect(deltas.count == 1)
-        #expect(deltas.first?.count == 1)
-        try expectSaved(target, vault, page: page, note: Self.other)
-        undo.undo()
-        #expect(target.items(on: page).isEmpty)
-        await target.close()
-    }
-
-    @Test func readOnlyEditorsRefuseItems() async throws {
-        let (vault, _) = try TS.unlockedFixture()
-        let clock = try DeviceClock(url: TS.deviceStateURL())
-        let editor = try await NoteEditor.open(vault: vault, noteID: Self.other, clock: clock)   // in Recently Deleted
-        #expect(editor.isReadOnly)
-        let page = try #require(editor.currentPage).id
-        #expect(throws: NoteEditor.ItemError.notEditable) { try editor.addItems([Self.textItem()], on: page) }
-        await #expect(throws: NoteEditor.ItemError.notEditable) {
-            try await editor.addAttachment(data: Self.png(), type: "image/png", on: page) { Self.imageItem($0) }
-        }
-        #expect(editor.setItemFrame(UUID(), to: Rect(x: 0, y: 0, w: 1, h: 1), on: page) == nil)
-        #expect(editor.removeItems([UUID()], from: page).isEmpty)
-    }
-
-    @Test func itemsSurviveAPageLayoutSwitch() async throws {
-        let (vault, _) = try TS.unlockedFixture()
-        let (editor, _) = try await NoteEditorTests.open(vault)
-        let page = try #require(editor.currentPage).id
-        _ = try editor.addItems([Self.textItem()], on: page)
-        await editor.flush()
-        await editor.setLayout(pageless: true)
-        #expect(editor.pages.flatMap(\.items).count == 1)
-        await editor.setLayout(pageless: false)
-        #expect(editor.pages.flatMap(\.items).count == 1)
-        let state = try vault.reconstruct(noteId: Self.lecture)
-        #expect(state.pages.flatMap(\.items).count == 1)
     }
 
     @Test func modelClipboardCopiesAndPastesAcrossNotes() async throws {
