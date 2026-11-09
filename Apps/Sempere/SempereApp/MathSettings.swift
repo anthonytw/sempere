@@ -1,4 +1,5 @@
 import Sempere
+import SempereAppCore
 import SempereRender
 import SwiftUI
 import UniformTypeIdentifiers
@@ -11,6 +12,12 @@ struct MathRecognitionSettingsSection: View {
     private let models = MathModels.shared
     @State private var addingModel = false
 
+    /// Files hands over a security-scoped URL: access is open while the model is read.
+    private static let scopedAccess: @Sendable (URL) -> (() -> Void) = { url in
+        let scoped = url.startAccessingSecurityScopedResource()
+        return { if scoped { url.stopAccessingSecurityScopedResource() } }
+    }
+
     var body: some View {
         Section {
             Toggle("Convert Handwriting to Math", isOn: $enabled)
@@ -18,7 +25,7 @@ struct MathRecognitionSettingsSection: View {
                 // On a row that is always there, not the section: a section's modifier is on each of
                 // its rows, and several rows presenting at once can close it again on Mac Catalyst 27.
                 .fileImporter(isPresented: $addingModel, allowedContentTypes: [.folder, .zip]) { result in
-                    if case .success(let url) = result { models.importModel(from: url) }
+                    if case .success(let url) = result { models.importModel(from: url, access: Self.scopedAccess) }
                 }
             if enabled {
                 if models.catalog.isEmpty && models.added.isEmpty {
@@ -39,7 +46,7 @@ struct MathRecognitionSettingsSection: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let why = models.importFailure {
-                    Text(verbatim: why).font(.caption).foregroundStyle(.red)
+                    Text(verbatim: MathModels.importFailureText(why)).font(.caption).foregroundStyle(.red)
                 }
             }
         } header: {

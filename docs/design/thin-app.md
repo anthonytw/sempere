@@ -904,6 +904,21 @@ type mapping stays), `DragTestSettings`' `NoteDragTestRun` (debug), and the app'
 sits in the views (the title-pattern field's validation is part 3). Each preference moves with its key so
 `SettingsSyncBridge` and the settings catalog read one definition.
 
+**Part 4 done (wave 6).** Moved to `Sources/SempereAppCore/Preferences/`, with Linux tests (`MathModelsTests`,
+`PreferencesTests`): `MathModels` (status, download, import, remove, choosing the model to read with; the
+`MathModelDownload` driver; `MathModelFetching`), `MathRecognitionPreference`, `AppTheme` and `NotePagesAppearance`
+(values, keys, storage), `EraserModeStorage` (the key and stored names, which the palette and settings sync both
+read), `RecordingPreference`, `TranscriptionPreference` (the engine choice, the engine rows and their states as typed
+values, the model status), and `NoteDragStyle`, `NoteDragDebug`, `NoteDragTestRun` and `RevealClicks` (the hidden drag
+diagnostics). What stays in the app, and why: `URLSessionModelFetcher` (the `URLSession` part of the download seam;
+`FoundationNetworking` is `SempereWebDAV`'s alone, and `MathModelFetchTests` stays with it), the Core ML loader and the
+`SEMPERE_DEBUG_MATH_MODEL` folder (platform), the PencilKit mapping of `EraserPreference`, `installSettingsHooks`,
+and every word (`*+Text`, the failure texts, the engine lines, the drag run labels). `SettingsView`'s own rows hold
+only layout and bindings, apart from the eraser row's name mapping, which now calls `EraserModeStorage`.
+`MathSettings` (the Handwritten Math section, listed above as moving) stays: it is the view, and its logic is `MathModels`.
+`AppSettingsStorage` (`SettingsSyncBridge.swift`) stays for now and moves in part 8, once parts 2 and 3 have landed
+(it reads their types).
+
 **Part 5: the recording session (about 400 lines).** `RecordingSession` (`AudioRecorder.swift` 212-488: the state
 machine of pause, resume, interruption and file layout) and `RecordingAssembly` (489-544), `RecordingError` and
 `NoteEditor+RecordingSession` (89), behind the existing `AudioCaptureBackend` protocol (11-30; `AVAudioCaptureBackend`,
@@ -926,7 +941,8 @@ CLI; the undo step (`NotebookMoveRecord`, `restoreNotebooks`) stays the app's. W
 (several notes, one unresolvable note writes nothing, `--none`) and a changelog fragment. Nothing else is left: the
 passphrase copy already has `recovery add-passphrase`, and the other model edits are one note at a time.
 
-**Part 8: the app's test target.** After parts 2 to 6 move the logic, sweep `SempereAppTests`: of its 143 files, 61
+**Part 8: the app's test target.** After parts 2 to 6 move the logic, `AppSettingsStorage` (`SettingsSyncBridge.swift`, the
+storage half of settings sync, which reads the types parts 2 and 3 move) moves with its `SettingsSyncAppTests`, and sweep `SempereAppTests`: of its 143 files, 61
 import none of UIKit, SwiftUI, PencilKit, AppKit, AVFoundation, CoreGraphics, PDFKit, Vision, ActivityKit, AppIntents,
 UserNotifications, Security, LocalAuthentication, ImageIO, CoreText, QuartzCore, Speech, SwiftMath,
 UniformTypeIdentifiers or Photos (the review counted 64 when UniformTypeIdentifiers, Security and

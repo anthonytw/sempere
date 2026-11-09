@@ -19,7 +19,7 @@ extension RecordingTranscriptionError {
 /// The language chosen in Settings wins over the note's.
 struct SpeechRecordingTranscriber: RecordingTranscribing {
     func transcribe(file: URL, recording: UUID, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript {
-        let options = SpeechTranscription.Options(language: TranscriptionPreference.language(), noteLanguage: noteLanguage,
+        let options = SpeechTranscription.Options(language: TranscriptionPreference.language(UserDefaults.standard), noteLanguage: noteLanguage,
                                                   allowModelDownload: allowModelDownload)
         do {
             return try await SpeechTranscription.transcribe(file: file, recording: recording, options: options)

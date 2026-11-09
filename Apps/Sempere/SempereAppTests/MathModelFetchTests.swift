@@ -23,6 +23,21 @@ final class StubModelServer: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
+/// Answers with headers and then nothing, so a fetch stays in flight until it is cancelled.
+final class HangingModelServer: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                                       headerFields: ["Content-Type": "application/octet-stream"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(repeating: 1, count: 16))
+    }
+
+    override func stopLoading() {}
+}
+
 /// `URLSessionModelFetcher` stops at the manifest's size: a server that sends
 /// more never fills the disk, and nothing it sent is left behind.
 @Suite(.serialized)
@@ -65,6 +80,20 @@ struct MathModelFetchTests {
         await #expect(throws: URLSessionModelFetcher.Failure.self) {
             _ = try await Self.fetcher().fetch(Self.url, maxBytes: 4_095)
         }
+        #expect(Self.leftovers().subtracting(before).isEmpty)
+    }
+
+    /// `MathModelDownload` (SempereAppCore) treats `CancellationError` as "cancelled, not failed": a cancelled
+    /// fetch must surface as that, whichever error URLSession ends the task with.
+    @Test func aCancelledFetchThrowsCancellationError() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [HangingModelServer.self]
+        let fetcher = URLSessionModelFetcher(session: URLSession(configuration: config))
+        let before = Self.leftovers()
+        let task = Task { try await fetcher.fetch(Self.url, maxBytes: 1_000_000) }
+        try await Task.sleep(for: .milliseconds(200))
+        task.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await task.value }
         #expect(Self.leftovers().subtracting(before).isEmpty)
     }
 }

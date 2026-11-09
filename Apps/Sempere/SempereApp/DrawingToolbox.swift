@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import PencilKit
 import Sempere
+import SempereAppCore
 import UIKit
 
 /// The drawing palette's one tool state (`DrawingToolState`), shared by every canvas of every window
@@ -188,11 +189,11 @@ final class DrawingToolbox {
     static let pixelEraserType = PKEraserTool.EraserType.fixedWidthBitmap
 
     static func pkEraserType(_ mode: EraserMode) -> PKEraserTool.EraserType {
-        mode == .pixel ? EraserPreference.pixelType : .vector
+        EraserPreference.type(of: mode)
     }
 
     static func eraserMode(from defaults: UserDefaults) -> EraserMode {
-        EraserPreference.isPixel(EraserPreference.load(from: defaults)) ? .pixel : .object
+        EraserModeStorage.load(from: defaults)
     }
 
     /// The user's Apple Pencil preference as the palette's action.

@@ -12,19 +12,7 @@ struct SettingsPolishTests {
     static let sfOK = E(engine: "apple-sfspeech-27.0", available: true, language: "tl-PH", detail: "on device; allowed")
     static let sfNo = E(engine: "apple-sfspeech-27.0", available: false, language: nil, detail: "language not supported")
 
-    @Test func speechTranscriberWinsWhereItSupportsTheLanguage() {
-        #expect(TranscriptionPreference.chosenEngine([Self.stOK, Self.sfOK]) == .speechTranscriber)
-        #expect(TranscriptionPreference.chosenEngine([Self.sfOK, Self.stOK]) == .speechTranscriber, "the order of the list does not matter")
-    }
-
-    @Test func sfSpeechIsTheFallback() {
-        #expect(TranscriptionPreference.chosenEngine([Self.stNo, Self.sfOK]) == .sfSpeech)
-        #expect(TranscriptionPreference.chosenEngine([Self.sfOK]) == .sfSpeech)
-    }
-
     @Test func noEngineWhenNeitherSupportsTheLanguage() {
-        #expect(TranscriptionPreference.chosenEngine([Self.stNo, Self.sfNo]) == nil)
-        #expect(TranscriptionPreference.chosenEngine([]) == nil)
         #expect(TranscriptionPreference.engineNote([Self.stNo, Self.sfNo]) == "No speech engine on this device can transcribe this language.")
     }
 

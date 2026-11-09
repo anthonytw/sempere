@@ -1,4 +1,5 @@
 import PencilKit
+import SempereAppCore
 import UIKit
 
 /// Settings ▸ Appearance ▸ Note Pages on a page's canvas (`NotePagesAppearance`).
@@ -33,7 +34,7 @@ extension PageCanvasHost {
 
     /// Whether this canvas's pages are shown dark now.
     var showsDarkPages: Bool {
-        NotePagesAppearance.load().isDark(appIsDark: traitCollection.userInterfaceStyle == .dark)
+        NotePagesAppearance.load(from: UserDefaults.standard).isDark(appIsDark: traitCollection.userInterfaceStyle == .dark)
     }
 
     func applyPageAppearance() {

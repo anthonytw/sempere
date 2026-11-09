@@ -13,7 +13,7 @@ extension NoteEditor {
 
     /// Starts recording into this note in `format` (the settings' by
     /// default). The caller asked for the microphone first.
-    func startRecording(format: RecordingFormat = RecordingPreference.format(), root: URL = RecordingSession.root,
+    func startRecording(format: RecordingFormat = RecordingPreference.format(UserDefaults.standard), root: URL = RecordingSession.root,
                         backend: AudioCaptureBackend? = nil, center: NotificationCenter = .default) throws {
         guard canEditItems else { throw RecordingError.notEditable }
         guard recordingSession?.isActive != true else { return }

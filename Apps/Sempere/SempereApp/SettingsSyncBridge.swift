@@ -15,10 +15,7 @@ struct AppSettingsStorage: SettingsSyncStorage {
         case "editor.defaultPaper": return try? JSONValue(encoding: PaperPreference.load(from: d))
         case "editor.defaultLayout": return .string(NewNoteLayout.load(from: d).rawValue)
         case "editor.compactPalette": return .bool(d.bool(forKey: ToolPalette.compactKey))
-        case "eraser.mode":
-            // `EraserPreference` stores PencilKit's type names; any pixel eraser is "pixel".
-            let name = d.string(forKey: EraserPreference.defaultsKey) ?? "object"
-            return .string(name == "pixel" || name == "pixelFixedWidth" ? "pixel" : "object")
+        case "eraser.mode": return .string(EraserModeStorage.syncedName(from: d))
         case "eraser.objectRadius": return .number(ObjectEraserSize.load(from: d))
         case "recording.codec": return .string(RecordingSettings.load(from: d).codec.rawValue)
         case "recording.bitRate": return .number(Double(RecordingSettings.load(from: d).bitRate))
@@ -53,7 +50,7 @@ struct AppSettingsStorage: SettingsSyncStorage {
             case ("editor.defaultPaper", _): if let p = try? value.decode(Paper.self) { PaperPreference.save(p, to: d) }
             case ("editor.defaultLayout", .string(let s)): if let l = NewNoteLayout(rawValue: s) { NewNoteLayout.save(l, to: d) }
             case ("editor.compactPalette", .bool(let b)): d.set(b, forKey: ToolPalette.compactKey)
-            case ("eraser.mode", .string(let s)): d.set(s == "pixel" ? "pixelFixedWidth" : "object", forKey: EraserPreference.defaultsKey)
+            case ("eraser.mode", .string(let s)): EraserModeStorage.store(syncedName: s, in: d)
             case ("eraser.objectRadius", .number(let r)): ObjectEraserSize.save(r, to: d)
             case ("recording.codec", .string(let s)):
                 if let c = RecordingSettings.Codec(rawValue: s) { recording.codec = c; recordingChanged = true }

@@ -223,7 +223,7 @@ private struct GeneralSettings: View {
 /// Tool choices the editor also changes (its eraser and palette menus), here so
 /// that each can be kept on this device when settings sync (docs/settings-sync.md §5).
 private struct EditorSettingsSection: View {
-    @AppStorage(EraserPreference.defaultsKey) private var eraserName = "object"
+    @AppStorage(EraserModeStorage.key) private var eraserName = EraserModeStorage.objectName
     @AppStorage(ObjectEraserSize.defaultsKey) private var eraserRadius = ObjectEraserSize.defaultRadius
     @AppStorage(ToolPalette.compactKey) private var paletteCompact = false
     @AppStorage(MouseSmoothing.key) private var mouseSmoothing = MouseSmoothing.defaultLevel
@@ -231,10 +231,10 @@ private struct EditorSettingsSection: View {
     var body: some View {
         Section {
             Picker("Eraser", selection: Binding(
-                get: { eraserName == "pixel" || eraserName == "pixelFixedWidth" ? "pixel" : "object" },
-                set: { eraserName = $0 == "pixel" ? "pixelFixedWidth" : "object" })) {
-                Text("Object Eraser").tag("object")
-                Text("Pixel Eraser").tag("pixel")
+                get: { EraserModeStorage.mode(named: eraserName) == .pixel ? EraserModeStorage.syncedPixelName : EraserModeStorage.objectName },
+                set: { eraserName = EraserModeStorage.name(of: EraserModeStorage.mode(named: $0) ?? .object) })) {
+                Text("Object Eraser").tag(EraserModeStorage.objectName)
+                Text("Pixel Eraser").tag(EraserModeStorage.syncedPixelName)
             }
             .syncedSetting("eraser.mode")
             Picker("Object Eraser Size", selection: $eraserRadius) {

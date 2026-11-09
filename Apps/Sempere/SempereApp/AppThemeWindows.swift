@@ -1,4 +1,5 @@
 import SwiftUI
+import SempereAppCore
 import UIKit
 
 extension AppTheme {

@@ -3,22 +3,7 @@ import SwiftUI
 import UIKit
 import SempereAppCore
 
-/// How a row of the note list starts its drag (`NoteDragOut`).
-///
-/// TestFlight build 8, bug 7: on a Mac a note dragged to the Finder makes no file, and XCUITest's synthetic
-/// pointer drops nothing into the Finder even for controls (a UI test of it was deleted), so the drag is
-/// checked by hand with the `drag` log (`DragLog`). Hidden switches (`NoteDragDebug`, Mac only, any build,
-/// set in Settings ▸ About's hidden Drag Diagnostics, `DragTestSection`; docs/mac.md "Debugging a drag out")
-/// pick the style and two experiments; the iPad always uses `onDrag`.
-enum NoteDragStyle: String, CaseIterable, Sendable {
-    /// SwiftUI's `onDrag` on the row: the list's collection view runs the session (no end reported).
-    case onDrag
-    /// A `UIDragInteraction` on a clear view over the row (as notebook rows have, `NotebookDragSource`): its
-    /// delegate sees the whole session, down to the operation the destination chose.
-    case uikit
-
-    static let shipped: NoteDragStyle = .onDrag
-
+extension NoteDragStyle {
     /// The style rows use: `NoteDragDebug.style` on a Mac, else `shipped`. Read once per launch (rows read
     /// it in every body), so a changed default takes effect at the next launch; the launch's `config` line
     /// names it.
@@ -31,34 +16,15 @@ enum NoteDragStyle: String, CaseIterable, Sendable {
     }()
 }
 
-/// The hidden drag switches (bug 7), read from `UserDefaults` when a row is built (the style) and when a
-/// drag begins (the experiments). Set from Settings ▸ About's hidden Drag Diagnostics (`NoteDragTestRun`), never synced. In debug builds the environment
-/// (`SEMPERE_DEBUG_NOTE_DRAG`, `SEMPERE_DEBUG_DRAG_CONTROL`, `SEMPERE_DEBUG_DRAG_FILE_ONLY`) overrides them.
-struct NoteDragDebug: Equatable, Sendable {
-    /// `onDrag` or `uikit`; unset or unknown: `NoteDragStyle.shipped`.
-    static let styleKey = "Sempere.debug.noteDragStyle"
-    /// Drag a small text file written when the drag begins instead of the note (a control).
-    static let controlKey = "Sempere.debug.noteDragControl"
-    /// Leave the in-app payload off the drag: the file only.
-    static let fileOnlyKey = "Sempere.debug.noteDragFileOnly"
-
-    var style: NoteDragStyle?
-    var control = false
-    var fileOnly = false
-
+extension NoteDragDebug {
     /// The switches in `defaults`; in debug builds overridden by `environment` (the process's when nil).
     /// Release builds never read the environment.
     static func load(from defaults: UserDefaults = .standard, environment: [String: String]? = nil) -> NoteDragDebug {
-        var debug = NoteDragDebug(style: defaults.string(forKey: styleKey).flatMap(NoteDragStyle.init(rawValue:)),
-                                  control: defaults.bool(forKey: controlKey),
-                                  fileOnly: defaults.bool(forKey: fileOnlyKey))
         #if DEBUG
-        let environment = environment ?? ProcessInfo.processInfo.environment
-        if let v = environment["SEMPERE_DEBUG_NOTE_DRAG"], let s = NoteDragStyle(rawValue: v) { debug.style = s }
-        if environment["SEMPERE_DEBUG_DRAG_CONTROL"] != nil { debug.control = true }
-        if environment["SEMPERE_DEBUG_DRAG_FILE_ONLY"] != nil { debug.fileOnly = true }
+        return read(from: defaults, environment: environment ?? ProcessInfo.processInfo.environment)
+        #else
+        return read(from: defaults, environment: [:])
         #endif
-        return debug
     }
 }
 

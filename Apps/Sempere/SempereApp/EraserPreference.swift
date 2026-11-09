@@ -1,15 +1,14 @@
 import Foundation
 import PencilKit
+import SempereAppCore
+import Sempere
 
-/// The eraser mode, remembered across canvases and launches in `UserDefaults` (and synced as the
-/// setting `eraser.mode`). The palette's eraser (`DrawingToolbox`) reads and writes it: object (the
-/// app's sized object eraser, `ObjectEraser.swift`) or pixel (PencilKit's).
-///
-/// The stored names are PencilKit's types ("object", "pixel", "pixelFixedWidth"), from when PencilKit's
-/// `PKToolPicker` held the eraser; any pixel type reads as the one pixel mode (`canonical`).
+/// The eraser mode as PencilKit's types: the palette's eraser (`DrawingToolbox`) reads and writes it: object
+/// (the app's sized object eraser, `ObjectEraser.swift`) or pixel (PencilKit's). Where it is kept, under which
+/// key and names, is `EraserModeStorage` (SempereAppCore), which settings sync reads too.
 enum EraserPreference {
-    /// `UserDefaults` key holding the last-used eraser mode.
-    static let defaultsKey = "Sempere.eraserType"
+    /// The key holding the last-used eraser mode.
+    static var defaultsKey: String { EraserModeStorage.key }
     /// The mode a canvas starts with when nothing is stored.
     static var defaultType: PKEraserTool.EraserType { .vector }
 
@@ -24,33 +23,20 @@ enum EraserPreference {
         isPixel(type) ? pixelType : .vector
     }
 
+    /// PencilKit's type for `mode`.
+    static func type(of mode: EraserMode) -> PKEraserTool.EraserType { mode == .pixel ? pixelType : .vector }
+
+    /// The mode `type` is.
+    static func mode(of type: PKEraserTool.EraserType) -> EraserMode { isPixel(type) ? .pixel : .object }
+
     /// The stored eraser mode (`.vector` or `pixelType`), or `defaultType`.
-    static func load(from defaults: UserDefaults = .standard) -> PKEraserTool.EraserType {
-        defaults.string(forKey: defaultsKey).flatMap(type(named:)).map(canonical) ?? defaultType
+    static func load(from defaults: any KeyValueStore = UserDefaults.standard) -> PKEraserTool.EraserType {
+        type(of: EraserModeStorage.load(from: defaults))
     }
 
     /// Remembers `type`'s mode (object or pixel) as the last-used eraser mode.
-    static func save(_ type: PKEraserTool.EraserType, to defaults: UserDefaults = .standard) {
-        defaults.set(name(of: canonical(type)), forKey: defaultsKey)
-    }
-
-    /// Stable names for the stored value (the raw values are not API).
-    static func name(of type: PKEraserTool.EraserType) -> String {
-        switch type {
-        case .vector: return "object"
-        case .bitmap: return "pixel"
-        case .fixedWidthBitmap: return "pixelFixedWidth"
-        @unknown default: return "object"
-        }
-    }
-
-    static func type(named name: String) -> PKEraserTool.EraserType? {
-        switch name {
-        case "object": return .vector
-        case "pixel": return .bitmap
-        case "pixelFixedWidth": return .fixedWidthBitmap
-        default: return nil
-        }
+    static func save(_ type: PKEraserTool.EraserType, to defaults: any KeyValueStore = UserDefaults.standard) {
+        EraserModeStorage.save(mode(of: type), to: defaults)
     }
 
     /// The eraser mode of `tool`, if it is an eraser.

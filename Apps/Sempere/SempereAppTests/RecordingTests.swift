@@ -371,57 +371,6 @@ struct RecordingTests {
 
     // MARK: - Settings and export
 
-    @Test func recordingSettingsDefaultAndRoundTrip() throws {
-        let defaults = try #require(TestDefaults.suite("rec-\(UUID().uuidString)"))
-        #expect(RecordingPreference.format(defaults) == .default)
-        RecordingPreference.save(RecordingFormat(codec: .heAAC, bitRate: 24_000, sampleRate: 44_100, channels: 2), defaults)
-        #expect(RecordingPreference.format(defaults) == RecordingFormat(codec: .heAAC, bitRate: 24_000, sampleRate: 44_100, channels: 2))
-        defaults.set(12_345, forKey: RecordingPreference.sampleRateKey)
-        defaults.set("opus", forKey: RecordingPreference.codecKey)
-        #expect(RecordingPreference.format(defaults).sampleRate == 48_000)
-        #expect(RecordingPreference.format(defaults).codec == .aac)
-        #expect(TranscriptionPreference.isOn(defaults) == false, "transcription is opt-in")
-    }
-
-    /// The Settings panel (`RecordingSettings`, `TranscriptionSettings`) is
-    /// the one place these are chosen: every choice it offers is what is
-    /// recorded, and its transcription switch and language are what is used.
-    @Test func theSettingsPanelsChoicesAreWhatIsUsed() throws {
-        let d = try #require(TestDefaults.suite("rec-\(UUID().uuidString)"))
-        RecordingSettings(codec: .heAAC, bitRate: 64_000, sampleRate: 32_000, channels: .stereo).save(to: d)
-        #expect(RecordingPreference.format(d) == RecordingFormat(codec: .heAAC, bitRate: 64_000, sampleRate: 32_000, channels: 2))
-        RecordingSettings(codec: .aacLC, bitRate: 24_000, sampleRate: 22_050).save(to: d)
-        #expect(RecordingPreference.format(d) == RecordingFormat(codec: .aac, bitRate: 24_000, sampleRate: 22_050, channels: 1))
-        RecordingSettings(codec: .appleLossless, sampleRate: 16_000).save(to: d)
-        #expect(RecordingPreference.format(d) == RecordingFormat(codec: .alac, bitRate: nil, sampleRate: 16_000, channels: 1))
-        for codec in RecordingSettings.Codec.allCases {
-            for rate in RecordingSettings.bitRates(for: codec) {
-                for sampleRate in RecordingSettings.sampleRates(for: codec) {
-                    RecordingSettings(codec: codec, bitRate: rate, sampleRate: sampleRate).save(to: d)
-                    let f = RecordingPreference.format(d)
-                    #expect(f.codec.rawValue == codec.rawValue)
-                    #expect(f.bitRate == rate, "\(codec) \(rate)")
-                    #expect(f.sampleRate == sampleRate, "\(codec) \(sampleRate)")
-                }
-            }
-        }
-        #expect(!TranscriptionPreference.isOn(d))
-        TranscriptionSettings.setEnabled(true, in: d)
-        TranscriptionSettings.setLocaleIdentifier("es-MX", in: d)
-        #expect(TranscriptionPreference.isOn(d))
-        #expect(TranscriptionPreference.language(d) == "es-MX")
-    }
-
-    @Test func settingsShowWhatTheSpeechEnginesSay() {
-        typealias E = SpeechTranscription.EngineStatus
-        let none = E(engine: "a", available: false, language: nil, detail: "language not supported")
-        let missing = E(engine: "b", available: true, language: "en-US", detail: "model not installed (downloaded on first use)")
-        let ready = E(engine: "c", available: true, language: "en-US", detail: "model installed")
-        #expect(TranscriptionPreference.modelStatus([none]) == .unavailable)
-        #expect(TranscriptionPreference.modelStatus([missing, none]) == .notDownloaded)
-        #expect(TranscriptionPreference.modelStatus([missing, ready]) == .installed)
-    }
-
     /// The panel names the engine transcription would use and says what each engine reports.
     @Test func settingsListTheEnginesAndWhichOneIsUsed() {
         typealias E = SpeechTranscription.EngineStatus
@@ -445,8 +394,7 @@ struct RecordingTests {
                                                                           detail: "on device; allowed")])
         #expect(fallback.map(\.isUsed) == [false, true], "when SpeechTranscriber cannot, SFSpeechRecognizer is used")
         #expect(fallback[1].state == "Available, permission granted")
-        #expect(TranscriptionPreference.engineState(E(engine: "apple-speechtranscriber-26.7", available: true, language: "en-US",
-                                                      detail: "model installed")) == "Available, language model installed")
+        #expect(TranscriptionPreference.engineState(.availableModelInstalled) == "Available, language model installed")
         #expect(TranscriptionPreference.engineLines([]).isEmpty)
     }
 

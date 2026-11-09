@@ -39,28 +39,11 @@ struct AppearanceSettingsTests {
 
     // MARK: - Theme and Note Pages
 
-    @Test func themeDefaultsToTheSystemAndRoundTrips() {
-        let d = scratch()
-        #expect(AppTheme.load(from: d) == .system)
-        AppTheme.save(.dark, to: d)
-        #expect(AppTheme.load(from: d) == .dark)
-        d.set("sepia", forKey: AppTheme.key)
-        #expect(AppTheme.load(from: d) == .system, "an unknown value is the default")
+    @Test func theThemeMapsToTheWindowStyle() {
         #expect(AppTheme.system.userInterfaceStyle == .unspecified)
         #expect(AppTheme.light.userInterfaceStyle == .light)
         #expect(AppTheme.dark.userInterfaceStyle == .dark)
-    }
-
-    @Test func notePagesAreLightUnlessChosen() {
-        let d = scratch()
-        #expect(NotePagesAppearance.load(from: d) == .light)
-        for appIsDark in [false, true] {
-            #expect(!NotePagesAppearance.light.isDark(appIsDark: appIsDark))
-            #expect(NotePagesAppearance.dark.isDark(appIsDark: appIsDark))
-            #expect(NotePagesAppearance.matchApp.isDark(appIsDark: appIsDark) == appIsDark)
-        }
-        NotePagesAppearance.save(.matchApp, to: d)
-        #expect(NotePagesAppearance.load(from: d) == .matchApp)
+        #expect(!AppTheme.allCases.contains { $0.title.isEmpty } && !NotePagesAppearance.allCases.contains { $0.title.isEmpty })
     }
 
     /// Every new setting syncs through the bridge, read and written back.

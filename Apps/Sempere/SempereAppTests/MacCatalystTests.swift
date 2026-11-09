@@ -238,61 +238,6 @@ struct MacDragOutTests {
         #expect(DragLog.classify(NoteFileDrag.DragError.timedOut).contains("DragError"))
     }
 
-    @Test func eachDragTestRunWritesItsSwitchesAndOffRemovesThem() throws {
-        let name = "drag-runs-\(UUID().uuidString)"
-        let defaults = try #require(TestDefaults.suite(name))
-        defer { TestDefaults.remove(name) }
-        for run in NoteDragTestRun.allCases {
-            run.apply(to: defaults)
-            let read = NoteDragDebug.load(from: defaults, environment: [:])
-            #expect(read == run.switches, "\(run)")
-            #expect(NoteDragTestRun.matching(read) == run)
-        }
-        NoteDragTestRun.off.apply(to: defaults)
-        #expect(defaults.object(forKey: NoteDragDebug.styleKey) == nil)
-        #expect(defaults.object(forKey: NoteDragDebug.controlKey) == nil)
-        #expect(defaults.object(forKey: NoteDragDebug.fileOnlyKey) == nil)
-    }
-
-    @Test func switchesNoRunSetsAreClearedSoOffWorks() throws {
-        let name = "drag-unmatched-\(UUID().uuidString)"
-        let defaults = try #require(TestDefaults.suite(name))
-        defer { TestDefaults.remove(name) }
-        defaults.set("uikit", forKey: NoteDragDebug.styleKey)
-        defaults.set(true, forKey: NoteDragDebug.controlKey)   // uikit + control: no run sets this
-        #expect(NoteDragTestRun.matching(NoteDragDebug.load(from: defaults, environment: [:])) == nil)
-        #expect(NoteDragTestRun.settled(in: defaults) == .off)
-        #expect(defaults.object(forKey: NoteDragDebug.styleKey) == nil)
-        #expect(defaults.object(forKey: NoteDragDebug.controlKey) == nil)
-        NoteDragTestRun.b.apply(to: defaults)
-        #expect(NoteDragTestRun.settled(in: defaults) == .b, "a run's own switches stay")
-    }
-
-    @Test func fiveQuickClicksOrAnOptionClickRevealTheDiagnostics() {
-        let t0 = Date(timeIntervalSince1970: 1000)
-        var clicks = RevealClicks()
-        let option = clicks.click(at: t0, option: true)
-        #expect(option)
-        let quick = (0..<5).map { clicks.click(at: t0.addingTimeInterval(10 + Double($0) * 0.3), option: false) }
-        #expect(quick == [false, false, false, false, true])
-        let slow = (0..<5).map { clicks.click(at: t0.addingTimeInterval(100 + Double($0) * 2), option: false) }
-        #expect(!slow.contains(true), "clicks far apart start the count again")
-    }
-
-    @Test func notesDragAsShippedUnlessTheHiddenDefaultsSayOtherwise() throws {
-        #expect(NoteDragStyle.shipped == .onDrag)
-        let name = "drag-debug-\(UUID().uuidString)"
-        let defaults = try #require(TestDefaults.suite(name))
-        defer { TestDefaults.remove(name) }
-        #expect(NoteDragDebug.load(from: defaults, environment: [:]) == NoteDragDebug())
-        defaults.set("uikit", forKey: NoteDragDebug.styleKey)
-        defaults.set(true, forKey: NoteDragDebug.controlKey)
-        defaults.set(true, forKey: NoteDragDebug.fileOnlyKey)
-        #expect(NoteDragDebug.load(from: defaults, environment: [:]) == NoteDragDebug(style: .uikit, control: true, fileOnly: true))
-        defaults.set("sideways", forKey: NoteDragDebug.styleKey)
-        #expect(NoteDragDebug.load(from: defaults, environment: [:]).style == nil, "an unknown style is the shipped one")
-    }
-
     @Test func droppedFilesAreNamedAfterTheTitle() {
         #expect(NoteFileDrag.suggestedName(title: "Lab: week 3/4") == "Lab week 3 4")
         #expect(NoteFileDrag.suggestedName(title: "") == "Untitled")

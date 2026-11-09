@@ -158,7 +158,7 @@ final class AppCaptureAudio: CaptureAudio {
 
     func requestMicrophone() async -> Bool { await microphoneAllowed() }
     var microphonePermission: String { permission() }
-    var preferredFormat: RecordingFormat { RecordingPreference.format() }
+    var preferredFormat: RecordingFormat { RecordingPreference.format(UserDefaults.standard) }
     func makeRecorder() -> any CaptureRecorder { AppCaptureRecorder(backend: backend(), center: center) }
 
     /// `AVAudioApplication`'s record permission, named for the diagnostics.
