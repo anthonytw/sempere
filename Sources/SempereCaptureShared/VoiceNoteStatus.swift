@@ -83,8 +83,7 @@ public struct VoiceNoteStatus: Codable, Equatable, Sendable {
         return live.action
     }
 
-    /// An SF Symbol (system symbols only: no asset catalog to read, which a
-    /// Lock Screen widget may not be able to before the first unlock).
+    /// The SF Symbol of the phase (the ready phase's `glyph` is the nib instead; this is its fallback).
     public var symbol: String {
         switch phase {
         case .ready: return "mic.fill"
@@ -92,6 +91,13 @@ public struct VoiceNoteStatus: Codable, Equatable, Sendable {
         case .saving: return "arrow.down.doc.fill"
         case .notSetUp, .liveActivitiesOff: return "mic.slash.fill"
         }
+    }
+
+    /// What the widgets and the control draw: the nib when ready, a system symbol otherwise. The nib is a template
+    /// image in the widget extension's OWN asset catalog (bundle files read fine before the first unlock; the App
+    /// Group's container may not).
+    public var glyph: VoiceNoteGlyph {
+        phase == .ready ? .custom(VoiceNoteGlyph.nibName) : .system(symbol)
     }
 
     /// Whether the control shows as "on" (tinted).
@@ -230,4 +236,13 @@ public struct VoiceNoteStatusStore: Sendable {
         #endif
         return true
     }
+}
+
+/// An image a widget draws: an SF Symbol, or a template image of the widget extension's asset catalog.
+public enum VoiceNoteGlyph: Equatable, Sendable {
+    case system(String)
+    case custom(String)
+
+    /// The nib's name in the widget extension's asset catalog (`SempereWidgets/Assets.xcassets`).
+    public static let nibName = "SempereNib"
 }
