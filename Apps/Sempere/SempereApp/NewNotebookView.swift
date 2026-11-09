@@ -1,13 +1,6 @@
 import Sempere
+import SempereAppCore
 import SwiftUI
-
-/// What opens the New Notebook sheet: File ▸ New Notebook… (⌃⌘N), the sidebar's
-/// New Notebook button and the notebook rows' New Notebook Inside….
-struct NewNotebookRequest: Identifiable, Equatable {
-    let id = UUID()
-    /// The notebook the new one goes into; nil: the top level.
-    var parent: String?
-}
 
 /// Names a new, empty notebook (format.md §14): one notebook record, kept while
 /// no note is in it. `/` makes levels; the field starts inside `request.parent`.

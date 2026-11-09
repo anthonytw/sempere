@@ -117,10 +117,10 @@ Stop is pressed on a Live Activity whose recording the process does not have. Th
 
 ## Delivery and queueing
 
-The sealed files are written to `<vault>/inbox/` through the vault's bookmark,
-as a coordinated write in iCloud Drive. iCloud Drive accepts writes offline
-and uploads them later. When the folder cannot be reached (the bookmark is
-stale, the folder was moved, it is another vault), the files go to a local
+The sealed files are written to `<vault>/inbox/` of the vault's in-app copy, found by the
+vault's id in the store (`CaptureDelivery.vaultFolder`; the stored profile keeps no folder:
+a profile of 1.0.0 has a bookmark that nothing reads, and decoding ignores it). When there is
+no copy (the vault was removed from this device, or it is another vault), the files go to a local
 queue (`Application Support/Sempere/CaptureQueue/<vaultId>/`, already
 encrypted). They move into the vault when the app becomes active and when
 the vault opens. A vault whose `vault.json` says it was written by a newer

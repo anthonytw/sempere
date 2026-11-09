@@ -5,8 +5,8 @@ import TempDirSupport
 import Testing
 
 extension AppModelSuites {
-    /// The Settings panel (docs/attachments.md §15): the settings' wording and the behavior each one drives in
-    /// the app. Their defaults, choices and storage: `DeviceSettingsTests` (SempereAppCoreTests).
+    /// The Settings panel (docs/attachments.md §15): the behavior each setting drives.
+    /// Their defaults, choices and storage: `DeviceSettingsTests` (SempereAppCoreTests).
     @MainActor
     @Suite(.serialized)
     struct SettingsTests {

@@ -16,7 +16,7 @@ final class RecordingNotifier: BackupNotifying {
 
 extension AppModelSuites {
     /// Settings sync through the vault (`AppModel+SettingsSync`, docs/settings-sync.md; wave 5b part 3, moved from
-    /// the app's `SettingsSyncAppTests`, which keeps the app's `UserDefaults` mapping): the model's passes against a
+    /// the app's `AppSettingsStorageTests`, which keeps the app's `UserDefaults` mapping): the model's passes against a
     /// copy of the fixture vault, this device's values in memory (`StoredSettingsSyncStorage`). The rules themselves
     /// are `SettingsSyncStateTests` and `SharedSettingsTests` (SempereTests).
     @MainActor
@@ -195,7 +195,6 @@ extension AppModelSuites {
             let device = try model.deviceClockForWriting().device
             let profile = try vault.captureProfile(device: device)
             try model.quickCapture.store.save(StoredCaptureProfile(profile: profile, vaultName: "sample",
-                                                                   bookmark: try PathBookmarks().bookmark(for: url),
                                                                    transcribe: true))
             #expect(model.currentSettingsValues()["appearance.icon"] == .string("keyholeNib"))
             model.applySharedSettings(["handwriting.recognize": .bool(false), "search.transcripts": .bool(false),

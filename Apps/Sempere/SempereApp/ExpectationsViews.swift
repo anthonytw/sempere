@@ -6,22 +6,6 @@ import SwiftUI
 // About screen and the Settings ▸ About section, and the window modifier
 // that shows them (from the menus, and by themselves once).
 
-/// A notice or screen a window shows as a sheet (`WindowUI.expectations`).
-enum ExpectationsSheet: Identifiable, Hashable {
-    case about
-    /// `firstRun`: shown by itself (`OnboardingPolicy`), not asked for.
-    case tour(firstRun: Bool)
-    case keyNotice(firstRun: Bool)
-
-    var id: String {
-        switch self {
-        case .about: return "about"
-        case .tour(let first): return "tour-\(first)"
-        case .keyNotice(let first): return "keyNotice-\(first)"
-        }
-    }
-}
-
 /// Sheets that must not be covered by a notice that shows by itself (the
 /// new-vault sheet: its key receipt comes first). Counted, so nested holders work.
 @MainActor

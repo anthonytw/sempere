@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import SempereAppCore
 
-/// The iPhone is a reader: the three-column split view collapses into one
+/// The iPhone shows one column at a time: the three-column split view collapses into one
 /// stack (vault, notebooks and tags, note list, note), and a note opens
 /// read-first. Everything here is gated on `Platform.isPhone`; the iPad and
 /// the Mac keep their layouts. The decisions are plain values so tests can
