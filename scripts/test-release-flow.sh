@@ -10,6 +10,9 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_CO
 export SEMPERE_TAG_SIGN=false
 # The release scripts run on a Mac, where `shasum` and `curl` exist; the Linux CI image has neither (shims for file:// only).
 mkdir -p "$t/bin"; export PATH="$t/bin:$PATH"
+# A stub gh, so no test reaches the network or a real login: `release view` fails (no such release) unless GH_EXISTS=1.
+printf '#!/bin/sh\n[ "$1 $2" = "release view" ] && [ -n "$GH_EXISTS" ] && exit 0\n[ "$1 $2" = "release view" ] && exit 1\necho "stub gh: $*" >> "$STUB_GH_LOG"\n' > "$t/bin/gh"; chmod +x "$t/bin/gh"
+export SEMPERE_RELEASE_REPO=example/none STUB_GH_LOG="$t/gh.log"
 command -v shasum >/dev/null || { printf '#!/bin/sh\nshift 2\nexec sha256sum "$@"\n' > "$t/bin/shasum"; chmod +x "$t/bin/shasum"; }
 command -v curl >/dev/null || { printf '#!/bin/sh\nwhile [ "$1" != -o ]; do shift; done; out=$2; url=$3; exec cp "${url#file://}" "$out"\n' > "$t/bin/curl"; chmod +x "$t/bin/curl"; }
 git init -q --bare "$t/github.git"
@@ -46,23 +49,40 @@ tarballs() {
 }
 tarballs
 scripts/changelog-section.sh 1.2.3 > $d/notes.md
+git rev-parse v1.2.3^{commit} > $d/COMMIT
 (cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS)
 run scripts/release-publish.sh 1.2.3
-check "publish prints the gh command and publishes nothing" '[[ $rc == 0 && $out == *"gh release create v1.2.3 --repo anthonytw/sempere --verify-tag"* && $out == *"just formula 1.2.3"* ]]'
+check "publish prints the gh command and publishes nothing" '[[ $rc == 0 && $out == *"gh release create v1.2.3 --repo example/none --verify-tag"* && $out == *"just formula 1.2.3"* ]]'
 check "no squash machinery is left" '[[ ! -e $src/scripts/release-github.sh && $out != *squash* ]]'
+run env GH_EXISTS=1 scripts/release-publish.sh 1.2.3; check "print mode refuses a Release that exists" '[[ $rc != 0 && $out == *"already exists"* ]]'
 run scripts/release-publish.sh 1.2.3-rc.1; check "an unknown tag is refused" '[[ $rc != 0 && $out == *"no tag v1.2.3-rc.1"* ]]'
 echo tampered >> $d/sempere-1.2.3-linux-x86_64.tar.gz
 run scripts/release-publish.sh 1.2.3; check "publish refuses files that do not match SHA256SUMS" '[[ $rc != 0 && $out == *"does not match"* ]]'
+tarballs   # restore the files the sums were made from
 git checkout -q side; git tag -a v9.9.9 -m x; git push -q origin refs/tags/v9.9.9 2>/dev/null; git tag -d v9.9.9 >/dev/null; git tag -a v9.9.9 -m y main
 run scripts/release-publish.sh 9.9.9; check "publish refuses a tag that differs from GitHub's" '[[ $rc != 0 && $out == *"binaries must come from the pushed tag"* ]]'
 git checkout -q main
-run scripts/release-publish.sh --publish 1.2.3; check "--publish needs a terminal" '[[ $rc != 0 ]]'
+run scripts/release-publish.sh --publish 1.2.3; check "--publish needs a terminal" '[[ $rc != 0 && $out == *"on a terminal"* ]]'
+run scripts/release-publish.sh 1.2.3 --publish; check "--publish works after the version too" '[[ $rc != 0 && $out == *"on a terminal"* ]]'
+check "no gh release create was run" '[[ ! -f $STUB_GH_LOG ]] || ! grep -q create "$STUB_GH_LOG"'
+
+# Tagged again after the build: the pushed tag is no longer what was built, and publish and verify refuse.
+git checkout -q -b retag main; git commit -q --allow-empty -m "after the build"; git push -q origin retag
+git tag -d v1.2.3 >/dev/null; git tag -a v1.2.3 -m again retag; git push -q -f origin refs/tags/v1.2.3
+run scripts/release-publish.sh 1.2.3; check "publish refuses a build from another commit than the tag" '[[ $rc != 0 && $out == *"was built from"* ]]'
+git tag -d v1.2.3 >/dev/null; git tag -a v1.2.3 -m orig "$(cat $d/COMMIT)"; git push -q -f origin refs/tags/v1.2.3; git checkout -q main
+echo extra > $d/sempere-1.2.3-extra.tar.gz
+run scripts/release-publish.sh 1.2.3; check "publish refuses a tarball missing from SHA256SUMS" '[[ $rc != 0 && $out == *"not in SHA256SUMS"* ]]'
+rm $d/sempere-1.2.3-extra.tar.gz
 
 # release-verify: GitHub's tag against this checkout, and the Gitea mirror when a `gitea` remote exists.
 git init -q --bare "$t/gitea.git"; git remote add gitea "$t/gitea.git"
 tarballs; (cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS)
 mkdir -p "$t/dl/releases/download/v1.2.3"; cp $d/* "$t/dl/releases/download/v1.2.3/"
 export SEMPERE_RELEASE_URL="file://$t/dl"
+cp $d/COMMIT $t/COMMIT.bak; git rev-parse retag > $d/COMMIT
+run scripts/release-verify.sh 1.2.3; check "verify refuses a local build of another commit" '[[ $rc != 0 && $out == *"local build is of"* ]]'
+cp $t/COMMIT.bak $d/COMMIT
 run scripts/release-verify.sh 1.2.3; check "verify warns while the mirror lacks the tag" '[[ $rc == 0 && $out == *"ok    GitHub'"'"'s v1.2.3"* && $out == *"warn  the Gitea mirror has"* ]]'
 git push -q gitea refs/tags/v1.2.3 refs/heads/main
 run scripts/release-verify.sh 1.2.3; check "verify sees the mirror's tag" '[[ $rc == 0 && $out == *"the Gitea mirror has v1.2.3 at the same commit"* ]]'

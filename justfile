@@ -100,8 +100,8 @@ release-build VERSION:
     scripts/release-build.sh {{VERSION}}
 
 # The GitHub Release for vVERSION from the local build: checks the pushed tag, prints the `gh release create` command (--publish runs it)
-release-publish VERSION *FLAGS:
-    scripts/release-publish.sh {{FLAGS}} {{VERSION}}
+release-publish *ARGS:
+    scripts/release-publish.sh {{ARGS}}
 
 # Check a published release: GitHub's tag is the built commit, the Gitea mirror has it, the assets match SHA256SUMS (and the local build)
 release-verify VERSION:

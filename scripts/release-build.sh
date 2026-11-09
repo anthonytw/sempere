@@ -32,6 +32,7 @@ command -v docker >/dev/null || die "Docker is needed for the Linux builds"
 out=$repo/build/release/$tag
 src=$repo/build/release/$tag-src
 rm -rf "$out"; mkdir -p "$out"
+echo "$sha" > "$out/COMMIT"   # what release-publish and release-verify compare the pushed tag with
 
 step "checks on $(git log --oneline -1 "$sha")"
 if line=$(scripts/release-sweep-check.sh "$sha"); then echo "$line"

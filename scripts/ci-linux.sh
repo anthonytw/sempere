@@ -114,7 +114,8 @@ job_test() {
 removable_importers() {
   local plan; plan=$(mktemp)
   python3 scripts/ci-hash.py plan --job linux-removable --out "$plan" CLITests
-  if [[ $(python3 scripts/ci-hash.py runs "$plan" | wc -l) -eq 0 ]]; then
+  local n; n=$(python3 scripts/ci-hash.py runs "$plan" | wc -l)   # assigned first: a crash of `runs` fails here, never reads as "skip"
+  if [[ $n -eq 0 ]]; then
     scripts/check-importer-isolation.sh
     echo "ci-linux: removable-importers build skipped: CLITests passed without the module with its current hash (line above names the commit)"
     return 0
@@ -130,7 +131,8 @@ job_webdav() {
   # The job runs the tests whose name says Wsgidav, which live in these two targets (docs/ci.md "What runs when").
   local plan; plan=$(mktemp)
   python3 scripts/ci-hash.py plan --job linux-webdav --out "$plan" SempereWebDAVTests CLITests
-  if [[ $(python3 scripts/ci-hash.py runs "$plan" | wc -l) -eq 0 ]]; then
+  local n; n=$(python3 scripts/ci-hash.py runs "$plan" | wc -l)
+  if [[ $n -eq 0 ]]; then
     echo "ci-linux: the WebDAV job skipped: both of its targets passed with their current hash (lines above name the commits)"
     return 0
   fi

@@ -63,8 +63,9 @@ JOB_FILES = {
     "mac-package": COMMON + ["scripts/ci-mac-package.sh", "scripts/test-runner.py"],
     # check-removable-importers.sh: build every target without the Notability module, run CLITests. Planned for the one target
     # CLITests (its closure and the built CLI); check-importer-isolation.sh, which the first script runs, is the other input.
-    # ci-linux.sh always runs the isolation check itself, even when this job is skipped (it greps every .swift file).
-    "linux-removable": COMMON + ["scripts/check-removable-importers.sh", "scripts/check-importer-isolation.sh"],
+    # ci-linux.sh always runs the isolation check itself, even when this job is skipped (it greps every .swift file), and it
+    # holds the skip logic, so it is in the hash.
+    "linux-removable": COMMON + ["scripts/ci-linux.sh", "scripts/check-removable-importers.sh", "scripts/check-importer-isolation.sh"],
 }
 IGNORED_NAMES = {".DS_Store"}
 

@@ -24,6 +24,11 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
 else
   echo "warn  no local $tag to compare with; GitHub's is ${gh_sha:0:8}"
 fi
+built=build/release/$tag/COMMIT
+if [[ -f $built ]]; then
+  [[ $(cat "$built") == "$gh_sha" ]] || { echo "FAIL  the local build is of $(cut -c1-8 "$built"), but GitHub's $tag is ${gh_sha:0:8}"; exit 1; }
+  echo "ok    the local build is of ${gh_sha:0:8}"
+fi
 if git remote get-url gitea >/dev/null 2>&1; then
   g=$(peeled gitea || true)
   if [[ $g == "$gh_sha" ]]; then echo "ok    the Gitea mirror has $tag at the same commit"

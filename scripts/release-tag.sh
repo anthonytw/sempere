@@ -3,7 +3,8 @@
 # GitHub (`origin`) holds the real history, so a tag is made on a commit of its `main` and pushed there; the Gitea
 # mirror (scripts/mirror-gitea.sh) copies it. The push is asked for separately; after it come `just release-build`
 # (the binaries, built here) and `just release-publish` (the GitHub Release; the owner or the script, see there).
-# Pushing a tag needs write access only, never admin; the seat has neither, so the owner pushes.
+# Pushing a tag needs write access only, never admin. The seat (splarg-bot) can push, but only with the owner's explicit OK:
+# the typed version is a human gate, and an agent must never answer it for the owner.
 #
 #   scripts/release-tag.sh VERSION [REF]          checks, then a signed tag on REF (default origin/main),
 #                                                 then asks before pushing it
@@ -25,7 +26,7 @@ mode=tag
 case "${1:-}" in
   --check) mode=check; shift ;;
   --push) mode=push; shift ;;
-  -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
 esac
 [[ $# -ge 1 && $# -le 2 ]] || { echo "$usage" >&2; exit 2; }
 version=${1#v}
