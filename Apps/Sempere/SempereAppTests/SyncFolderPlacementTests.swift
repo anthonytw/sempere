@@ -58,21 +58,6 @@ struct SyncFolderPlacementTests {
         ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0 != ".DS_Store" }.sorted()
     }
 
-    /// The paths an iPhone or iPad hands over: the picked folder (which exists) standardizes to `/var/…`, the copy's
-    /// folder inside it (not made yet) keeps `/private/var/…`. Both still compare as folder and subfolder.
-    @Test func theSubfolderSurvivesPrivateVarPaths() {
-        let picked = URL(fileURLWithPath: "/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/junk", isDirectory: true)
-        let copy = URL(fileURLWithPath: "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/junk/Wompa.sempere",
-                       isDirectory: true)
-        #expect(AppModel.subfolder(of: copy, in: picked) == "Wompa.sempere")
-        #expect(AppModel.subfolder(of: copy.deletingLastPathComponent(), in: picked) == nil)
-        #expect(AppModel.samePlace(copy.deletingLastPathComponent(), picked))
-        #expect(AppModel.subfolder(of: URL(fileURLWithPath: "/private/tmp/a/b"), in: URL(fileURLWithPath: "/tmp/a")) == "b")
-        #expect(AppModel.subfolder(of: URL(fileURLWithPath: "/elsewhere/b"), in: picked) == nil)
-        #expect(AppModel.subfolder(of: URL(fileURLWithPath: "/var/mobile/junkyard/x"), in: URL(fileURLWithPath: "/var/mobile/junk"))
-                == nil, "a sibling with a longer name is not inside")
-    }
-
     /// Add Folder… on a folder: the vault's files land in `<picked>/<Name>.sempere` and nowhere else in it; the
     /// user's own file there is left as it was.
     @Test func addFolderWritesIntoTheVaultsOwnSubfolder() async throws {
@@ -91,28 +76,6 @@ struct SyncFolderPlacementTests {
         #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("vault.json").path))
         #expect(!Self.noteFiles(copy).isEmpty)
         #expect(Self.noteFiles(copy) == Self.noteFiles(device.folder))
-    }
-
-    /// A picked `.sempere` folder is the target itself; one holding other files and no vault is refused, an empty one
-    /// is taken.
-    @Test func aPickedSempereFolderIsTheTargetItself() async throws {
-        let (device, picked) = try await Self.setUp()
-        defer { device.model.close() }
-        let name = device.folder.lastPathComponent
-        let copy = picked.appendingPathComponent(name)
-        let added = try device.model.addPickedFolderTarget(picked, to: device.vaultID)
-        await device.model.syncAllTargetsNow()
-        try await device.model.removeSyncTarget(added.id, of: device.vaultID)
-        let itself = try device.model.addPickedFolderTarget(copy, to: device.vaultID)
-        #expect(itself.subfolder == nil && itself.path == copy.standardizedFileURL.path)
-        let stray = picked.deletingLastPathComponent().appendingPathComponent("Stray-\(UUID().uuidString).sempere")
-        try FileManager.default.createDirectory(at: stray, withIntermediateDirectories: true)
-        #expect(try AppModel.folderTargetLocation(picked: stray, vaultFolderName: name, vaultId: device.vaultID)
-                == stray)
-        try Data("x".utf8).write(to: stray.appendingPathComponent("note.txt"))
-        #expect(throws: SyncTargetProblem.notAVault(stray.lastPathComponent)) {
-            try AppModel.folderTargetLocation(picked: stray, vaultFolderName: name, vaultId: device.vaultID)
-        }
     }
 
     /// Review of #109: a folder inside a vault or a backup is never a sync target: by content (a backup's
@@ -139,16 +102,6 @@ struct SyncFolderPlacementTests {
         }
         #expect(device.model.openVaultTargets.isEmpty)
         #expect(AppModel.describe(SyncTargetProblem.insideVault("X.sempere")).contains("outside it"))
-    }
-
-    /// Join This Device needs a sync target: a store vault without one (a backup opened as a copy) does not offer it.
-    @Test func joinNeedsASyncTarget() async throws {
-        let (device, picked) = try await Self.setUp()
-        defer { device.model.close() }
-        #expect(device.model.openVaultTargets.isEmpty)
-        #expect(!device.model.canJoinOpenVault)
-        try device.model.addPickedFolderTarget(picked, to: device.vaultID)
-        #expect(device.model.canJoinOpenVault)
     }
 
     /// Review of #115 (R1): on an iPhone, an iCloud package not downloaded is not on the device as a folder (picked

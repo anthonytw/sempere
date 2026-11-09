@@ -23,34 +23,7 @@ struct SettingsPolishTests {
         #expect(lines.map(\.isUsed) == [false, true], "the engine list agrees with the note")
     }
 
-    @Test func automaticLanguageIsTheDefault() {
-        let d = TestDefaults.suite("SettingsPolishTests-\(UUID().uuidString)")!
-        #expect(TranscriptionSettings.localeIdentifier(d) == nil)
-        TranscriptionSettings.setLocaleIdentifier("es-ES", in: d)
-        #expect(TranscriptionSettings.localeIdentifier(d) == "es-ES")
-        TranscriptionSettings.setLocaleIdentifier(nil, in: d)
-        #expect(TranscriptionSettings.localeIdentifier(d) == nil)
-    }
-
     // MARK: Sync bar
-
-    @Test func smallSyncsShowNoBar() {
-        #expect(!SyncBarPolicy.shows(pending: 0, wasShown: false))
-        for pending in 1..<SyncBarPolicy.minimumNotes { #expect(!SyncBarPolicy.shows(pending: pending, wasShown: false)) }
-        #expect(SyncBarPolicy.shows(pending: SyncBarPolicy.minimumNotes, wasShown: false))
-        #expect(SyncBarPolicy.shows(pending: 400, wasShown: false))
-    }
-
-    @Test func aBulkBarStaysUntilTheLastNoteArrives() {
-        #expect(SyncBarPolicy.shows(pending: 2, wasShown: true), "no blinking off at the last few notes")
-        #expect(!SyncBarPolicy.shows(pending: 0, wasShown: true))
-    }
-
-    @Test func refreshingFewNotesShowsNoBarButOpeningAVaultDoes() {
-        #expect(!NoteLoading(done: 0, total: 1, refreshing: true).showsBar)
-        #expect(NoteLoading(done: 0, total: 50, refreshing: true).showsBar)
-        #expect(NoteLoading(done: 0, total: 1, refreshing: false).showsBar)
-    }
 
     // MARK: Voice-note permissions
 

@@ -1,14 +1,15 @@
 import Foundation
 import Sempere
-import SempereAppCore
 
-/// Where this app keeps each shared setting that is not the model's (docs/settings-sync.md §5,
+/// Where an app keeps each shared setting that is not the model's (docs/settings-sync.md §5,
 /// `SharedSettingsCatalog`; `SettingsSyncBridge` in SempereAppCore reads the model's own keys): `UserDefaults`
 /// through the settings' own types, so every value is read with its default filled in and written through the same
 /// clamping as the Settings screen. The logic of sync is `SettingsSyncState` (Sempere) and the model's
 /// (`AppModel+SettingsSync`, SempereAppCore); this only reads and writes values.
-struct AppSettingsStorage: SettingsSyncStorage {
-    func read(_ key: String, from d: any KeyValueStore) -> JSONValue? {
+public struct AppSettingsStorage: SettingsSyncStorage {
+    public init() {}
+
+    public func read(_ key: String, from d: any KeyValueStore) -> JSONValue? {
         switch key {
         case "newNote.titleFormat": return .string(NewNoteSettings.titleFormat(d).rawValue)
         case "newNote.titlePattern": return .string(NewNoteSettings.titlePattern(d))
@@ -38,7 +39,7 @@ struct AppSettingsStorage: SettingsSyncStorage {
         }
     }
 
-    func write(_ values: [String: JSONValue], to d: any KeyValueStore) {
+    public func write(_ values: [String: JSONValue], to d: any KeyValueStore) {
         // The recording fields are clamped together (a bit rate depends on the codec).
         var recording = RecordingSettings.load(from: d)
         var recordingChanged = false
@@ -78,14 +79,14 @@ struct AppSettingsStorage: SettingsSyncStorage {
 }
 
 extension SettingsSyncBridge {
-    /// This app's values of the settings a device of `type` uses (`AppSettingsStorage`).
-    static func values(for type: SettingsDeviceType, defaults: any KeyValueStore, extras: Extras) -> [String: JSONValue] {
+    /// The values of the settings a device of `type` uses (`AppSettingsStorage`).
+    public static func values(for type: SettingsDeviceType, defaults: any KeyValueStore, extras: Extras) -> [String: JSONValue] {
         values(for: type, defaults: defaults, extras: extras, storage: AppSettingsStorage())
     }
 
     /// Writes `values` through `AppSettingsStorage`; returns the model's keys.
     @discardableResult
-    static func apply(_ values: [String: JSONValue], defaults: any KeyValueStore) -> [String: JSONValue] {
+    public static func apply(_ values: [String: JSONValue], defaults: any KeyValueStore) -> [String: JSONValue] {
         apply(values, defaults: defaults, storage: AppSettingsStorage())
     }
 }

@@ -13,6 +13,16 @@ extension AppModelSuites {
         static let lecture = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
         static let deleted = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
 
+        /// A private copy of the fixture, so no test can touch the committed one (the sync form of
+        /// `ModelFixture.vault()`, for tests that set up on the main actor).
+        static func fixtureVault() throws -> (vault: URL, key: URL) {
+            let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let vault = dir.appendingPathComponent("sample.sempere")
+            try FileManager.default.copyItem(at: ModelFixture.fixtures.appendingPathComponent("sample.sempere"), to: vault)
+            return (vault, ModelFixture.fixtures.appendingPathComponent("sample.key"))
+        }
+
         @Test func opensLockedThenUnlocksWithKeyFile() async throws {
             let (url, key) = try await ModelFixture.vault()
             let model = AppModel()
@@ -192,5 +202,4 @@ extension AppModelSuites {
             #expect(!reopened.liveStrokes(of: page.id).contains { $0.id == erased.id })
         }
     }
-
 }

@@ -43,7 +43,7 @@ struct DragAndDropTests {
     }
 
     @Test func aDropRegistersOneUndoStep() async throws {
-        let (model, ids) = try await NotebookTreeTests.model()
+        let (model, ids) = try await NotebookTreeFixture.model()
         defer { model.close() }
         let lab = try #require(ids["Lab"])
         let undo = UndoManager()
@@ -87,7 +87,7 @@ struct DragAndDropTests {
     }
 
     @Test func aDropsUndoGoesToItsOwnWindow() async throws {
-        let (model, ids) = try await NotebookTreeTests.model()
+        let (model, ids) = try await NotebookTreeFixture.model()
         defer { model.close() }
         let lab = try #require(ids["Lab"])
         let here = UndoManager(), other = UndoManager()
@@ -101,7 +101,7 @@ struct DragAndDropTests {
     }
 
     @Test func aNotebookDragDropsThroughTheModel() async throws {
-        let (model, _) = try await NotebookTreeTests.model()
+        let (model, _) = try await NotebookTreeFixture.model()
         defer { model.close() }
         _ = model.beginDrag(.notebook("Research/Lab"), provider: DragPayload.notebook("Research/Lab").provider())
         let payload = try #require(model.takeDrop(on: .topLevel))

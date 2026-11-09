@@ -2,6 +2,7 @@ import Age
 import Foundation
 import Sempere
 import PencilKit
+import SempereAppCore
 @testable import SempereApp
 
 /// Test helpers shared by the app test suites.
@@ -190,4 +191,28 @@ final class Heartbeat {
     }
 
     func stop() { task?.cancel() }
+}
+
+/// Counts the revision files a vault (and every copy of it) decrypted (`Vault.revisionDecryptCount`), for the device
+/// checks. The Version History cost tests moved to `SempereAppCoreTests/AppModel/WriterReadCostTests`.
+struct DecryptCounter: Sendable {
+    let vault: Vault
+    var count: Int { vault.revisionDecryptCount }
+}
+
+/// The fixture plus notes filed like a Notability import, for the drag tests (the notebook tree's own tests moved to
+/// `SempereAppCoreTests/AppModel/NotebookTreeTests`).
+enum NotebookTreeFixture {
+    @MainActor
+    static func model() async throws -> (AppModel, [String: UUID]) {
+        let model = try await BrowserTests.unlockedFixtureModel()
+        var ids: [String: UUID] = [:]
+        for (title, notebook) in [("Daily", "Research/Daily log"), ("Old day", "Research/Daily log/2025"),
+                                  ("Plan", "Research"), ("Lab", "Research/Lab"), ("Other", "Researcher"),
+                                  ("Loose", "  /School// Math 9 / ")] {
+            ids[title] = try await model.createNote(title: title, paper: .ruled, notebook: notebook)
+        }
+        model.sidebarSelection = .allNotes
+        return (model, ids)
+    }
 }

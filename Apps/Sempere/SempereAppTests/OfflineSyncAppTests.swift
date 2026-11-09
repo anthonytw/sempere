@@ -97,50 +97,6 @@ struct OfflineSyncAppTests {
         return r
     }
 
-    @Test func aCutRunThatMadeProgressIsNotAFailure() async throws {
-        let stops = try Self.engineStops()
-        #expect(stops.cancel.stopReason == .cancelled)
-        #expect(stops.time.stopReason == .timeLimit, "the engine classifies its time bound")
-        #expect(stops.entries.stopReason == .bound)
-        for stop in [stops.cancel, stops.time] {
-            #expect(SyncSession.progressedCutShort(Self.cutReport(stop, progress: true))?.lastingErrors.isEmpty == true)
-            #expect(SyncSession.progressedCutShort(Self.cutReport(stop, progress: false)) == nil, "no progress: still a failure")
-        }
-        var other = Self.cutReport(stops.cancel, progress: true)
-        other.errors.append(.init(path: "notes/b", message: "refused"))
-        #expect(SyncSession.progressedCutShort(other)?.errors.map(\.path) == ["notes/b"], "real errors stay")
-
-        let report = Self.cutReport(stops.cancel, progress: true)
-        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
-                                  run: { _ in report }, countUnconfirmed: { 0 })
-        session.vaultUnlocked()
-        _ = await session.syncNow()
-        #expect(session.problems.isEmpty)
-        #expect(!session.needsAttention)
-        #expect(session.status.kind == .continuing)
-        #expect(session.schedule.failures == 0, "no backoff")
-        #expect(session.lastSuccess == nil, "only a complete run is a last sync")
-        session.stop()
-    }
-
-    /// Review of #91, M1: a server bound (here `maxEntries`) that stops a run after it moved files is a failure: shown
-    /// and backed off, never a silent run every 30 s.
-    @Test func aServerBoundStopIsAFailureThatBacksOff() async throws {
-        let stops = try Self.engineStops()
-        let report = Self.cutReport(stops.entries, progress: true)
-        #expect(SyncSession.progressedCutShort(report) == nil)
-        #expect(!report.outcome.success, "the engine's outcome agrees")
-        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
-                                  run: { _ in report }, countUnconfirmed: { 0 })
-        session.vaultUnlocked()
-        _ = await session.syncNow()
-        #expect(session.needsAttention)
-        #expect(session.status.kind != .continuing)
-        #expect(session.schedule.failures == 1)
-        #expect(session.schedule.retryDelay > 0)
-        session.stop()
-    }
-
 
     // MARK: P14: a clock far off
 

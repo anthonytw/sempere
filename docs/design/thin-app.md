@@ -1040,6 +1040,73 @@ the like) are checked against `Tests/SempereAppCoreTests` for a twin and either 
 remains is the screen's: the canvas, gestures, PencilKit, the real recorder, the extension targets and the UI tests.
 The "done when" list is then checked line by line, and wave 6 is closed.
 
+**Part 8 done (wave 6, 2026-11-09): the app's test target.** `AppSettingsStorage` (with the `SettingsSyncBridge.values/apply`
+conveniences that use it) moved to `Sources/SempereAppCore/AppSettingsStorage.swift`, and the key it read from the app,
+`ToolPalette.compactKey`, to `Preferences/ToolPalette.swift`. Its `SettingsSyncAppTests` became `AppSettingsStorageTests`
+(Linux, on a `MemoryKeyValueStore`: every key of every device type round-trips through the real storage, and the model's
+keys and extras are split off). Then the sweep: of the 142 files of `SempereAppTests`, 60 (that one among them) import none of the listed
+frameworks (`UniformTypeIdentifiers`, `Security` and `LocalAuthentication` count as listed). Each was compiled in the core
+test target first (the `@testable import SempereApp` dropped, wrapped in `AppModelSuites`) and every test classed by what the
+compiler could not find: an app type, an app word (`*+Text`), or a helper another app suite owns. **No test was deleted:** no
+test in these files has a twin in `Tests/SempereAppCoreTests` (the names that coincide, `MenuCommandTests`'
+`switchesSayWhatTheyDoNext` and `theMenusAddPageMatchesTheToolbars`, assert the app's words against the core's rules, not the
+same thing). 49 tests moved in all (2 with `AppSettingsStorage`, 47 in the sweep), adapted only by the fixture helper (`AppModelTests.fixtureVault()`, now also in core) and by
+`MemoryKeyValueStore` in place of a `TestDefaults` suite.
+
+| File (`SempereAppTests`) | Outcome |
+| --- | --- |
+| `EmptyNotebookTests` (4), `NotebookTreeTests` (7), `NoteNamesAndTagsTests` (8), `UnlockLoadingTests` (2), `WriterReadCostTests` (1) | moved whole to `SempereAppCoreTests/AppModel/` |
+| `BrowserEditorTests` | 3 of 4 moved (`AppModel/BrowserEditorTests`); stays: `browserEditsAndCanvasSaveShareOneClock` (`saveError` is app text) |
+| `BrowserTests` | 3 of 5 moved (`AppModel/BrowserTests+FromApp`); stays: `bookmarkRoundTrips` (`SecurityScopedBookmarks`), `unlockedFixtureModel` and the helpers other app suites use |
+| `ListAlertTests` | 3 of 9 moved (`AppModel/ListAlertTests`); stay: the alert, banner and recordings-menu words |
+| `OfflineSyncAppTests` | 2 of 11 moved (`AppModel/OfflineSyncAppTests`); stay: bookmarks, certificate and status words, the removal sheet |
+| `SettingsPolishTests` | 4 of 7 moved (sync bar policy, `automaticLanguageIsTheDefault`); stay: engine and blocker words |
+| `SettingsTests` | 2 of 10 moved (`storageNeedsAnUnlockedVault`, `generalSettingsKeepTheirKeysAndDefaults`); stay: labels, status text, the launch hook, `StorageText`, `TitlePatternField`, the drawing cache |
+| `SettingsConfirmationTests` | 2 of 3 moved; stays: `theDefaultPrivacyStripsWhatTheSettingOffKeeps` (`ImagePreparation`) |
+| `SyncFolderPlacementTests` | 3 of 8 moved (`AppModel/SyncFolderPlacementTests`); stay: the headline and `describe` words, the iCloud hooks (`CloudVault.Hooks.live`), the bundle bit (`Platform`) |
+| `MacSupportTests` | `WindowValueTests` (3) moved to `SempereAppCoreTests/WindowValueTests`; `PointerCursorTests` stays (`PointerCursor` is in the app) |
+| `AppModelTests` | stays: its remaining tests assert `readOnlyBanner` words and `heldDeviceKey` (app); its `lecture` and `fixtureVault` are used by the suites that stay |
+| `AttachmentIndexAppTests`, `DevicesAppTests`, `FolderAccessTests`, `FolderTargetAppTests`, `ImportReportTests`, `InsertTextTests`, `JoinThroughProviderTests`, `LocalizationTests`, `MenuCommandTests`, `NewVaultKeyTests`, `ReadOnlySourceVaultTests`, `ReadOnlyVaultTextTests`, `SearchTests`, `ThisDeviceNameTests`, `TitleRenameTests`, `VaultOpeningTests`, `VersionHistoryAppTests`, `WebDAVTextAppTests` | stay: the words (they read the app bundle's catalog or an `*+Text` extension). The rules they sit beside are tested in core (`JoinThroughProviderTests`, `FolderTargetTests`, `VaultOpeningTests`, `SearchTests`, `HistoryTests`, `MenuCommandTests`) |
+| `CloudTests`, `DeviceWriteStoresTests`, `ImportProgressTests`, `JoinTakeoverPlatformTests`, `KeyExportGapTests`, `OpenedVaultTests`, `RecognitionModifiedDateTests`, `VoiceNoteMenuTests`, `PhoneSidebarTests`, `MenuHandlerTests`, `ExportTests` | stay: the code under test is still in the app (`CloudVault` live hooks, `LedgerKeychain`, `ImportProgressOverlay`, `TakeoverView`, `StoredSigning`, `KeyFile`, `VoiceNoteMenu`, `PhoneNotebookRows`, `LibraryCommands`, `CommandRouter`, `ExportCommand`), or they use another app suite's helper (`NoteWindowTests`, `EditorRecognitionTests`); see the follow-ups |
+| `MenuBarItemTests`, `QuickCaptureIntentTests`, `OfflineTranscriptionTests`, `OfflineModeTests`, `PDFKitRasterizerTests`, `PDFKitTextExtractorTests`, `VaultStoreAppTests`, `WebDAVTransportPoolTests`, `MathModelFetchTests`, `SearchHighlightEmojiTests` | stay: platform (`StatusItemBridge`, the app intents, the quick-capture suites they extend, the no-network sandbox, PDFKit, `AppHost`, `URLSession`, `URLProtocol`, `CoreTextShaper`) |
+| `MainActorBenchmarkTests`, `SearchDeviceCheckTests` | stay: wall-clock budgets (a 60 and 120 second wait on 600 transcripts), kept off the Linux runner |
+| `NoteEditorTests`, `TestDefaults`, `TestTemp` | stay: helpers (the editor opener uses `AVCaptureAudioFiles`; the `UserDefaults` suites and the temp-folder guard are Apple's) |
+| `SettingsSyncAppTests` | moved to `AppSettingsStorageTests` (above) |
+
+Counts (`@Test` and `func test` declarations): `SempereAppTests` 868 before, 819 after (142 files, 136 after); `SempereAppCoreTests`
+767 before, 816 after (85 files, 100 after). Run, core: 777 tests in 105 suites.
+
+**Done when, checked 2026-11-09 against `main` plus this PR:**
+
+1. *`Apps/Sempere/SempereApp` holds views, glue and the platform implementations of the protocols, and nothing else.* **Not met.**
+   169 files; those that import no Apple framework are almost all the words (`*+Text`) and thin extensions, but some rules are
+   still app code: `LibraryCommands` (the library window's menu outcomes, 90 lines), `VoiceNoteMenu` (the Mac voice-note menu's
+   decisions, 61), `PhoneNotebookRows` (`SidebarView.swift`), `PointerCursor` (`MacSupport.swift`, a 28-line diameter rule),
+   `ThisDevice` (64), the `CommandRouter`, `RecentItem` and `WindowUI` types of `AppCommands.swift`, `VoiceNoteBannerRule`
+   (`VoiceNoteBanner.swift`), `ItemActions` (162, undo glue over the editor), the file and key types of `DeviceKeyStore.swift`
+   (`KeyFile`, `StoredSigning`) and `DragLog`. Follow-up F1.
+2. *No logic exists in both the app and the CLI.* **Met**, as far as it was checked: duplicates 1 to 6 are removed (the
+   bulk-export driver was the last, part 2; `moveNotes` has one decision function, part 7; `devices approve --qr`, part 1); wave 6
+   part 1 checked every other capability the app has against `docs/cli.md`. The two things the CLI cannot do on purpose
+   (recording recovery, cache sizes) are decided in part 1. Not re-audited line by line here.
+3. *The app's test target holds only tests that need UIKit, SwiftUI, PencilKit or the screen.* **Not met.** 60 files that import
+   none of the listed frameworks were swept and 49 tests moved; what remains is the words (they need the app bundle's catalog,
+   a documented exception), platform code (`URLSession`, PDFKit, the intents, the sandbox) and tests of rules that are still in
+   the app (item 1). Follow-ups F1 and F2.
+
+**Follow-ups left by wave 6 (explicit, none silent):**
+- **F1** Move the rules listed under item 1 into `SempereAppCore` with their words left behind, and then the tests of
+  `MenuHandlerTests`, `VoiceNoteMenuTests`, `PhoneSidebarTests`, `ThisDeviceNameTests` (rules), `KeyExportGapTests` and
+  `DeviceWriteStoresTests` follow. Each is a part-3-sized PR.
+- **F2** The tests that stay for a helper another suite owns (`NoteWindowTests`, `EditorRecognitionTests`,
+  `AttachmentEditorTests`, `DrawingCacheTests`): once the rules above move, the suites of the model that use those helpers
+  can move with a core copy.
+- **F3** Mixed words-and-rule tests (`SearchTests`, `SettingsTests`, `ListAlertTests`, `OfflineSyncAppTests`, …) assert a
+  rule and its words in one test. Splitting each into a rule test (core) and a words test (app) would move about 40 more
+  assertions; no test is wrong where it is.
+
+**Wave 6 is closed** with the above: its eight parts are merged or in review (part 8 is this PR), and what is not met is F1 to F3.
+
 **Decisions taken in the review of #35 (2026-11-09).** (1) `DemoVault.denseOps` stays as it is. (2) No CLI command for
 recording recovery or cache sizes. (3) `NoteWriter.thin` stays in `Sempere`. (4) Part 2's driver is one async
 `BulkExportDriver` in `SempereRender`, on condition that the CLI keeps its Ctrl-C behavior and the output of

@@ -1,22 +1,12 @@
 import Foundation
 import Sempere
-import SempereAppCore
 import Testing
-@testable import SempereApp
+@testable import SempereAppCore
 
-/// Settings sync's mapping in the app (docs/settings-sync.md): `AppSettingsStorage` through
-/// `SettingsSyncBridge` against `UserDefaults`. The model's passes are tested on Linux
+/// Settings sync's mapping (docs/settings-sync.md): `AppSettingsStorage` through
+/// `SettingsSyncBridge` against a `MemoryKeyValueStore` (the app's `UserDefaults` is the same protocol). The model's passes are tested on Linux
 /// (`SettingsSyncTests`, SempereAppCoreTests), and so are the rules (`SettingsSyncStateTests`, `SharedSettingsTests`).
-@MainActor
-@Suite(.serialized)
-struct SettingsSyncAppTests {
-    /// A defaults suite of its own.
-    final class Scratch {
-        let name = "sempere-settings-sync-tests-\(UUID().uuidString)"
-        lazy var defaults = TestDefaults.suite(name)!
-        func cleanUp() { defaults.removePersistentDomain(forName: name) }
-    }
-
+struct AppSettingsStorageTests {
     /// A value of `spec` other than its default.
     static func otherValue(_ spec: SharedSettingSpec) -> JSONValue {
         switch spec.kind {
@@ -32,12 +22,11 @@ struct SettingsSyncAppTests {
 
     // MARK: - Bridge
 
-    @Test func everyUserDefaultsKeyRoundTrips() throws {
-        let scratch = Scratch()
-        defer { scratch.cleanUp() }
+    @Test func everyStoredKeyRoundTrips() throws {
         for type in SettingsDeviceType.allCases {
+            let defaults = MemoryKeyValueStore()   // a fresh device per type
             let specs = SharedSettingsCatalog.specs(for: type).filter { !SettingsSyncBridge.modelKeys.contains($0.name) }
-            let before = SettingsSyncBridge.values(for: type, defaults: scratch.defaults, extras: .init())
+            let before = SettingsSyncBridge.values(for: type, defaults: defaults, extras: .init())
             for spec in specs {
                 #expect(before[spec.name] == spec.defaultValue, "\(spec.name) default")
             }
@@ -47,32 +36,30 @@ struct SettingsSyncAppTests {
             wanted["recording.bitRate"] = .number(32_000)
             // Sample rate: HE-AAC offers 32 kHz and up, so pick a rate both codecs offer.
             wanted["recording.sampleRate"] = .number(44_100)
-            let leftover = SettingsSyncBridge.apply(wanted, defaults: scratch.defaults)
+            let leftover = SettingsSyncBridge.apply(wanted, defaults: defaults)
             #expect(leftover.isEmpty)
-            let after = SettingsSyncBridge.values(for: type, defaults: scratch.defaults, extras: .init())
+            let after = SettingsSyncBridge.values(for: type, defaults: defaults, extras: .init())
             for spec in specs { #expect(after[spec.name] == wanted[spec.name], "\(spec.name) on \(type)") }
-            scratch.cleanUp()
         }
     }
 
     @Test func modelKeysAndExtras() throws {
-        let scratch = Scratch()
-        defer { scratch.cleanUp() }
-        let none = SettingsSyncBridge.values(for: .ipad, defaults: scratch.defaults, extras: .init())
+        let defaults = MemoryKeyValueStore()
+        let none = SettingsSyncBridge.values(for: .ipad, defaults: defaults, extras: .init())
         #expect(none["quickCapture.notebook"] == nil, "quick capture off: not read")
         #expect(none["backup.reminderDays"] == nil)
         let extras = SettingsSyncBridge.Extras(quickCapture: (notebook: "Inbox/Voice", transcribe: false), backupReminderDays: 7)
-        let some = SettingsSyncBridge.values(for: .ipad, defaults: scratch.defaults, extras: extras)
+        let some = SettingsSyncBridge.values(for: .ipad, defaults: defaults, extras: extras)
         #expect(some["quickCapture.notebook"] == .string("Inbox/Voice"))
         #expect(some["quickCapture.transcribe"] == .bool(false))
         #expect(some["backup.reminderDays"] == .number(7))
-        #expect(SettingsSyncBridge.values(for: .mac, defaults: scratch.defaults, extras: extras)["quickCapture.notebook"]
+        #expect(SettingsSyncBridge.values(for: .mac, defaults: defaults, extras: extras)["quickCapture.notebook"]
                 == .string("Inbox/Voice"), "a Mac has Quick Voice Notes too")
-        #expect(SettingsSyncBridge.values(for: .mac, defaults: scratch.defaults, extras: extras)["editor.keepScreenOn"] == nil,
+        #expect(SettingsSyncBridge.values(for: .mac, defaults: defaults, extras: extras)["editor.keepScreenOn"] == nil,
                 "a Mac has no Keep Screen On")
         let forModel = SettingsSyncBridge.apply(["handwriting.recognize": .bool(false), "eraser.mode": .string("pixel")],
-                                                defaults: scratch.defaults)
+                                                defaults: defaults)
         #expect(forModel == ["handwriting.recognize": .bool(false)])
-        #expect(scratch.defaults.string(forKey: EraserPreference.defaultsKey) == "pixelFixedWidth")
+        #expect(defaults.string(forKey: EraserModeStorage.key) == "pixelFixedWidth")
     }
 }

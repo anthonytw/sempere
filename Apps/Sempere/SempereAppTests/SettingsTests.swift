@@ -72,19 +72,6 @@ struct SettingsTests {
 
     // MARK: General and history
 
-    @Test func generalSettingsKeepTheirKeysAndDefaults() {
-        #expect(KeepScreenOn.key == "Sempere.keepScreenOn")
-        #expect(RecognitionPreference.key == "Sempere.recognizeHandwriting")
-        // What the app reads when nothing is stored, then a stored choice.
-        let d = scratch()
-        #expect(!KeepScreenOn.defaultValue && !KeepScreenOn.isOn(d), "off unless set")
-        #expect(RecognitionPreference.defaultValue && RecognitionPreference.isEnabled(d), "on unless set")
-        d.set(true, forKey: KeepScreenOn.key)
-        d.set(false, forKey: RecognitionPreference.key)
-        #expect(KeepScreenOn.isOn(d))
-        #expect(!RecognitionPreference.isEnabled(d))
-    }
-
     @Test func recognitionSwitchReachesTheModel() {
         let saved = RecognitionPreference.enabled
         defer { RecognitionPreference.enabled = saved }
@@ -101,13 +88,6 @@ struct SettingsTests {
         #expect(StorageText.items(1, bytes: 0).hasPrefix("1 item, "))
         #expect(StorageText.items(3, bytes: 5_000_000).hasPrefix("3 items, "))
         #expect(StorageText.bytes(-5) == StorageText.bytes(0))
-    }
-
-    @Test func storageNeedsAnUnlockedVault() async throws {
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        await #expect(throws: AppModel.ModelError.noVaultOpen) { _ = try await model.deleteUnusedAttachments([]) }
-        #expect(model.attachmentStorage().unused.isEmpty)
-        // Unused attachments themselves: `AttachmentIndexAppTests`.
     }
 
     @Test func clearCachesEmptiesBothCachesAndKeepsTheVault() async throws {

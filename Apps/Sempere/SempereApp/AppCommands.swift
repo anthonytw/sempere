@@ -172,7 +172,7 @@ enum EditorCommands {
             ObjectEraserSize.save(ObjectEraserSize.step(ObjectEraserSize.load(from: UserDefaults.standard), larger: command == .eraserLarger),
                                   to: UserDefaults.standard)
         case .toggleCompactPalette:
-            UserDefaults.standard.set(!ToolPalette.isCompact(), forKey: ToolPalette.compactKey)
+            UserDefaults.standard.set(!ToolPalette.isCompact(in: UserDefaults.standard), forKey: ToolPalette.compactKey)
         case .togglePageStrip:
             UserDefaults.standard.set(!PageStrip.isVisible(), forKey: PageStrip.visibleKey)
         case .toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso:
