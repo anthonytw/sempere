@@ -135,22 +135,25 @@ public struct HistoryRow: Identifiable, Hashable, Sendable {
 /// session whose autosaves are shown when it is expanded.
 public struct HistoryGroupRow: Identifiable, Hashable, Sendable {
     public enum Kind: Hashable, Sendable { case checkpoint, session }
-    public let kind: Kind
+    /// The library's group (`NoteHistory.groups`): the one place a group's device, times and saves are read, as the
+    /// CLI's `notes history --sessions` reads them.
+    public let group: HistoryGroup
     /// The group's rows, newest first; never empty.
     public let entries: [HistoryRow]
 
-    init(kind: Kind, entries: [HistoryRow]) {
-        self.kind = kind
+    init(group: HistoryGroup, entries: [HistoryRow]) {
+        self.group = group
         self.entries = entries
     }
 
+    public var kind: Kind { group.isCheckpoint ? .checkpoint : .session }
     /// The newest point's revision.
     public var id: RevisionName { entries[0].id }
     public var newest: HistoryRow { entries[0] }
     /// `wall` of the oldest and the newest point.
-    public var start: Date { entries[entries.count - 1].date }
-    public var end: Date { entries[0].date }
-    public var saves: Int { entries.count }
+    public var start: Date { group.start }
+    public var end: Date { group.end }
+    public var saves: Int { group.saves }
     /// Whether the note as it is now is in this group.
     public var containsLatest: Bool { entries.contains(where: \.isLatest) }
 
@@ -161,8 +164,7 @@ public struct HistoryGroupRow: Identifiable, Hashable, Sendable {
         return NoteHistory.groups(points).reversed().compactMap { group in
             let rows = group.points.reversed().compactMap { byName[$0.name] }
             guard !rows.isEmpty else { return nil }
-            if case .checkpoint = group { return HistoryGroupRow(kind: .checkpoint, entries: rows) }
-            return HistoryGroupRow(kind: .session, entries: rows)
+            return HistoryGroupRow(group: group, entries: rows)
         }
     }
 }

@@ -150,11 +150,11 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     @ObservationIgnored var incrementalMerges = true
     /// The read that completes an editor opened from the cache.
     @ObservationIgnored var fullLoad: Task<Void, Never>?
-    /// Called when that read fails (`failLoading`), with the error: the
-    /// model shows the failure instead of a partial, read-only canvas.
     /// Words the errors this editor keeps as text (`readOnly`'s load failure, `saveFailure`, the recognition and
     /// recording failures): the model's `services.describeError`, set when it opens the editor.
     @ObservationIgnored var describeError: ErrorDescriber = plainErrorDescription
+    /// Called when that read fails (`failLoading`), with the error: the
+    /// model shows the failure instead of a partial, read-only canvas.
     @ObservationIgnored var onLoadFailed: (@MainActor (any Error) -> Void)?
     /// Called once a recording made in this note is saved (by the app's microphone half), with its audio file and
     /// the session folder holding it: the model transcribes it when that setting is on, then hands the folder to

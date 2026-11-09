@@ -139,6 +139,18 @@ final class VersionHistoryTests: XCTestCase {
         XCTAssertEqual(s.start, pts[0].wall)
         XCTAssertEqual(s.end, pts[1].wall)
         XCTAssertEqual(s.newest.name, pts[1].name)
+        // The group's own readings: the CLI's `notes history --sessions` and the app's history rows both read these.
+        XCTAssertFalse(groups[0].isCheckpoint)
+        XCTAssertEqual(groups[0].device, devA)
+        XCTAssertEqual(groups[0].start, pts[0].wall)
+        XCTAssertEqual(groups[0].end, pts[1].wall)
+        XCTAssertEqual(groups[0].saves, 2)
+        XCTAssertNil(groups[0].checkpointName)
+        XCTAssertTrue(groups[1].isCheckpoint)
+        XCTAssertEqual(groups[1].checkpointName, "v1")
+        XCTAssertEqual(groups[1].saves, 1)
+        XCTAssertEqual(groups[1].start, groups[1].end)
+        XCTAssertNil(groups[3].checkpointName, "an unnamed checkpoint")
     }
 
     func testRestorePointsCarryCheckpointAndSession() {

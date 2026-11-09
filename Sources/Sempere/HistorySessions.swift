@@ -42,6 +42,28 @@ public enum HistoryGroup: Hashable, Sendable {
 
     /// The group's newest restore point.
     public var newest: RestorePoint { points[points.count - 1] }
+
+    /// Whether the group is a checkpoint (else an editing session).
+    public var isCheckpoint: Bool {
+        if case .checkpoint = self { return true }
+        return false
+    }
+
+    // The readings below are what `sempere notes history --sessions` prints; the app's rows read the newest point's
+    // own fields (`newest.deviceLabel`) and `start`, `end`, `saves`, `isCheckpoint`.
+
+    /// The device that wrote the group's first point (every point of a session has the same).
+    public var device: DeviceID { points[0].device }
+    /// The editing-session id of the first point, if it has one.
+    public var session: String? { points[0].session }
+    /// The checkpoint's name; nil for a session or an unnamed checkpoint.
+    public var checkpointName: String? { isCheckpoint ? points[0].checkpoint?.name : nil }
+    /// `wall` of the oldest point.
+    public var start: Date { points[0].wall }
+    /// `wall` of the newest point.
+    public var end: Date { newest.wall }
+    /// Number of restore points (saves) in the group.
+    public var saves: Int { points.count }
 }
 
 extension NoteHistory {

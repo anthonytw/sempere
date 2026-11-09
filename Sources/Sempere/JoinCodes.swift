@@ -163,3 +163,11 @@ public enum JoinCodes {
         return (id, root, frontier)
     }
 }
+
+extension JoinRequest {
+    /// The QR payload of the commitment (design §6.2 step 1): base64 of `JoinCodes.commitmentQR`. The text a camera
+    /// reads off the new device's screen, and what `sempere device init --json` prints as `qr`.
+    public var qrText: String {
+        JoinCodes.commitmentQR(vaultId: vaultId, commitment: commitment).base64EncodedString()
+    }
+}

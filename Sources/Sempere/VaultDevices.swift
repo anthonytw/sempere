@@ -60,6 +60,19 @@ extension Vault {
         joinRequests().compactMap(\.request).first { $0.vaultId == vaultId && JoinCodes.matches(words, $0.commitment) }
     }
 
+    /// The request `words` (typed) or `qr` (a scanned code's text, `JoinRequest.qrText`) names in `joins/`; nil when
+    /// none is there. A code that does not parse, or names another vault, matches nothing; with both given the code
+    /// is the one read. The app's Add Device and `sempere devices approve` look a request up this way.
+    public func joinRequest(words: [String]?, qr: String?) -> JoinRequest? {
+        if let qr, let data = Data(base64Encoded: qr), let parsed = JoinCodes.parseCommitmentQR(data) {
+            guard parsed.vaultId == vaultId else { return nil }
+            return joinRequests().compactMap(\.request).first { $0.vaultId == vaultId && $0.commitment == parsed.commitment }
+        } else if let words {
+            return joinRequest(matching: words)
+        }
+        return nil
+    }
+
     /// Whether `name` is a join request's file name (`<8 hex>.join.json`, format.md §15.12).
     public static func isJoinRequestName(_ name: String) -> Bool {
         guard name.hasSuffix(".join.json") else { return false }

@@ -75,6 +75,8 @@ extension QuickCapture {
                                    app: UIKitCaptureApp(), backgroundTime: UIKitBackgroundTime(), bookmarks: SecurityScopedBookmarks(),
                                    files: SystemFileCoordinator(), perf: AppPerfSink(), root: root, queueRoot: queueRoot)
         capture.statusStore = statusStore
+        // The app's words for errors even when no `AppModel` exists yet (a start from a widget before any is made).
+        capture.describeError = { AppModel.describe($0) }
         capture.noteTitle = { QuickCapture.title($0) }
         capture.reloadSurfaces = { QuickCapture.reloadSystemSurfaces() }
         return capture

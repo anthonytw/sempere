@@ -206,6 +206,16 @@ extension Vault {
         try loadForCompaction(noteId, mode: mode, now: now, cache: cache, keepPlainBytes: Self.compactionPlainBytes)
     }
 
+    /// What the summary cache's revision metadata says about compacting `noteId` (whose revisions are `revisions`):
+    /// false when it shows nothing `mode` may delete (the note needs no read at all), true when something may go,
+    /// nil when the cache has nothing for exactly these revisions. The one rule behind `loadForCompaction`'s shortcut
+    /// and the app's thinning, which asks it before taking a coordinated read (`NoteWriter.thin`).
+    public static func cachedCompactionVerdict(_ noteId: UUID, revisions: [RevisionName], mode: CompactionMode,
+                                               now: Date, cache: SummaryCache?) -> Bool? {
+        guard let hit = cache?.history(for: noteId, revisions: revisions) else { return nil }
+        return CompactionPlanner.mayDelete(hit, noteId: noteId, mode: mode, now: now)
+    }
+
     /// The most plaintext `loadForCompaction` keeps per note between its two
     /// decodes; a larger note is read again for the full decode instead.
     static let compactionPlainBytes = 32 << 20
@@ -213,9 +223,8 @@ extension Vault {
     func loadForCompaction(_ noteId: UUID, mode: CompactionMode, now: Date, cache: SummaryCache?,
                            keepPlainBytes: Int) throws -> LoadedNote? {
         let names = try revisionNames(of: noteId)
-        if let hit = cache?.history(for: noteId, revisions: names) {
-            guard CompactionPlanner.mayDelete(hit, noteId: noteId, mode: mode, now: now) else { return nil }
-            return try loadNote(noteId)
+        if let verdict = Self.cachedCompactionVerdict(noteId, revisions: names, mode: mode, now: now, cache: cache) {
+            return verdict ? try loadNote(noteId) : nil
         }
         // As `revisionIndex`: any unreadable revision stops the note.
         // The plaintext is kept for the full decode only while it stays under

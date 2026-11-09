@@ -784,7 +784,40 @@ Each one becomes a single implementation in the library that both call.
    stays different is the platform's, not a rule: the app places on what is on screen (`viewFrame`,
    `unoccupied`) where the CLI takes flags, lays text out with TextKit, and typesets equations.
 6. **Thinning, the bulk-export driver, notebook rename, join approval, history rendering and the demo
-   generators.**
+   generators.** Checked item by item in wave 6 part 1 (2026-11-08):
+   - *Thinning*: done. The stages (`loadForCompaction`, `planCompaction`, `prepare`, `execute`) and the rule
+     (`ThinningRule`, `CompactionMode`) were already the library's, and the CLI's `compact` and the app's thinning both
+     ran them. What each kept for itself was the cache shortcut ("the cached metadata shows nothing to delete, read
+     nothing"), written twice. It is `Vault.cachedCompactionVerdict`, used by `loadForCompaction` and by the app's step.
+     The app's async per-note step (`NoteWriter.thin`: the coordinated read and write, `verify`, the open-note check)
+     moved from `SempereAppCore` to `Sources/Sempere/NoteThinning.swift`, next to the writer and the planner it calls.
+     `NoteThinningTests` (SempereTests, Linux) pins that it plans the same deletions, snapshots and witnesses as
+     `prepareCompaction`, cold and with a warm cache, and what is left on disk after a real run. What stays
+     different is the platform's: the CLI runs notes on threads with a `HybridClock`, the app on tasks with the
+     `DeviceClock` actor, the iCloud coordination, and the app's `ThinningReport` (titles and a progress count for
+     the preview sheet) next to the CLI's `compact` JSON items.
+   - *Join approval*: done. Both call `Vault.joinRequest(matching:)` and `Vault.approveDevice`. The one rule the app
+     kept for itself was reading a request by a scanned code (`joinRequest(in:words:qr:)`), which is
+     `Vault.joinRequest(words:qr:)` now, with the code's text `JoinRequest.qrText` (was `commitmentQRText`). The CLI
+     gained what that made possible, `devices approve --qr TEXT`, and `device init --json` prints `qr`
+     (`CLIDevicesTests.testApproveByTheScannedCodesText`). The wait for a request still on its way (sync every target,
+     look again) stays the model's (`approveDevice`): the CLI syncs with `store sync`, a separate command.
+   - *History rendering*: done. Both read `NoteHistory.restorePoints` and `NoteHistory.groups`. A group's device,
+     times, saves and checkpoint name were derived in `notes history --sessions` and again in `HistoryGroupRow`; they
+     are `HistoryGroup.device`, `.start`, `.end`, `.saves`, `.checkpointName` and `.isCheckpoint`, which both read
+     (`VersionHistoryTests.testCheckpointsStandAloneAndSplitSessions`; the app's `HistoryTests` run on them). Words
+     ("This device", "Saved version", the compaction notice) are the app's and the CLI prints ids and kinds.
+   - *Notebook rename*: already one implementation. `NoteOps.renameNotebook` (the notes' ops), `NotebookRecords.rename`
+     (the empty notebooks' record) and `NotebookPath.renamed` are the library's and both `notebooks rename`/`move` and
+     `AppModelCore.renameNotebook` use them, in the same order (the record first, then one delta per note). What
+     differs is what each reports and the app's downloads of notes not yet here. Nothing to move.
+   - *Demo generators*: no duplicate to remove. `DemoVault`, `DemoHandwriting` and `DemoSearchNotes` (screenshots and
+     UI-test data, `#if DEBUG`) have no CLI counterpart: the CLI's generators (`pages scribble`, `notes dense`,
+     `DenseNote`) are the loop-shaped benchmarks fixtures. Their overlap is `SyntheticInk` (already shared: the demo's
+     dense note, `DenseNote` and the app's device checks all use it). `DemoVault.denseOps` keeps its own paper, row
+     height and ids on purpose, because the UI tests assert on that geometry; routing it through `DenseNote` would
+     change what they see. Decided in review of #35: keep `denseOps`.
+   - *Bulk-export driver*: not done; moved to part 2 (the largest item, below).
 
 ## Waves
 
@@ -801,6 +834,117 @@ for what it moved.
 | 5 | **The `NoteEditor` cut, then the `AppModel` family**, as one unit into `SempereAppCore`, together with duplicate 5. About 51 of the 84 app test files that build an `AppModel` move to Linux with it. |
 | 6 | **The rest of the splits**, duplicate 6, and new CLI commands for anything the app can now do that the CLI cannot. |
 | 7 | **CI.** Test targets split into logic and OS-dependent, hash-based skipping of unchanged targets, the lean Gitea gate, and the scheduled benchmark run. |
+
+## Wave 6 plan
+
+Surveyed on 2026-11-08 at `aaef975` (the head of wave 5b): `Apps/Sempere/SempereApp` is 175 files and 37.3k lines,
+`SempereAppTests` 143 files. The 102 files that import SwiftUI or UIKit hold 29.4k of the lines and are mostly
+views, UIKit controllers and platform implementations of the library's protocols (`PageCanvasView`, `NoteListView`,
+`SettingsView`, `JoinViews`, `ItemSelectionController`, `TextBoxEditorController`, the Keychain, ActivityKit,
+AVFoundation and CoreGraphics services), which stay; the 73 that import neither hold the other 7.9k, part of it
+words (`*+Text.swift`), which stay. What is left of logic is below, found by reading each of those 73 files and the types inside
+the 102. Each part is one PR with its tests; sizes are the lines that move (the ranges are line numbers at `aaef975`).
+
+**Rules for deciding.** Moves: a type with no UIKit/SwiftUI/PencilKit/CoreGraphics/AVFoundation symbol in it, or one
+whose platform part is a protocol the app can implement (`AudioCaptureBackend`, `KeyValueStore`, `FileCoordinating`).
+Stays: anything that is a view, a gesture recognizer, a `UIViewRepresentable`, or words (`String(localized:)`, kept in
+the `*+Text.swift` files). A file with both is split along that line, the pure half first.
+
+**What the app does that the CLI cannot** (read against `docs/cli.md`; the CLI has a command for nearly everything
+the model does: notes, notebooks, pages, items, attachments, history, export, import, sync, devices, inbox, settings):
+
+| Capability | Where it is | CLI | Plan |
+| --- | --- | --- | --- |
+| Approve a join by the scanned code | `AppModelCore.approveDevice(qr:)` | words only | **Done, part 1**: `devices approve --qr TEXT`, `device init --json` `qr` |
+| Add Passphrase Copy | `AppModelCore.addPassphraseCopy`, `Vault.addPassphraseCopy` | `recovery add-passphrase --kit FILE [--generate \| --new-passphrase-env VAR] --yes` (`Epochs.swift`, `CLIEpochTests`; missing from the usage list in `docs/cli.md` until part 1, which adds it) | None needed |
+| Move several notes at once (ticked notes dragged onto a notebook) | `AppModelCore.moveNotes(_:toNotebook:)` (`AppModel+Drags.swift`), one commit and one `NotebookMoveRecord`; undo is `restoreNotebooks`, reached from `NoteDragSource` → `DragPayload.notes(ids)` → `move(_:to:)` | `notes move` takes one note | Part 7: `notes move ID\|TITLE... (NOTEBOOK \| --none)` (the model's other edits are one note at a time; `renameNotebook` has `notebooks rename`) |
+| Recover a recording a crash left | `RecordingRecovery` | none | No command: the recording root is the app's own scratch folder, and a CLI has no such state (`attach recording` takes the file). Decided here, reviewer may overrule |
+| Cache sizes, Clear Caches | `AppModelCore.cacheSizes`, `clearCaches` | none | No command: the drawing and blob caches are the app's (the CLI's only cache is the summary cache, `--no-cache`) |
+| Demo vault, debug launches | `DemoVault`, `DemoLaunch`, `DebugLaunch` | none | None: `#if DEBUG`, screenshots and UI tests only |
+
+**Part 1 (this PR).** This inventory, duplicate 6's check (above) with its three small unifications, `devices approve
+--qr`, and the two #34 folds-in (the `onLoadFailed` doc comment, `QuickCapture.app()`'s `describeError`).
+
+**Part 2: the bulk-export driver, and the leaves with no editor edge (about 1,150 lines).**
+- The driver (duplicate 6's last item): `AppModelCore.exportJobs`/`runBulkExport` (about 120 lines of
+  `AppModel+BulkExport.swift`) and `ExportCommand.runBulk`'s loop (`ExportBulk.swift`, about 50) both run, per job:
+  names, skip when unchanged, load, export, `fail` on an error, `finish(cancelled:)` on a `BulkExportError` or a
+  cancel. The read-ahead (`LoadAhead`, `ByteBudget`) is already `SempereRender`'s. Plan: `LoadedForExport` and
+  `loadNoteForExport` (`AppModel+Export.swift`, about 30 lines, which only call `Vault.loadNote` and `reconstruct`)
+  move to `SempereRender`, with one async `BulkExportDriver.run(jobs:session:vault:…)` that owns the turn and the
+  read-ahead; the app passes what is its own (`flushEditors`, the iCloud `ensurePDFAttachmentsLocal`/`ensureMediaLocal`
+  as a `prepare` closure, `ensureCurrent(gen)`, the progress) and the CLI passes none and keeps its Ctrl-C. Tests
+  (Linux): the driver's order, skips, one failed note not stopping the rest, cancel between notes, the memory budget
+  (the cases of `BulkExportTests` in `SempereAppCoreTests` become its tests) and CLITests for `export --all` unchanged.
+- `PageStackLayout.swift` (215, pure geometry) and `PageStackLayoutTests` (189), `ZoomDetent` (43), `PageLayoutChoice`
+  (`NewNoteLayout`, `PageStrip`, 66), `PaperDraft` and `PaperPreference` (210) with `PaperPickerTests`, `TextBoxEmoji`
+  (66) with `TextBoxEmojiTests`, `PickedFolderRules` (134; `Platform.isMac` becomes a parameter), `SelectionStorage`
+  (`LibraryCommands.swift` 94-110), `KeyRemoval` (57), `ExistingKeyInput`'s status rules (100; its messages stay),
+  `AddDeviceApproval` (99, the sheet's model; it only calls `AppModelCore`), the key halves of `ColumnLayout`
+  (`stored`, `toggled`, `withoutNote`; the `NavigationSplitViewVisibility` mapping stays), `NoteTitle` (`NoteCanvasView`
+  780-786, the trimming), `SearchSnippetText` and `RecognitionResultsText` (`NoteListView` 705-717, 797-817: their words
+  stay), `TypedWords` (`JoinViews` 121-131), `ExportHandOffState` (`ExportSheet` 322-333).
+
+**Part 3: the editor's interaction models (about 700 lines).** The pure types inside the gesture files:
+`ItemSelectionModel` and its `Scope`, `Drag`, `Tap` (`ItemSelection.swift` 12-127), `ItemMenu` (234-280) and
+`FingerTapTracker` (281-309); `MouseSmoothing` (`MouseInk.swift` 10-62); `InsertOptions`, `CanvasDrop` and
+`InsertState` (`InsertUI.swift` 13-153); `TextBoxPlacement` and `TextColourPalette` (`TextBoxEditor.swift` 784-877; the
+`UIColor` values become `Color` values the app maps); `PageExtent` (`PageCanvasView.swift` 1466-1499);
+`ObjectEraser`'s hit rules (the `ObjectEraserController`'s decision half, about 120 of 393 lines, behind
+`StrokeHitShape`, which is the library's already); `ItemPointer` (85; the pointer regions' `UIBezierPath`s stay, the rule that picks a region moves) and `TitlePatternField`'s `Field` and
+`Status` (`SettingsView.swift` 420-477). The controllers keep the recognizers and call these. Tests: the
+`ItemPointerTests`, `MouseSmoothingTests`, `ObjectEraserTests` (the rules only) and `InsertTests` move to
+`SempereAppCoreTests`; the gesture tests (`CanvasSelectionTests`, `PhoneCanvasInteractionTests`) stay.
+
+**Part 4: preferences and the math models (about 800 lines).** `MathModels` (347, the installed and downloadable
+recognizer models: status, download, import, remove; it calls the library's `MathModelStore` and a download seam) with `MathModelFetchTests`
+and `MathSettings` (100), `RecordingPreferences` (166: `RecordingPreference`, `TranscriptionPreference` and its
+engine lines; `installSettingsHooks` stays), `AppearancePreferences` (99), `EraserPreference` (60; the PencilKit
+type mapping stays), `DragTestSettings`' `NoteDragTestRun` (debug), and the app's `SettingsView` rows' logic that
+sits in the views (the title-pattern field's validation is part 3). Each preference moves with its key so
+`SettingsSyncBridge` and the settings catalog read one definition.
+
+**Part 5: the recording session (about 400 lines).** `RecordingSession` (`AudioRecorder.swift` 212-488: the state
+machine of pause, resume, interruption and file layout) and `RecordingAssembly` (489-544), `RecordingError` and
+`NoteEditor+RecordingSession` (89), behind the existing `AudioCaptureBackend` protocol (11-30; `AVAudioCaptureBackend`,
+65-211, stays). A fake backend gives the state machine Linux tests (the cases of `RecordingTests` that do not need the
+real audio engine, `RecordingRelaunchTests`); the AVFoundation cases stay. Size check first: `QuickCapture`'s
+`CaptureRecorder` may already cover half of it.
+
+**Part 6: the PencilKit and CoreGraphics boundaries (audit, then about 900 lines).** Files that are mostly a
+conversion but hold rules: `StrokeConversion` (219) and `CanvasStrokes` (175: the stroke order and ledger rules
+the editor's `NoteCanvas` already carries in `SempereAppCore`, so most should be deletions), `DrawingPreparation`
+(88), `MathLasso` (107), `DrawingToolbox` (245: the tool state moves, the `PKTool` mapping stays),
+`PageColorInversion` (117, the colour arithmetic), `TextBoxLayout` (534) and `TextBoxEditing` (291: the TextKit
+layout stays, the placement and editing rules go). Each file is read first; the part that turns out to be only
+drawing stays and is listed as such in the PR.
+
+**Part 7: `notes move` for several notes (about 120 lines).** `notes move ID|TITLE... (NOTEBOOK | --none)`: every note
+is resolved first (`Vault.resolveNote`), then one all-or-none move goes through the library. The loop of
+`AppModelCore.moveNotes` moves into `Sources/Sempere` if it is not there already, one implementation for the app and the
+CLI; the undo step (`NotebookMoveRecord`, `restoreNotebooks`) stays the app's. With `--json`, `docs/cli.md`, `CLITests`
+(several notes, one unresolvable note writes nothing, `--none`) and a changelog fragment. Nothing else is left: the
+passphrase copy already has `recovery add-passphrase`, and the other model edits are one note at a time.
+
+**Part 8: the app's test target.** After parts 2 to 6 move the logic, sweep `SempereAppTests`: of its 143 files, 61
+import none of UIKit, SwiftUI, PencilKit, AppKit, AVFoundation, CoreGraphics, PDFKit, Vision, ActivityKit, AppIntents,
+UserNotifications, Security, LocalAuthentication, ImageIO, CoreText, QuartzCore, Speech, SwiftMath,
+UniformTypeIdentifiers or Photos (the review counted 64 when UniformTypeIdentifiers, Security and
+LocalAuthentication, which are Foundation-level on Linux or easily faked, are left out of the list). Those that test the words
+(`*TextAppTests`, `LocalizationTests`, `ReadOnlyVaultTextTests`) need the app bundle's catalog and stay; those that
+test a model or a rule (`MenuHandlerTests`, `MenuBarItemTests`, `SyncFolderPlacementTests`, `JoinThroughProviderTests`,
+`DeviceWriteStoresTests`, `OfflineSyncAppTests`, `SearchTests`, `BrowserTests`, `ListAlertTests`, `NewVaultKeyTests` and
+the like) are checked against `Tests/SempereAppCoreTests` for a twin and either deleted as a duplicate or moved. What
+remains is the screen's: the canvas, gestures, PencilKit, the real recorder, the extension targets and the UI tests.
+The "done when" list is then checked line by line, and wave 6 is closed.
+
+**Decisions taken in the review of #35 (2026-11-09).** (1) `DemoVault.denseOps` stays as it is. (2) No CLI command for
+recording recovery or cache sizes. (3) `NoteWriter.thin` stays in `Sempere`. (4) Part 2's driver is one async
+`BulkExportDriver` in `SempereRender`, on condition that the CLI keeps its Ctrl-C behavior and the output of
+`export --all`, both pinned by `CLITests` in part 2.
+
+Order: 2, 3 and 4 are independent (any order, one PR each); 5 follows nothing but is the riskiest to test; 6 comes
+after 3 (it reuses the types 3 creates); 7 can run any time; 8 is last.
 
 ## Done when
 

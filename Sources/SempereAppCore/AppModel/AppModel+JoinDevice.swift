@@ -117,15 +117,10 @@ public struct TakeoverDraft: Sendable {
 extension AppModelCore {
     // MARK: - Joining (the new device)
 
-    /// The QR payload of `request`'s commitment (design §6.2 step 1): base64 of `JoinCodes.commitmentQR`.
-    nonisolated static func commitmentQRText(_ request: JoinRequest) -> String {
-        JoinCodes.commitmentQR(vaultId: request.vaultId, commitment: request.commitment).base64EncodedString()
-    }
-
     /// The six words and the code of this device's request for `vault` (computed from its keys).
     nonisolated static func joinCodes(_ keys: DeviceKeys, vaultId: UUID, kind: String) -> (words: [String], qr: String) {
         let request = keys.joinRequest(vaultId: vaultId, name: "", kind: kind)
-        return (JoinCodes.words(request.commitment), commitmentQRText(request))
+        return (JoinCodes.words(request.commitment), request.qrText)
     }
 
     /// Starts this device's join of the open, locked vault: new keys (stored), the request written into the
@@ -358,18 +353,7 @@ extension AppModelCore {
     /// Device approves them again once their request has arrived.
     public func hasJoinRequest(words: [String]?, qr: String?) async -> Bool {
         guard let vault else { return false }
-        return await Task.detached(priority: .userInitiated) { Self.joinRequest(in: vault, words: words, qr: qr) != nil }.value
-    }
-
-    /// The request in `vault`'s copy that `words` (typed) or `qr` (scanned) names; nil when none is there.
-    nonisolated static func joinRequest(in vault: Vault, words: [String]?, qr: String?) -> JoinRequest? {
-        if let qr, let data = Data(base64Encoded: qr), let parsed = JoinCodes.parseCommitmentQR(data) {
-            guard parsed.vaultId == vault.vaultId else { return nil }
-            return vault.joinRequests().compactMap(\.request).first { $0.vaultId == vault.vaultId && $0.commitment == parsed.commitment }
-        } else if let words {
-            return vault.joinRequest(matching: words)
-        }
-        return nil
+        return await Task.detached(priority: .userInitiated) { vault.joinRequest(words: words, qr: qr) != nil }.value
     }
 
     /// Approves the request whose commitment `words` (typed) or `qr` (scanned) gives (design §6.2 step 2), after
@@ -385,7 +369,7 @@ extension AppModelCore {
         guard let first = vault, phase == .unlocked else { throw KeyError.notUnlocked }
         try requireWritableVault()
         var start = first
-        var found = await Task.detached(priority: .userInitiated) { Self.joinRequest(in: first, words: words, qr: qr) }.value
+        var found = await Task.detached(priority: .userInitiated) { first.joinRequest(words: words, qr: qr) }.value
         guard proceed() else { throw CancellationError() }
         let synced = found == nil && !syncSessions.isEmpty
         if synced {
@@ -395,7 +379,7 @@ extension AppModelCore {
             // The run may have taken a vault.json that makes this device read-only or not home (review of #117, N1).
             try requireWritableVault()
             start = again
-            found = await Task.detached(priority: .userInitiated) { Self.joinRequest(in: again, words: words, qr: qr) }.value
+            found = await Task.detached(priority: .userInitiated) { again.joinRequest(words: words, qr: qr) }.value
             guard proceed() else { throw CancellationError() }
         }
         guard let request = found else {

@@ -76,13 +76,9 @@ struct NotesHistory: ParsableCommand {
         if output.json {
             if sessions {
                 try output.emitJSON(groups.map { g -> Group in
-                    let first = g.points[0]
-                    let isCheckpoint: Bool
-                    if case .checkpoint = g { isCheckpoint = true } else { isCheckpoint = false }
-                    return Group(type: isCheckpoint ? "checkpoint" : "session", device: first.device.rawValue,
-                                 session: first.session, name: isCheckpoint ? first.checkpoint?.name : nil,
-                                 start: first.wall, end: g.newest.wall, saves: g.points.count,
-                                 newest: g.newest.name.filename, points: g.points.map(json))
+                    Group(type: g.isCheckpoint ? "checkpoint" : "session", device: g.device.rawValue, session: g.session,
+                          name: g.checkpointName, start: g.start, end: g.end, saves: g.saves,
+                          newest: g.newest.name.filename, points: g.points.map(json))
                 })
             } else {
                 try output.emitJSON(points.map(json))
@@ -99,11 +95,8 @@ struct NotesHistory: ParsableCommand {
         if sessions {
             var rows = output.quiet ? [] : [["GROUP", "FROM", "TO", "DEVICE", "SAVES", "NEWEST"]]
             for g in groups {
-                let first = g.points[0]
-                let label: String
-                if case .checkpoint = g { label = "checkpoint" } else { label = "session" }
-                rows.append([label, Format.local(first.wall), Format.local(g.newest.wall), first.device.rawValue,
-                             "\(g.points.count)", mark(g.newest)])
+                rows.append([g.isCheckpoint ? "checkpoint" : "session", Format.local(g.start), Format.local(g.end),
+                             g.device.rawValue, "\(g.saves)", mark(g.newest)])
             }
             print(Format.table(rows))
             return

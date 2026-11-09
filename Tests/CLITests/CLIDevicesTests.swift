@@ -123,6 +123,38 @@ final class CLIDevicesTests: CLITestCase {
         XCTAssertTrue(exists("joins/Not-A-Request.join.json"), "never declined silently")
     }
 
+    /// `devices approve --qr`: the code's text (`device init --json` `qr`, what the app scans) names the same request
+    /// the six words do; a code of another vault, junk, or words together with it are refused.
+    func testApproveByTheScannedCodesText() throws {
+        let (vault, _) = try initVault()
+        let v = ["--vault", vault]
+        let ask = try cli(["device", "init", "--name", "Laptop", "--json"] + v, env: machine("laptop"))
+        XCTAssertEqual(ask.status, 0, ask.err)
+        let askJSON = try XCTUnwrap(ask.json as? [String: Any])
+        let qr = try XCTUnwrap(askJSON["qr"] as? String)
+        let words = try XCTUnwrap(askJSON["words"] as? [String])
+        let data = try XCTUnwrap(Data(base64Encoded: qr))
+        XCTAssertEqual(data.count, 48, "the vault id and the commitment")
+        XCTAssertEqual(try cli(["devices", "approve", "--qr", qr] + v, env: machine("laptop")).status, 4, "only home")
+        XCTAssertEqual(try cli(["devices", "approve", "--qr", "not base64!"] + v, env: machine("home")).status, 1)
+        var other = data
+        other[0] ^= 0xFF   // another vault's id
+        XCTAssertEqual(try cli(["devices", "approve", "--qr", other.base64EncodedString()] + v, env: machine("home")).status, 1)
+        XCTAssertEqual(try cli(["devices", "approve", "--qr", qr] + words + v, env: machine("home")).status, 2,
+                       "words and a code together are a usage error")
+        // A well-formed code of this vault that names no request matches nothing.
+        var unknown = data
+        unknown[unknown.count - 1] ^= 0xFF   // another commitment
+        XCTAssertEqual(try cli(["devices", "approve", "--qr", unknown.base64EncodedString()] + v, env: machine("home")).status, 1)
+        let approve = try cli(["devices", "approve", "--json", "--qr", qr] + v, env: machine("home"))
+        XCTAssertEqual(approve.status, 0, approve.err)
+        XCTAssertEqual(((approve.json as? [String: Any])?["reply"] as? [String])?.count, 6)
+        XCTAssertEqual(try cli(["notes", "list"] + v, env: machine("laptop")).status, 0, "listed")
+        // Listed but not home: refused as a non-home device (exit 1), by words and by code.
+        XCTAssertEqual(try cli(["devices", "approve", "--qr", qr] + v, env: machine("laptop")).status, 1, "not home")
+        XCTAssertEqual(try cli(["devices", "approve"] + words + v, env: machine("laptop")).status, 1, "not home")
+    }
+
     func testJoinByApprovalWithTypedWordsBothWays() throws {
         let (vault, _) = try initVault()
         let v = ["--vault", vault]

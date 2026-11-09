@@ -211,7 +211,7 @@ groups with or without their checksums (each given checksum must match, `KitReco
 sempere device init [--name TEXT] [--kind WORD] [--passphrase]
 sempere device confirm WORD WORD WORD WORD WORD WORD
 sempere devices list
-sempere devices approve WORD WORD WORD WORD WORD WORD
+sempere devices approve (WORD WORD WORD WORD WORD WORD | --qr TEXT)
 sempere devices decline (WORD WORD WORD WORD WORD WORD | --id ID... | --all)
 sempere devices rename ID NAME
 sempere devices remove ID... [--no-pull] [--password-env VAR]
@@ -220,6 +220,7 @@ sempere devices status [--export DIR] [--forget-sightings [--all]]
 sempere devices history
 sempere devices takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--yes]
 sempere recovery replace --recovery-out FILE [--keep ID]... [--remove ID]... [--old-recovery-key FILE] [--recovery-passphrase | --generate-passphrase] [--yes]
+sempere recovery add-passphrase --kit FILE --yes [--generate | --new-passphrase-env VAR] [--json]
 sempere set-aside list | export [SHA...] --to DIR | keep (SHA... | --own-dropped) --yes | clear (SHA... | --superseded) --yes
 ```
 
@@ -235,7 +236,8 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
    (at most 40 characters, default `sempere CLI`) and `--kind` (a lowercase
    word, default `cli`) go into the request. It refuses (exit 1) when this
    machine already has a device key for the vault. `--json`: `device`,
-   `deviceKey`, `request`, `words`.
+   `deviceKey`, `request`, `words`, `qr` (the text of the code the app scans:
+   base64 of the vault id and the commitment, for `devices approve --qr`).
 2. The request must reach the home device's copy of the folder (a shared
    folder, `vault merge-copy`, or a sync: `sync webdav`, `sync folder` and
    `store sync` carry `joins/`). There, `devices approve --vault V WORD…`
@@ -245,7 +247,12 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
    request, and prints six words back. No file is re-encrypted. Only home
    approves (exit 1 elsewhere, naming the home device). It refuses a request
    of another vault, a key that is not post-quantum, a key already listed, or
-   one whose id is a listed device's. `--json`: `device`, `name`, `reply`.
+   one whose id is a listed device's. `--qr TEXT` names the request by the
+   text of the code the new device shows (what a QR reader prints for it, or
+   `qr` of `device init --json`; the app's Add Device scans the same code)
+   instead of the six words; give words or `--qr`, not both (exit 2). A code
+   that is not base64 of 48 bytes, or names another vault, matches no request
+   (exit 1). `--json`: `device`, `name`, `reply`.
 3. Once the new `vault.json` reaches the new machine (a sync with its device
    key takes the approval that lists it, although the machine's copy does not
    list it yet), `device confirm --vault V

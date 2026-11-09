@@ -150,7 +150,7 @@ struct DeviceInit: ParsableCommand {
         let words = JoinCodes.words(request.commitment)
         if output.json {
             try output.emitJSON(Out(device: device.id, deviceKey: path, request: "\(Vault.joinsName)/\(request.fileName)",
-                                    words: words))
+                                    words: words, qr: request.qrText))
         } else {
             output.info("This device: \(device.id) (keys in \(path))")
             output.info("Asked to join: \(Vault.joinsName)/\(request.fileName)")
@@ -165,6 +165,8 @@ struct DeviceInit: ParsableCommand {
         var deviceKey: String
         var request: String
         var words: [String]
+        /// The text of the code the app scans (`devices approve --qr`).
+        var qr: String
     }
 }
 
@@ -309,7 +311,9 @@ struct DevicesApprove: ParsableCommand {
         abstract: "Approve a join request on the home device: type the six words the new device shows.",
         discussion: """
             Finds the request in joins/ whose commitment the words give (typing, not comparing, so a near \
-            match is not waved through), adds the device with a wrap of the vault key and this device's \
+            match is not waved through), or, with --qr, whose commitment the scanned code's text names \
+            (the base64 text a QR reader prints for the code the new device shows, or `qr` of \
+            `device init --json`; the app's Add Device scans the same code), adds the device with a wrap of the vault key and this device's \
             signature, and deletes the request. No file is re-encrypted. Prints six words: type them on \
             the new device (`sempere device confirm`). Only the home device approves (exit 1 elsewhere).
             """
@@ -320,10 +324,18 @@ struct DevicesApprove: ParsableCommand {
     @Argument(help: ArgumentHelp("The six words the new device shows.", valueName: "word"))
     var words: [String] = []
 
+    @Option(name: .long, help: ArgumentHelp("The text of the code the new device shows, instead of the six words.",
+                                            valueName: "text"))
+    var qr: String?
+
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
-        guard words.count == 6 else { throw ValidationError("give the six words the new device shows") }
+        if qr != nil {
+            guard words.isEmpty else { throw ValidationError("give the six words or --qr, not both") }
+        } else {
+            guard words.count == 6 else { throw ValidationError("give the six words the new device shows, or --qr") }
+        }
     }
 
     func run() throws {
@@ -332,9 +344,12 @@ struct DevicesApprove: ParsableCommand {
             let home = vault.manifest.homeEntry.map { "\(DeviceName.display($0.name)) (\($0.id ?? "?"))" } ?? "another device"
             throw CLIError.failure("only the home device approves devices: \(home) manages this vault's devices")
         }
-        guard let request = vault.joinRequest(matching: words) else {
-            throw CLIError.failure("no join request in \(Vault.joinsName)/ matches those words: check them, or the "
-                + "request was replaced on the way (it is refused)")
+        guard let request = vault.joinRequest(words: qr == nil ? words : nil, qr: qr) else {
+            throw CLIError.failure(qr == nil
+                ? "no join request in \(Vault.joinsName)/ matches those words: check them, or the "
+                    + "request was replaced on the way (it is refused)"
+                : "no join request in \(Vault.joinsName)/ matches that code: check it, or the request was "
+                    + "replaced on the way (it is refused)")
         }
         let reply = try vault.approveDevice(request)
         let id = String(Hex.encode(request.fingerprint).prefix(8))
