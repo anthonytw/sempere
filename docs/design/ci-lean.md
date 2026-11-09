@@ -118,7 +118,7 @@ later and would not be a required check.
 
 **Build.** The package always builds (`swift build --build-tests`, incremental, cheap when warm), also when every
 target is skipped: the benchmark targets are never tested but must still compile, and on Linux all test targets are
-one xctest bundle. `ci-linux.sh test` also runs the portability and removable-importer checks every time.
+one xctest bundle. `ci-linux.sh test` also runs the portability check every time, and the removable-importer isolation grep; the build without the module is skipped by hash under the job `linux-removable` ([ci.md](../ci.md)).
 
 **WebDAV job.** It runs the tests named `Wsgidav*`, which live in `SempereWebDAVTests` and `CLITests`; it is
 skipped when both of those hash as already passed under the `linux-webdav` job.
