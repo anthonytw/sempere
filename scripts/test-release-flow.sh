@@ -8,6 +8,10 @@ src=$PWD
 t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export SEMPERE_TAG_SIGN=false
+# The release scripts run on a Mac, where `shasum` and `curl` exist; the Linux CI image has neither (shims for file:// only).
+mkdir -p "$t/bin"; export PATH="$t/bin:$PATH"
+command -v shasum >/dev/null || { printf '#!/bin/sh\nshift 2\nexec sha256sum "$@"\n' > "$t/bin/shasum"; chmod +x "$t/bin/shasum"; }
+command -v curl >/dev/null || { printf '#!/bin/sh\nwhile [ "$1" != -o ]; do shift; done; out=$2; url=$3; exec cp "${url#file://}" "$out"\n' > "$t/bin/curl"; chmod +x "$t/bin/curl"; }
 git init -q --bare "$t/github.git"
 git init -q -b main "$t/w"; cd "$t/w"
 git config commit.gpgsign false
