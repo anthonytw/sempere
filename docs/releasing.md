@@ -317,6 +317,10 @@ just testflight both "$sha"
 Wait for processing, then install it from TestFlight on an iPad, an iPhone and the Mac and check it starts and
 opens a vault **[you]**. This build is what you submit in B.5.
 
+**[you]** For a minor release (1.1, 1.2, ...): **release audit done** (`docs/audits/README.md`): its report is published, or
+its findings are embargoed in private advisories with the fixes on this build (`scripts/release-tag.sh --embargo`). The
+coordinator prepares a one-paragraph status. A script cannot see private advisories, so this is not enforced.
+
 ### B.4 Website live before the submission
 
 App Review (and Beta App Review) opens the Privacy Policy and Support URLs, so the site must serve them before

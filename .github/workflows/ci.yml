@@ -70,14 +70,14 @@ jobs:
           gh run download -R "$GITHUB_REPOSITORY" "$run" -n "ci-pass-${{ matrix.job }}" -D "$dir" || { echo "no records artifact in run $run"; exit 0; }
           echo "ci-hash: records of pull request #$pr (run $run) are in $dir"
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/ci-pass
           key: ci-pass-${{ matrix.job }}-main-${{ github.sha }}
           restore-keys: ci-pass-${{ matrix.job }}-
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/ci-pass
           key: ci-pass-${{ matrix.job }}-main-${{ github.sha }}
@@ -94,8 +94,8 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -121,7 +121,7 @@ jobs:
     timeout-minutes: 15
     container: swift:6.4-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install python3
         run: apt-get update -q >/dev/null && apt-get install -y -q python3 >/dev/null
       # scripts/local-ci.sh's `help` step, then the portability guard (also run again by the Linux package job).
@@ -138,6 +138,12 @@ jobs:
           python3 -I scripts/test-runner.py --self-test
       - name: Portability
         run: scripts/check-portability.sh
+      # The yes/no security checks (docs/audits/README.md "Checks and audits"): secrets, logging, pins.
+      - name: Security checks
+        run: |
+          scripts/test-check-security.sh
+          scripts/test-release-tag-embargo.sh
+          scripts/check-security.sh
 
   ios-build:
     name: iOS build
@@ -146,7 +152,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: ./.github/actions/select-xcode
       - id: cache
         uses: ./.github/actions/build-cache
@@ -159,7 +165,7 @@ jobs:
         run: mkdir -p build && scripts/app.sh build-ios 2>&1 | tee build/ios-build.log
       - name: Save the build cache
         if: ${{ success() && env.SAVE_BUILD_CACHE == 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .build/xcode.noindex
           key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
@@ -172,7 +178,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: ./.github/actions/select-xcode
       - id: cache
         uses: ./.github/actions/build-cache
@@ -185,7 +191,7 @@ jobs:
         run: mkdir -p build && scripts/app.sh test-mac 2>&1 | tee build/mac-app.log
       - name: Save the build cache
         if: ${{ success() && env.SAVE_BUILD_CACHE == 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .build/xcode.noindex
           key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
@@ -197,7 +203,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: ./.github/actions/select-xcode
       - id: pass
         uses: ./.github/actions/pass-records
@@ -207,13 +213,13 @@ jobs:
         run: scripts/ci-mac-package.sh
       - name: Save the pass records
         if: success()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/ci-pass
           key: ${{ steps.pass.outputs.key }}
       - name: Records for main (pull requests)
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ci-pass-mac-package
           path: ${{ runner.temp }}/ci-pass
@@ -232,7 +238,7 @@ jobs:
       # namespace of their own, which needs these two capabilities.
       options: --cap-add=SYS_ADMIN --cap-add=NET_ADMIN
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: pass
         uses: ./.github/actions/pass-records
         with:
@@ -242,13 +248,13 @@ jobs:
         run: scripts/ci-linux.sh test
       - name: Save the pass records
         if: success()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/ci-pass
           key: ${{ steps.pass.outputs.key }}
       - name: Records for main (pull requests)
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ci-pass-linux-test
           path: ${{ runner.temp }}/ci-pass
@@ -264,7 +270,7 @@ jobs:
     container:
       image: swift:6.4-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: pass
         uses: ./.github/actions/pass-records
         with:
@@ -274,13 +280,13 @@ jobs:
         run: scripts/ci-linux.sh webdav
       - name: Save the pass records
         if: success()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/ci-pass
           key: ${{ steps.pass.outputs.key }}
       - name: Records for main (pull requests)
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ci-pass-linux-webdav
           path: ${{ runner.temp }}/ci-pass
