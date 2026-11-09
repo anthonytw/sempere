@@ -354,13 +354,3 @@ extension ObjectEraserSize {
         }
     }
 }
-
-enum ObjectEraser {
-    /// `drawing` without the strokes an eraser of `radius` touches moving
-    /// from `a` to `b` (page points), and how many were removed.
-    static func erasing(_ drawing: PKDrawing, from a: EraserPoint, to b: EraserPoint,
-                        radius: Double) -> (drawing: PKDrawing, removed: Int) {
-        let kept = drawing.strokes.filter { !StrokeHitShape($0).intersects(sweepFrom: a, to: b, radius: radius) }
-        return (PKDrawing(strokes: kept), drawing.strokes.count - kept.count)
-    }
-}

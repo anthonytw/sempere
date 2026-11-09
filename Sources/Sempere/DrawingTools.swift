@@ -168,6 +168,20 @@ public struct DrawingToolState: Hashable, Sendable {
         }
     }
 
+    /// The widths `ink` takes on a platform whose own range for the ink is `platform` (PencilKit's `validWidthRange`
+    /// for its type): the model's range within it; a platform with a narrower range wins, and one that does not
+    /// overlap the model's leaves the model's.
+    public static func widthRange(for ink: InkTool, within platform: ClosedRange<Double>) -> ClosedRange<Double> {
+        let model = widthRange(for: ink)
+        let lo = max(model.lowerBound, platform.lowerBound), hi = min(model.upperBound, platform.upperBound)
+        return lo < hi ? lo...hi : model
+    }
+
+    /// `width` limited to `range`.
+    public static func clamped(_ width: Double, to range: ClosedRange<Double>) -> Double {
+        min(max(width, range.lowerBound), range.upperBound)
+    }
+
     /// The thinnest tool width PencilKit takes for `ink` (`PKInkingTool` clamps below it; measured on macOS 27:
     /// pen 0.878, monoline 0.5, fountain pen 1.5), nil when the model's range is all PencilKit takes. Thinner lines
     /// than these need Sempere's own stroke rendering (post-v1): a tool width below the floor is never drawn, so the

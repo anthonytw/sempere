@@ -46,7 +46,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         var frame: Rect
         var rotation: Double?
         var original: TextContent?
-        var style: TextBoxEditing.BoxStyle
+        var style: TextBoxStyle
         /// A Markdown box: its source is edited, with the Markdown bar.
         var markdown = false
         /// Changed since editing started.
@@ -63,7 +63,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
     private(set) var textView: UITextView?
 
     /// The style of the last box edited: the next new box starts with it.
-    static var lastStyle = TextBoxEditing.BoxStyle(TextContent(size: 16, color: .black, runs: []))
+    static var lastStyle = TextBoxStyle(TextContent(size: 16, color: .black, runs: []))
 
     var isEditing: Bool { session != nil }
 
@@ -128,7 +128,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
     func begin(_ item: Item) {
         guard item.kind == .text, let content = item.text, let pageID, editor?.canEditItems == true else { return }
         endEditing()
-        let style = TextBoxEditing.BoxStyle(content)
+        let style = TextBoxStyle(content)
         session = Session(itemID: item.id, pageID: pageID, frame: item.frame, rotation: item.rotation, original: content,
                           style: style, markdown: content.isMarkdown)
         itemLayer?.hiddenItem = item.id
@@ -231,7 +231,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
             return
         }
         guard !source.isEmpty,
-              let content = TextBoxEditing.markdownContent(source, style: session.style, original: session.original,
+              let content = TextBoxRules.markdownContent(source, style: session.style, original: session.original,
                                                             keyboardLanguage: keyboardLanguage) else { return }
         let frame = session.frame
         let previous = pendingCommit
@@ -616,7 +616,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
     }
 
     /// Changes the box's own style (font, alignment, direction).
-    func restyle(_ change: (inout TextBoxEditing.BoxStyle) -> Void) {
+    func restyle(_ change: (inout TextBoxStyle) -> Void) {
         guard let tv = textView, var session else { return }
         let old = session.style
         change(&session.style)
@@ -633,7 +633,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
     // MARK: Markdown bar
 
     /// Changes a Markdown box's own style (size, color, font, alignment) and redraws its source.
-    func restyleMarkdown(_ change: (inout TextBoxEditing.BoxStyle) -> Void) {
+    func restyleMarkdown(_ change: (inout TextBoxStyle) -> Void) {
         guard let tv = textView, var session, session.markdown else { return }
         let old = session.style
         change(&session.style)
@@ -654,7 +654,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         let before = tv.selectedRange
         let r = MarkdownEditing.apply(action, to: old, selection: before)
         guard r.text != old else { return }
-        let change = TextBoxEditing.changedRange(from: old, to: r.text)
+        let change = TextBoxRules.changedRange(from: old, to: r.text)
         let length = (old as NSString).length
         guard change.range.location >= 0, change.range.location + change.range.length <= length,
               Self.fits(old, replacing: change.range, with: change.replacement) else { return }

@@ -2,6 +2,7 @@ import CoreGraphics
 import CoreText
 import Foundation
 import Sempere
+import SempereAppCore
 import SempereRender
 import UIKit
 
@@ -50,15 +51,6 @@ enum TextBoxFonts {
 
     /// Widths for laying Markdown boxes out (format.md §8.5.4): CoreText, as the canvas and exports draw.
     static let markdownMeasure: MarkdownMeasure = MarkdownLayout.measure(with: CoreTextShaper())
-
-    /// The concrete family written to `family` (informational, format.md §8.2.4).
-    static func family(_ generic: TextContent.Font) -> String {
-        switch generic.effective {
-        case .serif: return "New York"
-        case .mono: return "SF Mono"
-        default: return "SF Pro"
-        }
-    }
 }
 
 /// Attributed strings for laying out a box (pure mapping of the runs).
@@ -128,11 +120,7 @@ enum TextKitBreaks {
         // A Markdown box stores the breaks of its rendered text (format.md §8.2.4 `layout`).
         if content.isMarkdown { return MarkdownLayout.relayout(content, frame: frame, measure: TextBoxFonts.markdownMeasure) }
         let layout = LayoutText(content)
-        var out = content
-        out.breaks = breaks(layout, width: frame.w)
-        let lines = layout.lines(layout.lineRanges(breaks: out.breaks ?? []), top: 0)
-        let h = InkJSON.round3(max(LayoutText.height(of: lines), 1.2 * content.size))
-        return (out, Rect(x: frame.x, y: frame.y, w: frame.w, h: h))
+        return TextBoxRules.relaid(content, layout: layout, breaks: breaks(layout, width: frame.w), frame: frame)
     }
 }
 
@@ -178,13 +166,9 @@ struct TextBoxLayout {
     /// What the drawn text covers: the frame, and lines that overflow it
     /// (text is never clipped, format.md §8.2.4).
     var extent: Rect {
-        var x0 = frame.x, x1 = frame.x + frame.w, y1 = max(frame.y + frame.h, bottom)
-        for line in lines where line.width > 0 {
-            x0 = min(x0, line.x)
-            x1 = max(x1, line.x + line.width)
-            y1 = max(y1, line.geometry.baseline + 0.5 * line.geometry.size)   // descenders, decorations
-        }
-        return Rect(x: x0, y: frame.y, w: x1 - x0, h: y1 - frame.y)
+        TextBoxRules.extent(frame: frame, bottom: bottom, lines: lines.map {
+            TextBoxRules.ExtentLine(x: $0.x, width: $0.width, baseline: $0.geometry.baseline, size: $0.geometry.size)
+        })
     }
 
     init(_ content: TextContent, frame: Rect) {
@@ -211,20 +195,12 @@ struct TextBoxLayout {
             for ctRun in (CTLineGetGlyphRuns(ctLine) as? [CTRun]) ?? [] {
                 guard let run = Self.run(ctRun, layout: layout, x: x, baseline: g.baseline) else { continue }
                 runs.append(run)
-                // Decorations (format.md §8.5.3): S/18 thick, underline 0.12 × the run's size
-                // below the baseline, strikethrough 0.3 × above it.
+                // Decorations (format.md §8.5.3; `TextBoxRules.decorations`).
                 let source = content.runs[layout.runOfScalar[run.scalars.lowerBound]]
                 guard source.u || source.s, let left = run.positions.map(\.x).min() else { continue }
                 let right = zip(run.positions, run.advances).map { Double($0.x) + $1 }.max() ?? Double(left)
-                let t = g.size / 18
-                if source.u {
-                    decorations.append(TextDecoration(x: Double(left), y: g.baseline + 0.12 * run.size - t / 2,
-                                                      width: right - Double(left), height: t, color: run.color))
-                }
-                if source.s {
-                    decorations.append(TextDecoration(x: Double(left), y: g.baseline - 0.3 * run.size - t / 2,
-                                                      width: right - Double(left), height: t, color: run.color))
-                }
+                decorations += TextBoxRules.decorations(underline: source.u, strikethrough: source.s, left: Double(left), right: right,
+                                                        baseline: g.baseline, lineSize: g.size, runSize: run.size, color: run.color)
             }
             runs.sort { ($0.positions.first?.x ?? 0) < ($1.positions.first?.x ?? 0) }
             let text = String(String.UnicodeScalarView(layout.scalars[g.drawn]))
@@ -256,16 +232,7 @@ struct TextBoxLayout {
         // The characters of each cluster go on its first glyph (for search and copying in exports).
         let range = CTRunGetStringRange(ctRun)
         let runEnd = range.location + range.length
-        let starts = Array(Set(indices)).sorted()
-        var assigned = Set<Int>()
-        var texts: [String] = []
-        for i in indices {
-            let s = layout.scalarOffset(utf16: i)
-            guard assigned.insert(s).inserted else { texts.append(""); continue }
-            let next = starts.first { $0 > i } ?? runEnd
-            let e = max(s, layout.scalarOffset(utf16: next))
-            texts.append(String(String.UnicodeScalarView(layout.scalars[s..<min(e, layout.scalars.count)])))
-        }
+        let texts = TextBoxRules.clusterTexts(indices: indices, runEnd: runEnd, layout: layout)
         let lo = layout.scalarOffset(utf16: range.location), hi = max(lo, layout.scalarOffset(utf16: runEnd))
         return Run(font: uiFont as CTFont, glyphs: glyphs,
                    positions: positions.map { CGPoint(x: CGFloat(x) + $0.x, y: CGFloat(baseline) - $0.y) },

@@ -1,5 +1,6 @@
 import PencilKit
 import UIKit
+import Sempere
 import SempereAppCore
 
 /// The lasso of "Convert to Math" (docs/attachments.md §14 G1 part 2): while
@@ -17,13 +18,10 @@ final class MathLassoController: NSObject, UIGestureRecognizerDelegate {
     private weak var canvas: PKCanvasView?
     private let pan = UIPanGestureRecognizer()
     private let shape = CAShapeLayer()
-    /// The loop so far, in the canvas's content coordinates.
-    private var points: [CGPoint] = []
+    /// The loop so far, in the canvas's content coordinates (which moves it keeps: `LassoTrace`).
+    private var trace = LassoTrace()
     private var savedMinimumTouches: Int?
     private var savedPanTouchTypes: [NSNumber]?
-    /// Most points kept for one loop (the core thins further, `InkLasso.maxVertices`).
-    static let maxPoints = 4_096
-
     /// Called with the loop in page points when a lasso ends.
     var onFinish: (([CGPoint]) -> Void)?
     private(set) var isActive = false
@@ -72,26 +70,24 @@ final class MathLassoController: NSObject, UIGestureRecognizerDelegate {
 
     @objc private func panned(_ g: UIPanGestureRecognizer) {
         guard let canvas else { return }
-        let p = g.location(in: canvas)
+        let l = g.location(in: canvas)
+        let p = InkLasso.Point(x: Double(l.x), y: Double(l.y))
         switch g.state {
         case .began:
-            points = [p]
+            trace.begin(at: p)
         case .changed:
-            if let last = points.last, hypot(p.x - last.x, p.y - last.y) >= 2, points.count < Self.maxPoints {
-                points.append(p)
-            }
+            trace.move(to: p)
         case .ended:
-            points.append(p)
-            let z = max(canvas.zoomScale, 0.0001)
-            let loop = points.map { CGPoint(x: $0.x / z, y: $0.y / z) }
+            let loop = trace.finish(at: p, zoom: Double(canvas.zoomScale))
             clear()
-            onFinish?(loop)
+            onFinish?(loop.map { CGPoint(x: $0.x, y: $0.y) })
             return
         default:
             clear()
             return
         }
         let path = UIBezierPath()
+        let points = trace.points.map { CGPoint(x: $0.x, y: $0.y) }
         if let first = points.first {
             path.move(to: first)
             for q in points.dropFirst() { path.addLine(to: q) }
@@ -101,7 +97,7 @@ final class MathLassoController: NSObject, UIGestureRecognizerDelegate {
     }
 
     private func clear() {
-        points = []
+        trace.clear()
         shape.path = nil
     }
 }

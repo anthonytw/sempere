@@ -201,16 +201,4 @@ struct MarkdownBoxTests {
         let types = (tap.allowedTouchTypes).map(\.intValue)
         #expect(types.contains(UITouch.TouchType.pencil.rawValue) && types.contains(UITouch.TouchType.direct.rawValue))
     }
-
-    @Test func markdownContentKeepsTheBoxStyleAndChangedRangeIsMinimal() throws {
-        var style = TextBoxEditing.BoxStyle(TextContent(font: .mono, size: 18, color: .black, runs: []))
-        style.align = .center
-        let c = try #require(TextBoxEditing.markdownContent("# Hi", style: style, original: nil, keyboardLanguage: "es"))
-        #expect(c.isMarkdown && c.font == .sans && c.size == 18 && c.align == .center && c.lang == "es")
-        #expect(c.runs == [TextRun("# Hi")])
-        let change = TextBoxEditing.changedRange(from: "a word b", to: "a **word** b")
-        #expect(change.range == NSRange(location: 2, length: 4) && change.replacement == "**word**")
-        let emoji = TextBoxEditing.changedRange(from: "😀", to: "😃")
-        #expect(emoji.range == NSRange(location: 0, length: 2))
-    }
 }

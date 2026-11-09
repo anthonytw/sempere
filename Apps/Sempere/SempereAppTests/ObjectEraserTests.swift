@@ -215,3 +215,14 @@ final class DrawingWatcher: NSObject, PKCanvasViewDelegate {
     init(_ changed: @escaping () -> Void) { self.changed = changed }
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) { changed() }
 }
+
+/// The one-shot form of an erase, the reference the sweep is checked against: `drawing` without the strokes an eraser of
+/// `radius` touches moving from `a` to `b` (page points), and how many were removed. The app erases through
+/// `ObjectEraseSweep` (SempereAppCore), which only makes a stroke's hit shape when a sweep gets near it.
+private enum ObjectEraser {
+    static func erasing(_ drawing: PKDrawing, from a: EraserPoint, to b: EraserPoint,
+                        radius: Double) -> (drawing: PKDrawing, removed: Int) {
+        let kept = drawing.strokes.filter { !StrokeHitShape($0).intersects(sweepFrom: a, to: b, radius: radius) }
+        return (PKDrawing(strokes: kept), drawing.strokes.count - kept.count)
+    }
+}

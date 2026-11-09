@@ -229,3 +229,27 @@ final class DrawingToolsTests: XCTestCase {
         XCTAssertEqual(DrawingToolState.pencilKitWidth(0.2, for: .marker), 0.2)
     }
 }
+
+/// The widths a platform takes for an ink (`DrawingToolState.widthRange(for:within:)`); PencilKit's own range is the app's
+/// `DrawingToolboxTests`.
+final class PlatformWidthRangeTests: XCTestCase {
+    func testAPlatformWithAWiderRangeLeavesTheModelsAndANarrowerOneWins() {
+        let model = DrawingToolState.widthRange(for: .pen)
+        XCTAssertEqual(DrawingToolState.widthRange(for: .pen, within: 0...100), model)
+        XCTAssertEqual(DrawingToolState.widthRange(for: .pen, within: 2...10), 2...10)
+        XCTAssertEqual(DrawingToolState.widthRange(for: .pen, within: 5...100), 5...model.upperBound)
+        XCTAssertEqual(DrawingToolState.widthRange(for: .pen, within: 0...3), model.lowerBound...3)
+    }
+
+    func testARangeThatDoesNotOverlapOrIsEmptyLeavesTheModels() {
+        let model = DrawingToolState.widthRange(for: .pen)
+        XCTAssertEqual(DrawingToolState.widthRange(for: .pen, within: 50...60), model, "no overlap")
+        XCTAssertEqual(DrawingToolState.widthRange(for: .pen, within: 5...5), model, "a single width is no range")
+    }
+
+    func testClampedLimitsAWidthToItsRange() {
+        XCTAssertEqual(DrawingToolState.clamped(0.1, to: 1...5), 1)
+        XCTAssertEqual(DrawingToolState.clamped(9, to: 1...5), 5)
+        XCTAssertEqual(DrawingToolState.clamped(3, to: 1...5), 3)
+    }
+}

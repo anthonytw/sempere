@@ -1,5 +1,6 @@
 import SempereRender
 import Sempere
+import SempereAppCore
 import UIKit
 
 /// The page's paper (background color plus its ruling) under the canvas,

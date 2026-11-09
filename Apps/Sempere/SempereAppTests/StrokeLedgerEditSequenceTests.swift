@@ -214,13 +214,7 @@ struct CanvasStrokeInfoBuildTests {
                                 canvasID: pk.id)
     }
 
-    @Test func sampledIndicesAreTheSortedSet() {
-        for n in 0..<400 {
-            let expected = n > 0 ? Set([0, n / 3, n / 2, (2 * n) / 3, n - 1]).sorted() : []
-            #expect(CanvasStrokeInfo.sampled(n) == expected, "n = \(n)")
-            #expect(CanvasStrokeInfo.sampledCount(n) == expected.count)
-        }
-    }
+    // The sampled indices are tested on Linux (`CanvasStrokeFingerprintTests`).
 
     @Test func fingerprintsAreTheReferenceAndInkBoundsTheDrawingBounds() throws {
         var rng = StrokeLedgerEditSequenceTests.RNG(state: 0xB0_0D5)

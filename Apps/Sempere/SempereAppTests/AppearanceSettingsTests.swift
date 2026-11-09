@@ -63,49 +63,7 @@ struct AppearanceSettingsTests {
 
     // MARK: - Color inversion
 
-    private func lightness(_ c: (r: Double, g: Double, b: Double)) -> Double {
-        PageColorInversion.hsl(r: c.r, g: c.g, b: c.b).l
-    }
-
-    @Test func blackInkShowsLightAndWhitePaperDark() {
-        let black = PageColorInversion.invert(r: 0, g: 0, b: 0)
-        let white = PageColorInversion.invert(r: 1, g: 1, b: 1)
-        #expect(lightness(black) > 0.9)
-        #expect(lightness(white) < 0.15)
-        #expect(abs(black.r - black.g) < 1e-9 && abs(black.g - black.b) < 1e-9, "gray stays gray")
-    }
-
-    @Test func hueAndSaturationAreKeptAndLightnessInverted() {
-        let colors: [(Double, Double, Double)] = [(0.8, 0.1, 0.1), (0.1, 0.2, 0.7), (0.0, 0.5, 0.2), (0.95, 0.85, 0.2), (0.3, 0.1, 0.4)]
-        for (r, g, b) in colors {
-            let before = PageColorInversion.hsl(r: r, g: g, b: b)
-            let out = PageColorInversion.invert(r: r, g: g, b: b)
-            let after = PageColorInversion.hsl(r: out.r, g: out.g, b: out.b)
-            let hueDistance = min(abs(after.h - before.h), 1 - abs(after.h - before.h))
-            #expect(hueDistance < 0.01, "hue of \((r, g, b))")
-            #expect(abs(after.s - before.s) < 0.02, "saturation of \((r, g, b))")
-            let expected = PageColorInversion.darkest + (1 - before.l) * (PageColorInversion.lightest - PageColorInversion.darkest)
-            #expect(abs(after.l - expected) < 0.01, "lightness of \((r, g, b))")
-        }
-        // Darker in, lighter out.
-        #expect(lightness(PageColorInversion.invert(r: 0.2, g: 0.2, b: 0.6)) > lightness(PageColorInversion.invert(r: 0.5, g: 0.5, b: 0.9)))
-    }
-
-    @Test func paintKeepsItsAlpha() {
-        let p = PageColorInversion.invert(Paint(r: 0, g: 0, b: 0, alpha: 0.4))
-        #expect(p.alpha == 0.4)
-        #expect(p.r > 200)
-    }
-
-    /// Text, equations and recording cards are converted; pictures, PDF pages and videos never.
-    @Test func picturesPDFsAndVideosAreNeverInverted() {
-        #expect(PageColorInversion.converts(kind: .text))
-        #expect(PageColorInversion.converts(kind: .math))
-        #expect(PageColorInversion.converts(kind: .audio))
-        #expect(!PageColorInversion.converts(kind: .image))
-        #expect(!PageColorInversion.converts(kind: .pdfPage))
-        #expect(!PageColorInversion.converts(kind: .video))
-    }
+    // The colour arithmetic (`PageColorInversion`) is tested in SempereAppCoreTests (`PageColorInversionTests`).
 
     @Test func anImagesPixelsAreInvertedAndTransparencyKept() throws {
         // Black, opaque red, half-transparent blue, transparent.

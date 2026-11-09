@@ -226,7 +226,7 @@ struct TextBoxLayoutTests {
             TextRun("Bold", b: true), TextRun(" plain"), TextRun(" big red", color: Sempere.Color(r: 200, g: 0, b: 0), size: 20),
             TextRun(" 日本語", lang: "ja", extra: ["x-future": .string("kept")]), TextRun(" under", u: true, s: true),
         ])
-        let style = TextBoxEditing.BoxStyle(content)
+        let style = TextBoxStyle(content)
         let text = TextBoxEditing.attributed(content)
         #expect(text.string == content.string)
         #expect(TextBoxEditing.runs(from: text, style: style) == content.runs)
@@ -249,7 +249,7 @@ struct TextBoxLayoutTests {
     }
 
     @Test func committedContentHasBreaksFamilyAndLanguage() throws {
-        let style = TextBoxEditing.BoxStyle(TextContent(size: 14, color: .black, runs: []))
+        let style = TextBoxStyle(TextContent(size: 14, color: .black, runs: []))
         let typed = NSAttributedString(string: "Typed on the iPad, long enough to wrap in a narrow box.",
                                        attributes: TextBoxEditing.typingAttributes(style))
         let (content, frame) = TextBoxEditing.content(from: typed, style: style, original: nil, keyboardLanguage: "en-US",
@@ -286,7 +286,7 @@ struct TextBoxLayoutTests {
         let emoji = ["\u{1F1FA}\u{1F1F8}", "\u{1F44D}\u{1F3FD}", "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}",
                      "1\u{FE0F}\u{20E3}", "\u{1F600}"]
         let text = emoji.map { "hi " + $0 }.joined(separator: " ")
-        let style = TextBoxEditing.BoxStyle(TextContent(size: 14, color: .black, runs: []))
+        let style = TextBoxStyle(TextContent(size: 14, color: .black, runs: []))
         let typed = NSAttributedString(string: text, attributes: TextBoxEditing.typingAttributes(style))
         let (content, _) = TextBoxEditing.content(from: typed, style: style, original: nil, keyboardLanguage: "en-US",
                                                   frame: Rect(x: 0, y: 0, w: 60, h: 16.8))
@@ -313,7 +313,7 @@ struct TextBoxLayoutTests {
         let page = try #require(editor.currentPage).id
         let undo = AttachmentEditorTests.undoManager()
         let actions = ItemActions(editor: editor, undoManager: undo)
-        let style = TextBoxEditing.BoxStyle(TextContent(size: 14, color: .black, runs: []))
+        let style = TextBoxStyle(TextContent(size: 14, color: .black, runs: []))
         func typed(_ s: String) -> NSAttributedString {
             NSAttributedString(string: s, attributes: TextBoxEditing.typingAttributes(style))
         }

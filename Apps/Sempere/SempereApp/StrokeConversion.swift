@@ -1,6 +1,7 @@
 import Foundation
 import SempereRender
 import Sempere
+import SempereAppCore
 import PencilKit
 import UIKit
 
@@ -72,8 +73,7 @@ extension Sempere.Color {
             var white: CGFloat = 0
             if color.getWhite(&white, alpha: &a) { r = white; g = white; b = white } else { a = 1 }
         }
-        func byte(_ v: CGFloat) -> UInt8 { UInt8((min(max(Double(v), 0), 1) * 255).rounded()) }
-        self.init(r: byte(r), g: byte(g), b: byte(b), a: byte(a))
+        self.init(unitRed: Double(r), green: Double(g), blue: Double(b), alpha: Double(a))
     }
 }
 
@@ -87,67 +87,17 @@ extension Transform {
     }
 }
 
-/// Format point size (`w`, `h`: the width the ink is drawn at, in points,
-/// format.md §5.6) ⇄ `PKStrokePoint.size`, per ink.
-///
-/// PencilKit does not draw a point at its `size`. Measured on iPadOS 26.5 and
-/// 27.0 (the same on both; independent of force, tool width, timing, render
-/// scale, `secondaryScale` and `threshold`), a straight stroke of size `s` is
-/// drawn:
-/// - `pen`, `monoline`, `fountainPen` (across the nib): `2s − 4` wide, so
-///   nothing at all below `s = 2`. Strokes drawn with the Pencil have sizes
-///   of about 2.5 to 5; Notability's pens are 0.4 to 2 wide, which is why
-///   imported notes showed no handwriting.
-/// - `marker`: a nib whose extents depend on direction and azimuth; a size
-///   of `(w / 0.4375, h / 1.225)` draws about `w` wide in every direction
-///   when `w == h`.
-/// - `pencil`, `crayon`, `watercolor`: about `1.75 s` (textured edges).
-///
-/// Every map is linear, so format → PencilKit → format is exact up to
-/// PencilKit's storage: Float32, and a height kept as a ratio of the width
-/// rounded to 1e-3 (so a marker's `h` comes back within about `0.0015 w`).
-/// PencilKit → format → PencilKit is stable. PencilKit sizes below 2 on the pen family
-/// (drawn invisibly by PencilKit) come back as width 0, which loads as size
-/// 2, also invisible.
-///
-/// Any change to these maps (or to how strokes become `PKStroke`s) must bump
-/// `DrawingCache.schemaVersion`: cached drawings are checked against the
-/// stored strokes only by count, id, seed, ink type, point count, end points
-/// and transform, not by width or color.
-enum NibSize {
-    /// Pen family: drawn width `2s − 4`.
-    static let penOffset = 2.0
-    /// Marker: drawn extent per unit of size, across a horizontal stroke (`w`)
-    /// and a vertical one (`h`).
-    static let markerWidthFactor = 0.4375
-    static let markerHeightFactor = 1.225
-    /// Textured inks: drawn width per unit of size.
-    static let texturedFactor = 1.75
-
+/// `NibSize` (SempereAppCore: the maps and the measurements behind them) on `CGSize`.
+extension NibSize {
     /// The PencilKit size for a format point size.
     static func pkSize(w: Double, h: Double, tool: InkTool) -> CGSize {
-        let w = max(w, 0), h = max(h, 0)
-        switch tool {
-        case .pen, .monoline, .fountainPen:
-            return CGSize(width: w / 2 + penOffset, height: h / 2 + penOffset)
-        case .marker:
-            return CGSize(width: w / markerWidthFactor, height: h / markerHeightFactor)
-        case .pencil, .crayon, .watercolor:
-            return CGSize(width: w / texturedFactor, height: h / texturedFactor)
-        }
+        let s = size(w: w, h: h, tool: tool)
+        return CGSize(width: s.width, height: s.height)
     }
 
     /// The format point size for a PencilKit size.
     static func formatSize(_ size: CGSize, tool: InkTool) -> (w: Double, h: Double) {
-        let sw = Double(size.width), sh = Double(size.height)
-        switch tool {
-        case .pen, .monoline, .fountainPen:
-            return (max(2 * (sw - penOffset), 0), max(2 * (sh - penOffset), 0))
-        case .marker:
-            return (sw * markerWidthFactor, sh * markerHeightFactor)
-        case .pencil, .crayon, .watercolor:
-            return (sw * texturedFactor, sh * texturedFactor)
-        }
+        formatSize(width: Double(size.width), height: Double(size.height), tool: tool)
     }
 }
 
@@ -200,20 +150,9 @@ enum StrokeConversion {
     ///   control point.
     static func strokes(from pk: PKStroke, nominalWidth: Double? = nil) -> [Stroke] {
         let tool = InkTool(pk.ink.inkType)
-        let all = points(of: pk.path, tool: tool)
-        let transform = Transform(pk.transform)
-        let width = nominalWidth ?? all.map(\.w).max() ?? 0
-        let ink = Ink(tool: tool, color: Sempere.Color(pk.ink.color), width: width)
-        let pieces: [[StrokePoint]]
-        if pk.mask == nil {
-            pieces = [all]
-        } else {
-            pieces = pk.maskedPathRanges.map {
-                BSpline.substroke(of: all, lower: Double($0.lowerBound), upper: Double($0.upperBound))
-            }
-        }
-        return pieces.filter { !$0.isEmpty }.map {
-            Stroke(ink: ink, points: $0, transform: transform.isIdentity ? nil : transform)
-        }
+        return StrokePieces.strokes(
+            points: points(of: pk.path, tool: tool), tool: tool, color: Sempere.Color(pk.ink.color),
+            transform: Transform(pk.transform), nominalWidth: nominalWidth,
+            visibleRanges: pk.mask == nil ? nil : pk.maskedPathRanges.map { Double($0.lowerBound)...Double($0.upperBound) })
     }
 }

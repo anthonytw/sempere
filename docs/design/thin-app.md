@@ -965,13 +965,37 @@ machine of pause, resume, interruption and file layout) and `RecordingAssembly` 
 real audio engine, `RecordingRelaunchTests`); the AVFoundation cases stay. Size check first: `QuickCapture`'s
 `CaptureRecorder` may already cover half of it.
 
-**Part 6: the PencilKit and CoreGraphics boundaries (audit, then about 900 lines).** Files that are mostly a
-conversion but hold rules: `StrokeConversion` (219) and `CanvasStrokes` (175: the stroke order and ledger rules
-the editor's `NoteCanvas` already carries in `SempereAppCore`, so most should be deletions), `DrawingPreparation`
-(88), `MathLasso` (107), `DrawingToolbox` (245: the tool state moves, the `PKTool` mapping stays),
-`PageColorInversion` (117, the colour arithmetic), `TextBoxLayout` (534) and `TextBoxEditing` (291: the TextKit
-layout stays, the placement and editing rules go). Each file is read first; the part that turns out to be only
-drawing stays and is listed as such in the PR.
+**Part 6: the PencilKit and CoreGraphics boundaries (done, wave 6).** Each file was read first; what was a rule moved, what
+was only drawing stayed. Moved, with Linux tests:
+
+| Rule | To | The app keeps |
+| --- | --- | --- |
+| `NibSize` (the ink-size maps and the measurements behind them), `StrokePieces` (which format strokes a canvas stroke stands for: widest-point width, identity transform omitted, one piece per visible mask range), `Color(unitRed:…)` | `SempereAppCore/Canvas/StrokeConversionRules`, `Sempere` (`Color`) | `StrokeConversion` (the `PKStroke`, `PKInk`, `PKStrokePath` and `UIColor` mapping, `CGSize` wrappers of `NibSize`) |
+| The fingerprint key's layout and the cheap "unchanged" test (`CanvasStrokeInfo.init(ink:color:…point:)`, `isUnchanged(id:…)`, `sampled`) | `Sempere/CanvasStrokeFingerprint.swift`, next to `CanvasStrokeInfo` and the ledger | `CanvasStrokes`: reading the numbers off a `PKStroke`, and the ledger items (`PKDrawing`, `PKInkingTool`) |
+| `DrawingPreparationRules` (visible-first choice and threshold, a stroke's extent, the cached-drawing check) | `SempereAppCore/Canvas/DrawingPreparationRules` | `DrawingPreparation`: conversion, `PKDrawing(data:)`, and `CGRect.intersects` (kept as the test of "on screen" so the choice cannot drift) |
+| `LassoTrace` (which moves the loop keeps, the 4,096 cap, divide by zoom) | `SempereAppCore/Canvas/LassoTrace` | `MathLassoController`: the pan, the dashed layer, the touch types |
+| `PageColorInversion` (HSL arithmetic, `converts(kind:)`) | `SempereAppCore/Canvas/PageColorInversion` | `PageColorInversion+Image`: the pixel pass over a `CGImage` |
+| `DrawingToolState.widthRange(for:within:)`, `clamped` | `Sempere/DrawingTools.swift`, with the width ranges | `DrawingToolbox`: `PKTool`, `UIPencilInteraction`, defaults, the notification |
+| `TextBoxStyle`, `TextBoxRules` (family names, paragraph alignment and direction, language to take, run overrides, the written content, `relaid`, Markdown content, `changedRange`, decoration geometry, `extent`, `clusterTexts`) | `SempereAppCore/Editor/TextBoxRules` | `TextBoxEditing` (the attributed string and its keys), `TextBoxLayout` (TextKit breaks, CoreText runs, glyph drawing, outline fonts, emoji bitmaps) |
+
+Already in the core or the library, so nothing to delete: the stroke order and ledger rules `CanvasStrokes` was thought to
+copy (`StrokeLedger`, `NoteCanvas`'s `PreparedInk`) are used, not repeated, by `CanvasStrokes`.
+
+Only drawing, and so left in the app: the `InkTool` ⇄ `PKInk.InkType` maps and `UIColor`, `CGAffineTransform` and
+`PKStrokePoint` conversions; `CanvasStrokes`' ledger items; `PKDrawing` cache decoding; the lasso's gesture and layer;
+the `PKTool` mapping, the Pencil double-tap and squeeze mapping, `PKInkingTool.convertColor`; every `NSAttributedString`
+attribute and `UIFont` trait read; TextKit's line fragments, CoreText typesetting, glyph and decoration drawing, the
+outline-font and emoji-bitmap builders (their per-box byte and placement budget is a cache of renders, not a rule).
+
+Tests: the app's `PageColorInversion` colour tests, the `sampled` indices test and the Markdown content and `changedRange`
+test moved to Linux (deleted in the app); the app suites that drive PencilKit (`StrokeConversionTests`,
+`StrokeLedger*Tests`, `DrawingCacheTests`, `DrawingToolboxTests`, `TextBoxLayoutTests`, `MarkdownBoxTests`) stay and
+now check the moved code against the real framework. `ObjectEraser.erasing`, used only by `ObjectEraserTests`, became that
+suite's private reference (decision below).
+
+Decisions (for the reviewer of the wave 6 part 6 PR): (1) `CGPoint` and `CGFloat` in `InsertOptions.cascade` and
+`FingerTapTracker` stay Foundation's, which `SempereAppCore` already uses throughout (`PageStackLayout`, `NoteEditor`, the
+insert calls); (2) `ObjectEraser.erasing` leaves the app target for the tests that use it.
 
 **Part 7 (done, wave 6 part 7): `notes move` for several notes (about 120 lines).** `notes move ID|TITLE... (NOTEBOOK | --none)`: every note
 is resolved first (`Vault.resolveNote`), then one all-or-none move goes through the library. The loop of

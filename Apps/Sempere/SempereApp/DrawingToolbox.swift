@@ -170,19 +170,16 @@ final class DrawingToolbox {
         default:
             guard let ink = state.tool.ink else { return PKInkingTool(.pen, color: .black, width: 2) }
             let s = state.settings(for: ink)
-            let range = widthRange(for: ink)
             return PKInkingTool(ink.pkInkType, color: s.inkColor.uiColor,
-                                width: CGFloat(min(max(s.width, range.lowerBound), range.upperBound)))
+                                width: CGFloat(DrawingToolState.clamped(s.width, to: widthRange(for: ink))))
         }
     }
 
     /// The widths `ink` takes here: the model's range within PencilKit's `validWidthRange` for its type (the
     /// model's was measured on macOS 27; a platform with a narrower range wins).
     static func widthRange(for ink: InkTool) -> ClosedRange<Double> {
-        let model = DrawingToolState.widthRange(for: ink)
         let pk = ink.pkInkType.validWidthRange
-        let lo = max(model.lowerBound, Double(pk.lowerBound)), hi = min(model.upperBound, Double(pk.upperBound))
-        return lo < hi ? lo...hi : model
+        return DrawingToolState.widthRange(for: ink, within: Double(pk.lowerBound)...Double(pk.upperBound))
     }
 
     /// The pixel eraser the canvas is given (a fixed width, whatever the zoom).
