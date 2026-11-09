@@ -43,7 +43,7 @@ extension DeviceKeyReason {
 
 /// A signing pair in the Secure Enclave (design §4.1): the enclave's key blobs, which only this device's enclave
 /// can use. `sign` makes both signatures and checks them against the public keys before handing them out.
-struct SecureEnclaveSigner: AuthorSigner {
+struct SecureEnclaveSigner: EnclaveBackedSigner {
     let p256Blob: Data
     let mldsa65Blob: Data
     let keys: DeviceSigningPublicKeys
@@ -78,45 +78,9 @@ struct SecureEnclaveSigner: AuthorSigner {
     }
 }
 
-/// The signing item's contents: enclave blobs, or software seeds where there is no enclave.
-struct StoredSigning: Codable, Equatable {
-    var kind: String
-    var p256: Data
-    var mldsa65: Data
-    var publicP256: Data?
-    var publicMLDSA65: Data?
-    /// The device fingerprint of the keys (read without the device key, which may need Face ID).
-    var fingerprint: Data?
-
-    static let enclave = "enclave", software = "software"
-
-    init(_ signer: any AuthorSigner, fingerprint: Data? = nil) throws {
-        self.fingerprint = fingerprint
-        if let se = signer as? SecureEnclaveSigner {
-            kind = Self.enclave
-            p256 = se.p256Blob; mldsa65 = se.mldsa65Blob
-            publicP256 = se.keys.p256; publicMLDSA65 = se.keys.mldsa65
-        } else if let sw = signer as? DeviceSigningKeys {
-            kind = Self.software
-            p256 = sw.p256Scalar; mldsa65 = sw.mldsa65SeedBytes
-        } else {
-            throw DeviceKeyStoreError.malformed
-        }
-    }
-
-    func signer() throws -> any AuthorSigner {
-        switch kind {
-        case Self.enclave:
-            guard let pp = publicP256, let pm = publicMLDSA65, let keys = DeviceSigningPublicKeys(p256: pp, mldsa65: pm) else {
-                throw DeviceKeyStoreError.malformed
-            }
-            return SecureEnclaveSigner(p256Blob: p256, mldsa65Blob: mldsa65, keys: keys)
-        case Self.software:
-            return try DeviceSigningKeys(p256Scalar: p256, mldsa65Seed: mldsa65)
-        default:
-            throw DeviceKeyStoreError.malformed
-        }
-    }
+extension StoredSigning {
+    /// The signer these contents describe (`SecureEnclaveSigner` for enclave keys).
+    func signer() throws -> any AuthorSigner { try signer(enclave: SecureEnclaveSigner.self) }
 }
 
 /// The Keychain calls `KeychainDeviceKeyStore` makes, so its order of adds, updates and deletes (and their failures)

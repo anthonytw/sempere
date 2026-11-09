@@ -7,7 +7,7 @@ import UIKit
 @testable import SempereApp
 import Sempere
 
-/// The iPhone reader (`PhoneLayout.swift`): the stack navigation rules, the
+/// The iPhone's layout (`PhoneLayout.swift`): the stack navigation rules, the
 /// reading mode of the canvas at iPhone sizes, and that the iPad keeps
 /// drawing. Pure rules run on every destination; the view checks use the
 /// destination's idiom, so the iPhone simulator run in CI exercises the phone

@@ -258,7 +258,11 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         }
         guard ns.domain == NSURLErrorDomain else { return .transport(message) }
         if offlineCodes.contains(ns.code) { return notConnectedCodes.contains(ns.code) ? .notConnected(message) : .offline(message) }
-        if certificateCodes.contains(ns.code) { return .untrustedCertificate(message) }
+        if certificateCodes.contains(ns.code) {
+            // A certificate refused for its dates starts with the marker the app's `PinnedServerTrust` adds, so this
+            // path (the CLI's) is `WebDAVSyncProblem.certificateDate` too: the clock may be what is wrong.
+            return .untrustedCertificate(CertificateDate.dateCodes.contains(ns.code) ? CertificateDate.marker + message : message)
+        }
         return .transport(message)
     }
 

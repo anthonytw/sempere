@@ -176,6 +176,18 @@ final class ConnectionTests: SyncTestCase {
         for code in [-1202, -1203, -1201, -1204] {
             guard case .untrustedCertificate = classify(code) else { return XCTFail("\(code)") }
         }
+        // Only the dates carry the marker the app's trust check adds (the CLI then knows the clock may be wrong).
+        for code in [-1201, -1204] {
+            guard case .untrustedCertificate(let message) = classify(code) else { return XCTFail("\(code)") }
+            XCTAssertTrue(CertificateDate.matches(message), "\(code)")
+            XCTAssertEqual(WebDAVSyncProblem.from(error: classify(code)), .certificateDate, "\(code)")
+            XCTAssertFalse(WebDAVErrorText.message(classify(code)).contains(CertificateDate.marker), "the marker is never shown")
+        }
+        for code in [-1202, -1203] {
+            guard case .untrustedCertificate(let message) = classify(code) else { return XCTFail("\(code)") }
+            XCTAssertFalse(CertificateDate.matches(message), "\(code)")
+            guard case .certificate = WebDAVSyncProblem.from(error: classify(code)) else { return XCTFail("\(code)") }
+        }
         guard case .transport = classify(-1200) else { return XCTFail() }
         guard case .transport = URLSessionTransport.classify(NSError(domain: "other", code: -1009)) else { return XCTFail() }
     }

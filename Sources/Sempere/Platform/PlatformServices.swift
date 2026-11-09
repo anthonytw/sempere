@@ -12,7 +12,7 @@ public enum HapticFeedback: String, Sendable, CaseIterable {
 public protocol PlatformServices: Sendable {
     /// The Mac (Catalyst) build.
     var isMac: Bool { get }
-    /// An iPhone (the reader layouts). Never true on an iPad or a Mac.
+    /// An iPhone (the phone layouts). Never true on an iPad or a Mac.
     @MainActor var isPhone: Bool { get }
     /// Keeps the screen from locking (true) or lets it lock again (false). App-wide.
     @MainActor func setIdleTimerDisabled(_ disabled: Bool)

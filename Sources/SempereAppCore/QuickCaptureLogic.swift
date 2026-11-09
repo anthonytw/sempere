@@ -9,13 +9,12 @@ import Sempere
 
 /// What this device keeps for quick voice notes (docs/quick-capture.md):
 /// the vault's capture profile (public recipients and the capture key, never
-/// the identity or the vault secret), where the vault is, and whether voice
-/// notes are transcribed here.
+/// the identity or the vault secret) and whether voice notes are transcribed
+/// here. The vault is found by its id in the in-app store (`CaptureDelivery`). A profile
+/// stored by 1.0.0 also has a `bookmark` of the vault folder, which decoding ignores.
 public struct StoredCaptureProfile: Codable, Equatable, Sendable {
     public var profile: CaptureProfile
     public var vaultName: String
-    /// Bookmark of the vault folder (`options: []`, as for recent vaults).
-    public var bookmark: Data
     /// Transcribe voice notes on this device when they stop.
     public var transcribe: Bool
     /// This device is not on the vault's newest device list (key-hierarchy design §5.5; review of #87, R1): no
@@ -24,10 +23,9 @@ public struct StoredCaptureProfile: Codable, Equatable, Sendable {
     /// notebook, once the device is listed again. Absent means not suspended.
     public var suspended: Bool? = nil
 
-    public init(profile: CaptureProfile, vaultName: String, bookmark: Data, transcribe: Bool, suspended: Bool? = nil) {
+    public init(profile: CaptureProfile, vaultName: String, transcribe: Bool, suspended: Bool? = nil) {
         self.profile = profile
         self.vaultName = vaultName
-        self.bookmark = bookmark
         self.transcribe = transcribe
         self.suspended = suspended
     }
@@ -252,8 +250,8 @@ public enum CaptureSegments {
 
 // MARK: - Delivery
 
-/// Where a sealed voice note goes: the profile's vault's `inbox/` (its in-app copy when the store holds it, else
-/// the folder its bookmark names), or this device's queue when that folder cannot be reached, is not the profile's
+/// Where a sealed voice note goes: the profile's vault's `inbox/` (its in-app copy, which the store holds by the vault's
+/// id), or this device's queue when that folder cannot be reached, is not the profile's
 /// vault, or is read-only (a newer format: this version writes nothing into its `inbox/`, format.md §7.3; security
 /// review 2026-10, N2). Each file is recorded in its vault's write ledger before it is placed in the inbox
 /// (key-hierarchy design §5.4, §5.7): never placed unrecorded.
@@ -266,7 +264,7 @@ public struct CaptureDelivery: Sendable {
     /// The in-app vault store: a voice note for a store vault goes straight into its inbox, found by vault id,
     /// open or not (docs/design/device-first-sync.md §5.3).
     var vaultStore: VaultStore?
-    /// Resolves the profile's bookmark and holds its scope (the app's security-scoped bookmarks).
+    /// Holds the vault folder's scope while it is written (the app's security-scoped bookmarks).
     var bookmarks: any FolderBookmarks
     /// The write ledger of a vault (this device's, `DeviceWriteStores`); nil records nothing (tests).
     var ledger: (@Sendable (UUID) -> any WriteLedgerStore)?
@@ -353,10 +351,10 @@ public struct CaptureDelivery: Sendable {
         queueRoot.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true)
     }
 
-    /// The folder of the profile's vault: its in-app copy when the store holds it (found by id, so a moved
-    /// store or a stale bookmark does not matter), else the folder its bookmark names.
+    /// The folder of the profile's vault: its in-app copy, found by id in the store (every vault the app opens is one,
+    /// `VaultStore`), so a moved store does not matter. Nil without a store or a copy: the capture is queued.
     func vaultFolder(_ stored: StoredCaptureProfile) -> URL? {
-        vaultStore?.entry(id: stored.profile.vaultId)?.url ?? (try? bookmarks.resolve(stored.bookmark))?.url
+        vaultStore?.entry(id: stored.profile.vaultId)?.url
     }
 
     /// Moves queued captures of `vaultId` into the vault at `vaultURL`

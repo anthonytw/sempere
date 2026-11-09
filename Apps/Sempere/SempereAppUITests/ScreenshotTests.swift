@@ -34,7 +34,7 @@ final class ScreenshotTests: XCTestCase {
         return deviceShots
     }
 
-    /// The iPhone is a reader: a stack, so each shot is one screen of it. The launch variables
+    /// The iPhone is a stack, so each shot is one screen of it. The launch variables
     /// pick the screen (a note opens the note view; a sidebar item alone, its list).
     /// "Annotate" is the note view's pencil button. The paper picker is not shown on the phone.
     static var phoneShots: [Shot] {

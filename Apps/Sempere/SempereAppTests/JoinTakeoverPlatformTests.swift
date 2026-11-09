@@ -53,14 +53,7 @@ struct JoinTakeoverAppTests {
         #expect(TakeoverView.kitCode("https://example.com") == nil)
     }
 
-    @Test func storedSigningRoundTripsASoftwarePair() throws {
-        let pair = DeviceSigningKeys.generate()
-        let stored = try StoredSigning(pair)
-        let back = try JSONDecoder().decode(StoredSigning.self, from: JSONEncoder().encode(stored))
-        let signer = try back.signer()
-        let message = Data("m".utf8)
-        #expect(try signer.sign(message).verifies(message, keys: try pair.publicKeys()))
-    }
+    // `storedSigningRoundTripsASoftwarePair` moved to `StoredSigningTests` in `SempereAppCoreTests` (`StoredSigning` is the core's).
 
     /// The enclave pair signs what the package verifies in software (design §4.1). Where the test host has no
     /// Secure Enclave (or may not use it unsigned), it says so and checks nothing.

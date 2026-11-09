@@ -187,6 +187,7 @@ extension AppModelSuites {
             qc.now = { clock.now }
             qc.sleep = { await sleeper.sleep($0) }
             qc.showsActivity = false
+            qc.vaultStore = model.syncStore   // the vault is delivered into by its id there, as in the app
             if let stores = model.writeStores { qc.ledger = { stores.ledger(for: $0) } }
             model.quickCapture = qc
             return qc

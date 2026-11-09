@@ -30,16 +30,20 @@ enum CaptureFixture {
         return Template(url: url, identity: identity, profile: try vault.captureProfile(device: DeviceID("0badf00d")!))
     }
 
-    /// A copy of the template vault in its own folder, and its stored profile (a path bookmark).
-    static func vault(transcribe: Bool = false) throws -> (url: URL, identity: NativeIdentity, stored: StoredCaptureProfile) {
+    /// A copy of the template vault in a store of its own (a capture finds its vault by id there, as the app's does),
+    /// and its stored profile.
+    static func vault(transcribe: Bool = false) throws -> (url: URL, identity: NativeIdentity, stored: StoredCaptureProfile,
+                                                           store: VaultStore) {
         let t = try template.get()
         let dir = TestTemp.root.appendingPathComponent("capture-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("sample.sempere", isDirectory: true)
-        try FileManager.default.copyItem(at: t.url, to: url)
-        let stored = StoredCaptureProfile(profile: t.profile, vaultName: "sample", bookmark: try PathBookmarks().bookmark(for: url),
-                                          transcribe: transcribe)
-        return (url, t.identity, stored)
+        let source = dir.appendingPathComponent("sample.sempere", isDirectory: true)
+        try FileManager.default.copyItem(at: t.url, to: source)
+        let store = VaultStore(root: dir.appendingPathComponent("store", isDirectory: true))
+        let entry = try store.importVault(from: source)
+        try FileManager.default.removeItem(at: source)
+        let stored = StoredCaptureProfile(profile: t.profile, vaultName: "sample", transcribe: transcribe)
+        return (entry.url, t.identity, stored, store)
     }
 
     static func temp(_ name: String) -> URL {
@@ -320,7 +324,7 @@ final class CaptureRig {
 
     /// - Parameter profile: store the vault's profile (else quick voice notes are off).
     init(transcribe: Bool = false, profile: Bool = true, transcriber: (any RecordingTranscribing)? = nil) throws {
-        let (url, identity, stored) = try CaptureFixture.vault(transcribe: transcribe)
+        let (url, identity, stored, vaultStore) = try CaptureFixture.vault(transcribe: transcribe)
         vault = url
         self.identity = identity
         if profile { try store.save(stored) }
@@ -330,6 +334,7 @@ final class CaptureRig {
                                liveActivity: live, app: app, root: CaptureFixture.temp("qc-root"),
                                queueRoot: CaptureFixture.temp("qc-queue"))
         let clock = self.clock, sleeper = self.sleeper
+        capture.vaultStore = vaultStore
         capture.now = { clock.now }
         capture.sleep = { await sleeper.sleep($0) }
         capture.showsActivity = false
