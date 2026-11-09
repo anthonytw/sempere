@@ -32,7 +32,7 @@ extension AppModelCore {
         return created
     }
 
-    public func remember(in library: VaultLibrary) {
+    func remember(in library: VaultLibrary) {
         guard let url = vaultURL else { return }
         library.remember(url)
     }
@@ -56,7 +56,7 @@ extension AppModelCore {
 
     /// Selects a note just created in `notebook`, showing all notes when the
     /// sidebar's selection would hide it.
-    public func selectNewNote(_ id: UUID, notebook: String?) {
+    func selectNewNote(_ id: UUID, notebook: String?) {
         switch sidebarSelection ?? .allNotes {
         case .notebook(let n) where !NotebookPath.name(notebook, isWithin: n): sidebarSelection = .allNotes
         case .tag, .deleted: sidebarSelection = .allNotes
@@ -214,7 +214,7 @@ extension AppModelCore {
     /// With `detail: .withoutStrokePoints` the note is read without stroke
     /// geometry: for builders of metadata ops only (move, rename, favorite,
     /// tags, delete; `NoteWriter.append(to:detail:building:)`).
-    public func commit(_ id: UUID, detail: RevisionDetail = .full,
+    func commit(_ id: UUID, detail: RevisionDetail = .full,
                 building build: @escaping @Sendable (NoteState?) -> [Op]) async throws {
         try await commit(ids: [id]) { vault, clock, verifier in
             try await NoteWriter.append(to: id, vault: vault, clock: clock, detail: detail,
@@ -227,7 +227,7 @@ extension AppModelCore {
     /// note's append runs before it writes: in a partial copy, a note still marked incomplete is refused
     /// (`partialNoteVerifier`, review of #75; core refuses such a write too, format.md §1.2). A note in
     /// `creating` is new and is never marked incomplete, so the same check passes for it.
-    public func commit(ids: [UUID], creating: Set<UUID> = [],
+    func commit(ids: [UUID], creating: Set<UUID> = [],
                         write: (Vault, DeviceClock, @Sendable (UUID) -> (@Sendable () throws -> Void)?) async throws -> Void)
         async throws {
         await editGate.acquire()
@@ -283,20 +283,20 @@ extension AppModelCore {
 /// A first-come first-served lock for the main actor: waiters sleep instead
 /// of spinning.
 @MainActor
-public final class EditGate {
+final class EditGate {
     private var busy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     /// How many callers are waiting in `acquire`.
-    public var waiting: Int { waiters.count }
+    var waiting: Int { waiters.count }
 
-    public func acquire() async {
+    func acquire() async {
         guard busy else { busy = true; return }
         await withCheckedContinuation { waiters.append($0) }
     }
 
     /// Hands the lock to the next waiter, if any.
-    public func release() {
+    func release() {
         if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() }
     }
 }

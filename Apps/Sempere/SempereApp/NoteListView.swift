@@ -552,7 +552,7 @@ struct EmptyListView: View {
             ContentUnavailableView {
                 Label("Notes Could Not Be Listed", systemImage: "exclamationmark.triangle")
             } description: {
-                Text(String(describing: error))
+                Text(AppModel.describe(error))
             } actions: {
                 Button("Try Again", action: retry)
             }

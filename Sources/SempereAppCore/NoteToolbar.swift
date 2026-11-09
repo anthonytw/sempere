@@ -33,21 +33,21 @@ public enum NoteToolbar {
     }
 
     /// The one order: the top bar's items first, then the overflow menu's, on every device.
-    public static let order: [Item] = Item.allCases
+    static let order: [Item] = Item.allCases
 
     /// What the note view knows when it builds its toolbar.
     public struct State: Equatable, Sendable {
-        public var device: NoteDevice
-        public var mode = NoteMode.initial
-        public var readOnly = false
-        public var hasPage = true
-        public var pageCount = 1
-        public var pageless = false
-        public var hasRecordings = false
+        var device: NoteDevice
+        var mode = NoteMode.initial
+        var readOnly = false
+        var hasPage = true
+        var pageCount = 1
+        var pageless = false
+        var hasRecordings = false
         /// The Pages menu has entries besides turning pages (`PageMenu.entries`).
-        public var pageEntries = true
+        var pageEntries = true
         /// A note window of its own (Mac), not the library window's canvas.
-        public var noteWindow = false
+        var noteWindow = false
 
         public init(device: NoteDevice, mode: NoteMode = NoteMode.initial, readOnly: Bool = false, hasPage: Bool = true,
                     pageCount: Int = 1, pageless: Bool = false, hasRecordings: Bool = false, pageEntries: Bool = true,
@@ -70,7 +70,7 @@ public enum NoteToolbar {
     /// Add Page and the thumbnails are in the Pages menu only. Only the Mac has Drawing Tools: the tools as a
     /// menu beside the palette, for the pointer and the keyboard (it came first, when PencilKit's palette
     /// showed nothing in Mac Catalyst).
-    public static func placement(of item: Item, on device: NoteDevice) -> Placement? {
+    static func placement(of item: Item, on device: NoteDevice) -> Placement? {
         switch item {
         case .annotate, .hand:
             return .bar

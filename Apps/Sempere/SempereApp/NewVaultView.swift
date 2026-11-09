@@ -276,7 +276,7 @@ struct NewVaultView: View {
         } catch VaultError.fileTooLarge {
             existing = .problem(ExistingKeyInput.message(.tooLarge(KeyText.maximumBytes + 1)))
         } catch {
-            existing = .problem(String(localized: "Sempere could not read that file: \(String(describing: error))"))
+            existing = .problem(String(localized: "Sempere could not read that file: \(AppModel.describe(error))"))
         }
         existingFile = url.lastPathComponent
     }
@@ -393,7 +393,7 @@ struct NewVaultView: View {
                 }
                 if result.secretKey == nil { dismiss() } else { created = result }
             } catch {
-                failure = InvalidVaultName.describe(error)
+                failure = AppModel.describe(error)
             }
         }
     }

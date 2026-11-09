@@ -15,11 +15,11 @@ extension AppModelCore {
     public struct PDFImportRequest: Identifiable {
         public let id = UUID()
         public var file: URL
-        public var destination: PDFDestination
+        var destination: PDFDestination
         /// The last password tried did not open it.
         public var wrongPassword = false
 
-        public init(file: URL, destination: PDFDestination, wrongPassword: Bool = false) {
+        init(file: URL, destination: PDFDestination, wrongPassword: Bool = false) {
             self.file = file
             self.destination = destination
             self.wrongPassword = wrongPassword

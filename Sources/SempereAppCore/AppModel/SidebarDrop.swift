@@ -69,7 +69,7 @@ public enum DropTarget: Hashable, Sendable {
     }
 
     /// The notebook path notes dropped here get; nil: none.
-    public var path: String? {
+    var path: String? {
         if case .notebook(let p) = self { return NotebookPath.canonical(p) }
         return nil
     }
@@ -105,7 +105,7 @@ public struct NotebookMoveRecord: Equatable, Sendable {
         case notebook
     }
 
-    public var previous: [UUID: String?]
+    var previous: [UUID: String?]
     public var moved: Moved
     /// The empty notebooks (notebook records, format.md §14) the move renamed, if any.
     public var emptyNotebooks: NotebookPathMove? = nil
@@ -119,8 +119,8 @@ public struct NotebookMoveRecord: Equatable, Sendable {
 
 /// A notebook path renamed from `from` to `to` (nil: its levels lifted to the top).
 public struct NotebookPathMove: Equatable, Sendable {
-    public var from: String
-    public var to: String?
+    var from: String
+    var to: String?
 
     public init(from: String, to: String?) {
         self.from = from
@@ -131,7 +131,7 @@ public struct NotebookPathMove: Equatable, Sendable {
 /// A drop that just landed on a sidebar row (`AppModelCore.landedDrop`); each drop is a new value.
 public struct LandedDrop: Equatable, Sendable {
     public let target: DropTarget
-    public let id = UUID()
+    let id = UUID()
 
-    public init(target: DropTarget) { self.target = target }
+    init(target: DropTarget) { self.target = target }
 }

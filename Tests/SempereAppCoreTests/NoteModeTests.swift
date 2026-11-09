@@ -1,6 +1,6 @@
 import Foundation
 import Sempere
-import SempereAppCore
+@testable import SempereAppCore
 import Testing
 
 /// The note view's three modes on every device (`NoteMode`, `NoteModeInput`) and its one toolbar

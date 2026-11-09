@@ -1,7 +1,7 @@
 import Age
 import Foundation
 import Sempere
-import SempereAppCore
+@testable import SempereAppCore
 import TempDirSupport
 import Testing
 import VaultTestSupport

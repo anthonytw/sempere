@@ -27,7 +27,7 @@ extension NoteEditorModel {
 
     /// Recognizes the pages that need it after `recognitionDelay` without
     /// further stroke changes (and once when the note opens).
-    public func scheduleRecognition() {
+    func scheduleRecognition() {
         guard recognizer != nil, !isReadOnly, !isClosed else { return }
         recognitionTimer?.cancel()
         let delay = recognitionDelay
@@ -77,7 +77,7 @@ extension NoteEditorModel {
                     r.basis = digest
                     result = r
                 } catch {
-                    recognitionFailure = .read("\(error)")
+                    recognitionFailure = .read(describeError(error))
                     failed = true
                     continue
                 }
@@ -105,7 +105,7 @@ extension NoteEditorModel {
             writtenNames.append(name)
             knownRevisionNames.insert(name)
         } catch {
-            recognitionFailure = .save("\(error)")
+            recognitionFailure = .save(describeError(error))
             return
         }
         for r in current {

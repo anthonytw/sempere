@@ -15,10 +15,10 @@ public struct BackupRecord: Codable, Equatable, Sendable {
     /// folder covers what is inside it, so the backup may be a subfolder.
     public var bookmark: Data?
     /// The picked folder's name, for display.
-    public var folderName: String?
+    var folderName: String?
     /// The backup folder inside the picked one (`BackupLocation`), nil when
     /// the picked folder is the backup itself.
-    public var subfolder: String?
+    var subfolder: String?
     /// The last run that finished without a file error.
     public var lastBackup: Date?
     /// Notes, files and bytes the backup held after that run (`BackupStatus`).
@@ -26,7 +26,7 @@ public struct BackupRecord: Codable, Equatable, Sendable {
     public var lastFiles: Int?
     public var lastBytes: Int?
     /// File errors of the last run (0 when it finished cleanly).
-    public var lastErrors: Int?
+    var lastErrors: Int?
     /// The last Verify Backup and whether it found the backup healthy.
     public var lastVerified: Date?
     public var lastVerifyHealthy: Bool?
@@ -34,7 +34,7 @@ public struct BackupRecord: Codable, Equatable, Sendable {
     public var reminderDays = 0
     /// When the reminder was switched on: what it counts from while there
     /// has been no backup yet.
-    public var reminderSince: Date?
+    var reminderSince: Date?
 
     public init(bookmark: Data? = nil, folderName: String? = nil, subfolder: String? = nil, lastBackup: Date? = nil,
                 lastNotes: Int? = nil, lastFiles: Int? = nil, lastBytes: Int? = nil, lastErrors: Int? = nil,
@@ -62,21 +62,21 @@ public struct BackupRecord: Codable, Equatable, Sendable {
 
 /// Reads and writes `BackupRecord`s (one key per vault in the device's key-value store: the app's
 /// `UserDefaults.standard`, tests a `MemoryKeyValueStore`).
-public struct BackupStore: Sendable {
-    public var defaults: any KeyValueStore
+struct BackupStore: Sendable {
+    var defaults: any KeyValueStore
 
-    public init(defaults: any KeyValueStore) { self.defaults = defaults }
+    init(defaults: any KeyValueStore) { self.defaults = defaults }
 
-    public static func key(_ vaultId: UUID) -> String { "Sempere.backup.\(vaultId.uuidString.lowercased())" }
+    static func key(_ vaultId: UUID) -> String { "Sempere.backup.\(vaultId.uuidString.lowercased())" }
 
     /// The vault's record; an empty one when none is stored or it cannot be read.
-    public func record(for vaultId: UUID) -> BackupRecord {
+    func record(for vaultId: UUID) -> BackupRecord {
         guard let data = defaults.data(forKey: Self.key(vaultId)),
               let record = try? JSONDecoder().decode(BackupRecord.self, from: data) else { return BackupRecord() }
         return record
     }
 
-    public func save(_ record: BackupRecord, for vaultId: UUID) {
+    func save(_ record: BackupRecord, for vaultId: UUID) {
         guard let data = try? JSONEncoder().encode(record) else { return }
         defaults.set(data, forKey: Self.key(vaultId))
     }
@@ -102,22 +102,22 @@ public enum BackupLocation {
 
     /// The vault id a backup folder holds, from its `backup.json`; nil for a
     /// folder that is no backup (or whose index cannot be read).
-    public static func backupVaultId(_ dir: URL) -> String? {
+    static func backupVaultId(_ dir: URL) -> String? {
         try? Backup.status(at: dir).vaultId
     }
 
     /// A vault: its `vault.json`, or iCloud's `.vault.json.icloud` stand-in (not downloaded yet; review of #115).
-    public static func isVault(_ dir: URL, _ fm: FileManager) -> Bool {
+    static func isVault(_ dir: URL, _ fm: FileManager) -> Bool {
         fm.fileExists(atPath: dir.appendingPathComponent("vault.json").path)
             || fm.fileExists(atPath: dir.appendingPathComponent(".vault.json.icloud").path)
     }
 
     /// A backup: its `backup.json` or that file's stand-in (the core's `BackupDestination.isBackup`).
-    public static func isBackup(_ dir: URL, _ fm: FileManager) -> Bool {
+    static func isBackup(_ dir: URL, _ fm: FileManager) -> Bool {
         BackupDestination.isBackup(dir, fileManager: fm)
     }
 
-    public static func visibleEntries(_ dir: URL, _ fm: FileManager) -> [String] {
+    static func visibleEntries(_ dir: URL, _ fm: FileManager) -> [String] {
         ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix(".") }
     }
 
@@ -131,7 +131,7 @@ public enum BackupLocation {
     /// - Throws: `Problem.insideOpenVault` when `picked` overlaps `openVault`,
     ///   `.isVault` for a vault (a backup of one has `backup.json` too and is
     ///   fine), `.otherVaultsBackup` for another vault's backup.
-    public static func subfolder(in picked: URL, vaultId: UUID, vaultName: String, openVault: URL?,
+    static func subfolder(in picked: URL, vaultId: UUID, vaultName: String, openVault: URL?,
                                  fileManager fm: FileManager = .default) throws -> String? {
         let dest = try destination(in: picked, vaultId: vaultId, vaultName: vaultName, openVault: openVault, fileManager: fm)
         return dest.standardizedFileURL.path == picked.standardizedFileURL.path ? nil : dest.lastPathComponent
@@ -161,7 +161,7 @@ public enum BackupLocation {
     /// - otherwise `subfolder(in:…)`: so a name another device's vault took meanwhile moves on to the next
     ///   free "<vault> N.sempere-backup", and a backup written straight into `picked` (`sempere backup --to`)
     ///   gets a new "<vault>.sempere-backup" inside it, its old files left as they are.
-    public static func runSubfolder(in picked: URL, recorded: String?, vaultId: UUID, vaultName: String, openVault: URL?,
+    static func runSubfolder(in picked: URL, recorded: String?, vaultId: UUID, vaultName: String, openVault: URL?,
                                     fileManager fm: FileManager = .default) throws -> String? {
         if let openVault, picked.overlaps(openVault) { throw Problem.insideOpenVault }
         if let recorded {
@@ -179,7 +179,7 @@ public enum BackupLocation {
     /// `backup.json` or `vault.json`, else its one subfolder that does. A backup or vault folder listed only as
     /// iCloud's stand-in (`.<name>.sempere-backup.icloud`, `.<name>.sempere.icloud`: a package an iPhone has not
     /// downloaded) counts as such a subfolder; `previewRestore` downloads it (review of #115, F3).
-    public static func restoreSource(_ picked: URL, fileManager fm: FileManager = .default) throws -> URL {
+    static func restoreSource(_ picked: URL, fileManager fm: FileManager = .default) throws -> URL {
         if isBackup(picked, fm) || isVault(picked, fm) { return picked }
         var inside = visibleEntries(picked, fm).sorted().map { picked.appendingPathComponent($0, isDirectory: true) }
             .filter { isBackup($0, fm) || isVault($0, fm) }
@@ -211,15 +211,15 @@ public enum BackupReminder {
     public static let choices = [0, 1, 3, 7, 14, 30]
     /// Never fire sooner than this after scheduling (an overdue reminder
     /// fires shortly, not at once while the user looks at Settings).
-    public static let minimumDelay: TimeInterval = 60 * 60
+    static let minimumDelay: TimeInterval = 60 * 60
 
     /// The notification's identifier for vault `id` (one pending per vault).
-    public static func identifier(_ vaultId: UUID) -> String { "Sempere.backupReminder.\(vaultId.uuidString.lowercased())" }
+    static func identifier(_ vaultId: UUID) -> String { "Sempere.backupReminder.\(vaultId.uuidString.lowercased())" }
 
     /// When the reminder is due: `days` after the last backup, or after it
     /// was switched on when there was none; nil when off.
     /// The rule is `BackupSchedule`'s, shared with `sempere backup status --max-age`.
-    public static func dueDate(_ r: BackupRecord) -> Date? {
+    static func dueDate(_ r: BackupRecord) -> Date? {
         guard r.reminderDays > 0, let base = r.lastBackup ?? r.reminderSince else { return nil }
         return BackupSchedule.dueDate(since: base, days: r.reminderDays)
     }
@@ -232,7 +232,7 @@ public enum BackupReminder {
 
     /// When to deliver the notification: the due date, but not before
     /// `now + minimumDelay`; nil when off.
-    public static func fireDate(_ r: BackupRecord, now: Date) -> Date? {
+    static func fireDate(_ r: BackupRecord, now: Date) -> Date? {
         dueDate(r).map { max($0, now.addingTimeInterval(minimumDelay)) }
     }
 }
@@ -259,19 +259,19 @@ public protocol BackupNotifying: AnyObject {
 
 /// Notifies nothing (the default until the app installs the real one).
 @MainActor
-public final class NoBackupNotifier: BackupNotifying {
-    public init() {}
-    public func authorize() async -> Bool { false }
-    public func schedule(id: String, at date: Date, notice: LocalNotice) async {}
-    public func cancel(id: String) async {}
+final class NoBackupNotifier: BackupNotifying {
+    init() {}
+    func authorize() async -> Bool { false }
+    func schedule(id: String, at date: Date, notice: LocalNotice) async {}
+    func cancel(id: String) async {}
 }
 
 /// A takeover by another device that this device has not acknowledged (key-hierarchy design §6.3): a banner until
 /// dismissed, and a notification (`AppModel+Devices`). Worded by the app (`title`, `message`).
 public struct TakeoverAlert: Equatable, Sendable {
-    public var vaultID: UUID
+    var vaultID: UUID
     /// The takeovers it reports (newest first): acknowledged by Dismiss.
-    public var epochIds: [Data]
+    var epochIds: [Data]
     public var vaultName: String
     /// The device that took over, by name; nil when no list here names it.
     public var by: String?
@@ -301,7 +301,7 @@ public struct BackupProgress: Equatable, Sendable {
     /// The WebDAV server a partial copy downloads from; nil for iCloud Drive.
     public var server: String?
 
-    public init(stage: Stage, server: String? = nil) {
+    init(stage: Stage, server: String? = nil) {
         self.stage = stage
         self.server = server
     }
@@ -309,18 +309,18 @@ public struct BackupProgress: Equatable, Sendable {
 
 /// Counts files a backup run wrote and carries a cancel request into it
 /// (`BackupOptions.afterEachFile` runs on the backup's thread).
-public final class BackupRunControl: @unchecked Sendable {
+final class BackupRunControl: @unchecked Sendable {
     private let lock = NSLock()
     private var written = 0
     private var cancelled = false
 
-    public init() {}
+    init() {}
 
-    public var filesWritten: Int { lock.withLock { written } }
-    public func cancel() { lock.withLock { cancelled = true } }
+    var filesWritten: Int { lock.withLock { written } }
+    func cancel() { lock.withLock { cancelled = true } }
 
     /// Counts a file; throws `CancellationError` once `cancel()` was called.
-    public func fileWritten() throws {
+    func fileWritten() throws {
         try lock.withLock {
             written += 1
             if cancelled { throw CancellationError() }

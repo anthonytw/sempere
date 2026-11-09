@@ -17,7 +17,7 @@ public struct BulkExportRequest: Identifiable, Equatable, WindowTargeted {
     }
 
     /// The zip archive's name: the notebook's, else "Sempere Notes".
-    public var archiveName: String {
+    var archiveName: String {
         if case .notebook(let path) = scope, let last = NotebookPath.components(path).last {
             return ExportName.folderComponent(last) + ".zip"
         }
@@ -50,7 +50,7 @@ extension BulkExportRequest {
     }
 
     /// `s` as one shell word: unchanged when plain, else in single quotes.
-    public static func shellQuoted(_ s: String) -> String {
+    static func shellQuoted(_ s: String) -> String {
         let plain = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./"))
         if !s.isEmpty, s.unicodeScalars.allSatisfy({ $0.isASCII && plain.contains($0) }) { return s }
         return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
@@ -112,24 +112,24 @@ extension AppModelCore {
 
     /// What reading a note ahead found (`LoadAhead`): the revision names it listed, and the note
     /// when it was read.
-    public struct BulkPrefetched: Sendable {
-        public var names: [String]?
+    struct BulkPrefetched: Sendable {
+        var names: [String]?
         /// nil: not read here (the consumer reads it, in turn).
-        public var item: Result<LoadedForExport, any Error>?
+        var item: Result<LoadedForExport, any Error>?
     }
 
     /// In memory, a note is several times its revision files (they are compressed and encrypted).
-    nonisolated public static var bulkDecodeFactor: Int { 8 }
+    nonisolated static var bulkDecodeFactor: Int { 8 }
     /// Assumed size of a note whose files cannot be measured (evicted from iCloud): in memory.
-    nonisolated public static var bulkUnknownNoteBytes: Int { 64 << 20 }
+    nonisolated static var bulkUnknownNoteBytes: Int { 64 << 20 }
     /// Most estimated bytes of notes held by a bulk export at once: the note being rendered plus
     /// those read ahead. A note over it is read and rendered on its own, as one note always was.
-    nonisolated public static var bulkMemoryBudget: Int { 256 << 20 }
+    nonisolated static var bulkMemoryBudget: Int { 256 << 20 }
     /// How many notes after the current one are read ahead.
     nonisolated public static var bulkReadAheadDepth: Int { 2 }
 
     /// The estimated bytes of `id` in memory once read.
-    nonisolated public static func bulkEstimate(of id: UUID, vault: Vault) -> Int {
+    nonisolated static func bulkEstimate(of id: UUID, vault: Vault) -> Int {
         guard let disk = vault.revisionBytes(of: id) else { return bulkUnknownNoteBytes }
         return max(1 << 20, disk * bulkDecodeFactor)
     }
@@ -237,7 +237,7 @@ extension AppModelCore {
             // budget, so a read ahead never reserves room this job is about to need.
             if unsaved.contains(id) {
                 ahead.schedule(after: index)
-                session.fail(job, UnsavedChangesError())
+                session.fail(job, UnsavedChangesError(), text: services.describeError)
                 state.failed += 1
                 state.done += 1
                 continue
@@ -265,8 +265,10 @@ extension AppModelCore {
                     item = try await bulkLoad(id, vault: vault, session: session, gen: gen)
                 }
                 try ensureCurrent(gen)
+                let describe = services.describeError
                 let render = Task.detached(priority: .userInitiated) { [session] in
-                    try session.export(job, state: item.state, version: item.version, blobs: vault.blobSource(note: id))
+                    try session.export(job, state: item.state, version: item.version, blobs: vault.blobSource(note: id),
+                                       text: describe)
                 }
                 let outcome = try await withTaskCancellationHandler { try await render.value } onCancel: { render.cancel() }
                 if case .failed = outcome.status { state.failed += 1 }
@@ -277,7 +279,7 @@ extension AppModelCore {
                 _ = try? await finishBulk(session, cancelled: true)
                 throw e
             } catch {
-                session.fail(job, error)
+                session.fail(job, error, text: services.describeError)
                 state.failed += 1
             }
             state.done += 1
@@ -288,7 +290,7 @@ extension AppModelCore {
     }
 
     /// True when `url` is the vault folder or inside it.
-    public func isInsideVault(_ url: URL) -> Bool {
+    func isInsideVault(_ url: URL) -> Bool {
         guard let root = vault?.url ?? vaultURL else { return false }
         return url.isSameOrInside(root)
     }
@@ -391,7 +393,7 @@ public final class BulkExportRun {
                 return
             } catch {
                 if let mine { try? FileManager.default.removeItem(at: mine) }
-                next = .failed(.error("\(error)"))
+                next = .failed(.error(model.services.describeError(error)))
             }
             guard let self, self.token == current else {
                 if let mine { try? FileManager.default.removeItem(at: mine) }

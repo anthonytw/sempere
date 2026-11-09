@@ -163,7 +163,7 @@ struct NoteWindowView: View {
             _ = try await model.openWindowNote(value.noteID)
         } catch is CancellationError {
         } catch {
-            failure = "\(error)"
+            failure = AppModel.describe(error)
         }
     }
 

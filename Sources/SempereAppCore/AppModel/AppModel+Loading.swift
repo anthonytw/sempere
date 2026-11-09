@@ -8,7 +8,7 @@ import Sempere
 public enum SyncBarPolicy {
     public static let minimumNotes = 5
 
-    public static func isBulk(_ notes: Int) -> Bool { notes >= minimumNotes }
+    static func isBulk(_ notes: Int) -> Bool { notes >= minimumNotes }
 
     /// Whether to show the bar for `pending` notes still to arrive; `wasShown`: it was showing on the previous pass.
     public static func shows(pending: Int, wasShown: Bool) -> Bool {
@@ -68,11 +68,11 @@ public enum EmptyListReason: Equatable, Sendable {
 }
 
 /// A summary and the sorted revision file names it was made from.
-public struct NamedSummary: Sendable {
-    public var summary: NoteSummary
-    public var revisions: [String]
+struct NamedSummary: Sendable {
+    var summary: NoteSummary
+    var revisions: [String]
 
-    public init(summary: NoteSummary, revisions: [String]) {
+    init(summary: NoteSummary, revisions: [String]) {
         self.summary = summary
         self.revisions = revisions
     }
@@ -83,7 +83,7 @@ extension AppModelCore {
     /// per vault secret in Application Support (`format.md` §10). Not backed up.
     /// Where the app keeps its trust records of vaults' device lists
     /// (format.md §15.10), next to the device clock.
-    public nonisolated static var defaultTrustDirectory: URL {
+    nonisolated static var defaultTrustDirectory: URL {
         DeviceClock.defaultURL.deletingLastPathComponent().appendingPathComponent("Trust", isDirectory: true)
     }
 
@@ -132,7 +132,7 @@ extension AppModelCore {
     ///
     /// - Parameter reportErrors: put a failure in `alert` (nobody
     ///   awaits the task) rather than only rethrowing it from `notesLoaded`.
-    public func startLoadingNotes(reportErrors: Bool) {
+    func startLoadingNotes(reportErrors: Bool) {
         let gen = generation
         loadTask = Task { [weak self] in
             guard let self else { return }
@@ -161,7 +161,7 @@ extension AppModelCore {
     /// Callers share one load: a sync pass that starts while `reload` is
     /// decrypting the index waits for it rather than treating every note as
     /// changed.
-    public func openSummaryCache() async throws {
+    func openSummaryCache() async throws {
         if let opening = summaryCacheOpening {
             try await opening.value
             return
@@ -201,7 +201,7 @@ extension AppModelCore {
 
     /// A listing of a vault outside iCloud Drive: every note folder by name,
     /// reading only notes whose names changed (`reconcile`).
-    public func listLocalNotes() async throws {
+    func listLocalNotes() async throws {
         try await reconcile(full: true)
     }
 
@@ -214,7 +214,7 @@ extension AppModelCore {
     /// the index file does not have the note). Publishes nothing once the
     /// vault closed (`CancellationError`) or, for the sync loop, once its task
     /// is canceled.
-    public func readSummaries(_ ids: [UUID], listedNames: [UUID: [String]] = [:],
+    func readSummaries(_ ids: [UUID], listedNames: [UUID: [String]] = [:],
                        onBatch: (([NoteSummary]) -> Void)? = nil) async throws {
         guard let vault else { throw ModelError.noVaultOpen }
         guard !ids.isEmpty else { return }
@@ -263,7 +263,7 @@ extension AppModelCore {
     /// notes (an edit's own re-read: shown at once, and newer than anything
     /// a listing has queued for them). Nothing is published when every one
     /// is already there unchanged.
-    public func merge(_ summaries: [NoteSummary]) {
+    func merge(_ summaries: [NoteSummary]) {
         guard !summaries.isEmpty else { return }
         for s in summaries { listUpserts[s.id] = nil }
         applyListChanges(upserts: summaries, removals: [])
@@ -274,7 +274,7 @@ extension AppModelCore {
     /// cache or a summary still being listed.
     /// A note not in the list is left to the caller (`noteNotFound`): reading
     /// an unknown id would list it as an empty note with a problem.
-    public func verifySummary(_ id: UUID) async throws {
+    func verifySummary(_ id: UUID) async throws {
         guard !verifiedNoteIDs.contains(id), notes.contains(where: { $0.id == id }) else { return }
         try await refresh([id])
     }
@@ -282,7 +282,7 @@ extension AppModelCore {
     /// `saveSummaryCache` unless the last save was less than
     /// `summaryCacheSaveInterval` ago (and not `force`): a pass that reads a
     /// few of many arriving notes does not re-encrypt the whole index each time.
-    public func saveSummaryCacheIfDue(force: Bool) {
+    func saveSummaryCacheIfDue(force: Bool) {
         let now = ContinuousClock.now
         if !force, let last = lastSummaryCacheSave, now - last < summaryCacheSaveInterval { return }
         guard summaryCache?.hasChanges == true else { return }
@@ -293,7 +293,7 @@ extension AppModelCore {
     /// Writes the summary cache in the background; a failure only costs the
     /// next launch time.
     /// Saves run one after another (`summaryCacheSave`, awaited by tests).
-    public func saveSummaryCache() {
+    func saveSummaryCache() {
         guard let cache = summaryCache, cache.hasChanges else { return }
         let previous = summaryCacheSave
         summaryCacheSaves += 1
@@ -306,7 +306,7 @@ extension AppModelCore {
 
     /// Creates the cache folder, excluded from device backups (the cache is
     /// rebuilt from the vault whenever it is missing).
-    public nonisolated static func prepareCacheDirectory(_ dir: URL) {
+    nonisolated static func prepareCacheDirectory(_ dir: URL) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

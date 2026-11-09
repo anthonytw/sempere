@@ -103,7 +103,7 @@ struct ReadOnlySourceVaultTests {
         #expect(throws: SyncTargetProblem.notWritable("Mine.sempere")) {
             _ = try model.addFolderTarget(locked.appendingPathComponent("Mine.sempere"), scope: locked, to: id)
         }
-        #expect(SyncTargetProblem.notWritable("X").description.contains("no permission"))
+        #expect(AppModel.describe(SyncTargetProblem.notWritable("X")).contains("no permission"))
         #expect(!SyncStatus.text(for: .notWritable(["notes/a"])).contains("errno"))
         // An EPERM on the target (a lapsed grant) has its own words: not "the folder is gone" (re-check of #124).
         #expect(SyncStatus.text(for: .writeGrantLapsed).contains("lost permission"))

@@ -17,7 +17,7 @@ extension AppModelCore {
     /// Queues summaries to show and notes to drop; applied now when the last
     /// application was at least `listUpdateInterval` ago, else once that
     /// interval has passed.
-    public func queueListUpdate(upserts: [NoteSummary] = [], removals: Set<UUID> = []) {
+    func queueListUpdate(upserts: [NoteSummary] = [], removals: Set<UUID> = []) {
         for s in upserts {
             listUpserts[s.id] = s
             listRemovals.remove(s.id)
@@ -45,7 +45,7 @@ extension AppModelCore {
 
     /// Applies everything queued now (the end of a pass, so whoever awaited
     /// it sees the final list).
-    public func flushListUpdates() {
+    func flushListUpdates() {
         listFlushTask?.cancel()
         listFlushTask = nil
         guard !listUpserts.isEmpty || !listRemovals.isEmpty else { return }
@@ -57,7 +57,7 @@ extension AppModelCore {
 
     /// Changes `notes` by `upserts` and `removals` (`NoteListDiff`); assigns
     /// only when something differs.
-    public func applyListChanges(upserts: [NoteSummary], removals: Set<UUID>) {
+    func applyListChanges(upserts: [NoteSummary], removals: Set<UUID>) {
         lastListApply = .now
         let interval = services.perf.begin("list.update")
         var changed = false
@@ -71,7 +71,7 @@ extension AppModelCore {
     }
 
     /// Forgets queued updates (the vault closed).
-    public func discardListUpdates() {
+    func discardListUpdates() {
         listFlushTask?.cancel()
         listFlushTask = nil
         listUpserts = [:]
@@ -82,15 +82,15 @@ extension AppModelCore {
 
 /// Lists the views derive from `notes`, computed once per change: the
 /// sidebar and the list read them on every render.
-public struct DerivedLists {
-    public struct VisibleKey: Equatable {
-        public var version: Int
-        public var selection: SidebarItem?
-        public var search: String
-        public var sort: NoteSort
-        public var favoritesFirst: Bool
+struct DerivedLists {
+    struct VisibleKey: Equatable {
+        var version: Int
+        var selection: SidebarItem?
+        var search: String
+        var sort: NoteSort
+        var favoritesFirst: Bool
 
-        public init(version: Int, selection: SidebarItem?, search: String, sort: NoteSort, favoritesFirst: Bool) {
+        init(version: Int, selection: SidebarItem?, search: String, sort: NoteSort, favoritesFirst: Bool) {
             self.version = version
             self.selection = selection
             self.search = search
@@ -99,10 +99,10 @@ public struct DerivedLists {
         }
     }
 
-    public var visible: (key: VisibleKey, value: [NoteSummary])?
-    public var byID: (version: Int, value: [UUID: NoteSummary])?
-    public var tags: (version: Int, value: [String])?
-    public var tree: (version: Int, value: [NotebookNode])?
+    var visible: (key: VisibleKey, value: [NoteSummary])?
+    var byID: (version: Int, value: [UUID: NoteSummary])?
+    var tags: (version: Int, value: [String])?
+    var tree: (version: Int, value: [NotebookNode])?
 
-    public init() {}
+    init() {}
 }

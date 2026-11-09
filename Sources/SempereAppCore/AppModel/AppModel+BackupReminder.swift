@@ -23,7 +23,7 @@ extension AppModelCore {
 
     /// Replaces the open vault's pending reminder with one for its current
     /// due date (after a backup, a setting change, unlocking), or removes it.
-    public func rescheduleBackupReminder(now: Date = Date()) async {
+    func rescheduleBackupReminder(now: Date = Date()) async {
         guard let vault, let name = vaultName else { return }
         let record = backupStore.record(for: vault.vaultId)
         let id = BackupReminder.identifier(vault.vaultId)

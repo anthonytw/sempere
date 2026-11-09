@@ -13,15 +13,15 @@ public struct CanvasModes: Equatable, Sendable {
         case drawing, selecting, addingText
     }
 
-    public private(set) var mode = Mode.drawing
+    private(set) var mode = Mode.drawing
     /// Where a one-shot tool goes back to once it has placed its item.
-    public private(set) var returnTo = Mode.drawing
+    private(set) var returnTo = Mode.drawing
 
     /// Drawing, with nothing to go back to.
     public init() {}
 
     /// Selection mode is on (the Select toggle).
-    public var selectingItems: Bool {
+    var selectingItems: Bool {
         get { mode == .selecting }
         set { set(.selecting, on: newValue) }
     }
@@ -34,7 +34,7 @@ public struct CanvasModes: Equatable, Sendable {
 
     /// Turns `m` on (the other modes off) or off (back to drawing). Arming the
     /// text tool remembers the mode it came from.
-    public mutating func set(_ m: Mode, on: Bool) {
+    mutating func set(_ m: Mode, on: Bool) {
         if on {
             guard mode != m else { return }
             if m == .addingText { returnTo = mode == .selecting ? .selecting : .drawing }
@@ -46,7 +46,7 @@ public struct CanvasModes: Equatable, Sendable {
     }
 
     /// The text tool placed a new box: back to the mode before it.
-    public mutating func placedItem() {
+    mutating func placedItem() {
         guard mode == .addingText else { return }
         mode = returnTo
         returnTo = .drawing

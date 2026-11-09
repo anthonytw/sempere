@@ -56,7 +56,7 @@ public enum ImportWorkFolder {
     public static let maxPDFBytes = 1 << 30
 
     /// `SempereImport` in the temporary directory.
-    public static var root: URL {
+    static var root: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("SempereImport", isDirectory: true)
     }
 
@@ -105,7 +105,7 @@ public enum ImportWorkFolder {
 /// poster). `AppModelServices.headless()` uses it.
 public struct PortableAttachmentPreparation: AttachmentPreparing {
     /// Reads each PDF page's text for search (`BuiltinPDFTextExtractor`, as the CLI); nil: none.
-    public var pdfText: (any PDFTextExtracting)?
+    var pdfText: (any PDFTextExtracting)?
 
     public init(pdfText: (any PDFTextExtracting)? = BuiltinPDFTextExtractor()) {
         self.pdfText = pdfText

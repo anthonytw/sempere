@@ -20,7 +20,7 @@ extension AppModelCore {
 
     /// Why this device is not on the newest device list: the open vault's state at open, or what a run of one of
     /// its targets met since (the vault is opened again then, `reopenIfUnlisted`). Nil while listed.
-    public var unlistedNotice: String? {
+    var unlistedNotice: String? {
         guard let vault, !vault.isRecoveryOpen else { return nil }
         return vault.unlistedNotice ?? syncSessions.lazy.compactMap { $0.lastReport?.epoch?.unlisted }.first
     }
@@ -78,7 +78,7 @@ extension AppModelCore {
     }
 
     /// The root fingerprint the user gave from the kit: its root code (of this vault), or the 16 groups typed.
-    public nonisolated static func kitRoot(_ text: String, vaultId: UUID) throws -> Data {
+    nonisolated static func kitRoot(_ text: String, vaultId: UUID) throws -> Data {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let qr = KitRecovery.parseRootQR(trimmed) {
             guard qr.vaultId == vaultId else { throw DeviceJoinError.otherVaultsRoot }

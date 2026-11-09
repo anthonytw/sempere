@@ -73,7 +73,7 @@ public enum MenuCommand: String, CaseIterable, Sendable {
     /// Commands that replace UIKit's own items without a shortcut: Sempere >
     /// About Sempere (UIKit's opens the standard about panel) and the Help menu
     /// (UIKit's "Sempere Help" has no help book to open). `MacMenus` builds them.
-    public static let nativeWithoutShortcut: [MenuCommand] = [.showAbout, .showTour, .showKeyNotice]
+    static let nativeWithoutShortcut: [MenuCommand] = [.showAbout, .showTour, .showKeyNotice]
 
     /// Who handles the command.
     public enum Provider: Sendable {
@@ -299,7 +299,7 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         }
 
         /// The note list is in the window (library windows only).
-        public var hasNoteList: Bool { window == .library }
+        var hasNoteList: Bool { window == .library }
     }
 
     /// Whether the command is available in `context`.
@@ -405,11 +405,11 @@ public enum MenuLayout {
     ]
     public static let window: [[MenuCommand]] = [[.showLibrary, .showKeys, .showSettings]]
     /// The app menu's About Sempere (`MacMenus`).
-    public static let app: [[MenuCommand]] = [[.showAbout]]
+    static let app: [[MenuCommand]] = [[.showAbout]]
     /// Help (`MacMenus`).
     public static let help: [[MenuCommand]] = [[.showTour, .showKeyNotice]]
     /// Edit > Find (the system's Undo and Redo stay where UIKit puts them).
-    public static let edit: [[MenuCommand]] = [[.find]]
+    static let edit: [[MenuCommand]] = [[.find]]
 
     /// Every command a menu shows, in order.
     public static var all: [MenuCommand] {

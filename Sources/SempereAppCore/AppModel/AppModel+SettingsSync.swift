@@ -15,13 +15,13 @@ extension AppModelCore {
                                                                     isPhone: services.platform.isPhone)
     }
 
-    public nonisolated static func settingsSyncKey(_ vaultId: UUID) -> String {
+    nonisolated static func settingsSyncKey(_ vaultId: UUID) -> String {
         "Sempere.settingsSync.\(vaultId.uuidString.lowercased())"
     }
 
     /// Loads this device's sync state for the open vault and starts following
     /// local changes; the first pass runs now.
-    public func startSettingsSync() {
+    func startSettingsSync() {
         guard let vault else { return }
         settingsSync = Self.loadSettingsSyncState(services.settings, vaultId: vault.vaultId)
         settingsSyncProblem = nil
@@ -34,7 +34,7 @@ extension AppModelCore {
     }
 
     /// Stops following changes (the vault closed). The state stays stored.
-    public func stopSettingsSync() {
+    func stopSettingsSync() {
         settingsSyncScheduled?.cancel()
         settingsSyncScheduled = nil
         settingsSyncObserver?.cancel()
@@ -44,13 +44,13 @@ extension AppModelCore {
         settingsSyncPrompt = nil
     }
 
-    public nonisolated static func loadSettingsSyncState(_ defaults: any KeyValueStore, vaultId: UUID) -> SettingsSyncState {
+    nonisolated static func loadSettingsSyncState(_ defaults: any KeyValueStore, vaultId: UUID) -> SettingsSyncState {
         guard let data = defaults.data(forKey: settingsSyncKey(vaultId)),
               let state = try? JSONDecoder().decode(SettingsSyncState.self, from: data) else { return SettingsSyncState() }
         return state
     }
 
-    public func saveSettingsSyncState() {
+    func saveSettingsSyncState() {
         guard let vault else { return }
         let key = Self.settingsSyncKey(vault.vaultId)
         guard let data = try? JSONEncoder().encode(settingsSync), services.settings.data(forKey: key) != data else { return }
@@ -67,7 +67,7 @@ extension AppModelCore {
 
     /// Any change to `services.settings`, from anywhere in the app: cheap (no Keychain
     /// read, so the quick-capture keys are left to `settingsChanged`).
-    public func settingsDefaultsChanged() {
+    func settingsDefaultsChanged() {
         guard settingsSync.enabled, phase == .unlocked else { return }
         let local = currentSettingsValues(includingCaptureProfile: false)
         let changed = local.contains { key, value in
@@ -156,13 +156,13 @@ extension AppModelCore {
 
     // MARK: - Passes
 
-    public typealias SettingsStep = @MainActor (inout SettingsSyncState, [String: JSONValue], SharedSettings?,
+    typealias SettingsStep = @MainActor (inout SettingsSyncState, [String: JSONValue], SharedSettings?,
                                                 SettingsDeviceType, Date) async throws -> SettingsSyncState.Pass?
 
     /// Runs `step` on the current state with this device's values and the
     /// vault's file, applies and writes what it decides. One pass at a time:
     /// a pass asked for while one runs runs after it.
-    public func runSettingsStep(enabling: Bool = false, _ step: @escaping SettingsStep) async {
+    func runSettingsStep(enabling: Bool = false, _ step: @escaping SettingsStep) async {
         while settingsSyncRunning { try? await Task.sleep(for: .milliseconds(20)) }
         settingsSyncRunning = true
         defer { settingsSyncRunning = false }
@@ -194,7 +194,7 @@ extension AppModelCore {
         } catch is CancellationError {
             return
         } catch {
-            if (try? ensureCurrent(gen)) != nil { settingsSyncProblem = .failed(String(describing: error)) }
+            if (try? ensureCurrent(gen)) != nil { settingsSyncProblem = .failed(services.describeError(error)) }
             return
         }
         guard (try? ensureCurrent(gen)) != nil, self.vault?.vaultId == vault.vaultId else { return }
@@ -205,7 +205,7 @@ extension AppModelCore {
         do {
             decided = try await step(&state, currentSettingsValues(), file, type, Date())
         } catch {
-            settingsSyncProblem = .failed(String(describing: error))
+            settingsSyncProblem = .failed(services.describeError(error))
             return
         }
         guard (try? ensureCurrent(gen)) != nil else { return }
@@ -246,12 +246,12 @@ extension AppModelCore {
         } catch VaultError.untrustedList {
             settingsSyncProblem = .untrustedRecipients
         } catch {
-            settingsSyncProblem = .failed(String(describing: error))
+            settingsSyncProblem = .failed(services.describeError(error))
         }
     }
 
     /// This device's values of the settings it uses (`SettingsSyncBridge`).
-    public func currentSettingsValues(includingCaptureProfile: Bool = true) -> [String: JSONValue] {
+    func currentSettingsValues(includingCaptureProfile: Bool = true) -> [String: JSONValue] {
         var extras = SettingsSyncBridge.Extras()
         if let vault {
             extras.backupReminderDays = backupStore.record(for: vault.vaultId).reminderDays
@@ -265,7 +265,7 @@ extension AppModelCore {
     }
 
     /// Writes values from the vault on this device.
-    public func applySharedSettings(_ values: [String: JSONValue]) {
+    func applySharedSettings(_ values: [String: JSONValue]) {
         guard !values.isEmpty else { return }
         let forModel = SettingsSyncBridge.apply(values, defaults: services.settings, storage: services.settingsStorage)
         for (key, value) in forModel {

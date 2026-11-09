@@ -1,6 +1,6 @@
 import Foundation
 import Sempere
-import SempereAppCore
+@testable import SempereAppCore
 import Testing
 
 /// The key notice, the quick tour and About (`Expectations.swift`): what this device remembers, when a notice

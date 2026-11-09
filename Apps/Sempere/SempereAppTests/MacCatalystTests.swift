@@ -182,7 +182,7 @@ struct MacDragOutTests {
         defer { model.close() }
         let prepare = NoteFileDrag.prepare(Self.lecture, model: model)
         let provider = DragPayload.notes([Self.lecture]).provider { provider in
-            NoteFileDrag.register(on: provider, title: "Fixture lecture", prepare: prepare)
+            NoteFileDrag.register(on: provider, title: "Fixture lecture", format: .pdf, prepare: prepare)
         }
         #expect(provider.registeredTypeIdentifiers.first == UTType.pdf.identifier, "other apps see the PDF first")
         #expect(provider.suggestedName == "Fixture lecture")
@@ -203,7 +203,7 @@ struct MacDragOutTests {
         defer { model.close() }
         let prepare = NoteFileDrag.prepare(Self.lecture, model: model)
         let provider = DragPayload.notes([Self.lecture]).provider(includePayload: false) { provider in
-            NoteFileDrag.register(on: provider, title: "Fixture lecture", prepare: prepare)
+            NoteFileDrag.register(on: provider, title: "Fixture lecture", format: .pdf, prepare: prepare)
         }
         #expect(provider.registeredTypeIdentifiers == [UTType.pdf.identifier])
         prepare.cancel()

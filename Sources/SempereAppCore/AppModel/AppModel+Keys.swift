@@ -6,13 +6,13 @@ import SempereRender
 /// shows it: a device, or the recovery key.
 public struct VaultDevice: Identifiable, Equatable, Sendable {
     /// The `age1pq1…` key.
-    public var recipient: String
+    var recipient: String
     /// The device's id (8 hex digits); empty for the recovery key.
     public var deviceID: String
     public var name: String
     /// `ipad`, `iphone`, `mac`, `cli`…; nil for the recovery key.
     public var kind: String?
-    public var added: Date?
+    var added: Date?
     public var isRecovery: Bool
     /// The vault's home: it approves and renames devices (design §5.6).
     public var isHome: Bool
@@ -21,7 +21,7 @@ public struct VaultDevice: Identifiable, Equatable, Sendable {
 
     public var id: String { recipient }
 
-    public init(recipient: String, deviceID: String, name: String, kind: String?, added: Date?, isRecovery: Bool,
+    init(recipient: String, deviceID: String, name: String, kind: String?, added: Date?, isRecovery: Bool,
                 isHome: Bool, isThisDevice: Bool) {
         self.recipient = recipient
         self.deviceID = deviceID
@@ -35,9 +35,9 @@ public struct VaultDevice: Identifiable, Equatable, Sendable {
 
     /// `age1pq1abcdefg…` (1959 characters in full) with its SHA-256 fingerprint,
     /// as printed on the recovery kit.
-    public var summary: String { Self.abbreviated(recipient) }
+    var summary: String { Self.abbreviated(recipient) }
 
-    public static func abbreviated(_ key: String) -> String {
+    static func abbreviated(_ key: String) -> String {
         key.count > 40 ? "\(key.prefix(14))…  SHA-256 \(PaperKey.fingerprint(key))" : key
     }
 }

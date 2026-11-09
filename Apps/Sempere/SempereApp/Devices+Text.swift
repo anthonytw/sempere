@@ -67,8 +67,8 @@ extension DeviceNotice {
     }
 }
 
-extension AppModelKeyError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension AppModelKeyError {
+    var text: String {
         switch self {
         case .notUnlocked: return String(localized: "Unlock the vault first.")
         case .vaultChanged: return String(localized: "Another vault was opened meanwhile. Nothing was changed.")
@@ -76,8 +76,8 @@ extension AppModelKeyError: @retroactive CustomStringConvertible {
     }
 }
 
-extension KeyProblem: @retroactive CustomStringConvertible {
-    public var description: String {
+extension KeyProblem {
+    var text: String {
         switch self {
         case .recoveryKeyNeeded: return String(localized: "Paste the recovery key from the printed kit (AGE-SECRET-KEY-PQ-1…).")
         }
@@ -103,8 +103,8 @@ extension JoinDelivery {
 }
 
 /// `DeviceJoinError` (SempereAppCore) worded.
-extension DeviceJoinError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension DeviceJoinError {
+    var text: String {
         switch self {
         case .noMatchingRequest:
             return String(localized: "No device that asked to join has these words. Check them on the new device.")

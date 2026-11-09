@@ -65,7 +65,7 @@ struct NewNoteView: View {
                                 // The sheet's choice is for this note only: the default for new notes is
                                 // Settings ▸ New Notes ▸ Layout, never the last note made (TestFlight build 8).
                                 dismiss()
-                            } catch { failure = "\(error)" }
+                            } catch { failure = AppModel.describe(error) }
                         }
                     }
                     .disabled(model.isEditing)

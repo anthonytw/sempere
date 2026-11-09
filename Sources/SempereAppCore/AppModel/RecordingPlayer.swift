@@ -52,16 +52,16 @@ public final class RecordingPlayer {
     @ObservationIgnored private let backend: any AudioPlaybackBackend
     @ObservationIgnored private var ticker: Task<Void, Never>?
     /// Called with every new position (the editor's stroke highlights).
-    @ObservationIgnored public var onPosition: ((Recording, Double) -> Void)?
+    @ObservationIgnored var onPosition: ((Recording, Double) -> Void)?
     /// Called when a loaded file is no longer used (`BlobCache.release`).
-    @ObservationIgnored public var onUnload: ((Recording) -> Void)?
+    @ObservationIgnored var onUnload: ((Recording) -> Void)?
 
-    public init(backend: any AudioPlaybackBackend) {
+    init(backend: any AudioPlaybackBackend) {
         self.backend = backend
     }
 
     /// Loads `recording` from its (verified, local) audio file.
-    public func load(_ recording: Recording, file: URL) throws {
+    func load(_ recording: Recording, file: URL) throws {
         unloadCurrent()
         duration = try backend.load(file)
         self.recording = recording
@@ -69,14 +69,14 @@ public final class RecordingPlayer {
         transcript = nil
     }
 
-    public func play() {
+    func play() {
         guard recording != nil else { return }
         backend.play()
         isPlaying = backend.isPlaying
         startTicker()
     }
 
-    public func pause() {
+    func pause() {
         backend.pause()
         isPlaying = false
         update()

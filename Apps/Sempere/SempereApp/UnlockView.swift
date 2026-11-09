@@ -170,7 +170,7 @@ struct UnlockView: View {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
         Task {
-            do { try await action() } catch { failure = "\(error)" }
+            do { try await action() } catch { failure = AppModel.describe(error) }
         }
     }
 }

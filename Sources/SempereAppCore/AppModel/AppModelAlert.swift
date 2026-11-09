@@ -53,7 +53,7 @@ public enum InsertNotice: Sendable, Equatable {
     case fileNotOpened(name: String, any Error)
 
     /// The error it carries.
-    public var error: any Error {
+    var error: any Error {
         switch self {
         case .imageNotAdded(let e), .imageNotReplaced(let e), .pdfNotImported(let e), .videoNotAdded(let e),
              .fileNotOpened(_, let e):
@@ -75,9 +75,14 @@ public enum InsertNotice: Sendable, Equatable {
 }
 
 /// Whether two errors are the same: equal values of one `Equatable` type (`AttachmentOpsError.pagelessNote`,
-/// `PDFLocked.needsPassword`), else the same type with the same description (an `NSError`'s domain and code show in
-/// it).
-public func sameError(_ a: any Error, _ b: any Error) -> Bool {
+/// `PDFLocked.needsPassword`), else the same type with the same `String(reflecting:)`, the type's own debug text (an
+/// `NSError`'s domain and code show in it); never the app's `AppModel.describe`.
+///
+/// The `Equatable` of `AppModelAlert`, `EditorFailure`, `InsertNotice` and `EmptyListReason` is for tests (they assert
+/// the reason) and for change suppression (setting an equal value publishes nothing new). It is not identity: two
+/// separate failures of the same kind compare equal, so never use it to tell whether an alert is "the same one" as
+/// before, only whether its content changed.
+func sameError(_ a: any Error, _ b: any Error) -> Bool {
     if let x = a as? any Equatable { return equals(x, b) }
     return type(of: a) == type(of: b) && String(reflecting: a) == String(reflecting: b)
 }

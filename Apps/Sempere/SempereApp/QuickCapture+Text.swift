@@ -4,8 +4,8 @@ import SempereAppCore
 // The words of quick voice notes (`QuickCapture`, `QuickCaptureError`, `CaptureAssemblyError`, SempereAppCore), for the
 // app's banner and Settings, and for Siri, Shortcuts and the widgets.
 
-extension QuickCaptureError: @retroactive CustomStringConvertible, @retroactive CustomLocalizedStringResourceConvertible {
-    public var description: String {
+extension QuickCaptureError: @retroactive CustomLocalizedStringResourceConvertible {
+    var text: String {
         switch self {
         case .notSetUp: return String(localized: "Quick Voice Notes is not set up: open Sempere, unlock the vault and turn it on in Settings.")
         case .profileUnreadable: return String(localized: "Quick Voice Notes could not read its settings on this device. Unlock the device and try again; if it keeps happening, turn Quick Voice Notes off and on again in Settings.")
@@ -27,12 +27,11 @@ extension QuickCaptureError: @retroactive CustomStringConvertible, @retroactive 
     }
 
     /// What Siri, Shortcuts and the widgets show when an intent fails.
-    public var localizedStringResource: LocalizedStringResource { LocalizedStringResource(stringLiteral: description) }
+    public var localizedStringResource: LocalizedStringResource { LocalizedStringResource(stringLiteral: text) }
 }
 
-extension CaptureAssemblyError: @retroactive CustomStringConvertible {
-    /// As the recorder's own assembly errors (`RecordingError.cannotAssemble`).
-    public var description: String {
+extension CaptureAssemblyError {
+    var text: String {
         switch self {
         case .noAudio: return RecordingError.cannotAssemble("no audio").description
         case .segmentUndecodable(let name): return RecordingError.cannotAssemble("\(name) does not decode").description

@@ -18,7 +18,7 @@ struct InsertTextTests {
         #expect(InsertNotice.videoNotAdded(VideoPreparation.Failure.unreadable).text
                 == "Could not add the video. This file is not a video Sempere can read.")
         #expect(InsertNotice.fileNotOpened(name: "Paper.pdf", CocoaError(.fileNoSuchFile)).text.hasPrefix("Could not open “Paper.pdf”. "))
-        #expect("\(PDFLocked.wrongPassword)" == "That password does not open this PDF.")
+        #expect(AppModel.describe(PDFLocked.wrongPassword) == "That password does not open this PDF.")
     }
 
     /// The model's alert and the detail pane's failure are typed (step 7); the app words them as the strings were
@@ -27,17 +27,17 @@ struct InsertTextTests {
         let pageless = InsertNotice.pdfNotImported(AttachmentOpsError.pagelessNote)
         #expect(AppModelAlert.insert(pageless).text == pageless.text)
         #expect(AppModelAlert.notice(.transcriptionModelMissing).text == AppModelNotice.transcriptionModelMissing.text)
-        #expect(AppModelAlert.error(AppModelError.noVaultOpen).text == "\(AppModelError.noVaultOpen)")
+        #expect(AppModelAlert.error(AppModelError.noVaultOpen).text == "No vault is open.")
         #expect(AppModelAlert.worded("Could not paste: x").text == "Could not paste: x")
         #expect(EditorFailure.unreadable(nil).text == "This note could not be read.")
         #expect(EditorFailure.unreadable(.deleted).text == NoteReadOnly.deleted.text)
-        #expect(EditorFailure.failed(AppModelError.noteNotFound).text == "\(AppModelError.noteNotFound)")
+        #expect(EditorFailure.failed(AppModelError.noteNotFound).text == "That note is no longer in the vault.")
     }
 
     @Test func tooLargeFilesNameTheirSizeAndTheLimit() {
-        let pdf = "\(AttachmentTooLarge.pdf(2 << 30))"
+        let pdf = AppModel.describe(AttachmentTooLarge.pdf(2 << 30))
         #expect(pdf.hasPrefix("This PDF is too large to add (2 GB; at most 1 GB)"), "\(pdf)")
-        let video = "\(AttachmentTooLarge.video(3 << 30))"
+        let video = AppModel.describe(AttachmentTooLarge.video(3 << 30))
         #expect(video.hasSuffix("Trim it first."), "\(video)")
         #expect(video.contains("3 GB"))
         #expect(AppModel.describe(AttachmentTooLarge.pdf(2 << 30)) == pdf)

@@ -93,7 +93,7 @@ struct KeyFileActions: View {
     }
 
     private func share() {
-        do { shared = try KeyShareFile.stage(key) } catch { failure = String(localized: "The key could not be prepared for sharing: \(error)") }
+        do { shared = try KeyShareFile.stage(key) } catch { failure = String(localized: "The key could not be prepared for sharing: \(AppModel.describe(error))") }
     }
 
     private func unshare() {
@@ -102,7 +102,7 @@ struct KeyFileActions: View {
     }
 
     private func kitPDF() -> Data? {
-        do { return try AppModel.recoveryKitPDF(for: key, vault: vault) } catch { failure = "\(error)"; return nil }
+        do { return try AppModel.recoveryKitPDF(for: key, vault: vault) } catch { failure = AppModel.describe(error); return nil }
     }
 
     private func saveKit() {

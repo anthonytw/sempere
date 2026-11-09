@@ -29,10 +29,10 @@ public struct NoteWindowValue: Codable, Hashable, Sendable {
 public struct RestorableSelection: Codable, Equatable, Sendable {
     /// `all`, `deleted`, `favorites`, `recognized`, `notebook#<digest>` or
     /// `tag#<digest>`; anything else is All Notes.
-    public var sidebar: String
-    public var note: UUID?
+    var sidebar: String
+    var note: UUID?
     /// The vault the selection belongs to.
-    public var vault: UUID?
+    var vault: UUID?
 
     public static let key = "Sempere.selection"
 

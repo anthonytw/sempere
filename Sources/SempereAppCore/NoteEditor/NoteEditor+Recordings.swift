@@ -14,7 +14,7 @@ extension NoteEditorModel {
     public var recordingStamp: (@Sendable (Date) -> RecordingLink?)? { Canvas.recordingStamp(of: self) }
 
     /// The note as the recording features see it (no strokes).
-    public var recordingState: NoteState {
+    var recordingState: NoteState {
         NoteState(meta: meta, pages: [], recordings: recordings)
     }
 
@@ -46,7 +46,7 @@ extension NoteEditorModel {
     /// The card that shows `recording` on the page being looked at, inside the
     /// part of it on screen (format.md §8.2.9; `NoteOps.placeRecording`), nil
     /// when the note has no page or the page is full.
-    public func audioPlacement(for recording: Recording) -> ItemPlacement? {
+    func audioPlacement(for recording: Recording) -> ItemPlacement? {
         guard let page = currentPage ?? pages.first else { return nil }
         let visible = Canvas.visibleRect(ofPage: page.id, in: self).map { Rect($0) }
         // Below the page's items (an earlier card), never on them (`NoteOps.unoccupied`); an infinite page grows to keep it in reach.
@@ -79,7 +79,7 @@ extension NoteEditorModel {
             try await writeRecordingOps(ops)
             if let i = recordings.firstIndex(where: { $0.id == id }) { recordings[i].title = renamed }
         } catch {
-            Canvas.recordingFailed(.rename("\(error)"), in: self)
+            Canvas.recordingFailed(.rename(describeError(error)), in: self)
         }
     }
 
@@ -100,13 +100,13 @@ extension NoteEditorModel {
             showWrittenItems(added: [], removed: removed)
             playbackHighlight = [:]
         } catch {
-            Canvas.recordingFailed(.delete("\(error)"), in: self)
+            Canvas.recordingFailed(.delete(describeError(error)), in: self)
         }
     }
 
     /// Takes a transcript written for this note elsewhere (the model's
     /// transcription job, through `NoteWriter.append`) into the open editor.
-    public func adoptTranscript(_ ref: BlobRef?, for id: UUID) {
+    func adoptTranscript(_ ref: BlobRef?, for id: UUID) {
         guard let i = recordings.firstIndex(where: { $0.id == id }) else { return }
         recordings[i].transcript = ref
     }
@@ -139,12 +139,12 @@ extension NoteEditorModel {
         if next != playbackHighlight { playbackHighlight = next }
     }
 
-    public func clearPlaybackHighlight() {
+    func clearPlaybackHighlight() {
         if !playbackHighlight.isEmpty { playbackHighlight = [:] }
     }
 
     /// The highlight boxes of playback on `pageID`.
-    public func playbackBoxes(onPage pageID: UUID) -> [HighlightBox] {
+    func playbackBoxes(onPage pageID: UUID) -> [HighlightBox] {
         guard let ids = playbackHighlight[pageID], !ids.isEmpty else { return [] }
         return liveStrokes(of: pageID).filter { ids.contains($0.id) }.compactMap(RecordingSync.box(of:))
             .map { HighlightBox(box: $0, isCurrent: false, style: .playback) }
@@ -172,11 +172,11 @@ public struct PlaybackIndex {
     /// change of a page's ink bumps its `inkRevisions`; a note still being
     /// read has no strokes yet).
     public struct Basis: Equatable {
-        public var recording: UUID
-        public var recordings: [Recording]
+        var recording: UUID
+        var recordings: [Recording]
         public var pages: [UUID]
-        public var revisions: [Int]
-        public var ready: Bool
+        var revisions: [Int]
+        var ready: Bool
 
         public init(recording: UUID, recordings: [Recording], pages: [UUID], revisions: [Int], ready: Bool) {
             self.recording = recording
@@ -187,7 +187,7 @@ public struct PlaybackIndex {
         }
     }
 
-    public let basis: Basis
+    let basis: Basis
     /// (at, page, stroke), sorted by `at`; only finite moments (no other can
     /// fall in a window around a finite position).
     var links: [(at: Double, page: UUID, stroke: UUID)] = []

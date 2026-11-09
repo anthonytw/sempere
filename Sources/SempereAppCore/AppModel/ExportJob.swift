@@ -51,7 +51,7 @@ public final class ExportJob {
         /// or written with their metadata, one line each.
         public var warnings: [String] = []
 
-        public init(items: [URL], failures: [String], exported: Int, recordingsAttached: Int = 0,
+        init(items: [URL], failures: [String], exported: Int, recordingsAttached: Int = 0,
                     recordingsOmitted: Int = 0, videosAttached: Int = 0, mediaFiles: Int = 0, withoutMedia: Int = 0,
                     warnings: [String] = []) {
             self.items = items
@@ -75,7 +75,7 @@ public final class ExportJob {
     public var isRunning: Bool { if case .running = state { return true } else { return false } }
 
     /// Where exports are staged (under the temporary directory, never in the vault).
-    nonisolated public static var scratchRoot: URL {
+    nonisolated static var scratchRoot: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("SempereExports", isDirectory: true)
     }
 
@@ -117,7 +117,7 @@ public final class ExportJob {
                                          warnings: options.format == .media ? result.warnings : []))
             } catch is CancellationError {
             } catch {
-                next = .failed(.error("\(error)"))
+                next = .failed(.error(model.services.describeError(error)))
             }
             guard let self, self.scratch == dir, !Task.isCancelled, let next else {
                 try? FileManager.default.removeItem(at: dir)

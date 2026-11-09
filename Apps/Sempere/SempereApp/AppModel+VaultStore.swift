@@ -19,8 +19,8 @@ extension VaultCopyProgress {
     }
 }
 
-extension VaultStoreProblem: @retroactive CustomStringConvertible {
-    public var description: String {
+extension VaultStoreProblem {
+    var text: String {
         switch error {
         case .alreadyInStore(_, let name):
             return String(localized: "This vault is already on this device as “\(name)”. Open it from the list.",

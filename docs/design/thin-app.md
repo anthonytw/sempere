@@ -248,7 +248,7 @@ Wave 5b, part 2 (the first half of the `AppModel` family, 2026-11-07) moved the 
   `SyncTargetProblem`, `WebDAVVaultError`, `WebDAVPasswordError`, `NoteSort`, `SearchScope`, the progress headlines,
   `WebDAVLeftover` and the read-only banner, unchanged.
 - **Public surface**: every member of the moved files that was internal is public, because the views and the app-side
-  extensions (part 3) use the class through another module. Narrowing it to what the views read is step 7b (below).
+  extensions (part 3) use the class through another module. Narrowed to what the app uses in step 7b (below).
 - **Tests**: `Tests/SempereAppCoreTests/AppModel` (one `.serialized` parent suite, `AppModelSuites`; fixture vaults copied
   off the main actor, `ModelFixture`) holds `IndexTests`, `ListEpochTests`, `MassChangeTests` and the parts of
   `AppModelTests`, `BrowserTests`, `SearchTests` and `VaultOpeningTests` that need no app-side code, on a host of their
@@ -674,25 +674,72 @@ app:
   `finishRecordingSave`), the typed assertions above in `InsertTests`, `OpenedFilesTests`, `RecordingModelTests` and
   `VaultOpeningTests`; the app's `InsertTextTests.theAlertAndTheEditorFailureAreWordedAsBefore` checks the words.
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b, 5a to 6b and 7a are done (above). Left:
+Wave 5b, part 3, step 7b (the public surface, 2026-11-08) narrowed `SempereAppCore` to what the app uses and finished
+wave 5b:
+
+- **Counts** (lines declaring `public`, `Sources/SempereAppCore`): 2,664 before, 1,643 after (88 files); named public
+  types 361 before, 317 after. The CLI links none of the module, so only the app (views, glue and its tests) counts as a
+  user. Method: the members and types of the moved `AppModel`, `NoteEditor`, `QuickCapture` and settings files went
+  internal, the app and its tests were built (`scripts/app.sh build-ios`, `test-mac`) and what failed became public
+  again (a handful of members: `OpenedPDF`'s and `PDFImportRequest`'s `file`, `ImportDetails.isEmpty`,
+  `CanvasModes.textToolEnded`, `OpenedFile.shows`, and the like). A second pass took the 40 public types the app never
+  names and tried each as internal: all 40 stayed public because another public declaration's signature names them (a
+  default argument of `AppModelServices.init` or `QuickCapture.init`, a property's type, an `AppModelCore` initializer).
+- **What stays public, and why**: (1) `AppModelCore`'s state and steps the views read and call, with the typed values they
+  show (`AppModelAlert`, `AppModelNotice`, `InsertNotice`, `EditorFailure`, `EmptyListReason`, the rows and progress
+  values); (2) the seams the app implements (`AppModelServices` and the protocols and no-op defaults its initializer
+  names, `QuickCapturePlatform`'s, `DeviceKeyStore`, `AppLifecycle`, `AttachmentPreparing`); (3) `NoteEditorModel` and
+  `NoteCanvas`, which the app's `PencilCanvas` instantiates; (4) the types of the first three in other public
+  signatures; (5) `DemoVault` and `DemoHandwriting` (`#if DEBUG`, the screenshots). Internal now: every `AppModel`
+  helper the extensions call among themselves, the model's own bookkeeping (generations, gates, caches, queues, the
+  list-update machinery), and the types only they name.
+- **Tests and `@testable`**: `Tests/SempereAppCoreTests` use `@testable import SempereAppCore` (the target's own tests,
+  which drive behavior through the internals). The app's tests do not: after the narrowing they build against the public
+  surface alone, so nothing in `SempereAppTests` reaches an internal. The decision (reviewer, 2026-11-08): they may
+  `@testable import SempereAppCore` to READ internals, never to drive behavior the app itself cannot reach; core behavior
+  tests belong in `SempereAppCoreTests`.
+- **One `AppModel.describe(_:)`** (`Insert+Text.swift`) words every thrown error: `AppModelAlert.error`,
+  `EditorFailure.failed`, `EmptyListReason.failed`, and the `catch` blocks of the views that show what they caught (the
+  `localizedDescription` catches for system and file errors, `InsertUI`'s photo picks, `KeyExportViews`' file save,
+  `ExportSheet`'s, stay as they are). The 24 errors of the library the app worded with a retroactive
+  `CustomStringConvertible` (`AppModelError`, `SyncTargetProblem`, `DeviceJoinError`, `VaultStoreProblem`,
+  `DragExportError`, `QuickCaptureError`, …) now have a plain `text` and no conformance; any other error keeps its own
+  description. Those conformances also applied inside the library at run time, so every text the core builds from an
+  error goes through `AppModelServices.describeError` (the app passes `AppModel.describe`; headless and the editors'
+  standalone default is `plainErrorDescription`, the error's own description): the export and bulk-export failures
+  (`ExportJob`, `BulkExportSession`'s `fail` and `export`), the notices' reasons (`recordingUnplayable`,
+  `recordingUnreadable`, `recordingNotTranscribed`, `voiceNoteUnreadable`, `deviceListUnreadable`), the attachment index's
+  problems, the settings sync problem, the sync targets' `other`, thinning's skipped notes, and what each editor keeps
+  (`readOnly`'s load failure, `saveFailure`, the recognition and recording failures: the model gives the editor its
+  describer when it opens it). The model gives `QuickCapture.describeError` the same one (its banner and outcome).
+  With that the strings are those of before; the one exception is `VoiceNoteErrorInfo` (Settings ▸ Quick Voice Notes ▸
+  Recent Starts), a technical log that now shows an error's case name (`liveActivitiesOff`) where it showed the
+  app's sentence: accepted, it is untranslated diagnostics. `inboxProblem` is a string no view reads. The app's tests
+  assert through `AppModel.describe`; `DescribeErrorTests` (core) inject a stub describer and check that an export, a
+  bulk export of an unsaved note and a notice use it, and `LocalizationCatalogTests.testEveryWordedErrorTypeIsInAppModelDescribe`
+  fails when an error type with an app-side `text` has no case in `describe`.
+- **`sameError`** (`AppModelAlert.swift`): equal values of one `Equatable` error type, else the same type and the same
+  `String(reflecting:)`, the type's own debug text, never the app's `AppModel.describe`. The `Equatable` of
+  `AppModelAlert`, `EditorFailure`, `InsertNotice` and `EmptyListReason` is for tests and for change suppression, not
+  identity. `LocalizationCatalogTests.testTheLibraryBuildsNoWordedAlert` fails if `.worded` appears anywhere under
+  `Sources/` outside `AppModelAlert.swift` (applied or not; the PR gate runs the package tests).
+- **Review of #33, folded in**: the waits of `VaultOpeningTests` (the listing error) and `OfflineTranscriptionTests` are
+  30 s (the policy); `NoteFileDrag.register` has no default `format` (the drag source and `MacCatalystTests` pass it).
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b, 5a to 6b, 7a and 7b are done (above): wave 5b is done. The steps:
 
 6. App lifecycle and windows: done (step 6, above).
 6b. The drag-out export (`AppModel+DragExport.swift`, split out of step 6): done (step 6b, above).
 7a. `AppModelAppState`, `Host.State` and the host's steps go; the model's words become typed values: done (step 7a,
     above).
 7b. Narrow the public surface of `SempereAppCore` to what the app (views, glue and its tests) uses; the CLI links
-    none of it. On 2026-11-08 the module had about 2,675 `public` declarations, 343 of them named types, of which 84
-    are named nowhere in `Apps/`. Method: make the moved `AppModel` files' members internal, build the app and its
-    tests (`scripts/app.sh build-ios`, `test-mac`), make public again only what fails, and give
-    `SempereAppCoreTests` `@testable import SempereAppCore` where the tests need the rest. Open for that step: whether
-    the app's tests may `@testable import SempereAppCore` (Xcode's Debug builds of the local package allow it) or
-    everything they read stays public. Wave 5b is done with it.
+    none of it: done (step 7b, above). Wave 5b is done with it.
 
 The words stayed in the app, next to the views that show them, so the string catalog's checks still see them
 (`LocalizationCatalogTests` scans `Apps/`): `MenuCommand+Titles.swift` words `MenuCommand.titleKind(in:)`,
 `DeviceSettings+Text.swift` the settings' choices and `StorageText`, `Expectations+Text.swift` the tour pages
 (`TourPage.topic`), `VaultLibrary+App.swift`, `BackupSettings+Text.swift` and `QuickCapture+Text.swift` the errors (and, since wave 5b, the banner's titles and the kept-on-device line),
-progress, reminder and restore name of wave 4 (retroactive `CustomStringConvertible`, as `CloudVault+Live.swift`). So did the glue that reads the process or the bundle for the app: `OnboardingPolicy.automatic`
+progress, reminder and restore name of wave 4 (a `text` per error type, worded through `AppModel.describe` since step 7b, as `CloudVault+Live.swift`). So did the glue that reads the process or the bundle for the app: `OnboardingPolicy.automatic`
 (debug launch variables), `OnboardingMemory()` (`UserDefaults.standard`), the transcription hooks
 (`TranscriptionSettings.statusProvider` and the others, set at launch) and `DemoLaunch`.
 

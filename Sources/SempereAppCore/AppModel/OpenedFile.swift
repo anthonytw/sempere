@@ -11,7 +11,7 @@ public enum OpenedFile {
     /// A PDF by its type (`isPDFType`: the app reads the URL's `UTType`) or its extension (the type cannot always be
     /// read before the security scope is taken); anything else is taken for a vault (or a folder inside one), as
     /// before.
-    public static func kind(of url: URL, isPDFType: Bool = false) -> Kind {
+    static func kind(of url: URL, isPDFType: Bool = false) -> Kind {
         if isPDFType || url.pathExtension.lowercased() == "pdf" { return .pdf }
         return .vault
     }
@@ -37,7 +37,7 @@ public enum OpenedFile {
         canvasWindow == nil || canvasWindow == window
     }
 
-    public static func stage(waiting: Int, phase: AppModelPhase, busy: Bool, readOnly: Bool) -> Stage {
+    static func stage(waiting: Int, phase: AppModelPhase, busy: Bool, readOnly: Bool) -> Stage {
         guard waiting > 0 else { return .none }
         switch phase {
         case .noVault: return .needsVault

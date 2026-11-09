@@ -8,7 +8,7 @@ public struct VaultDetailsSnapshot: Sendable, Equatable {
     public var storage: VaultStorage
     public var targets: [TargetDetails]
 
-    public init(storage: VaultStorage, targets: [TargetDetails]) {
+    init(storage: VaultStorage, targets: [TargetDetails]) {
         self.storage = storage
         self.targets = targets
     }

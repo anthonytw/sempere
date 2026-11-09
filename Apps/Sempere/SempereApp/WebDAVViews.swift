@@ -277,7 +277,7 @@ struct WebDAVConnectSheet: View {
             try await model.addWebDAVTarget(url: url, user: userName, password: password, pin: pin, to: addingTo)
             dismiss()
         } catch {
-            failure = String(describing: error)
+            failure = AppModel.describe(error)
         }
     }
 
@@ -291,7 +291,7 @@ struct WebDAVConnectSheet: View {
             // Canceled download (the vault is listed; opening it continues), or another vault opened meanwhile.
             dismiss()
         } catch {
-            failure = String(describing: error)
+            failure = AppModel.describe(error)
         }
     }
 
@@ -303,7 +303,7 @@ struct WebDAVConnectSheet: View {
             try await model.updateWebDAVLocation(editing.id, password: password.isEmpty ? nil : password, pin: pin)
             dismiss()
         } catch {
-            failure = String(describing: error)
+            failure = AppModel.describe(error)
         }
     }
 }

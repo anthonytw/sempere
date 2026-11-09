@@ -46,7 +46,7 @@ public struct UndoneRemoval: Hashable, Sendable {
 
     /// The store vault's record of removals a takeover undid (`AppModel.undoneRemovalsSource`); none for a vault
     /// elsewhere.
-    public static func recorded(_ vault: Vault) -> [UndoneRemoval] {
+    static func recorded(_ vault: Vault) -> [UndoneRemoval] {
         guard let url = UndoneRemovalsRecord.url(storeVault: vault.url, vaultId: vault.vaultId) else { return [] }
         return UndoneRemovalsRecord.load(url).map { UndoneRemoval(id: $0.id, name: $0.name.map(DeviceName.display) ?? $0.id) }
     }
@@ -61,7 +61,7 @@ public struct UnlistedFacts: Equatable, Sendable {
     /// This device's own files that no target holds (its write ledger's).
     public var unsynced: [String]
 
-    public init(by: String? = nil, seen: Date? = nil, unsynced: [String]) {
+    init(by: String? = nil, seen: Date? = nil, unsynced: [String]) {
         self.by = by
         self.seen = seen
         self.unsynced = unsynced
@@ -85,7 +85,7 @@ public struct UnlistedFacts: Equatable, Sendable {
 /// One sighting as Repair lists it (`Vault.sightings`).
 public struct SightingRow: Identifiable, Equatable, Sendable {
     public var epoch: Int
-    public var epochId: Data
+    var epochId: Data
     /// Its parent is an epoch this device verified: it holds every sync back (a real change whose record has not
     /// arrived, or this device's removal). Detached ones (nothing verifies them) hold back only the targets that
     /// show them.
@@ -94,7 +94,7 @@ public struct SightingRow: Identifiable, Equatable, Sendable {
     public var seen: Date
     public var id: Data { epochId }
 
-    public init(epoch: Int, epochId: Data, anchored: Bool, sources: [String], seen: Date) {
+    init(epoch: Int, epochId: Data, anchored: Bool, sources: [String], seen: Date) {
         self.epoch = epoch
         self.epochId = epochId
         self.anchored = anchored
@@ -133,11 +133,11 @@ extension AppModelCore {
     }
 
     /// True when this device is not on the newest device list (design §5.5): every write is refused.
-    public var isUnlisted: Bool { unlistedNotice != nil }
+    var isUnlisted: Bool { unlistedNotice != nil }
 
     /// After a two-way run: when a target reported this device unlisted and the open vault does not know it yet,
     /// the vault is opened again, so its own refusal of writes and the unlisted screen's facts follow.
-    public func reopenIfUnlisted() async {
+    func reopenIfUnlisted() async {
         guard phase == .unlocked, !isChangingKeys, let vault, vault.unlistedNotice == nil,
               syncSessions.contains(where: { $0.lastReport?.epoch?.unlisted != nil }) else { return }
         await reopenUnderSameKeys()
@@ -230,7 +230,7 @@ extension AppModelCore {
 
     /// Reads, off the main actor, since when this device's sync is held back and its sightings (each judged
     /// anchored or detached, which can verify signatures): after an unlock, a reopen, a run and a Forget.
-    public func refreshDeviceState() async {
+    func refreshDeviceState() async {
         guard let vault, phase == .unlocked else { return }
         let gen = generation
         let (since, rows) = await Task.detached(priority: .utility) { () -> (Date?, [SightingRow]) in
@@ -262,7 +262,7 @@ extension AppModelCore {
 
     /// Opens the vault again with the keys it was unlocked with (its state at open follows what changed in the
     /// trust store), as after a list change from elsewhere.
-    public func reopenUnderSameKeys() async {
+    func reopenUnderSameKeys() async {
         guard let start = vault, phase == .unlocked else { return }
         let keys = unlockKeys
         let trust = keys.root == nil ? self.trust : nil

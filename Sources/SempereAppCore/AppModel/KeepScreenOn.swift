@@ -23,7 +23,7 @@ public enum KeepScreenOn {
     ///   - active: the scene is active (not in the background or app switcher).
     ///   - debugLaunch: a DEBUG build started from launch environment
     ///     variables, kept awake for scripted device runs.
-    public static func idleTimerDisabled(enabled: Bool, noteOpen: Bool, active: Bool, debugLaunch: Bool = false) -> Bool {
+    static func idleTimerDisabled(enabled: Bool, noteOpen: Bool, active: Bool, debugLaunch: Bool = false) -> Bool {
         guard active else { return false }
         return debugLaunch || (enabled && noteOpen)
     }
@@ -84,7 +84,7 @@ public final class IdleTimerKeeper {
 
     /// Applies the setting to the idle timer. `leaving`: the app is resigning active or entering the
     /// background (its state may still read active then), so the timer comes back on.
-    public func update(leaving: Bool = false) {
+    func update(leaving: Bool = false) {
         let value = KeepScreenOn.idleTimerDisabled(enabled: KeepScreenOn.isOn(settings), noteOpen: noteOpen(),
                                                    active: !leaving && lifecycle.isActive, debugLaunch: debugLaunch)
         guard value != disabled else { return }

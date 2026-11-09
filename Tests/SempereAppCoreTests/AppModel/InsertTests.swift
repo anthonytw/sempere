@@ -1,6 +1,6 @@
 import Foundation
 import Sempere
-import SempereAppCore
+@testable import SempereAppCore
 @testable import SempereRender
 import TempDirSupport
 import Testing

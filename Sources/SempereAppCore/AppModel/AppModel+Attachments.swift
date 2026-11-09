@@ -60,7 +60,7 @@ extension AppModelCore {
 
     /// Deletes the decrypted attachments and their pictures and forgets
     /// copied items (the vault closed, or changed under them).
-    public func dropAttachments() {
+    func dropAttachments() {
         if let cache = blobCache { Task { await cache.clear() } }
         blobCache = nil
         renderCache?.close()
@@ -86,13 +86,13 @@ extension AppModelCore {
     /// (`NoteEditor.prepareBlobWrite`): in a partial copy, this note's blob, if
     /// still a stand-in, is fetched so the write reuses it (blob files are
     /// write-once, format.md §8.1.4); nil otherwise.
-    public func blobWritePreparer(note: UUID) -> (@Sendable (BlobRef) async throws -> Void)? {
+    func blobWritePreparer(note: UUID) -> (@Sendable (BlobRef) async throws -> Void)? {
         guard let partial = partialBlobFetcher(), let vault else { return nil }
         return { ref in try? await partial(note, try vault.blobFileName(for: ref)) }
     }
 
     /// Makes the blob `ref` of `note` local (a partial copy), waiting for it.
-    public func ensureBlobLocal(_ ref: BlobRef, of note: UUID) async throws {
+    func ensureBlobLocal(_ ref: BlobRef, of note: UUID) async throws {
         guard let partial = partialBlobFetcher(), let vault else { return }
         try await partial(note, try vault.blobFileName(for: ref))
     }
@@ -142,9 +142,9 @@ public final class ItemClipboard {
 
     public private(set) var entry: Entry?
     /// Pastes since the last copy, so repeated pastes do not stack exactly.
-    @ObservationIgnored public private(set) var pasteCount = 0
+    @ObservationIgnored private(set) var pasteCount = 0
 
-    public init() {}
+    init() {}
 
     public func copy(_ items: [Item], from note: UUID) {
         let usable = items.filter { $0.validationError == nil }
@@ -152,14 +152,14 @@ public final class ItemClipboard {
         pasteCount = 0
     }
 
-    public func clear() {
+    func clear() {
         entry = nil
         pasteCount = 0
     }
 
     /// The offset of the next paste: on the same page as the copy, each
     /// paste lands 20 points further down and right.
-    public func nextOffset(samePage: Bool) -> Double {
+    func nextOffset(samePage: Bool) -> Double {
         pasteCount += 1
         return samePage ? Double(pasteCount) * 20 : 0
     }

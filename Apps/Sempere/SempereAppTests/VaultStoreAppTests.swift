@@ -16,9 +16,9 @@ struct VaultStoreAppTests {
         #expect(progress.text.contains("3 of 12"))
         #expect(progress.text.contains("“Notes”"))
         #expect(VaultCopyProgress(name: "Notes", stage: .downloading(done: 1, total: 4)).text.contains("1 of 4"))
-        #expect(VaultStoreProblem(error: .alreadyInStore(vaultId: UUID(), name: "Notes")).description.contains("“Notes”"))
-        #expect("\(VaultStoreProblem(error: .inUse(UUID())))" == "That vault is open. Close it first.")
-        #expect(InvalidVaultName.describe(InvalidVaultName()).contains("slashes"))
+        #expect(AppModel.describe(VaultStoreProblem(error: .alreadyInStore(vaultId: UUID(), name: "Notes"))).contains("“Notes”"))
+        #expect(AppModel.describe(VaultStoreProblem(error: .inUse(UUID()))) == "That vault is open. Close it first.")
+        #expect(AppModel.describe(InvalidVaultName()).contains("slashes"))
         #expect(VaultListStatus(sessions: []) == VaultListStatus.onlyOnThisDevice)
     }
 }

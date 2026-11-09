@@ -8,7 +8,7 @@ import Sempere
 extension AppModelCore {
     /// Reads every device's published summaries into `publishedRows` when the files changed since the last
     /// read. Needs the key; only while a partial copy is open.
-    public func refreshPublishedRows() async {
+    func refreshPublishedRows() async {
         guard partialCopyRoot != nil, phase == .unlocked, let vault, vault.canRead else { return }
         let gen = generation
         let previous = publishedRowsSignature

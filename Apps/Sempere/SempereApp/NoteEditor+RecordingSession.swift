@@ -79,7 +79,7 @@ extension NoteEditor {
             }
             return recording
         } catch {
-            let detail = "\(error)"
+            let detail = AppModel.describe(error)
             recordingError = String(localized: "Could not save the recording: \(detail)")
             if recordingSession === s { recordingSession = nil }
             RecordingSession.busy.remove(s.id)   // the files stay for `RecordingRecovery`

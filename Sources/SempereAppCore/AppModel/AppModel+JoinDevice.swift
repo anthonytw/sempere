@@ -26,7 +26,7 @@ public struct JoinReply: Equatable, Sendable {
     public var words: [String]
     public var qr: String
 
-    public init(deviceName: String, words: [String], qr: String) {
+    init(deviceName: String, words: [String], qr: String) {
         self.deviceName = deviceName
         self.words = words
         self.qr = qr
@@ -62,14 +62,14 @@ public enum JoinDelivery: Equatable, Sendable {
 
     /// What one target's session says (`SyncSession`), for `judge`.
     public struct Target: Sendable {
-        public var lastAttempt: Date?
-        public var syncing: Bool
-        public var failure: String?
-        public var joinsError: Bool
-        public var providerPending: Int
-        public var viaICloud: Bool
+        var lastAttempt: Date?
+        var syncing: Bool
+        var failure: String?
+        var joinsError: Bool
+        var providerPending: Int
+        var viaICloud: Bool
 
-        public init(lastAttempt: Date?, syncing: Bool, failure: String?, joinsError: Bool, providerPending: Int,
+        init(lastAttempt: Date?, syncing: Bool, failure: String?, joinsError: Bool, providerPending: Int,
                     viaICloud: Bool) {
             self.lastAttempt = lastAttempt
             self.syncing = syncing
@@ -82,7 +82,7 @@ public enum JoinDelivery: Equatable, Sendable {
 
     /// The request was made at `requestedAt` (nil: unknown, any run counts). A target holds it once a run started
     /// after it ended without failing and without an error for `joins/`.
-    public static func judge(requestedAt: Date?, targets: [Target]) -> JoinDelivery {
+    static func judge(requestedAt: Date?, targets: [Target]) -> JoinDelivery {
         let carried = targets.filter { t in
             guard let last = t.lastAttempt, !t.syncing, t.failure == nil, !t.joinsError else { return false }
             return requestedAt.map { last >= $0 } ?? true
@@ -98,15 +98,15 @@ public enum JoinDelivery: Equatable, Sendable {
 
 /// A takeover about to be signed (design §6.3): its candidates and what it drops.
 public struct TakeoverDraft: Sendable {
-    public var recovery: MLKEM768X25519Identity
+    var recovery: MLKEM768X25519Identity
     /// The root to check the chain against: from the passphrase copy, the kit, or nil for a device that keeps a
     /// trust record of the vault.
-    public var root: Data?
+    var root: Data?
     public var plan: Vault.TakeoverPlan
     /// Keys made for a device joining by the kit (nil: this device's own).
-    public var newKeys: DeviceKeys?
+    var newKeys: DeviceKeys?
 
-    public init(recovery: MLKEM768X25519Identity, root: Data?, plan: Vault.TakeoverPlan, newKeys: DeviceKeys?) {
+    init(recovery: MLKEM768X25519Identity, root: Data?, plan: Vault.TakeoverPlan, newKeys: DeviceKeys?) {
         self.recovery = recovery
         self.root = root
         self.plan = plan
@@ -118,12 +118,12 @@ extension AppModelCore {
     // MARK: - Joining (the new device)
 
     /// The QR payload of `request`'s commitment (design §6.2 step 1): base64 of `JoinCodes.commitmentQR`.
-    public nonisolated static func commitmentQRText(_ request: JoinRequest) -> String {
+    nonisolated static func commitmentQRText(_ request: JoinRequest) -> String {
         JoinCodes.commitmentQR(vaultId: request.vaultId, commitment: request.commitment).base64EncodedString()
     }
 
     /// The six words and the code of this device's request for `vault` (computed from its keys).
-    public nonisolated static func joinCodes(_ keys: DeviceKeys, vaultId: UUID, kind: String) -> (words: [String], qr: String) {
+    nonisolated static func joinCodes(_ keys: DeviceKeys, vaultId: UUID, kind: String) -> (words: [String], qr: String) {
         let request = keys.joinRequest(vaultId: vaultId, name: "", kind: kind)
         return (JoinCodes.words(request.commitment), commitmentQRText(request))
     }
@@ -161,20 +161,20 @@ extension AppModelCore {
     /// This device asked to join `vaultID` with `keys` and has neither confirmed nor given up: while it is set, a
     /// copy without the request file (home took it with its approval, which has not arrived) still counts as
     /// waiting, never as keys to forget. Kept as the keys' fingerprint and the time of the request.
-    public func setJoinRequested(_ keys: DeviceKeys, vaultID: UUID, at date: Date = Date()) {
+    func setJoinRequested(_ keys: DeviceKeys, vaultID: UUID, at date: Date = Date()) {
         deviceMemory.set("\(Self.idText(keys.fingerprint)) \(RFC3339.string(date))", forKey: Self.joinRequestedKey(vaultID))
     }
 
-    public func clearJoinRequested(_ vaultID: UUID) {
+    func clearJoinRequested(_ vaultID: UUID) {
         deviceMemory.removeObject(forKey: Self.joinRequestedKey(vaultID))
     }
 
     /// The marker of `keys`' join of `vaultID`.
-    public enum JoinMarker: Equatable { case none, open, lapsed }
+    enum JoinMarker: Equatable { case none, open, lapsed }
 
     /// The marker lapses once home has deleted the request, which it does `joinRequestLifetime` after the request
     /// (design §6.2; second re-check of #88): the join is over, and the device is told to join again.
-    public func joinRequested(_ keys: DeviceKeys, vaultID: UUID, now: Date = Date()) -> JoinMarker {
+    func joinRequested(_ keys: DeviceKeys, vaultID: UUID, now: Date = Date()) -> JoinMarker {
         guard let text = deviceMemory.string(forKey: Self.joinRequestedKey(vaultID)) else { return .none }
         let parts = text.split(separator: " ", maxSplits: 1).map(String.init)
         guard parts.first == Self.idText(keys.fingerprint) else { return .none }
@@ -192,7 +192,7 @@ extension AppModelCore {
     }
 
     /// When this device asked to join `vaultID` (its marker), whatever keys asked.
-    public func joinRequestedAt(_ vaultID: UUID) -> Date? {
+    func joinRequestedAt(_ vaultID: UUID) -> Date? {
         guard let text = deviceMemory.string(forKey: Self.joinRequestedKey(vaultID)) else { return nil }
         let parts = text.split(separator: " ", maxSplits: 1).map(String.init)
         return parts.count == 2 ? RFC3339.parse(parts[1]) : nil
@@ -209,14 +209,14 @@ extension AppModelCore {
     }
 
     /// How long home keeps a join request before it deletes it (design §6.2; `SyncEngine`'s rule).
-    public nonisolated static var joinRequestLifetime: TimeInterval { 7 * 86_400 }
+    nonisolated static var joinRequestLifetime: TimeInterval { 7 * 86_400 }
 
-    public nonisolated static func joinRequestedKey(_ vaultID: UUID) -> String {
+    nonisolated static func joinRequestedKey(_ vaultID: UUID) -> String {
         "Sempere.joinRequested.\(vaultID.uuidString.lowercased())"
     }
 
     /// Where this device's keys stand in the open, locked vault.
-    public enum JoinCheck: Equatable {
+    enum JoinCheck: Equatable {
         /// Listed and confirmed: they unlock it.
         case member
         case stage(JoinStage)
@@ -232,7 +232,7 @@ extension AppModelCore {
     /// Where this device's join of the open, locked vault stands, from its keys: a member when the vault lists the
     /// keys and this device confirmed it, `.confirming` when listed but not confirmed yet, `.waiting` while its
     /// request is in the copy or its join is still open here (`joinRequested`) (the runs then keep looking for the approval), else stray.
-    public func joinStage(_ keys: DeviceKeys) async -> JoinCheck {
+    func joinStage(_ keys: DeviceKeys) async -> JoinCheck {
         guard let locked = vault, let url = vaultURL else { return .member }
         let trust = self.trust
         let listed = locked.manifest.devices.contains { $0.key == keys.key }
@@ -345,14 +345,14 @@ extension AppModelCore {
 
     /// The last run of a target of the open vault left a join request (or the `joins/` folder) arriving: the
     /// target's provider (iCloud Drive) listed it but has not delivered its bytes yet.
-    public var joinRequestArriving: Bool {
+    var joinRequestArriving: Bool {
         syncSessions.contains { s in
             s.lastReport?.arriving.contains { $0.path.hasPrefix(Self.joinsPrefix) } == true
         }
     }
 
     /// Where join requests are in a vault and in a target (`format.md` §15.12), as sync reports name them.
-    public nonisolated static var joinsPrefix: String { "joins/" }
+    nonisolated static var joinsPrefix: String { "joins/" }
 
     /// Whether the copy holds the request six typed words (or a scanned code) name, read off the main actor: Add
     /// Device approves them again once their request has arrived.
@@ -362,7 +362,7 @@ extension AppModelCore {
     }
 
     /// The request in `vault`'s copy that `words` (typed) or `qr` (scanned) names; nil when none is there.
-    public nonisolated static func joinRequest(in vault: Vault, words: [String]?, qr: String?) -> JoinRequest? {
+    nonisolated static func joinRequest(in vault: Vault, words: [String]?, qr: String?) -> JoinRequest? {
         if let qr, let data = Data(base64Encoded: qr), let parsed = JoinCodes.parseCommitmentQR(data) {
             guard parsed.vaultId == vault.vaultId else { return nil }
             return vault.joinRequests().compactMap(\.request).first { $0.vaultId == vault.vaultId && $0.commitment == parsed.commitment }

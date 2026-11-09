@@ -67,8 +67,8 @@ extension CreatedVault {
 
 // MARK: - Wording
 
-extension VaultLocator.LocatorError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension VaultLocator.LocatorError {
+    var text: String {
         switch self {
         case .severalVaults(let names):
             let list = names.joined(separator: ", ")
@@ -80,8 +80,8 @@ extension VaultLocator.LocatorError: @retroactive CustomStringConvertible {
     }
 }
 
-extension FolderAccess.Problem: @retroactive CustomStringConvertible {
-    public var description: String {
+extension FolderAccess.Problem {
+    var text: String {
         switch self {
         case .noAccess(let name, let scoped):
             return scoped
@@ -91,8 +91,8 @@ extension FolderAccess.Problem: @retroactive CustomStringConvertible {
     }
 }
 
-extension VaultLibrary.LibraryError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension VaultLibrary.LibraryError {
+    var text: String {
         switch self {
         case .cannotResolve(let name):
             return String(localized: "“\(name)” can't be found any more. It may have been moved or deleted, or access to it expired. Choose its folder again.")
@@ -100,8 +100,8 @@ extension VaultLibrary.LibraryError: @retroactive CustomStringConvertible {
     }
 }
 
-extension VaultCreation.CreationError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension VaultCreation.CreationError {
+    var text: String {
         switch self {
         case .classicRecoveryKey:
             return String(localized: "That is a classic AGE-SECRET-KEY-1… key, which is not quantum-safe. Use a post-quantum recovery key (AGE-SECRET-KEY-PQ-1…) or generate one.")
@@ -111,14 +111,8 @@ extension VaultCreation.CreationError: @retroactive CustomStringConvertible {
 
 /// The words of a vault name `VaultStore.folderName` refuses (`InvalidVaultName`, SempereAppCore): New Vault and
 /// Restore from Backup.
-extension InvalidVaultName: @retroactive CustomStringConvertible {
-    public var description: String {
+extension InvalidVaultName {
+    var text: String {
         String(localized: "Give the vault a name without slashes, leading dots or control characters.")
-    }
-
-    /// `error` worded for the app: the name rule's own sentence for `VaultStoreError.invalidName`.
-    static func describe(_ error: Error) -> String {
-        if case .invalidName? = error as? VaultStoreError { return InvalidVaultName().description }
-        return "\(error)"
     }
 }

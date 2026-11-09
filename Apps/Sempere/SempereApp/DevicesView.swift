@@ -260,7 +260,7 @@ struct DevicesView: View {
             reencryptStatus = try? await model.reencryptStatus()
             failure = nil
         } catch {
-            failure = "\(error)"
+            failure = AppModel.describe(error)
         }
     }
 
@@ -418,16 +418,16 @@ enum DeviceChangeText {
         case ReencryptRefusal.targetCannotBeOpened:
             return String(localized: "This target cannot be opened for re-encryption.")
         case let e as VaultFileLock.LockError:
-            return String(localized: "Another sync is writing to this vault. Try again in a moment. (\(String(describing: e)))",
+            return String(localized: "Another sync is writing to this vault. Try again in a moment. (\(AppModel.describe(e)))",
                           comment: "The value is the error (English)")
         case let e as KeyProblem:
-            return e.description
+            return e.text
         case let e as DeviceJoinError:
-            return e.description
+            return e.text
         case is CancellationError:
             return String(localized: "Canceled.")
         default:
-            return String(localized: "That did not work: \(String(describing: error))", comment: "The value is the error (English)")
+            return String(localized: "That did not work: \(AppModel.describe(error))", comment: "The value is the error (English)")
         }
     }
 

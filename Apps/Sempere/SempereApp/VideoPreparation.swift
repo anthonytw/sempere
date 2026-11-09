@@ -53,7 +53,7 @@ enum VideoPreparation {
                 // Only the original: the converted copy is in the same work folder.
                 try? FileManager.default.removeItem(at: file)
                 file = converted
-                do { info = try VideoProbe.probe(file: file) } catch { throw Failure.cannotConvert("\(error)") }
+                do { info = try VideoProbe.probe(file: file) } catch { throw Failure.cannotConvert(AppModel.describe(error)) }
             default:
                 throw Failure.unreadable
             }

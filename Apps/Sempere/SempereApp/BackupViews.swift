@@ -44,7 +44,7 @@ struct BackupSettingsSection: View {
                         problems = []
                         message = nil
                     } catch {
-                        failure = BackupFailure(kind: .folder, message: "\(error)")
+                        failure = BackupFailure(kind: .folder, message: AppModel.describe(error))
                     }
                     reload()
                 }
@@ -135,7 +135,7 @@ struct BackupSettingsSection: View {
             do { try await body() } catch is CancellationError {
                 message = String(localized: "Stopped. The backup holds every file written so far; Back Up Now finishes it.")
             } catch {
-                failure = BackupFailure(kind: .run, message: "\(error)")
+                failure = BackupFailure(kind: .run, message: AppModel.describe(error))
             }
             reload()
         }
@@ -326,7 +326,7 @@ struct RestoreBackupView: View {
             preview = found.preview
             if name.isEmpty { name = BackupLocation.suggestedName(forBackup: found.source) }
         } catch {
-            failure = "\(error)"
+            failure = AppModel.describe(error)
         }
     }
 
@@ -352,7 +352,7 @@ struct RestoreBackupView: View {
                 outcome = try await model.restoreBackup(picked: picked, source: source, name: name, replace: replace,
                                                         library: library)
             } catch {
-                failure = "\(error)"
+                failure = AppModel.describe(error)
             }
         }
     }

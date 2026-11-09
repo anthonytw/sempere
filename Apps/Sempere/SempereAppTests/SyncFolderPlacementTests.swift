@@ -138,7 +138,7 @@ struct SyncFolderPlacementTests {
             try device.model.addPickedFolderTarget(named.deletingLastPathComponent(), to: device.vaultID)
         }
         #expect(device.model.openVaultTargets.isEmpty)
-        #expect(SyncTargetProblem.insideVault("X.sempere").description.contains("outside it"))
+        #expect(AppModel.describe(SyncTargetProblem.insideVault("X.sempere")).contains("outside it"))
     }
 
     /// Join This Device needs a sync target: a store vault without one (a backup opened as a copy) does not offer it.
@@ -177,7 +177,7 @@ struct SyncFolderPlacementTests {
         await device.model.pickedDownloadRequest?.value
         #expect(requested.paths == [away.standardizedFileURL.path], "asked iCloud for the package")
         #expect(!fm.fileExists(atPath: away.path), "no folder made")
-        #expect(SyncTargetProblem.notDownloaded(name).description.contains("not on this device yet"))
+        #expect(AppModel.describe(SyncTargetProblem.notDownloaded(name)).contains("not on this device yet"))
 
         // Its parent picked, the package listed only as iCloud's stand-in.
         try Data().write(to: picked.appendingPathComponent(".\(name).icloud"))

@@ -51,7 +51,7 @@ public final class RememberedKeys {
 
     public let store: any DeviceKeyStore
     /// The open vault has keys on this device (`refresh`).
-    public private(set) var hasKeysVaultID: UUID?
+    private(set) var hasKeysVaultID: UUID?
     /// "Require Face ID to open this vault" for the open vault.
     public private(set) var requiresBiometry = false
     /// While the open, locked vault is being joined by this device: where it stands.
@@ -61,7 +61,7 @@ public final class RememberedKeys {
     /// True while Face ID / the Keychain is being asked.
     public private(set) var isUnlocking = false
     /// True while an unlock with a passphrase or pasted key runs.
-    public private(set) var isManualUnlocking = false
+    private(set) var isManualUnlocking = false
 
     public init(store: any DeviceKeyStore) {
         self.store = store
@@ -139,7 +139,7 @@ public final class RememberedKeys {
     /// change invalidated them) or do not read as keys are a key problem, offered to be forgotten; a cancel is a
     /// cancel; anything else (a failed Face ID, a Keychain error, a build without the entitlement) is a failure
     /// that leaves the keys alone and Unlock offered again.
-    public static func readOutcome(_ error: any Error) -> Attempt {
+    static func readOutcome(_ error: any Error) -> Attempt {
         if error is CancellationError { return .cancelled }
         switch error as? DeviceKeyStoreError {
         case .notFound, .malformed: return .keyProblem(.unreadable)

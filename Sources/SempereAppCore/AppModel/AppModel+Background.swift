@@ -26,7 +26,7 @@ extension AppModelCore {
 
     /// Asks for a background refresh while any vault has a sync target (every vault and target, design
     /// §4.2); a processing task too while a target has changes to upload.
-    public func scheduleBackgroundRefresh() {
+    func scheduleBackgroundRefresh() {
         let sessions = syncCoordinator.sessions.values
         guard !sessions.isEmpty else { return }
         syncScheduler.schedule(.refresh)
@@ -35,7 +35,7 @@ extension AppModelCore {
 
     /// The processing task to ask for: it requires the network only while a WebDAV target has uploads waiting
     /// (offline audit A-P3).
-    public var processingRequest: BackgroundSyncRequest {
+    var processingRequest: BackgroundSyncRequest {
         .processing(needsNetwork: syncCoordinator.sessions.values.contains { $0.kind == .webdav && $0.unconfirmed > 0 })
     }
 
@@ -44,7 +44,7 @@ extension AppModelCore {
     /// The app left the screen with target runs going or asked for (the last edits, a voice note): they finish
     /// under background time (`beginBackgroundTask`), then it ends. When the system takes the time back first, a
     /// processing task is asked for.
-    public func finishTargetRunsInBackground() {
+    func finishTargetRunsInBackground() {
         let coordinator = syncCoordinator
         guard !coordinator.sessions.isEmpty, targetsBackgroundToken == nil else { return }
         guard let token = backgroundTasks.begin(name: "Sempere sync", expired: { [weak self] in
@@ -65,7 +65,7 @@ extension AppModelCore {
     }
 
     /// Ends the targets' background-time assertion, if one is held.
-    public func endTargetsBackgroundTime() {
+    func endTargetsBackgroundTime() {
         targetsBackgroundWait?.cancel()
         targetsBackgroundWait = nil
         if let token = targetsBackgroundToken { backgroundTasks.end(token) }

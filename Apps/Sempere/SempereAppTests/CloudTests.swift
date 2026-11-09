@@ -56,8 +56,8 @@ struct CloudTests {
 
     @Test func timeoutMessageSaysWhatIsMissing() {
         let e = CloudVault.CloudError.timedOut(CloudProgress(total: 10, downloaded: 4), seconds: 90)
-        #expect(e.description.contains("6 of 10"))
-        #expect(e.description.contains("90 seconds"))
+        #expect(AppModel.describe(e).contains("6 of 10"))
+        #expect(AppModel.describe(e).contains("90 seconds"))
     }
 }
 

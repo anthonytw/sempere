@@ -183,7 +183,7 @@ struct MathEditorView: View {
                                      comment: "Convert to Math: the model read nothing")
             }
         } catch {
-            readFailure = String(localized: "The handwriting could not be read: \(String(describing: error)) Type the equation below.",
+            readFailure = String(localized: "The handwriting could not be read: \(AppModel.describe(error)) Type the equation below.",
                                  comment: "Convert to Math; the error text follows (English)")
         }
     }

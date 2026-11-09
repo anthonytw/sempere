@@ -91,7 +91,7 @@ struct HistoryView: View {
             }
         } catch is CancellationError {
         } catch {
-            failure = "\(error)"
+            failure = AppModel.describe(error)
         }
     }
 }
@@ -198,7 +198,7 @@ private struct HistoryPreviewView: View {
         }
         .task {
             do { preview = try await model.historyPreview(data, at: entry.id) } catch is CancellationError {} catch {
-                failure = "\(error)"
+                failure = AppModel.describe(error)
             }
         }
     }
@@ -214,7 +214,7 @@ private struct HistoryPreviewView: View {
             await restored()
         } catch is CancellationError {
         } catch {
-            let detail = "\(error)"
+            let detail = AppModel.describe(error)
             outcome = String(localized: "Could not restore: \(detail)")
         }
     }

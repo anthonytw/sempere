@@ -46,20 +46,20 @@ public enum VoiceNoteActivityRequest: Codable, Equatable, Sendable {
 /// One try at starting the recorder within a start attempt.
 public struct VoiceNoteStartTry: Codable, Equatable, Sendable {
     /// `UIApplication.State` when the try began: "active", "inactive" or "background".
-    public var appState: String
+    var appState: String
     /// Nil when the try ended before the Live Activity was asked for (not set up, no microphone).
-    public var activity: VoiceNoteActivityRequest?
+    var activity: VoiceNoteActivityRequest?
     /// The microphone permission as the try read it (`granted`, `denied`, `undetermined`; nil when the try ended before
     /// the microphone was asked: already recording, not set up, an unreadable or suspended profile, Live Activities off).
-    public var microphone: String?
+    var microphone: String?
     /// Whether protected data was available (false before the first unlock after a restart; nil when the try ended
     /// before it was read: `alreadyRecording` is thrown first).
-    public var protectedData: Bool?
+    var protectedData: Bool?
     /// How the audio session was made active, before the Live Activity was asked for (`not mixable`,
     /// `mixable after a refusal`); nil when the try did not get that far.
-    public var session: String?
+    var session: String?
     /// Nil when the recorder started.
-    public var error: VoiceNoteErrorInfo?
+    var error: VoiceNoteErrorInfo?
 
     public init(appState: String, activity: VoiceNoteActivityRequest? = nil, microphone: String? = nil, protectedData: Bool? = nil,
                 session: String? = nil, error: VoiceNoteErrorInfo? = nil) {
@@ -105,7 +105,7 @@ public struct VoiceNoteStartAttempt: Codable, Equatable, Sendable, Identifiable 
     public var date: Date
     public var source: VoiceNoteStartSource
     /// The intent's `systemContext.currentMode` (nil for a start in the app).
-    public var intentMode: String?
+    var intentMode: String?
     public var first: VoiceNoteStartTry
     public var foreground: Foreground?
     /// The start tried again with the app in front.
@@ -125,7 +125,7 @@ public struct VoiceNoteStartAttempt: Codable, Equatable, Sendable, Identifiable 
     }
 
     /// The error that ended the attempt, if it failed.
-    public var finalError: VoiceNoteErrorInfo? {
+    var finalError: VoiceNoteErrorInfo? {
         guard outcome == .failed else { return nil }
         return retry?.error ?? foreground?.error ?? first.error
     }
@@ -139,18 +139,18 @@ public struct VoiceNoteStartAttempt: Codable, Equatable, Sendable, Identifiable 
 @MainActor
 @Observable
 public final class VoiceNoteStartLog {
-    public nonisolated static let capacity = 8
-    public nonisolated static let maxFileBytes = 64 * 1024
+    nonisolated static let capacity = 8
+    nonisolated static let maxFileBytes = 64 * 1024
     /// The log category of the lines (`PerfSink.log`).
-    public nonisolated static let logCategory = "quick-capture"
+    nonisolated static let logCategory = "quick-capture"
 
     public nonisolated static var defaultURL: URL {
         AppSupport.folder("QuickCaptureDiagnostics").appendingPathComponent("recent-starts.json")
     }
 
-    @ObservationIgnored public let url: URL?
+    @ObservationIgnored let url: URL?
     @ObservationIgnored private let perf: any PerfSink
-    public private(set) var attempts: [VoiceNoteStartAttempt] = []
+    private(set) var attempts: [VoiceNoteStartAttempt] = []
 
     public init(url: URL?, perf: any PerfSink = NoPerfSink()) {
         self.url = url
@@ -159,7 +159,7 @@ public final class VoiceNoteStartLog {
     }
 
     /// The attempts in `url`; none when it is missing, too large or does not decode.
-    public nonisolated static func read(_ url: URL?) -> [VoiceNoteStartAttempt] {
+    nonisolated static func read(_ url: URL?) -> [VoiceNoteStartAttempt] {
         guard let url, let data = try? BoundedRead.contents(of: url, maxBytes: maxFileBytes) else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -173,7 +173,7 @@ public final class VoiceNoteStartLog {
         attempts = Array((attempts + onDisk).sorted { $0.date > $1.date }.prefix(Self.capacity))
     }
 
-    public func append(_ attempt: VoiceNoteStartAttempt) {
+    func append(_ attempt: VoiceNoteStartAttempt) {
         // The file may hold starts this launch could not read (it began before the first unlock after a
         // restart): merged, never overwritten with only this launch's.
         var known = Set(attempts.map(\.id))
@@ -200,13 +200,13 @@ public final class VoiceNoteStartLog {
         }
     }
 
-    public func clear() {
+    func clear() {
         attempts = []
         if let url { try? FileManager.default.removeItem(at: url) }
     }
 
     /// The attempt as one log line, every field public (none is personal).
-    public nonisolated static func logLine(_ a: VoiceNoteStartAttempt) -> String {
+    nonisolated static func logLine(_ a: VoiceNoteStartAttempt) -> String {
         let first = describe(a.first)
         let foreground = a.foreground.map { f in
             "continued in app: active=\(f.becameActive) after \(String(format: "%.1f", f.waited)) s" + (f.error.map { ", error \($0.summary)" } ?? "")

@@ -653,7 +653,7 @@ struct ConfirmVaultSheet: View {
                 try await model.confirmVaultRoot(rootText)
                 dismiss()
             } catch let e as DeviceJoinError {
-                failure = e.description
+                failure = e.text
             } catch VaultError.untrustedList(let problem) where problem.reason == .rootMismatch {
                 failure = String(localized: "That root fingerprint is not this vault's. Check it against the vault's recovery kit.")
             } catch {

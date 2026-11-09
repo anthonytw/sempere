@@ -12,15 +12,15 @@ import Sempere
 /// acknowledged for. Per device (the app's `UserDefaults`), never in the vault.
 public struct OnboardingMemory: Sendable {
     /// `UserDefaults` key: the tour version last seen (0 = never).
-    public static let tourSeenKey = "Sempere.quickTourSeen"
+    static let tourSeenKey = "Sempere.quickTourSeen"
     /// `UserDefaults` key: digests of the (vault, key) pairs whose notice was acknowledged.
-    public static let keyNoticeKey = "Sempere.keyNoticeAcknowledged"
+    static let keyNoticeKey = "Sempere.keyNoticeAcknowledged"
     /// Bumped when the tour changes enough to be shown again.
-    public static let tourVersion = 1
+    static let tourVersion = 1
     /// At most this many acknowledgements are kept (the oldest go first).
-    public static let keyNoticeLimit = 64
+    static let keyNoticeLimit = 64
 
-    public var defaults: any KeyValueStore
+    var defaults: any KeyValueStore
 
     public init(defaults: any KeyValueStore) { self.defaults = defaults }
 
@@ -33,12 +33,12 @@ public struct OnboardingMemory: Sendable {
     /// The stored form of a (vault, key) pair: a digest, so the preferences
     /// hold neither the vault id nor the public key. `recipient` is nil when
     /// the vault was unlocked without a key this device holds.
-    public static func keyNoticeToken(vault: UUID, recipient: String?) -> String {
+    static func keyNoticeToken(vault: UUID, recipient: String?) -> String {
         let text = vault.uuidString.lowercased() + "\n" + (recipient ?? "")
         return String(FileDigest.sha256(Data(text.utf8)).prefix(32))
     }
 
-    public func keyNoticeAcknowledged(vault: UUID, recipient: String?) -> Bool {
+    func keyNoticeAcknowledged(vault: UUID, recipient: String?) -> Bool {
         acknowledged.contains(Self.keyNoticeToken(vault: vault, recipient: recipient))
     }
 
@@ -91,7 +91,7 @@ public struct TourPage: Identifiable, Equatable, Sendable {
     /// Worded for the Mac (the writing page mentions mouse and trackpad smoothing).
     public var isMac: Bool
 
-    public init(topic: Topic, offersKeyNotice: Bool = false, isMac: Bool = false) {
+    init(topic: Topic, offersKeyNotice: Bool = false, isMac: Bool = false) {
         self.topic = topic
         self.offersKeyNotice = offersKeyNotice
         self.isMac = isMac
@@ -131,7 +131,7 @@ public enum AboutInfo {
     }
 
     /// At most this many bytes are read from a bundled text (the GPL is 35 KB).
-    public static let maxDocumentBytes = 1 << 20
+    static let maxDocumentBytes = 1 << 20
 
     /// A bundled text, or nil when the bundle does not have it.
     public static func text(of document: Document, in bundle: Bundle = .main) -> String? {

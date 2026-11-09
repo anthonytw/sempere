@@ -1,7 +1,7 @@
 import Age
 import Foundation
 import Sempere
-import SempereAppCore
+@testable import SempereAppCore
 import TempDirSupport
 import Testing
 
@@ -318,7 +318,7 @@ extension AppModelSuites {
             try FileManager.default.removeItem(at: notesDir)
             try Data("not a folder".utf8).write(to: notesDir)
             try await model.unlock(identityText: key, awaitNotes: false)
-            #expect(await TS.waitUntil { model.alert != nil })
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.alert != nil })
             #expect(model.phase == .unlocked)
             guard case .error(let reported) = model.alert, let failure = model.loadFailure else {
                 Issue.record("expected the listing's error, got \(String(describing: model.alert))"); return

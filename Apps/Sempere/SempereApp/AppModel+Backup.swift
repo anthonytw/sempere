@@ -4,8 +4,8 @@ import SempereAppCore
 
 // The words of the backups' values (`AppModel+Backup.swift` in SempereAppCore).
 
-extension AppModelBackupError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension AppModelBackupError {
+    var text: String {
         switch self {
         case .noVault: return String(localized: "No vault is open.")
         case .noFolder: return String(localized: "Choose a backup folder first.")

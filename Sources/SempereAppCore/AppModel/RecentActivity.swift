@@ -21,12 +21,12 @@ public struct RecentSearches: Codable, Equatable, Sendable {
         if queries.count > Self.limit { queries.removeLast(queries.count - Self.limit) }
     }
 
-    public mutating func remove(_ query: String) { queries.removeAll { $0 == query } }
+    mutating func remove(_ query: String) { queries.removeAll { $0 == query } }
 
     public mutating func clear() { queries = [] }
 
     /// The list as read from a file: trimmed, bounded, without duplicates.
-    public func sanitized() -> RecentSearches {
+    func sanitized() -> RecentSearches {
         var clean = RecentSearches()
         for q in queries.prefix(Self.limit * 4).reversed() { clean.record(q) }
         return clean
@@ -39,24 +39,24 @@ public struct RecentSearches: Codable, Equatable, Sendable {
 /// Application Support folder, never in the vault: searches can name what
 /// notes hold, so they are as private as the notes. A vault whose secret
 /// changes starts afresh.
-public struct RecentActivity: Codable, Equatable, Sendable {
-    public var searches = RecentSearches()
+struct RecentActivity: Codable, Equatable, Sendable {
+    var searches = RecentSearches()
 
-    public init(searches: RecentSearches = RecentSearches()) { self.searches = searches }
+    init(searches: RecentSearches = RecentSearches()) { self.searches = searches }
 
     /// `SMPA` then version 1.
-    public static let magic: [UInt8] = [0x53, 0x4D, 0x50, 0x41, 0x01]
-    public static let fileName = "activity"
+    static let magic: [UInt8] = [0x53, 0x4D, 0x50, 0x41, 0x01]
+    static let fileName = "activity"
     /// The largest file read.
-    public static let maxFileBytes = 4 << 20
+    static let maxFileBytes = 4 << 20
 
     /// The file of `vault` under `root` (the folder is named by the key).
-    public static func location(root: URL, key: LocalCacheKey) -> URL {
+    static func location(root: URL, key: LocalCacheKey) -> URL {
         root.appendingPathComponent(key.name, isDirectory: true).appendingPathComponent(fileName)
     }
 
     /// What `root` holds for `vault`; empty when nothing (or nothing usable) is stored.
-    public static func load(root: URL, vault: Vault, now: Date = Date()) -> RecentActivity {
+    static func load(root: URL, vault: Vault, now: Date = Date()) -> RecentActivity {
         guard let key = try? LocalCacheKey(vault: vault, purpose: "activity", magic: magic) else { return RecentActivity() }
         let url = location(root: root, key: key)
         guard FileManager.default.fileExists(atPath: url.path),
@@ -68,7 +68,7 @@ public struct RecentActivity: Codable, Equatable, Sendable {
     }
 
     /// Stores `self` for `vault` under `root` (errors are ignored: it is a convenience).
-    public func save(root: URL, vault: Vault) {
+    func save(root: URL, vault: Vault) {
         guard let key = try? LocalCacheKey(vault: vault, purpose: "activity", magic: Self.magic),
               let plain = try? JSONEncoder().encode(self),
               let sealed = try? key.seal(plain, fileName: Self.fileName) else { return }

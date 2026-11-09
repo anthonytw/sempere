@@ -66,7 +66,7 @@ struct NewNotebookView: View {
                 try await model.createNotebook(typed)
                 dismiss()
             } catch {
-                failure = "\(error)"
+                failure = AppModel.describe(error)
             }
         }
     }

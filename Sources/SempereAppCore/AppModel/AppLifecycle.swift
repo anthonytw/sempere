@@ -42,7 +42,7 @@ public final class ManualAppLifecycle: AppLifecycle {
     }
 
     /// How many observers are running.
-    public var observerCount: Int { handlers.count }
+    var observerCount: Int { handlers.count }
 
     public func observe(_ handler: @escaping @MainActor (AppLifecycleEvent) -> Void) -> AppLifecycleObservation {
         let id = UUID()
@@ -60,7 +60,7 @@ public final class ManualAppLifecycle: AppLifecycle {
 
     /// `event` happens: the state follows it, then every observer is told, in this turn. Each observer is looked up as
     /// its turn comes, so one that an earlier observer cancelled during this `send` is not told.
-    public func send(_ event: AppLifecycleEvent) {
+    func send(_ event: AppLifecycleEvent) {
         switch event {
         case .didEnterBackground: isInBackground = true; isActive = false
         case .willEnterForeground: isInBackground = false

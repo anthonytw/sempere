@@ -30,7 +30,7 @@ extension NoteEditorModel {
     /// part of the page on screen (`visible`, page points), centered on
     /// `point` when given (a drop), else on what is on screen.
     @discardableResult
-    public func insertVideo(_ video: PreparedVideo, on pageID: UUID, visible: CGRect?, at point: CGPoint? = nil) async throws -> Item {
+    func insertVideo(_ video: PreparedVideo, on pageID: UUID, visible: CGRect?, at point: CGPoint? = nil) async throws -> Item {
         guard canEditItems else { throw ItemError.notEditable }
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
         let size = pageSize
@@ -57,7 +57,7 @@ extension NoteEditorModel {
     /// frame could be taken (the CLI on Linux) gets one the first time it
     /// plays here. Returns false when nothing changed.
     @discardableResult
-    public func setVideoPoster(_ id: UUID, to poster: PreparedImage, on pageID: UUID) async throws -> Bool {
+    func setVideoPoster(_ id: UUID, to poster: PreparedImage, on pageID: UUID) async throws -> Bool {
         guard canEditItems else { throw ItemError.notEditable }
         let stored = try await storeBlob(poster.data, type: poster.mediaType)
         guard canEditItems, let page = pages.first(where: { $0.id == pageID }),

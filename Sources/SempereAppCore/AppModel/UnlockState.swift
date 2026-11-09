@@ -6,16 +6,16 @@ import Sempere
 /// signing keys when they are known), or the recovery key (read-only), with
 /// the root it is checked against when one came with it (the passphrase copy).
 public struct UnlockKeys: Sendable {
-    public var identities: [any AgeIdentity] = []
+    var identities: [any AgeIdentity] = []
     /// This device's signing keys (`DeviceKeys.signing`): only home needs them, for list changes.
     public var signing: (any AuthorSigner)?
     /// This device's keys when it unlocked as a device (a takeover signs with them).
-    public var device: DeviceKeys?
+    var device: DeviceKeys?
     /// The vault's root fingerprint the list is checked against (format.md §15.2); nil checks it
     /// against this device's trust record.
-    public var root: Data?
+    var root: Data?
 
-    public init(identities: [any AgeIdentity] = [], signing: (any AuthorSigner)? = nil, device: DeviceKeys? = nil,
+    init(identities: [any AgeIdentity] = [], signing: (any AuthorSigner)? = nil, device: DeviceKeys? = nil,
                 root: Data? = nil) {
         self.identities = identities
         self.signing = signing
@@ -34,7 +34,7 @@ public struct ListAlert: Identifiable, Equatable, Sendable {
     public let id = UUID()
     public var problem: ListProblem
     /// The vault was opened with the recovery key.
-    public var recovery: Bool
+    var recovery: Bool
 
     /// The alert for `vault`'s list status, or nil when it checks. A recovery
     /// read with no root to check against (a pasted recovery key) is not
@@ -61,9 +61,9 @@ public struct ListAlert: Identifiable, Equatable, Sendable {
 /// in memory.
 public struct DeviceWriteStores: Sendable {
     /// `<…>/Ledger/<vault id>/` per vault (`FileWriteLedger`).
-    public let ledgerDirectory: URL
-    public let setAside: SetAsideStore
-    public let key: @Sendable () throws -> Data
+    let ledgerDirectory: URL
+    let setAside: SetAsideStore
+    let key: @Sendable () throws -> Data
 
     public init(ledgerDirectory: URL, setAside: SetAsideStore, key: @escaping @Sendable () throws -> Data) {
         self.ledgerDirectory = ledgerDirectory

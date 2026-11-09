@@ -43,15 +43,15 @@ public enum DragExportError: Error, Equatable, Sendable {
 
 /// A note ready to be written outside the vault (`AppModelCore.prepareExport`).
 public struct PreparedExport: Sendable {
-    public let vault: Vault
-    public let noteID: UUID
+    let vault: Vault
+    let noteID: UUID
     /// The model's `exportFolder`: each write makes a folder of its own in it.
-    public let folder: URL
+    let folder: URL
     /// What the file is drawn with (`services.exportRendering` when prepared); its blobs are the note's.
-    public let rendering: RenderOptions
+    let rendering: RenderOptions
     let epoch: ExportEpoch
     /// The model's generation when prepared (`ensureCurrent`).
-    public let generation: Int
+    let generation: Int
     let startEpoch: Int
 
     /// Renders the note as a PDF and writes `<folder>/<uuid>/<title>.pdf`. Blocking: call it off the main actor.
@@ -96,11 +96,11 @@ public struct PreparedExport: Sendable {
 /// Rendering a note to a PDF file outside the vault (Mac drag and drop).
 extension NotePDFExport {
     /// A rendered note: its title (the file's name) and the PDF.
-    public struct Rendered: Sendable {
-        public var title: String
-        public var pdf: Data
+    struct Rendered: Sendable {
+        var title: String
+        var pdf: Data
 
-        public init(title: String, pdf: Data) {
+        init(title: String, pdf: Data) {
             self.title = title
             self.pdf = pdf
         }
@@ -108,7 +108,7 @@ extension NotePDFExport {
 
     /// The note's PDF, drawn with `rendering` (its blobs set to the note's). A note with unreadable revisions is
     /// refused rather than exported with pages missing (`DragExportError`).
-    public static func render(vault: Vault, noteID: UUID, rendering: RenderOptions) throws -> Rendered {
+    static func render(vault: Vault, noteID: UUID, rendering: RenderOptions) throws -> Rendered {
         let loaded = try vault.loadNote(noteID)
         guard loaded.failures.isEmpty else { throw DragExportError.unreadableRevisions(loaded.failures.count) }
         let state = try NoteReducer.reconstruct(loaded.revisions)
@@ -120,7 +120,7 @@ extension NotePDFExport {
     }
 
     /// Writes `rendered` to `<folder>/<uuid>/<title>.pdf`, old exports removed first.
-    public static func write(_ rendered: Rendered, in folder: URL = NotePDFExport.folder) throws -> URL {
+    static func write(_ rendered: Rendered, in folder: URL = NotePDFExport.folder) throws -> URL {
         purge(in: folder)
         let dir = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -132,16 +132,16 @@ extension NotePDFExport {
 
 /// Markdown and HTML for one dragged note (`PreparedExport.write(format:)`), written by the share exporter
 /// (`ShareExport`) as one file, exactly as Share ▸ Text (Markdown) and Share ▸ HTML write it.
-public enum NoteDragExport {
+enum NoteDragExport {
     /// The note could not be rendered in the chosen format (the exporter's own reason).
     public struct Failed: Error, CustomStringConvertible, Sendable {
-        public var reason: String
-        public var description: String { reason }
+        var reason: String
+        var description: String { reason }
     }
 
     /// Writes `noteID` as `format` (Markdown or HTML) into the new folder `dir`, drawn with `rendering`'s PDF
     /// rasterizer, shaper and image decoder, named as a dropped PDF is (`ExportFileName.base`), and returns the file.
-    public static func write(vault: Vault, noteID: UUID, format: DragExportFormat, into dir: URL,
+    static func write(vault: Vault, noteID: UUID, format: DragExportFormat, into dir: URL,
                              rendering: RenderOptions) throws -> URL {
         let loaded = try vault.loadNote(noteID)
         guard loaded.failures.isEmpty else { throw DragExportError.unreadableRevisions(loaded.failures.count) }
@@ -197,11 +197,11 @@ public enum DragExportFormat: String, CaseIterable, Identifiable, Sendable {
 /// File names for exported notes (drag to Finder).
 public enum ExportFileName {
     /// The longest base name in bytes (file systems allow 255 for the whole name).
-    public static let maxBytes = 120
+    static let maxBytes = 120
 
     /// `title` as a safe `.pdf` file name: no path separators, colons or control characters, no leading dot,
     /// bounded length, "Untitled" when nothing is left.
-    public static func pdf(title: String) -> String {
+    static func pdf(title: String) -> String {
         base(title: title) + ".pdf"
     }
 

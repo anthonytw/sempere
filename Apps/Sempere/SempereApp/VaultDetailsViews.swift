@@ -57,7 +57,7 @@ struct VaultDetailsView: View {
         .accessibilityIdentifier("vaultDetails")
         .task(id: generation) {
             do { details = try await model.vaultDetails(vaultID, measureFolders: true) } catch {
-                failure = String(describing: error)
+                failure = AppModel.describe(error)
             }
         }
     }
@@ -225,7 +225,7 @@ struct RepairView: View {
         working = true
         Task {
             defer { working = false; load(); changed() }
-            do { try await body() } catch { message = String(describing: error) }
+            do { try await body() } catch { message = AppModel.describe(error) }
         }
     }
 }

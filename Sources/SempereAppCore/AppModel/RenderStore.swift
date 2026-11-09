@@ -48,15 +48,15 @@ public final class RenderStore<Codec: RenderPictureCodec>: RenderCaching, @unche
     public typealias Picture = Codec.Picture
 
     /// `SMPI` then format version 1.
-    public static var magic: [UInt8] { [0x53, 0x4D, 0x50, 0x49, 0x01] }
+    static var magic: [UInt8] { [0x53, 0x4D, 0x50, 0x49, 0x01] }
     /// Bumped whenever how a picture or preview is drawn changes: older entries are then never found.
-    public static var schemaVersion: Int { 4 }
-    public static var defaultCapBytes: Int { 256 << 20 }
+    static var schemaVersion: Int { 4 }
+    static var defaultCapBytes: Int { 256 << 20 }
     /// The settings key of the disk size limit in megabytes (unset: 256).
-    public static var capDefaultsKey: String { "Sempere.renderCacheMegabytes" }
-    public static var memoryCapBytes: Int { 96 << 20 }
+    static var capDefaultsKey: String { "Sempere.renderCacheMegabytes" }
+    static var memoryCapBytes: Int { 96 << 20 }
     /// The largest single file read.
-    public static var maxFileBytes: Int { 96 << 20 }
+    static var maxFileBytes: Int { 96 << 20 }
     /// Largest preview, in pixels.
     public static var maxPreviewPixels: Int { 4_000_000 }
 
@@ -68,10 +68,10 @@ public final class RenderStore<Codec: RenderPictureCodec>: RenderCaching, @unche
 
     /// The vault's folder; nil: memory only.
     public let directory: URL?
-    public let capBytes: Int
+    let capBytes: Int
     /// What the native (text) drawing depends on (the app's: the system and its fonts at launch); tests stand
     /// in an OS update or a font install by giving another (check c16).
-    public let salt: String
+    let salt: String
     private let key: LocalCacheKey?
     private let lock = NSLock()
     /// Held while the folder is made (`prepareFolder`), so that no write overtakes it.
@@ -90,7 +90,7 @@ public final class RenderStore<Codec: RenderPictureCodec>: RenderCaching, @unche
     /// Lookups answered from memory, from disk, and missed (tests, timing).
     public var memoryHits: Int { lock.withLock { hits.memory } }
     public var diskHits: Int { lock.withLock { hits.disk } }
-    public var misses: Int { lock.withLock { hits.misses } }
+    var misses: Int { lock.withLock { hits.misses } }
 
     /// The cache of `vault` (unlocked) under `root`; nil `root`: memory only. The memory level is dropped on
     /// `memoryWarning` (posted on the default center; the app's is UIKit's). Cheap: the folder is made, and other
@@ -242,13 +242,13 @@ public final class RenderStore<Codec: RenderPictureCodec>: RenderCaching, @unche
         }
     }
 
-    public var isClosed: Bool { lock.withLock { closed } }
+    var isClosed: Bool { lock.withLock { closed } }
 
     /// Bytes held in memory.
-    public var bytesInMemory: Int { lock.withLock { memoryBytes } }
+    var bytesInMemory: Int { lock.withLock { memoryBytes } }
 
     /// Drops the memory level (a memory warning); the disk keeps everything.
-    public func trimMemory() {
+    func trimMemory() {
         lock.withLock {
             memory = [:]
             memoryBytes = 0
@@ -328,7 +328,7 @@ public final class RenderStore<Codec: RenderPictureCodec>: RenderCaching, @unche
     }
 
     /// Deletes the least recently used files until the total is at most 90 % of `capBytes`.
-    public func trim() {
+    func trim() {
         guard let directory else { return }
         var files = Self.files(in: directory)
         var total = files.reduce(0) { $0 + $1.size }
@@ -342,7 +342,7 @@ public final class RenderStore<Codec: RenderPictureCodec>: RenderCaching, @unche
     }
 
     /// Bytes in the folder now.
-    public var totalBytes: Int { directory.map { Self.files(in: $0).reduce(0) { $0 + $1.size } } ?? 0 }
+    var totalBytes: Int { directory.map { Self.files(in: $0).reduce(0) { $0 + $1.size } } ?? 0 }
 
     private static func files(in dir: URL) -> [(url: URL, size: Int, used: Date)] {
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
@@ -356,8 +356,8 @@ public final class RenderStore<Codec: RenderPictureCodec>: RenderCaching, @unche
 
 /// Pictures that are their stored bytes: the headless services' render cache (`AppModelServices.dataRenderCache`)
 /// and the store's tests.
-public enum DataPictureCodec: RenderPictureCodec {
-    public static func encode(_ picture: Data) -> Data? { picture.isEmpty ? nil : picture }
-    public static func decode(_ data: Data) -> Data? { data.isEmpty ? nil : data }
-    public static func byteCount(_ picture: Data) -> Int { picture.count }
+enum DataPictureCodec: RenderPictureCodec {
+    static func encode(_ picture: Data) -> Data? { picture.isEmpty ? nil : picture }
+    static func decode(_ data: Data) -> Data? { data.isEmpty ? nil : data }
+    static func byteCount(_ picture: Data) -> Int { picture.count }
 }

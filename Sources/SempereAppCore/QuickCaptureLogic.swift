@@ -100,12 +100,12 @@ public enum VoiceNoteBlocker: Hashable, Sendable {
 /// the app is killed before the recording is stopped (the app's `RecordingRecovery`, `CaptureSegments.Leftover`).
 public struct RecordingManifest: Codable, Equatable, Sendable {
     /// The manifest's file name in a recording folder.
-    public static let fileName = "manifest.json"
+    static let fileName = "manifest.json"
 
-    public var note: UUID
-    public var recording: UUID
-    public var started: Date?
-    public var codec: String
+    var note: UUID
+    var recording: UUID
+    var started: Date?
+    var codec: String
     /// Segment file names in order; the last may be unfinished.
     public var segments: [String]
     /// Segments known to be complete.
@@ -130,7 +130,7 @@ public enum CaptureSegments {
     /// a recording cut off by a force quit, a crash or a restart keeps its audio up to the last frame.
     /// MPEG-4 (`m4a`, what in-note recordings use) is unreadable until the recorder finishes the file:
     /// a voice note interrupted by a restart was lost whole (TestFlight 1.0.0 (6), iPhone).
-    public static let segmentExtension = "aac"
+    static let segmentExtension = "aac"
 
     /// The format quick voice notes record in: the recording settings, but AAC for Apple Lossless
     /// (ADTS carries only AAC; `segmentExtension`).
@@ -144,7 +144,7 @@ public enum CaptureSegments {
     /// the app died may be missing from the manifest (its write failed or had
     /// not happened yet); sealing without it and deleting the folder would
     /// lose its audio.
-    public static func files(listed: [URL], in folder: URL) -> [URL] {
+    static func files(listed: [URL], in folder: URL) -> [URL] {
         let names = Set(listed.map(\.lastPathComponent))
         let present = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         let extra = present.compactMap { name -> (Int, String)? in
@@ -180,7 +180,7 @@ public enum CaptureSegments {
     }
 
     /// What a seal does with a recording folder's segments.
-    public enum SealPlan: Equatable, Sendable {
+    enum SealPlan: Equatable, Sendable {
         /// Not a byte recorded, or only finished files of no length (stopped, or the app died, before the
         /// recorder wrote any audio): nothing to keep, the folder goes.
         case nothingRecorded
@@ -196,12 +196,12 @@ public enum CaptureSegments {
         case seal([URL])
 
         /// Whether the folder may be deleted without sealing (only when nothing was recorded).
-        public var discardsFolder: Bool { self == .nothingRecorded }
+        var discardsFolder: Bool { self == .nothingRecorded }
     }
 
     /// The seal's rule for `held` (every segment file, `files(listed:in:)`, with what it holds), of which the
     /// first `finished` of `listed` (all of them when nil) are complete.
-    public static func plan(held: [(url: URL, audio: Audio)], listed: [URL], finished: Int?) -> SealPlan {
+    static func plan(held: [(url: URL, audio: Audio)], listed: [URL], finished: Int?) -> SealPlan {
         if held.allSatisfy({ $0.audio == .none }) { return .nothingRecorded }
         let complete = Set(listed.prefix(max(0, finished ?? listed.count)).map(\.lastPathComponent))
         if let bad = held.first(where: { $0.audio == .undecodable && complete.contains($0.url.lastPathComponent) }) {
@@ -215,16 +215,16 @@ public enum CaptureSegments {
     /// it can be read, else from its files: a session's folder is named by
     /// its recording id, and its segments by number (`files(listed:in:)`). Without
     /// a manifest every segment but the last counts as complete.
-    public struct Leftover: Equatable, Sendable {
-        public var id: UUID?
-        public var segments: [URL]
-        public var finished: Int?
-        public var started: Date?
+    struct Leftover: Equatable, Sendable {
+        var id: UUID?
+        var segments: [URL]
+        var finished: Int?
+        var started: Date?
 
-        public static let maxManifestBytes = 1 << 20
+        static let maxManifestBytes = 1 << 20
 
         /// Nil when the manifest is there but cannot be read now.
-        public init?(folder: URL) {
+        init?(folder: URL) {
             let fm = FileManager.default
             let url = folder.appendingPathComponent(RecordingManifest.fileName)
             var manifest: RecordingManifest?
@@ -262,19 +262,19 @@ public struct CaptureDelivery: Sendable {
     public enum Destination: Equatable, Sendable { case vault, queued }
 
     /// Sealed captures waiting for the vault folder, per vault id.
-    public var queueRoot: URL
+    var queueRoot: URL
     /// The in-app vault store: a voice note for a store vault goes straight into its inbox, found by vault id,
     /// open or not (docs/design/device-first-sync.md §5.3).
-    public var vaultStore: VaultStore?
+    var vaultStore: VaultStore?
     /// Resolves the profile's bookmark and holds its scope (the app's security-scoped bookmarks).
-    public var bookmarks: any FolderBookmarks
+    var bookmarks: any FolderBookmarks
     /// The write ledger of a vault (this device's, `DeviceWriteStores`); nil records nothing (tests).
-    public var ledger: (@Sendable (UUID) -> any WriteLedgerStore)?
+    var ledger: (@Sendable (UUID) -> any WriteLedgerStore)?
     /// Called with the vault id after captures were written into its inbox (the app posts
     /// `QuickCapture.deliveredNotification`, so a synced copy runs soon).
-    public var delivered: @Sendable (UUID) -> Void
+    var delivered: @Sendable (UUID) -> Void
 
-    public init(queueRoot: URL, vaultStore: VaultStore?, bookmarks: any FolderBookmarks,
+    init(queueRoot: URL, vaultStore: VaultStore?, bookmarks: any FolderBookmarks,
                 ledger: (@Sendable (UUID) -> any WriteLedgerStore)?, delivered: @escaping @Sendable (UUID) -> Void) {
         self.queueRoot = queueRoot
         self.vaultStore = vaultStore
@@ -284,7 +284,7 @@ public struct CaptureDelivery: Sendable {
     }
 
     /// Writes `sealed` into the vault's inbox, or into the local queue (`deliver`'s rules above).
-    public func deliver(_ sealed: SealedCapture, _ stored: StoredCaptureProfile) throws -> Destination {
+    func deliver(_ sealed: SealedCapture, _ stored: StoredCaptureProfile) throws -> Destination {
         if let url = vaultFolder(stored) {
             let placed = bookmarks.withAccess(to: url) { () -> Bool in
                 guard Self.acceptsCaptures(at: url, vaultId: stored.profile.vaultId) else { return false }
@@ -316,10 +316,10 @@ public struct CaptureDelivery: Sendable {
     }
 
     /// `<queued file>.epoch`: "<epoch> <epoch id hex>", the epoch of the profile that sealed it.
-    public static func epochSidecar(_ file: URL) -> URL { file.appendingPathExtension("epoch") }
+    static func epochSidecar(_ file: URL) -> URL { file.appendingPathExtension("epoch") }
 
     /// The epoch a queued file was sealed under, from its sidecar.
-    public static func queuedEpoch(_ file: URL) -> (Int, Data)? {
+    static func queuedEpoch(_ file: URL) -> (Int, Data)? {
         guard let data = try? BoundedRead.contents(of: epochSidecar(file), maxBytes: 256),
               let text = String(data: data, encoding: .utf8) else { return nil }
         let parts = text.split(whereSeparator: { $0 == " " || $0 == "\n" })
@@ -335,7 +335,7 @@ public struct CaptureDelivery: Sendable {
     }
 
     /// Records `sealed` in the write ledger of the profile's vault (design §5.4); nothing without `ledger`.
-    public func record(_ sealed: SealedCapture, _ profile: CaptureProfile) throws {
+    func record(_ sealed: SealedCapture, _ profile: CaptureProfile) throws {
         guard let ledger else { return }
         try CaptureWriter(profile: profile).record(sealed, in: ledger(profile.vaultId))
     }
@@ -344,18 +344,18 @@ public struct CaptureDelivery: Sendable {
     /// write into its inbox: not one marked as written by a newer version
     /// (its `format` or `features`, format.md §7.3). Checked from `vault.json`
     /// alone, without a key.
-    public static func acceptsCaptures(at url: URL, vaultId: UUID) -> Bool {
+    static func acceptsCaptures(at url: URL, vaultId: UUID) -> Bool {
         guard let vault = try? Vault.open(at: url) else { return false }
         return vault.vaultId == vaultId && !vault.isReadOnly
     }
 
-    public func queueFolder(_ vault: UUID) -> URL {
+    func queueFolder(_ vault: UUID) -> URL {
         queueRoot.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true)
     }
 
     /// The folder of the profile's vault: its in-app copy when the store holds it (found by id, so a moved
     /// store or a stale bookmark does not matter), else the folder its bookmark names.
-    public func vaultFolder(_ stored: StoredCaptureProfile) -> URL? {
+    func vaultFolder(_ stored: StoredCaptureProfile) -> URL? {
         vaultStore?.entry(id: stored.profile.vaultId)?.url ?? (try? bookmarks.resolve(stored.bookmark))?.url
     }
 
@@ -367,7 +367,7 @@ public struct CaptureDelivery: Sendable {
     ///   each was sealed with (its sidecar; a file queued before sidecars existed takes the profile's); with a
     ///   ledger and no such profile they stay queued, never placed unrecorded.
     @discardableResult
-    public func flushQueue(into vaultURL: URL, vaultId: UUID, profile: CaptureProfile?,
+    func flushQueue(into vaultURL: URL, vaultId: UUID, profile: CaptureProfile?,
                            files: (any FileCoordinating)?) -> Int {
         guard Self.acceptsCaptures(at: vaultURL, vaultId: vaultId) else { return 0 }
         let dir = queueFolder(vaultId)
@@ -403,7 +403,7 @@ public struct CaptureDelivery: Sendable {
     /// Moves queued captures into the stored profile's vault when its folder can be reached (uncoordinated: the
     /// app became active). Returns how many moved.
     @discardableResult
-    public func flushQueue(of stored: StoredCaptureProfile) -> Int {
+    func flushQueue(of stored: StoredCaptureProfile) -> Int {
         guard let url = vaultFolder(stored) else { return 0 }
         let moved = bookmarks.withAccess(to: url) {
             flushQueue(into: url, vaultId: stored.profile.vaultId, profile: stored.profile, files: nil)

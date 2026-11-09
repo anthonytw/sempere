@@ -576,7 +576,7 @@ private struct TranscriptionSettingsSection: View {
         status = .downloading(fraction: nil)
         defer { downloading = false }
         do { try await download(locale) } catch {
-            failure = String(localized: "The language model could not be downloaded: \(String(describing: error))",
+            failure = String(localized: "The language model could not be downloaded: \(AppModel.describe(error))",
                              comment: "Settings ▸ Transcription; the error text follows (English)")
         }
         await refresh()
@@ -684,7 +684,7 @@ private struct HistorySettingsSection: View {
             preview = PreviewBox(report: try await model.thinVault(rule: rule, dryRun: true))
         } catch is CancellationError {
         } catch {
-            outcome = String(localized: "Could not check the vault: \(String(describing: error))",
+            outcome = String(localized: "Could not check the vault: \(AppModel.describe(error))",
                              comment: "Settings alert; the error text follows (English)")
         }
     }
@@ -698,7 +698,7 @@ private struct HistorySettingsSection: View {
             outcome = ThinningPreviewView.sentence(done, done: true)
         } catch is CancellationError {
         } catch {
-            outcome = String(localized: "Could not thin the vault: \(String(describing: error))",
+            outcome = String(localized: "Could not thin the vault: \(AppModel.describe(error))",
                              comment: "Settings alert; the error text follows (English)")
         }
     }
@@ -737,7 +737,7 @@ private struct DeviceKeySettingsSection: View {
                               comment: "Settings toggle; the value is Face ID, Touch ID or “the Passcode”"),
                        isOn: Binding(get: { keys.requiresBiometry }, set: { on in
                            Task {
-                               do { try await keys.setRequiresBiometry(on, model: model); failure = nil } catch { failure = "\(error)" }
+                               do { try await keys.setRequiresBiometry(on, model: model); failure = nil } catch { failure = AppModel.describe(error) }
                            }
                        }))
                     .accessibilityIdentifier("settings.requireBiometry")
@@ -941,7 +941,7 @@ struct UnusedAttachmentsView: View {
             message = text
         } catch is CancellationError {
         } catch {
-            message = String(localized: "Could not delete: \(String(describing: error))", comment: "the error text follows (English)")
+            message = String(localized: "Could not delete: \(AppModel.describe(error))", comment: "the error text follows (English)")
         }
     }
 }

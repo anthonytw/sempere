@@ -13,10 +13,10 @@ struct BackupAppTests {
     /// The folder rules are `BackupLocation`'s, pinned on Linux by `BackupSettingsTests`; here, their words.
     @Test func whereTheBackupGoesIsRefusedInTheAppsWords() {
         // The message covers both refusals: a folder inside the vault and one that holds it.
-        let why = BackupLocation.Problem.insideOpenVault.description
+        let why = AppModel.describe(BackupLocation.Problem.insideOpenVault)
         #expect(why.contains("holds it") && why.contains("inside it"), "\(why)")
-        #expect(BackupLocation.Problem.isVault("Notes.sempere").description.contains("“Notes.sempere” is a vault"))
-        #expect(BackupLocation.Problem.severalBackups(["A", "B"]).description.contains("A and B"))
+        #expect(AppModel.describe(BackupLocation.Problem.isVault("Notes.sempere")).contains("“Notes.sempere” is a vault"))
+        #expect(AppModel.describe(BackupLocation.Problem.severalBackups(["A", "B"])).contains("A and B"))
     }
 
     /// TestFlight 1.0.0 (9): another vault's sync folder picked is refused by name, in the app's words. The rule itself
@@ -30,7 +30,7 @@ struct BackupAppTests {
         #expect(throws: SyncTargetProblem.otherVault("sample")) {
             _ = try AppModel.folderTargetLocation(picked: own, vaultFolderName: "Whoopie.sempere", vaultId: UUID())
         }
-        let why = SyncTargetProblem.otherVault("sample").description
+        let why = AppModel.describe(SyncTargetProblem.otherVault("sample"))
         #expect(why.contains("another vault (sample)") && why.contains("own sync folder"), "\(why)")
     }
 
@@ -75,9 +75,9 @@ struct BackupAppTests {
     /// The backups' refusals and reports in the app's words, from values the model and the core make (the runs
     /// themselves: `BackupTests`).
     @Test func backupErrorsAndReportsReadInTheAppsWords() throws {
-        #expect(AppModel.BackupAppError.folderUnavailable("Backups").description.contains("Connect it"))
-        #expect(AppModel.BackupAppError.folderGone("Gone").description.contains("“Gone”"))
-        #expect("\(AppModel.BackupAppError.noFolder)" == "Choose a backup folder first.")
+        #expect(AppModel.describe(AppModel.BackupAppError.folderUnavailable("Backups")).contains("Connect it"))
+        #expect(AppModel.describe(AppModel.BackupAppError.folderGone("Gone")).contains("“Gone”"))
+        #expect(AppModel.describe(AppModel.BackupAppError.noFolder) == "Choose a backup folder first.")
         let (fixture, _) = try AppModelTests.fixtureVault()
         let dir = try TestTemp.directory("backup-words")
         let backup = dir.appendingPathComponent("Notes.sempere-backup", isDirectory: true)

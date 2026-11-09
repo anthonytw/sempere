@@ -31,7 +31,7 @@ struct QuickCaptureSettingsSection: View {
                     if on { try model.enableQuickCapture(notebook: notebook) } else { try model.disableQuickCapture() }
                     problem = nil
                 } catch {
-                    problem = "\(error)"
+                    problem = AppModel.describe(error)
                 }
                 reload()
             }))
@@ -56,10 +56,10 @@ struct QuickCaptureSettingsSection: View {
             }
             if unreadable {
                 // Not "off" and not "set up": the settings are there, or may be, and cannot be read now.
-                Text(QuickCaptureError.profileUnreadable.description).font(.footnote).foregroundStyle(.orange)
+                Text(QuickCaptureError.profileUnreadable.text).font(.footnote).foregroundStyle(.orange)
             }
             if stored?.suspended == true {
-                Text(QuickCaptureError.notOnDeviceList.description).font(.footnote).foregroundStyle(.orange)
+                Text(QuickCaptureError.notOnDeviceList.text).font(.footnote).foregroundStyle(.orange)
             }
             if let problem { Text(problem).font(.footnote).foregroundStyle(.orange) }
             // Why the Lock Screen / Control Center / Action button / widget shortcuts cannot record,
@@ -138,7 +138,7 @@ struct QuickCaptureSettingsSection: View {
         }
         guard var s else { return }
         change(&s)
-        do { try model.quickCapture.store.save(s) } catch { problem = "\(error)" }
+        do { try model.quickCapture.store.save(s) } catch { problem = AppModel.describe(error) }
         model.quickCapture.publishStatus()
         model.settingsChanged()   // a synced setting (docs/settings-sync.md §5.2)
         reload()

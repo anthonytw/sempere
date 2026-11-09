@@ -29,7 +29,7 @@ enum NoteFileDrag {
     /// `services.settings`) on
     /// `provider`: rendered when a drop asks for it, from `prepare`, on a
     /// background task. Every step goes to the `drag` log (`DragLog`).
-    static func register(on provider: NSItemProvider, title: String, format: DragExportFormat = .defaultValue,
+    static func register(on provider: NSItemProvider, title: String, format: DragExportFormat,
                          prepare: Task<PreparedExport, any Error>, tag: String = "") {
         provider.suggestedName = suggestedName(title: title)
         let type = fileType(for: format).identifier

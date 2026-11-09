@@ -39,7 +39,7 @@ public final class QuickCapture {
         /// The recording is kept on this device for the next seal (`sweep`): said after `error`.
         public var kept = false
 
-        public init(id: UUID, delivery: Delivery? = nil, transcribed: Bool = false, error: String? = nil, kept: Bool = false) {
+        init(id: UUID, delivery: Delivery? = nil, transcribed: Bool = false, error: String? = nil, kept: Bool = false) {
             self.id = id
             self.delivery = delivery
             self.transcribed = transcribed
@@ -69,10 +69,10 @@ public final class QuickCapture {
         /// The recording is kept on this device (said after `error`).
         public var kept: Bool
         /// Stays until dismissed rather than for `result.shownFor`.
-        public var persists: Bool
-        public var id: UUID
+        var persists: Bool
+        var id: UUID
 
-        public init(result: VoiceNoteResult, kind: Kind = .stopped, error: String? = nil, kept: Bool = false,
+        init(result: VoiceNoteResult, kind: Kind = .stopped, error: String? = nil, kept: Bool = false,
                     persists: Bool = false, id: UUID = UUID()) {
             self.result = result
             self.kind = kind
@@ -91,7 +91,7 @@ public final class QuickCapture {
     /// A `sweep()` is running.
     @ObservationIgnored private var sweeping = false
     /// The last capture's outcome.
-    public private(set) var lastOutcome: Outcome?
+    private(set) var lastOutcome: Outcome?
     /// Where the last stopped voice note went, while the app's banner shows it
     /// (cleared after `VoiceNoteResult.shownFor`).
     public private(set) var notice: Notice?
@@ -101,7 +101,7 @@ public final class QuickCapture {
     public var pendingLink: VoiceNoteLink?
 
     /// When the recording in progress started.
-    public var started: Date? { session?.timeline.started }
+    var started: Date? { session?.timeline.started }
 
     /// Whether the recording in progress is paused (a call, a headset unplugged).
     public var isPaused: Bool { session?.isPaused ?? false }
@@ -125,34 +125,34 @@ public final class QuickCapture {
     /// The microphone and the recorder.
     @ObservationIgnored public var audio: any CaptureAudio
     /// Decodes and joins the segment files.
-    @ObservationIgnored public var audioFiles: any CaptureAudioFiles
+    @ObservationIgnored var audioFiles: any CaptureAudioFiles
     @ObservationIgnored public var transcriber: (any RecordingTranscribing)?
     @ObservationIgnored public var liveActivity: any CaptureLiveActivity
-    @ObservationIgnored public var app: any CaptureAppState
-    @ObservationIgnored public var backgroundTime: any BackgroundTime
+    @ObservationIgnored var app: any CaptureAppState
+    @ObservationIgnored var backgroundTime: any BackgroundTime
     /// Resolves the profile's bookmark (the app's security-scoped bookmarks).
-    @ObservationIgnored public var bookmarks: any FolderBookmarks
+    @ObservationIgnored var bookmarks: any FolderBookmarks
     /// Coordinates a queue flush into a vault in iCloud Drive (`flushQueue(…coordinated: true)`).
-    @ObservationIgnored public var files: any FileCoordinating
+    @ObservationIgnored var files: any FileCoordinating
     /// The start diagnostics' log lines.
-    @ObservationIgnored public var perf: any PerfSink
+    @ObservationIgnored var perf: any PerfSink
     /// The default title of a voice note (the app: in the device's language); nil: `CaptureWriter.defaultTitle`.
     @ObservationIgnored public var noteTitle: (@Sendable (Date) -> String)?
     /// The time now (tests set their own, with a recording that reads it too).
-    @ObservationIgnored public var now: @MainActor () -> Date = { Date() }
+    @ObservationIgnored var now: @MainActor () -> Date = { Date() }
     /// Waits (the banner's time, the Live Activity's heartbeat); tests set their own.
-    @ObservationIgnored public var sleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+    @ObservationIgnored var sleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     /// How long after its last update the recording's Live Activity counts as stale: the app refreshes
     /// it every `activityHeartbeat` while recording, so an activity whose app died (force quit, crash)
     /// shows "interrupted" and an Open button instead of a Stop that reaches nothing.
-    @ObservationIgnored public var activityStaleAfter: TimeInterval = 120
-    @ObservationIgnored public var activityHeartbeat: Duration = .seconds(45)
+    @ObservationIgnored var activityStaleAfter: TimeInterval = 120
+    @ObservationIgnored var activityHeartbeat: Duration = .seconds(45)
     /// Interrupted recordings a sweep could not save yet that the banner already reported (once per launch).
     @ObservationIgnored private var reportedKept: Set<UUID> = []
     /// Where recordings in progress are (plaintext, protected, deleted once sealed).
     @ObservationIgnored public var root: URL
     /// Sealed captures waiting for the vault folder, per vault id.
-    @ObservationIgnored public var queueRoot: URL
+    @ObservationIgnored var queueRoot: URL
     /// The in-app vault store (the app sets it at launch): a voice note for a store vault goes straight into
     /// its in-app inbox, found by vault id, open or not (docs/design/device-first-sync.md §5.3).
     @ObservationIgnored public var vaultStore: VaultStore?
@@ -167,7 +167,7 @@ public final class QuickCapture {
     /// Reloads the widgets and the control after the status changed.
     @ObservationIgnored public var reloadSurfaces: @MainActor () -> Void = {}
     /// How long a start that continued in the app waits for the app to be active before trying again.
-    @ObservationIgnored public var foregroundWait: Duration = .seconds(12)
+    @ObservationIgnored var foregroundWait: Duration = .seconds(12)
     /// The last voice-note starts, kept for Settings (`VoiceNoteStartLog`); memory only unless the app gives a file.
     @ObservationIgnored public var startLog = VoiceNoteStartLog(url: nil)
     /// `startLog`'s attempts, newest first, for Settings ▸ Quick Voice Notes ▸ Recent Starts (observed through the log).
@@ -175,8 +175,11 @@ public final class QuickCapture {
     /// The last taps on a widget, the control or a voice note shortcut, from the app and the widget
     /// extension (`VoiceNoteTapLog`), newest first; read again by `refreshTaps()`.
     public private(set) var recentTaps: [VoiceNoteTap] = []
+    /// Words the error a banner or an outcome carries (the app's `AppModel.describe`; the error's own description by
+    /// default).
+    @ObservationIgnored public var describeError: ErrorDescriber = plainErrorDescription
     /// Called with the capture id as each seal begins (tests).
-    @ObservationIgnored public var willSeal: (@MainActor (UUID) -> Void)?
+    @ObservationIgnored var willSeal: (@MainActor (UUID) -> Void)?
 
     /// - Parameters: the platform's services (`QuickCapturePlatform.swift`); the defaults record nothing, show no
     ///   Live Activity and run as an app in front, for tests and the CLI.
@@ -237,7 +240,7 @@ public final class QuickCapture {
     /// The status the widgets and the control show now. Its timer counts the
     /// audio, as the Live Activity's does: it starts later by the pauses so far
     /// and stands still during one (`VoiceNoteStatus.paused`).
-    public var status: VoiceNoteStatus {
+    var status: VoiceNoteStatus {
         // From the current run alone, so that the status (compared to skip widget reloads) is the same until the next pause or resumption.
         let run = session?.timeline.runs.last
         return VoiceNoteStatus.make(setUp: isSetUp, activitiesEnabled: liveActivity.areEnabled,
@@ -267,7 +270,7 @@ public final class QuickCapture {
     /// The stored profile. Throws `notSetUp` when there is none, and
     /// `profileUnreadable` when the store would not hand it over: not the
     /// same thing, and "not set up" would send the user to turn on what is on.
-    public func storedProfile() throws -> StoredCaptureProfile {
+    func storedProfile() throws -> StoredCaptureProfile {
         let stored: StoredCaptureProfile?
         do { stored = try store.load() } catch { throw QuickCaptureError.profileUnreadable }
         guard let stored else { throw QuickCaptureError.notSetUp }
@@ -292,7 +295,7 @@ public final class QuickCapture {
 
     /// Reads the tap log again (`VoiceNoteActions.tapLog`): after a tap in this process, and when the
     /// app becomes active (the widget extension may have added one).
-    public func refreshTaps() {
+    func refreshTaps() {
         recentTaps = VoiceNoteActions.tapLog?.read() ?? []
     }
 
@@ -556,11 +559,11 @@ public final class QuickCapture {
         } catch QuickCaptureError.notSetUp {
             // Turned off while recording: nothing can seal it.
             s.discardFiles()
-            announce(nil, error: "\(QuickCaptureError.notSetUp)", kept: false, started: shown, ended: ended)
+            announce(nil, error: describeError(QuickCaptureError.notSetUp), kept: false, started: shown, ended: ended)
             throw QuickCaptureError.notSetUp
         } catch {
             // The profile may still be there: the recording waits for `sweep()`.
-            announce(nil, error: "\(QuickCaptureError.profileUnreadable)", kept: true, started: shown, ended: ended)
+            announce(nil, error: describeError(QuickCaptureError.profileUnreadable), kept: true, started: shown, ended: ended)
             throw QuickCaptureError.profileUnreadable
         }
         let outcome = await seal(segments: s.segments, folder: s.folder, id: s.id, started: started, stored: stored) { [weak self] delivery in
@@ -592,7 +595,7 @@ public final class QuickCapture {
         }
     }
 
-    public nonisolated static func result(for delivery: Delivery?) -> VoiceNoteResult {
+    nonisolated static func result(for delivery: Delivery?) -> VoiceNoteResult {
         switch delivery {
         case .vault: return .savedToInbox
         case .queued: return .savedOnDevice
@@ -602,8 +605,8 @@ public final class QuickCapture {
 
     /// Says in the app's banner that a voice note did not start (`start(_:)` after continuing in
     /// the app): kept until it is dismissed, since the app may come to the front only later.
-    public func announceStartFailure(_ error: Error) {
-        show(Notice(result: .failed, kind: .notRecorded, error: "\(error)", persists: true))
+    func announceStartFailure(_ error: Error) {
+        show(Notice(result: .failed, kind: .notRecorded, error: describeError(error), persists: true))
     }
 
     /// Hides the banner's notice (tapped away).
@@ -627,7 +630,7 @@ public final class QuickCapture {
     /// when nil) are complete; only a later one, the segment being written
     /// when the app died, may be undecodable and is then left out
     /// (docs/attachments.md §13: a crash loses at most that segment).
-    public func seal(segments listed: [URL], finished: Int? = nil, folder: URL, id: UUID, started: Date, stored: StoredCaptureProfile,
+    func seal(segments listed: [URL], finished: Int? = nil, folder: URL, id: UUID, started: Date, stored: StoredCaptureProfile,
                      delivered: (@MainActor (Delivery) -> Void)? = nil) async -> Outcome {
         var outcome = Outcome(id: id)
         willSeal?(id)
@@ -688,7 +691,7 @@ public final class QuickCapture {
                 }
             }
         } catch {
-            outcome.error = "\(error)"
+            outcome.error = describeError(error)
             outcome.kept = keep
         }
         return outcome
@@ -698,7 +701,7 @@ public final class QuickCapture {
 
     /// Where sealed voice notes go (`CaptureDelivery`): the vault's inbox through its bookmark or
     /// the store, recorded in this device's ledger, else the queue.
-    public var delivery: CaptureDelivery {
+    var delivery: CaptureDelivery {
         CaptureDelivery(queueRoot: queueRoot, vaultStore: vaultStore, bookmarks: bookmarks, ledger: ledger, delivered: { vault in
             // A synced copy runs soon, open or not (`SyncCoordinator.captureDelivered`).
             NotificationCenter.default.post(name: QuickCapture.deliveredNotification, object: nil, userInfo: ["vault": vault])
@@ -706,7 +709,7 @@ public final class QuickCapture {
     }
 
     /// Writes `sealed` into the vault's inbox, or into the local queue (`CaptureDelivery.deliver`).
-    public func deliver(_ sealed: SealedCapture, _ stored: StoredCaptureProfile) throws -> Delivery {
+    func deliver(_ sealed: SealedCapture, _ stored: StoredCaptureProfile) throws -> Delivery {
         try delivery.deliver(sealed, stored)
     }
 
@@ -718,7 +721,7 @@ public final class QuickCapture {
     /// Moves queued captures of `vaultId` into the vault at `vaultURL` (`CaptureDelivery.flushQueue`), recorded under
     /// the stored profile when it is this vault's; `coordinated`: each write coordinated (`files`, iCloud Drive).
     @discardableResult
-    public func flushQueue(into vaultURL: URL, vaultId: UUID, coordinated: Bool) -> Int {
+    func flushQueue(into vaultURL: URL, vaultId: UUID, coordinated: Bool) -> Int {
         delivery.flushQueue(into: vaultURL, vaultId: vaultId, profile: (try? store.load())?.profile,
                             files: coordinated ? files : nil)
     }
@@ -728,7 +731,7 @@ public final class QuickCapture {
     /// throws `profileUnreadable` when the profile cannot be read now (the
     /// captures stay queued; unlocking the vault moves them too).
     @discardableResult
-    public func flushStoredQueue() throws -> Int {
+    func flushStoredQueue() throws -> Int {
         let stored: StoredCaptureProfile
         do { stored = try storedProfile() } catch QuickCaptureError.notSetUp { return 0 }
         return delivery.flushQueue(of: stored)
@@ -847,5 +850,5 @@ public final class QuickCapture {
     }
 
     /// An activity started less than this long ago may be a start of this process still in progress.
-    public nonisolated static let orphanGrace: TimeInterval = 10
+    nonisolated static let orphanGrace: TimeInterval = 10
 }

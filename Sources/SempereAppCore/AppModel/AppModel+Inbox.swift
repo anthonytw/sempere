@@ -126,7 +126,7 @@ extension AppModelCore {
     /// reach it. Its quick-capture profile is marked suspended, not deleted: a start says why it is refused, while
     /// a recording in progress, leftovers and the queue still seal into `inbox/` with ledger entries (the unlisted
     /// screen's Save Files covers them). Listed again, the suspension is lifted with the notebook choice kept.
-    public func syncQuickCaptureSuspension() {
+    func syncQuickCaptureSuspension() {
         guard let vault, phase == .unlocked, !vault.isRecoveryOpen,
               var stored = try? storedQuickCaptureProfile(), stored.profile.vaultId == vault.vaultId else { return }
         let unlisted = vault.unlistedNotice != nil || unlistedNotice != nil
@@ -144,7 +144,7 @@ extension AppModelCore {
     /// `here` (security review 2026-10 stage 4, S16): a lookalike folder with
     /// the same vault id, opened from outside, must not take over the profile
     /// (its recipients, its key and where voice notes go).
-    public nonisolated static func isProfileFolder(_ bookmark: Data, _ here: URL, bookmarks: any FolderBookmarks) -> Bool {
+    nonisolated static func isProfileFolder(_ bookmark: Data, _ here: URL, bookmarks: any FolderBookmarks) -> Bool {
         guard let target = try? bookmarks.resolve(bookmark).url else { return false }
         func path(_ u: URL) -> String { u.standardizedFileURL.resolvingSymlinksInPath().path }
         return path(target) == path(here)
@@ -171,7 +171,7 @@ extension AppModelCore {
     /// A voice note recorded on this device lands in the open vault's inbox from outside the model
     /// (`QuickCapture.deliver` posts `deliveredNotification`): adopt it now, not when the app next
     /// becomes active or the vault is reopened.
-    public func installInboxDeliveryObserver() {
+    func installInboxDeliveryObserver() {
         guard inboxDeliveryObserver == nil else { return }
         // No observer queue (as `SyncCoordinator`'s): on Linux a post to an observer of `OperationQueue.main` waits for
         // that queue for ever. On the main thread the adoption starts at once, from anywhere else through the main actor.
@@ -223,7 +223,7 @@ extension AppModelCore {
             }
         } catch is CancellationError {
         } catch {
-            if gen == generation { inboxProblem = "\(AppModelNotice.inboxUnreadable(String(describing: error)))" }
+            if gen == generation { inboxProblem = "\(AppModelNotice.inboxUnreadable(services.describeError(error)))" }
         }
         return done
     }
@@ -290,21 +290,21 @@ extension AppModelCore {
         } catch is CancellationError {
             return false
         } catch {
-            let reason = (error as? CaptureError)?.description ?? "\(error)"
+            let reason = (error as? CaptureError)?.description ?? services.describeError(error)
             inboxProblem = "\(AppModelNotice.voiceNoteNotAdded(reason))"
             return false
         }
     }
 
     /// Transcribes a recording already in the vault (from the blob cache).
-    public func transcribeStored(_ recording: Recording, note: UUID, meta: NoteMeta?) async {
+    func transcribeStored(_ recording: Recording, note: UUID, meta: NoteMeta?) async {
         guard let cache = attachmentCache() else { return }
         do {
             let url = try await cache.acquire(note: note, ref: recording.blob)
             await transcribe(recording, note: note, file: url, meta: meta, automatic: true)
             await cache.release(note: note, ref: recording.blob, discard: true)
         } catch {
-            alert = .notice(.voiceNoteUnreadable(String(describing: error)))
+            alert = .notice(.voiceNoteUnreadable(services.describeError(error)))
         }
     }
 }

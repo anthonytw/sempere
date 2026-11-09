@@ -127,7 +127,7 @@ extension AppModelCore {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                failures.append("\(id.uuidString.lowercased()): \(error)")
+                failures.append("\(id.uuidString.lowercased()): \(services.describeError(error))")
             }
         }
         try Task.checkCancellation()
@@ -176,7 +176,7 @@ extension AppModelCore {
     /// windows) of a note in `ids`, as a drag-out does (`prepareExport`), so
     /// an export reads what the canvas shows. Returns the notes whose editor
     /// still could not save (`saveFailure`).
-    public func flushEditors(for ids: Set<UUID>) async -> Set<UUID> {
+    func flushEditors(for ids: Set<UUID>) async -> Set<UUID> {
         var open: [Editor] = []
         if let editor, ids.contains(editor.noteID) { open.append(editor) }
         open += windowEditors.filter { ids.contains($0.key) }.map(\.value)
@@ -192,7 +192,7 @@ extension AppModelCore {
     /// recordings and their transcripts, and video clips (format.md §8.2.7),
     /// fetched only now, when they are embedded. Failures are left to the
     /// export, which reports them.
-    public func ensurePDFAttachmentsLocal(_ state: NoteState, of id: UUID) async {
+    func ensurePDFAttachmentsLocal(_ state: NoteState, of id: UUID) async {
         for r in state.recordings {
             try? await ensureBlobLocal(r.blob, of: id)
             if let t = r.transcript { try? await ensureBlobLocal(t, of: id) }
@@ -203,7 +203,7 @@ extension AppModelCore {
     /// Downloads (iCloud) every blob a media export of `state` writes:
     /// recordings and their transcripts, clips, images and PDFs
     /// (`MediaExport.plan`). Failures are left to the export, which reports them.
-    public func ensureMediaLocal(_ state: NoteState, of id: UUID) async {
+    func ensureMediaLocal(_ state: NoteState, of id: UUID) async {
         for p in MediaExport.plan(state) {
             try? await ensureBlobLocal(p.ref, of: id)
             if let t = p.transcript { try? await ensureBlobLocal(t, of: id) }
@@ -212,7 +212,7 @@ extension AppModelCore {
 
     /// Reads one note for an export: fetched first in a partial copy (`downloadNote`), which refuses a note
     /// still incomplete (an export of a partial note would be an older note without a word).
-    public func loadNoteForExport(_ id: UUID, vault: Vault) async throws -> LoadedForExport {
+    func loadNoteForExport(_ id: UUID, vault: Vault) async throws -> LoadedForExport {
         try await downloadNote(id)
         let verify = partialNoteVerifier(id)
         return try await offMain { () throws -> LoadedForExport in
@@ -224,13 +224,13 @@ extension AppModelCore {
     }
 }
 
-public struct LoadedForExport: Sendable {
-    public let summary: NoteSummary
-    public let state: NoteState
+struct LoadedForExport: Sendable {
+    let summary: NoteSummary
+    let state: NoteState
     /// `BulkExportPlan.version` of the revisions read.
-    public var version = ""
+    var version = ""
 
-    public init(summary: NoteSummary, state: NoteState, version: String = "") {
+    init(summary: NoteSummary, state: NoteState, version: String = "") {
         self.summary = summary
         self.state = state
         self.version = version

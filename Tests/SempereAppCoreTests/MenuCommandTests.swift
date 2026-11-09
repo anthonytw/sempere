@@ -1,5 +1,5 @@
 import Foundation
-import SempereAppCore
+@testable import SempereAppCore
 import Testing
 
 /// The Mac menu command list: one type for every command, no clashing shortcuts.

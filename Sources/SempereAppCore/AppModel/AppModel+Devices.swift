@@ -25,7 +25,7 @@ public struct DeviceRow: Identifiable, Equatable, Sendable {
 
     /// The device's id (8 hex digits).
     public var id: String
-    public var fingerprint: Data
+    var fingerprint: Data
     public var name: String
     /// `ipad`, `iphone`, `mac`, `cli`…
     public var kind: String
@@ -69,7 +69,7 @@ public struct DeviceListSnapshot: Equatable, Sendable {
     /// Epochs this device had followed that a takeover dropped.
     public var dropped = 0
 
-    public init(devices: [DeviceRow] = [], recoveryAdded: Date? = nil, passphraseCopy: Bool = false,
+    init(devices: [DeviceRow] = [], recoveryAdded: Date? = nil, passphraseCopy: Bool = false,
                 history: [DeviceHistoryEvent] = [], joinRequests: Int = 0, thisIsHome: Bool = false, homeName: String? = nil,
                 dropped: Int = 0) {
         self.devices = devices
@@ -85,7 +85,7 @@ public struct DeviceListSnapshot: Equatable, Sendable {
 
 /// What a device change did, for the sheet that started it.
 public struct DeviceChangeOutcome: Equatable, Sendable {
-    public var report: EpochChangeReport
+    var report: EpochChangeReport
     /// Targets the run before the change could not reach (their names), with when each last synced.
     public var unreachable: [UnreachableTarget] = []
 
@@ -143,7 +143,7 @@ extension AppModelCore {
     /// Remembers the names of the devices on `vault`'s list (by id), so the history can still name them once a
     /// change removed them: no list this device keeps holds them then. Names are plaintext in `vault.json` anyway.
     /// The newest 256 are kept (the oldest go first).
-    public func rememberDeviceNames(_ vault: Vault) {
+    func rememberDeviceNames(_ vault: Vault) {
         let key = Self.deviceNamesKey(vault.vaultId)
         var pairs = ((deviceMemory.object(forKey: key) as? [String]) ?? []).compactMap { line -> (String, String)? in
             let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
@@ -158,7 +158,7 @@ extension AppModelCore {
     }
 
     /// At most this many device names are remembered per vault.
-    public nonisolated static var rememberedNamesLimit: Int { 256 }
+    nonisolated static var rememberedNamesLimit: Int { 256 }
 
     public func rememberedDeviceNames(_ vaultID: UUID) -> [String: String] {
         var out: [String: String] = [:]
@@ -169,12 +169,12 @@ extension AppModelCore {
         return out
     }
 
-    public nonisolated static func deviceNamesKey(_ vaultID: UUID) -> String {
+    nonisolated static func deviceNamesKey(_ vaultID: UUID) -> String {
         "Sempere.deviceNames.\(vaultID.uuidString.lowercased())"
     }
 
     /// `events` with the devices no list here names filled in from `names` (by id).
-    public nonisolated static func named(_ events: [DeviceHistoryEvent], _ names: [String: String]) -> [DeviceHistoryEvent] {
+    nonisolated static func named(_ events: [DeviceHistoryEvent], _ names: [String: String]) -> [DeviceHistoryEvent] {
         func fill(_ r: DeviceRef) -> DeviceRef {
             guard r.name == nil, let n = names[r.id] else { return r }
             var out = r
@@ -190,7 +190,7 @@ extension AppModelCore {
         }
     }
 
-    public nonisolated static func deviceListSnapshot(_ vault: Vault, now: Date = Date()) -> DeviceListSnapshot {
+    nonisolated static func deviceListSnapshot(_ vault: Vault, now: Date = Date()) -> DeviceListSnapshot {
         let m = vault.manifest
         let this = vault.deviceFingerprint
         let rows = m.devices.map { e -> DeviceRow in
@@ -294,7 +294,7 @@ extension AppModelCore {
     /// so the change seals what they hold), the editors saved and closed, the change, the vault opened again under
     /// the new epoch (`adoptReopened`), the editors and the runs back. When the change fails, the vault follows the
     /// disk (a change can fail after its `vault.json` is written) and the editors open again all the same.
-    public func performDeviceChange(_ change: @escaping @Sendable (inout Vault) throws -> EpochChangeReport) async throws
+    func performDeviceChange(_ change: @escaping @Sendable (inout Vault) throws -> EpochChangeReport) async throws
         -> DeviceChangeOutcome {
         guard phase == .unlocked, let before = vault else { throw KeyError.notUnlocked }
         try requireWritableVault()
@@ -337,7 +337,7 @@ extension AppModelCore {
     }
 
     /// The note and note windows a device change closed, open again.
-    public func reopenEditors(shown: UUID?, windows: [UUID]) async {
+    func reopenEditors(shown: UUID?, windows: [UUID]) async {
         if let shown { try? await openEditor(for: shown) }
         for id in windows { _ = try? await openWindowNote(id) }
     }
@@ -346,7 +346,7 @@ extension AppModelCore {
     /// open vault, at most `deviceChangeRunBound` each (a run already going is waited for as long, no longer), so
     /// the change seals what other devices uploaded there. `cancelDeviceChangeSync` skips the rest. Returns the
     /// targets it did not reach; their writers catch their files up themselves.
-    public func syncBeforeDeviceChange() async -> [UnreachableTarget] {
+    func syncBeforeDeviceChange() async -> [UnreachableTarget] {
         let cancel = SyncRunCancel()
         deviceChangeCancel = cancel
         isSyncingBeforeChange = true
@@ -381,7 +381,7 @@ extension AppModelCore {
     }
 
     /// Each target's run before a device change is bounded by this (design §5.2 step 2: 10 seconds).
-    public nonisolated static var defaultDeviceChangeRunBound: TimeInterval { EpochChangePull.defaultBound }
+    nonisolated static var defaultDeviceChangeRunBound: TimeInterval { EpochChangePull.defaultBound }
 
     // MARK: - Takeover alerts (design §6.3)
 
@@ -391,7 +391,7 @@ extension AppModelCore {
     /// ancestor, design §5.6 rule 4). The first time a vault is seen here, the takeovers already on its chain are
     /// acknowledged silently; this device's own takeovers are acknowledged at once. The history is read off the
     /// main actor.
-    public func checkTakeovers() async {
+    func checkTakeovers() async {
         guard let vault, phase == .unlocked, !vault.isRecoveryOpen else { return }
         rememberDeviceNames(vault)
         let gen = generation
@@ -401,7 +401,7 @@ extension AppModelCore {
     }
 
     /// `checkTakeovers`' decision for `takeovers` (newest first) of `vault`.
-    public func applyTakeovers(_ takeovers: [DeviceHistoryEvent], vault: Vault) {
+    func applyTakeovers(_ takeovers: [DeviceHistoryEvent], vault: Vault) {
         let key = Self.takeoverAckKey(vault.vaultId)
         let defaults = deviceMemory
         let acknowledged: [String]
@@ -439,10 +439,10 @@ extension AppModelCore {
     }
 
     /// An epoch id as the acknowledged set stores it (lowercase hex).
-    public nonisolated static func idText(_ id: Data) -> String { id.map { String(format: "%02x", $0) }.joined() }
+    nonisolated static func idText(_ id: Data) -> String { id.map { String(format: "%02x", $0) }.joined() }
 
     /// At most this many acknowledged takeovers are remembered per vault (the newest).
-    public nonisolated static var acknowledgedTakeoversLimit: Int { 64 }
+    nonisolated static var acknowledgedTakeoversLimit: Int { 64 }
 
     /// The banner's Dismiss: its takeovers are acknowledged on this device.
     public func dismissTakeoverAlert() {
@@ -454,7 +454,7 @@ extension AppModelCore {
         takeoverAlert = nil
     }
 
-    public nonisolated static func takeoverAckKey(_ vaultID: UUID) -> String {
+    nonisolated static func takeoverAckKey(_ vaultID: UUID) -> String {
         "Sempere.takeoversAcknowledged.\(vaultID.uuidString.lowercased())"
     }
 }

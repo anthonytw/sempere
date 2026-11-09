@@ -1,7 +1,7 @@
 import Age
 import Foundation
 import Sempere
-import SempereAppCore
+@testable import SempereAppCore
 import SempereSync
 import SempereWebDAV
 import TempDirSupport

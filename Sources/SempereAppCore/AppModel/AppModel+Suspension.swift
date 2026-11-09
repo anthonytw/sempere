@@ -45,7 +45,7 @@ extension AppModelCore {
 
     /// The app entered the background: the last saves finish under background time, then the store
     /// lease is let go (at once when the system gives no time or takes it back).
-    public func prepareForSuspension() {
+    func prepareForSuspension() {
         guard releasesLocksInBackground else { return }
         locksSuspended = true
         guard storeLease != nil || closingEditor != nil else { return }
@@ -78,7 +78,7 @@ extension AppModelCore {
     }
 
     /// Lets the lease go (when the app is still in the background) and ends the background time.
-    public func finishSuspension() {
+    func finishSuspension() {
         if locksSuspended, let lease = storeLease {
             lease.release()
             storeLease = nil
@@ -89,7 +89,7 @@ extension AppModelCore {
     }
 
     /// The app is coming back: the open store vault's lease is taken again.
-    public func resumeAfterSuspension() {
+    func resumeAfterSuspension() {
         guard releasesLocksInBackground else { return }
         locksSuspended = false
         reacquireStoreLease()
@@ -99,7 +99,7 @@ extension AppModelCore {
     /// lease can be taken after the app went back to the background (a detached wait could, with no
     /// assertion held). Only a removal holds the lock exclusively: when the vault is gone (removed while
     /// it was unleased) it closes; when the lease cannot be taken, the next return tries again.
-    public func reacquireStoreLease() {
+    func reacquireStoreLease() {
         guard storeLease == nil, !locksSuspended, let id = storeLeaseVault, let store = vaultStore else { return }
         do {
             let lease = try store.lease(id, timeout: 0)

@@ -37,17 +37,17 @@ public struct WebDAVDownloadStatus: Equatable, Sendable {
 /// Hands a run's progress, reported on the sync's threads, to the main actor:
 /// only the newest value is delivered, one main-actor task at a time, and
 /// nothing after `close` (a later download's status is never overwritten).
-public final class WebDAVProgressRelay: @unchecked Sendable {
+final class WebDAVProgressRelay: @unchecked Sendable {
     private let lock = NSLock()
     private var latest: SyncProgress?
     private var scheduled = false
     private var closed = false
     private let deliver: @MainActor @Sendable (SyncProgress) -> Void
 
-    public init(_ deliver: @escaping @MainActor @Sendable (SyncProgress) -> Void) { self.deliver = deliver }
+    init(_ deliver: @escaping @MainActor @Sendable (SyncProgress) -> Void) { self.deliver = deliver }
 
     /// From any thread.
-    public func send(_ progress: SyncProgress) {
+    func send(_ progress: SyncProgress) {
         lock.lock()
         defer { lock.unlock() }
         guard !closed else { return }
@@ -58,11 +58,11 @@ public final class WebDAVProgressRelay: @unchecked Sendable {
     }
 
     /// Stops delivering.
-    public func close() {
+    func close() {
         lock.lock(); closed = true; latest = nil; lock.unlock()
     }
 
-    @MainActor public func flush() {
+    @MainActor func flush() {
         lock.lock()
         let value = closed ? nil : latest
         latest = nil
@@ -73,10 +73,10 @@ public final class WebDAVProgressRelay: @unchecked Sendable {
 }
 
 /// The Cancel of a WebDAV download, read by the sync's threads (`SyncOptions.isCancelled`).
-public final class WebDAVCancelFlag: @unchecked Sendable {
+final class WebDAVCancelFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var set = false
 
-    public var isSet: Bool { lock.lock(); defer { lock.unlock() }; return set }
-    public func cancel() { lock.lock(); set = true; lock.unlock() }
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return set }
+    func cancel() { lock.lock(); set = true; lock.unlock() }
 }

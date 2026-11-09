@@ -12,14 +12,14 @@ public enum SearchScope: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// A page to show once its note is open.
-public struct PageJump: Equatable, Sendable {
-    public var note: UUID
-    public var page: UUID
+struct PageJump: Equatable, Sendable {
+    var note: UUID
+    var page: UUID
     /// The search the page was found with: its words are highlighted on the
     /// canvas (`NoteEditor.highlightSearch`). Nil: just show the page.
-    public var query: String? = nil
+    var query: String? = nil
 
-    public init(note: UUID, page: UUID, query: String? = nil) {
+    init(note: UUID, page: UUID, query: String? = nil) {
         self.note = note
         self.page = page
         self.query = query
@@ -33,7 +33,7 @@ public struct RecognitionProgress: Equatable, Sendable {
     /// Notes that could not be read or written.
     public var failed = 0
 
-    public init(done: Int = 0, total: Int, failed: Int = 0) {
+    init(done: Int = 0, total: Int, failed: Int = 0) {
         self.done = done
         self.total = total
         self.failed = failed
@@ -53,7 +53,7 @@ public struct RecognitionResults: Equatable, Sendable {
     public var stopped = false
 
     /// The entry for a note, for its row's "Read 2 of 5 pages".
-    public func entry(for id: UUID) -> RecognizedNote? { notes.first { $0.id == id } }
+    func entry(for id: UUID) -> RecognizedNote? { notes.first { $0.id == id } }
 
     public init(notes: [RecognizedNote] = [], failed: Int = 0, finished: Bool = false, stopped: Bool = false) {
         self.notes = notes
@@ -65,18 +65,18 @@ public struct RecognitionResults: Equatable, Sendable {
 
 /// The query, scope and selection `searchResults` were computed for, and the
 /// notes changed since (merged in by the next `NoteSearch.updated`).
-public struct CompletedSearch: Equatable {
-    public var query: String
-    public var scope: SearchScope
-    public var selection: SidebarItem?
-    public var generation: Int
-    public var changed: Set<UUID> = []
+struct CompletedSearch: Equatable {
+    var query: String
+    var scope: SearchScope
+    var selection: SidebarItem?
+    var generation: Int
+    var changed: Set<UUID> = []
 
-    public func answers(_ other: CompletedSearch) -> Bool {
+    func answers(_ other: CompletedSearch) -> Bool {
         query == other.query && scope == other.scope && selection == other.selection && generation == other.generation
     }
 
-    public init(query: String, scope: SearchScope, selection: SidebarItem? = nil, generation: Int, changed: Set<UUID> = []) {
+    init(query: String, scope: SearchScope, selection: SidebarItem? = nil, generation: Int, changed: Set<UUID> = []) {
         self.query = query
         self.scope = scope
         self.selection = selection
@@ -113,7 +113,7 @@ extension AppModelCore {
     }
 
     /// The summary of a hit's note.
-    public func note(for hit: NoteSearchHit) -> NoteSummary? {
+    func note(for hit: NoteSearchHit) -> NoteSummary? {
         notesByID[hit.note]
     }
 
@@ -124,7 +124,7 @@ extension AppModelCore {
     /// and selection (and transcripts are not searched), only those notes are
     /// searched again and merged in (`NoteSearch.updated`, the same result as a
     /// full search).
-    public func updateSearch(changed: Set<UUID>? = nil) {
+    func updateSearch(changed: Set<UUID>? = nil) {
         searchTask?.cancel()
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
@@ -195,7 +195,7 @@ extension AppModelCore {
 
     /// Shows the pending page when its note is the one on the canvas; drops
     /// a jump that belongs to another note.
-    public func applyPendingJump() {
+    func applyPendingJump() {
         applyPendingRecordingJump()
         guard let jump = pendingJump, let editor else { return }
         guard editor.noteID == jump.note else {
@@ -246,7 +246,7 @@ extension AppModelCore {
         recognitionTask?.cancel()
     }
 
-    public func recognizeNotes(_ ids: [UUID], with recognizer: any PageRecognizing, generation gen: Int) async {
+    func recognizeNotes(_ ids: [UUID], with recognizer: any PageRecognizing, generation gen: Int) async {
         for id in ids {
             guard !Task.isCancelled, gen == generation else { return }
             do {
@@ -311,10 +311,10 @@ extension AppModelCore {
 }
 
 /// How many ops a `commit` closure produced, read once the commit has finished.
-public final class WrittenCount: @unchecked Sendable {
+final class WrittenCount: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
-    public var value: Int {
+    var value: Int {
         get { lock.withLock { count } }
         set { lock.withLock { count = newValue } }
     }

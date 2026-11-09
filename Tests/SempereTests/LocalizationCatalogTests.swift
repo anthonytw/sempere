@@ -261,6 +261,67 @@ final class LocalizationCatalogTests: XCTestCase {
 
     static let allowedVerbatim: Set<String> = ["Sempere"]
 
+    /// `AppModelAlert.worded` carries a sentence the app already worded, so this test's scan of `Apps/` sees it
+    /// (`.worded(` is a bypass sink above). The library never builds one: its alerts are typed values the app words
+    /// (docs/design/thin-app.md "Rules"). Only `AppModelAlert.swift`, which declares and compares the case, names it.
+    func testTheLibraryBuildsNoWordedAlert() throws {
+        let sources = Self.repo.appendingPathComponent("Sources")
+        let files = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
+        XCTAssertFalse(files.isEmpty, "no Swift files under \(sources.path)")
+        var found: [String] = []
+        for file in files where file.lastPathComponent != "AppModelAlert.swift" {
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+            for (n, line) in lines.enumerated() {
+                // `.worded` anywhere, applied or not (`map(AppModelAlert.worded)`), comments and strings included: no
+                // legitimate mention exists outside `AppModelAlert.swift`.
+                if line.contains(".worded") {
+                    found.append("\(file.path.replacingOccurrences(of: Self.repo.path + "/", with: "")):\(n + 1)")
+                }
+            }
+        }
+        XCTAssertTrue(found.isEmpty, "the library words no alert (use a typed AppModelAlert case):\n" + found.joined(separator: "\n"))
+    }
+
+    /// `AppModel.describe` (Apps/Sempere/SempereApp/Insert+Text.swift) is the one wording of a thrown error. Every error
+    /// type the app words with a `var text` extension must have a `case let e as <Type>` there, or an error of that type
+    /// would show as its Swift case name.
+    func testEveryWordedErrorTypeIsInAppModelDescribe() throws {
+        let app = Self.repo.appendingPathComponent("Apps/Sempere/SempereApp")
+        let files = try FileManager.default.contentsOfDirectory(at: app, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "swift" }
+        let describe = try String(contentsOf: app.appendingPathComponent("Insert+Text.swift"), encoding: .utf8)
+        let start = try XCTUnwrap(describe.range(of: "static func describe(_ error: any Error)"))
+        let body = String(describe[start.upperBound...])
+        var types: [String] = []
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            // `extension X {` / `extension X: …Convertible {` followed by `var text: String {`, X an Error of the library.
+            let lines = text.components(separatedBy: "\n")
+            for (i, line) in lines.enumerated() where line.hasPrefix("extension ") && i + 1 < lines.count {
+                let next = lines[(i + 1)...].prefix(3).joined(separator: "\n")
+                guard next.contains("var text: String") else { continue }
+                var name = String(line.dropFirst("extension ".count))
+                name = name.components(separatedBy: " {").first ?? name
+                name = name.components(separatedBy: ":").first ?? name
+                name = name.trimmingCharacters(in: .whitespaces)
+                types.append(name)
+            }
+        }
+        // Only the types that are errors (`enum X: Error`, `struct X: Error, …`, in Sources/ or Apps/).
+        let declarations = try [Self.repo.appendingPathComponent("Sources"), Self.repo.appendingPathComponent("Apps")].flatMap { root in
+            (FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? [])
+                .filter { $0.pathExtension == "swift" }
+        }.map { try String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+        types = types.filter { name in
+            let last = NSRegularExpression.escapedPattern(for: String(name.split(separator: ".").last ?? ""))
+            return declarations.range(of: "(enum|struct|class) \(last)\\b[^\\n{]*\\bError\\b", options: .regularExpression) != nil
+        }
+        XCTAssertGreaterThan(types.count, 20, "found only \(types)")
+        let missing = types.filter { !body.contains("case let e as \($0):") }
+        XCTAssertTrue(missing.isEmpty, "AppModel.describe has no case for: \(missing)")
+    }
+
     // MARK: - Info.plist strings and Siri phrases
 
     func testInfoPlistStringsMatchTheProject() throws {

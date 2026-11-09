@@ -25,13 +25,13 @@ public enum NotePDFExport {
 
 /// A vault generation readable from any thread: `AppModel.close` bumps it, and
 /// an export prepared before then writes nothing (`PreparedExport.write`).
-public final class ExportEpoch: @unchecked Sendable {
+final class ExportEpoch: @unchecked Sendable {
     private let lock = NSLock()
     private var current = 0
 
-    public init() {}
+    init() {}
 
-    public var value: Int { lock.withLock { current } }
+    var value: Int { lock.withLock { current } }
 
-    public func bump() { lock.withLock { current += 1 } }
+    func bump() { lock.withLock { current += 1 } }
 }

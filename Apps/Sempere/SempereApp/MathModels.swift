@@ -118,7 +118,7 @@ final class MathModels {
                 self.refresh()
                 if self.selectedID == nil || self.added.count == 1 { self.select(model.id) }
             case .failure(let error):
-                self.importFailure = String(localized: "That model cannot be added: \(String(describing: error))",
+                self.importFailure = String(localized: "That model cannot be added: \(AppModel.describe(error))",
                                             comment: "Settings ▸ Handwritten Math: Add Model from Files failed; the reason follows (English)")
             }
         }
@@ -164,7 +164,7 @@ final class MathModels {
             } catch let e as URLError where e.code == .cancelled {
                 result = .notInstalled
             } catch {
-                result = .failed(String(describing: error))
+                result = .failed(AppModel.describe(error))
             }
             guard let self else { return }
             self.downloads[entry.id] = nil

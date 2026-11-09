@@ -226,7 +226,7 @@ extension NoteEditor {
             return
         }
         do { try startRecording() } catch {
-            let detail = "\(error)"
+            let detail = AppModel.describe(error)
             recordingError = (error as? RecordingError)?.description ?? String(localized: "Could not record: \(detail)")
         }
     }

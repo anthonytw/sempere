@@ -8,7 +8,7 @@ import SempereRender
 extension NoteEditorModel {
     /// Where words fall inside a text box, as the canvas lays it out (`NoteCanvas.textBoxMatcher`: the app's
     /// CoreText shaper through `TextMatchBoxes`, as the CLI's `search --show-boxes` with its own shaper).
-    public static var textBoxMatcher: TextBoxMatcher { Canvas.textBoxMatcher }
+    static var textBoxMatcher: TextBoxMatcher { Canvas.textBoxMatcher }
 
     /// The pages as the highlight sees them: recognition that no longer
     /// describes the strokes (edited here, or a basis that does not match)
@@ -19,7 +19,7 @@ extension NoteEditorModel {
     /// Kept between calls: a page is judged again (its stroke digest included)
     /// only when the page itself, its dirty flag or `isPreparing` changed
     /// since the last answer, so a step with nothing edited judges no page.
-    public var pagesForHighlight: [Page] {
+    var pagesForHighlight: [Page] {
         let dirty = dirtyPages
         if let c = highlightCache, c.preparing == isPreparing, c.dirty == dirty, c.source == pages { return c.result }
         let old = highlightCache
@@ -59,7 +59,7 @@ extension NoteEditorModel {
     }
 
     /// Runs a highlight asked for while the note was opening.
-    public func applyPendingSearch() {
+    func applyPendingSearch() {
         guard let pending = pendingSearch else { return }
         highlightSearch(query: pending.query, page: pending.page)
     }

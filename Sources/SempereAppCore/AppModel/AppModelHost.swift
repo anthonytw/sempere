@@ -30,50 +30,50 @@ public protocol AppModelHost: Sendable {
 /// passes its own at init (or, for `lifecycle`, to `observeAppLifecycle` and `keepScreenOn`).
 public struct AppModelServices {
     /// Timing and log lines (`AppPerfSink` in the app).
-    public var perf: any PerfSink
+    var perf: any PerfSink
     /// Device settings (`UserDefaults.standard` in the app).
     public var settings: any KeyValueStore
     /// Security-scoped bookmarks of folder targets (`SecurityScopedBookmarks` in the app).
-    public var bookmarks: any FolderBookmarks
+    var bookmarks: any FolderBookmarks
     /// The device (`AppPlatform`).
-    public var platform: any PlatformServices
+    var platform: any PlatformServices
     /// The WebDAV server calls (`LiveWebDAVRemote`) and passwords (the Keychain).
-    public var webdavRemote: any WebDAVRemote
-    public var webdavPasswords: any WebDAVPasswordStore
+    var webdavRemote: any WebDAVRemote
+    var webdavPasswords: any WebDAVPasswordStore
     /// The iCloud calls for copying a vault in, and for a sync folder pick (`CloudVault.Hooks.live`).
-    public var iCloudHooks: CloudVault.Hooks
+    var iCloudHooks: CloudVault.Hooks
     /// Transcribes recordings on device (`SpeechRecordingTranscriber`); nil: none.
-    public var transcriber: (any RecordingTranscribing)?
+    var transcriber: (any RecordingTranscribing)?
     /// The `app` the model's revisions carry (format.md §5.1: `NoteWriter.appName`, `sempere-ios/<version>`).
-    public var appName: String
+    var appName: String
     /// Makes the open vault's cache of drawn attachments under a root (nil: memory only): the app's `RenderCache`
     /// (CoreGraphics pictures); headless, a store of plain bytes.
-    public var makeRenderCache: @MainActor (_ root: URL?, _ vault: Vault) -> any RenderCaching
+    var makeRenderCache: @MainActor (_ root: URL?, _ vault: Vault) -> any RenderCaching
     /// What plays recordings (`AVAudioPlaybackBackend`; headless, `SilentPlaybackBackend`).
-    public var makePlaybackBackend: @MainActor () -> any AudioPlaybackBackend
+    var makePlaybackBackend: @MainActor () -> any AudioPlaybackBackend
     /// Where recordings in progress keep their files (`RecordingSession.root`); nil: a folder of the model's own.
-    public var recordingRoot: URL?
+    var recordingRoot: URL?
     /// The recordings whose files are in use (running, being saved or transcribed): recovery leaves them alone.
-    public var recordingsInUse: @MainActor () -> Set<UUID>
+    var recordingsInUse: @MainActor () -> Set<UUID>
     /// What a recording's segment files hold, and their merge (`AVCaptureAudioFiles`; headless, bytes).
-    public var audioFiles: any CaptureAudioFiles
+    var audioFiles: any CaptureAudioFiles
     /// A recording made in a note is saved and, when that setting is on, transcribed (`onRecordingSaved`, set by the
     /// model on every editor it opens): its session folder, holding the plaintext audio, goes. The app also stops
     /// counting the recording as in use (`RecordingSession.busy`); headless, the folder is deleted.
-    public var finishRecordingSave: @MainActor (_ recording: UUID, _ folder: URL) -> Void
+    var finishRecordingSave: @MainActor (_ recording: UUID, _ folder: URL) -> Void
     /// Quick voice notes (the app's `QuickCapture.shared`; headless, a capture that records nothing, its folders in
     /// the model's own scratch folder, which it is given).
-    public var makeQuickCapture: @MainActor (_ scratch: URL) -> QuickCapture
+    var makeQuickCapture: @MainActor (_ scratch: URL) -> QuickCapture
     /// Where this device keeps the shared settings that are not the model's (`SettingsSyncBridge`; the app's
     /// `AppSettingsStorage`, `UserDefaults` through the settings' own types; headless, `StoredSettingsSyncStorage`).
-    public var settingsStorage: any SettingsSyncStorage
+    var settingsStorage: any SettingsSyncStorage
     /// Reads handwriting when recognition is turned on (`setHandwritingRecognition`; the app's Vision recognizer;
     /// headless, none).
-    public var makePageRecognizer: @MainActor () -> (any PageRecognizing)?
+    var makePageRecognizer: @MainActor () -> (any PageRecognizing)?
     /// Asks for the device owner before a list change that needs them at the device (Add Device, Replace Recovery Kit,
     /// a passphrase copy: design §6.5): the app's Face ID, Touch ID or passcode check; headless, none can be asked,
     /// and every check fails (`OwnerCheckUnavailable`).
-    public var ownerAuthenticator: any OwnerAuthenticator
+    var ownerAuthenticator: any OwnerAuthenticator
     /// Coordinated reads of a folder a provider may touch while it is read (a copy-in, a restore from iCloud Drive):
     /// the app's `SystemFileCoordinator` (`NSFileCoordinator`); headless, none (`UncoordinatedFiles`).
     public var files: any FileCoordinating
@@ -98,6 +98,10 @@ public struct AppModelServices {
     public var syncScheduler: any BackgroundSyncScheduling
     /// Watches the network for the WebDAV targets (`startReachability`: the app's `NWPathMonitor`); headless, none.
     public var makeReachability: @MainActor () -> (any NetworkReachability)?
+    /// Words every error the model (and the editors and the quick capture it opens) turns into text itself: a note
+    /// that failed to export, a failed read, the notices' reasons, the editors' save, recognition and recording
+    /// failures, a quick voice note's banner. The app's `AppModel.describe`; headless, the error's own description.
+    public var describeError: ErrorDescriber
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,
@@ -117,7 +121,8 @@ public struct AppModelServices {
                 attachmentPreparation: any AttachmentPreparing = PortableAttachmentPreparation(),
                 lifecycle: any AppLifecycle = ManualAppLifecycle(), backgroundTasks: any BackgroundTaskRunning = NoBackgroundTasks(),
                 syncScheduler: any BackgroundSyncScheduling = NoBackgroundSyncScheduler(),
-                makeReachability: @escaping @MainActor () -> (any NetworkReachability)? = { nil }) {
+                makeReachability: @escaping @MainActor () -> (any NetworkReachability)? = { nil },
+                describeError: @escaping ErrorDescriber = plainErrorDescription) {
         self.perf = perf
         self.settings = settings
         self.bookmarks = bookmarks
@@ -145,6 +150,7 @@ public struct AppModelServices {
         self.backgroundTasks = backgroundTasks
         self.syncScheduler = syncScheduler
         self.makeReachability = makeReachability
+        self.describeError = describeError
     }
 
     /// A quick capture that records nothing (`QuickCapture`'s defaults), its folders under `scratch`.
@@ -167,13 +173,14 @@ public struct AppModelServices {
     /// Memory versions: settings in memory, plain paths for bookmarks, an iPad with no haptics, no server, passwords
     /// in memory, no iCloud, no transcriber, the package's own attachment preparation and PDF page text, an app
     /// lifecycle driven by hand, no background time, no scheduled tasks and no network watcher.
-    public static func headless(settings: any KeyValueStore = MemoryKeyValueStore(),
-                                webdavRemote: any WebDAVRemote = OfflineWebDAVRemote()) -> AppModelServices {
+    static func headless(settings: any KeyValueStore = MemoryKeyValueStore(),
+                                webdavRemote: any WebDAVRemote = OfflineWebDAVRemote(),
+                                describeError: @escaping ErrorDescriber = plainErrorDescription) -> AppModelServices {
         AppModelServices(perf: NoPerfSink(), settings: settings, bookmarks: PathBookmarks(), platform: HeadlessPlatform(),
                          webdavRemote: webdavRemote, webdavPasswords: MemoryWebDAVPasswordStore(),
                          iCloudHooks: CloudVault.Hooks(isUbiquitous: { _ in false }, state: { _ in .current },
                                                        request: { _ in }),
-                         transcriber: nil, appName: "sempere-app-core")
+                         transcriber: nil, appName: "sempere-app-core", describeError: describeError)
     }
 }
 
@@ -182,3 +189,9 @@ extension DeviceClock {
     /// (on iPad and in the Catalyst sandbox that is per installation).
     public static var defaultURL: URL { AppSupport.sempere.appendingPathComponent("device.json") }
 }
+
+/// Turns an error into the sentence a user reads (`AppModelServices.describeError`, `QuickCapture.describeError`).
+public typealias ErrorDescriber = @Sendable (any Error) -> String
+
+/// An error's own description, for a front end that has no words of its own (tests, previews).
+@Sendable public func plainErrorDescription(_ error: any Error) -> String { "\(error)" }

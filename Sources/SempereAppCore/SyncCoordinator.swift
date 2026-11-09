@@ -5,16 +5,16 @@ import SempereSync
 import SempereWebDAV
 
 /// One sync target of a store vault, as the coordinator schedules it.
-public struct SyncTargetRef: Hashable, Sendable, Identifiable {
+struct SyncTargetRef: Hashable, Sendable, Identifiable {
     /// The store vault.
-    public let vaultID: UUID
+    let vaultID: UUID
     /// The vault's name, for the bars.
-    public let vaultName: String
-    public let target: SyncTarget
+    let vaultName: String
+    let target: SyncTarget
     /// The session's key: the target's id.
-    public var id: UUID { target.id }
+    var id: UUID { target.id }
 
-    public init(vaultID: UUID, vaultName: String, target: SyncTarget) {
+    init(vaultID: UUID, vaultName: String, target: SyncTarget) {
         self.vaultID = vaultID
         self.vaultName = vaultName
         self.target = target
@@ -43,24 +43,24 @@ public final class SyncCoordinator {
     /// The sessions, by target id.
     public private(set) var sessions: [UUID: SyncSession] = [:]
     /// The vault open in the model, if any.
-    public private(set) var openVault: UUID?
+    private(set) var openVault: UUID?
     /// Whether every target's session runs (the app at launch); off, only the open vault's do (tests).
-    public private(set) var runsAll = false
+    private(set) var runsAll = false
     /// The open vault was unlocked here (its sessions are two-way; targets added later are too).
     @ObservationIgnored private var openUnlocked = false
 
     /// At most this many runs at once across the app.
-    @ObservationIgnored public var maxConcurrentRuns = 2
+    @ObservationIgnored var maxConcurrentRuns = 2
     @ObservationIgnored private var active = 0
     @ObservationIgnored private var waiting: [(priority: @MainActor () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
 
     /// Builds the session of a target (the model supplies the transport, copy and options).
-    @ObservationIgnored public var makeSession: @MainActor (SyncTargetRef) -> SyncSession?
+    @ObservationIgnored var makeSession: @MainActor (SyncTargetRef) -> SyncSession?
     /// The targets there are now, of every store vault.
-    @ObservationIgnored public var targets: @MainActor () -> [SyncTargetRef]
+    @ObservationIgnored var targets: @MainActor () -> [SyncTargetRef]
     /// How often sessions look at their schedules, and their write delay (tests shorten both).
-    @ObservationIgnored public var tick = Duration.seconds(1)
-    @ObservationIgnored public var configure: (inout SyncSchedule) -> Void = { _ in }
+    @ObservationIgnored var tick = Duration.seconds(1)
+    @ObservationIgnored var configure: (inout SyncSchedule) -> Void = { _ in }
 
     /// - Parameters:
     ///   - deliveries: the notification quick capture posts when it writes a voice note into a vault's copy from
@@ -69,7 +69,7 @@ public final class SyncCoordinator {
     ///   - settings: where the background tasks' fairness record is kept (`triedKey`; the app's `UserDefaults`:
     ///     iOS often launches the app for one task).
     ///   - perf: the background tasks' events (`sync.background`).
-    public init(targets: @escaping @MainActor () -> [SyncTargetRef],
+    init(targets: @escaping @MainActor () -> [SyncTargetRef],
                 makeSession: @escaping @MainActor (SyncTargetRef) -> SyncSession?,
                 deliveries: Notification.Name? = nil,
                 settings: any KeyValueStore = MemoryKeyValueStore(),
@@ -109,7 +109,7 @@ public final class SyncCoordinator {
     /// Makes sessions for new targets (every vault's when `runsAll`, else only the open vault's) and
     /// stops those of removed ones. The model calls it when a target is added or removed. A WebDAV target
     /// whose first download has not finished has no copy to sync yet (`openWebDAV` makes it).
-    public func refresh() {
+    func refresh() {
         let now = targets()
         let ids = Set(now.map { $0.id })
         for id in sessions.keys where !ids.contains(id) { _ = stop(id) }
@@ -126,7 +126,7 @@ public final class SyncCoordinator {
 
     /// The session of `ref`, made and started if there is none.
     @discardableResult
-    public func session(for ref: SyncTargetRef) -> SyncSession? {
+    func session(for ref: SyncTargetRef) -> SyncSession? {
         if let existing = sessions[ref.id] { return existing }
         guard let made = makeSession(ref) else { return nil }
         made.tick = tick
@@ -148,7 +148,7 @@ public final class SyncCoordinator {
 
     /// The model opened vault `id`: its targets' sessions are the open ones (made if needed).
     @discardableResult
-    public func attachOpen(_ id: UUID) -> [SyncSession] {
+    func attachOpen(_ id: UUID) -> [SyncSession] {
         openVault = id
         openUnlocked = false
         for ref in targets() where ref.vaultID == id { session(for: ref) }
@@ -159,7 +159,7 @@ public final class SyncCoordinator {
     }
 
     /// The open vault was unlocked here: its sessions run two-way from now on, and run now.
-    public func openVaultUnlocked() {
+    func openVaultUnlocked() {
         guard let openVault else { return }
         openUnlocked = true
         for s in sessions(of: openVault) { s.vaultUnlocked() }
@@ -168,7 +168,7 @@ public final class SyncCoordinator {
     /// The model closed the open vault: its sessions go back to upload-only (or stop when only the open
     /// vault syncs). Returns the runs still going, which must end before the copy is replaced.
     @discardableResult
-    public func detachOpen() -> [Task<SyncReport?, Never>] {
+    func detachOpen() -> [Task<SyncReport?, Never>] {
         guard let id = openVault else { return [] }
         openVault = nil
         openUnlocked = false
@@ -189,7 +189,7 @@ public final class SyncCoordinator {
 
     /// Stops and forgets the session of target `id` (a removed target); returns its run still going.
     @discardableResult
-    public func stop(_ id: UUID) -> Task<SyncReport?, Never>? {
+    func stop(_ id: UUID) -> Task<SyncReport?, Never>? {
         guard let session = sessions.removeValue(forKey: id) else { return nil }
         return session.stop()
     }
@@ -203,7 +203,7 @@ public final class SyncCoordinator {
     @ObservationIgnored private var inBackground = false
 
     /// Asks every session for a run soon (the app became active, the network came back).
-    public func demandAll() {
+    func demandAll() {
         for s in sessions.values { s.demand() }
     }
 
@@ -249,24 +249,24 @@ public final class SyncCoordinator {
     }
 
     /// The number of runs going now (tests).
-    public var runsGoing: Int { active }
+    var runsGoing: Int { active }
 
     // MARK: - Background tasks (docs/design/device-first-sync.md §4.2)
 
     /// When a background task last ran each target (by target id), so the next starts with the others (no pair
     /// starves, `BackgroundBudget.order`). Kept in the coordinator's `settings`: iOS often launches the app for one
     /// task. Tests replace both.
-    @ObservationIgnored public var loadTried: () -> [String: Double]
-    @ObservationIgnored public var saveTried: ([String: Double]) -> Void
-    public static let triedKey = "Sempere.backgroundSyncTried"
+    @ObservationIgnored var loadTried: () -> [String: Double]
+    @ObservationIgnored var saveTried: ([String: Double]) -> Void
+    static let triedKey = "Sempere.backgroundSyncTried"
     /// The clock the background budget is measured with (tests pass their own).
-    @ObservationIgnored public var clock: () -> Date = { Date() }
+    @ObservationIgnored var clock: () -> Date = { Date() }
 
     /// The pairs a background task runs: every session whose vault has local changes the target has not
     /// confirmed, the open vault's while it is unlocked here (two-way: what other devices wrote arrives), any
     /// that failed (it retries), and every closed vault's that stages downloads for its next unlock
     /// (`LockedStaging`, design §4.1). A session that neither uploads nor stages anything is left out.
-    public func backgroundCandidates() -> [BackgroundRunCandidate] {
+    func backgroundCandidates() -> [BackgroundRunCandidate] {
         let tried = loadTried()
         return sessions.values.compactMap { s in
             guard let vault = s.vaultID,
@@ -281,7 +281,7 @@ public final class SyncCoordinator {
 
     /// Waits at most `timeout` for `start` (a launch in the background starts the coordinator once old copies
     /// are converted). Returns whether it started.
-    public func waitUntilStarted(timeout: Duration = .seconds(5)) async -> Bool {
+    func waitUntilStarted(timeout: Duration = .seconds(5)) async -> Bool {
         let end = ContinuousClock.now + timeout
         while !runsAll, ContinuousClock.now < end, !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(50))
@@ -294,7 +294,7 @@ public final class SyncCoordinator {
     /// for the next task, which starts with them (`markTried`). A run that fails or hangs (bounded) only marks its own
     /// session. Returns the targets that ran, in order.
     @discardableResult
-    public func runBackgroundRefresh(budget: TimeInterval = BackgroundBudget.refreshTime, cancel: SyncRunCancel) async -> [UUID] {
+    func runBackgroundRefresh(budget: TimeInterval = BackgroundBudget.refreshTime, cancel: SyncRunCancel) async -> [UUID] {
         let start = clock()
         let order = BackgroundBudget.order(backgroundCandidates())
         var ran: [UUID] = []
@@ -314,7 +314,7 @@ public final class SyncCoordinator {
 
     /// A `BGProcessingTask`: full passes over every candidate pair in the same order, until a pass changes
     /// nothing, `maxPasses` passes ran, or iOS takes the time back (`cancel`: runs stop between files).
-    public func runBackgroundProcessing(cancel: SyncRunCancel, maxPasses: Int = 3) async {
+    func runBackgroundProcessing(cancel: SyncRunCancel, maxPasses: Int = 3) async {
         for _ in 0..<maxPasses {
             var changed = false
             for candidate in BackgroundBudget.order(backgroundCandidates()) {
@@ -336,28 +336,28 @@ public final class SyncCoordinator {
     }
 
     /// The flag every run started now polls along with its own (`SyncRunRequest.cancels`).
-    @ObservationIgnored public private(set) var runCancel = SyncRunCancel()
+    @ObservationIgnored private(set) var runCancel = SyncRunCancel()
 
     /// iOS takes the background time back: every run going stops between files (a foreground run without a
     /// bound included, review of #74, B2), and runs started from now on get a fresh flag.
-    public func cancelAllRuns() {
+    func cancelAllRuns() {
         runCancel.cancel()
         runCancel = SyncRunCancel()
     }
 
     /// After a task whose expiry set `flag` (from outside the main actor): runs from now on get a fresh flag.
-    public func renewRunCancel(ifSet flag: SyncRunCancel) {
+    func renewRunCancel(ifSet flag: SyncRunCancel) {
         if flag.isSet, flag === runCancel { runCancel = SyncRunCancel() }
     }
 
     /// True while a run goes or one was asked for and has not started.
-    public var hasWorkInFlight: Bool {
+    var hasWorkInFlight: Bool {
         active > 0 || !waiting.isEmpty || sessions.values.contains { $0.isSyncing || ($0.schedule.demanded && $0.runsAutomatically) }
     }
 
     /// Waits until no run goes and none was asked for (the app left the screen: what was in flight finishes
     /// under background time), or the task is canceled.
-    public func waitForRunsToEnd(poll: Duration = .milliseconds(200)) async {
+    func waitForRunsToEnd(poll: Duration = .milliseconds(200)) async {
         while hasWorkInFlight, !Task.isCancelled {
             try? await Task.sleep(for: poll)
         }
@@ -370,7 +370,7 @@ public final class SyncCoordinator {
     /// (a flapping network starts no burst of runs), every session runs soon and forgets its backoff (design §4:
     /// "network reachable: run, cancel the backoff"): WebDAV targets, and folder targets too (offline audit P12:
     /// a share or a provider's folder may be back with it, and a drive's backoff is no reason to wait).
-    public func networkChanged(reachable: Bool) {
+    func networkChanged(reachable: Bool) {
         let previous = lastReachable
         lastReachable = reachable
         guard reachable else {
@@ -392,12 +392,12 @@ public final class SyncCoordinator {
     }
     @ObservationIgnored private var lastReachable: Bool?
     /// How long the path must hold after coming back before every session is asked to run (tests shorten it).
-    @ObservationIgnored public var networkDebounce = Duration.seconds(10)
+    @ObservationIgnored var networkDebounce = Duration.seconds(10)
     @ObservationIgnored private var networkReturn: Task<Void, Never>?
 
     /// A voice note was delivered into vault `id`'s copy (quick capture, open or not): its sessions run soon
     /// rather than at the idle pace.
-    public func captureDelivered(vault id: UUID) {
+    func captureDelivered(vault id: UUID) {
         for s in sessions.values where s.vaultID == id { s.noteWrite() }
     }
 }

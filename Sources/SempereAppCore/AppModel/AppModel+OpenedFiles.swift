@@ -10,7 +10,7 @@ public struct OpenedPDF: Identifiable, Equatable, Sendable {
     /// The file's name as opened, for the import sheet.
     public var name: String
 
-    public init(file: URL, name: String) {
+    init(file: URL, name: String) {
         self.file = file
         self.name = name
     }
@@ -70,7 +70,7 @@ extension AppModelCore {
 
     /// Takes a PDF the system opened the app with: copies it into a work folder (its scope through
     /// `services.bookmarks`) and queues it. Failures go to `alert` (`InsertNotice.fileNotOpened`).
-    public func receiveOpenedPDF(_ url: URL) async {
+    func receiveOpenedPDF(_ url: URL) async {
         let bookmarks = services.bookmarks
         do {
             let copy = try await Task.detached(priority: .userInitiated) {

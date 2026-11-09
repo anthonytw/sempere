@@ -7,13 +7,13 @@ import Sempere
 /// what undo puts back. Immutable; held by undo closures (like the eraser's
 /// `DrawingBox`), hence `@unchecked Sendable`.
 public final class TakenInk<Canvas: NoteCanvas>: @unchecked Sendable {
-    public let page: UUID
+    let page: UUID
     /// The ledger entries removed: fingerprints and stored strokes.
-    public let entries: [StrokeLedger.Entry]
+    let entries: [StrokeLedger.Entry]
     /// The canvas strokes they were shown as.
-    public let canvasStrokes: [Canvas.CanvasStroke]
+    let canvasStrokes: [Canvas.CanvasStroke]
 
-    public init(page: UUID, entries: [StrokeLedger.Entry], canvasStrokes: [Canvas.CanvasStroke]) {
+    init(page: UUID, entries: [StrokeLedger.Entry], canvasStrokes: [Canvas.CanvasStroke]) {
         self.page = page; self.entries = entries; self.canvasStrokes = canvasStrokes
     }
 

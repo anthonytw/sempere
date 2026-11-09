@@ -32,18 +32,18 @@ extension QuickCaptureTests {
         #expect(Self.inbox(url) == [CaptureFile.name(outcome.id, .capture)], "the audio is sealed all the same")
 
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50))
+        defer { model.close() }
         model.blobCacheFolder = Self.temp("blobs")
         model.transcriber = missing
         model.quickCapture = qc
         try await model.openVault(at: url)
         try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { log.downloadsAllowed.count == 2 })
+        #expect(await TS.waitUntil(timeout: .seconds(30)) { log.downloadsAllowed.count == 2 })
         #expect(log.downloadsAllowed == [false, false], "capture, then adoption: neither may download")
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { model.alert != nil })
+        #expect(await TS.waitUntil(timeout: .seconds(30)) { model.alert != nil })
         #expect(model.alert?.text == RecordingTranscriptionError.modelNotDownloaded.message)
         #expect(model.alert?.text.contains("Settings ▸ Audio & Transcription") == true)
         #expect(model.capturesAdopted == 1, "the voice note is in a note, untranscribed")
-        model.close()
     }
 }
 

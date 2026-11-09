@@ -11,20 +11,20 @@ public enum ThinningPreference {
     /// The choices the settings offer, 0 last ("Never").
     public static let choices = [7, 14, 30, 90, 365, 0]
     /// Seconds between automatic runs on one vault.
-    public static let interval: TimeInterval = 24 * 60 * 60
+    static let interval: TimeInterval = 24 * 60 * 60
 
     /// Days, or 0 for never; a stored value outside `choices` reads as its nearest sane value.
-    public static func days(in settings: any KeyValueStore) -> Int {
+    static func days(in settings: any KeyValueStore) -> Int {
         guard let n = settings.object(forKey: key) as? Int else { return defaultDays }
         return n <= 0 ? 0 : min(n, 3650)
     }
 
     /// The settings key of the last automatic run on vault `id`.
-    public static func lastRunKey(_ id: UUID) -> String { "Sempere.lastThinning.\(id.uuidString.lowercased())" }
+    static func lastRunKey(_ id: UUID) -> String { "Sempere.lastThinning.\(id.uuidString.lowercased())" }
 
     /// Whether an automatic run is due: thinning is on and the last run on
     /// this vault was `interval` or more ago (or never, or in the future).
-    public static func isDue(days: Int, lastRun: Date?, now: Date) -> Bool {
+    static func isDue(days: Int, lastRun: Date?, now: Date) -> Bool {
         guard days > 0 else { return false }
         guard let lastRun, lastRun <= now else { return true }
         return now.timeIntervalSince(lastRun) >= interval
@@ -38,9 +38,9 @@ public struct NoteThinning: Hashable, Sendable, Identifiable {
     /// Revision files deleted (or that would be).
     public var deletions: Int
     /// Snapshots written first (or that would be).
-    public var snapshots: Int
-    public var bytesDeleted: Int
-    public var bytesAdded: Int
+    var snapshots: Int
+    var bytesDeleted: Int
+    var bytesAdded: Int
 
     public init(id: UUID, title: String, deletions: Int, snapshots: Int, bytesDeleted: Int, bytesAdded: Int) {
         self.id = id
@@ -61,7 +61,7 @@ public struct ThinningReport: Hashable, Sendable {
     /// Notes left alone, with why (open in an editor, not downloaded, unreadable revision).
     public var skipped: [UUID: String] = [:]
     /// Notes looked at.
-    public var checked = 0
+    var checked = 0
     /// The time the rule was applied at. Confirming a preview runs with this
     /// time, so the run removes what the preview listed and nothing written
     /// since (with "Thin everything except checkpoints", a newer autosave
@@ -103,9 +103,9 @@ public struct ThinningProgress: Equatable, Sendable {
 /// Thinning left a note alone because it was opened while the automatic
 /// run was under way (`thinVault(skipOpen:)`); reported like a note open
 /// when the run started.
-public struct ThinningSkippedOpen: Error, CustomStringConvertible {
-    public init() {}
-    public var description: String { "open" }
+struct ThinningSkippedOpen: Error, CustomStringConvertible {
+    init() {}
+    var description: String { "open" }
 }
 
 extension NoteWriter {
@@ -121,7 +121,7 @@ extension NoteWriter {
     /// nothing of it is read. `isOpen` is asked once the plan is made, before
     /// anything is written: true leaves the note alone (`ThinningSkippedOpen`). The snapshots carry `app` (nil: the
     /// clock's own).
-    public static func thin(_ noteID: UUID, mode: CompactionMode, vault: Vault, clock: DeviceClock, cache: SummaryCache?,
+    static func thin(_ noteID: UUID, mode: CompactionMode, vault: Vault, clock: DeviceClock, cache: SummaryCache?,
                             app: String? = nil, coordinated: Bool, files: any FileCoordinating = UncoordinatedFiles(),
                             verify: (@Sendable () throws -> Void)?,
                             dryRun: Bool, now: Date = Date(), perf: any PerfSink = NoPerfSink(),
@@ -266,7 +266,7 @@ extension AppModelCore {
                                                  bytesAdded: p.bytesAdded))
                 if !dryRun { changed.append(id) }
             case .failure(let error):
-                report.skipped[id] = "\(error)"
+                report.skipped[id] = services.describeError(error)
             }
         }
         try ensureCurrent(gen)
@@ -281,7 +281,7 @@ extension AppModelCore {
     }
 
     /// Whether note `id` is open in an editor or a note window (or one is opening it).
-    public func isNoteOpen(_ id: UUID) -> Bool {
+    func isNoteOpen(_ id: UUID) -> Bool {
         editor?.noteID == id || windowEditors[id] != nil || windowClaims.contains(id) || openingNoteIDs[id] != nil
     }
 
@@ -289,7 +289,7 @@ extension AppModelCore {
     /// vault in the last day (`ThinningPreference`, in `services.settings`). Only an `AppModel` built
     /// with `automaticThinning` does this, so tests write nothing unasked (nor do the app's scripted runs:
     /// screenshots and device probes must not change the vault they open). After every listing `unlock` starts.
-    public func thinIfDue(now: Date = Date()) {
+    func thinIfDue(now: Date = Date()) {
         // Never in a vault of a newer format version (format.md §7.3).
         guard automaticThinning, phase == .unlocked, !isVaultReadOnly, partialCopyRoot == nil,
               let id = vault?.vaultId else { return }

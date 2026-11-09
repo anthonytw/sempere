@@ -1,6 +1,6 @@
 import Foundation
 import Sempere
-import SempereAppCore
+@testable import SempereAppCore
 import Testing
 
 /// The device settings (docs/attachments.md §15): defaults, valid choices and persistence in the device's

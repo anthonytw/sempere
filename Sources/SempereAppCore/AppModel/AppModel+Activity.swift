@@ -7,13 +7,13 @@ import Sempere
 /// (`RecentActivity`, sealed under the vault secret).
 extension AppModelCore {
     /// Reads what this device remembers of the open, unlocked vault.
-    public func loadActivity() {
+    func loadActivity() {
         guard let vault, vault.canRead else { return }
         activity = RecentActivity.load(root: activityRoot, vault: vault, now: activityNow())
     }
 
     /// Stores `activity` for the open vault.
-    public func saveActivity() {
+    func saveActivity() {
         guard let vault, vault.canRead else { return }
         activity.save(root: activityRoot, vault: vault)
     }

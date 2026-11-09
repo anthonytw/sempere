@@ -56,9 +56,9 @@ extension DeviceUnlockFailure {
     var text: String {
         switch self {
         case .keysNotRead(let error):
-            return String(describing: error)
+            return AppModel.describe(error)
         case .keysDidNotUnlock(let error):
-            return String(localized: "This device's key did not unlock the vault: \(String(describing: error))",
+            return String(localized: "This device's key did not unlock the vault: \(AppModel.describe(error))",
                           comment: "The error text follows (English)")
         }
     }

@@ -31,7 +31,7 @@ extension NoteEditorModel {
     /// part of the page on screen (`visible`, page points), centered on `point`
     /// when given (a drop), else on what is on screen (`NoteOps.viewFrame`).
     @discardableResult
-    public func insertImage(_ image: PreparedImage, on pageID: UUID, visible: CGRect?,
+    func insertImage(_ image: PreparedImage, on pageID: UUID, visible: CGRect?,
                      at point: CGPoint? = nil) async throws -> Item {
         guard canEditItems else { throw ItemError.notEditable }
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
@@ -65,7 +65,7 @@ extension NoteEditorModel {
     /// - Throws: `AttachmentOpsError.noSuchImage` when the page has no image
     ///   `id` (checked again after the blob is written), `ItemError`, or a write error.
     @discardableResult
-    public func replaceImage(_ id: UUID, with image: PreparedImage, on pageID: UUID) async throws -> (old: Item, new: Item) {
+    func replaceImage(_ id: UUID, with image: PreparedImage, on pageID: UUID) async throws -> (old: Item, new: Item) {
         guard canEditItems else { throw ItemError.notEditable }
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
         let planned = BlobRef(content: image.data, type: image.mediaType)
@@ -93,7 +93,7 @@ extension NoteEditorModel {
     ///   one infinite page; import the PDF as a new note, or switch to pages),
     ///   `ItemError.notEditable`, or a write error.
     @discardableResult
-    public func insertPDFPages(_ pdf: PreparedPDF, after index: Int) async throws -> [UUID] {
+    func insertPDFPages(_ pdf: PreparedPDF, after index: Int) async throws -> [UUID] {
         guard canEditItems else { throw ItemError.notEditable }
         guard !isPageless else { throw AttachmentOpsError.pagelessNote }
         // Fail before anything is written when the pages cannot be added.

@@ -11,20 +11,20 @@ import Sempere
 /// DEBUG only (`#if DEBUG`: a release build of the package, the app's included, has none of it).
 public enum DemoVault {
     /// The vault's folder is `My Notes.sempere`; the sidebar shows "My Notes".
-    public static let folderName = "My Notes.sempere"
+    static let folderName = "My Notes.sempere"
     /// The newest note's date, noon UTC. Notes are dated fractions of a day
     /// before it, so their day depends on the time zone: the screenshot tests
     /// run the app in UTC (`ScreenshotTests`).
-    public static let anchor: Date = {
+    static let anchor: Date = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
         return calendar.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 12)) ?? Date(timeIntervalSince1970: 1_791_201_600)
     }()
-    public static let ruled = Paper(kind: .ruled)
-    public static let margin = Paper(kind: .marginRuled)
-    public static let grid = Paper(kind: .grid, spacing: 18)
-    public static let dots = Paper(kind: .dot, spacing: 18, background: Paper.cream)
-    public static let cornell = Paper(kind: .cornell, spacing: 24)
+    static let ruled = Paper(kind: .ruled)
+    static let margin = Paper(kind: .marginRuled)
+    static let grid = Paper(kind: .grid, spacing: 18)
+    static let dots = Paper(kind: .dot, spacing: 18, background: Paper.cream)
+    static let cornell = Paper(kind: .cornell, spacing: 24)
 
     /// What `build` made.
     public struct Built: Sendable {
@@ -32,32 +32,32 @@ public enum DemoVault {
         /// The device key file (`DeviceKeys.fileText`) of the vault's throwaway home device.
         public let identityText: String
         /// The `age-keygen` style text of the vault's throwaway recovery key (opens it read-only).
-        public let recoveryText: String
+        let recoveryText: String
         /// Note ids by `Spec.key`.
         public let notes: [String: UUID]
     }
 
     /// One demo note.
     public struct Spec: Sendable {
-        public let key: String
-        public let title: String
-        public let notebook: String?
-        public let tags: [String]
-        public let paper: Paper
+        let key: String
+        let title: String
+        let notebook: String?
+        let tags: [String]
+        let paper: Paper
         /// How long before `anchor` it was last edited.
-        public let daysAgo: Double
+        let daysAgo: Double
         /// Draws page 1; further pages are drawn by `more`.
-        public let draw: @Sendable (inout DemoSheet) -> Void
-        public var more: [@Sendable (inout DemoSheet) -> Void] = []
+        let draw: @Sendable (inout DemoSheet) -> Void
+        var more: [@Sendable (inout DemoSheet) -> Void] = []
     }
 
     /// FNV-1a: a stable seed from a name (`hashValue` differs on every launch).
-    public static func seed(_ name: String) -> UInt64 {
+    static func seed(_ name: String) -> UInt64 {
         name.utf8.reduce(0xCBF2_9CE4_8422_2325) { ($0 ^ UInt64($1)) &* 0x0000_0100_0000_01B3 }
     }
 
     /// The id of the note with this key: the same on every run.
-    public static func noteID(_ key: String) -> UUID {
+    static func noteID(_ key: String) -> UUID {
         var rng = DemoRandom(seed: seed("note/" + key))
         return rng.uuid()
     }
@@ -137,15 +137,15 @@ public enum DemoVault {
     }
 
     /// The pageless dense note's key (`denseStrokes`).
-    public static let denseNote = "dense"
-    public static var densePage: UUID {
+    static let denseNote = "dense"
+    static var densePage: UUID {
         var rng = DemoRandom(seed: seed("page/" + denseNote))
         return rng.uuid()
     }
 
     /// A pageless ruled note of `strokes` synthetic strokes, rows 24 points apart, its stored
     /// height the ink's (as an import writes it).
-    public static func denseOps(strokes: Int) -> [Op] {
+    static func denseOps(strokes: Int) -> [Op] {
         var ink = SyntheticInk(seed: seed("ink/" + denseNote), options: .init(pointsPerStroke: 16, rowHeight: 24, top: 40))
         let all = ink.strokes(strokes)
         let height = max(792, (ink.nextBaseline + 48).rounded(.up))
@@ -156,11 +156,11 @@ public enum DemoVault {
     }
 
     /// The note `itemsImage` places items on.
-    public static let itemsNote = "thoughts"
+    static let itemsNote = "thoughts"
 
     /// A text box, an image (`png`, 4 × 3 pixels, stored first), an equation and a
     /// recording's card on the first page of note `note`, clear of its ink.
-    public static func itemOps(vault: Vault, note: UUID, png: Data, page: UUID? = nil) throws -> [Op] {
+    static func itemOps(vault: Vault, note: UUID, png: Data, page: UUID? = nil) throws -> [Op] {
         var rng = DemoRandom(seed: seed("page/" + itemsNote))
         let page = page ?? rng.uuid()
         let blob = try vault.writeBlob(note: note, png, type: "image/png")
@@ -174,7 +174,7 @@ public enum DemoVault {
     }
 
     /// The ops that create `spec`'s note: its pages, metadata, tags and ink.
-    public static func ops(for spec: Spec, id: UUID) -> [Op] {
+    static func ops(for spec: Spec, id: UUID) -> [Op] {
         var rng = DemoRandom(seed: seed("page/" + spec.key))
         let firstPage = rng.uuid()
         var ops = NoteOps.newNote(title: spec.title, paper: spec.paper, notebook: spec.notebook, tags: spec.tags,
@@ -201,7 +201,7 @@ public enum DemoVault {
     private static func base(_ k: Int) -> Double { Double(k) * 24 - 5 }
 
     /// A title in large blue with a double rule, then one line of writing per entry.
-    public static func plain(_ title: String, _ lines: [String], x: Double = 60, spacing: Double = 24,
+    static func plain(_ title: String, _ lines: [String], x: Double = 60, spacing: Double = 24,
                              first: Double = 72, into sheet: inout DemoSheet) {
         sheet.write(title, x: x, baseline: first, pen: DemoPen.blue.scaled(1.7), maxWidth: 470)
         sheet.underline(x0: x, x1: x + min(sheet.width(of: title, pen: DemoPen.blue.scaled(1.7)), 470), y: first + 8,
@@ -212,7 +212,7 @@ public enum DemoVault {
     }
 
     /// The hero note: lecture notes on ruled paper with a margin, a diagram, highlights.
-    public static func respiration(_ s: inout DemoSheet) {
+    static func respiration(_ s: inout DemoSheet) {
         let x0 = 84.0
         s.write("Lecture 4  -  Oct 1", x: 410, baseline: base(1), pen: DemoPen.green.scaled(0.85))
         let title = DemoPen.blue.scaled(1.8)
@@ -256,7 +256,7 @@ public enum DemoVault {
     }
 
     /// The second hero: a sketch of how the sync works, on dot paper.
-    public static func atlas(_ s: inout DemoSheet) {
+    static func atlas(_ s: inout DemoSheet) {
         let title = DemoPen.blue.scaled(1.8)
         s.write("Atlas: sync design", x: 54, baseline: 62, pen: title)
         s.underline(x0: 54, x1: 54 + s.width(of: "Atlas: sync design", pen: title), y: 72, pen: .blue, double: true)

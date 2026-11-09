@@ -7,12 +7,12 @@ import SempereWebDAV
 /// An error that only says the device has not been unlocked since it started (the Keychain refuses the WebDAV
 /// password until then): a run that throws it waits for the unlock, with no problem shown and no backoff (review of
 /// #74, B1). The app's password store's error conforms.
-public protocol DeviceUnlockWaiting: Error {
+protocol DeviceUnlockWaiting: Error {
     var waitsForDeviceUnlock: Bool { get }
 }
 
 /// How a run of a `SyncSession` goes.
-public enum SyncRunMode: Sendable, Equatable {
+enum SyncRunMode: Sendable, Equatable {
     /// Two-way (the vault is open and unlocked here): takes what other devices wrote, merges settings,
     /// follows deletions the rules explain.
     case twoWay
@@ -25,27 +25,27 @@ public enum SyncRunMode: Sendable, Equatable {
 
 /// One run a `SyncSession` asks for: its mode, and the bounds a background task gives it.
 public struct SyncRunRequest: Sendable {
-    public var mode: SyncRunMode
+    var mode: SyncRunMode
     /// The run's time bound (`SyncLimits.maxDuration`); nil: the default. A background task shares its
     /// time out this way (`SyncCoordinator.runBackgroundRefresh`, design §4.2).
-    public var maxDuration: TimeInterval?
+    var maxDuration: TimeInterval?
     /// An upload-only run also stages what the target holds that this copy lacks (`LockedStaging`, P8b), for
     /// the next unlock to place. Off between `SyncSession.stageInterval`s outside background tasks.
-    public var stage = false
+    var stage = false
     /// Stop the run between files when any is set (`SyncOptions.isCancelled`): iOS took a background task's
     /// time back (the task's own flag, and the coordinator's app-wide one, which reaches every run going).
-    public var cancels: [SyncRunCancel] = []
+    var cancels: [SyncRunCancel] = []
     /// The user asked for this run (Sync Now): a folder target's bookmark may mount its share then
     /// (`FolderTargetAccess.open`); scheduled runs never do.
-    public var interactive = false
+    var interactive = false
     /// When the device's network path last became satisfied (the path monitor): a provider's late file is not
     /// counted as stalled before it (`SyncOptions.networkReturned`, offline audit P5).
-    public var networkReturned: Date?
+    var networkReturned: Date?
     /// Attachment blobs too large for this target's recent windows (`SyncOptions.largeBlobs`, offline audit P3):
     /// `.now` for a background processing task and for Sync Now (time to send them), else `.auto`.
-    public var largeBlobs = LargeBlobPolicy.auto
+    var largeBlobs = LargeBlobPolicy.auto
 
-    public init(mode: SyncRunMode, maxDuration: TimeInterval? = nil, stage: Bool = false, cancels: [SyncRunCancel] = [],
+    init(mode: SyncRunMode, maxDuration: TimeInterval? = nil, stage: Bool = false, cancels: [SyncRunCancel] = [],
                 interactive: Bool = false, networkReturned: Date? = nil, largeBlobs: LargeBlobPolicy = .auto) {
         self.mode = mode
         self.maxDuration = maxDuration
@@ -57,7 +57,7 @@ public struct SyncRunRequest: Sendable {
     }
 
     /// Applies the bounds to a run's options (the time bound through `SyncBounds`, as the CLI's `--max-minutes`).
-    public func apply(to options: inout SyncOptions) {
+    func apply(to options: inout SyncOptions) {
         SyncBounds(maxDuration: maxDuration).apply(to: &options)
         options.largeBlobs = largeBlobs
         if let networkReturned { options.networkReturned = networkReturned }
@@ -67,14 +67,14 @@ public struct SyncRunRequest: Sendable {
 }
 
 /// A cancellation flag a run polls between files (a background task's expiry sets it).
-public final class SyncRunCancel: @unchecked Sendable {
+final class SyncRunCancel: @unchecked Sendable {
     private let lock = NSLock()
     private var set = false
 
-    public init() {}
+    init() {}
 
-    public var isSet: Bool { lock.lock(); defer { lock.unlock() }; return set }
-    public func cancel() { lock.lock(); set = true; lock.unlock() }
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return set }
+    func cancel() { lock.lock(); set = true; lock.unlock() }
 }
 
 /// One (vault, target) pair's sync (docs/design/device-first-sync.md §4, docs/io.md "Sync targets in the
@@ -88,15 +88,15 @@ public final class SyncSession {
     /// The target's id (a `SyncTarget`, which a WebDAV location also is).
     public let locationID: UUID
     /// The vault (its `vaultId`), when known.
-    public let vaultID: UUID?
+    let vaultID: UUID?
     /// The vault's name, for the bar.
-    public let name: String
+    let name: String
     /// The target's kind: the bar's wording (a folder or a server).
     public var kind = SyncTargetKind.webdav
     /// The target's name (the folder's or the host), for the target list.
     public var targetName = ""
     /// When the target was added (the order of a vault's sessions).
-    public var added = Date.distantPast
+    var added = Date.distantPast
     /// When runs happen; the session tells it about writes, demands and runs. Tests shorten its delays.
     public var schedule = SyncSchedule()
     /// A run is going.
@@ -104,92 +104,92 @@ public final class SyncSession {
     /// What the last run (or the failure that stopped it) reported; empty: all is well.
     public private(set) var problems: [WebDAVSyncProblem] = []
     /// The last run's error message, when it threw.
-    public private(set) var failure: String?
+    private(set) var failure: String?
     /// Files of the local copy the target has not confirmed (recounted after each run and write).
-    public private(set) var unconfirmed = 0
+    private(set) var unconfirmed = 0
     /// When a run last finished without problems.
     public private(set) var lastSuccess: Date?
     /// Runs are two-way: the vault is open and unlocked here.
-    public private(set) var twoWay = false
+    private(set) var twoWay = false
     /// What the last run did, for "Show Details" and tests.
-    public private(set) var lastReport: SyncReport?
+    private(set) var lastReport: SyncReport?
     /// The last run moved files and was cut short (a run bound, the background time): the next one continues.
-    public private(set) var continuing = false
+    private(set) var continuing = false
     /// Files the last runs left arriving on the target (a provider still delivering them).
-    public private(set) var arriving = 0
+    private(set) var arriving = 0
     /// Files other devices wrote that are staged for this vault's next unlock (`LockedStaging`, P8b).
-    public private(set) var staged = 0
+    private(set) var staged = 0
     /// When an upload-only run last staged downloads; staging runs at most every `stageInterval` outside
     /// background tasks (each stages, design §4.1).
     @ObservationIgnored private var lastStaged: Date?
-    @ObservationIgnored public var stageInterval: TimeInterval = 15 * 60
+    @ObservationIgnored var stageInterval: TimeInterval = 15 * 60
     /// Counts the staged files off the main actor (the model sets it; nil: no staging).
-    @ObservationIgnored public var countStaged: (@Sendable () async -> Int)?
+    @ObservationIgnored var countStaged: (@Sendable () async -> Int)?
     /// Files the runs wrote into a provider's folder that it has not uploaded yet (`ProviderUploads`, offline audit
     /// P15): until they are, the target is not "synced", only written to.
-    public private(set) var providerPending = 0
+    private(set) var providerPending = 0
     /// The provider reported an upload error for them (a full iCloud storage): the bar says so, as a problem.
-    public private(set) var providerError: ProviderUploads.State?
+    private(set) var providerError: ProviderUploads.State?
     /// Reads them off the main actor (folder targets; nil: none).
-    @ObservationIgnored public var providerSummary: (@Sendable () async -> ProviderUploads.Summary)?
+    @ObservationIgnored var providerSummary: (@Sendable () async -> ProviderUploads.Summary)?
     /// The folder is in iCloud Drive (the wording names it).
-    @ObservationIgnored public var uploadsViaICloud = false
+    @ObservationIgnored var uploadsViaICloud = false
     /// A folder target's path as run errors may spell it (as stored, symbolic links resolved): a write refused there
     /// is the target's (`WebDAVSyncProblem.notWritable`), not the device's own copy's (review of #124, note 5).
-    @ObservationIgnored public var targetRoots: [String] = []
+    @ObservationIgnored var targetRoots: [String] = []
     /// The last run could not read the target's password: the device is locked and was not unlocked since it
     /// started. Not a problem and no backoff: the run waits for the unlock (review of #74, B1).
-    public private(set) var waitingForDeviceUnlock = false
+    private(set) var waitingForDeviceUnlock = false
 
     /// Runs one sync off the main actor and returns its report (the coordinator supplies it: endpoint,
     /// copy, vault, options).
-    @ObservationIgnored public let run: @Sendable (SyncRunRequest) async throws -> SyncReport
+    @ObservationIgnored let run: @Sendable (SyncRunRequest) async throws -> SyncReport
     /// Counts the copy's unconfirmed files off the main actor.
-    @ObservationIgnored public let countUnconfirmed: @Sendable () async -> Int
+    @ObservationIgnored let countUnconfirmed: @Sendable () async -> Int
     /// Told when a run ends without problems (the coordinator stores the date).
-    @ObservationIgnored public var onSuccess: (Date) -> Void = { _ in }
+    @ObservationIgnored var onSuccess: (Date) -> Void = { _ in }
     /// The target as the sync engine's remote, with what to call when done with it (a folder's security scope): for
     /// a re-encryption's claim and confirmation (key-hierarchy KH6). Nil: none (a kind of a later version).
     /// The target as the engine's remote, for a re-encryption: `close` ends its access, `syncedBefore` says this device
     /// synced with it (a claim never makes its base again then; `FolderTargetRun.syncedBefore`).
-    @ObservationIgnored public var openRemote: (@Sendable () async throws -> (remote: any SyncRemote, close: @Sendable () -> Void,
+    @ObservationIgnored var openRemote: (@Sendable () async throws -> (remote: any SyncRemote, close: @Sendable () -> Void,
                                                                       syncedBefore: Bool))?
     /// Told what a two-way run changed in the local copy (the open vault's model applies it).
-    @ObservationIgnored public var onChanges: (LocalChanges) -> Void = { _ in }
+    @ObservationIgnored var onChanges: (LocalChanges) -> Void = { _ in }
     /// Called after every two-way run, whether it returned or threw (the model compares its open vault
     /// with the disk: a run that stopped may still have taken a new `vault.json`).
-    @ObservationIgnored public var afterTwoWayRun: () -> Void = {}
+    @ObservationIgnored var afterTwoWayRun: () -> Void = {}
     /// Taken around each run: the coordinator's budget (at most a few runs at once app-wide).
-    @ObservationIgnored public var admit: @MainActor (_ priority: @escaping @MainActor () -> Bool) async -> Void = { _ in }
-    @ObservationIgnored public var release: @MainActor () -> Void = {}
+    @ObservationIgnored var admit: @MainActor (_ priority: @escaping @MainActor () -> Bool) async -> Void = { _ in }
+    @ObservationIgnored var release: @MainActor () -> Void = {}
     /// The open vault's session (the coordinator sets it): its runs take the slot kept for it.
-    @ObservationIgnored public var isOpenVault = false
+    @ObservationIgnored var isOpenVault = false
     /// The coordinator's app-wide cancel flag, read when a run starts (`SyncCoordinator.cancelAllRuns`).
-    @ObservationIgnored public var appCancel: @MainActor () -> SyncRunCancel? = { nil }
+    @ObservationIgnored var appCancel: @MainActor () -> SyncRunCancel? = { nil }
     /// Runs automatically at all (the coordinator's background sessions; the open vault's always do).
-    @ObservationIgnored public var runsAutomatically = true { didSet { wake() } }
+    @ObservationIgnored var runsAutomatically = true { didSet { wake() } }
     /// The periodic pace is paused (a closed vault while the app is in the background): only a write
     /// (a voice note delivered into it) or a demand starts a run (review of #72).
-    @ObservationIgnored public var periodicPaused = false { didSet { wake() } }
+    @ObservationIgnored var periodicPaused = false { didSet { wake() } }
     /// The device has no network path now (the app's path monitor, through the coordinator): a WebDAV target's scheduled
     /// runs wait and its bar says offline (offline audit P11). Folder targets need no network and ignore it; Sync
     /// Now still runs.
-    public private(set) var networkDown = false
+    private(set) var networkDown = false
     /// When the network path last came back (`networkReturned`, `networkChanged`); nil before it ever went away.
-    public private(set) var networkReturnedAt: Date?
-    @ObservationIgnored public var now: () -> Date = { Date() }
+    private(set) var networkReturnedAt: Date?
+    @ObservationIgnored var now: () -> Date = { Date() }
     /// The shortest sleep of the loop: it sleeps until the schedule's next run (offline audit P11: no tick every
     /// second while nothing is due), at least this long, and is woken by writes, demands and changes of state.
-    @ObservationIgnored public var tick = Duration.seconds(1)
+    @ObservationIgnored var tick = Duration.seconds(1)
     /// The longest sleep: the loop looks at the schedule at least this often, whatever it was told (nil: 60 ticks,
     /// a minute in the app).
-    @ObservationIgnored public var maxSleep: Duration?
+    @ObservationIgnored var maxSleep: Duration?
     @ObservationIgnored private var loop: Task<Void, Never>?
     /// The loop's sleep going now; cancelling it wakes the loop (`wake`).
     @ObservationIgnored private var sleeper: Task<Void, Never>?
     @ObservationIgnored private var running: Task<SyncReport?, Never>?
     /// The run going now, if any (the copy must not be replaced or removed until it has ended).
-    public var currentRun: Task<SyncReport?, Never>? { running }
+    var currentRun: Task<SyncReport?, Never>? { running }
 
     public init(locationID: UUID, vaultID: UUID?, name: String, lastSuccess: Date?,
          run: @escaping @Sendable (SyncRunRequest) async throws -> SyncReport,
@@ -205,7 +205,7 @@ public final class SyncSession {
     // MARK: - Lifecycle
 
     /// Starts the loop (upload-only until `vaultUnlocked`).
-    public func start() {
+    func start() {
         guard loop == nil else { return }
         loop = Task { [weak self] in
             while !Task.isCancelled {
@@ -232,7 +232,7 @@ public final class SyncSession {
 
     /// How long the loop sleeps: until the schedule's next run, between `tick` and `maxSleep`; `maxSleep` while
     /// nothing may run (a wake ends it sooner).
-    public func sleepDuration() -> Duration {
+    func sleepDuration() -> Duration {
         let floor = tick, ceiling = max(maxSleep ?? tick * 60, tick)
         guard mayRunNow, let next = schedule.nextRun(now: now()) else { return ceiling }
         let wait = Duration.milliseconds(Int64(max(0, next.timeIntervalSince(now())) * 1000))
@@ -248,7 +248,7 @@ public final class SyncSession {
         return true
     }
     @ObservationIgnored private var lastMount: Date?
-    @ObservationIgnored public var mountInterval: TimeInterval = 5 * 60
+    @ObservationIgnored var mountInterval: TimeInterval = 5 * 60
 
     /// Ends the loop's sleep now: something changed what is due.
     private func wake() {
@@ -274,14 +274,14 @@ public final class SyncSession {
     }
 
     /// The vault closed or locked here: runs only upload until it is unlocked again.
-    public func vaultClosed() {
+    func vaultClosed() {
         twoWay = false
     }
 
     // MARK: - Events
 
     /// A delta, blob, capture or setting was written to the copy.
-    public func noteWrite() {
+    func noteWrite() {
         schedule.noteWrite(at: now())
         unconfirmed += 1
         wake()
@@ -307,7 +307,7 @@ public final class SyncSession {
     /// foreground one without a bound (review of #74, B2; the task's expiry stops it through the app-wide flag).
     /// Returns whether the run ended without problems, and whether it changed anything.
     /// `full`: a background processing task's run, which also sends the large blobs short runs leave (offline audit P3).
-    public func runInBackground(maxDuration: TimeInterval?, cancel: SyncRunCancel?, full: Bool = false) async -> (ok: Bool, changed: Bool) {
+    func runInBackground(maxDuration: TimeInterval?, cancel: SyncRunCancel?, full: Bool = false) async -> (ok: Bool, changed: Bool) {
         guard running == nil else { return (false, false) }
         let report = await runOnce(maxDuration: maxDuration, cancel: cancel, full: full)
         guard let report else { return (false, false) }
@@ -317,7 +317,7 @@ public final class SyncSession {
     }
 
     /// The network came back: a run soon, without waiting out the backoff of earlier failures.
-    public func networkReturned() {
+    func networkReturned() {
         networkDown = false
         networkReturnedAt = now()
         schedule.resetBackoff()
@@ -326,7 +326,7 @@ public final class SyncSession {
     }
 
     /// The device's network path changed (the coordinator): without one, a WebDAV target's scheduled runs wait.
-    public func networkChanged(reachable: Bool) {
+    func networkChanged(reachable: Bool) {
         guard networkDown == reachable else { return }
         networkDown = !reachable
         if reachable { networkReturnedAt = now() }
@@ -465,28 +465,28 @@ public struct SyncStatus: Equatable, Sendable {
         case synced
     }
 
-    public var syncing: Bool
-    public var problems: [WebDAVSyncProblem]
+    var syncing: Bool
+    var problems: [WebDAVSyncProblem]
     public var unconfirmed: Int
     public var arriving: Int
-    public var twoWay: Bool
-    public var lastSuccess: Date?
+    var twoWay: Bool
+    var lastSuccess: Date?
     /// The target is a folder (iCloud Drive, any folder), not a server: the wording says so.
     public var folder = false
     /// The last run waited for the device's first unlock (its password could not be read yet).
-    public var deviceLocked = false
+    var deviceLocked = false
     /// Files from other devices staged for the next unlock (`LockedStaging`).
     public var staged = 0
     /// A server target while the device has no network path: offline, whatever the last run said.
-    public var networkDown = false
+    var networkDown = false
     /// The last run moved files and was cut short; the next one continues (not a problem).
-    public var continuing = false
+    var continuing = false
     /// Files written into a provider's folder that it has not uploaded yet (offline audit P15).
-    public var providerPending = 0
+    var providerPending = 0
     /// That provider is iCloud Drive.
     public var viaICloud = false
     /// The provider's upload error for them (a `.failed` state; the app words it).
-    public var providerError: ProviderUploads.State?
+    var providerError: ProviderUploads.State?
 
     public init(syncing: Bool, problems: [WebDAVSyncProblem], unconfirmed: Int, arriving: Int, twoWay: Bool, lastSuccess: Date?,
                 folder: Bool = false, deviceLocked: Bool = false, staged: Int = 0, networkDown: Bool = false,

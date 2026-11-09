@@ -21,7 +21,7 @@ public struct AttachmentDeletion: Equatable, Sendable {
         public var note: UUID
         public var kind: Kind
 
-        public init(note: UUID, kind: Kind) {
+        init(note: UUID, kind: Kind) {
             self.note = note
             self.kind = kind
         }
@@ -35,7 +35,7 @@ public struct AttachmentDeletion: Equatable, Sendable {
     /// blob that does not verify, iCloud): one each.
     public var problems: [Problem] = []
 
-    public init() {}
+    init() {}
 }
 
 /// The unused-attachments index (docs/attachments.md §4, task E7).
@@ -63,7 +63,7 @@ extension AppModelCore {
     public nonisolated static var defaultAttachmentIndexRoot: URL { AppSupport.folder("AttachmentIndex") }
 
     /// The open vault's index files; nil while it cannot read (locked).
-    public func attachmentIndexStore() -> AttachmentIndexStore? {
+    func attachmentIndexStore() -> AttachmentIndexStore? {
         if let store = attachmentIndexStoreCache { return store }
         guard let vault, vault.canRead, let store = try? AttachmentIndexStore(root: attachmentIndexRoot, vault: vault)
         else { return nil }
@@ -75,13 +75,13 @@ extension AppModelCore {
 
     /// A `NoteWriter` wrote a delta to note `id`: index it again, with the
     /// open editor's items as its current state when it is open.
-    public func noteWritten(_ id: UUID) {
+    func noteWritten(_ id: UUID) {
         noteChanged(id, current: openEditor(id)?.blobHashes)
     }
 
     /// The revisions of note `id` changed: queue its index update. `current`
     /// is what the note now shows (a fresh summary's `blobs`), nil when unknown.
-    public func noteChanged(_ id: UUID, current: Set<String>?) {
+    func noteChanged(_ id: UUID, current: Set<String>?) {
         guard vault?.canRead == true, phase == .unlocked else { return }
         if let current { attachmentIndexQueue[id] = .some(current) } else if attachmentIndexQueue[id] == nil {
             attachmentIndexQueue[id] = .some(nil)
@@ -92,7 +92,7 @@ extension AppModelCore {
 
     /// Fresh summaries were read: queue those notes (a summary with a
     /// problem says nothing about the current state, but the note is still re-indexed).
-    public func summariesRead(_ summaries: [NoteSummary]) {
+    func summariesRead(_ summaries: [NoteSummary]) {
         for s in summaries { noteChanged(s.id, current: s.problem == nil ? Set(s.blobs.map(\.sha256)) : nil) }
     }
 
@@ -138,7 +138,7 @@ extension AppModelCore {
     }
 
     /// Notes gone from the vault: their entries go too.
-    public func forgetAttachmentIndex(_ ids: some Sequence<UUID>) {
+    func forgetAttachmentIndex(_ ids: some Sequence<UUID>) {
         let store = attachmentIndexStoreCache
         let gone = Array(ids)
         var changed = false
@@ -150,12 +150,12 @@ extension AppModelCore {
     }
 
     /// Waits until every queued update is done (tests, and Settings' "Check").
-    public func attachmentIndexIdle() async {
+    func attachmentIndexIdle() async {
         while let task = attachmentIndexTask { await task.value; if attachmentIndexTask == task { break } }
     }
 
     /// The vault closed: forget the index (its files stay for the next opening).
-    public func resetAttachmentIndex() {
+    func resetAttachmentIndex() {
         attachmentIndexTask?.cancel()
         attachmentIndexTask = nil
         attachmentIndexQueue = [:]
@@ -167,7 +167,7 @@ extension AppModelCore {
     }
 
     /// The hashes the list's summary of `id` says the note shows; nil when unknown.
-    public func summaryBlobHashes(_ id: UUID) -> Set<String>? {
+    func summaryBlobHashes(_ id: UUID) -> Set<String>? {
         guard let s = notes.first(where: { $0.id == id }), s.problem == nil, !placeholderNoteIDs.contains(id) else {
             return nil
         }
@@ -240,7 +240,7 @@ extension AppModelCore {
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
-                    result.problems.append(.init(note: note, kind: .notDownloaded(String(describing: error))))
+                    result.problems.append(.init(note: note, kind: .notDownloaded(services.describeError(error))))
                     continue
                 }
                 try ensureCurrent(gen)
@@ -258,7 +258,7 @@ extension AppModelCore {
                 }
             } catch {
                 try ensureCurrent(gen)
-                result.problems.append(.init(note: note, kind: .failed("\(error)")))
+                result.problems.append(.init(note: note, kind: .failed(services.describeError(error))))
                 continue
             }
             try ensureCurrent(gen)
@@ -280,14 +280,14 @@ extension AppModelCore {
     }
 
     /// The unused attachments that may be deleted now ("Delete All Eligible").
-    public func eligibleUnusedAttachments() -> [AttachmentStorageReport.Unused] {
+    func eligibleUnusedAttachments() -> [AttachmentStorageReport.Unused] {
         attachmentStorage().eligible(at: attachmentNow())
     }
 
     // MARK: Previews
 
     /// The largest attachment Settings decrypts for a preview.
-    public nonisolated static var maxPreviewBytes: Int { 32 << 20 }
+    nonisolated static var maxPreviewBytes: Int { 32 << 20 }
 
     /// The content of an image or PDF blob for its preview in Settings
     /// (verified, in memory only); nil for other kinds, large files, or when

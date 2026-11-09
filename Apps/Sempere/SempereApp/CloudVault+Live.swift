@@ -61,8 +61,8 @@ extension CloudVault.Hooks {
     })
 }
 
-extension CloudVault.CloudError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension CloudVault.CloudError {
+    var text: String {
         switch self {
         case let .timedOut(progress, seconds, _):
             let wait = String(localized: "\(seconds) seconds", comment: "A number of seconds")

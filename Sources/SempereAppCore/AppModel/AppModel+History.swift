@@ -9,11 +9,11 @@ import Sempere
 /// geometry) is what the read costs.
 public struct HistoryData: Sendable {
     public let noteID: UUID
-    public let revisions: [Revision]
+    let revisions: [Revision]
     /// Listed revisions that could not be read.
-    public let unreadable: [RevisionName]
+    let unreadable: [RevisionName]
     /// This installation's device id, for "This device" labels.
-    public let thisDevice: DeviceID?
+    let thisDevice: DeviceID?
     /// Restore points, oldest first (`NoteHistory.restorePoints`). Computed
     /// once: the views read it on every update.
     public let points: [RestorePoint]
@@ -23,7 +23,7 @@ public struct HistoryData: Sendable {
     /// checkpoints and editing sessions, newest first.
     public let groups: [HistoryGroupRow]
 
-    public init(noteID: UUID, revisions: [Revision], unreadable: [RevisionName], thisDevice: DeviceID?) {
+    init(noteID: UUID, revisions: [Revision], unreadable: [RevisionName], thisDevice: DeviceID?) {
         self.noteID = noteID
         self.revisions = revisions
         self.unreadable = unreadable
@@ -48,25 +48,25 @@ public struct HistoryData: Sendable {
 
     /// Whether the list says compacted revisions are not restore points (`HistoryRow.needsCompactionNotice`;
     /// the sentence is the app's).
-    public var needsCompactionNotice: Bool { HistoryRow.needsCompactionNotice(points) }
+    var needsCompactionNotice: Bool { HistoryRow.needsCompactionNotice(points) }
 }
 
 /// The last `kept` states a history browser previewed, newest last. Previews
 /// are built off the main actor, so behind a lock.
 public final class HistoryPreviews: @unchecked Sendable {
-    public static let kept = 4
+    static let kept = 4
     private let lock = NSLock()
     private var states: [(point: RevisionName, state: NoteState)] = []
     /// States built (not taken from here), for tests.
     private(set) var built = 0
 
-    public init() {}
+    init() {}
 
-    public func state(at point: RevisionName) -> NoteState? {
+    func state(at point: RevisionName) -> NoteState? {
         lock.withLock { states.first { $0.point == point }?.state }
     }
 
-    public func remember(_ state: NoteState, at point: RevisionName) {
+    func remember(_ state: NoteState, at point: RevisionName) {
         lock.withLock {
             built += 1
             states.removeAll { $0.point == point }
@@ -96,7 +96,7 @@ public struct HistoryRow: Identifiable, Hashable, Sendable {
     public let isLatest: Bool
     public let isThisDevice: Bool
 
-    public init(point: RestorePoint, isLatest: Bool, isThisDevice: Bool) {
+    init(point: RestorePoint, isLatest: Bool, isThisDevice: Bool) {
         self.point = point
         self.isLatest = isLatest
         self.isThisDevice = isThisDevice
@@ -139,7 +139,7 @@ public struct HistoryGroupRow: Identifiable, Hashable, Sendable {
     /// The group's rows, newest first; never empty.
     public let entries: [HistoryRow]
 
-    public init(kind: Kind, entries: [HistoryRow]) {
+    init(kind: Kind, entries: [HistoryRow]) {
         self.kind = kind
         self.entries = entries
     }

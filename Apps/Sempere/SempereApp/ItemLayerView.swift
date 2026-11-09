@@ -486,7 +486,7 @@ final class ItemLayerView: UIView {
                     try? await Task.sleep(for: delay)
                     guard !Task.isCancelled, self.noteID == note else { return }
                 } else {
-                    self.documentFailures[key] = "\(error)"
+                    self.documentFailures[key] = AppModel.describe(error)
                 }
                 self.documentTasks[key] = nil
                 self.layout()

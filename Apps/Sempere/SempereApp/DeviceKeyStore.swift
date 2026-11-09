@@ -13,8 +13,8 @@ import Security
 // nothing is exported: a device whose keys are lost leaves and joins again.
 
 /// `DeviceKeyStoreError` (SempereAppCore) worded.
-extension DeviceKeyStoreError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension DeviceKeyStoreError {
+    var text: String {
         switch self {
         case .notFound: return String(localized: "This device has no key for this vault.")
         case .cancelled: return String(localized: "Authentication was canceled.")

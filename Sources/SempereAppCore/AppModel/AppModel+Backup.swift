@@ -141,7 +141,7 @@ extension AppModelCore {
     /// Why a backup folder's bookmark does not resolve: its drive or share is absent (the path the bookmark
     /// recorded, `FolderBookmarks.recordedPath(of:)`, and the folder it is in, are not there: offline audit A-P2), else
     /// it is gone.
-    public nonisolated static func unresolvedBackupFolder(_ record: BackupRecord, recordedPath: String?) -> BackupAppError {
+    nonisolated static func unresolvedBackupFolder(_ record: BackupRecord, recordedPath: String?) -> BackupAppError {
         let name = record.displayPath ?? ""
         if let path = recordedPath, FolderReachability.isOnAbsentVolume(path) { return .folderUnavailable(name) }
         return .folderGone(name)
@@ -355,7 +355,7 @@ extension BackupRecord {
     /// Takes notes, files and bytes (and the last complete run) from a
     /// backup's status. A run with file errors or cut short is no backup
     /// (`BackupStatus.completed`, as `sempere backup status --max-age` counts).
-    public mutating func apply(status: BackupStatus?) {
+    mutating func apply(status: BackupStatus?) {
         guard let status else { return }
         lastBackup = status.completed
         lastNotes = status.notes

@@ -34,7 +34,7 @@ public enum VaultLocator {
     ///   one vault; `LocatorError.insideVault` for a file or folder inside a
     ///   vault (`notes/`, `notes/<id>/…`, `keys/…`, `vault.json`), whose
     ///   security scope would not reach the vault.
-    public static func resolve(_ picked: URL, fileManager fm: FileManager = .default) throws -> URL {
+    static func resolve(_ picked: URL, fileManager fm: FileManager = .default) throws -> URL {
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: picked.path, isDirectory: &isDir) else { return picked }
         func isVault(_ dir: URL) -> Bool {
@@ -69,7 +69,7 @@ public struct RecentVault: Codable, Identifiable, Hashable, Sendable {
     public var lastOpened: Date
     /// The WebDAV location (`WebDAVLocationStore`) whose local copy this is;
     /// nil for a store vault. Opened with `AppModel.openWebDAV`.
-    public var webdav: UUID?
+    var webdav: UUID?
     /// The vault id of a vault in the in-app store (`VaultLibrary.vaultStore`), opened by its id (the
     /// container's path changes when iOS moves it); nil for a WebDAV vault.
     public var storeID: UUID?
@@ -98,7 +98,7 @@ public enum FolderAccess {
 
     /// Whether `error` is the system refusing access (permissions, the
     /// sandbox), as opposed to a missing or damaged folder.
-    public static func isPermissionDenied(_ error: Error) -> Bool {
+    static func isPermissionDenied(_ error: Error) -> Bool {
         let ns = error as NSError
         if ns.domain == NSCocoaErrorDomain, [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(ns.code) {
             return true
@@ -113,7 +113,7 @@ public enum FolderAccess {
     /// Whether this account may create and replace files in `folder`, or (not made yet) in the nearest folder above it
     /// that exists: `access(W_OK)`, which says no for a folder another user owns without write permission for others,
     /// or a read-only one.
-    public static func isWritableFolder(_ folder: URL) -> Bool {
+    static func isWritableFolder(_ folder: URL) -> Bool {
         var u = folder.standardizedFileURL
         while !FileManager.default.fileExists(atPath: u.path), u.pathComponents.count > 1 { u = u.deletingLastPathComponent() }
         return FileManager.default.isWritableFile(atPath: u.path)
@@ -122,7 +122,7 @@ public enum FolderAccess {
     /// Throws `Problem.noAccess` when the folder at `url` cannot be listed for
     /// lack of permission. Other failures (not there, not a folder) are left
     /// to opening the vault, which reports them.
-    public static func check(_ url: URL, scoped: Bool, fileManager fm: FileManager = .default) throws {
+    static func check(_ url: URL, scoped: Bool, fileManager fm: FileManager = .default) throws {
         do {
             _ = try fm.contentsOfDirectory(atPath: url.path)
         } catch {
@@ -139,14 +139,14 @@ public struct NewVaultRequest: Sendable {
     /// always its home, with a device key generated here.
     public typealias KeySource = VaultCreation.RecoverySource
 
-    public var name: String
-    public var keySource: KeySource
+    var name: String
+    var keySource: KeySource
     /// Also keep a copy of the recovery key in the vault's `keys/` under this
     /// passphrase (format.md §15.11); any non-empty passphrase is taken, an empty one means none.
-    public var passphrase: String?
+    var passphrase: String?
     /// This device's name and kind in the vault's list (format.md §15.3).
     public var deviceName = "This device"
-    public var deviceKind = "ipad"
+    var deviceKind = "ipad"
     /// The passphrase copy's scrypt work factor: writers use 20; tests less.
     public var workFactor = RecoveryPassphraseCopy.workFactor
     /// This device's keys for the vault (`DeviceKeyStore.generate`, the signing pair in the Secure Enclave);
@@ -166,12 +166,12 @@ public struct NewVaultRequest: Sendable {
     }
 
     /// The keys `VaultCreation` makes the vault with (the recovery key read or generated now).
-    public func keys() throws -> VaultCreation.Keys {
+    func keys() throws -> VaultCreation.Keys {
         try VaultCreation.Keys(recovery: keySource, device: device, vaultId: vaultId)
     }
 
     /// The rest of what `VaultCreation` takes. The form's empty passphrase means no copy.
-    public var options: VaultCreation.Options {
+    var options: VaultCreation.Options {
         VaultCreation.Options(deviceName: deviceName, deviceKind: deviceKind,
                               recoveryPassphrase: passphrase.flatMap { $0.isEmpty ? nil : $0 }, workFactor: workFactor)
     }
@@ -196,7 +196,7 @@ public struct CreatedVault: Sendable {
     /// This device's keys (the vault's home).
     public var device: DeviceKeys
     /// The recents entry saved for it; nil when saving it failed.
-    public var recentID: UUID?
+    var recentID: UUID?
 }
 
 /// Recent vaults, vault creation, and the places vaults live.
@@ -207,15 +207,15 @@ public final class VaultLibrary {
         case cannotResolve(name: String)
     }
 
-    public static let maxRecents = 10
+    static let maxRecents = 10
 
     public var recents: [RecentVault] = []
-    public let storeURL: URL
+    let storeURL: URL
     /// Where every vault this device creates or copies in lives (docs/design/device-first-sync.md §2):
     /// `Application Support/Sempere/Vaults` for the app, next to `storeURL` in tests.
     public let vaultStore: VaultStore
     /// The store's vaults, as last listed (`refreshStoredVaults`).
-    public var storedVaults: [VaultStore.Entry] = []
+    var storedVaults: [VaultStore.Entry] = []
 
     /// - Parameters:
     ///   - storeURL: the `recents.json` file.
@@ -236,7 +236,7 @@ public final class VaultLibrary {
     // MARK: - Places
 
     /// Forgets a store vault that is gone from the store (its recent entries and list row).
-    public func forgetStored(_ vault: UUID) {
+    func forgetStored(_ vault: UUID) {
         storedVaults.removeAll { $0.vaultId == vault }
         let gone = recents.filter { $0.storeID == vault }.map(\.id)
         guard !gone.isEmpty else { return }
@@ -245,7 +245,7 @@ public final class VaultLibrary {
     }
 
     /// The `.sempere` folders (or those with the extension `ext`) directly inside `folder`, sorted by name.
-    public nonisolated static func vaults(in folder: URL, extension ext: String = "sempere") -> [URL] {
+    nonisolated static func vaults(in folder: URL, extension ext: String = "sempere") -> [URL] {
         let items = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
         return items.filter { $0.pathExtension == ext && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
@@ -256,14 +256,14 @@ public final class VaultLibrary {
     /// Records that the vault at `url` was opened, when it is a vault of the in-app store (the only
     /// kind the app opens); a folder outside the store (a debug launch) is not recorded.
     @discardableResult
-    public func remember(_ url: URL) -> RecentVault? {
+    func remember(_ url: URL) -> RecentVault? {
         guard let stored = vaultStore.entry(containing: url) else { return nil }
         return rememberStored(stored)
     }
 
     /// Records that the store vault `entry` was opened.
     @discardableResult
-    public func rememberStored(_ entry: VaultStore.Entry) -> RecentVault {
+    func rememberStored(_ entry: VaultStore.Entry) -> RecentVault {
         recents.removeAll { $0.storeID == entry.vaultId }
         let recent = RecentVault(id: UUID(), name: entry.name, lastOpened: Date(), storeID: entry.vaultId)
         recents.insert(recent, at: 0)
@@ -275,7 +275,7 @@ public final class VaultLibrary {
 
     /// Records that the local copy of the WebDAV location `location` was opened.
     @discardableResult
-    public func rememberWebDAV(_ location: UUID, name: String) -> RecentVault {
+    func rememberWebDAV(_ location: UUID, name: String) -> RecentVault {
         recents.removeAll { $0.webdav == location }
         let entry = RecentVault(id: UUID(), name: name, lastOpened: Date(), webdav: location)
         recents.insert(entry, at: 0)
@@ -285,7 +285,7 @@ public final class VaultLibrary {
     }
 
     /// Drops the recent entries of the WebDAV location `location` (it was removed).
-    public func forgetWebDAV(_ location: UUID) {
+    func forgetWebDAV(_ location: UUID) {
         guard recents.contains(where: { $0.webdav == location }) else { return }
         recents.removeAll { $0.webdav == location }
         save()
@@ -293,7 +293,7 @@ public final class VaultLibrary {
 
     /// Resolves a recent entry to its vault folder in the store. A WebDAV entry is opened by its
     /// location (`AppModel.open(recent:)`), so it, or a store vault that is gone, throws `cannotResolve`.
-    public func resolve(_ entry: RecentVault) throws -> URL {
+    func resolve(_ entry: RecentVault) throws -> URL {
         guard let id = entry.storeID, let stored = vaultStore.entry(id: id) else {
             throw LibraryError.cannotResolve(name: entry.name)
         }
@@ -305,7 +305,7 @@ public final class VaultLibrary {
         save()
     }
 
-    public func save() {
+    func save() {
         do {
             try FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(recents).write(to: storeURL, options: .atomic)
@@ -328,7 +328,7 @@ public final class VaultLibrary {
     /// - Parameter trust: this device's trust records; the new vault's is saved there (format.md §15.10).
     /// - Throws: `VaultStoreError.invalidName` for a name `VaultStore.folderName` refuses,
     ///   `VaultCreation.CreationError.classicRecoveryKey` for a classic recovery key.
-    public func create(_ request: NewVaultRequest, trust: (any EpochTrustStore)? = nil) async throws -> CreatedVault {
+    func create(_ request: NewVaultRequest, trust: (any EpochTrustStore)? = nil) async throws -> CreatedVault {
         _ = try VaultStore.folderName(for: request.name)
         let store = vaultStore
         let (entry, built) = try await Task.detached(priority: .userInitiated) { () throws -> (VaultStore.Entry, CreatedVault) in
@@ -344,7 +344,7 @@ public final class VaultLibrary {
 
     /// The device key file of a software pair, for tests (DEBUG builds); nil in a release, where the keys are only in
     /// the Keychain and the Secure Enclave (review of #88).
-    public nonisolated static func testKeyFile(_ device: DeviceKeys) -> String? {
+    nonisolated static func testKeyFile(_ device: DeviceKeys) -> String? {
         #if DEBUG
         return try? device.fileText(created: Date())
         #else
@@ -395,7 +395,7 @@ extension VaultLibrary {
 
     /// Copies the vault folder `source` into the store (`VaultStore.importVault`), off the main actor;
     /// `coordinated` reads it under one coordinated read of `files` (iCloud Drive, another provider).
-    public func copyIn(_ source: URL, coordinated: Bool, files: any FileCoordinating,
+    func copyIn(_ source: URL, coordinated: Bool, files: any FileCoordinating,
                        progress: @escaping @Sendable (Int, Int) -> Void) async throws -> VaultStore.Entry {
         let store = vaultStore
         let entry = try await Task.detached(priority: .userInitiated) {

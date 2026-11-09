@@ -55,7 +55,8 @@ extension AppModelCore {
         let clock = try deviceClockForWriting()
         let opened = try await Editor.open(vault: vault, noteID: noteID, clock: clock, debounce: editorDebounce,
                                            recognizer: recognizer, recognitionDelay: recognitionDelay,
-                                           verify: partialNoteVerifier(noteID), perf: services.perf)
+                                           verify: partialNoteVerifier(noteID),
+                                           describeError: services.describeError, perf: services.perf)
         try ensureCurrent(gen)
         if let open = windowEditors[noteID] {   // a concurrent call won
             Task { await opened.close() }
@@ -79,7 +80,7 @@ extension AppModelCore {
 
     /// Reloads a note window's editor after the note was deleted or restored
     /// (it opens read-only or editable); pending ink is saved first.
-    public func reopenWindowNote(_ noteID: UUID) async {
+    func reopenWindowNote(_ noteID: UUID) async {
         guard let old = windowEditors.removeValue(forKey: noteID) else { return }
         await old.close()
         _ = try? await openWindowNote(noteID)
@@ -87,7 +88,7 @@ extension AppModelCore {
 
     /// Saves and closes every note window's editor (the vault is about to
     /// change under them, `AppModel+Keys`).
-    public func closeWindowEditors() async {
+    func closeWindowEditors() async {
         let all = Array(windowEditors.values)
         windowEditors = [:]
         for editor in all { await editor.close() }
@@ -109,7 +110,7 @@ extension AppModelCore {
     /// (`RestorableSelection`): `LocalCacheKey` purpose `selection` of the open
     /// vault's secret, so the window state the system keeps in plaintext names
     /// none. Nil while the vault is locked.
-    public func selectionDigest() -> ((String) -> String)? {
+    func selectionDigest() -> ((String) -> String)? {
         guard phase == .unlocked, let vault,
               let key = try? LocalCacheKey(vault: vault, purpose: "selection", magic: [0x53, 0x4D, 0x50, 0x53, 0x01])
         else { return nil }

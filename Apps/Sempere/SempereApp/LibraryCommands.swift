@@ -79,7 +79,7 @@ enum LibraryCommands {
             // The user stopped the iCloud download.
             return nil
         } catch {
-            let detail = "\(error)"
+            let detail = AppModel.describe(error)
             model.alert = .worded(pickOnFailure
                 ? String(localized: "Could not reopen “\(entry.name)”: \(detail)\n\nChoose the vault folder again.",
                          comment: "First %@ is the vault's name, second the error (English)")

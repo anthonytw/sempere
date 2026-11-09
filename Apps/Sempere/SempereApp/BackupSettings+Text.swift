@@ -6,8 +6,8 @@ import SempereSync
 // The words of Settings ▸ Backups, the restore sheet and the backup reminder. The records, the folder rules, the
 // reminder's schedule and a run's progress are `BackupSettings.swift` in SempereAppCore.
 
-extension BackupLocation.Problem: @retroactive CustomStringConvertible {
-    public var description: String {
+extension BackupLocation.Problem {
+    var text: String {
         switch self {
         case .isVault(let name):
             return String(localized: "“\(name)” is a vault. Choose a folder outside it (an external drive, another cloud folder).",

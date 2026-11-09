@@ -93,7 +93,7 @@ struct DevicesAppTests {
         #expect(DeviceKeyProblem.expired.text.contains("has expired"))
         #expect(DeviceKeyProblem.stray.text.contains("not on its device list"))
         #expect(DeviceUnlockFailure.keysNotRead(DeviceKeyStoreError.authenticationFailed).text
-                == DeviceKeyStoreError.authenticationFailed.description)
+                == AppModel.describe(DeviceKeyStoreError.authenticationFailed))
         let didNot = DeviceUnlockFailure.keysDidNotUnlock(AppModel.KeyError.vaultChanged).text
         #expect(didNot.hasPrefix("This device's key did not unlock the vault: ") && didNot.contains("Another vault"), "\(didNot)")
     }
@@ -116,7 +116,7 @@ struct DevicesAppTests {
         #expect(DeviceChangeText.message(ReencryptRefusal.targetCannotBeOpened) == "This target cannot be opened for re-encryption.")
         #expect(DeviceChangeText.message(KeyProblem.recoveryKeyNeeded).contains("AGE-SECRET-KEY-PQ-1"))
         #expect(DeviceChangeText.message(DeviceJoinError.rootNeeded).contains("root fingerprint"))
-        #expect(AppModel.KeyError.vaultChanged.description.contains("Another vault"))
+        #expect(AppModel.describe(AppModel.KeyError.vaultChanged).contains("Another vault"))
         #expect(DeviceKeyReason.unlock(vaultName: "Mine").text.contains("Mine"))
         #expect(DeviceKeyReason.withdrawJoin.text.isEmpty)
         #expect(OwnerCheckReason.approveDevice.text == "Let a new device into the vault")

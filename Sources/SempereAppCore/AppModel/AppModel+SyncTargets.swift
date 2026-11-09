@@ -7,11 +7,11 @@ import SempereSync
 /// `close`), else its path.
 public struct FolderTargetAccess: Sendable {
     /// The folder holding the vault's copy.
-    public let folder: URL
+    let folder: URL
     private let scoped: URL?
     private let bookmarks: any FolderBookmarks
     /// A fresh bookmark when the stored one was stale (the folder moved or was renamed): the caller saves it.
-    public var refreshedBookmark: Data?
+    var refreshedBookmark: Data?
 
     /// - Parameter mount: may mount a share the bookmark names (a run the user started, Sync Now). Scheduled runs
     ///   pass false (`.withoutMounting`): the Mac would otherwise try to mount an absent share on every run.
@@ -45,7 +45,7 @@ public struct FolderTargetAccess: Sendable {
         return FolderTargetAccess(folder: URL(fileURLWithPath: path, isDirectory: true), scoped: nil, bookmarks: bookmarks)
     }
 
-    public func close() {
+    func close() {
         if let scoped { bookmarks.stopAccessing(scoped) }
     }
 }
@@ -80,7 +80,7 @@ public enum SyncTargetProblem: Error, Equatable, Sendable {
 /// any number per vault, each a `SyncSession` of the `SyncCoordinator`.
 extension AppModelCore {
     /// Every store vault's targets (the coordinator's list).
-    public func allSyncTargets() -> [SyncTargetRef] {
+    func allSyncTargets() -> [SyncTargetRef] {
         let store = syncStore
         return store.targets.all().flatMap { vault, targets -> [SyncTargetRef] in
             let entry = store.entry(id: vault)
@@ -109,7 +109,7 @@ extension AppModelCore {
     }
 
     /// The coordinator's session for a target.
-    public func makeSession(for ref: SyncTargetRef) -> SyncSession? {
+    func makeSession(for ref: SyncTargetRef) -> SyncSession? {
         let session: SyncSession?
         switch ref.target.kind {
         case .webdav:
@@ -259,14 +259,14 @@ extension AppModelCore {
     ///   #70, F1). `vault` is the open vault then, nil for an upload-only run.
     /// - a device joining the open, locked vault takes home's approval through its runs (key-hierarchy KH5): `join` is
     ///   its key then.
-    public func syncRunKeys(for target: UUID) -> (vault: Vault?, join: NativeIdentity?) {
+    func syncRunKeys(for target: UUID) -> (vault: Vault?, join: NativeIdentity?) {
         let mine = syncSessions.contains { $0.locationID == target }
         let open = mine && phase == .unlocked && !syncVaultStale
         return (open ? vault : nil, mine && phase == .locked ? joinIdentity : nil)
     }
 
     /// Two runs' local changes as one report's (a placing of staged files, then the run).
-    public nonisolated static func union(_ a: LocalChanges?, _ b: LocalChanges?) -> LocalChanges? {
+    nonisolated static func union(_ a: LocalChanges?, _ b: LocalChanges?) -> LocalChanges? {
         guard var merged = a else { return b }
         if let b { merged.formUnion(b) }
         return merged.isEmpty ? nil : merged
@@ -274,7 +274,7 @@ extension AppModelCore {
 
     /// The vault just opened: when it is a store vault, its targets' sessions become the open ones (two-way
     /// once it is unlocked), and what their runs change arrives in the model.
-    public func attachSyncTargets(vaultID: UUID, at url: URL) {
+    func attachSyncTargets(vaultID: UUID, at url: URL) {
         guard syncStore.entry(containing: url)?.vaultId == vaultID else { return }
         webdavLocations.reload()
         syncCoordinator.attachOpen(vaultID)
@@ -303,7 +303,7 @@ extension AppModelCore {
     }
 
     /// The targets changed (added, removed): sessions follow, and the open vault's list with them.
-    public func syncTargetsChanged() {
+    func syncTargetsChanged() {
         webdavLocations.reload()
         syncCoordinator.refresh()
         if let open = syncCoordinator.openVault { adoptOpenSessions(open) }
@@ -337,7 +337,7 @@ extension AppModelCore {
         } catch SyncTargetError.duplicate {
             throw SyncTargetProblem.duplicate
         } catch {
-            throw SyncTargetProblem.other(String(describing: error))
+            throw SyncTargetProblem.other(services.describeError(error))
         }
         syncTargetsChanged()
         syncCoordinator.sessions[target.id]?.demand()
@@ -347,7 +347,7 @@ extension AppModelCore {
     /// Whether this account may create and replace files in `folder`, or (not made yet) in the nearest folder above it
     /// that exists: `access(W_OK)`, which says no for a folder another user owns without write permission for others,
     /// or a read-only one.
-    public nonisolated static func isWritableFolder(_ folder: URL) -> Bool { FolderAccess.isWritableFolder(folder) }
+    nonisolated static func isWritableFolder(_ folder: URL) -> Bool { FolderAccess.isWritableFolder(folder) }
 
     /// The path of `inner` below `base` ("Wompa.sempere"), nil when it is `base` itself or not below it.
     ///
@@ -400,7 +400,7 @@ extension AppModelCore {
     }
 
     /// Asks iCloud Drive for `item` (a package downloads whole), off the main actor, under `scope`'s security scope.
-    public func requestDownload(of item: URL, scope: URL) {
+    func requestDownload(of item: URL, scope: URL) {
         let hooks = iCloudHooks, bookmarks = services.bookmarks, perf = services.perf
         pickedDownloadRequest = Task.detached(priority: .userInitiated) {
             let scoped = bookmarks.startAccessing(scope)
@@ -431,7 +431,7 @@ extension AppModelCore {
     }
 
     /// `VaultStore.checkFolderTarget`, its refusals worded for the app.
-    public nonisolated static func checkFolderTarget(_ folder: URL, in store: VaultStore) throws {
+    nonisolated static func checkFolderTarget(_ folder: URL, in store: VaultStore) throws {
         do { try store.checkFolderTarget(folder) } catch SyncTargetError.isBackup {
             throw SyncTargetProblem.isBackup
         } catch SyncTargetError.insideVault(_, let holder) {
@@ -470,7 +470,7 @@ extension AppModelCore {
                 $0.name = VaultStore.displayName(of: folder)
             }
         } catch {
-            throw SyncTargetProblem.other(String(describing: error))
+            throw SyncTargetProblem.other(services.describeError(error))
         }
         store.targets.resetState(id, of: vaultID)
         syncTargetsChanged()

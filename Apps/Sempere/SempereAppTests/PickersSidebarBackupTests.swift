@@ -61,7 +61,7 @@ struct PickersSidebarBackupTests {
     }
 
     @Test func aFolderProblemAndARunFailureHaveTheirOwnTitles() {
-        let folder = BackupFailure(kind: .folder, message: BackupLocation.Problem.otherVaultsBackup("Drive").description)
+        let folder = BackupFailure(kind: .folder, message: AppModel.describe(BackupLocation.Problem.otherVaultsBackup("Drive")))
         #expect(folder.title == "Choose Another Backup Folder")
         #expect(folder.message.contains("another vault"))
         #expect(BackupFailure(kind: .run, message: "x").title == "Backup Failed")

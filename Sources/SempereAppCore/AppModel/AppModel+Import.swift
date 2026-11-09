@@ -23,7 +23,7 @@ public struct ImportOptions: Equatable, Sendable {
     /// The values passed to `importer`: only the options the app offers (`appTitle`) may be set; every other
     /// option (`--overwrite`, `--tag`) keeps the importer's default, so an import from the app never replaces a
     /// note that is already in the vault (and may be open in an editor).
-    public func appValues(for importer: any VaultImporter) -> ImporterOptionValues {
+    func appValues(for importer: any VaultImporter) -> ImporterOptionValues {
         let offered = Set(importer.options.filter { $0.appTitle != nil }.map(\.id))
         return ImporterOptionValues(values.values.filter { offered.contains($0.key) })
     }
@@ -40,13 +40,13 @@ public struct ImportDetails: Equatable, Sendable {
         public var count: Int
         public var id: String { key }
 
-        public init(key: String, english: String, count: Int) {
+        init(key: String, english: String, count: Int) {
             self.key = key
             self.english = english
             self.count = count
         }
 
-        public init(_ count: ImporterCount) {
+        init(_ count: ImporterCount) {
             self.init(key: count.id, english: count.english, count: count.count)
         }
     }
@@ -67,8 +67,8 @@ public struct ImportDetails: Equatable, Sendable {
     public var recognizedPages = 0
     public var recognitionFailed = 0
 
-    public static let maxWarnings = 300
-    public static let maxWarningLength = 400
+    static let maxWarnings = 300
+    static let maxWarningLength = 400
 
     public init() {}
 

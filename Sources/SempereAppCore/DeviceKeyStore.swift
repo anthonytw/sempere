@@ -20,7 +20,7 @@ public enum DeviceKeyStoreError: Error, Equatable, Sendable {
     case keychain(Int32)
 
     /// The Keychain's `errSecDuplicateItem`: keys are stored for the vault already.
-    public static let duplicateItem = DeviceKeyStoreError.keychain(-25299)
+    static let duplicateItem = DeviceKeyStoreError.keychain(-25299)
 }
 
 /// What a read of this device's keys is for: the app's store shows it in the Face ID prompt.
@@ -67,11 +67,11 @@ public final class MemoryDeviceKeyStore: DeviceKeyStore, @unchecked Sendable {
     public init() {}
 
     /// Reads made (tests count Face ID prompts).
-    public var reads: Int { lock.withLock { _reads } }
+    var reads: Int { lock.withLock { _reads } }
     /// The reason of each read, in order.
-    public var reasons: [DeviceKeyReason] { lock.withLock { _reasons } }
+    var reasons: [DeviceKeyReason] { lock.withLock { _reasons } }
     /// Set: every read fails as an unreadable key would (Face ID re-enrolled), tests.
-    public var unreadable: Bool {
+    var unreadable: Bool {
         get { lock.withLock { _unreadable } }
         set { lock.withLock { _unreadable = newValue } }
     }
@@ -136,8 +136,8 @@ public protocol OwnerAuthenticator: Sendable {
 }
 
 /// No device owner can be asked (a front end without one): every check fails with this.
-public struct OwnerCheckUnavailable: Error, Equatable, Sendable {
-    public init() {}
+struct OwnerCheckUnavailable: Error, Equatable, Sendable {
+    init() {}
 }
 
 /// The owner check of a front end with no device owner to ask (headless, `AppModelServices.headless()`): every check
@@ -163,13 +163,13 @@ public final class ScriptedOwnerCheck: OwnerAuthenticator, @unchecked Sendable {
     public init(_ answer: Answer) { _answer = answer }
 
     /// The answer the next checks get.
-    public var answer: Answer {
+    var answer: Answer {
         get { lock.withLock { _answer } }
         set { lock.withLock { _answer = newValue } }
     }
 
     /// The reason of each check, in order.
-    public var reasons: [OwnerCheckReason] { lock.withLock { _reasons } }
+    var reasons: [OwnerCheckReason] { lock.withLock { _reasons } }
 
     public func authenticate(reason: OwnerCheckReason) async throws {
         let answer = lock.withLock { () -> Answer in

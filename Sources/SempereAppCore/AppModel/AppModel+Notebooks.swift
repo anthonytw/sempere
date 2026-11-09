@@ -74,7 +74,7 @@ extension AppModelCore {
 
     /// Writes notebook records with `write` under the edit gate (no note edit runs
     /// meanwhile), then re-reads them.
-    public func writeNotebookRecords(_ write: @escaping @Sendable (Vault) throws -> Void) async throws {
+    func writeNotebookRecords(_ write: @escaping @Sendable (Vault) throws -> Void) async throws {
         await editGate.acquire()
         defer { editGate.release() }
         guard let vault else { throw ModelError.noVaultOpen }

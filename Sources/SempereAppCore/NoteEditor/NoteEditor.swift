@@ -55,7 +55,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
 
     /// The note was opened again because another device changed the vault's keys (the editor before it
     /// was closed): the canvas says "Updated from another device", as after a merge.
-    public func noteReopenedForRemoteChange() { remoteUpdates += 1 }
+    func noteReopenedForRemoteChange() { remoteUpdates += 1 }
     /// When the last of them happened.
     public internal(set) var lastRemoteUpdate: Date?
     /// Canvases showing this note's ink (`attachInkView`).
@@ -76,11 +76,11 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     public var revealToken = 0
     /// The query and starting page to look for once the note is readable
     /// (`highlightSearch(query:page:)` while it is still opening).
-    @ObservationIgnored public var pendingSearch: (query: String, page: UUID?)?
+    @ObservationIgnored var pendingSearch: (query: String, page: UUID?)?
 
     /// The pages (of a paged note's stack, each canvas has its own selection) with an item
     /// selected; the Mac menu's item commands are enabled while it is not empty.
-    public internal(set) var pagesWithSelectedItem: Set<UUID> = []
+    var pagesWithSelectedItem: Set<UUID> = []
     public var hasItemSelection: Bool { !pagesWithSelectedItem.isEmpty }
 
     /// A canvas reports whether `page` has a selected item (`ItemSelectionController`).
@@ -95,7 +95,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// The app's own state for this editor (`NoteCanvas.Glue`).
     @ObservationIgnored public let glue: Canvas.Glue
     /// Where timings go (the app's signposts).
-    @ObservationIgnored public let perf: any PerfSink
+    @ObservationIgnored let perf: any PerfSink
     @ObservationIgnored var ledgers: [UUID: StrokeLedger] = [:]
     /// The drawing each page's canvas showed last, one-to-one with its
     /// ledger's entries: shown again as it is (no conversion) while the
@@ -112,16 +112,16 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// prepared (`prepareDrawing`), so a test can change the page meanwhile.
     @ObservationIgnored public var prepareHook: (@Sendable () async -> Void)?
     /// Pages whose strokes changed since the note was read.
-    @ObservationIgnored public internal(set) var dirtyPages: Set<UUID> = []
+    @ObservationIgnored var dirtyPages: Set<UUID> = []
     /// `pagesForHighlight`'s last answer and what it was made from (`NoteEditor+SearchHighlight`).
     @ObservationIgnored var highlightCache: (source: [Page], dirty: Set<UUID>, preparing: Bool, result: [Page])?
     /// Pages whose staleness `pagesForHighlight` worked out (test and measurement counter).
     @ObservationIgnored public var highlightPagesChecked = 0
     /// Where page drawings are cached between opens (nil: no cache).
-    @ObservationIgnored public internal(set) var drawingCache: DrawingCache?
+    @ObservationIgnored var drawingCache: DrawingCache?
     /// The note version the editor was read from (`DrawingCache.Key`); nil
     /// when it cannot be cached (unreadable revisions).
-    @ObservationIgnored public internal(set) var cacheKey: DrawingCache.Key?
+    @ObservationIgnored var cacheKey: DrawingCache.Key?
     /// Revisions this editor wrote, by file name.
     @ObservationIgnored var writtenNames: [String] = []
     /// Bumped whenever this editor starts writing a revision (`mergeRevisions`
@@ -134,7 +134,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// (on open and by `mergeRevisions`) and those it wrote. A name listed in
     /// the note's folder that is not here is a revision written elsewhere
     /// (`hasUnmergedRevisions`).
-    @ObservationIgnored public internal(set) var knownRevisionNames: Set<String> = []
+    @ObservationIgnored var knownRevisionNames: Set<String> = []
     /// The revisions the last read decoded, by file name: a merge reads only
     /// the files that are new since (`read(reuse:)`). They share most of
     /// their storage (stroke points) with the note's state.
@@ -145,14 +145,17 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// changed. Nil until the first merge (opening reconstructs without it).
     @ObservationIgnored var reduced: ReducedNote?
     /// What the last merge cost (tests and `Perf`).
-    @ObservationIgnored public internal(set) var lastMergeWork = MergeWork()
+    @ObservationIgnored var lastMergeWork = MergeWork()
     /// Test seam: false makes every merge reduce the whole note and compare every page, as before `reduced`.
-    @ObservationIgnored public var incrementalMerges = true
+    @ObservationIgnored var incrementalMerges = true
     /// The read that completes an editor opened from the cache.
     @ObservationIgnored var fullLoad: Task<Void, Never>?
     /// Called when that read fails (`failLoading`), with the error: the
     /// model shows the failure instead of a partial, read-only canvas.
-    @ObservationIgnored public var onLoadFailed: (@MainActor (any Error) -> Void)?
+    /// Words the errors this editor keeps as text (`readOnly`'s load failure, `saveFailure`, the recognition and
+    /// recording failures): the model's `services.describeError`, set when it opens the editor.
+    @ObservationIgnored var describeError: ErrorDescriber = plainErrorDescription
+    @ObservationIgnored var onLoadFailed: (@MainActor (any Error) -> Void)?
     /// Called once a recording made in this note is saved (by the app's microphone half), with its audio file and
     /// the session folder holding it: the model transcribes it when that setting is on, then hands the folder to
     /// `AppModelServices.finishRecordingSave` (`configureRecordings`). Nil: the recorder deletes the folder itself.
@@ -161,7 +164,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// unchecked from then on.
     @ObservationIgnored var finishing = false
     /// `note.firstRender`: from the open until the canvas shows ink (`didShowInk`).
-    @ObservationIgnored public var openInterval: PerfInterval?
+    @ObservationIgnored var openInterval: PerfInterval?
     @ObservationIgnored var committedPageSize: PageSize
     /// Page additions and paper changes not yet written (written before any stroke ops).
     @ObservationIgnored var pendingPageOps: [Op] = []
@@ -169,7 +172,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// This opening of the note (format.md §5.8.2): written on every delta the
     /// editor saves, so a history view starts a new session when the note is
     /// closed and opened again. A new editor is a new session.
-    @ObservationIgnored public internal(set) var editingSession = EditingSession.newID()
+    @ObservationIgnored var editingSession = EditingSession.newID()
     @ObservationIgnored let debounce: Duration
     @ObservationIgnored var timer: Task<Void, Never>?
     @ObservationIgnored var chain: Task<Void, Never>?
@@ -185,7 +188,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
         didSet { if recognizer != nil { scheduleRecognition() } }
     }
     /// Called with the note id after a page's recognition was written.
-    @ObservationIgnored public var onRecognized: (@MainActor (UUID) -> Void)?
+    @ObservationIgnored var onRecognized: (@MainActor (UUID) -> Void)?
     /// Pages whose strokes this editor changed and whose recognition is not
     /// redone yet: it replaces recognition that cannot be checked (an import).
     @ObservationIgnored var touchedPages: Set<UUID> = []
@@ -216,9 +219,9 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// The strokes playback highlights, indexed (`updatePlaybackHighlight`).
     @ObservationIgnored var playbackIndex: PlaybackIndex?
     /// Recordings being transcribed now.
-    public var transcribing: Set<UUID> = []
+    var transcribing: Set<UUID> = []
     /// Called to play a recording from a time (a tap on linked ink).
-    @ObservationIgnored public var onPlayRequest: ((Recording, Double) -> Void)?
+    @ObservationIgnored var onPlayRequest: ((Recording, Double) -> Void)?
     /// Plays the note's recordings (`AppModel.play`); nil until one is played.
     public var player: RecordingPlayer?
 
@@ -229,9 +232,9 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// Default pause before an autosave.
     public static var defaultDebounce: Duration { NoteEditorDefaults.debounce }
     /// Default pause after the last stroke change before pages are recognized.
-    public static var defaultRecognitionDelay: Duration { NoteEditorDefaults.recognitionDelay }
+    static var defaultRecognitionDelay: Duration { NoteEditorDefaults.recognitionDelay }
 
-    public init(noteID: UUID, state: NoteState, writer: NoteWriter?, readOnly: NoteReadOnly?,
+    init(noteID: UUID, state: NoteState, writer: NoteWriter?, readOnly: NoteReadOnly?,
                 debounce: Duration = NoteEditorDefaults.debounce, recognizer: (any PageRecognizing)? = nil,
                 recognitionDelay: Duration = NoteEditorDefaults.recognitionDelay, perf: any PerfSink = NoPerfSink()) {
         self.noteID = noteID
@@ -271,21 +274,21 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     }
 
     /// The cost of one merge, as counted (`lastMergeWork`).
-    public struct MergeWork: Equatable, Sendable {
+    struct MergeWork: Equatable, Sendable {
         /// Revision files decrypted and decoded by the read.
-        public var decoded = 0
+        var decoded = 0
         /// Revisions reduced: only the new ones, or all of them.
-        public var reduced = 0
+        var reduced = 0
         /// Pages whose content was compared on the main actor.
-        public var pagesCompared = 0
+        var pagesCompared = 0
         /// Strokes visited on the main actor (ledger merges, id comparisons, the shown-state comparison).
-        public var strokesVisited = 0
+        var strokesVisited = 0
         /// Main-actor time of the apply, and of it the time the canvas took to build
         /// the changed pages' drawings (`NoteCanvas.drawing(of:)`, the same either way).
-        public var applyTime: Duration = .zero
-        public var drawingTime: Duration = .zero
+        var applyTime: Duration = .zero
+        var drawingTime: Duration = .zero
 
-        public init(decoded: Int = 0, reduced: Int = 0) {
+        init(decoded: Int = 0, reduced: Int = 0) {
             self.decoded = decoded
             self.reduced = reduced
         }
@@ -312,6 +315,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
                             cache: DrawingCache? = nil, listedNames: [String]? = nil,
                             beforeFinishing: (@Sendable () async -> Void)? = nil,
                             redownload: (@MainActor @Sendable () async throws -> Void)? = nil,
+                            describeError: @escaping ErrorDescriber = plainErrorDescription,
                             perf: any PerfSink = NoPerfSink()) async throws -> NoteEditorModel {
         if let cache, let listedNames, !listedNames.isEmpty {
             let key = DrawingCache.Key(note: noteID, revisions: listedNames)
@@ -321,6 +325,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
             if let layout {
                 let editor = NoteEditorModel(noteID: noteID, layout: layout, debounce: debounce, recognizer: recognizer,
                                         recognitionDelay: recognitionDelay, perf: perf)
+                editor.describeError = describeError
                 editor.drawingCache = cache
                 editor.cacheKey = key
                 editor.fullLoad = Task { [weak editor] in
@@ -360,6 +365,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
                                                 session: session) : nil
         let editor = NoteEditorModel(noteID: noteID, state: loaded.state, writer: writer, readOnly: reason,
                                 debounce: debounce, recognizer: recognizer, recognitionDelay: recognitionDelay, perf: perf)
+        editor.describeError = describeError
         editor.editingSession = session
         editor.knownRevisionNames = Set(loaded.names)
         editor.decodedRevisions = loaded.decoded
@@ -506,7 +512,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// cached ink stays on screen, read-only, with the reason.
     func failLoading(_ error: any Error) {
         guard isPreparing else { return }
-        readOnly = .loadFailed("\(error)")
+        readOnly = .loadFailed(describeError(error))
         loadFailed = true
         isPreparing = false
         onLoadFailed?(error)
@@ -514,7 +520,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
 
     /// Stops the background read of an editor opened from the cache that
     /// will not be shown (nothing is written; `close` also does this).
-    public func cancelLoading() {
+    func cancelLoading() {
         fullLoad?.cancel()
     }
 
@@ -700,7 +706,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// scrolls to the match itself (`PageStackHost.performReveal`), and a jump to the top of the page
     /// that reached the stack after the reveal scrolled the match back off screen (SwiftUI may hand
     /// the stack the new `revealToken` and the new `pageJump` in two updates). Saves like `selectPage`.
-    public func showPageOfMatch(id: UUID) {
+    func showPageOfMatch(id: UUID) {
         guard let index = pages.firstIndex(where: { $0.id == id }), index != pageIndex else { return }
         pageIndex = index
         Task { await flush() }
@@ -901,13 +907,13 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     public internal(set) var itemRevisions: [UUID: Int] = [:]
 
     /// The writer, for attachment blobs (`NoteEditor+Items`); nil when read-only.
-    public var attachmentWriter: NoteWriter? { isShutDown ? nil : writer }
+    var attachmentWriter: NoteWriter? { isShutDown ? nil : writer }
 
     /// iCloud Drive: makes this note's copy of a blob local before the blob is
     /// written or copied into the note (set by the model; nil elsewhere). A
     /// copy iCloud lists but has not downloaded would otherwise not be found,
     /// and a second file written under the same write-once name.
-    @ObservationIgnored public var prepareBlobWrite: (@Sendable (BlobRef) async throws -> Void)?
+    @ObservationIgnored var prepareBlobWrite: (@Sendable (BlobRef) async throws -> Void)?
 
     /// Takes an item gesture's page and queues its ops, then saves them as
     /// one delta (with any ink still pending). False when the note cannot
@@ -926,7 +932,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// Shows item changes a delta written elsewhere already holds (a
     /// recording's card, `NoteEditor+Recordings`): `added` items on their
     /// pages, `removed` item ids gone from theirs. Writes nothing.
-    public func showWrittenItems(added: [(page: UUID, item: Item)], removed: [(page: UUID, item: UUID)] = []) {
+    func showWrittenItems(added: [(page: UUID, item: Item)], removed: [(page: UUID, item: UUID)] = []) {
         for (page, item) in added {
             guard let i = pages.firstIndex(where: { $0.id == page }) else { continue }
             pages[i].items.append(item)
@@ -942,7 +948,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
 
     /// Takes pages built elsewhere (a PDF's, `NoteEditor+Insert`), shows
     /// `show`, and saves them at once as one delta.
-    public func applyInsertedPages(_ edit: PageEdit, show: UUID?) {
+    func applyInsertedPages(_ edit: PageEdit, show: UUID?) {
         guard !isReadOnly, !isShutDown else { return }
         apply(edit, show: show)
         for page in edit.pages where !page.items.isEmpty { itemRevisions[page.id, default: 0] &+= 1 }
@@ -1017,7 +1023,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
 
     /// Grows an infinite page so ink stays at least `growMargin` above its
     /// bottom. Finite pages never change size; pages never shrink.
-    public func growPage(toFit inkMaxY: Double) {
+    func growPage(toFit inkMaxY: Double) {
         guard pageSize.infinite, inkMaxY.isFinite, inkMaxY > pageSize.height - Self.growMargin else { return }
         pageSize.height = (inkMaxY + Self.growStep).rounded(.up)
     }
@@ -1074,7 +1080,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// their live strokes, in the background. Nothing when the note could
     /// not be cached, a save failed or something is still unsaved; the
     /// version it replaces is dropped from the cache.
-    public func storeForNextOpen() {
+    func storeForNextOpen() {
         guard let cache = drawingCache, let base = cacheKey, !isPreparing, readOnly == nil, saveFailure == nil,
               pendingPageOps.isEmpty, pageSize == committedPageSize,
               !pages.contains(where: { page in ledgers[page.id]?.hasPending ?? false })
@@ -1110,7 +1116,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
 
     /// Writes `ops` as one delta of their own, after any save in flight
     /// (recording changes, which touch no page).
-    public func writeDirect(_ ops: [Op], with writer: NoteWriter) async throws {
+    func writeDirect(_ ops: [Op], with writer: NoteWriter) async throws {
         let previous = chain
         let task = Task { () async throws -> RevisionName in
             await previous?.value
@@ -1147,7 +1153,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
             knownRevisionNames.insert(name.filename)
         } catch {
             for (id, save) in saves { ledgers[id]?.saveFailed(save) }
-            saveFailure = "\(error)"
+            saveFailure = describeError(error)
             return
         }
         pendingPageOps.removeFirst(pageOps.count)
@@ -1188,9 +1194,9 @@ struct NoteLoad: Sendable {
 /// The editor's defaults (`NoteEditor.defaultDebounce` and the others; a generic type has no stored statics).
 public enum NoteEditorDefaults {
     /// Ink closer than this to the bottom of an infinite page grows it.
-    public static let growMargin = 200.0
+    static let growMargin = 200.0
     /// How far below the ink an infinite page grows to.
-    public static let growStep = 400.0
+    static let growStep = 400.0
     /// Pause before an autosave.
     public static let debounce = Duration.milliseconds(1500)
     /// Pause after the last stroke change before pages are recognized.

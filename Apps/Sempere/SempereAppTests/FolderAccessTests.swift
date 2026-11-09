@@ -7,9 +7,9 @@ import SempereAppCore
 /// vault opens (`FolderAccess`, SempereAppCore): `VaultLibraryTests` on Linux.
 struct FolderAccessTests {
     @Test func theMessageNamesTheFolderAndTheWayOut() {
-        let text = FolderAccess.Problem.noAccess(name: "Notes", scoped: false).description
+        let text = AppModel.describe(FolderAccess.Problem.noAccess(name: "Notes", scoped: false))
         #expect(text.contains("“Notes”"))
         #expect(text.contains("choose"))
-        #expect(!FolderAccess.Problem.noAccess(name: "Notes", scoped: true).description.contains("did not come back"))
+        #expect(!AppModel.describe(FolderAccess.Problem.noAccess(name: "Notes", scoped: true)).contains("did not come back"))
     }
 }

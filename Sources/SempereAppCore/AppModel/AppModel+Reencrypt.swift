@@ -13,9 +13,9 @@ public struct ReencryptProgress: Equatable, Sendable {
     /// The last step's problems (files the pass could not do, set-aside files), for the sheet.
     public var problems: [String] = []
     /// The finish happened in the last step.
-    public var finished = false
+    var finished = false
 
-    public init(status: ReencryptStatus?, targets: [TargetLine] = [], problems: [String] = [], finished: Bool = false) {
+    init(status: ReencryptStatus?, targets: [TargetLine] = [], problems: [String] = [], finished: Bool = false) {
         self.status = status
         self.targets = targets
         self.problems = problems
@@ -32,7 +32,7 @@ public struct ReencryptProgress: Equatable, Sendable {
         /// 0…1 of the target's files under the new keys.
         public var fraction: Double { files == 0 ? (confirmed ? 1 : 0) : Double(current) / Double(files) }
 
-        public init(name: String, reached: Bool, confirmed: Bool, files: Int, current: Int) {
+        init(name: String, reached: Bool, confirmed: Bool, files: Int, current: Int) {
             self.name = name
             self.reached = reached
             self.confirmed = confirmed
@@ -226,7 +226,7 @@ extension AppModelCore {
 
     /// The open vault's targets as the sync engine's remotes; `close` ends their access. With `requireAll`, a target
     /// that cannot be reached refuses (design §7.1 step 2: every target reachable at the start).
-    public func openReencryptTargets(requireAll: Bool) async throws -> (targets: [ReencryptCoordinator.Target], close: @Sendable () -> Void) {
+    func openReencryptTargets(requireAll: Bool) async throws -> (targets: [ReencryptCoordinator.Target], close: @Sendable () -> Void) {
         var targets: [ReencryptCoordinator.Target] = []
         var closers: [@Sendable () -> Void] = []
         for session in syncSessions {

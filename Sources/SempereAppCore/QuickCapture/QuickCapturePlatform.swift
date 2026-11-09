@@ -109,12 +109,12 @@ public final class NoCaptureAudio: CaptureAudio {
 
 /// The recorder of `NoCaptureAudio`: its session never activates.
 @MainActor
-public final class NoCaptureRecorder: CaptureRecorder {
+final class NoCaptureRecorder: CaptureRecorder {
     public struct Unavailable: Error {}
-    public init() {}
-    public func activateSession(mixable: Bool) async throws { throw Unavailable() }
-    public func deactivate() {}
-    public func makeRecording(format: RecordingFormat, root: URL, segmentExtension: String) -> any CaptureRecording {
+    init() {}
+    func activateSession(mixable: Bool) async throws { throw Unavailable() }
+    func deactivate() {}
+    func makeRecording(format: RecordingFormat, root: URL, segmentExtension: String) -> any CaptureRecording {
         UnstartableRecording(folder: root.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true))
     }
 }

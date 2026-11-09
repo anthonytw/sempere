@@ -30,7 +30,7 @@ extension NoteEditorModel {
     /// Whether the editor can take revisions written elsewhere in place
     /// (`mergeRevisions`): it can save. A read-only editor (Recently Deleted,
     /// unreadable revisions) is reopened instead, it has nothing unsaved.
-    public var mergesInPlace: Bool { writer != nil && !loadFailed }
+    var mergesInPlace: Bool { writer != nil && !loadFailed }
 
     /// True while a canvas showing this note is in the middle of a stroke or
     /// an object-eraser gesture: its drawing must not be replaced then.

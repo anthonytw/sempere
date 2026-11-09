@@ -35,7 +35,7 @@ public enum NoteMode: String, Equatable, Sendable, CaseIterable {
     public enum Button: Equatable, Sendable, CaseIterable {
         case annotate, hand
 
-        public var mode: NoteMode { self == .annotate ? .annotating : .hand }
+        var mode: NoteMode { self == .annotate ? .annotating : .hand }
     }
 
     /// A note opens in reading mode (and the next note does too).
@@ -56,9 +56,9 @@ public enum NoteMode: String, Equatable, Sendable, CaseIterable {
     public func toolPicked() -> NoteMode { .annotating }
 
     /// Selection mode: the Hand.
-    public var selectingItems: Bool { self == .hand }
+    var selectingItems: Bool { self == .hand }
     /// The drawing palette: only while annotating.
-    public var showsPalette: Bool { self == .annotating }
+    var showsPalette: Bool { self == .annotating }
 
     /// A debug launch's mode for the notes it opens (`SEMPERE_DEBUG_NOTE_MODE`: reading, hand or
     /// annotating; "annotate" too), so UI tests written for drawing open the note ready to draw.
@@ -96,7 +96,7 @@ public struct NoteModeInput: Equatable, Sendable {
     /// No tap writes: the button below the last page (Add Page) is hidden.
     public var reading = false
     /// A finger is ink on an iPhone (its drawing policy `.anyInput`; scrolling then takes two fingers).
-    public var fingersDraw = false
+    var fingersDraw = false
 
     /// Everything off unless given (`of(_:on:)` sets what a mode turns on).
     public init(drawingSuspended: Bool = false, pencilAnnotates: Bool = false, selectingItems: Bool = false,

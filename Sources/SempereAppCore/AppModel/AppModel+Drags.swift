@@ -154,7 +154,7 @@ extension AppModelCore {
 
     /// Flashes `target`'s sidebar row after a drop moved something there (`landedDrop`), until
     /// `landedDropDuration` has passed or another drop lands.
-    public func flashLandedDrop(_ target: DropTarget) {
+    func flashLandedDrop(_ target: DropTarget) {
         let landed = LandedDrop(target: target)
         landedDrop = landed
         let duration = landedDropDuration

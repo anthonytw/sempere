@@ -13,16 +13,16 @@ import SempereSync
 
 /// One note folder as a pass lists it: the revision file names, nothing else.
 public struct NoteListing: Equatable, Sendable {
-    public var id: UUID
+    var id: UUID
     /// Sorted canonical revision file names (`RevisionName.filename`);
     /// iCloud placeholders (`.<name>.icloud`) count under their real name.
     public var names: [String]
 
     /// The folder lists no revision: iCloud has not listed it yet (a note
     /// always has one), so it is never taken for an empty note.
-    public var isUnlisted: Bool { names.isEmpty }
+    var isUnlisted: Bool { names.isEmpty }
 
-    public init(id: UUID, names: [String]) {
+    init(id: UUID, names: [String]) {
         self.id = id
         self.names = names
     }
@@ -67,7 +67,7 @@ public enum VaultEnumeration {
 
     /// The canonical revision names among a folder's entries, placeholders
     /// mapped to their real names, sorted and without duplicates.
-    public static func revisionNames(in entries: [String]) -> [String] {
+    static func revisionNames(in entries: [String]) -> [String] {
         var names = Set<String>()
         for entry in entries {
             let real = CloudPlaceholder.realName(of: entry) ?? entry
@@ -79,13 +79,13 @@ public enum VaultEnumeration {
 }
 
 /// How a listing compares with what the list shows.
-public struct IndexDiff: Equatable, Sendable {
+struct IndexDiff: Equatable, Sendable {
     /// Listed with exactly the names their summary was made from.
-    public var unchanged: [UUID] = []
+    var unchanged: [UUID] = []
     /// Listed with other names, or not in the index: to be read.
-    public var changed: [UUID] = []
+    var changed: [UUID] = []
     /// In the index or the list, in scope, but no longer listed.
-    public var removed: [UUID] = []
+    var removed: [UUID] = []
 
     /// Compares `listings` with `indexed` (note id → sorted names its shown
     /// summary was made from).
@@ -94,7 +94,7 @@ public struct IndexDiff: Equatable, Sendable {
     ///   - known: notes shown or indexed before the listing; only these can
     ///     be `removed` (a note created meanwhile was not listed yet).
     ///   - scope: the notes the listing covered (nil: all of them).
-    public static func compute(listings: [NoteListing], indexed: [UUID: [String]], known: Set<UUID>,
+    static func compute(listings: [NoteListing], indexed: [UUID: [String]], known: Set<UUID>,
                         scope: Set<UUID>? = nil) -> IndexDiff {
         var diff = IndexDiff()
         var listed = Set<UUID>()
@@ -107,7 +107,7 @@ public struct IndexDiff: Equatable, Sendable {
         return diff
     }
 
-    public init(unchanged: [UUID] = [], changed: [UUID] = [], removed: [UUID] = []) {
+    init(unchanged: [UUID] = [], changed: [UUID] = [], removed: [UUID] = []) {
         self.unchanged = unchanged
         self.changed = changed
         self.removed = removed

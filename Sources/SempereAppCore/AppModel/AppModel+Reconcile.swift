@@ -164,7 +164,7 @@ extension AppModelCore {
     }
 
     /// The row of a pending note nothing is known about yet (no published summary).
-    public nonisolated static func placeholderSummary(_ id: UUID) -> NoteSummary {
+    nonisolated static func placeholderSummary(_ id: UUID) -> NoteSummary {
         NoteSummary(id: id, title: "", tags: [], notebook: nil, deleted: false, pages: 0, strokes: 0, modified: nil,
                     problem: nil)
     }
@@ -176,7 +176,7 @@ extension AppModelCore {
     /// pass then fetches nothing, since the index will show the notes and
     /// say which changed. Without one (the vault is new on this device) the
     /// notes are downloaded while the key is typed.
-    public var hasLocalIndex: Bool {
+    var hasLocalIndex: Bool {
         guard let marker = indexMarkerURL else { return false }
         return FileManager.default.fileExists(atPath: marker.path)
     }
@@ -184,13 +184,13 @@ extension AppModelCore {
     /// `<summary cache dir>/indexed-<SHA-256 of the vault id>`: an empty file
     /// saying an index of this vault exists (the index's own name needs the
     /// vault secret). Nil without a cache directory (tests).
-    public var indexMarkerURL: URL? {
+    var indexMarkerURL: URL? {
         guard let dir = summaryCacheDirectory, let vault else { return nil }
         return dir.appendingPathComponent("indexed-" + LocalCacheKey.digestHex(vault.vaultId.uuidString.lowercased()))
     }
 
     /// Records that the open vault has an index on this device.
-    public func markIndexed() {
+    func markIndexed() {
         guard summaryCache != nil, let marker = indexMarkerURL, !FileManager.default.fileExists(atPath: marker.path) else { return }
         _ = FileManager.default.createFile(atPath: marker.path, contents: Data())
     }

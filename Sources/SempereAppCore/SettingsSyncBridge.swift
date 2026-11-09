@@ -18,7 +18,7 @@ public struct SettingsSyncPrompt: Identifiable, Equatable, Sendable {
     public let id = UUID()
     public var differences: [SettingsSyncState.Difference]
 
-    public init(differences: [SettingsSyncState.Difference]) { self.differences = differences }
+    init(differences: [SettingsSyncState.Difference]) { self.differences = differences }
 }
 
 /// Where a front end keeps the shared settings that are not the model's on this device (docs/settings-sync.md §5,
@@ -38,7 +38,7 @@ public protocol SettingsSyncStorage: Sendable {
 /// of sync is `SettingsSyncState` (Sempere); this only reads and writes values.
 public enum SettingsSyncBridge {
     /// The kind of device this app runs on (the iPad app on a Mac is a Mac).
-    public static func deviceType(isMac: Bool, isPhone: Bool) -> SettingsDeviceType {
+    static func deviceType(isMac: Bool, isPhone: Bool) -> SettingsDeviceType {
         isMac ? .mac : (isPhone ? .iphone : .ipad)
     }
 
@@ -46,11 +46,11 @@ public enum SettingsSyncBridge {
     public struct Extras: Equatable, Sendable {
         /// The quick-capture profile's notebook and transcription choice, when
         /// quick capture is on for the open vault (else those keys are not read).
-        public var quickCapture: (notebook: String, transcribe: Bool)?
+        var quickCapture: (notebook: String, transcribe: Bool)?
         /// The open vault's backup reminder (`BackupRecord.reminderDays`).
-        public var backupReminderDays: Int?
+        var backupReminderDays: Int?
         /// The home-screen icon (`PlatformServices.appIcon`), where the device can switch icons.
-        public var appIcon: String?
+        var appIcon: String?
 
         public init(quickCapture: (notebook: String, transcribe: Bool)? = nil, backupReminderDays: Int? = nil,
                     appIcon: String? = nil) {
@@ -84,7 +84,7 @@ public enum SettingsSyncBridge {
     }
 
     /// One key's value: the model's keys here, the rest from `storage`.
-    public static func read(_ key: String, defaults d: any KeyValueStore, extras: Extras,
+    static func read(_ key: String, defaults d: any KeyValueStore, extras: Extras,
                             storage: any SettingsSyncStorage) -> JSONValue? {
         switch key {
         case "handwriting.recognize": return .bool(RecognitionPreference.isEnabled(d))
@@ -118,7 +118,7 @@ public struct StoredSettingsSyncStorage: SettingsSyncStorage {
     public init() {}
 
     /// The store key of setting `name`.
-    public static func key(for name: String) -> String { "Sempere.sharedSetting.\(name)" }
+    static func key(for name: String) -> String { "Sempere.sharedSetting.\(name)" }
 
     public func read(_ key: String, from defaults: any KeyValueStore) -> JSONValue? {
         guard let spec = SharedSettingsCatalog.spec(named: key) else { return nil }

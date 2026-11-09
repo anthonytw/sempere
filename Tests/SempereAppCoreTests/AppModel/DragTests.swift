@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 import Sempere
-import SempereAppCore
+@testable import SempereAppCore
 import Testing
 
 extension AppModelSuites {

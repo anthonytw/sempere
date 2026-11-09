@@ -40,7 +40,7 @@ public struct RecordingSettings: Hashable, Sendable {
     /// Bit rates offered, per second per channel pair as the encoder is told.
     public static let bitRates = [24_000, 32_000, 48_000, 64_000, 96_000, 128_000]
     /// HE-AAC is a low-rate codec: it does not offer the top rates.
-    public static let heAACBitRates = [24_000, 32_000, 48_000, 64_000]
+    static let heAACBitRates = [24_000, 32_000, 48_000, 64_000]
     public static let sampleRates = [16_000, 22_050, 32_000, 44_100, 48_000]
 
     public static let codecKey = "Sempere.recording.codec"
@@ -115,7 +115,7 @@ public struct RecordingSettings: Hashable, Sendable {
 
     /// The channel count a recording uses: stereo only when chosen *and* the
     /// input has two channels (docs/attachments.md §15).
-    public func effectiveChannels(inputChannels: Int) -> Int {
+    func effectiveChannels(inputChannels: Int) -> Int {
         channels == .stereo && inputChannels >= 2 ? 2 : 1
     }
 
@@ -139,7 +139,7 @@ public struct RecordingSettings: Hashable, Sendable {
 /// *Transcription*: on-device, opt-in (docs/attachments.md §16 decision 9).
 public enum TranscriptionSettings {
     public static let enabledKey = "Sempere.transcription.enabled"
-    public static let localeKey = "Sempere.transcription.locale"
+    static let localeKey = "Sempere.transcription.locale"
     /// Opt-in: nothing is transcribed until the user turns it on.
     public static let defaultEnabled = false
 
@@ -163,7 +163,7 @@ public enum TranscriptionSettings {
     }
 
     /// Letters, digits and `-`/`_` only, at most 35 characters, starting with a letter.
-    public static func isWellFormed(_ id: String) -> Bool {
+    static func isWellFormed(_ id: String) -> Bool {
         let scalars = Array(id.unicodeScalars)
         guard (1...35).contains(scalars.count), scalars[0].isASCII, scalars[0].properties.isAlphabetic else { return false }
         return scalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || $0.properties.numericType != nil || $0 == "-" || $0 == "_") }
@@ -210,7 +210,7 @@ public enum NewNoteSettings {
         public var id: String { rawValue }
 
         /// The pattern of a fixed preset (`DefaultTitle`); nil for the locale's styles, custom and blank.
-        public var pattern: String? {
+        var pattern: String? {
             switch self {
             case .isoDateTime: return "yyyy-MM-dd HH:mm"
             case .weekday: return "EEEE d MMMM"
@@ -219,13 +219,13 @@ public enum NewNoteSettings {
         }
     }
 
-    public static let titleFormatKey = "Sempere.newNote.titleFormat"
+    static let titleFormatKey = "Sempere.newNote.titleFormat"
     /// The custom pattern (`TitleFormat.custom`): a Unicode date pattern or a
     /// strftime format, checked by `DefaultTitle.check` (as `notes new
     /// --title-format` is) before it is stored.
-    public static let titlePatternKey = "Sempere.newNote.titlePattern"
+    static let titlePatternKey = "Sempere.newNote.titlePattern"
     public static let defaultTitlePattern = "yyyy-MM-dd HH:mm"
-    public static let defaultTitleFormat = TitleFormat.dateAndTime
+    static let defaultTitleFormat = TitleFormat.dateAndTime
 
     public static func titleFormat(_ defaults: any KeyValueStore) -> TitleFormat {
         defaults.string(forKey: titleFormatKey).flatMap(TitleFormat.init(rawValue:)) ?? defaultTitleFormat

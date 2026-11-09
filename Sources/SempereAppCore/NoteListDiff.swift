@@ -5,7 +5,7 @@ import Sempere
 /// `AppModel.notes` (`AppModel.byTitle`).
 public enum NoteListDiff {
     /// The list's sort key.
-    public static func key(_ s: NoteSummary) -> (String, String) { (s.title.lowercased(), s.id.uuidString) }
+    static func key(_ s: NoteSummary) -> (String, String) { (s.title.lowercased(), s.id.uuidString) }
 
     /// `list` (sorted by title, then id) with `removals` dropped and
     /// `upserts` put in their sorted place; nil when nothing changes.
@@ -49,7 +49,7 @@ public enum NoteListDiff {
     }
 
     /// `list` in the list's order (`key`).
-    public static func sorted(_ list: [NoteSummary]) -> [NoteSummary] {
+    static func sorted(_ list: [NoteSummary]) -> [NoteSummary] {
         list.sorted { key($0) < key($1) }
     }
 }

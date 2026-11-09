@@ -220,7 +220,8 @@ there. Commit messages:
   canvas and services only, is `AppModel+Host.swift`; docs/design/thin-app.md "Wave 5b, part 2" and "step 7"). New model
   logic goes into the library and takes its platform through `services` (`AppModelServices`), never `UserDefaults`,
   bookmarks or `os` directly; what it reports is a typed value the app words (`alert: AppModelAlert`, `editorFailure`,
-  `loadFailure`; the app's `.worded(…)` carries a sentence it made itself); its tests go
+  `loadFailure`; the app's `.worded(…)` carries a sentence it made itself, and a thrown error is worded by the app's one
+  `AppModel.describe`); members are internal unless the app uses them (`scripts/app.sh build-ios` shows what it needs); its tests go
   in `Tests/SempereAppCoreTests/AppModel` on `TestHost`. SwiftUI views cannot run on Linux, only the app build checks
   them (`scripts/app.sh build-ios`, in the PR gate).
 - Notebook names are `/`-separated display paths (`format.md` §5.4): use

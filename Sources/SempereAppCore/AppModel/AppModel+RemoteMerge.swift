@@ -14,14 +14,14 @@ import Sempere
 /// (`downloadNote`): an editor never writes while any revision is missing.
 extension AppModelCore {
     /// The editors showing a note now: the library window's and note windows'.
-    public var openEditors: [Editor] {
+    var openEditors: [Editor] {
         ([editor] + Array(windowEditors.values)).compactMap { $0 }
     }
 
     /// Starts a merge for every open editor whose note folder, as just listed
     /// (`listedNames`: note id → revision file names), holds revisions it
     /// does not have.
-    public func mergeIntoOpenEditors(listedNames: [UUID: [String]]) {
+    func mergeIntoOpenEditors(listedNames: [UUID: [String]]) {
         for open in openEditors {
             guard let names = listedNames[open.noteID], open.hasUnmergedRevisions(names) else { continue }
             if let unreadable = unreadableMergeNames[open.noteID], unreadable == names.sorted() { continue }
@@ -32,7 +32,7 @@ extension AppModelCore {
     /// Merges revisions written elsewhere into `open` in the background; at
     /// most one merge per note runs (a revision arriving meanwhile is picked
     /// up by the next pass, whose listing still shows it unknown).
-    public func scheduleRemoteMerge(_ open: Editor) {
+    func scheduleRemoteMerge(_ open: Editor) {
         let id = open.noteID
         guard remoteMerges[id] == nil else { return }
         let gen = generation
@@ -52,7 +52,7 @@ extension AppModelCore {
     }
 
     /// Whether `open` is still the editor of its note.
-    public func isOpenEditor(_ open: Editor) -> Bool {
+    func isOpenEditor(_ open: Editor) -> Bool {
         editor === open || windowEditors[open.noteID] === open
     }
 
@@ -60,7 +60,7 @@ extension AppModelCore {
     /// read-only editor (nothing unsaved) is reopened instead. The note's
     /// summary is re-read when anything changed.
     @discardableResult
-    public func mergeRemoteRevisions(into open: Editor) async throws -> Editor.RemoteMergeOutcome {
+    func mergeRemoteRevisions(into open: Editor) async throws -> Editor.RemoteMergeOutcome {
         let id = open.noteID
         let gen = generation
         let interval = services.perf.begin("note.remoteMerge")
@@ -100,7 +100,7 @@ extension AppModelCore {
     }
 
     /// Stops merges in flight (the vault closes).
-    public func cancelRemoteMerges() {
+    func cancelRemoteMerges() {
         for task in remoteMerges.values { task.cancel() }
         remoteMerges = [:]
         unreadableMergeNames = [:]

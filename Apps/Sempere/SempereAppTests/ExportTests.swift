@@ -49,8 +49,8 @@ struct ExportTests {
         #expect(ExportRunFailure.noNotes.text == "There are no notes to export.")
         #expect(ExportRunFailure.folderInsideVault.text.hasPrefix("Choose a folder outside the vault"))
         #expect(ExportRunFailure.noteFailed("x: y").text == "x: y")
-        #expect("\(UnsavedChangesError())" == "Its latest changes could not be saved, so it was not exported.")
-        #expect("\(DragExportError.unreadableRevisions(2))"
+        #expect(AppModel.describe(UnsavedChangesError()) == "Its latest changes could not be saved, so it was not exported.")
+        #expect(AppModel.describe(DragExportError.unreadableRevisions(2))
                 == "2 revisions of this note could not be read, so it cannot be exported completely.")
     }
 

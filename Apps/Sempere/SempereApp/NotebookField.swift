@@ -188,7 +188,7 @@ struct MoveNotebookView: View {
                             Text("Becomes \(NotebookChoices.display(result)), with every notebook and note inside it.")
                         } else if NotebookPath.moved(path, into: parent) == nil {
                             // The model's own refusal of this move, word for word.
-                            Text(AppModel.ModelError.invalidNotebookMove.description)
+                            Text(AppModel.ModelError.invalidNotebookMove.text)
                         } else {
                             Text("It is there already.")
                         }

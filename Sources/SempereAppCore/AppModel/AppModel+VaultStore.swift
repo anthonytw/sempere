@@ -97,7 +97,7 @@ public struct InvalidVaultName: Error, Equatable {
     public init() {}
 
     /// Throws `InvalidVaultName` for a name the store would refuse.
-    public static func check(_ name: String) throws {
+    static func check(_ name: String) throws {
         do { _ = try VaultStore.folderName(for: name) } catch { throw InvalidVaultName() }
     }
 }
@@ -227,7 +227,7 @@ extension AppModelCore {
     /// Downloads every file of the vault folder `url` in iCloud Drive (or another provider that reports its
     /// files): what a copy-in or a restore reads (`CloudVault.download`). The only iCloud reading the app
     /// does: every vault it opens is an in-app copy.
-    public func downloadSourceFolder(_ url: URL, hooks: CloudVault.Hooks,
+    func downloadSourceFolder(_ url: URL, hooks: CloudVault.Hooks,
                                      progress: @escaping @Sendable (CloudProgress) async -> Void) async throws {
         let stall = cloudStallTimeout
         let poll = cloudPollInterval

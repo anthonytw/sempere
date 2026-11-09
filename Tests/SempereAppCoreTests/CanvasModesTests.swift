@@ -1,5 +1,5 @@
 import Foundation
-import SempereAppCore
+@testable import SempereAppCore
 import Testing
 
 /// What a touch on the canvas does besides the palette's tool (`CanvasModes`): the text tool is one-shot

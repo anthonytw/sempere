@@ -84,8 +84,8 @@ enum PDFPreparation {
             return PDFIngest.withText(try PDFIngest.inspect(data).pages, pdf: data, extractor: PDFKitTextExtractor()).refs
         } catch let error as PDFIngestError {
             switch error {
-            case .unreadable: throw Failure.unreadable("\(error)")
-            default: throw Failure.pages("\(error)")
+            case .unreadable: throw Failure.unreadable(AppModel.describe(error))
+            default: throw Failure.pages(AppModel.describe(error))
             }
         }
     }

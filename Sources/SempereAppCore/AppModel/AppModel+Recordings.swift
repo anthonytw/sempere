@@ -17,7 +17,7 @@ public enum RecordingRecovery {
 
     /// Folders under `root` whose manifest names `note` and whose recording is not `inUse` (running, or still being
     /// saved or transcribed: `AppModelServices.recordingsInUse`).
-    public static func pending(for note: UUID, root: URL, inUse: Set<UUID>) -> [(URL, RecordingManifest)] {
+    static func pending(for note: UUID, root: URL, inUse: Set<UUID>) -> [(URL, RecordingManifest)] {
         let fm = FileManager.default
         guard let dirs = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return [] }
         return dirs.compactMap { dir -> (URL, RecordingManifest)? in
@@ -42,7 +42,7 @@ extension AppModelCore {
     /// Hooks an editor's recordings up to the model: taps on linked ink play, a recording made in it is transcribed
     /// once saved (when that setting is on, then `services.finishRecordingSave`), and recordings a crash left behind
     /// for this note are saved into it. Every editor the model opens, for the library window or a note window, gets it.
-    public func configureRecordings(_ editor: Editor) {
+    func configureRecordings(_ editor: Editor) {
         editor.onPlayRequest = { [weak self, weak editor] recording, time in
             guard let self, let editor else { return }
             Task { await self.play(recording, in: editor, from: time) }
@@ -64,13 +64,13 @@ extension AppModelCore {
 
     /// Whether a recording just saved is transcribed at once ("Transcribe Recordings on This Device", and a
     /// transcriber).
-    public var transcribesSavedRecordings: Bool {
+    var transcribesSavedRecordings: Bool {
         TranscriptionSettings.isEnabled(services.settings) && transcriber != nil
     }
 
     /// Transcribes a recording made in `note` (its `meta` as the editor had it) and just saved from `file`
     /// (`transcribesSavedRecordings`). Takes no editor, so none is held for the whole transcription.
-    public func transcribeSaved(_ recording: Recording, file: URL, note: UUID, meta: NoteMeta?) async {
+    func transcribeSaved(_ recording: Recording, file: URL, note: UUID, meta: NoteMeta?) async {
         await transcribe(recording, note: note, file: file, meta: meta, automatic: true)
     }
 
@@ -101,7 +101,7 @@ extension AppModelCore {
                     throw error
                 }
             } catch {
-                alert = .notice(.recordingUnplayable(String(describing: error)))
+                alert = .notice(.recordingUnplayable(services.describeError(error)))
                 return
             }
             if recording.transcript != nil {
@@ -162,7 +162,7 @@ extension AppModelCore {
             await transcribe(recording, note: note, file: url, meta: editor.meta, automatic: false)
             await cache.release(note: note, ref: recording.blob, discard: true)
         } catch {
-            alert = .notice(.recordingUnreadable(String(describing: error)))
+            alert = .notice(.recordingUnreadable(services.describeError(error)))
         }
     }
 
@@ -194,13 +194,13 @@ extension AppModelCore {
                 alert = .notice(.transcriptionModelMissing)
             }
         } catch {
-            if gen == generation { alert = .notice(.recordingNotTranscribed(String(describing: error))) }
+            if gen == generation { alert = .notice(.recordingNotTranscribed(services.describeError(error))) }
         }
     }
 
     /// Writes `transcript` as a blob of `note`, then the delta that sets it
     /// on its recording (checked against the note on disk at write time).
-    public func storeTranscript(_ transcript: Transcript, note: UUID) async throws -> BlobRef {
+    func storeTranscript(_ transcript: Transcript, note: UUID) async throws -> BlobRef {
         guard let vault, let clock = try? deviceClockForWriting() else { throw ModelError.noVaultOpen }
         try requireWritableVault()   // format.md §7.3
         let content = try transcript.encoded()
@@ -224,7 +224,7 @@ extension AppModelCore {
     /// for this note (their finished segments) into it, titled "Recovered
     /// recording", then deletes their files. One recovery per note at a time (`recoveringNotes`): a call while one
     /// runs for the same note does nothing.
-    public func recoverRecordings(into editor: Editor) async {
+    func recoverRecordings(into editor: Editor) async {
         let note = editor.noteID
         guard !recoveringNotes.contains(note) else { return }
         let pending = RecordingRecovery.pending(for: note, root: recordingRoot, inUse: services.recordingsInUse())
@@ -253,7 +253,7 @@ extension AppModelCore {
                 }
                 try? FileManager.default.removeItem(at: folder)
             } catch {
-                Host.Canvas.recordingFailed(.recover(String(describing: error)), in: editor)
+                Host.Canvas.recordingFailed(.recover(services.describeError(error)), in: editor)
             }
         }
     }

@@ -7,9 +7,9 @@ import Sempere
 /// chosen long before.
 extension AppModelCore {
     /// How long a request waits for the vault to be unlocked.
-    public static var menuBarRequestLifetime: TimeInterval { 120 }
+    static var menuBarRequestLifetime: TimeInterval { 120 }
 
-    public enum MenuBarNewNoteStep: Equatable, Sendable {
+    enum MenuBarNewNoteStep: Equatable, Sendable {
         /// Nothing to do (no request, it was too old, or there is no vault to put a note in).
         case none
         /// A vault is open but locked: the request waits for the unlock.
@@ -22,7 +22,7 @@ extension AppModelCore {
     }
 
     /// What a pending request needs now. Drops it when it cannot be carried out.
-    public func menuBarNewNoteStep(now: Date = Date()) -> MenuBarNewNoteStep {
+    func menuBarNewNoteStep(now: Date = Date()) -> MenuBarNewNoteStep {
         guard let at = menuBarNewNoteRequest else { return .none }
         let age = now.timeIntervalSince(at)
         guard age >= 0, age <= Self.menuBarRequestLifetime else {

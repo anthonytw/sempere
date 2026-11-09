@@ -40,7 +40,7 @@ struct WebDAVAppTests {
         #expect(SyncStatus.text(for: .unauthorized).contains("password"))
         #expect(SyncStatus.text(for: .serverChangedManifest).contains("Both copies were kept"))
         #expect(SyncStatus.text(for: .redirect("https://x/")).contains("https://x/"))
-        #expect("\(SyncTargetProblem.serverFolderTaken)"
+        #expect(AppModel.describe(SyncTargetProblem.serverFolderTaken)
                 == "The folder could not be added: The server folder holds another vault or other files. Choose an empty or new folder.")
     }
 

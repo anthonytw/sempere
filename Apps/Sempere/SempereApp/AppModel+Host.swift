@@ -35,6 +35,7 @@ enum AppHost: AppModelHost {
                                                         shaper: CoreTextShaper()),
                          pdfTextExtractor: PDFKitTextExtractor(), attachmentPreparation: AppAttachmentPreparation(),
                          lifecycle: UIKitAppLifecycle(), backgroundTasks: UIKitBackgroundTasks(),
-                         syncScheduler: BGTaskSyncScheduler(), makeReachability: { WebDAVReachability() })
+                         syncScheduler: BGTaskSyncScheduler(), makeReachability: { WebDAVReachability() },
+                         describeError: AppModel.describe)
     }
 }

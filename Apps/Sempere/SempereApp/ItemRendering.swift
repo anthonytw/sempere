@@ -76,7 +76,7 @@ enum ItemRendering {
                     if markdown, !isTransient(error) { continue }
                     for held in blobs where files[held.sha256] != nil { await cache.release(note: note, ref: held) }
                     // Not here yet (iCloud), or the cache went away: still loading, tried again later.
-                    return .placeholder(isTransient(error) ? .loading : .unavailable("\(error)"))
+                    return .placeholder(isTransient(error) ? .loading : .unavailable(AppModel.describe(error)))
                 }
             }
         }
@@ -91,7 +91,7 @@ enum ItemRendering {
                 if let reason = r.placeholder, reason != .noPoster, !markdown { return .failed(reason.description) }
                 return .pixels(r.image, r.bounds)
             } catch {
-                return .failed("\(error)")
+                return .failed(AppModel.describe(error))
             }
         }.value
         if let cache { for ref in blobs where files[ref.sha256] != nil { await cache.release(note: note, ref: ref) } }
@@ -154,7 +154,7 @@ enum ItemRendering {
                 if let reason = r.placeholder { return .failed(reason.description) }
                 return .pixels(r.image, r.bounds)
             } catch {
-                return .failed("\(error)")
+                return .failed(AppModel.describe(error))
             }
         }.value
         // Transcripts are never kept (docs/attachments.md §13; `BlobCache` discards them in any case).

@@ -8,11 +8,11 @@ import SempereSync
 // Moved with wave 5b part 2 from the files that moved into SempereAppCore; the strings are unchanged.
 
 extension AppModelAlert {
-    /// The model's alert (`AppModel.alert`), worded: a thrown error as its own description (the retroactive
-    /// `CustomStringConvertible` conformances of the library's errors, in this file and the other `+Text` files).
+    /// The model's alert (`AppModel.alert`), worded: a thrown error through `AppModel.describe`
+    /// (`Insert+Text.swift`).
     var text: String {
         switch self {
-        case .error(let error): return "\(error)"
+        case .error(let error): return AppModel.describe(error)
         case .notice(let notice): return notice.text
         case .insert(let notice): return notice.text
         case .worded(let sentence): return sentence
@@ -25,7 +25,7 @@ extension EditorFailure {
     var text: String {
         switch self {
         case .unreadable(let reason): return reason?.text ?? String(localized: "This note could not be read.")
-        case .failed(let error): return "\(error)"
+        case .failed(let error): return AppModel.describe(error)
         }
     }
 }
@@ -41,8 +41,8 @@ extension NoteSort {
     }
 }
 
-extension AppModelError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension AppModelError {
+    var text: String {
         switch self {
         case .noVaultOpen: return String(localized: "No vault is open.")
         case .notAnIdentity: return String(localized: "That text holds no device key file and no AGE-SECRET-KEY-PQ-1… identity.")
@@ -162,8 +162,8 @@ extension JoinProgress {
     }
 }
 
-extension SyncTargetProblem: @retroactive CustomStringConvertible {
-    public var description: String {
+extension SyncTargetProblem {
+    var text: String {
         switch self {
         case .notAStoreVault:
             return String(localized: "Only a vault kept on this device can have sync targets. Open the vault from the list first.")
@@ -189,15 +189,15 @@ extension SyncTargetProblem: @retroactive CustomStringConvertible {
             return String(localized: "Sempere cannot write to “\(name)”: this account has no permission to change it (it belongs to another user, or is read-only). Choose a folder you can write to.",
                           comment: "Sync targets: the picked folder is not writable; %@ is its name")
         case .serverFolderTaken:
-            return Self.other(String(localized: "The server folder holds another vault or other files. Choose an empty or new folder.")).description
+            return Self.other(String(localized: "The server folder holds another vault or other files. Choose an empty or new folder.")).text
         case .other(let message):
             return String(localized: "The folder could not be added: \(message)", comment: "The value is the reason (English)")
         }
     }
 }
 
-extension WebDAVVaultError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension WebDAVVaultError {
+    var text: String {
         switch self {
         case .noSuchLocation:
             return String(localized: "That WebDAV vault is no longer set up on this device. Connect to it again.")
@@ -211,8 +211,8 @@ extension WebDAVVaultError: @retroactive CustomStringConvertible {
     }
 }
 
-extension WebDAVPasswordError: @retroactive CustomStringConvertible {
-    public var description: String {
+extension WebDAVPasswordError {
+    var text: String {
         switch self {
         case .notFound: return String(localized: "No password is saved for this server. Enter it again.")
         case .missingEntitlement: return String(localized: "This build of Sempere cannot use the Keychain (missing entitlement).")

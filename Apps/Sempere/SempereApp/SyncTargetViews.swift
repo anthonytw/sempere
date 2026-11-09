@@ -77,7 +77,7 @@ struct SyncTargetsSheet: View {
             // The vault is written into it: a folder picker with New Folder (`FolderPicker`).
             .folderPicker(isPresented: $pickingFolder, purpose: .syncFolder) { result in
                 guard case .success(let url) = result, let vault = model.vault?.vaultId else { return }
-                do { try model.addPickedFolderTarget(url, to: vault) } catch { problem = String(describing: error) }
+                do { try model.addPickedFolderTarget(url, to: vault) } catch { problem = AppModel.describe(error) }
             }
             .confirmationDialog("Remove this sync target?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                                 titleVisibility: .visible, presenting: removing) { target in
@@ -100,7 +100,7 @@ struct SyncTargetsSheet: View {
                 guard case .success(let url) = result, let target = rechoosing, let vault = model.vault?.vaultId else { return }
                 rechoosing = nil
                 do { try model.rechooseFolderTarget(target.id, of: vault, picked: url) } catch {
-                    problem = String(describing: error)
+                    problem = AppModel.describe(error)
                 }
             }
         }
