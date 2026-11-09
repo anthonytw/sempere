@@ -403,6 +403,32 @@ the same when the app is open. Opening the app from the Live Activity
 ignored (`VoiceNoteLink.route`): anyone can open one, and it is never taken
 for a vault.
 
+## Apple Watch
+
+A voice note from the wrist is the same capture, sealed on the watch (docs/design/1.1-watch.md; the watch app itself
+arrives in a later release, and nothing here is visible yet). Three things are in the package and tested on Linux and a Mac:
+
+- **The profile.** The watch keeps the iPhone's capture profile and nothing else: no identity, no vault key, no device key.
+  The phone sends it over WatchConnectivity **age-encrypted to a provisioning key the watch made for itself**
+  (`WatchProfilePayload`, with a counter: the newest wins, and a clear, which carries nothing secret, deletes the profile
+  and keeps an older payload from bringing it back). Its capture key is the phone's, so a lost watch can add voice notes
+  to the inbox as the iPhone until the phone's key is replaced by a new epoch; it can read nothing. Unpairing a watch clears its
+  profile and revokes nothing cryptographic.
+- **The recording.** `WatchRecorder` is a start, stop and sweep state machine over the recorder protocols this document's
+  phone recorder uses (`CaptureRecorder`, `CaptureRecording`, in `SempereCapture`): ADTS segments as above, mono AAC-LC at
+  24 kHz and 32 kbit/s, at most 60 minutes. watchOS cannot write MPEG-4 from segments, so a pure-Swift muxer
+  (`ADTSToMP4`, bounded, fuzzed, checked against AVFoundation) joins them, and the note is sealed with the profile
+  (`Watch voice note <date> <time>`) into the watch's **outbox** before the plaintext is deleted. The outbox deletes a file
+  only when the phone acknowledges it, resends one that has had no ack for 24 hours, and its caps (200 files, 500 MB, 1 GB free
+  space) only stop a new recording from starting, never a sealed one.
+- **The hand-off.** The phone checks what arrives against its metadata (name, size, SHA-256: the file crossed a daemon),
+  skips an id it has, and delivers by the **vault the metadata names**: the stored profile's vault through the normal
+  delivery (ledger first, inbox or queue), another vault it holds into that vault's inbox under its own epoch, and a vault it
+  does not hold into a queue for it. Then it acknowledges. A file sealed under an older epoch keeps it in the ledger, and
+  `catchUp` re-seals it.
+
+`sempere inbox watch keygen|provision|seal|receive` run each step from the command line (docs/cli.md "Watch").
+
 ## Not verified yet
 
 - On an iPhone (build 7): a Control Center, Action button or Siri start records in the background, with

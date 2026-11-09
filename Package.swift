@@ -26,7 +26,7 @@ let defaultLocalization: LanguageTag? = "en"
 let package = Package(
     name: "sempere-core",
     defaultLocalization: defaultLocalization,
-    platforms: [.macOS(.v14), .iOS(.v17)],
+    platforms: [.macOS(.v14), .iOS(.v17), .watchOS(.v10)],
     products: [
         .library(name: "Age", targets: ["Age"]),
         .library(name: "Sempere", targets: ["Sempere"]),
@@ -39,6 +39,7 @@ let package = Package(
         .library(name: "SempereSpeech", targets: ["SempereSpeech"]),
         .library(name: "SempereAppCore", targets: ["SempereAppCore"]),
         .library(name: "SempereCaptureShared", targets: ["SempereCaptureShared"]),
+        .library(name: "SempereCapture", targets: ["SempereCapture"]),
         .executable(name: "sempere", targets: ["SempereCLI"]),
     ] + appleOnlyProducts,
     dependencies: [
@@ -108,19 +109,25 @@ let package = Package(
         // `SyncSession`, `SyncStatus`) and the demo vault (DEBUG only).
         // Foundation and Observation only, and no user-facing text: the app words its values.
         .target(name: "SempereAppCore", dependencies: ["Sempere", "Age", "SempereImport", "SempereImporters", "SempereSync", "SempereRender",
-                                                       "SempereWebDAV", "SempereCaptureShared", "SempereSpeech"]),
+                                                       "SempereWebDAV", "SempereCapture", "SempereCaptureShared", "SempereSpeech"]),
         // What the quick voice note widgets, the control and the Live Activity share with the app (docs/design/thin-app.md
         // "Rules"): the status the widgets read, the links, the tap log and the intents' hooks. No dependencies (Foundation
         // only), so the widget extension links it without the core; the words and the AppIntents/ActivityKit glue stay in
         // `Apps/Sempere/SempereShared`.
         .target(name: "SempereCaptureShared"),
+        // The quick voice note's recording folder and what the iPhone app, the Apple Watch app and the CLI share of it
+        // (docs/design/1.1-watch.md §3.2): the segments and their seal rules, the recorder protocols, the watch's
+        // provisioning payload, outbox, transfer metadata, the phone side's intake checks, the pure-Swift ADTS to MPEG-4
+        // muxer and the watch's recorder state machine. Foundation and `Sempere` only (no UI, no Apple frameworks, no `os`),
+        // so the watch links it without `SempereAppCore`; `SempereAppCore` re-exports it.
+        .target(name: "SempereCapture", dependencies: ["Sempere", "Age", "SempereCaptureShared"]),
         // Noto fonts for text in CLI exports (OFL 1.1); the app does not link them.
         .target(name: "SempereFonts", resources: [.copy("Fonts")]),
         .executableTarget(
             name: "SempereCLI",
             dependencies: [
                 "Age", "Sempere", "SemperePDF", "SempereRender", "SempereImport", "SempereImporters", "SempereSync", "SempereWebDAV", "SempereFonts",
-                "SempereSpeech", .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                "SempereSpeech", "SempereCapture", .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
         // Seeded mutation fuzzer shared by the test targets (Foundation only).
@@ -166,6 +173,9 @@ let package = Package(
                                                          "SempereWebDAV", "SempereRender", "SempereImport", "SempereSpeech", "Age",
                                                          "TempDirSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereCaptureSharedTests", dependencies: ["SempereCaptureShared", "TempDirSupport"]),
+        .testTarget(name: "SempereCaptureTests", dependencies: ["SempereCapture", "SempereCaptureShared", "Sempere", "Age", "FuzzSupport",
+                                                                "TempDirSupport", "VaultTestSupport",
+                                                                .product(name: "Crypto", package: "swift-crypto")]),
         .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport", "VaultTestSupport"]),
     ] + appleOnlyTargets + (hasNotability ? [
         // The Notability importer (docs/import-notability.md "Structure"). Optional: delete this directory

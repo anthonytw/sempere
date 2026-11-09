@@ -36,8 +36,8 @@ public struct RevisionName: Hashable, Comparable, Sendable, CustomStringConverti
     /// The largest `seq` a reader accepts (2^53 − 1, the largest integer every
     /// JSON implementation represents exactly). Larger values in a file name,
     /// a revision or a snapshot's `included` are rejected, so `seq + 1` never
-    /// overflows.
-    public static let maxSeq = 9_007_199_254_740_991
+    /// overflows. (Where `Int` is 32 bits, the Apple Watch's arm64_32, the largest `Int`: no `seq` is larger.)
+    public static let maxSeq = Int(clamping: 9_007_199_254_740_991 as Int64)
 
     /// Parses a file base name. Rejects non-canonical `seq` (leading zeros, 0)
     /// and `seq` above `maxSeq`.
