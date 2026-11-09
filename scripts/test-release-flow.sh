@@ -58,7 +58,8 @@ run env GH_EXISTS=1 scripts/release-publish.sh 1.2.3; check "print mode refuses 
 run scripts/release-publish.sh 1.2.3-rc.1; check "an unknown tag is refused" '[[ $rc != 0 && $out == *"no tag v1.2.3-rc.1"* ]]'
 echo tampered >> $d/sempere-1.2.3-linux-x86_64.tar.gz
 run scripts/release-publish.sh 1.2.3; check "publish refuses files that do not match SHA256SUMS" '[[ $rc != 0 && $out == *"does not match"* ]]'
-tarballs   # restore the files the sums were made from
+tarballs   # restore the files; a rebuilt tar can differ by its mtime, so make the sums again
+(cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS)
 git checkout -q side; git tag -a v9.9.9 -m x; git push -q origin refs/tags/v9.9.9 2>/dev/null; git tag -d v9.9.9 >/dev/null; git tag -a v9.9.9 -m y main
 run scripts/release-publish.sh 9.9.9; check "publish refuses a tag that differs from GitHub's" '[[ $rc != 0 && $out == *"binaries must come from the pushed tag"* ]]'
 git checkout -q main
