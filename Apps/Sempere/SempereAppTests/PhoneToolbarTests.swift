@@ -81,13 +81,4 @@ struct PhonePagelessTests {
             window.isHidden = true
         }
     }
-
-    @Test func theScrollExtentRuleIsTheSameWithoutAView() {
-        let infinite = PageSize(width: 612, height: 792, infinite: true)
-        // A phone's screen in page points at the fitted zoom: 956 / (440 / 612).
-        let viewport = 956.0 / (440.0 / 612.0)
-        #expect(PageExtent.scrollHeight(pageSize: infinite, inkMaxY: nil, viewportHeight: viewport) == 792 + viewport)
-        #expect(PageExtent.scrollHeight(pageSize: infinite, inkMaxY: 3000, viewportHeight: viewport) == 3000 + viewport,
-                "past the stored height the ink decides")
-    }
 }

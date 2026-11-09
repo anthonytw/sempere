@@ -1,35 +1,16 @@
 import Foundation
 import PencilKit
 import Sempere
+import SempereAppCore
 import UIKit
 import UIKit.UIGestureRecognizerSubclass
 
-/// The "Smooth Mouse Strokes" setting (Settings → General, Mac only) and the
-/// rules for when the app, not PencilKit, draws a pointer stroke
-/// (docs/mac.md "Mouse and trackpad").
-enum MouseSmoothing {
-    /// `@AppStorage` key of the user's choice (a `StrokeSmoothing.Level` raw value).
-    static let key = "Sempere.mouseSmoothing"
-    /// Off unless the user picks otherwise (build 11 feedback: the smoothing after a stroke flashed).
-    static let defaultLevel = StrokeSmoothing.Level.off
-
-    /// The stored level, `defaultLevel` when never set or not a level.
-    static func load(_ defaults: UserDefaults = .standard) -> StrokeSmoothing.Level {
-        defaults.string(forKey: key).flatMap(StrokeSmoothing.Level.init(rawValue:)) ?? defaultLevel
-    }
-
+/// The app's half of `MouseSmoothing` (`SempereAppCore`: the setting and when the app draws a pointer stroke): the
+/// touches it takes and the PencilKit stroke it builds.
+extension MouseSmoothing {
     /// The only touches the app's mouse ink takes: the Mac's mouse and
     /// trackpad. The Pencil and fingers never reach it.
     static let touchTypes: [NSNumber] = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
-
-    /// Whether the app draws pointer strokes itself (and PencilKit's drawing
-    /// gesture is off): on a Mac, with smoothing on, an ink tool selected and
-    /// the ruler hidden (PencilKit's ruler snaps its own strokes), on a page
-    /// that can be drawn on. Everywhere else PencilKit draws, as before.
-    static func takesPointer(isMac: Bool, level: StrokeSmoothing.Level, editable: Bool,
-                             inkingTool: Bool, rulerActive: Bool) -> Bool {
-        isMac && level != .off && editable && inkingTool && !rulerActive
-    }
 
     /// The stroke for the pointer's raw samples (canvas content coordinates:
     /// page points times `zoom`, seconds) drawn with `tool`: smoothed by
@@ -268,7 +249,7 @@ final class MouseInkController: NSObject, UIGestureRecognizerDelegate {
     func begin(at s: StrokeSmoothing.Sample) {
         resetStroke()
         guard let canvas, let tool = canvas.tool as? PKInkingTool,
-              let parameters = MouseSmoothing.load(defaults).parameters else { return }
+              let parameters = MouseSmoothing.load(from: defaults).parameters else { return }
         self.tool = tool
         started = Date()
         filter = StrokeSmoothing.StreamlineFilter(parameters: parameters)

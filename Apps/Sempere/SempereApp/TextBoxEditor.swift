@@ -780,61 +780,22 @@ final class CompletingTextView: UITextView {
     }
 }
 
-/// Where text boxes go and what the style bar offers (pure, tested).
-enum TextBoxPlacement {
-    /// Sizes in the size menu.
-    static let sizes: [Double] = [10, 12, 14, 16, 18, 24, 32, 48, 72]
-    /// Room kept to the page's right edge.
-    static let margin = 16.0
-    /// Width of a new box, at most (page points).
-    static let newBoxWidth = 320.0
-    /// Narrowest new box.
-    static let minimumWidth = 60.0
-
-    /// A new box's frame for a tap at `p`: its first line there (the tap is
-    /// on the line's middle), as wide as `newBoxWidth` or up to the page's
-    /// margin, at least `minimumWidth`, one line tall.
-    static func newFrame(at p: ItemFrames.Point, pageWidth: Double, size: Double) -> Rect {
-        let lineHeight = 1.2 * size
-        let room = pageWidth - margin - p.x
-        let w = max(minimumWidth, min(newBoxWidth, room.isFinite ? room : 0))
-        let x = min(p.x, max(0, pageWidth - w))
-        return Rect(x: InkJSON.round3(max(0, x)), y: InkJSON.round3(max(0, p.y - lineHeight / 2)), w: InkJSON.round3(w),
-                    h: InkJSON.round3(lineHeight))
-    }
-
-    /// The text box a tap at `p` lands on (topmost, with the selection's slop).
-    static func textBox(at p: ItemFrames.Point, in items: [Item], zoom: Double) -> Item? {
-        let texts = items.filter { $0.kind == .text && $0.text != nil }
-        return ItemFrames.item(at: p, in: texts, slop: ItemSelectionModel.slop / max(zoom, 0.01))
-    }
-}
-
-/// The text colors the style bar offers: the pen's palette (pure, tested).
-/// PencilKit's tool picker offers black, blue, green, yellow and red (the
-/// system colors as on light paper) and a color wheel; the swatches are the
-/// same, the pen's current color first when it is another one, and "More"
-/// opens the same system color picker as the pen's wheel.
-enum TextColourPalette {
+/// The app's half of `TextColourPalette` (`SempereAppCore`: the swatch rules): the system colors, the words and the
+/// swatch image.
+extension TextColourPalette {
     /// The pen palette's colors, as drawn on (light) paper, with their names (for VoiceOver).
     @MainActor static var standard: [(name: String, color: Sempere.Color)] {
         let light = UITraitCollection(userInterfaceStyle: .light)
-        return [(String(localized: "Black", comment: "Text color"), UIColor.black),
-                (String(localized: "Blue", comment: "Text color"), .systemBlue),
-                (String(localized: "Green", comment: "Text color"), .systemGreen),
-                (String(localized: "Yellow", comment: "Text color"), .systemYellow),
-                (String(localized: "Red", comment: "Text color"), .systemRed)].map { ($0.0, opaque(Sempere.Color($0.1.resolvedColor(with: light)))) }
-    }
-
-    /// The swatches: the pen's color (opaque) first unless the palette has
-    /// it, then the palette.
-    static func swatches(pen: Sempere.Color?, standard: [Sempere.Color]) -> [Sempere.Color] {
-        var out = standard
-        if let pen {
-            let p = opaque(pen)
-            if !out.contains(p) { out.insert(p, at: 0) }
+        return Standard.allCases.map { s in
+            let (name, ui): (String, UIColor) = switch s {
+            case .black: (String(localized: "Black", comment: "Text color"), .black)
+            case .blue: (String(localized: "Blue", comment: "Text color"), .systemBlue)
+            case .green: (String(localized: "Green", comment: "Text color"), .systemGreen)
+            case .yellow: (String(localized: "Yellow", comment: "Text color"), .systemYellow)
+            case .red: (String(localized: "Red", comment: "Text color"), .systemRed)
+            }
+            return (name, opaque(Sempere.Color(ui.resolvedColor(with: light))))
         }
-        return out
     }
 
     @MainActor static func swatches(pen: Sempere.Color?) -> [Sempere.Color] {
@@ -844,13 +805,12 @@ enum TextColourPalette {
     /// The name VoiceOver reads for a swatch: the palette's, else "Pen Color"
     /// for the pen's, else the hex value.
     static func name(of colour: Sempere.Color, standard: [(name: String, color: Sempere.Color)], pen: Sempere.Color?) -> String {
-        if let named = standard.first(where: { $0.color == opaque(colour) }) { return named.name }
-        if let pen, opaque(pen) == opaque(colour) { return String(localized: "Pen Color", comment: "VoiceOver: the swatch of the pen's current color") }
-        return String(format: "#%02X%02X%02X", colour.r, colour.g, colour.b)
+        switch label(of: colour, standard: standard.map(\.color), pen: pen) {
+        case .standard(let index): return standard[index].name
+        case .pen: return String(localized: "Pen Color", comment: "VoiceOver: the swatch of the pen's current color")
+        case .hex(let hex): return hex
+        }
     }
-
-    /// Text is drawn opaque: a marker's translucent color is taken without its alpha.
-    static func opaque(_ c: Sempere.Color) -> Sempere.Color { Sempere.Color(r: c.r, g: c.g, b: c.b) }
 
     /// A round swatch of `colour`, with a thin ring so white and yellow show on a light bar.
     @MainActor static func swatchImage(_ colour: Sempere.Color, size: CGFloat, selected: Bool = false) -> UIImage {

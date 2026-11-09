@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import PencilKit
+import SempereAppCore
 import UIKit
 
 /// The app's object (stroke) eraser, used instead of PencilKit's when the
@@ -35,11 +36,8 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     // ones are marked dead rather than removed, so indices stay valid.
     private var before: PKDrawing?
     private var remaining: [PKStroke] = []
-    private var alive: [Bool] = []
-    private var bounds: [StrokeBoundsGrid.Box] = []
-    private var grid: StrokeBoundsGrid?
-    private var shapes: [StrokeHitShape?] = []
-    private var last: EraserPoint?
+    /// Which strokes the sweep has touched so far (`ObjectEraseSweep`, the decision half, in `SempereAppCore`).
+    private var sweep: ObjectEraseSweep?
     /// Strokes erased since the canvas was last given the drawing. The
     /// first erase gives it at once; later ones wait for the next display
     /// frame (`frameLink`), so the canvas, and the ledger behind it, take
@@ -168,15 +166,11 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
         let drawing = canvas.drawing
         before = drawing
         remaining = drawing.strokes
-        alive = Array(repeating: true, count: remaining.count)
         shownIDs = remaining.map(\.id)
-        bounds = remaining.map { stroke in
+        sweep = ObjectEraseSweep(bounds: remaining.map { stroke in
             let b = stroke.renderBounds
             return StrokeBoundsGrid.Box(minX: Double(b.minX), minY: Double(b.minY), maxX: Double(b.maxX), maxY: Double(b.maxY))
-        }
-        grid = StrokeBoundsGrid(bounds)
-        shapes = Array(repeating: nil, count: remaining.count)
-        last = p
+        }, start: p)
         erase(to: p)
     }
 
@@ -227,26 +221,9 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     }
 
     private func erase(to p: EraserPoint) {
-        guard canvas != nil, let from = last, let grid else { return }
-        last = p
-        let r = radius
-        let sweep = StrokeBoundsGrid.Box(minX: min(from.x, p.x) - r, minY: min(from.y, p.y) - r,
-                                         maxX: max(from.x, p.x) + r, maxY: max(from.y, p.y) + r)
-        var hit = false
-        for i in grid.candidates(sweep) where alive[i] {
-            if shapes[i] == nil {
-                // Cheap reject on PencilKit's bounds before sampling the path.
-                let b = bounds[i]
-                if b.maxX < sweep.minX || b.minX > sweep.maxX || b.maxY < sweep.minY || b.minY > sweep.maxY {
-                    continue
-                }
-                shapes[i] = StrokeHitShape(remaining[i])
-            }
-            if shapes[i]?.intersects(sweepFrom: from, to: p, radius: r) == true {
-                alive[i] = false
-                hit = true
-            }
-        }
+        guard canvas != nil, sweep != nil else { return }
+        let strokes = remaining
+        let hit = sweep?.erase(to: p, radius: radius) { StrokeHitShape(strokes[$0]) } ?? false
         guard hit else { return }
         pending = true
         if frameLink == nil {
@@ -276,7 +253,7 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
             cancelGesture()
             return
         }
-        let kept = remaining.indices.filter { alive[$0] }.map { remaining[$0] }
+        let kept = (sweep?.survivors ?? []).map { remaining[$0] }
         canvas.drawing = PKDrawing(strokes: kept)
         shownIDs = canvas.drawing.strokes.map(\.id)
     }
@@ -289,11 +266,7 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
 
     private func reset() {
         remaining = []
-        alive = []
-        bounds = []
-        grid = nil
-        shapes = []
-        last = nil
+        sweep = nil
     }
 
     private func finish() {

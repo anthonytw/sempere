@@ -146,16 +146,6 @@ struct PickedMovie: Transferable {
     }
 }
 
-/// Which file the editor's file importer is choosing.
-enum EditorFileImport {
-    case pdf, video
-    /// A picture to replace an image with (Replace Image from Files).
-    case image
-    /// PDF pages for a pageless note: the note is switched to pages only
-    /// once a PDF is picked, so canceling the picker changes nothing.
-    case pdfSwitchingToPages
-}
-
 /// The audio session for a clip: playback, unless a recording is running (then it stays `.playAndRecord`, as for
 /// recordings).
 @MainActor

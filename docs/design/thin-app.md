@@ -862,7 +862,7 @@ the model does: notes, notebooks, pages, items, attachments, history, export, im
 | Cache sizes, Clear Caches | `AppModelCore.cacheSizes`, `clearCaches` | none | No command: the drawing and blob caches are the app's (the CLI's only cache is the summary cache, `--no-cache`) |
 | Demo vault, debug launches | `DemoVault`, `DemoLaunch`, `DebugLaunch` | none | None: `#if DEBUG`, screenshots and UI tests only |
 
-**Part 1 (this PR).** This inventory, duplicate 6's check (above) with its three small unifications, `devices approve
+**Part 1 (done, #35).** This inventory, duplicate 6's check (above) with its three small unifications, `devices approve
 --qr`, and the two #34 folds-in (the `onLoadFailed` doc comment, `QuickCapture.app()`'s `describeError`).
 
 **Part 2: the bulk-export driver, and the leaves with no editor edge (about 1,150 lines).**
@@ -885,16 +885,39 @@ the model does: notes, notebooks, pages, items, attachments, history, export, im
   780-786, the trimming), `SearchSnippetText` and `RecognitionResultsText` (`NoteListView` 705-717, 797-817: their words
   stay), `TypedWords` (`JoinViews` 121-131), `ExportHandOffState` (`ExportSheet` 322-333).
 
-**Part 3: the editor's interaction models (about 700 lines).** The pure types inside the gesture files:
-`ItemSelectionModel` and its `Scope`, `Drag`, `Tap` (`ItemSelection.swift` 12-127), `ItemMenu` (234-280) and
-`FingerTapTracker` (281-309); `MouseSmoothing` (`MouseInk.swift` 10-62); `InsertOptions`, `CanvasDrop` and
-`InsertState` (`InsertUI.swift` 13-153); `TextBoxPlacement` and `TextColourPalette` (`TextBoxEditor.swift` 784-877; the
-`UIColor` values become `Color` values the app maps); `PageExtent` (`PageCanvasView.swift` 1466-1499);
-`ObjectEraser`'s hit rules (the `ObjectEraserController`'s decision half, about 120 of 393 lines, behind
-`StrokeHitShape`, which is the library's already); `ItemPointer` (85; the pointer regions' `UIBezierPath`s stay, the rule that picks a region moves) and `TitlePatternField`'s `Field` and
-`Status` (`SettingsView.swift` 420-477). The controllers keep the recognizers and call these. Tests: the
-`ItemPointerTests`, `MouseSmoothingTests`, `ObjectEraserTests` (the rules only) and `InsertTests` move to
-`SempereAppCoreTests`; the gesture tests (`CanvasSelectionTests`, `PhoneCanvasInteractionTests`) stay.
+**Part 3: the editor's interaction models (done, #38).** The pure types inside the gesture files moved to
+`Sources/SempereAppCore/Editor/`; the controllers keep the recognizers and call them.
+
+Wave 6 part 3 (2026-11-09) moved:
+
+| Core type (`SempereAppCore`) | From | The app keeps (as an extension or a caller) |
+| --- | --- | --- |
+| `ItemSelectionModel` (`Scope`, `Drag`, `Tap`) | `ItemSelection.swift` | `ItemSelectionView`, the recognizers, `ItemSelectionController` |
+| `ItemMenu` | `ItemSelection.swift` | the menu's buttons and words |
+| `FingerTapTracker` | `ItemSelection.swift` | `FingerItemTapRecognizer` |
+| `MouseSmoothing` (key, default, `load(from:)`, `takesPointer`) | `MouseInk.swift` | `touchTypes`, `stroke(…)` (PencilKit) |
+| `ItemPointer` (`zone`, `angle`, `identifier`) | `ItemPointer.swift` | `path`, `twoWay`, `fourWay` (`UIBezierPath`) |
+| `InsertOptions` (`PDFPagesPlacement`, `pdfPagesPlacement`, `pdfImport`, `cascade`), `EditorFileImport`, `CanvasDropContent` | `InsertUI.swift`, `VideoViews.swift` | `camera`, `pdfPagesTitle` (the words), `CanvasDrop` (item providers, `UTType`) |
+| `TextBoxPlacement` | `TextBoxEditor.swift` | the style bar and editor |
+| `TextColourPalette` (`Standard`, `Label`, `swatches`, `label(of:)`, `opaque`) | `TextBoxEditor.swift` | `standard` (system colours on light paper), `name(of:)` (words), `swatchImage` |
+| `PageExtent` (`Footer`, `scrollHeight`, `footerScreenHeight` as `Double`) | `PageCanvasView.swift` | the canvas's content size and footer button |
+| `TitlePatternCheck` (`Field`, `Status`, `status(of:)`) | `SettingsView.swift` | `TitlePatternField` words the fields and problems |
+| `ObjectEraseSweep` (new) | `ObjectEraserController` | the controller: canvas, `PKStroke` to `StrokeHitShape`, display link, undo |
+
+Where the plan text above turned out different:
+- `InsertState` stays in the app: it is `@Observable` state of `PhotosPickerItem`, `CameraMode` and `CropRequest`, and its one
+  rule (`open`) is two lines over `InsertOptions.pdfImport`, which moved.
+- The text colours are a `Standard` enum (black, blue, green, yellow, red) that the app resolves to `UIColor.system*` on light
+  paper, not `Color` values in the core, so the swatches keep tracking the OS.
+- `InsertTests` and `ObjectEraserTests` stay in the app: what is left in them drives a canvas host, a `PKCanvasView` and the
+  editor (drops, crop with undo, the gesture against the canvas), and the pure rules they held now have core tests
+  (`EditorRulesTests`, `ObjectEraseSweepTests`).
+
+Decisions (reviewed): (1) `InsertState` stays in the app; (2) the colours resolve to `UIColor.system*` in the app;
+(3) `MouseSmoothing.load(from:)` takes `any KeyValueStore` (the app makes `UserDefaults` conform), like its sibling
+preferences; (4) `ObjectEraser.erasing` and the controller's touch-type helpers stay in the app (PencilKit, UIKit). The
+`CGPoint` and `CGFloat` types in `InsertOptions.cascade` and `FingerTapTracker` are Foundation's on Linux; part 6 decides
+whether the CoreGraphics point types give way to the library's.
 
 **Part 4: preferences and the math models (about 800 lines).** `MathModels` (347, the installed and downloadable
 recognizer models: status, download, import, remove; it calls the library's `MathModelStore` and a download seam) with `MathModelFetchTests`

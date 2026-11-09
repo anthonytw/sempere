@@ -204,7 +204,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         let size = PageCanvasHost.displayable(configuration.pageSize)
         let footer = !editor.isReadOnly && !configuration.input.reading   // a tap while reading never writes
         layout = PageStackLayout(pageWidth: size.width, pageHeight: size.height, count: configuration.pageIDs.count,
-                                 footerScreenHeight: footer ? Double(PageExtent.footerScreenHeight) : 0)
+                                 footerScreenHeight: footer ? PageExtent.footerScreenHeight : 0)
         footerButton.isHidden = !footer
         if newEditor {
             for id in Array(slots.keys) { recycle(id) }
@@ -323,7 +323,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         footerButton.sizeToFit()
         let b = footerButton.bounds.size
         footerButton.frame = CGRect(x: (content.bounds.width - b.width) / 2,
-                                    y: CGFloat(layout.footerTop(scale: Double(scale))) + (PageExtent.footerScreenHeight - b.height) / 2,
+                                    y: CGFloat(layout.footerTop(scale: Double(scale))) + (CGFloat(PageExtent.footerScreenHeight) - b.height) / 2,
                                     width: b.width, height: b.height)
     }
 

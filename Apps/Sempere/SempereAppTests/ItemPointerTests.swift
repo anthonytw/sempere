@@ -16,29 +16,7 @@ struct ItemPointerTests {
         return item
     }
 
-    @Test func aHandlePointsAlongItsDrag() {
-        let square = Rect(x: 0, y: 0, w: 100, h: 100)
-        #expect(ItemPointer.angle(of: .corner(.bottomRight), frame: square, rotation: nil) == 45)
-        #expect(ItemPointer.angle(of: .corner(.topLeft), frame: square, rotation: nil) == 45)
-        #expect(ItemPointer.angle(of: .corner(.topRight), frame: square, rotation: nil) == 135)
-        #expect(ItemPointer.angle(of: .edge(.left), frame: square, rotation: nil) == 0)
-        #expect(ItemPointer.angle(of: .edge(.right), frame: square, rotation: 90) == 90)
-        // A wide picture's corner is flatter than 45°.
-        let wide = ItemPointer.angle(of: .corner(.bottomRight), frame: Rect(x: 0, y: 0, w: 200, h: 100), rotation: nil)
-        #expect(wide > 20 && wide < 30)
-    }
-
-    @Test func zonesFollowTheDragRule() {
-        let item = Self.image(Rect(x: 100, y: 100, w: 100, h: 100))
-        var model = ItemSelectionModel()
-        // Not selected: the inside moves it, nothing else.
-        #expect(ItemPointer.zone(model.drag(at: .init(x: 150, y: 150), items: [item], zoom: 1), items: [item]) == .move)
-        #expect(ItemPointer.zone(model.drag(at: .init(x: 20, y: 20), items: [item], zoom: 1), items: [item]) == nil)
-        model.selected = item.id
-        #expect(ItemPointer.zone(model.drag(at: .init(x: 201, y: 199), items: [item], zoom: 1), items: [item])
-                == .resize(degrees: 45))
-        #expect(ItemPointer.zone(model.drag(at: .init(x: 150, y: 150), items: [item], zoom: 1), items: [item]) == .move)
-        #expect(ItemPointer.move.identifier != ItemPointer.resize(degrees: 45).identifier)
+    @Test func theOutlinesAreDrawnForEveryZone() {
         #expect(!ItemPointer.move.path.isEmpty && !ItemPointer.resize(degrees: 135).path.isEmpty)
     }
 

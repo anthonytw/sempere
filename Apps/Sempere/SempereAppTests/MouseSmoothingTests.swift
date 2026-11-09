@@ -51,20 +51,9 @@ struct MouseSmoothingTests {
 
     // MARK: - When it applies
 
-    @Test func onlyThePointerOnAMacWithAnInkToolIsSmoothed() {
+    @Test func onlyThePointerIsTakenByTheAppsMouseInk() {
         #expect(MouseSmoothing.touchTypes.map(\.intValue) == [UITouch.TouchType.indirectPointer.rawValue],
                 "the Pencil and fingers never reach the smoothing")
-        func takes(isMac: Bool = true, level: StrokeSmoothing.Level = .light, editable: Bool = true,
-                   inking: Bool = true, ruler: Bool = false) -> Bool {
-            MouseSmoothing.takesPointer(isMac: isMac, level: level, editable: editable, inkingTool: inking, rulerActive: ruler)
-        }
-        #expect(takes())
-        #expect(takes(level: .strong))
-        #expect(!takes(isMac: false), "the iPad is unchanged: PencilKit draws")
-        #expect(!takes(level: .off), "Off: PencilKit draws the pointer, as before")
-        #expect(!takes(editable: false))
-        #expect(!takes(inking: false), "eraser and lasso stay PencilKit's (or the object eraser's)")
-        #expect(!takes(ruler: true), "the ruler snaps PencilKit's own strokes")
     }
 
     @Test func aRightClickNeverDraws() {
@@ -72,15 +61,6 @@ struct MouseSmoothingTests {
         #expect(!PointerInkGesture.isSecondaryClick(buttons: .primary, modifiers: [.shift, .alternate]))
         #expect(PointerInkGesture.isSecondaryClick(buttons: .secondary, modifiers: []))
         #expect(PointerInkGesture.isSecondaryClick(buttons: .primary, modifiers: .control))
-    }
-
-    @Test func theSettingDefaultsToOff() {
-        #expect(MouseSmoothing.load(Self.defaults(nil)) == .off)
-        #expect(MouseSmoothing.load(Self.defaults(.strong)) == .strong)
-        #expect(MouseSmoothing.load(Self.defaults(.off)) == .off)
-        let wobbly = Self.defaults(nil)
-        wobbly.set("wobbly", forKey: MouseSmoothing.key)
-        #expect(MouseSmoothing.load(wobbly) == .off)
     }
 
     /// On the iPad (the simulator CI runs), a canvas never hands any input to

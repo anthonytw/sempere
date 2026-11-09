@@ -1,3 +1,4 @@
+import SempereAppCore
 import Sempere
 import UIKit
 

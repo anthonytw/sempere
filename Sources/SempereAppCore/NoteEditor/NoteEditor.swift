@@ -153,7 +153,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// Words the errors this editor keeps as text (`readOnly`'s load failure, `saveFailure`, the recognition and
     /// recording failures): the model's `services.describeError`, set when it opens the editor.
     @ObservationIgnored var describeError: ErrorDescriber = plainErrorDescription
-    /// Called when that read fails (`failLoading`), with the error: the
+    /// Called when the read that completes the editor fails (`failLoading`), with the error: the
     /// model shows the failure instead of a partial, read-only canvas.
     @ObservationIgnored var onLoadFailed: (@MainActor (any Error) -> Void)?
     /// Called once a recording made in this note is saved (by the app's microphone half), with its audio file and

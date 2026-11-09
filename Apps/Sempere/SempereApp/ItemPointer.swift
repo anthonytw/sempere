@@ -1,49 +1,9 @@
-import Sempere
+import SempereAppCore
 import UIKit
 
-/// The pointer over placed items while they can be selected (Mac, docs/mac.md
-/// "Placed items"): a four-way arrow over an item a drag would move, a
-/// two-way arrow along the drag over a resize handle, and the system arrow
-/// elsewhere, so it is plain that a drag moves or resizes. The zone comes from
-/// the same rule as the drag (`ItemSelectionModel.drag(at:)`).
-enum ItemPointer: Equatable {
-    case move
-    /// A resize handle, its two-way arrow at `degrees` (0: left–right; clockwise, screen axes).
-    case resize(degrees: Double)
-
-    /// The pointer for `drag` (`ItemSelectionModel.drag(at:)` at the pointer), nil: none.
-    static func zone(_ drag: ItemSelectionModel.Drag?, items: [Item]) -> ItemPointer? {
-        switch drag {
-        case nil: return nil
-        case .move: return .move
-        case .resize(let id, let handle):
-            guard let item = items.first(where: { $0.id == id }) else { return .move }
-            return .resize(degrees: angle(of: handle, frame: item.frame, rotation: item.rotation))
-        }
-    }
-
-    /// The direction a handle drags in, degrees: from the frame's centre out
-    /// through the handle (a corner of a wide image is not at 45°), turned
-    /// with the item, folded into 0..<180 (a two-way arrow).
-    static func angle(of handle: ItemFrames.Handle, frame: Rect, rotation: Double?) -> Double {
-        let p = ItemFrames.point(of: handle, frame, rotation: rotation)
-        let c = Point2(x: frame.x + frame.w / 2, y: frame.y + frame.h / 2)
-        var a = atan2(p.y - c.y, p.x - c.x) * 180 / .pi
-        a = a.truncatingRemainder(dividingBy: 180)
-        if a < 0 { a += 180 }
-        return (a * 2).rounded() / 2
-    }
-
-    private struct Point2 { var x, y: Double }
-
-    /// A region identifier: UIKit asks for the style again when it changes.
-    var identifier: String {
-        switch self {
-        case .move: return "item.move"
-        case .resize(let d): return "item.resize.\(d)"
-        }
-    }
-
+/// The app's half of `ItemPointer` (`SempereAppCore`: which region a drag is in, its angle and identifier): the
+/// outlines.
+extension ItemPointer {
     /// The pointer's outline, centred on the hot spot, screen points.
     var path: UIBezierPath {
         switch self {

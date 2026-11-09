@@ -10,22 +10,8 @@ import SempereAppCore
 /// tasks E1, E3).
 @MainActor
 struct InsertOptionsTests {
-    @Test func theCameraIsOfferedWhereThereIsOneButNeverOnAMac() {
-        #expect(InsertOptions.offersCamera(isMac: false, cameraAvailable: true), "iPad and iPhone")
-        #expect(!InsertOptions.offersCamera(isMac: false, cameraAvailable: false), "the simulator has none")
-        #expect(!InsertOptions.offersCamera(isMac: true, cameraAvailable: true), "Mac (Catalyst)")
+    @Test func aMacOffersNoCamera() {
         if Platform.isMac { #expect(!InsertOptions.camera) }
-    }
-
-    @Test func pdfPagesGoIntoPagedNotesOnly() {
-        #expect(InsertOptions.offersPDFPages(pageless: false))
-        #expect(!InsertOptions.offersPDFPages(pageless: true))
-    }
-
-    @Test func severalImagesCascade() {
-        #expect(InsertOptions.cascade(nil, index: 3) == nil)
-        #expect(InsertOptions.cascade(CGPoint(x: 10, y: 10), index: 0) == CGPoint(x: 10, y: 10))
-        #expect(InsertOptions.cascade(CGPoint(x: 10, y: 10), index: 2) == CGPoint(x: 50, y: 50))
     }
 
     /// The canvas takes drops (Files on the iPad, the Finder on the Mac) and

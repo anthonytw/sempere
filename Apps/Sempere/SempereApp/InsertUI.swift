@@ -6,52 +6,27 @@ import UniformTypeIdentifiers
 import SempereAppCore
 import SempereRender
 
-/// Which ways of adding images and PDFs the editor offers (pure, tested on
-/// each platform): the camera only where there is one and never on a Mac,
-/// PDF pages only on a paged note (a pageless note has one infinite page:
-/// import the PDF as a new note instead).
-enum InsertOptions {
-    static func offersCamera(isMac: Bool, cameraAvailable: Bool) -> Bool { !isMac && cameraAvailable }
-
-    static func offersPDFPages(pageless: Bool) -> Bool { !pageless }
-
-    /// What the Insert menu's PDF entry picks: on a pageless note the switch
-    /// to pages waits for the PDF (`EditorInsert.preparePages`), so a
-    /// canceled picker leaves the note as it was.
-    static func pdfImport(pageless: Bool) -> EditorFileImport { pageless ? .pdfSwitchingToPages : .pdf }
-
-    /// The Insert menu's PDF entry, saying where the pages go: after the
-    /// current page (`pageIndex`, 0-based) of a paged note; a pageless note
-    /// is switched to pages first (its one page stays the first).
+/// The app's half of `InsertOptions` (`SempereAppCore`): the words and the camera on this device.
+extension InsertOptions {
+    /// The Insert menu's PDF entry, saying where the pages go.
     static func pdfPagesTitle(pageless: Bool, pageIndex: Int, pageCount: Int) -> String {
-        if pageless { return String(localized: "Switch to Pages and Insert PDF…") }
-        if pageCount <= 0 { return String(localized: "Insert PDF Pages…") }
-        let n = min(max(pageIndex, 0), pageCount - 1) + 1
-        return n == pageCount ? String(localized: "Insert PDF Pages at the End…") : String(localized: "Insert PDF Pages After Page \(n)…")
+        switch pdfPagesPlacement(pageless: pageless, pageIndex: pageIndex, pageCount: pageCount) {
+        case .switchToPages: return String(localized: "Switch to Pages and Insert PDF…")
+        case .anywhere: return String(localized: "Insert PDF Pages…")
+        case .atEnd: return String(localized: "Insert PDF Pages at the End…")
+        case .afterPage(let n): return String(localized: "Insert PDF Pages After Page \(n)…")
+        }
     }
 
     /// The camera on this device.
     @MainActor static var camera: Bool {
         offersCamera(isMac: Platform.isMac, cameraAvailable: UIImagePickerController.isSourceTypeAvailable(.camera))
     }
-
-    /// Where the `index`-th of several images added at once goes: each a
-    /// little further down and right, so none hides another.
-    static func cascade(_ point: CGPoint?, index: Int) -> CGPoint? {
-        point.map { CGPoint(x: $0.x + CGFloat(index) * 20, y: $0.y + CGFloat(index) * 20) }
-    }
 }
 
 /// What a drop or a paste brings: image bytes, or a PDF or video clip copied into a work folder.
 enum CanvasDrop {
-    enum Content: Sendable {
-        case image(Data)
-        case pdf(URL)
-        /// A clip (format.md §8.2.7), copied into a work folder.
-        case video(URL)
-        /// Something that could not be read (too large, unreadable): why.
-        case failed(String)
-    }
+    typealias Content = CanvasDropContent
 
     /// The types the canvas takes.
     static let typeIdentifiers = [UTType.pdf.identifier, UTType.movie.identifier, UTType.image.identifier]

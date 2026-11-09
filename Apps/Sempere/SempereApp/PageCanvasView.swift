@@ -987,7 +987,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     @objc nonisolated private func defaultsChanged() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let level = MouseSmoothing.load(self.smoothingDefaults)
+            let level = MouseSmoothing.load(from: self.smoothingDefaults)
             guard level != self.smoothingLevel else { return }
             self.smoothingLevel = level
             self.updateEraser()
@@ -1015,7 +1015,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         let editable = drawingEditable
         let ours = editable && objectEraserSelected
         objectEraser.setActive(ours)
-        if Platform.isMac { smoothingLevel = MouseSmoothing.load(smoothingDefaults) }
+        if Platform.isMac { smoothingLevel = MouseSmoothing.load(from: smoothingDefaults) }
         let pointer = !ours && MouseSmoothing.takesPointer(
             isMac: Platform.isMac, level: smoothingLevel, editable: editable,
             inkingTool: toolbox.state.tool.isInk, rulerActive: canvas.isRulerActive)
@@ -1352,7 +1352,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         cursorInteraction?.invalidate()
         let height = PageExtent.scrollHeight(pageSize: pageSize, inkMaxY: inkMaxY,
                                              viewportHeight: Double(bounds.height / z),
-                                             footerHeight: footer == .none ? 0 : Double(PageExtent.footerScreenHeight / z))
+                                             footerHeight: footer == .none ? 0 : PageExtent.footerScreenHeight / Double(z))
         let paperHeight = pageSize.infinite ? height : pageSize.height
         let size = CGSize(width: CGFloat(pageSize.width), height: CGFloat(paperHeight))
         paperView.setVisible(canvas.bounds)   // only the bands on screen are built
@@ -1380,7 +1380,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
             footerButton.sizeToFit()
             let b = footerButton.bounds.size
             footerButton.frame = CGRect(x: (canvas.contentSize.width - b.width) / 2,
-                                        y: CGFloat(pageSize.height) * z + (PageExtent.footerScreenHeight - b.height) / 2,
+                                        y: CGFloat(pageSize.height) * z + (CGFloat(PageExtent.footerScreenHeight) - b.height) / 2,
                                         width: b.width, height: b.height)
         }
         layoutHighlights()
@@ -1459,41 +1459,6 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         let maxX = max(canvas.contentSize.width - bounds.width, 0), maxY = max(canvas.contentSize.height - bounds.height, 0)
         canvas.setContentOffset(CGPoint(x: min(max(rect.midX - bounds.width / 2, 0), maxX),
                                         y: min(max(rect.midY - bounds.height / 2, 0), maxY)), animated: true)
-    }
-}
-
-/// How far a page scrolls.
-enum PageExtent {
-    /// The control below a finite page.
-    enum Footer: Equatable { case none, addPage, nextPage }
-
-    /// Screen points below a finite page for its footer button.
-    static let footerScreenHeight: CGFloat = 120
-
-    /// The scrollable height of a page in page points.
-    ///
-    /// - Infinite pages always scroll at least one screen (`viewportHeight`,
-    ///   in page points at the current zoom) below both the ink and the
-    ///   stored height, so there is always room to keep writing; the stored
-    ///   height grows as the user writes (`NoteEditor.growPage`) and this
-    ///   follows it.
-    /// - Finite pages end at their height plus `footerHeight` (the Add Page /
-    ///   Next Page button), and never less than a screen.
-    ///
-    /// Every term is clamped to `RenderLimits.maxExtent` (non-finite: 0), so
-    /// a stroke or page size far out of range cannot produce an absurd
-    /// content size.
-    static func scrollHeight(pageSize: PageSize, inkMaxY: Double?, viewportHeight: Double, footerHeight: Double = 0) -> Double {
-        func clamped(_ v: Double?) -> Double {
-            guard let v, v.isFinite else { return 0 }
-            return min(max(v, 0), RenderLimits.maxExtent)
-        }
-        let screen = clamped(viewportHeight)
-        let page = clamped(pageSize.height)
-        if pageSize.infinite {
-            return max(page, clamped(inkMaxY)) + screen
-        }
-        return max(page + clamped(footerHeight), screen)
     }
 }
 

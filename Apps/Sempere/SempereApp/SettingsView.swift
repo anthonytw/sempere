@@ -422,17 +422,23 @@ struct TitlePatternField: View {
         let pattern: String
     }
 
-    /// The fields the Insert menu offers.
-    static let fields: [Field] = [
-        Field(name: String(localized: "Year", comment: "Title pattern Insert menu: the year field"), pattern: "yyyy"),
-        Field(name: String(localized: "Month", comment: "Title pattern Insert menu: the month name"), pattern: "MMMM"),
-        Field(name: String(localized: "Month (number)", comment: "Title pattern Insert menu: the month as a number"), pattern: "MM"),
-        Field(name: String(localized: "Day", comment: "Title pattern Insert menu: the day of the month"), pattern: "d"),
-        Field(name: String(localized: "Weekday", comment: "Title pattern Insert menu: the weekday name"), pattern: "EEEE"),
-        Field(name: String(localized: "Time", comment: "Title pattern Insert menu: 24-hour time"), pattern: "HH:mm"),
-        Field(name: String(localized: "Time (12-hour)", comment: "Title pattern Insert menu: 12-hour time"), pattern: "h:mm a"),
-        Field(name: String(localized: "Text", comment: "Title pattern Insert menu: literal text in quotes"), pattern: "'Note'"),
-    ]
+    /// The fields the Insert menu offers (`TitlePatternCheck.Field`, worded).
+    static let fields: [Field] = TitlePatternCheck.Field.allCases.map { field in
+        Field(name: name(of: field), pattern: field.pattern)
+    }
+
+    private static func name(of field: TitlePatternCheck.Field) -> String {
+        switch field {
+        case .year: return String(localized: "Year", comment: "Title pattern Insert menu: the year field")
+        case .month: return String(localized: "Month", comment: "Title pattern Insert menu: the month name")
+        case .monthNumber: return String(localized: "Month (number)", comment: "Title pattern Insert menu: the month as a number")
+        case .day: return String(localized: "Day", comment: "Title pattern Insert menu: the day of the month")
+        case .weekday: return String(localized: "Weekday", comment: "Title pattern Insert menu: the weekday name")
+        case .time: return String(localized: "Time", comment: "Title pattern Insert menu: 24-hour time")
+        case .time12Hour: return String(localized: "Time (12-hour)", comment: "Title pattern Insert menu: 12-hour time")
+        case .text: return String(localized: "Text", comment: "Title pattern Insert menu: literal text in quotes")
+        }
+    }
 
     enum Status: Equatable {
         case preview(String)
@@ -461,17 +467,16 @@ struct TitlePatternField: View {
         }
     }
 
-    /// What the field shows under `pattern` at `now`. Pure, tested.
+    /// What the field shows under `pattern` at `now` (`TitlePatternCheck.status`, worded).
     static func status(of pattern: String, now: Date = Date(), locale: Locale = .current,
                        timeZone: TimeZone = .current) -> Status {
-        if pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        switch TitlePatternCheck.status(of: pattern, now: now, locale: locale, timeZone: timeZone) {
+        case .preview(let title): return .preview(title)
+        case .empty:
             return .problem(String(localized: "Type a pattern, e.g. \(NewNoteSettings.defaultTitlePattern).",
                                    comment: "Title pattern field: the field is empty"))
+        case .invalid(let problem): return .problem(message(problem))
         }
-        if let problem = DefaultTitle.check(pattern, at: now, locale: locale, timeZone: timeZone) {
-            return .problem(message(problem))
-        }
-        return .preview(DefaultTitle.title(at: now, format: pattern, locale: locale, timeZone: timeZone))
     }
 }
 

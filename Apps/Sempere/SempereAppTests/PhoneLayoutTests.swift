@@ -295,7 +295,7 @@ struct PhoneCanvasTests {
         host.footer = .nextPage
         host.layoutIfNeeded()
         let z = host.canvas.zoomScale
-        #expect(host.canvas.contentSize.height >= (792 * z) + PageExtent.footerScreenHeight - 0.5)
+        #expect(host.canvas.contentSize.height >= (792 * z) + CGFloat(PageExtent.footerScreenHeight) - 0.5)
         #expect(!host.footerButton.isHidden)
         window.isHidden = true
     }

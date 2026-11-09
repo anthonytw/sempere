@@ -305,18 +305,6 @@ struct TextBoxLayoutTests {
         #expect(TextBoxEditorController.fits(String(nearlyFull.dropLast()), replacing: NSRange(location: 0, length: 0), with: family))
     }
 
-    @Test func newBoxesStartWhereTapped() {
-        let f = TextBoxPlacement.newFrame(at: ItemFrames.Point(x: 100, y: 200), pageWidth: 612, size: 20)
-        #expect(f == Rect(x: 100, y: 188, w: 320, h: 24))
-        // Near the right edge: narrower, down to the minimum, then moved left.
-        #expect(TextBoxPlacement.newFrame(at: ItemFrames.Point(x: 500, y: 10), pageWidth: 612, size: 10).w == 96)
-        let edge = TextBoxPlacement.newFrame(at: ItemFrames.Point(x: 600, y: 10), pageWidth: 612, size: 10)
-        #expect(edge.w == 60 && edge.x == 552 && edge.y == 4)
-        let box = AttachmentEditorTests.textItem()
-        #expect(TextBoxPlacement.textBox(at: ItemFrames.Point(x: 20, y: 20), in: [box], zoom: 1)?.id == box.id)
-        #expect(TextBoxPlacement.textBox(at: ItemFrames.Point(x: 400, y: 400), in: [box], zoom: 1) == nil)
-    }
-
     // MARK: Deltas
 
     @Test func textEditsAreOneDeltaEachWithUndo() async throws {
