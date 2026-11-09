@@ -23,7 +23,7 @@ This is a volunteer-run project, so these are aims, not promises:
    you are asked to check it if you wish. Fixes are prioritized by impact.
 3. **Publish.** Once a fixed release is out, the advisory is published as a GitHub Security
    Advisory. For a serious issue (anything that exposes note content or keys, or lets someone
-   plant content that passes as authentic) a CVE is requested through GitHub. The timing is
+   plant content that passes as authentic) a CVE is requested through GitHub (see [Audits](#audits) for which findings get one). The timing is
    agreed with you; the default is publication with the fixed release.
 4. **Tell users.** The release notes and `CHANGELOG.md` say who is affected (which versions,
    platforms and settings), what could happen, and what to do (update; and, if keys or
@@ -81,7 +81,7 @@ stated guarantee in released versions. Low, Info, hardening and findings only in
 | Audit | Date | Version | Report |
 | --- | --- | --- | --- |
 
-No audit is published yet. The first, a full audit of 1.0, is under way; its row goes here when its fixes have shipped.
+No audit is published yet. The first, a full audit of 1.0, is planned; its row goes here when its fixes have shipped.
 
 ## Verifying releases
 

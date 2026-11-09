@@ -1,22 +1,30 @@
-# Exceptions to scripts/check-security.sh: `rule | path | reason`. A path ending in / is a prefix.
-# Every entry needs a reason. The audit reviews this list each run (docs/audits/README.md); remove an entry the
-# moment it matches nothing (the script says so).
+# Exceptions to scripts/check-security.sh. Every entry needs a reason; the audit reviews this list each run
+# (docs/audits/README.md), and the script says so when an entry matches nothing: remove it then.
 #
-# secrets: a test key committed on purpose. None of these protects anything: each is a published test vector, a
-# generated throwaway, or a key printed in a fixture so a test can check what the code does with it.
-secrets | Tests/AgeTests/Vectors/ | the C2SP age test vectors (CCTV); every identity in them is public by design
-secrets | Tests/AgeTests/KeyTests.swift | the age specification's example identity
-secrets | Tests/AgeTests/PostQuantumTests.swift | the age specification's example post-quantum identity
-secrets | Tests/SempereTests/Fixtures/ | throwaway keys of the sample vault and the frozen epoch vectors (docs/design/key-hierarchy.md)
-secrets | Tests/SempereTests/PaperKeyTests.swift | a throwaway key for the paper-key encoding tests
-secrets | Tests/SempereTests/BackupTests.swift | a fake "BEGIN OPENSSH PRIVATE KEY" string: bytes the backup test must not leak
-secrets | Tests/SempereRenderTests/Fixtures/qr-vectors.json | QR-code vectors of throwaway keys
-secrets | Tests/SempereRenderTests/generate_qr_vectors.py | the generator of those vectors (throwaway keys)
-secrets | Tests/SempereRenderTests/QRCodeTests.swift | throwaway key for the QR tests
-secrets | Tests/SempereRenderTests/RecoveryKitTests.swift | throwaway keys for the recovery-kit tests
-secrets | web/test/vault.test.ts | a throwaway key for the web viewer's vault test
-secrets | Apps/Sempere/SempereAppUITests/DemoDeviceKey.swift | the demo vault's device key (a vault of sample notes only)
-secrets | Apps/Sempere/SempereAppUITests/NewVaultSheetUITests.swift | a throwaway key typed by a UI test
+# secrets | path-or-prefix | sha256:HASH | reason   (a path ending in / is a prefix)
+# HASH is the SHA-256 of the matched token, so a NEW key in an allowed file still fails. Never write the key here.
+# Each is a test key committed on purpose: a published test vector, a generated throwaway, or a key printed in a
+# fixture so a test can check what the code does with it. None protects anything.
+secrets | Apps/Sempere/SempereAppUITests/DemoDeviceKey.swift | sha256:f0682a27556fa94dbb7097eeeea546711f70f23c7ffda055440506ce316cae1c | the demo vault's device key (a vault of sample notes only)
+secrets | Apps/Sempere/SempereAppUITests/NewVaultSheetUITests.swift | sha256:0c8037666a504a1f583dfa0e1b107c21e59089602ccb1eb60dfa1379f4ae3b25 | a throwaway key typed by a UI test
+secrets | Tests/AgeTests/KeyTests.swift | sha256:789eb04ae4c00984483bc16c3fd1249161cc2935ef6b399b596c0defc2a08f1d | the age specification's example identity
+secrets | Tests/AgeTests/PostQuantumTests.swift | sha256:20b2864707ce45afd97a00f6a669ae4d5814ffe321f56d3926412582a2306ce6 | the age specification's example post-quantum identity
+secrets | Tests/AgeTests/Vectors/ | sha256:0fe9dca67aa5402f9ee9b56f8501cd760c780b8ad060e510631ff68935375f48 | the C2SP age test vectors (CCTV); every identity in them is public by design
+secrets | Tests/AgeTests/Vectors/ | sha256:73e7976d91fdc8fc6ebae532145ef31045826ee3ff8f5b41426fef0326f58f38 | the C2SP age test vectors (CCTV); every identity in them is public by design
+secrets | Tests/AgeTests/Vectors/ | sha256:9288e521d3d6e3c7cf929faebfcda00474b49b8817912be1ab158ad991ece48f | the C2SP age test vectors (CCTV); every identity in them is public by design
+secrets | Tests/AgeTests/Vectors/ | sha256:eae3cb3d3158df8a464a0da04f2e45f0fae44aa88c9ce0ab2c8b75aff14acc40 | the C2SP age test vectors (CCTV); every identity in them is public by design
+secrets | Tests/SempereRenderTests/ | sha256:88d8600a382853eb80ed729b368bc603abbd82762ec9badcc525d5f6c156e81d | throwaway keys for the QR and recovery-kit tests, and their generated vectors
+secrets | Tests/SempereRenderTests/ | sha256:b3b811f68292c2bcbb3f0a607e9f6dc3f5d8cb6907acdb2ebc9cbf973e8c3646 | throwaway keys for the QR and recovery-kit tests, and their generated vectors
+secrets | Tests/SempereTests/BackupTests.swift | sha256:bc77a88e28830d9563b484567461e7cbc985ec9f27ba699363570d8d79e4702e | a fake PEM header string: bytes the backup test must not leak
+secrets | Tests/SempereTests/Fixtures/ | sha256:3ed93138798f7930c6860f4ba3c64f9d29a018b581c811c359d759664b620844 | throwaway keys of the sample vault and the frozen epoch vectors (docs/design/key-hierarchy.md)
+secrets | Tests/SempereTests/Fixtures/ | sha256:3f907d53480d046e3319b1f2aea0ead5333a9d84919bdd420c0063a57b6bb3aa | throwaway keys of the sample vault and the frozen epoch vectors (docs/design/key-hierarchy.md)
+secrets | Tests/SempereTests/Fixtures/ | sha256:4ee940be92e9d030f636f8016331fcd2021953d8d8d7a7cef2fe41069083a123 | throwaway keys of the sample vault and the frozen epoch vectors (docs/design/key-hierarchy.md)
+secrets | Tests/SempereTests/Fixtures/ | sha256:8de3faea74e19105c2007c8e2322827d920a397f8098f915a652ec6fec3a3047 | throwaway keys of the sample vault and the frozen epoch vectors (docs/design/key-hierarchy.md)
+secrets | Tests/SempereTests/Fixtures/ | sha256:9f13966824a5ea836c0faa89b2e4cf09e969422332cff481d275a1d1f0daa740 | throwaway keys of the sample vault and the frozen epoch vectors (docs/design/key-hierarchy.md)
+secrets | Tests/SempereTests/Fixtures/ | sha256:a74b1223783eccf4f939fa8a1d608827f92211775c8fc855b1c9e33ef7e3e873 | throwaway keys of the sample vault and the frozen epoch vectors (docs/design/key-hierarchy.md)
+secrets | Tests/SempereTests/PaperKeyTests.swift | sha256:88d8600a382853eb80ed729b368bc603abbd82762ec9badcc525d5f6c156e81d | a throwaway key for the paper-key encoding tests
+secrets | Tests/SempereTests/PaperKeyTests.swift | sha256:b3b811f68292c2bcbb3f0a607e9f6dc3f5d8cb6907acdb2ebc9cbf973e8c3646 | a throwaway key for the paper-key encoding tests
+secrets | web/test/vault.test.ts | sha256:b3b811f68292c2bcbb3f0a607e9f6dc3f5d8cb6907acdb2ebc9cbf973e8c3646 | a throwaway key for the web viewer's vault test
 #
 # perf: a PerfSink call the word scan flags, reviewed: neither logs a key or a title.
 perf | Sources/SempereAppCore/AppModel/AppModel+Loading.swift | logs a note COUNT ("byTitle" is a sort function's name inside the closure)

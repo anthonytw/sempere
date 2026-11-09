@@ -89,18 +89,28 @@ A public commit, branch, tag or PR title is a disclosure.
 
 1. The fix is one commit, with its regression test, on top of `origin/main`, in a local branch that is never pushed.
    Write no changelog fragment for it before release time.
-2. Gate it locally (`scripts/local-ci.sh`; `just ci-release` before an App Store build), then build from it.
+2. Gate it locally with `scripts/local-ci.sh --no-status` (`--no-status` posts nothing
+   to Gitea), then build from it. An App Store build of an unpushed commit needs
+   `just testflight --skip-suite-check both <sha>`, because the suite status it looks for lives on Gitea.
 3. Tag it locally: `scripts/release-tag.sh --embargo X.Y.Z` (REF defaults to `HEAD`). It refuses a dirty tree, a commit
    already on `origin/main`, a merge, and a commit whose parent is not on `origin/main` (a commit two away). It makes a
-   signed tag and pushes nothing. `release-build.sh` reads its sweep status for the tagged commit from Gitea, which an
-   unpushed commit does not have: sweep it locally and do not post the status anywhere public.
-4. When the fixed version is live, open the fix as an ordinary PR (the gate runs on it) and merge it **without
-   squashing** (rebase or fast-forward) so the tagged commit lands on `main`. Then `just release-push X.Y.Z` pushes the
-   tag, the release notes and `CHANGELOG.md` say who is affected and what to do (`SECURITY.md` "What happens next",
-   step 4), and the owner publishes the advisory.
+   tag (signed unless `SEMPERE_TAG_SIGN=false`) and pushes nothing.
+   **Known gap, until the first embargoed release:** `release-build.sh` cannot build a non-prerelease embargo tag
+   today: it reads the release-sweep status of the tagged commit from Gitea, which an unpushed commit does not have, and
+   only a prerelease warns instead of failing. Likewise `release-tag.sh --push` wants the tag's commit on
+   `origin/main`. The first embargoed release's PR closes both (below).
+4. The repository is squash-merge only (merge commits and rebase merges are off, and a rebase rewrites the SHA anyway),
+   so the fix cannot land on `main` as the tagged commit. When the fixed version is live, open the fix as an ordinary PR
+   (the gate runs on it) and squash-merge it. The tag is then pushed from the unpushed commit: the first embargoed
+   release's PR makes `release-tag.sh --push` accept an embargo tag whose commit is off `main`, whose parent is on `main`,
+   and for which a `main` commit has the same `git patch-id --stable`. Until then, nothing here can publish the tag.
+   The release notes and `CHANGELOG.md` say who is affected and what to do (`SECURITY.md` "What happens next", step 4),
+   and the owner publishes the advisory.
 5. **Before any push**: no exploit detail in a commit message, branch name, PR title or body, issue, changelog fragment
-   or test name; the run folder is not under any synced or backed-up path that is public; `scripts/mirror-gitea.sh`
-   mirrors `main` only, so the Gitea mirror never receives the local branch (check before each push).
+   or test name; the run folder is not under any synced or backed-up path that is public. **Never** run
+   `git push --tags` or `--follow-tags` while an embargo tag exists: push single refs by name. `scripts/mirror-gitea.sh`
+   copies GitHub's `main`, branches and tags to Gitea, so it only ever sees what has already been pushed to GitHub;
+   still, check before each push.
 
 ### Publishing the report
 

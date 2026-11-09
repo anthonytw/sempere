@@ -5,7 +5,7 @@
 #
 #   scripts/release-tag.sh VERSION [REF]          checks, then a signed tag on REF (default origin/main),
 #                                                 then asks before pushing it
-#   scripts/release-tag.sh --check VERSION [REF]  the checks only: no tag, no push
+#   scripts/release-tag.sh --check VERSION [REF]  the checks only: no tag, no push; or --embargo VERSION [REF]: a LOCAL tag on an unpushed fix commit (see "Embargoed fixes" below)
 #   scripts/release-tag.sh --push VERSION         push an existing local tag (asks first); it re-checks only that
 #                                                 the tag is on origin/main (scripts/release-build.sh checks the rest)
 #
@@ -93,7 +93,9 @@ not_tagged() {
 # never-pushed commit REF (default HEAD) so the release build can be made from it before the fix is public. REF must
 # be one commit on top of origin/main (its one parent is on origin/main; a commit two away, a merge, or a commit
 # already on origin/main is refused), and the working tree must be clean. The tag stays local and nothing is pushed.
-# Once the fix is on main (merged WITHOUT squashing, so this commit is kept), `--push` publishes the tag.
+# The repository is squash-merge only, so once the fix is on main it is a different commit: `--push` does not accept this
+# tag yet (it wants the tag's commit on origin/main). The first embargoed release adds that: an embargo tag whose commit is
+# off main, whose parent is on main, and whose patch-id (`git patch-id --stable`) equals a main commit's.
 if [[ $mode == embargo ]]; then
   base="${remote:-origin}/main"
   embargo_ok=true
@@ -106,8 +108,9 @@ if [[ $mode == embargo ]]; then
   check cli_version; check changelog; check not_tagged
   echo "warn  release sweep not checked for an unpushed commit: run it locally (just ci-release) before the build"
   [[ $embargo_ok == true && $ok == true ]] || die "not ready to tag $tag"
-  if [[ ${SEMPERE_TAG_SIGN:-true} == false ]]; then git tag -a "$tag" -m "Sempere $version" "$sha"; else git tag -s "$tag" -m "Sempere $version" "$sha"; fi
-  echo "created signed tag $tag on ${sha:0:8} (local only, embargoed: NOT pushed; push it with just release-push $version once the fix is on main)"
+  signed=signed
+  if [[ ${SEMPERE_TAG_SIGN:-true} == false ]]; then signed=unsigned; git tag -a "$tag" -m "Sempere $version" "$sha"; else git tag -s "$tag" -m "Sempere $version" "$sha"; fi
+  echo "created $signed tag $tag on ${sha:0:8} (local only, embargoed: NOT pushed)"
   exit 0
 fi
 

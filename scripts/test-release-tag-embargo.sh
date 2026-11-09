@@ -44,7 +44,7 @@ tag_here() { git rev-parse -q --verify refs/tags/v9.9.9 >/dev/null; }
 tag_on_origin() { git ls-remote --exit-code --tags origin refs/tags/v9.9.9 >/dev/null 2>&1; }
 
 fresh; fix_commit one
-expect "a commit on top of origin/main is tagged (REF defaults to HEAD)" ok "created signed tag v9.9.9 .*local only" 9.9.9
+expect "a commit on top of origin/main is tagged (REF defaults to HEAD)" ok "created unsigned tag v9.9.9 .*local only" 9.9.9
 check "the tag is local" tag_here
 check "the tag points at the fix commit" test "$(git rev-parse 'v9.9.9^{commit}')" = "$(git rev-parse HEAD)"
 check "nothing was pushed (no tag on origin)" bash -c '! git ls-remote --exit-code --tags origin refs/tags/v9.9.9 >/dev/null 2>&1'
@@ -54,13 +54,13 @@ expect "a second tag of the same version is refused" fail "tag v9.9.9 already ex
 fresh; fix_commit one; sha=$(git rev-parse HEAD); fix_commit two
 expect "a commit two away from origin/main is refused" fail "parent of .* is not on origin/main" 9.9.9
 check "no tag was made" bash -c '! git rev-parse -q --verify refs/tags/v9.9.9 >/dev/null'
-expect "REF can name the commit explicitly" ok "created signed tag" 9.9.9 "$sha"
+expect "REF can name the commit explicitly" ok "created unsigned tag" 9.9.9 "$sha"
 
 fresh; fix_commit one; echo dirty >> CHANGELOG.md
 expect "a dirty tree is refused" fail "uncommitted changes" 9.9.9
 check "no tag was made on a dirty tree" bash -c '! git rev-parse -q --verify refs/tags/v9.9.9 >/dev/null'
 fresh; fix_commit one; echo untracked > scratch.txt
-expect "an untracked file does not count as dirty" ok "created signed tag" 9.9.9
+expect "an untracked file does not count as dirty" ok "created unsigned tag" 9.9.9
 
 fresh
 expect "a commit already on origin/main is refused" fail "already on origin/main" 9.9.9
