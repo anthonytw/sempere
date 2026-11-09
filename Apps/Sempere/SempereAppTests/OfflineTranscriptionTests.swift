@@ -39,9 +39,9 @@ extension QuickCaptureTests {
         try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
         #expect(await TS.waitUntil(timeout: .seconds(10)) { log.downloadsAllowed.count == 2 })
         #expect(log.downloadsAllowed == [false, false], "capture, then adoption: neither may download")
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { model.errorMessage != nil })
-        #expect(model.errorMessage == RecordingTranscriptionError.modelNotDownloaded.message)
-        #expect(model.errorMessage?.contains("Settings ▸ Audio & Transcription") == true)
+        #expect(await TS.waitUntil(timeout: .seconds(10)) { model.alert != nil })
+        #expect(model.alert?.text == RecordingTranscriptionError.modelNotDownloaded.message)
+        #expect(model.alert?.text.contains("Settings ▸ Audio & Transcription") == true)
         #expect(model.capturesAdopted == 1, "the voice note is in a note, untranscribed")
         model.close()
     }
@@ -51,7 +51,7 @@ extension RecordingTests {
     /// The model's notice for a missing language model is the app's sentence saying where to get it (the model's
     /// side is `RecordingModelTests.anAutomaticJobWithoutTheModelSaysSo` in SempereAppCoreTests).
     @Test func theMissingModelNoticeSaysWhereToGetIt() {
-        #expect("\(AppModelNotice.transcriptionModelMissing)" == RecordingTranscriptionError.modelNotDownloaded.message)
+        #expect(AppModelNotice.transcriptionModelMissing.text == RecordingTranscriptionError.modelNotDownloaded.message)
         #expect(RecordingTranscriptionError.modelNotDownloaded.message.contains("Settings ▸ Audio & Transcription"))
     }
 }

@@ -80,7 +80,7 @@ extension AppModelSuites {
             let editor = try #require(model.editor)
             let r = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
             await model.transcribe(r, in: editor)
-            #expect(model.errorMessage == nil)
+            #expect(model.alert == nil)
             let ref = try #require(editor.recording(r.id)?.transcript)
             let vault = try #require(model.vault)
             let state = try await Self.reconstruct(vault)
@@ -222,7 +222,7 @@ extension AppModelSuites {
             let r = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
             await model.transcribe(r, in: editor)
             #expect(log.downloadsAllowed == [true])
-            #expect(model.errorMessage == nil)
+            #expect(model.alert == nil)
             model.close()
         }
 
@@ -235,12 +235,12 @@ extension AppModelSuites {
             let r = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
             await model.transcribe(r, note: editor.noteID, file: Self.tone, meta: editor.meta, automatic: true)
             #expect(log.downloadsAllowed == [false])
-            #expect(model.errorMessage == "\(AppModelNotice.transcriptionModelMissing)")
+            #expect(model.alert == .notice(.transcriptionModelMissing))
             #expect(editor.recording(r.id)?.transcript == nil)
-            model.errorMessage = nil
+            model.alert = nil
             await model.transcribe(r, note: editor.noteID, file: Self.tone, meta: editor.meta, automatic: true)
             #expect(log.downloadsAllowed == [false, false])
-            #expect(model.errorMessage == nil)
+            #expect(model.alert == nil)
             model.close()
         }
 

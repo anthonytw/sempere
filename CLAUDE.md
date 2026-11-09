@@ -217,9 +217,10 @@ there. Commit messages:
   `startAccessingSecurityScopedResource()` for the whole time the vault is used;
   vault bookmarks use `options: []` (no `.withSecurityScope` on iOS/Catalyst).
 - `AppModel` is the library's `AppModelCore<AppHost>` (`Sources/SempereAppCore/AppModel/`; the app's host, its
-  services and, until wave 5b part 3, the state and steps of the extensions still in the app are
-  `AppModel+Host.swift`; docs/design/thin-app.md "Wave 5b, part 2"). New model logic goes into the library and takes
-  its platform through `services` (`AppModelServices`), never `UserDefaults`, bookmarks or `os` directly; its tests go
+  canvas and services only, is `AppModel+Host.swift`; docs/design/thin-app.md "Wave 5b, part 2" and "step 7"). New model
+  logic goes into the library and takes its platform through `services` (`AppModelServices`), never `UserDefaults`,
+  bookmarks or `os` directly; what it reports is a typed value the app words (`alert: AppModelAlert`, `editorFailure`,
+  `loadFailure`; the app's `.worded(…)` carries a sentence it made itself); its tests go
   in `Tests/SempereAppCoreTests/AppModel` on `TestHost`. SwiftUI views cannot run on Linux, only the app build checks
   them (`scripts/app.sh build-ios`, in the PR gate).
 - Notebook names are `/`-separated display paths (`format.md` §5.4): use

@@ -22,7 +22,7 @@ struct MacCatalystPDFTests {
         let vault = try #require(model.vault)
         let url = try PDFImportTests.makePDF(pages: 1)
         guard case .done(let id) = await model.importPDF(copy: url, to: .newNote(notebook: nil), password: nil) else {
-            Issue.record("not imported: \(model.errorMessage ?? "")")
+            Issue.record("not imported: \(model.alert?.text ?? "")")
             throw CancellationError()
         }
         return (model, id, try vault.reconstruct(noteId: id))

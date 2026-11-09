@@ -56,7 +56,7 @@ struct VoiceNoteMenuModelTests {
         await model.toggleVoiceNote()
         #expect(capture.pendingLink == .settings)
         #expect(capture.state == .idle)
-        #expect(model.errorMessage == nil)
+        #expect(model.alert == nil)
     }
 
     /// Start and stop through the menu's entry point seal a voice note into the vault's inbox
@@ -71,7 +71,7 @@ struct VoiceNoteMenuModelTests {
         #expect(VoiceNoteMenu.phase(capture.state) == .recording)
         await model.toggleVoiceNote()
         #expect(capture.state == .idle)
-        #expect(model.errorMessage == nil)
+        #expect(model.alert == nil)
         #expect(!QuickCaptureTests.inbox(url).isEmpty)
     }
 
@@ -82,6 +82,6 @@ struct VoiceNoteMenuModelTests {
         model.quickCapture = capture
         await model.toggleVoiceNote()
         #expect(capture.state == .idle)
-        #expect(model.errorMessage != nil)
+        #expect(model.alert != nil)
     }
 }

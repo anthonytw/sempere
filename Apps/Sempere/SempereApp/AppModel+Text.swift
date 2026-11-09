@@ -7,6 +7,29 @@ import SempereSync
 // The words of the model's typed values (docs/design/thin-app.md "Rules": the library holds no user-facing text).
 // Moved with wave 5b part 2 from the files that moved into SempereAppCore; the strings are unchanged.
 
+extension AppModelAlert {
+    /// The model's alert (`AppModel.alert`), worded: a thrown error as its own description (the retroactive
+    /// `CustomStringConvertible` conformances of the library's errors, in this file and the other `+Text` files).
+    var text: String {
+        switch self {
+        case .error(let error): return "\(error)"
+        case .notice(let notice): return notice.text
+        case .insert(let notice): return notice.text
+        case .worded(let sentence): return sentence
+        }
+    }
+}
+
+extension EditorFailure {
+    /// The detail pane's sentence for a note that could not be shown (`AppModel.editorFailure`).
+    var text: String {
+        switch self {
+        case .unreadable(let reason): return reason?.text ?? String(localized: "This note could not be read.")
+        case .failed(let error): return "\(error)"
+        }
+    }
+}
+
 extension NoteSort {
     /// The picker's label (`rawValue` is not localized).
     var title: String {
@@ -49,8 +72,9 @@ extension AppModelError: @retroactive CustomStringConvertible {
     }
 }
 
-extension AppModelNotice: @retroactive CustomStringConvertible {
-    public var description: String {
+extension AppModelNotice {
+    /// The alert's sentence (`AppModelAlert.notice`).
+    var text: String {
         switch self {
         case .keyNoLongerListed:
             return String(localized: "This device's key is no longer one of the vault's keys, so the vault was closed. Ask a device that still has the vault to add this device again.")

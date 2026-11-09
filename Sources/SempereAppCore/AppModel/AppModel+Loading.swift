@@ -46,14 +46,25 @@ public enum EmptyListReason: Equatable, Sendable {
     case loading(NoteLoading?)
     /// A join is still downloading the notes (a partial copy).
     case downloading(JoinProgress)
-    /// The listing failed; the text says why.
-    case failed(String)
+    /// The listing failed, with this error.
+    case failed(any Error)
     /// The search matches nothing among the notes shown.
     case noMatches(String)
     /// The sidebar selection (a notebook, a tag, Recently Deleted) has no notes.
     case emptySelection
     /// The vault holds no notes.
     case emptyVault
+
+    public static func == (a: EmptyListReason, b: EmptyListReason) -> Bool {
+        switch (a, b) {
+        case let (.loading(x), .loading(y)): return x == y
+        case let (.downloading(x), .downloading(y)): return x == y
+        case let (.failed(x), .failed(y)): return sameError(x, y)
+        case let (.noMatches(x), .noMatches(y)): return x == y
+        case (.emptySelection, .emptySelection), (.emptyVault, .emptyVault): return true
+        default: return false
+        }
+    }
 }
 
 /// A summary and the sorted revision file names it was made from.
@@ -119,7 +130,7 @@ extension AppModelCore {
     /// Lists the notes in a task the model owns. The previous listing, if
     /// any, finishes first (`loadGate`).
     ///
-    /// - Parameter reportErrors: put a failure in `errorMessage` (nobody
+    /// - Parameter reportErrors: put a failure in `alert` (nobody
     ///   awaits the task) rather than only rethrowing it from `notesLoaded`.
     public func startLoadingNotes(reportErrors: Bool) {
         let gen = generation
@@ -131,7 +142,7 @@ extension AppModelCore {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                if reportErrors, self.generation == gen { self.errorMessage = "\(error)" }
+                if reportErrors, self.generation == gen { self.alert = .error(error) }
                 throw error
             }
         }

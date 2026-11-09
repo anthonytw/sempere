@@ -55,7 +55,7 @@ extension AppModelSuites {
             #expect(model.openedPDFs.first?.name == outside.lastPathComponent)
             #expect(model.openedPDFStage == .needsVault)
             #expect(model.phase == .noVault, "a PDF is never opened as a vault")
-            #expect(model.errorMessage == nil)
+            #expect(model.alert == nil)
             let copy = try #require(model.openedPDFs.first?.file)
             #expect(copy != outside && FileManager.default.fileExists(atPath: copy.path))
 
@@ -69,7 +69,7 @@ extension AppModelSuites {
             #expect(locked.isEmpty)
             #expect(model.openedPDFs.isEmpty)
             #expect(model.openedPDFStage == .none)
-            #expect(model.errorMessage == nil)
+            #expect(model.alert == nil)
             let added = model.notes.filter { !before.contains($0.id) }
             #expect(added.count == 1)
             #expect(added.first?.notebook == "Inbox/PDFs")
@@ -129,7 +129,10 @@ extension AppModelSuites {
             defer { model.close() }
             await model.receiveOpenedPDF(URL(fileURLWithPath: "/nonexistent/\(UUID().uuidString).pdf"))
             #expect(model.openedPDFs.isEmpty)
-            #expect(model.errorMessage != nil)
+            guard case .insert(.fileNotOpened(let name, let error as CocoaError)) = model.alert else {
+                Issue.record("not the copy's error: \(String(describing: model.alert))"); return
+            }
+            #expect(name.hasSuffix(".pdf") && error.code == .fileReadNoSuchFile)
         }
 
         /// The waiting PDFs are the app's, not the vault's: closing a vault keeps them.

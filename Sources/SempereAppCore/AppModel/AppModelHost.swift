@@ -3,33 +3,19 @@ import Sempere
 import SempereRender
 import SempereSync
 
-/// What an `AppModelCore` needs from the front end that runs it: its canvas type, the platform services the moved
-/// code takes (`AppModelServices`), and, until wave 5b part 3 moves the rest of the family, the state and the steps
-/// of the extensions still in the app (docs/design/thin-app.md "Wave 5b, part 2").
+/// What an `AppModelCore` needs from the front end that runs it: its canvas type and the platform services
+/// (`AppModelServices`). Since wave 5b part 3, step 7, nothing else: the family is in the library, and what the app still
+/// adds (the microphone half of a saved recording) is a service.
 ///
 /// The app's host is `AppHost` (`Apps/Sempere/SempereApp/AppModel+Host.swift`), whose `AppModel` is
-/// `AppModelCore<AppHost>`; the package's tests use a host with no-op steps on `TestCanvas`. Every step is a
-/// requirement without a default, so a host that forgets one does not compile.
+/// `AppModelCore<AppHost>`; the package's tests use `TestHost` on `TestCanvas`.
 public protocol AppModelHost: Sendable {
     /// The editor's canvas (`NoteEditorModel<Canvas>`).
     associatedtype Canvas: NoteCanvas
-    /// The state of the extensions still in the app: properties whose types are the app's (part 3 moves them into
-    /// the class with their code). Made once per model.
-    associatedtype State: AnyObject
 
-    /// The model's app-side state (`AppModelCore.appState`).
-    @MainActor static func makeState() -> State
     /// The platform services the model starts with (the app's: `UserDefaults.standard`, the Keychain, the network;
     /// tests: memory versions). Tests replace single services on the model afterwards, as before.
     @MainActor static func makeServices() -> AppModelServices
-
-    // MARK: Steps of the extensions still in the app (wave 5b part 3)
-
-    /// An editor opened for the library window or a note window is about to be shown: what happens to recordings made in it once
-    /// saved (the microphone half is the app's).
-    @MainActor static func prepareEditor(_ editor: NoteEditorModel<Canvas>, of note: UUID, in model: AppModelCore<Self>)
-    /// What the detail pane says for a note whose read failed before it was shown.
-    @MainActor static func unreadableText(_ editor: NoteEditorModel<Canvas>) -> String
 }
 
 /// The platform services the moved `AppModel` code takes (docs/design/thin-app.md "The platform protocols"). Each
@@ -39,9 +25,9 @@ public protocol AppModelHost: Sendable {
 /// property at init and read from there (`transcriber`, `playbackBackend`, `recordingRoot`, `iCloudHooks`, the WebDAV
 /// remote and passwords, `quickCapture`, `ownerAuthenticator`, `backgroundTasks`, `syncScheduler`, and `settings` as
 /// `deviceMemory`); every other one is read from `services` when used (`perf`, `settings`, `bookmarks`, `platform`,
-/// `makeRenderCache`, `recordingsInUse`, `audioFiles`, `settingsStorage`, `makePageRecognizer`, `files`,
-/// `exportRendering`, `pdfTextExtractor`, `attachmentPreparation`, `lifecycle`, `makeReachability`), and a test passes
-/// its own at init (or, for `lifecycle`, to `observeAppLifecycle` and `keepScreenOn`).
+/// `makeRenderCache`, `recordingsInUse`, `audioFiles`, `finishRecordingSave`, `settingsStorage`, `makePageRecognizer`,
+/// `files`, `exportRendering`, `pdfTextExtractor`, `attachmentPreparation`, `lifecycle`, `makeReachability`), and a test
+/// passes its own at init (or, for `lifecycle`, to `observeAppLifecycle` and `keepScreenOn`).
 public struct AppModelServices {
     /// Timing and log lines (`AppPerfSink` in the app).
     public var perf: any PerfSink
@@ -71,6 +57,10 @@ public struct AppModelServices {
     public var recordingsInUse: @MainActor () -> Set<UUID>
     /// What a recording's segment files hold, and their merge (`AVCaptureAudioFiles`; headless, bytes).
     public var audioFiles: any CaptureAudioFiles
+    /// A recording made in a note is saved and, when that setting is on, transcribed (`onRecordingSaved`, set by the
+    /// model on every editor it opens): its session folder, holding the plaintext audio, goes. The app also stops
+    /// counting the recording as in use (`RecordingSession.busy`); headless, the folder is deleted.
+    public var finishRecordingSave: @MainActor (_ recording: UUID, _ folder: URL) -> Void
     /// Quick voice notes (the app's `QuickCapture.shared`; headless, a capture that records nothing, its folders in
     /// the model's own scratch folder, which it is given).
     public var makeQuickCapture: @MainActor (_ scratch: URL) -> QuickCapture
@@ -116,6 +106,8 @@ public struct AppModelServices {
                 makePlaybackBackend: @escaping @MainActor () -> any AudioPlaybackBackend = { SilentPlaybackBackend() },
                 recordingRoot: URL? = nil, recordingsInUse: @escaping @MainActor () -> Set<UUID> = { [] },
                 audioFiles: any CaptureAudioFiles = ByteCaptureAudioFiles(),
+                finishRecordingSave: @escaping @MainActor (_ recording: UUID, _ folder: URL) -> Void
+                    = AppModelServices.deleteRecordingFolder,
                 makeQuickCapture: @escaping @MainActor (_ scratch: URL) -> QuickCapture = AppModelServices.scratchQuickCapture,
                 settingsStorage: any SettingsSyncStorage = StoredSettingsSyncStorage(),
                 makePageRecognizer: @escaping @MainActor () -> (any PageRecognizing)? = { nil },
@@ -140,6 +132,7 @@ public struct AppModelServices {
         self.recordingRoot = recordingRoot
         self.recordingsInUse = recordingsInUse
         self.audioFiles = audioFiles
+        self.finishRecordingSave = finishRecordingSave
         self.makeQuickCapture = makeQuickCapture
         self.settingsStorage = settingsStorage
         self.makePageRecognizer = makePageRecognizer
@@ -158,6 +151,11 @@ public struct AppModelServices {
     @MainActor public static func scratchQuickCapture(_ scratch: URL) -> QuickCapture {
         QuickCapture(root: scratch.appendingPathComponent("QuickCapture", isDirectory: true),
                      queueRoot: scratch.appendingPathComponent("CaptureQueue", isDirectory: true))
+    }
+
+    /// Deletes a saved recording's session folder (the plaintext audio).
+    @MainActor public static func deleteRecordingFolder(_ recording: UUID, _ folder: URL) {
+        try? FileManager.default.removeItem(at: folder)
     }
 
     /// A render cache of plain bytes (`DataPictureCodec`), for tests and front ends that draw nothing.

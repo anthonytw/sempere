@@ -383,12 +383,12 @@ struct NewVaultView: View {
                 }
                 if let copyFolder, let vault = model.vault?.vaultId {
                     do { try model.addPickedFolderTarget(copyFolder, to: vault) } catch {
-                        model.errorMessage = String(describing: error)
+                        model.alert = .error(error)
                     }
                 }
                 if let backupFolder, model.vault != nil {
                     do { try model.chooseBackupFolder(backupFolder) } catch {
-                        model.errorMessage = String(describing: error)
+                        model.alert = .error(error)
                     }
                 }
                 if result.secretKey == nil { dismiss() } else { created = result }

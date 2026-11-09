@@ -88,7 +88,7 @@ struct VideoTests {
         let item = try #require(await model.insertVideo(file: file, into: editor,
                                                         visible: CGRect(x: 0, y: 200, width: 612, height: 400), privacy: true))
         await editor.flush()
-        #expect(model.errorMessage == nil)
+        #expect(model.alert == nil)
         #expect(try NoteEditorTests.myDeltas(vault, clock).count == 1)
         #expect(item.kind == .video)
         #expect(item.codec == "h264")

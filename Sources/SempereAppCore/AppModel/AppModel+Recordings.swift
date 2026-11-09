@@ -36,14 +36,28 @@ public enum RecordingRecovery {
 /// of the note, then one `setRecording(transcript)` delta through the
 /// browser's write path (`commit(_:building:)`), so a job finishes even if
 /// the note is closed meanwhile, and an open editor takes the result. The microphone half (a recording being
-/// made, and what happens to its files once saved) is the app's (`NoteEditor+RecordingSession`).
+/// made) is the app's (`NoteEditor+RecordingSession`); once one is saved, the model transcribes it and hands its
+/// files back (`services.finishRecordingSave`).
 extension AppModelCore {
-    /// Hooks an editor's recordings up to the model: taps on linked ink play, and
-    /// recordings a crash left behind for this note are saved into it.
+    /// Hooks an editor's recordings up to the model: taps on linked ink play, a recording made in it is transcribed
+    /// once saved (when that setting is on, then `services.finishRecordingSave`), and recordings a crash left behind
+    /// for this note are saved into it. Every editor the model opens, for the library window or a note window, gets it.
     public func configureRecordings(_ editor: Editor) {
         editor.onPlayRequest = { [weak self, weak editor] recording, time in
             guard let self, let editor else { return }
             Task { await self.play(recording, in: editor, from: time) }
+        }
+        let finish = services.finishRecordingSave
+        editor.onRecordingSaved = { [weak self, weak editor] recording, file, folder in
+            guard let self, let editor, self.transcribesSavedRecordings else {
+                finish(recording.id, folder)
+                return
+            }
+            let note = editor.noteID, meta = editor.meta
+            Task {
+                await self.transcribeSaved(recording, file: file, note: note, meta: meta)
+                finish(recording.id, folder)   // the plaintext audio
+            }
         }
         Task { await recoverRecordings(into: editor) }
     }
@@ -87,7 +101,7 @@ extension AppModelCore {
                     throw error
                 }
             } catch {
-                errorMessage = "\(AppModelNotice.recordingUnplayable(String(describing: error)))"
+                alert = .notice(.recordingUnplayable(String(describing: error)))
                 return
             }
             if recording.transcript != nil {
@@ -148,7 +162,7 @@ extension AppModelCore {
             await transcribe(recording, note: note, file: url, meta: editor.meta, automatic: false)
             await cache.release(note: note, ref: recording.blob, discard: true)
         } catch {
-            errorMessage = "\(AppModelNotice.recordingUnreadable(String(describing: error)))"
+            alert = .notice(.recordingUnreadable(String(describing: error)))
         }
     }
 
@@ -177,10 +191,10 @@ extension AppModelCore {
             // Once per launch: an inbox of several voice notes would otherwise bring the alert once each.
             if gen == generation, !modelMissingReported {
                 modelMissingReported = true
-                errorMessage = "\(AppModelNotice.transcriptionModelMissing)"
+                alert = .notice(.transcriptionModelMissing)
             }
         } catch {
-            if gen == generation { errorMessage = "\(AppModelNotice.recordingNotTranscribed(String(describing: error)))" }
+            if gen == generation { alert = .notice(.recordingNotTranscribed(String(describing: error))) }
         }
     }
 

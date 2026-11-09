@@ -83,14 +83,11 @@ enum NotePagesAppearance: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// Settings ▸ General ▸ Drag to Finder (the core's `DragExportFormat`): the app's
-/// switch, the stored choice in `UserDefaults` and the titles.
+/// switch and the titles (the stored choice is read from the model's `services.settings`).
 extension DragExportFormat {
     /// The one switch for v1: false hides Settings ▸ General ▸ Drag to Finder (the Finder
     /// does not accept the drop yet). The stored setting and `drag.format` sync are unchanged.
     static let showsInSettings = false
-
-    /// The choice in the app's defaults.
-    static func load() -> DragExportFormat { load(from: UserDefaults.standard) }
 
     var title: String {
         switch self {

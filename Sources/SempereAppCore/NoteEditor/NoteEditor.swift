@@ -150,9 +150,13 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     @ObservationIgnored public var incrementalMerges = true
     /// The read that completes an editor opened from the cache.
     @ObservationIgnored var fullLoad: Task<Void, Never>?
-    /// Called when that read fails (`failLoading`), with the reason: the
+    /// Called when that read fails (`failLoading`), with the error: the
     /// model shows the failure instead of a partial, read-only canvas.
-    @ObservationIgnored public var onLoadFailed: (@MainActor (String) -> Void)?
+    @ObservationIgnored public var onLoadFailed: (@MainActor (any Error) -> Void)?
+    /// Called once a recording made in this note is saved (by the app's microphone half), with its audio file and
+    /// the session folder holding it: the model transcribes it when that setting is on, then hands the folder to
+    /// `AppModelServices.finishRecordingSave` (`configureRecordings`). Nil: the recorder deletes the folder itself.
+    @ObservationIgnored public var onRecordingSaved: (@MainActor (Recording, URL, URL) -> Void)?
     /// Set when `finishLoading` starts: no more cache hits are handed out
     /// unchecked from then on.
     @ObservationIgnored var finishing = false
@@ -505,7 +509,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
         readOnly = .loadFailed("\(error)")
         loadFailed = true
         isPreparing = false
-        onLoadFailed?("\(error)")
+        onLoadFailed?(error)
     }
 
     /// Stops the background read of an editor opened from the cache that

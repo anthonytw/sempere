@@ -6,14 +6,18 @@ import TempDirSupport
 import Testing
 
 extension AppModelSuites {
-    /// The seam to the extensions still in the app (`AppModelHost`, wave 5b part 2): which host steps the core runs,
-    /// and when.
+    /// What used to be the host's steps (`AppModelHost`, wave 5b part 2) and is the core's own since step 7: a reopen,
+    /// the attachment index, the editors' saved recordings (a service, `finishRecordingSave`) and what `close()` forgets.
     @MainActor
     struct HostStepTests {
-        @Test func theCoreRunsTheHostsStepsInOrder() async throws {
+        @Test func theCoreDoesWhatTheHostsStepsDid() async throws {
             let (url, key) = try await ModelFixture.vault()
             let text = try await ModelFixture.keyText(key)
-            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            var services = AppModelServices.headless()
+            var finished: [UUID] = []
+            services.finishRecordingSave = { id, _ in finished.append(id) }
+            let model = AppModel(deviceStateURL: TS.deviceStateURL(), services: services)
+            defer { model.close() }
             try await model.openVault(at: url)
             try await model.unlock(identityText: text)
             try await model.notesLoaded()   // the listing ends in the core's own automatic thinning: no host step
@@ -23,9 +27,7 @@ extension AppModelSuites {
             let identity = try IdentityFile.parse(text)
             let reopened = try await Self.open(url, identity)
             let epoch = model.keyEpoch
-            let steps = model.appState.steps
             model.adoptReopened(reopened)
-            #expect(model.appState.steps == steps)
             #expect(model.keyEpoch == epoch + 1)
 
             // A delta written with the model's clock reaches the attachment index (`noteWritten`).
@@ -33,14 +35,23 @@ extension AppModelSuites {
             let id = try await model.createNote(title: "Written", paper: .ruled, notebook: nil)
             #expect(await TS.waitUntil(timeout: .seconds(60)) { model.attachmentIndex[id] != nil })
 
-            // An editor about to be shown, for the library window or a note window: the host's step (the microphone
-            // half of saved recordings is the app's).
-            let prepared = model.appState.steps.filter { $0 == "prepareEditor" }.count
+            // Every editor the model opens, for the library window or a note window, hands a saved recording's files
+            // to the service (transcription is off here, so at once; the microphone half is the app's).
             model.selectedNoteID = ModelFixture.lecture
             try await model.openEditor(for: ModelFixture.lecture)
             await model.claimNote(id)
-            _ = try await model.openWindowNote(id)
-            #expect(model.appState.steps.filter { $0 == "prepareEditor" }.count == prepared + 2)
+            let window = try await model.openWindowNote(id)
+            let library = try #require(model.editor)
+            #expect(!model.transcribesSavedRecordings)
+            let a = Recording(id: UUID(), blob: BlobRef(sha256: String(repeating: "0", count: 64), size: 1, type: "audio/mp4"),
+                              started: Date(), duration: 1)
+            let b = Recording(id: UUID(), blob: a.blob, started: Date(), duration: 1)
+            let folder = TestTemp.root.appendingPathComponent(UUID().uuidString)
+            let savedInLibrary = try #require(library.onRecordingSaved)
+            let savedInWindow = try #require(window.onRecordingSaved)
+            savedInLibrary(a, folder, folder)
+            savedInWindow(b, folder, folder)
+            #expect(finished == [a.id, b.id])
 
             // `close()` forgets a drag in progress and a row's flash itself (step 6: no `willClose` step any more).
             model.beginDrag(.notes([id]))

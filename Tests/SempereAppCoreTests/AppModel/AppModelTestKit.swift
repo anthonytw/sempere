@@ -5,26 +5,12 @@ import SempereAppCore
 import TempDirSupport
 import Testing
 
-/// The model's tests run it on a host of their own (`AppModelHost`): the canvas of stored strokes (`TestCanvas`), the
-/// headless services, and no-op steps for the extensions still in the app (wave 5b part 3), counted so a test can
-/// see that a step ran.
+/// The model's tests run it on a host of their own (`AppModelHost`): the canvas of stored strokes (`TestCanvas`) and
+/// the headless services.
 enum TestHost: AppModelHost {
     typealias Canvas = TestCanvas
-    typealias State = TestHostState
 
-    static func makeState() -> TestHostState { TestHostState() }
     static func makeServices() -> AppModelServices { .headless() }
-
-    static func prepareEditor(_ editor: TestEditor, of note: UUID, in model: AppModel) {
-        model.appState.steps.append("prepareEditor")
-    }
-    static func unreadableText(_ editor: TestEditor) -> String { "unreadable" }
-}
-
-/// What the test host's steps were asked.
-@MainActor
-final class TestHostState {
-    var steps: [String] = []
 }
 
 /// The model the tests drive, as the app's `AppModel` is `AppModelCore<AppHost>`.

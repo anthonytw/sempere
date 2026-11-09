@@ -84,7 +84,8 @@ enum NoteDragProvider {
                 NoteFileDrag.registerControl(on: provider, folder: model.exportFolder, tag: tag)
                 return
             }
-            NoteFileDrag.register(on: provider, title: note.title, prepare: NoteFileDrag.prepare(note.id, model: model), tag: tag)
+            NoteFileDrag.register(on: provider, title: note.title, format: DragExportFormat.load(from: model.services.settings),
+                                  prepare: NoteFileDrag.prepare(note.id, model: model), tag: tag)
         }
         DragLog.step("begin \(tag) notes=\(ids.count) deleted=\(note.deleted) fileOnly=\(fileOnly) control=\(control) "
                      + "types=\(provider.registeredTypeIdentifiers)")

@@ -69,7 +69,7 @@ extension AppModelCore {
     }
 
     /// Takes a PDF the system opened the app with: copies it into a work folder (its scope through
-    /// `services.bookmarks`) and queues it. Failures go to `errorMessage` (`InsertNotice.fileNotOpened`).
+    /// `services.bookmarks`) and queues it. Failures go to `alert` (`InsertNotice.fileNotOpened`).
     public func receiveOpenedPDF(_ url: URL) async {
         let bookmarks = services.bookmarks
         do {
@@ -78,12 +78,12 @@ extension AppModelCore {
             }.value
             openedPDFs.append(OpenedPDF(file: copy, name: url.lastPathComponent))
         } catch {
-            errorMessage = "\(InsertNotice.fileNotOpened(name: url.lastPathComponent, error))"
+            alert = .insert(.fileNotOpened(name: url.lastPathComponent, error))
         }
     }
 
     /// Imports every waiting PDF as a new note in `notebook`, one note each. Returns the ones that need a password
-    /// (their work copies stay for the password prompt); the others are imported or reported in `errorMessage`.
+    /// (their work copies stay for the password prompt); the others are imported or reported in `alert`.
     public func importOpenedPDFs(notebook: String?) async -> [PDFImportRequest] {
         let waiting = openedPDFs
         openedPDFs = []

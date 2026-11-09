@@ -19,7 +19,7 @@ public struct WebDAVLeftover: Identifiable, Equatable, Sendable {
     }
 }
 
-/// What the model reports in `errorMessage` that is not a thrown error's own text: worded by the app
+/// What the model reports in `alert` that is not a thrown error's own text: worded by the app
 /// (`AppModel+Text.swift`).
 public enum AppModelNotice: Sendable, Equatable {
     /// This device's key is no longer one of the vault's keys, so the vault was closed.
@@ -368,7 +368,7 @@ extension AppModelCore {
                 }
             } catch VaultError.keyNotListed {
                 guard generation == gen else { return }
-                errorMessage = "\(AppModelNotice.keyNoLongerListed)"
+                alert = .notice(.keyNoLongerListed)
                 close()
                 return
             }
@@ -386,7 +386,7 @@ extension AppModelCore {
             }
         } catch {
             // Never two-way again under the old keys: runs stay upload-only until the vault is opened anew.
-            errorMessage = "\(AppModelNotice.deviceListUnreadable(String(describing: error)))"
+            alert = .notice(.deviceListUnreadable(String(describing: error)))
         }
     }
 

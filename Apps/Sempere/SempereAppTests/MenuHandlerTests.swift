@@ -98,7 +98,7 @@ struct MenuHandlerTests {
         }
         let failure = await LibraryCommands.reopen(entry, pickOnFailure: true, model: model, library: library)
         #expect(failure == nil)
-        #expect(model.errorMessage == nil)
+        #expect(model.alert == nil)
         #expect(model.phase == .locked)
         #expect(model.vaultName == "Menu")
         try await model.unlock(identityText: try #require(created.unlockKey))
@@ -114,16 +114,16 @@ struct MenuHandlerTests {
         // By hand (a menu click): the alert, then the folder picker.
         let pick = await LibraryCommands.reopen(dead, pickOnFailure: true, model: model, library: library)
         #expect(pick == true)
-        let message = try #require(model.errorMessage)
+        let message = try #require(model.alert?.text)
         #expect(message.contains("Gone"))
         #expect(message.contains("Choose the vault folder again."))
         #expect(model.phase == .noVault)
 
         // At launch: the alert only, the welcome screen stays.
-        model.errorMessage = nil
+        model.alert = nil
         let quiet = await LibraryCommands.reopen(dead, pickOnFailure: false, model: model, library: library)
         #expect(quiet == false)
-        let launchMessage = try #require(model.errorMessage)
+        let launchMessage = try #require(model.alert?.text)
         #expect(launchMessage.contains("Gone"))
         #expect(!launchMessage.contains("Choose the vault folder again."))
     }
@@ -196,7 +196,7 @@ struct MenuHandlerTests {
         #expect(await TS.waitUntil { isDeleted() })
         _ = LibraryCommands.perform(.restoreNote, model: model, ui: ui, recents: [], storedColumns: "all")
         #expect(await TS.waitUntil { !isDeleted() })
-        #expect(model.errorMessage == nil)
+        #expect(model.alert == nil)
         model.close()
     }
 

@@ -32,7 +32,7 @@ extension AppModel {
             return try await actions.paste(paste.entry, on: page, offset: paste.offset, prepare: paste.prepare)
         } catch {
             let detail = "\(error)"
-            errorMessage = String(localized: "Could not paste: \(detail)")
+            alert = .worded(String(localized: "Could not paste: \(detail)"))
             return []
         }
     }

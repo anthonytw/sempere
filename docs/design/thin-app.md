@@ -234,7 +234,7 @@ Wave 5b, part 2 (the first half of the `AppModel` family, 2026-11-07) moved the 
   (`NoteEditorModel<Host.Canvas>`), the platform services (`AppModelServices`: `PerfSink`, `KeyValueStore`,
   `FolderBookmarks`, `PlatformServices`, the WebDAV remote and passwords, `CloudVault.Hooks`, the transcriber and the
   revisions' `app` name; the app's are `UserDefaults.standard`, the Keychain, the network, as before; tests get
-  `AppModelServices.headless()`) and, until part 3, two seams for the extensions still in the app:
+  `AppModelServices.headless()`) and, until part 3 step 7a removed them, two seams for the extensions still in the app:
   - `Host.State`: their stored state whose types are the app's (`AppModelAppState`: the drag payload, export and import
     requests, background tasks, reachability, the render cache, the item clipboard, takeover and settings-sync alerts,
     …), read through forwarding properties on `AppModel`. Stored state whose type is the library's is in the class even
@@ -248,8 +248,7 @@ Wave 5b, part 2 (the first half of the `AppModel` family, 2026-11-07) moved the 
   `SyncTargetProblem`, `WebDAVVaultError`, `WebDAVPasswordError`, `NoteSort`, `SearchScope`, the progress headlines,
   `WebDAVLeftover` and the read-only banner, unchanged.
 - **Public surface**: every member of the moved files that was internal is public, because the views and the app-side
-  extensions (part 3) use the class through another module. Part 3 can narrow it to what the views read once nothing
-  else is left in the app.
+  extensions (part 3) use the class through another module. Narrowing it to what the views read is step 7b (below).
 - **Tests**: `Tests/SempereAppCoreTests/AppModel` (one `.serialized` parent suite, `AppModelSuites`; fixture vaults copied
   off the main actor, `ModelFixture`) holds `IndexTests`, `ListEpochTests`, `MassChangeTests` and the parts of
   `AppModelTests`, `BrowserTests`, `SearchTests` and `VaultOpeningTests` that need no app-side code, on a host of their
@@ -613,7 +612,7 @@ Wave 5b, part 3, step 6b (the drag-out export, 2026-11-08) moved:
 - **Typed values the app words**: `AppModel.ExportError` is the core's `DragExportError` (`.unreadableRevisions(n)`);
   the app's `Export+Text.swift` words it with the same string and catalog key (retroactive
   `CustomStringConvertible`). `DragExportFormat.title` and the v1 switch `showsInSettings` stay in the app
-  (`AppearancePreferences.swift`), with `load()` on `UserDefaults.standard`.
+  (`AppearancePreferences.swift`); since step 7a the drag source reads the stored format from `model.services.settings`.
 - **What stays in the app**: `NoteFileDrag` (the `UTType` of each format, the item providers, the file request's wait
   and timeout, `DragLog`) and the drag source. They take the core's `PreparedExport`.
 - **Review of #31, folded in**: `ManualAppLifecycle`'s cancel removes the handler at once on the main thread
@@ -632,16 +631,62 @@ Wave 5b, part 3, step 6b (the drag-out export, 2026-11-08) moved:
   main thread blocked, the providers), `RobustnessAuditTests`' timeouts, `AppearanceSettingsTests`' drags (the `UTType`s,
   Markdown and HTML on the app's renderers) and the words (`ExportTests.progressAndFailureLines`).
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b and 5a to 6b are done (above). The rest of the family, in an
-order that empties `AppModelAppState` and the host's steps:
+Wave 5b, part 3, step 7a (the host's seams and the model's words, 2026-11-08) finished what `AppModelHost` carried for the
+app:
+
+- **Gone**: `AppModelAppState` (empty since step 6), `Host.State`, `makeState`, the model's `appState`, and the last two
+  host steps. `AppModelHost` is the canvas and `makeServices()`; `AppHost` and the tests' `TestHost` give nothing else.
+- **`prepareEditor` is a service**: the core's `configureRecordings`, which every editor the model opens already got
+  (library window and note windows), also sets the editor's `onRecordingSaved` (now `NoteEditorModel`'s, out of
+  `NoteEditorAppState`): with "Transcribe Recordings on This Device" on, it transcribes the saved recording
+  (`transcribeSaved`), then hands the session folder to `AppModelServices.finishRecordingSave` (the app's
+  `AppModel.finishRecordingSave` deletes the folder and clears `RecordingSession.busy`; headless, the folder is
+  deleted). The app's `configureRecordingSaves` is gone.
+- **`unreadableText` is a typed value**: `editorFailure` is `(id:, reason: EditorFailure)` (`.unreadable(NoteReadOnly?)`,
+  the editor's read-only reason; `.failed(any Error)`), and the editor's `onLoadFailed` passes the error, not its
+  description. The detail pane words it (`EditorFailure.text` in `AppModel+Text.swift`: the read-only banner's words,
+  "This note could not be read.", or the error's description; the same strings).
+- **`errorMessage` is `alert: AppModelAlert?`** (`AppModelAlert.swift`): `.error(any Error)` (`report`, a listing nobody
+  awaits), `.notice(AppModelNotice)`, `.insert(InsertNotice)`, and `.worded(String)` for a sentence the app made itself
+  (a paste, a photo pick, a reopen; the model only carries it). `RootView`'s alert shows `alert.text`. `loadFailure` is
+  `(any Error)?` and `EmptyListReason.failed` carries the error; the list words it with its description.
+  `AppModelNotice` and `InsertNotice` lost their retroactive `CustomStringConvertible`: the app words them with `text`,
+  same strings. Thrown errors keep theirs (`AppModelError` and the others), because `.error` and `.failed` word any
+  error by its description.
+- **Comparable reasons**: `AppModelAlert`, `EditorFailure`, `InsertNotice` and `EmptyListReason` are `Equatable` through
+  `sameError` (equal values of one `Equatable` error type, else the same type and description), so core tests assert the
+  reason: `.insert(.pdfNotImported(AttachmentOpsError.pagelessNote))`, `.imageNotAdded(ImageIngestError.unsupportedFormat)`,
+  `.imageNotReplaced(AttachmentOpsError.noSuchImage(…))`, `.pdfNotImported(PDFIngestError.unreadable(.notAPDF))`,
+  `.videoNotAdded(VideoProbeError.unsupportedCodec("mp4v"))`, a missing file's `CocoaError.fileReadNoSuchFile`,
+  `.notice(.transcriptionModelMissing)`, and a background listing's alert carrying the same error as `loadFailure`.
+- **Strings**: no localized literal changed. The set of literals in `Apps/` and `Sources/` (non-test) lost only the
+  core's own `"\(AppModelNotice.…)"` and `"\(InsertNotice.…)"` interpolations, which built `errorMessage`.
+  `LocalizationCatalogTests` treats `.worded(` as the bypass `errorMessage =` was.
+- **Review of #32, folded in**: `ManualAppLifecycle.send` looks each observer up as its turn comes, so one cancelled by
+  another during the same `send` is not told (`ManualAppLifecycleTests.anObserverCancelledDuringASendIsNotTold`);
+  `DragExportTests.aDragFromAClosedVaultWritesNothing` says the deferred second `close()` is idempotent; the app's drag
+  source reads `DragExportFormat.load(from: model.services.settings)` (`NoteFileDrag.register`'s default is
+  `DragExportFormat.defaultValue`; the app's `load()` on `UserDefaults.standard` is gone).
+- **Also**: `SidebarDropUITests.showSidebar` taps "Show Sidebar" on the Mac too (a 1100x760 library window, 847x586 Mac
+  points, can start with the sidebar collapsed). On this Mac on 2026-11-08 the tap lands but the sidebar stays
+  collapsed (the main window reports itself disabled), so the suite still fails there; the cause is not found yet.
+- **Tests**: `HostStepTests.theCoreDoesWhatTheHostsStepsDid` (both kinds of editor hand a saved recording to
+  `finishRecordingSave`), the typed assertions above in `InsertTests`, `OpenedFilesTests`, `RecordingModelTests` and
+  `VaultOpeningTests`; the app's `InsertTextTests.theAlertAndTheEditorFailureAreWordedAsBefore` checks the words.
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b, 5a to 6b and 7a are done (above). Left:
 
 6. App lifecycle and windows: done (step 6, above).
 6b. The drag-out export (`AppModel+DragExport.swift`, split out of step 6): done (step 6b, above).
-7. Then `AppModelAppState`, the host's steps and `Host.State` go; `AppHost` keeps only the canvas and the services, and
-   the public surface is narrowed to what the views use. The words still made for the model go with them:
-   `unreadableText` returns words, so `editorFailure` becomes a typed value the detail pane words; `errorMessage` and
-   `loadFailure` are strings today whose text comes from the app's `@retroactive CustomStringConvertible`
-   conformances (`AppModelError`, `AppModelNotice`, …), and become typed values the views word.
+7a. `AppModelAppState`, `Host.State` and the host's steps go; the model's words become typed values: done (step 7a,
+    above).
+7b. Narrow the public surface of `SempereAppCore` to what the app (views, glue and its tests) uses; the CLI links
+    none of it. On 2026-11-08 the module had about 2,675 `public` declarations, 343 of them named types, of which 84
+    are named nowhere in `Apps/`. Method: make the moved `AppModel` files' members internal, build the app and its
+    tests (`scripts/app.sh build-ios`, `test-mac`), make public again only what fails, and give
+    `SempereAppCoreTests` `@testable import SempereAppCore` where the tests need the rest. Open for that step: whether
+    the app's tests may `@testable import SempereAppCore` (Xcode's Debug builds of the local package allow it) or
+    everything they read stays public. Wave 5b is done with it.
 
 The words stayed in the app, next to the views that show them, so the string catalog's checks still see them
 (`LocalizationCatalogTests` scans `Apps/`): `MenuCommand+Titles.swift` words `MenuCommand.titleKind(in:)`,

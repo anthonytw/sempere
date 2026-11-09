@@ -111,7 +111,7 @@ struct RootView: View {
         .vaultPicker(isPresented: $pickingVault) { result in
             switch result {
             case .success(let url): pickedVault = PickedVault(url: url)
-            case .failure(let error): model.errorMessage = String(describing: error)
+            case .failure(let error): model.alert = .error(error)
             }
         }
         // Then: copy only, or keep syncing with the folder (`OpenVaultSheet`).
@@ -199,8 +199,8 @@ struct RootView: View {
             }
         }
         #endif
-        .alert("Sempere", isPresented: Binding(get: { model.errorMessage != nil },
-                                                set: { if !$0 { model.errorMessage = nil } })) {
+        .alert("Sempere", isPresented: Binding(get: { model.alert != nil },
+                                                set: { if !$0 { model.alert = nil } })) {
             Button("OK", role: .cancel) {
                 if pickAfterAlert {
                     pickAfterAlert = false
@@ -211,7 +211,7 @@ struct RootView: View {
                 }
             }
         } message: {
-            Text(model.errorMessage ?? "")
+            Text(model.alert?.text ?? "")
         }
         // A previous copy an interrupted "Download Again" left with files the vault lacks: kept, and shown.
         .alert("Sempere", isPresented: Binding(get: { model.webdavLeftover != nil },

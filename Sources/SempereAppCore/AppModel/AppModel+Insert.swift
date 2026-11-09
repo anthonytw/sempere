@@ -2,17 +2,6 @@ import Foundation
 import Sempere
 import SempereRender
 
-/// Why an image, a PDF, a clip or a file opened with the app could not be added, with the error (typed, worded by
-/// the app: `errorMessage` is its text).
-public enum InsertNotice: Sendable {
-    case imageNotAdded(any Error)
-    case imageNotReplaced(any Error)
-    case pdfNotImported(any Error)
-    case videoNotAdded(any Error)
-    /// A file the system opened the app with could not be copied in (its name as opened).
-    case fileNotOpened(name: String, any Error)
-}
-
 extension AppModelCore {
     /// Where an imported PDF goes.
     public enum PDFDestination {
@@ -43,14 +32,14 @@ extension AppModelCore {
         case done(UUID)
         /// It needs a password: ask, then `continuePDFImport` (or `cancelPDFImport`).
         case needsPassword(PDFImportRequest)
-        /// It failed or was canceled; `errorMessage` says why when it failed.
+        /// It failed or was canceled; `alert` says why when it failed.
         case failed
     }
 }
 
 /// Images and PDFs into the vault (docs/attachments.md §14 E1, E3): bytes are prepared off the main actor
 /// (`services.attachmentPreparation`), then written as one blob and one delta through the editor (or, for a new
-/// note, `commit`). Failures go to `errorMessage` (`InsertNotice`).
+/// note, `commit`). Failures go to `alert` (`InsertNotice`).
 extension AppModelCore {
     // MARK: Images
 
@@ -70,7 +59,7 @@ extension AppModelCore {
         } catch is CancellationError {
             return nil
         } catch {
-            errorMessage = "\(InsertNotice.imageNotAdded(error))"
+            alert = .insert(.imageNotAdded(error))
             return nil
         }
     }
@@ -90,7 +79,7 @@ extension AppModelCore {
         } catch is CancellationError {
             return nil
         } catch {
-            errorMessage = "\(InsertNotice.imageNotReplaced(error))"
+            alert = .insert(.imageNotReplaced(error))
             return nil
         }
     }
@@ -107,7 +96,7 @@ extension AppModelCore {
                 try ImportWorkFolder.copyPicked(url, bookmarks: bookmarks)
             }.value
         } catch {
-            errorMessage = "\(InsertNotice.pdfNotImported(error))"
+            alert = .insert(.pdfNotImported(error))
             return .failed
         }
         return await importPDF(copy: copy, to: destination, password: nil)
@@ -136,7 +125,7 @@ extension AppModelCore {
             return .needsPassword(PDFImportRequest(file: copy, destination: destination, wrongPassword: locked == .wrongPassword))
         } catch {
             ImportWorkFolder.discard(copy)
-            errorMessage = "\(InsertNotice.pdfNotImported(error))"
+            alert = .insert(.pdfNotImported(error))
             return .failed
         }
         defer {
@@ -154,7 +143,7 @@ extension AppModelCore {
         } catch is CancellationError {
             return .failed
         } catch {
-            errorMessage = "\(InsertNotice.pdfNotImported(error))"
+            alert = .insert(.pdfNotImported(error))
             return .failed
         }
     }

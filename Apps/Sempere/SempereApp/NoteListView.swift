@@ -548,11 +548,11 @@ struct EmptyListView: View {
                 Text("Notes appear here as they are read.").font(.callout).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
-        case .failed(let message):
+        case .failed(let error):
             ContentUnavailableView {
                 Label("Notes Could Not Be Listed", systemImage: "exclamationmark.triangle")
             } description: {
-                Text(message)
+                Text(String(describing: error))
             } actions: {
                 Button("Try Again", action: retry)
             }

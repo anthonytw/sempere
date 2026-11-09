@@ -34,24 +34,15 @@ struct SpeechRecordingTranscriber: RecordingTranscribing {
     }
 }
 
-/// What happens to a recording made in a note once it is saved (the microphone half, `NoteEditor+RecordingSession`):
-/// the model transcribes it when that setting is on (`AppModel+Recordings` in SempereAppCore), then its session
-/// folder, holding the plaintext audio, is deleted.
+/// The microphone half's bookkeeping (`NoteEditor+RecordingSession`): which recordings are in use, and the end of a
+/// saved one's files once the model has transcribed it (`AppModelServices.finishRecordingSave`, `configureRecordings`
+/// in SempereAppCore).
 extension AppModel {
-    func configureRecordingSaves(_ editor: NoteEditor) {
-        editor.onRecordingSaved = { [weak self, weak editor] recording, file, folder in
-            guard let self, let editor, self.transcribesSavedRecordings else {
-                try? FileManager.default.removeItem(at: folder)
-                RecordingSession.busy.remove(recording.id)
-                return
-            }
-            let note = editor.noteID, meta = editor.meta
-            Task {
-                await self.transcribeSaved(recording, file: file, note: note, meta: meta)
-                try? FileManager.default.removeItem(at: folder)   // the plaintext audio
-                RecordingSession.busy.remove(recording.id)
-            }
-        }
+    /// A saved recording is done with: its session folder, holding the plaintext audio, is deleted, and it no longer
+    /// counts as in use.
+    static func finishRecordingSave(_ recording: UUID, folder: URL) {
+        try? FileManager.default.removeItem(at: folder)
+        RecordingSession.busy.remove(recording)
     }
 
     /// The recordings `RecordingRecovery` leaves alone: the one running and those still being saved or transcribed.

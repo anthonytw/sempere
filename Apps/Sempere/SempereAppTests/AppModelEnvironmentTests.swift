@@ -13,7 +13,7 @@ final class ModelProbeLog {
 }
 
 /// A view that reads its model through `@AppModelEnvironment` and an
-/// observed property of it (`errorMessage`).
+/// observed property of it (`alert`).
 private struct ModelProbe: View {
     @AppModelEnvironment private var model
     let log: ModelProbeLog
@@ -21,7 +21,7 @@ private struct ModelProbe: View {
     var body: some View {
         log.models.append(ObjectIdentifier(model))
         log.bodies += 1
-        return Text(model.errorMessage ?? "none")
+        return Text(model.alert?.text ?? "none")
     }
 }
 
@@ -84,7 +84,7 @@ struct AppModelEnvironmentTests {
         let (window, controller) = Self.host(ModelProbe(log: log).environment(model))
         defer { window.isHidden = true }
         let before = log.bodies
-        model.errorMessage = "changed"
+        model.alert = .worded("changed")
         let updated = await TS.waitUntil {
             controller.view.layoutIfNeeded()
             return log.bodies > before

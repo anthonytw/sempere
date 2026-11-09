@@ -6,7 +6,7 @@ import SempereRender
 /// file a player reads. A clip is prepared off the main actor (`services.attachmentPreparation`: AVFoundation in the
 /// app) and written through the editor (blobs, then one delta); it is fetched from iCloud and decrypted only when it
 /// is played, into the model's `BlobCache` (a verified private file the player reads), and released when the player
-/// closes. The audio session stays in the app (`VideoViews.swift`). Failures go to `errorMessage` (`InsertNotice`).
+/// closes. The audio session stays in the app (`VideoViews.swift`). Failures go to `alert` (`InsertNotice`).
 extension AppModelCore {
     /// Adds the clip at `file` (a work copy, which this removes) to `page` of the editor's note, its metadata removed
     /// as the photo privacy setting says (`privacy`; nil: `PhotoPrivacy` in `services.settings`).
@@ -26,7 +26,7 @@ extension AppModelCore {
         } catch is CancellationError {
             return nil
         } catch {
-            errorMessage = "\(InsertNotice.videoNotAdded(error))"
+            alert = .insert(.videoNotAdded(error))
             return nil
         }
     }

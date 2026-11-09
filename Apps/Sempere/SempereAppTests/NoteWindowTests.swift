@@ -45,7 +45,7 @@ struct NoteWindowTests {
         let vault = try #require(model.vault)
         let source = try PDFImportTests.makePDF(pages: 2)
         guard case .done(let id) = await model.importPDF(copy: source, to: .newNote(notebook: nil), password: nil) else {
-            Issue.record("not imported: \(model.errorMessage ?? "")")
+            Issue.record("not imported: \(model.alert?.text ?? "")")
             return
         }
         model.selectedNoteID = id

@@ -111,7 +111,7 @@ extension AppModelSuites {
     /// Images, PDFs and clips into the vault through the model (`AppModel+Insert`, `AppModel+Video`; moved from the
     /// app's `PDFImportTests`, `VideoTests` and `CanvasSelectionTests`, which keep the platform's preparation, the
     /// drawing and the canvas): prepared by `services.attachmentPreparation`, written as blobs and one delta, the
-    /// work copies removed, failures in `errorMessage`.
+    /// work copies removed, failures in `alert` (`InsertNotice`).
     @MainActor
     struct InsertTests {
         static let lecture = ModelFixture.lecture
@@ -158,7 +158,7 @@ extension AppModelSuites {
             let item = try #require(await model.insertImage(try InsertFixture.png(), into: editor,
                                                             visible: CGRect(x: 0, y: 0, width: 612, height: 400)))
             await editor.flush()
-            #expect(model.errorMessage == nil)
+            #expect(model.alert == nil)
             #expect(item.kind == .image && item.pixelSize == Size(w: 4, h: 3))
             #expect(try Self.revisions(vault, Self.lecture) == before + 1)
             #expect(fake.privacies == [false], "the setting, from the model's settings")
@@ -173,7 +173,7 @@ extension AppModelSuites {
             let vault = try #require(model.vault)
             let blobs = Self.blobs(vault, Self.lecture)
             #expect(await model.insertImage(Data("not an image".utf8), into: editor, visible: nil) == nil)
-            #expect(model.errorMessage != nil)
+            #expect(model.alert == .insert(.imageNotAdded(ImageIngestError.unsupportedFormat)))
             #expect(Self.blobs(vault, Self.lecture) == blobs, "nothing written")
         }
 
@@ -189,10 +189,10 @@ extension AppModelSuites {
             #expect(new.id != original.id && new.kind == .image)
             #expect(editor.item(original.id, on: page) == nil)
             #expect(editor.item(new.id, on: page) != nil)
-            #expect(model.errorMessage == nil)
+            #expect(model.alert == nil)
             let text = try #require(editor.addTextBox(TextContent(size: 14, color: .black, runs: [TextRun("x")]), frame: Rect(x: 0, y: 0, w: 50, h: 20), on: page))
             #expect(await model.replaceImage(text.id, on: page, with: try InsertFixture.png(), in: editor) == nil)
-            #expect(model.errorMessage != nil)
+            #expect(model.alert == .insert(.imageNotReplaced(AttachmentOpsError.noSuchImage(text.id.uuidString.lowercased()))))
         }
 
         // MARK: PDFs
@@ -206,7 +206,7 @@ extension AppModelSuites {
             let url = try InsertFixture.pdf(pages: 3, w: 400, h: 500)
             let original = try Data(contentsOf: url)
             guard case .done(let id) = await model.importPDF(copy: url, to: .newNote(notebook: "Imports"), password: nil) else {
-                Issue.record("not imported: \(model.errorMessage ?? "")"); return
+                Issue.record("not imported: \(String(describing: model.alert))"); return
             }
             #expect(model.selectedNoteID == id)
             #expect(model.notes.contains { $0.id == id && $0.title == "synthetic" && $0.notebook == "Imports" })
@@ -265,7 +265,7 @@ extension AppModelSuites {
             let revisions = try Self.revisions(vault, Self.lecture)
             let url = try InsertFixture.pdf(pages: 2)
             guard case .done(let id) = await model.importPDF(copy: url, to: .insert(editor, after: 1), password: nil) else {
-                Issue.record("not inserted: \(model.errorMessage ?? "")"); return
+                Issue.record("not inserted: \(String(describing: model.alert))"); return
             }
             #expect(id == Self.lecture)
             await editor.flush()
@@ -293,7 +293,7 @@ extension AppModelSuites {
             guard case .failed = await model.importPDF(copy: url, to: .insert(editor, after: 1), password: nil) else {
                 Issue.record("inserted into a pageless note"); return
             }
-            #expect(model.errorMessage != nil)
+            #expect(model.alert == .insert(.pdfNotImported(AttachmentOpsError.pagelessNote)))
             #expect(Self.blobs(vault, Self.lecture) == blobs, "no blob written")
             #expect(!FileManager.default.fileExists(atPath: url.path), "the work copy is gone")
         }
@@ -315,7 +315,7 @@ extension AppModelSuites {
             }
             #expect(again.wrongPassword)
             guard case .done(let id) = await model.continuePDFImport(again, password: "pw") else {
-                Issue.record("not imported: \(model.errorMessage ?? "")"); return
+                Issue.record("not imported: \(String(describing: model.alert))"); return
             }
             #expect(model.notes.contains { $0.id == id && $0.title == "synthetic" })
             #expect(!FileManager.default.fileExists(atPath: folder.path), "the copy and the redrawn file are gone")
@@ -326,7 +326,7 @@ extension AppModelSuites {
             }
             model.cancelPDFImport(pending)
             #expect(!FileManager.default.fileExists(atPath: other.path))
-            #expect(model.errorMessage == nil)
+            #expect(model.alert == nil)
         }
 
         /// Import PDF from a picker: copied into a work folder first (the picked file is only read), then imported.
@@ -338,7 +338,7 @@ extension AppModelSuites {
             try InsertFixture.pdfData(pages: 1).write(to: picked)
             defer { try? FileManager.default.removeItem(at: picked) }
             guard case .done(let id) = await model.importPDF(picked: picked, to: .newNote(notebook: nil)) else {
-                Issue.record("not imported: \(model.errorMessage ?? "")"); return
+                Issue.record("not imported: \(String(describing: model.alert))"); return
             }
             #expect(model.notes.contains { $0.id == id })
             #expect(FileManager.default.fileExists(atPath: picked.path), "the user's file is untouched")
@@ -346,7 +346,10 @@ extension AppModelSuites {
             guard case .failed = await model.importPDF(picked: missing, to: .newNote(notebook: nil)) else {
                 Issue.record("imported a missing file"); return
             }
-            #expect(model.errorMessage != nil)
+            guard case .insert(.pdfNotImported(let error as CocoaError)) = model.alert else {
+                Issue.record("not the copy's error: \(String(describing: model.alert))"); return
+            }
+            #expect(error.code == .fileReadNoSuchFile)
         }
 
         @Test func notAPDFIsReportedAndItsCopyRemoved() async throws {
@@ -357,7 +360,7 @@ extension AppModelSuites {
             guard case .failed = await model.importPDF(copy: url, to: .newNote(notebook: nil), password: nil) else {
                 Issue.record("imported junk"); return
             }
-            #expect(model.errorMessage != nil)
+            #expect(model.alert == .insert(.pdfNotImported(PDFIngestError.unreadable(.notAPDF))))
             #expect(!FileManager.default.fileExists(atPath: url.path))
         }
 
@@ -413,7 +416,7 @@ extension AppModelSuites {
             let item = try #require(await model.insertVideo(file: file, into: editor,
                                                             visible: CGRect(x: 0, y: 200, width: 612, height: 400)))
             await editor.flush()
-            #expect(model.errorMessage == nil)
+            #expect(model.alert == nil)
             #expect(fake.privacies == [true], "on when never set")
             #expect(try Self.revisions(vault, Self.lecture) == revisions + 1)
             #expect(item.kind == .video && item.codec == "h264")
@@ -432,7 +435,7 @@ extension AppModelSuites {
             let editor = try #require(model.editor)
             let file = try InsertFixture.clip("clip-mpeg4.mp4")
             #expect(await model.insertVideo(file: file, into: editor, visible: nil) == nil)
-            #expect(model.errorMessage != nil)
+            #expect(model.alert == .insert(.videoNotAdded(VideoProbeError.unsupportedCodec("mp4v"))))
             #expect(!FileManager.default.fileExists(atPath: file.path))
         }
 

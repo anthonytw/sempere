@@ -173,7 +173,7 @@ struct ImageInsertTests {
         let item = try #require(await model.insertImage(heic, into: editor, visible: CGRect(x: 0, y: 200, width: 612, height: 400),
                                                          privacy: true))
         await editor.flush()
-        #expect(model.errorMessage == nil)
+        #expect(model.alert == nil)
         let deltas = try NoteEditorTests.myDeltas(vault, clock)
         #expect(deltas.count == 1)
         #expect(item.orientation == 6)

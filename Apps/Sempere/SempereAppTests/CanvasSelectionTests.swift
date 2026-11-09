@@ -236,7 +236,7 @@ struct CanvasSelectionTests {
         let new = try #require(await model.replaceImage(original.id, on: page, with: jpeg, in: editor, actions: actions, privacy: true))
         undo.endUndoGrouping()
         await editor.flush()
-        #expect(model.errorMessage == nil)
+        #expect(model.alert == nil)
         var deltas = try NoteEditorTests.myDeltas(vault, clock)
         #expect(deltas.count == count + 1, "one delta")
         #expect(deltas.last?.count == 2, "removeItem + addItem")
@@ -272,7 +272,7 @@ struct CanvasSelectionTests {
         let count = try NoteEditorTests.myDeltas(vault, clock).count
         let data = try #require(ImageInsertTests.photo(.png, gps: false))
         #expect(await model.replaceImage(text.id, on: page, with: data, in: editor, actions: nil) == nil)
-        #expect(model.errorMessage != nil)
+        #expect(model.alert != nil)
         await editor.flush()
         #expect(try NoteEditorTests.myDeltas(vault, clock).count == count)
     }

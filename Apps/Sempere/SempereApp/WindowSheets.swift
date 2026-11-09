@@ -237,8 +237,8 @@ struct OpenedPDFsView: View {
             for request in rest { model.cancelPDFImport(request) }
             if !rest.isEmpty {
                 let names = rest.map { $0.file.lastPathComponent }.formatted(.list(type: .and))
-                model.errorMessage = String(localized: "Protected PDFs not imported (open them again to enter their passwords): \(names)",
-                                            comment: "The value lists file names")
+                model.alert = .worded(String(localized: "Protected PDFs not imported (open them again to enter their passwords): \(names)",
+                                             comment: "The value lists file names"))
             }
         }
     }

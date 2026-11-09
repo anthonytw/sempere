@@ -304,7 +304,7 @@ extension AppModelCore {
             await transcribe(recording, note: note, file: url, meta: meta, automatic: true)
             await cache.release(note: note, ref: recording.blob, discard: true)
         } catch {
-            errorMessage = "\(AppModelNotice.voiceNoteUnreadable(String(describing: error)))"
+            alert = .notice(.voiceNoteUnreadable(String(describing: error)))
         }
     }
 }

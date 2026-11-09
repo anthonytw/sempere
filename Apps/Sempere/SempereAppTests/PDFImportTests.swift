@@ -111,7 +111,7 @@ struct PDFImportTests {
         }
         #expect(again.wrongPassword)
         guard case .done(let id) = await model.continuePDFImport(again, password: "pw") else {
-            Issue.record("not imported: \(model.errorMessage ?? "")"); return
+            Issue.record("not imported: \(model.alert?.text ?? "")"); return
         }
         let state = try #require(try model.vault?.reconstruct(noteId: id))
         let ref = try #require(state.pages.first?.items.first?.blob)
@@ -132,7 +132,7 @@ struct PDFImportTests {
 
     /// A pageless note refuses PDF pages (the core's `InsertTests.aPagelessNoteTakesNoPDFPages`); the app says why.
     @Test func aPagelessNoteSaysWhyItTakesNoPDFPages() {
-        #expect("\(InsertNotice.pdfNotImported(AttachmentOpsError.pagelessNote))".contains("pageless"))
+        #expect(InsertNotice.pdfNotImported(AttachmentOpsError.pagelessNote).text.contains("pageless"))
         #expect(!InsertOptions.offersPDFPages(pageless: true))
     }
 
@@ -177,7 +177,7 @@ struct PDFImportTests {
         let vault = try #require(model.vault)
         let url = try Self.makePDF(pages: 200)
         guard case .done(let id) = await model.importPDF(copy: url, to: .newNote(notebook: nil), password: nil) else {
-            Issue.record("not imported: \(model.errorMessage ?? "")"); return
+            Issue.record("not imported: \(model.alert?.text ?? "")"); return
         }
         let state = try vault.reconstruct(noteId: id)
         #expect(state.pages.count == 200)

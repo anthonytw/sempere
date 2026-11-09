@@ -34,13 +34,13 @@ final class SidebarDropUITests: XCTestCase {
         return app
     }
 
-    /// Opens the sidebar if the split view collapsed it.
+    /// Opens the sidebar if the split view collapsed it: an iPad in portrait, and the Mac too, where a library
+    /// window of 1100x760 (847x586 Mac points at Catalyst's 77%) can start with only the list and the note.
     @MainActor
     private func showSidebar(_ app: XCUIApplication) {
-        #if !targetEnvironment(macCatalyst)
+        if sidebarRow(app, "Personal").waitForExistence(timeout: 3) { return }
         let toggle = app.buttons["Show Sidebar"].firstMatch
-        if !sidebarRow(app, "Personal").waitForExistence(timeout: 3), toggle.exists { toggle.tap() }
-        #endif
+        if toggle.waitForExistence(timeout: 5) { toggle.tap() }
     }
 
     @MainActor

@@ -256,6 +256,22 @@ extension AppModelSuites {
             #expect(seen.events == [.didEnterBackground])
             #expect(!lifecycle.isInBackground, "the state still follows the events")
         }
+
+        /// An observer cancelled by another during the same `send` is not told (review of #32): each is looked up as
+        /// its turn comes. Two observers each cancel the other, so exactly one hears the event, whichever runs first.
+        @Test func anObserverCancelledDuringASendIsNotTold() async {
+            guard Self.onMainThread() else { return }   // off the main thread a cancel hops (above), after the send
+            let lifecycle = ManualAppLifecycle()
+            let seen = Seen()
+            var a: AppLifecycleObservation?
+            var b: AppLifecycleObservation?
+            a = lifecycle.observe { seen.events.append($0); b?.cancel() }
+            b = lifecycle.observe { seen.events.append($0); a?.cancel() }
+            lifecycle.send(.didEnterBackground)
+            #expect(seen.events == [.didEnterBackground])
+            #expect(lifecycle.observerCount == 1)
+            withExtendedLifetime((a, b)) {}
+        }
     }
 
     /// "The iPad seems to keep the screen on, even when it's not enabled": the idle timer is the app's, applied

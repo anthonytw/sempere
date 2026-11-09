@@ -11,8 +11,9 @@ typealias PDFDestination = AppModel.PDFDestination
 typealias PDFImportRequest = AppModel.PDFImportRequest
 typealias PDFImportOutcome = AppModel.PDFImportOutcome
 
-extension InsertNotice: @retroactive CustomStringConvertible {
-    public var description: String {
+extension InsertNotice {
+    /// The alert's sentence (`AppModelAlert.insert`).
+    var text: String {
         switch self {
         case .imageNotAdded(let error):
             return String(localized: "Could not add the image. \(AppModel.describe(error))")

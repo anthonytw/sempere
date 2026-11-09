@@ -11,14 +11,27 @@ import Testing
 struct InsertTextTests {
     @Test func theNoticesSayWhatFailedAndWhy() {
         let why = ImagePreparation.Failure.unreadable
-        #expect("\(InsertNotice.imageNotAdded(why))" == "Could not add the image. \(why.description)")
-        #expect("\(InsertNotice.imageNotReplaced(why))" == "Could not replace the image. \(why.description)")
-        #expect("\(InsertNotice.pdfNotImported(PDFLocked.needsPassword))"
+        #expect(InsertNotice.imageNotAdded(why).text == "Could not add the image. \(why.description)")
+        #expect(InsertNotice.imageNotReplaced(why).text == "Could not replace the image. \(why.description)")
+        #expect(InsertNotice.pdfNotImported(PDFLocked.needsPassword).text
                 == "Could not import the PDF. This PDF is protected with a password.")
-        #expect("\(InsertNotice.videoNotAdded(VideoPreparation.Failure.unreadable))"
+        #expect(InsertNotice.videoNotAdded(VideoPreparation.Failure.unreadable).text
                 == "Could not add the video. This file is not a video Sempere can read.")
-        #expect("\(InsertNotice.fileNotOpened(name: "Paper.pdf", CocoaError(.fileNoSuchFile)))".hasPrefix("Could not open “Paper.pdf”. "))
+        #expect(InsertNotice.fileNotOpened(name: "Paper.pdf", CocoaError(.fileNoSuchFile)).text.hasPrefix("Could not open “Paper.pdf”. "))
         #expect("\(PDFLocked.wrongPassword)" == "That password does not open this PDF.")
+    }
+
+    /// The model's alert and the detail pane's failure are typed (step 7); the app words them as the strings were
+    /// before: a thrown error as its description, a notice as its sentence, the app's own sentence as given.
+    @Test func theAlertAndTheEditorFailureAreWordedAsBefore() {
+        let pageless = InsertNotice.pdfNotImported(AttachmentOpsError.pagelessNote)
+        #expect(AppModelAlert.insert(pageless).text == pageless.text)
+        #expect(AppModelAlert.notice(.transcriptionModelMissing).text == AppModelNotice.transcriptionModelMissing.text)
+        #expect(AppModelAlert.error(AppModelError.noVaultOpen).text == "\(AppModelError.noVaultOpen)")
+        #expect(AppModelAlert.worded("Could not paste: x").text == "Could not paste: x")
+        #expect(EditorFailure.unreadable(nil).text == "This note could not be read.")
+        #expect(EditorFailure.unreadable(.deleted).text == NoteReadOnly.deleted.text)
+        #expect(EditorFailure.failed(AppModelError.noteNotFound).text == "\(AppModelError.noteNotFound)")
     }
 
     @Test func tooLargeFilesNameTheirSizeAndTheLimit() {

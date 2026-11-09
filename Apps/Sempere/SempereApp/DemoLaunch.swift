@@ -149,7 +149,7 @@ enum DemoLaunch {
             ctx.closePDF()
             _ = await model.importPDF(copy: url, to: .newNote(notebook: nil), password: nil)
         } catch {
-            model.errorMessage = "Demo PDF: \(error)"
+            model.alert = .worded("Demo PDF: \(error)")
         }
     }
 

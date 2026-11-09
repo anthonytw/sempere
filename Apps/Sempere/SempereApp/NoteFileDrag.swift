@@ -25,10 +25,11 @@ enum NoteFileDrag {
         ExportFileName.base(title: title)
     }
 
-    /// Registers the note's file in `format` (the setting's, by default) on
+    /// Registers the note's file in `format` (the drag source passes the setting, from the model's
+    /// `services.settings`) on
     /// `provider`: rendered when a drop asks for it, from `prepare`, on a
     /// background task. Every step goes to the `drag` log (`DragLog`).
-    static func register(on provider: NSItemProvider, title: String, format: DragExportFormat = .load(),
+    static func register(on provider: NSItemProvider, title: String, format: DragExportFormat = .defaultValue,
                          prepare: Task<PreparedExport, any Error>, tag: String = "") {
         provider.suggestedName = suggestedName(title: title)
         let type = fileType(for: format).identifier

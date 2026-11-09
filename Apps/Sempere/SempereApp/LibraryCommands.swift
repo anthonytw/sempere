@@ -80,10 +80,10 @@ enum LibraryCommands {
             return nil
         } catch {
             let detail = "\(error)"
-            model.errorMessage = pickOnFailure
+            model.alert = .worded(pickOnFailure
                 ? String(localized: "Could not reopen “\(entry.name)”: \(detail)\n\nChoose the vault folder again.",
                          comment: "First %@ is the vault's name, second the error (English)")
-                : String(localized: "Could not reopen “\(entry.name)”: \(detail)", comment: "First %@ is the vault's name, second the error (English)")
+                : String(localized: "Could not reopen “\(entry.name)”: \(detail)", comment: "First %@ is the vault's name, second the error (English)"))
             return pickOnFailure
         }
     }

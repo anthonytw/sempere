@@ -459,7 +459,7 @@ struct SwiftLiteral {
     /// Positions that show a `String` as is.
     static let bypassSinks: [String] = [
         #"\bText\(\s*verbatim:\s*$"#,
-        #"\berrorMessage\s*=\s*$"#, #"\bUIAlertController\(\s*title:\s*$"#, #"\bUIAction\(\s*title:\s*$"#,
+        #"\.worded\(\s*$"#, #"\bUIAlertController\(\s*title:\s*$"#, #"\bUIAction\(\s*title:\s*$"#,
         #"\bUIMenu\(\s*title:\s*$"#, #"\bUIBarButtonItem\(\s*title:\s*$"#, #"\bplaceholder\s*=\s*$"#,
         #"\bmessage:\s*$"#,
     ]

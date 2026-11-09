@@ -209,14 +209,14 @@ enum DebugLaunch {
         NSLog("%@", leftoverReport ?? "")
     }
 
-    /// Opens what the environment names; errors land in `model.errorMessage`.
+    /// Opens what the environment names; errors land in `model.alert`.
     @MainActor
     static func run(_ model: AppModel, library: VaultLibrary, keys: RememberedKeys? = nil) async {
         let env = environment
         // The leftover probe's launch only shows its report: opening the demo vault replaced the welcome
         // screen under the alert half a second later and dismissed it (QuitPurgeMacUITests).
         if let report = leftoverReport {
-            model.errorMessage = report
+            model.alert = .worded(report)
             return
         }
         if DemoLaunch.isActive {

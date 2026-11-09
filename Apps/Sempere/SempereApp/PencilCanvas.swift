@@ -105,10 +105,6 @@ final class NoteEditorAppState {
     var recordingError: String?
     /// Saves of finished recordings still running (`close` waits for them).
     @ObservationIgnored var recordingSaves: [Task<Void, Never>] = []
-    /// Called once a recording made here is saved, with its audio file and
-    /// the session folder holding it: the model transcribes it (when that
-    /// setting is on) and deletes the folder. Nil: the folder is deleted.
-    @ObservationIgnored var onRecordingSaved: ((Recording, URL, URL) -> Void)?
 }
 
 extension NoteEditor {
@@ -143,10 +139,6 @@ extension NoteEditor {
     var recordingSaves: [Task<Void, Never>] {
         get { glue.recordingSaves }
         set { glue.recordingSaves = newValue }
-    }
-    var onRecordingSaved: ((Recording, URL, URL) -> Void)? {
-        get { glue.onRecordingSaved }
-        set { glue.onRecordingSaved = newValue }
     }
 
     // MARK: Words

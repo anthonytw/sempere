@@ -33,7 +33,7 @@ struct NoteCanvasView: View {
                     ContentUnavailableView {
                         Label("Could Not Open Note", systemImage: "exclamationmark.icloud")
                     } description: {
-                        Text(failure.message)
+                        Text(failure.reason.text)
                     } actions: {
                         Button("Try Again") { Task { await model.showSelectedNote() } }
                     }

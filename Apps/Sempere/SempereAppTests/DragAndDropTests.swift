@@ -62,7 +62,7 @@ struct DragAndDropTests {
         // A rejected drop (into itself) changes nothing and registers nothing.
         let steps = undo.canUndo
         await model.move(.notebook("Research"), to: .notebook("Research/Lab"), undoManager: undo)
-        #expect(model.errorMessage == nil)
+        #expect(model.alert == nil)
         #expect(undo.canUndo == steps)
         #expect(model.notes.first { $0.id == lab }?.notebook == "Research/Lab")
 

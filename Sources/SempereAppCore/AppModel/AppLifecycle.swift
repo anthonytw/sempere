@@ -58,7 +58,8 @@ public final class ManualAppLifecycle: AppLifecycle {
         }
     }
 
-    /// `event` happens: the state follows it, then every observer is told, in this turn.
+    /// `event` happens: the state follows it, then every observer is told, in this turn. Each observer is looked up as
+    /// its turn comes, so one that an earlier observer cancelled during this `send` is not told.
     public func send(_ event: AppLifecycleEvent) {
         switch event {
         case .didEnterBackground: isInBackground = true; isActive = false
@@ -66,7 +67,7 @@ public final class ManualAppLifecycle: AppLifecycle {
         case .didBecomeActive: isActive = true; isInBackground = false
         case .willResignActive: break   // the state may still read active then (`IdleTimerKeeper`)
         }
-        for handler in Array(handlers.values) { handler(event) }
+        for id in Array(handlers.keys) { handlers[id]?(event) }
     }
 }
 

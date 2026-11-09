@@ -326,7 +326,7 @@ struct EditorInsert: ViewModifier {
                 guard let data = try await picked.loadTransferable(type: Data.self) else { return }
                 await replace(request, with: data)
             } catch {
-                model.errorMessage = String(localized: "Could not load the photo: \(error.localizedDescription)")
+                model.alert = .worded(String(localized: "Could not load the photo: \(error.localizedDescription)"))
             }
         }
     }
@@ -346,7 +346,7 @@ struct EditorInsert: ViewModifier {
                 }.value
                 await replace(request, with: data)
             } catch {
-                model.errorMessage = String(localized: "Could not read the picture. \(AppModel.describe(error))")
+                model.alert = .worded(String(localized: "Could not read the picture. \(AppModel.describe(error))"))
             }
         }
     }
@@ -372,7 +372,7 @@ struct EditorInsert: ViewModifier {
                     guard let data = try await item.loadTransferable(type: Data.self) else { continue }
                     await model.insertImage(data, into: editor, visible: visible)
                 } catch {
-                    model.errorMessage = String(localized: "Could not load the photo or video: \(error.localizedDescription)")
+                    model.alert = .worded(String(localized: "Could not load the photo or video: \(error.localizedDescription)"))
                 }
             }
         }
@@ -387,7 +387,7 @@ struct EditorInsert: ViewModifier {
                 let data = try ImagePreparation.jpeg(from: image)
                 await model.insertImage(data, into: editor, visible: visible)
             } catch {
-                model.errorMessage = String(localized: "Could not add the photo. \(AppModel.describe(error))")
+                model.alert = .worded(String(localized: "Could not add the photo. \(AppModel.describe(error))"))
             }
         }
     }
@@ -412,7 +412,7 @@ struct EditorInsert: ViewModifier {
                 let copy = try await Task.detached(priority: .userInitiated) { try VideoPreparation.copyPicked(url) }.value
                 await model.insertVideo(file: copy, into: editor, visible: visible)
             } catch {
-                model.errorMessage = String(localized: "Could not add the video. \(AppModel.describe(error))", comment: "The value is a sentence saying why")
+                model.alert = .worded(String(localized: "Could not add the video. \(AppModel.describe(error))", comment: "The value is a sentence saying why"))
             }
         }
     }
@@ -424,7 +424,7 @@ struct EditorInsert: ViewModifier {
             defer { state.working -= 1 }
             if switchingToPages {
                 guard await Self.preparePages(editor) else {
-                    model.errorMessage = String(localized: "Could not switch the note to pages, so the PDF was not inserted.")
+                    model.alert = .worded(String(localized: "Could not switch the note to pages, so the PDF was not inserted."))
                     return
                 }
             }
@@ -459,7 +459,7 @@ extension EditorInsert {
                                             at: InsertOptions.cascade(point, index: images))
                     images += 1
                 case .failed(let why):
-                    model.errorMessage = String(localized: "Could not add the attachment. \(why)")
+                    model.alert = .worded(String(localized: "Could not add the attachment. \(why)"))
                 case .pdf(let url):
                     let index = page.flatMap { id in editor.pages.firstIndex { $0.id == id } } ?? editor.pageIndex
                     if case .needsPassword(let request) = await model.importPDF(copy: url, to: .insert(editor, after: index + 1),

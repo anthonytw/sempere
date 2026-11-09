@@ -318,8 +318,12 @@ extension AppModelSuites {
             try FileManager.default.removeItem(at: notesDir)
             try Data("not a folder".utf8).write(to: notesDir)
             try await model.unlock(identityText: key, awaitNotes: false)
-            #expect(await TS.waitUntil { model.errorMessage != nil })
+            #expect(await TS.waitUntil { model.alert != nil })
             #expect(model.phase == .unlocked)
+            guard case .error(let reported) = model.alert, let failure = model.loadFailure else {
+                Issue.record("expected the listing's error, got \(String(describing: model.alert))"); return
+            }
+            #expect(sameError(reported, failure), "the alert and the empty list say the same")
             guard case .failed = model.emptyListReason else {
                 Issue.record("expected .failed, got \(String(describing: model.emptyListReason))")
                 return

@@ -55,7 +55,7 @@ system reads them from the app bundle. `project.pbxproj` lists `es` in `knownReg
 | Where | What to write |
 | --- | --- |
 | SwiftUI views: `Text`, `Button`, `Label`, `Toggle`, `Section`, `Picker`, `TextField` prompt, `.navigationTitle`, `.alert`, `.confirmationDialog`, `.help`, `.accessibilityLabel`… | the English **literal**: it is a `LocalizedStringKey` and is looked up automatically |
-| A `String` that is built in code and shown later (`var title: String`, `errorMessage`, a menu title, an `NSItemProvider` name, a `UIAlertController`, a share-sheet subject…) | `String(localized: "…")` at the point where the text is *defined*. `Text(someString)` never localizes: the string must already be localized |
+| A `String` that is built in code and shown later (`var title: String`, the model's `alert = .worded(…)`, a menu title, an `NSItemProvider` name, a `UIAlertController`, a share-sheet subject…) | `String(localized: "…")` at the point where the text is *defined*. `Text(someString)` never localizes: the string must already be localized |
 | A parameter typed for display | prefer `LocalizedStringResource` (App Intents require it); convert with `String(localized: resource)` |
 | Stored or technical text (raw values, `UserDefaults` keys, file names, log lines, debug output, `systemImage:` names, vault data) | leave as is |
 
@@ -88,7 +88,7 @@ Rules:
 catalog does not know, every entry without a Spanish value or plural variations, and every British
 spelling in the English source, and fails the build.
 It sees literals in localizing positions (`Text(…)`, `String(localized:)`, …) and the known bypasses
-(`errorMessage = "…"`, `message:`, `Text(verbatim:)`); a `String` built elsewhere and shown later still
+(`.worded("…")`, `message:`, `Text(verbatim:)`); a `String` built elsewhere and shown later still
 needs `String(localized:)` by hand. A plural is only needed where the *translation* changes with the
 number: a sentence whose verb or noun agrees with a count is reworded around it (“sin listar: 3”) or
 made plural; a `%lld` that only shows a position (“Página 3 de 10”) is not.

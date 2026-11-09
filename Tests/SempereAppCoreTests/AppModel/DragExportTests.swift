@@ -92,7 +92,7 @@ extension AppModelSuites {
             let model = try await Self.unlockedModel()
             defer { model.close() }
             let prepared = try await model.prepareExport(noteID: Self.lecture)
-            model.close()
+            model.close()   // the deferred close runs again at the end: `close()` is idempotent
             for format in DragExportFormat.allCases {
                 #expect(throws: CancellationError.self) { _ = try prepared.write(format: format) }
             }
@@ -111,7 +111,7 @@ extension AppModelSuites {
             let vault = try #require(model.vault)
             let source = try InsertFixture.pdf(pages: 2)
             guard case .done(let id) = await model.importPDF(copy: source, to: .newNote(notebook: nil), password: nil) else {
-                Issue.record("not imported: \(model.errorMessage ?? "")")
+                Issue.record("not imported: \(String(describing: model.alert))")
                 return
             }
             model.selectedNoteID = id

@@ -94,8 +94,8 @@ public enum AppModelError: Error, Equatable, Sendable {
 
 /// Window-level state: the open vault, its note summaries and the current selection. Vault I/O runs off the main
 /// actor; results land here. The app's `AppModel` is `AppModelCore<AppHost>` (docs/design/thin-app.md "Wave 5b,
-/// part 2"): the host supplies the canvas, the platform services and, until part 3, the state and steps of the
-/// extensions still in the app (`AppModelHost`).
+/// part 2"): the host supplies the canvas and the platform services (`AppModelHost`). What it reports is typed
+/// (`alert`, `loadFailure`, `editorFailure`) and worded by the front end.
 @MainActor
 @Observable
 public final class AppModelCore<Host: AppModelHost> {
@@ -135,8 +135,8 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored public var derived = DerivedLists()
     /// True while vault I/O is in flight.
     public private(set) var isBusy = false
-    /// The last error, as a sentence for an alert; cleared by the view.
-    public var errorMessage: String?
+    /// The last failure, for an alert (a typed value the view words); cleared by the view.
+    public var alert: AppModelAlert?
     /// Reading note summaries (opening or refreshing the vault), for the
     /// list's "Opening vault: N of M"; nil when no read is running.
     public var loading: NoteLoading?
@@ -144,7 +144,7 @@ public final class AppModelCore<Host: AppModelHost> {
     /// then what the vault holds, not a partial or cached view).
     public var listLoaded = false
     /// Why the last listing failed, shown in an empty list (cleared by the next one).
-    public var loadFailure: String?
+    public var loadFailure: (any Error)?
     /// Notes whose summary in `notes` was read (or confirmed from the cache)
     /// in this session. A summary shown from an earlier launch's cache, or a
     /// placeholder, is not: edits that decide from a summary re-read the
@@ -512,7 +512,7 @@ public final class AppModelCore<Host: AppModelHost> {
     /// Where this install keeps its device id and hybrid clock.
     public let deviceStateURL: URL
     /// Why the selected note could not be opened (`showSelectedNote`).
-    public var editorFailure: (id: UUID, message: String)?
+    public var editorFailure: (id: UUID, reason: EditorFailure)?
     /// The note open on the canvas, if any (`openEditor(for:)`).
     public private(set) var editor: Editor? {
         didSet { idleTimer?.update() }   // "Keep Screen On" counts open notes, whichever scene shows them
@@ -684,8 +684,6 @@ public final class AppModelCore<Host: AppModelHost> {
 
     /// The platform services this model was made with (`Host.makeServices()` unless given).
     @ObservationIgnored public let services: AppModelServices
-    /// The state of the extensions still in the app (`Host.State`, wave 5b part 3).
-    @ObservationIgnored public let appState: Host.State
 
     public init(deviceStateURL: URL = DeviceClock.defaultURL, editorDebounce: Duration = NoteEditorDefaults.debounce,
          recognizer: (any PageRecognizing)? = nil, recognitionDelay: Duration = NoteEditorDefaults.recognitionDelay,
@@ -700,7 +698,6 @@ public final class AppModelCore<Host: AppModelHost> {
          afterIO: (@Sendable () async -> Void)? = nil) {
         let services = services ?? Host.makeServices()
         self.services = services
-        appState = Host.makeState()
         defaultTitle = { [settings = services.settings] in NewNoteSettings.defaultTitle(settings, now: $0) }
         transcriber = services.transcriber
         playbackBackend = services.makePlaybackBackend
@@ -895,7 +892,7 @@ public final class AppModelCore<Host: AppModelHost> {
     ///
     /// - Parameter awaitNotes: wait for the listing (and throw its error)
     ///   before returning. The UI passes false, so the unlock sheet closes as
-    ///   soon as the key is accepted; failures then go to `errorMessage`.
+    ///   soon as the key is accepted; failures then go to `alert`.
     public func unlock(with keys: UnlockKeys, awaitNotes: Bool = true) async throws {
         guard let url = vaultURL else { throw ModelError.noVaultOpen }
         let gen = generation
@@ -1019,7 +1016,7 @@ public final class AppModelCore<Host: AppModelHost> {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            if gen == generation { loadFailure = "\(error)" }
+            if gen == generation { loadFailure = error }
             throw error
         }
     }
@@ -1097,22 +1094,21 @@ public final class AppModelCore<Host: AppModelHost> {
         }
         // The background read of a note opened from the cache failed: show the
         // failure (and Try Again) rather than a partial read-only canvas.
-        opened.onLoadFailed = { [weak self, weak opened] message in
+        opened.onLoadFailed = { [weak self, weak opened] error in
             guard let self, let opened, self.editor === opened else { return }
             self.editor = nil
-            if self.selectedNoteID == noteID { self.editorFailure = (noteID, message) }
+            if self.selectedNoteID == noteID { self.editorFailure = (noteID, .failed(error)) }
             Task { await opened.close() }
         }
         if opened.loadFailed {   // it failed before the callback was set
             if let stale = editor { editor = nil; Task { await stale.close() } }
-            editorFailure = (noteID, Host.unreadableText(opened))
+            editorFailure = (noteID, .unreadable(opened.readOnly))
             Task { await opened.close() }
             return
         }
         let stale = editor
         opened.prepareBlobWrite = blobWritePreparer(note: noteID)
         configureRecordings(opened)
-        Host.prepareEditor(opened, of: noteID, in: self)   // saved recordings (the microphone half is the app's)
         opened.onRecognized = { [weak self] id in
             guard let self else { return }
             Task { try? await self.refresh([id]) }   // search sees the new text
@@ -1150,7 +1146,7 @@ public final class AppModelCore<Host: AppModelHost> {
             try await openEditor(for: id)
         } catch is CancellationError {
         } catch {
-            if let id, selectedNoteID == id { editorFailure = (id, "\(error)") }
+            if let id, selectedNoteID == id { editorFailure = (id, .failed(error)) }
         }
     }
 
@@ -1294,7 +1290,7 @@ public final class AppModelCore<Host: AppModelHost> {
 
     /// Runs `body` and records its error for the UI instead of throwing.
     public func report(_ body: () async throws -> Void) async {
-        do { try await body() } catch is CancellationError {} catch { errorMessage = "\(error)" }
+        do { try await body() } catch is CancellationError {} catch { alert = .error(error) }
     }
 
     /// Throws `CancellationError` when `close()` or another `openVault` ran
