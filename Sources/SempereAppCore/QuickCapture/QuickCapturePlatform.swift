@@ -141,6 +141,8 @@ public struct ByteCaptureAudioFiles: CaptureAudioFiles {
     public init() {}
     public func classify(_ url: URL) async -> CaptureSegments.Audio { CaptureSegments.byteCount(url) > 0 ? .audio : .none }
     public func merge(_ segments: [URL], into out: URL) async throws {
+        // As AVFoundation's: nothing to join is a failure, not an empty file.
+        guard !segments.isEmpty else { throw RecordingError.cannotAssemble("no readable audio") }
         var data = Data()
         for url in segments { data.append(try Data(contentsOf: url)) }
         try? FileManager.default.removeItem(at: out)

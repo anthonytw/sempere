@@ -49,19 +49,11 @@ enum PencilCanvas: NoteCanvas {
 
     @MainActor static func makeGlue() -> NoteEditorAppState { NoteEditorAppState() }
 
-    @MainActor static func recordingStamp(of editor: NoteEditor) -> (@Sendable (Date) -> RecordingLink?)? {
-        guard let s = editor.recordingSession, s.isActive else { return nil }
-        return s.stamp
-    }
-
     @MainActor static func visibleRect(ofPage page: UUID, in editor: NoteEditor) -> CGRect? {
         editor.canvasTarget?.visibleRect(ofPage: page) ?? editor.canvasTarget?.visiblePageRect
     }
 
-    @MainActor static func editorWillClose(_ editor: NoteEditor) async {
-        // A recording in progress is saved into the note before the last save.
-        await editor.finishRecording()
-    }
+    @MainActor static func editorWillClose(_ editor: NoteEditor) async {}
 
     /// The editor stops its own playback of the recording (`NoteEditorModel.removeRecording`).
     @MainActor static func recordingWillBeRemoved(_ id: UUID, in editor: NoteEditor) {}
@@ -74,12 +66,14 @@ enum PencilCanvas: NoteCanvas {
             editor.recordingError = String(localized: "Could not delete the recording: \(detail)")
         case .recover(let detail):
             editor.recordingError = String(localized: "A recording interrupted by the app closing could not be recovered: \(detail)")
+        case .save(let detail):
+            editor.recordingError = String(localized: "Could not save the recording: \(detail)")
         }
     }
 }
 
 /// What the app keeps for one open note next to the package's editor (`NoteCanvas.Glue`): the canvas it shows
-/// on, "Convert to Math", and the recording being made and played. The editor's properties of the same names
+/// on, "Convert to Math", and the playback. The editor's properties of the same names
 /// (below) read and write these.
 @MainActor
 @Observable
@@ -97,14 +91,6 @@ final class NoteEditorAppState {
     /// The undo steps of conversions, held for as long as the editor (the
     /// undo manager does not retain its targets).
     @ObservationIgnored var conversionActions: ItemActions?
-
-    // Recordings (`NoteEditor+RecordingSession.swift`, format.md §8.3, docs/attachments.md §9).
-    /// The recording being made into this note, if one is.
-    var recordingSession: RecordingSession?
-    /// The last recording, playback or transcription failure.
-    var recordingError: String?
-    /// Saves of finished recordings still running (`close` waits for them).
-    @ObservationIgnored var recordingSaves: [Task<Void, Never>] = []
 }
 
 extension NoteEditor {
@@ -127,18 +113,6 @@ extension NoteEditor {
     var conversionActions: ItemActions? {
         get { glue.conversionActions }
         set { glue.conversionActions = newValue }
-    }
-    var recordingSession: RecordingSession? {
-        get { glue.recordingSession }
-        set { glue.recordingSession = newValue }
-    }
-    var recordingError: String? {
-        get { glue.recordingError }
-        set { glue.recordingError = newValue }
-    }
-    var recordingSaves: [Task<Void, Never>] {
-        get { glue.recordingSaves }
-        set { glue.recordingSaves = newValue }
     }
 
     // MARK: Words

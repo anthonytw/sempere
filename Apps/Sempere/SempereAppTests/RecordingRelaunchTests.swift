@@ -43,8 +43,9 @@ final class SilenceCapture: AudioCaptureBackend {
 /// through the real canvas path while it runs, through an interruption (the timeline leaves the
 /// pause out), then it stops and saves; a second `AppModel` on the same vault (the relaunch) reads
 /// the note and must still link each stroke to the recording at the same second, seek to it, and
-/// highlight exactly the ink written around the playback position. Recording unit tests are in
-/// `RecordingTests`, playback in a long note in `LoadDeviceCheckTests.c14…`.
+/// highlight exactly the ink written around the playback position. The same flow on a fake backend and
+/// the test canvas, on every platform, is `RecordingEditorTests` (SempereAppCoreTests); this one keeps the real audio
+/// engine and PencilKit's canvas. Playback in a long note: `LoadDeviceCheckTests.c14…`.
 @MainActor
 @Suite(.serialized, .timeLimit(.minutes(5)))
 struct RecordingRelaunchTests {

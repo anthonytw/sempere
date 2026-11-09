@@ -53,11 +53,9 @@ public protocol NoteCanvas: SendableMetatype {
 
     /// The app's state for a new editor.
     @MainActor static func makeGlue() -> Glue
-    /// What stamps ink and items placed now with the recording running in `editor`; nil when none runs.
-    @MainActor static func recordingStamp(of editor: NoteEditorModel<Self>) -> (@Sendable (Date) -> RecordingLink?)?
     /// The part of page `page` on screen (page points), else of the page on screen; nil when not known.
     @MainActor static func visibleRect(ofPage page: UUID, in editor: NoteEditorModel<Self>) -> CGRect?
-    /// `editor` closes (`NoteEditor.close`): a recording in progress is saved into it first, playback stops.
+    /// `editor` closes (`NoteEditor.close`), after a recording in progress was saved into it: the app's own teardown.
     @MainActor static func editorWillClose(_ editor: NoteEditorModel<Self>) async
     /// Recording `id` is about to be removed from `editor` (its playback stops).
     @MainActor static func recordingWillBeRemoved(_ id: UUID, in editor: NoteEditorModel<Self>)
@@ -142,6 +140,9 @@ public enum RecordingChangeFailure: Equatable, Sendable {
     case delete(String)
     /// A recording a crash left behind could not be saved into its note (`AppModel.recoverRecordings`).
     case recover(String)
+    /// A recording just made could not be saved into the note (`NoteEditorModel.stopRecording`); its files stay for
+    /// recovery.
+    case save(String)
 }
 
 /// An error that says a note is not downloaded yet (a partial copy, `AppModel.partialNoteVerifier`): an editor

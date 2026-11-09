@@ -958,12 +958,28 @@ only layout and bindings, apart from the eraser row's name mapping, which now ca
 `AppSettingsStorage` (`SettingsSyncBridge.swift`) stays for now and moves in part 8, once parts 2 and 3 have landed
 (it reads their types).
 
-**Part 5: the recording session (about 400 lines).** `RecordingSession` (`AudioRecorder.swift` 212-488: the state
-machine of pause, resume, interruption and file layout) and `RecordingAssembly` (489-544), `RecordingError` and
-`NoteEditor+RecordingSession` (89), behind the existing `AudioCaptureBackend` protocol (11-30; `AVAudioCaptureBackend`,
-65-211, stays). A fake backend gives the state machine Linux tests (the cases of `RecordingTests` that do not need the
-real audio engine, `RecordingRelaunchTests`); the AVFoundation cases stay. Size check first: `QuickCapture`'s
-`CaptureRecorder` may already cover half of it.
+**Part 5 done (wave 6): the recording session.** Moved to `Sources/SempereAppCore/Recording/` and `NoteEditor/`, with
+Linux tests (`RecordingSessionTests`, `RecordingEditorTests`): `RecordingSession` (the state machine of pause, resume,
+interruption, segments, manifest and file layout), `AudioCaptureBackend` (now public), `RecordingError` (typed values;
+its words are the app's `RecordingError+Text.swift`, and `CaptureStartRefusal` moved with it), and the editor's half,
+`NoteEditorModel.startRecording` / `stopRecording` / `finishRecording` and the save, with `recordingSession`,
+`recordingError` and `recordingSaves` now the editor's own (they were app glue). Two seams are new. The system's words
+(the audio session's interruptions, route changes and media server reset) reach the session through
+`RecordingSystemEvents`; the app's `AVAudioSessionEvents` reads the notifications as the session did, the core has
+`NoRecordingEvents`. The save reads and joins segments through the editor's `audioFiles` (the model's
+`services.audioFiles`, which recovery and quick capture already use), so the editor's `recordingStamp` hook of `NoteCanvas`
+went (the editor reads its own session) and `RecordingChangeFailure` gained `.save`. Size check: `CaptureRecorder`
+(`QuickCapturePlatform.swift`) is only the quick-capture seam that makes a `CaptureRecording` and activates the audio
+session; it holds none of the state machine, so there was nothing to unify but the types: `RecordingSession` is the
+`CaptureRecording` directly (the core conformance), and `AudioCaptureBackend` is what `AppCaptureRecorder` wraps. What
+stays in the app, and why: `AVAudioCaptureBackend` (AVAudioRecorder, the audio session), `AVAudioSessionEvents`,
+`RecordingAssembly` (an `AVMutableComposition` export: the app's `AVCaptureAudioFiles` is its `CaptureAudioFiles`, which
+the core already abstracts, so `merge` and `readable` are used as `classify` and `merge`), the app's `startRecording`
+and `RecordingSession.init` conveniences (the real backend and the notification center as defaults), and the
+AVFoundation, PencilKit and notification cases of `RecordingTests` and `RecordingRelaunchTests` (the real audio file,
+the assembly, `PKDrawing` ink). The logic of those two, on a fake backend and the test canvas, is now also tested on
+Linux (interruption, pause by the user, segments and manifest, a segment that cannot start, system events, the editor's
+save and its failure, and the relaunch flow: ink linked through an interruption, seek target and playback highlight).
 
 **Part 6: the PencilKit and CoreGraphics boundaries (done, wave 6).** Each file was read first; what was a rule moved, what
 was only drawing stayed. Moved, with Linux tests:

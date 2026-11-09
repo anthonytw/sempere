@@ -70,9 +70,6 @@ enum TestCanvas: NoteCanvas {
     static var textBoxMatcher: TextBoxMatcher { { _, _ in [] } }
 
     @MainActor static func makeGlue() -> TestGlue { TestGlue() }
-    @MainActor static func recordingStamp(of editor: NoteEditorModel<TestCanvas>) -> (@Sendable (Date) -> RecordingLink?)? {
-        editor.glue.stamp
-    }
     @MainActor static func visibleRect(ofPage page: UUID, in editor: NoteEditorModel<TestCanvas>) -> CGRect? {
         editor.glue.visible
     }
@@ -88,7 +85,6 @@ enum TestCanvas: NoteCanvas {
 /// What the test canvas's hooks were asked, and what they answer.
 @MainActor
 final class TestGlue {
-    var stamp: (@Sendable (Date) -> RecordingLink?)?
     var visible: CGRect?
     var closes = 0
     var removedRecordings: [UUID] = []

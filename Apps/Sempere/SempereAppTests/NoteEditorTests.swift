@@ -14,6 +14,8 @@ enum NoteEditorTests {
         async throws -> (NoteEditor, DeviceClock) {
         let clock = try DeviceClock(url: TS.deviceStateURL())
         let editor = try await NoteEditor.open(vault: vault, noteID: note, clock: clock, debounce: debounce)
+        // As the model sets it when it opens an editor: recordings are saved through AVFoundation, not by bytes.
+        editor.audioFiles = AVCaptureAudioFiles()
         return (editor, clock)
     }
 

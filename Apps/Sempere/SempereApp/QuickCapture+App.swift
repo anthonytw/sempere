@@ -142,7 +142,7 @@ extension QuickCapture {
 
 // MARK: - The recorder
 
-// `RecordingSession` is the `CaptureRecording` and `RecordingError` the `CaptureStartRefusal` (AudioRecorder.swift).
+// `RecordingSession` is the `CaptureRecording` and `RecordingError` the `CaptureStartRefusal` (SempereAppCore, `Recording/`).
 
 /// The device's microphone and `RecordingSession` (AVFoundation). Tests give it a fake backend, a permission and
 /// their own notification center.

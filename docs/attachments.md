@@ -1641,14 +1641,15 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   hour), `RecordingTimeline` (wall time → audio time across pauses: `rec.at` of
   a stroke is its path's creation date mapped through it), `RecordingSync`
   (stroke hit test, seek target with a 2 s lead-in, playback highlight window of
-  3 s, `rec` through a restored recording's `parent`). App: `RecordingSession`
-  (`AudioRecorder.swift`: `AVAudioRecorder` with the settings' format,
-  `.playAndRecord`, 10-minute segments with a manifest, interruptions and route
-  changes pause it, "should resume" resumes it in the same file; one recording
-  app-wide), `RecordingAssembly` (segments joined by `AVMutableComposition`,
+  3 s, `rec` through a restored recording's `parent`). `RecordingSession`
+  (SempereAppCore, tested on Linux with a fake `AudioCaptureBackend`: 10-minute segments with a
+  manifest, interruptions and route changes pause it, "should resume" resumes it in the same file;
+  one recording app-wide). App: `AVAudioCaptureBackend` (`AudioRecorder.swift`: `AVAudioRecorder` with
+  the settings' format, `.playAndRecord`) and `AVAudioSessionEvents` (the audio session's
+  notifications), `RecordingAssembly` (segments joined by `AVMutableComposition`,
   passthrough else AAC), `RecordingRecovery` (a session left by a crash is saved
   into its note, titled "Recovered recording", the next time the note opens),
-  `NoteEditor+RecordingSession` (app) and `NoteEditor+Recordings` (SempereAppCore:
+  `NoteEditor+RecordingSession` and `NoteEditor+Recordings` (SempereAppCore:
   blob first, then one `addRecording` delta; rename by `NoteOps.renameRecording`,
   as the CLI; delete; strokes stamped in `StrokeLedger.items(for:tool:stamp:)`, pieces of a
   sliced stroke keep their parent's `rec`; items placed while recording get

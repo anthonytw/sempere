@@ -160,6 +160,15 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     /// the session folder holding it: the model transcribes it when that setting is on, then hands the folder to
     /// `AppModelServices.finishRecordingSave` (`configureRecordings`). Nil: the recorder deletes the folder itself.
     @ObservationIgnored public var onRecordingSaved: (@MainActor (Recording, URL, URL) -> Void)?
+    /// The recording being made into this note, if one is (`NoteEditor+RecordingSession.swift`).
+    public var recordingSession: RecordingSession?
+    /// The last recording, playback or transcription failure (worded).
+    public var recordingError: String?
+    /// Saves of finished recordings still running (`close` waits for them).
+    @ObservationIgnored var recordingSaves: [Task<Void, Never>] = []
+    /// What a recording's segment files hold, and their merge (`save(_:)` in `NoteEditor+RecordingSession.swift`): the model's `services.audioFiles`,
+    /// set when it opens the editor; bytes alone by default.
+    @ObservationIgnored public var audioFiles: any CaptureAudioFiles = ByteCaptureAudioFiles()
     /// Set when `finishLoading` starts: no more cache hits are handed out
     /// unchecked from then on.
     @ObservationIgnored var finishing = false
@@ -1061,6 +1070,7 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
         // Playback ends with the note (its decrypted audio is released, `RecordingPlayer.onUnload`).
         player?.stop()
         // A recording in progress is saved into the note before the last save.
+        await finishRecording()
         await Canvas.editorWillClose(self)
         isClosed = true
         fullLoad?.cancel()

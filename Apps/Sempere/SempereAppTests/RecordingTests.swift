@@ -95,9 +95,10 @@ final class TestClock {
 
 private final class RecordingBundleToken {}
 
-/// Recording, playback, ink sync and transcription in the app
-/// (docs/attachments.md §14 tasks E4, E5). Serialized: one recording runs
-/// at a time app-wide (`RecordingSession.active`).
+/// What needs the platform in recording, playback, ink sync and transcription in the app (docs/attachments.md §14
+/// tasks E4, E5): PencilKit ink, AVFoundation's assembly of segments and the audio session's notifications. The
+/// session's states, its files and the editor's save are `RecordingSessionTests` and `RecordingEditorTests`
+/// (SempereAppCoreTests). Serialized: one recording runs at a time app-wide (`RecordingSession.active`).
 @Suite(.serialized)
 @MainActor
 struct RecordingTests {
@@ -116,64 +117,12 @@ struct RecordingTests {
         RecordingSession(noteID: lecture, format: .default, root: root(), backend: backend, center: center, now: { clock.now })
     }
 
-    // MARK: - Session
-
-    /// "Recording survives a simulated interruption" (task E4): a call
-    /// pauses the recorder, the end of the call resumes it in the same file,
-    /// and the audio timeline leaves the interruption out.
-    @Test func interruptionPausesAndResumesTheSameRecording() async throws {
-        let clock = TestClock(), backend = FakeCapture()
-        let s = Self.session(clock, backend: backend)
-        try s.start()
-        defer { s.stop(); s.discardFiles() }
-        #expect(s.state == .recording)
-        clock.advance(5)
-        // The iOS 27 deactivation and resumption messages cannot be built in a
-        // test (their contexts are made by the system): drive the session directly.
-        s.interruption(began: true, shouldResume: false)
-        #expect(s.state == .interrupted)
-        clock.advance(30)   // the call
-        s.interruption(began: false, shouldResume: true)
-        #expect(s.state == .recording)
-        clock.advance(2)
-        #expect(backend.log == ["begin", "pause", "resume"])
-        #expect(backend.files.count == 1, "the same file goes on")
-        #expect(abs(s.timeline.audioLength(at: clock.now) - 7) < 0.001)
-        s.stop()
-        #expect(s.state == .stopped)
-        #expect(backend.log.suffix(2) == ["finish", "deactivate"])
-        #expect(RecordingSession.active == nil)
-    }
+    // MARK: - Session (the state machine's own tests, on a fake backend, are `RecordingSessionTests` in SempereAppCoreTests)
 
     /// Only a deactivation the system made interrupts; the app's own
     /// (`setActive(false)` after a stop) does not.
     @Test func ownDeactivationIsNotAnInterruption() {
-        #expect(!RecordingSession.interrupts(.appDeactivated))
-    }
-
-    @Test func interruptionWithoutShouldResumeWaitsForTheUser() async throws {
-        let clock = TestClock(), backend = FakeCapture()
-        let s = Self.session(clock, backend: backend)
-        try s.start()
-        defer { s.stop(); s.discardFiles() }
-        s.interruption(began: true, shouldResume: false)
-        s.interruption(began: false, shouldResume: false)
-        #expect(s.state == .interrupted)
-        s.resumeByUser()
-        #expect(s.state == .recording)
-        s.routeChanged(oldDeviceUnavailable: true)   // the headset was unplugged
-        #expect(s.state == .interrupted)
-        backend.failResume = true
-        s.resumeByUser()
-        #expect(s.state == .interrupted, "a refused resume stays paused")
-    }
-
-    @Test func onlyOneRecordingAtATime() throws {
-        let clock = TestClock()
-        let a = Self.session(clock, backend: FakeCapture()), b = Self.session(clock, backend: FakeCapture())
-        try a.start()
-        defer { a.stop(); a.discardFiles() }
-        #expect(throws: RecordingError.alreadyRecording) { try b.start() }
+        #expect(!AVAudioSessionEvents.interrupts(.appDeactivated))
     }
 
     /// `rec.at` within 0.1 s (task E4): strokes drawn while recording carry
@@ -257,14 +206,6 @@ struct RecordingTests {
         #expect(try vault.reconstruct(noteId: Self.lecture).recordings.map(\.id) == [id])
     }
 
-    @Test func closingTheNoteSavesARecordingInProgress() async throws {
-        let (vault, _) = try TS.unlockedFixture()
-        let (editor, _) = try await NoteEditorTests.open(vault, debounce: .seconds(60))
-        try editor.startRecording(root: Self.root(), backend: FakeCapture())
-        await editor.close()
-        #expect(try vault.reconstruct(noteId: Self.lecture).recordings.count == 1)
-    }
-
     /// A recording that ends without the user (the media server was reset)
     /// is saved as after Stop, and its plaintext audio is deleted; it is not
     /// left on disk until the note is opened again.
@@ -280,21 +221,6 @@ struct RecordingTests {
         #expect(try vault.reconstruct(noteId: Self.lecture).recordings.map(\.id) == [id])
         #expect(await TS.waitUntil { !FileManager.default.fileExists(atPath: root.appendingPathComponent(id.uuidString.lowercased()).path) },
                 "no plaintext audio is left behind")
-    }
-
-    /// No new segment file could be started: what was recorded is saved.
-    @Test func aRecordingThatCannotStartANewSegmentIsSaved() async throws {
-        let (vault, _) = try TS.unlockedFixture()
-        let (editor, _) = try await NoteEditorTests.open(vault, debounce: .seconds(60))
-        let backend = FakeCapture()
-        try editor.startRecording(root: Self.root(), backend: backend)
-        let s = try #require(editor.recordingSession)
-        s.segmentSeconds = 0
-        backend.failBegin = true
-        s.tick()
-        #expect(s.state == .stopped)
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { editor.recording(s.id) != nil })
-        #expect(try vault.reconstruct(noteId: Self.lecture).recordings.map(\.id) == [s.id])
     }
 
     @Test func renameAndRemoveAreOneDeltaEach() async throws {

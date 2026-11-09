@@ -35,14 +35,15 @@ public enum RecordingRecovery {
 /// deleted once nothing plays or reads it, as are transcripts'; transcripts are written as a blob
 /// of the note, then one `setRecording(transcript)` delta through the
 /// browser's write path (`commit(_:building:)`), so a job finishes even if
-/// the note is closed meanwhile, and an open editor takes the result. The microphone half (a recording being
-/// made) is the app's (`NoteEditor+RecordingSession`); once one is saved, the model transcribes it and hands its
+/// the note is closed meanwhile, and an open editor takes the result. A recording being made is
+/// `NoteEditor+RecordingSession` (the microphone is the app's `AudioCaptureBackend`); once one is saved, the model transcribes it and hands its
 /// files back (`services.finishRecordingSave`).
 extension AppModelCore {
     /// Hooks an editor's recordings up to the model: taps on linked ink play, a recording made in it is transcribed
     /// once saved (when that setting is on, then `services.finishRecordingSave`), and recordings a crash left behind
     /// for this note are saved into it. Every editor the model opens, for the library window or a note window, gets it.
     func configureRecordings(_ editor: Editor) {
+        editor.audioFiles = services.audioFiles
         editor.onPlayRequest = { [weak self, weak editor] recording, time in
             guard let self, let editor else { return }
             Task { await self.play(recording, in: editor, from: time) }

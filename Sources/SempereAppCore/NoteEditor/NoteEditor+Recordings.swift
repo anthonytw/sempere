@@ -8,10 +8,13 @@ import Sempere
 /// playback: strokes written while recording carry `rec` (stamped in
 /// `NoteCanvas.update`), a tap on one plays from there, and playback
 /// highlights what was written around the current moment. Recording itself
-/// (the microphone, the session's files) is the app's (`NoteEditor+RecordingSession.swift`).
+/// (the session, its files, saving them) is `NoteEditor+RecordingSession.swift`; the microphone is the app's backend.
 extension NoteEditorModel {
     /// What stamps strokes drawn now with the running recording (nil when none runs).
-    public var recordingStamp: (@Sendable (Date) -> RecordingLink?)? { Canvas.recordingStamp(of: self) }
+    public var recordingStamp: (@Sendable (Date) -> RecordingLink?)? {
+        guard let s = recordingSession, s.isActive else { return nil }
+        return s.stamp
+    }
 
     /// The note as the recording features see it (no strokes).
     var recordingState: NoteState {

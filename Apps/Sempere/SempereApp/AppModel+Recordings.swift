@@ -34,7 +34,7 @@ struct SpeechRecordingTranscriber: RecordingTranscribing {
     }
 }
 
-/// The microphone half's bookkeeping (`NoteEditor+RecordingSession`): which recordings are in use, and the end of a
+/// The recordings' bookkeeping (`RecordingSession.busy` and `active`, SempereAppCore): which recordings are in use, and the end of a
 /// saved one's files once the model has transcribed it (`AppModelServices.finishRecordingSave`, `configureRecordings`
 /// in SempereAppCore).
 extension AppModel {
