@@ -62,10 +62,14 @@ case "$mode" in
   cli)        context=local/cli-suite; gate_steps=(); steps=(package linux webdav static) ;;
 esac
 
+# Only the gate skips targets that already passed with the same hash (docs/design/ci-lean.md); the release-bound
+# modes run every package test again, here and in the Docker jobs (ci-linux.sh passes the variable into the container).
+[[ $mode == gate ]] || export SEMPERE_CI_FORCE_ALL=1
+
 describe() {   # step: what it runs
   case "$1" in
     help)       echo "scripts/check-help.py          (every toolbar and icon-only control has a .help tooltip; tests use TestDefaults; every UI test class is in one of app.sh's device lists)" ;;
-    package)    echo "swift build --build-tests && swift test --parallel --skip Benchmarks (through scripts/test-runner.py; benchmarks are scripts/bench.sh)" ;;
+    package)    echo "swift build --build-tests && swift test --parallel --skip Benchmarks (through scripts/test-runner.py; benchmarks are scripts/bench.sh); skips targets whose hash already passed (scripts/ci-hash.py)" ;;
     mac)        echo "scripts/app.sh test-mac        (Mac Catalyst unit tests, pseudo-language layouts included)" ;;
     ios-build)  echo "scripts/app.sh build-ios       (iOS simulator compile check, no tests)" ;;
     mac-offline) echo "scripts/app.sh test-mac-offline (Mac Catalyst unit tests with the network refused, OfflineModeTests)" ;;
@@ -115,10 +119,29 @@ status() {   # context, state, description
   forge_post_status "$sha" "$1" "$2" "$3"
 }
 
+# The package tests, skipping every target that already passed with the same hash (scripts/ci-hash.py,
+# docs/design/ci-lean.md): the log names each skip's hash and the commit that passed it. SEMPERE_CI_FORCE_ALL=1 runs
+# everything. SEMPERE_CI_MAC_PACKAGE=os-dependent also leaves the logic targets to the Linux job (scripts/ci-targets.json).
+package_step() {
+  export SEMPERE_CI_PASS_DIR=${SEMPERE_CI_PASS_DIR:-$HOME/.cache/sempere-ci-pass}
+  local plan=build/local-ci/package.plan split=() skips=() t
+  [[ ${SEMPERE_CI_MAC_PACKAGE:-all} == os-dependent ]] && split=(--os-dependent-only)
+  /usr/bin/python3 -I scripts/ci-hash.py plan --job mac-package --out "$plan" ${split[@]+"${split[@]}"} || return 1
+  while read -r t; do skips+=(--skip "^$t\\."); done < <(/usr/bin/python3 -I scripts/ci-hash.py skips "$plan")
+  # The build always runs (incremental, cheap when warm): the benchmark targets are never tested but must still compile.
+  swift build --build-tests || return 1
+  if [[ $(/usr/bin/python3 -I scripts/ci-hash.py runs "$plan" | wc -l) -eq 0 ]]; then
+    echo "package: every test target skipped (each passed with its current hash, or is left to Linux)"
+    return 0
+  fi
+  /usr/bin/python3 -I scripts/test-runner.py --kind swiftpm -- swift test --parallel --skip 'Benchmarks\.' ${skips[@]+"${skips[@]}"} || return 1
+  /usr/bin/python3 -I scripts/ci-hash.py record --plan "$plan"
+}
+
 run_step() {
   case "$1" in
-    help)       scripts/check-help.py --self-test && scripts/check-help.py && scripts/check-test-defaults.sh && scripts/check-ui-tests.sh && /usr/bin/python3 -I scripts/test-runner.py --self-test ;;
-    package)    swift build --build-tests && /usr/bin/python3 -I scripts/test-runner.py --kind swiftpm -- swift test --parallel --skip 'Benchmarks\.' ;;
+    help)       scripts/check-help.py --self-test && /usr/bin/python3 -I scripts/ci-hash.py --self-test && scripts/test-ci-hash-guard.sh && /usr/bin/python3 -I scripts/ci-hash.py check-reads && scripts/check-help.py && scripts/check-test-defaults.sh && scripts/check-ui-tests.sh && /usr/bin/python3 -I scripts/test-runner.py --self-test ;;
+    package)    package_step ;;
     mac)        scripts/app.sh test-mac ;;
     ios-build)  scripts/app.sh build-ios ;;
     mac-offline) scripts/app.sh test-mac-offline ;;
@@ -152,6 +175,7 @@ for i in "${!steps[@]}"; do
   printf 'local-ci: %-11s ' "$step"
   if run_step "$step" > "build/local-ci/$step.log" 2>&1; then
     echo "passed ($(( $(date +%s) - t0 ))s)"
+    grep -E '^ci-hash: (SKIP|RUN|recorded|not recording)' "build/local-ci/$step.log" | sed 's/^/  /' || true
   else
     echo "FAILED ($(( $(date +%s) - t0 ))s): build/local-ci/$step.log"
     grep -E "✘|error:|\*\* TEST FAILED|\*\* BUILD FAILED|XCB-STALL|FAIL-FAST" "build/local-ci/$step.log" | grep -v "^TEST-RESULT" | tail -20 || true

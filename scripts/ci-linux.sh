@@ -13,6 +13,8 @@
 #                                      (sempere-linux-build-…), so the host's build folder is never touched;
 #                                      ~/.swiftpm (the Static Linux SDK) is the volume sempere-linux-swiftpm.
 #
+# test and webdav skip a test target whose inputs hash to one that already passed (scripts/ci-hash.py, docs/design/ci-lean.md),
+# say which commit passed it, and record what they ran once it passed. SEMPERE_CI_FORCE_ALL=1 runs everything.
 # test: SEMPERE_REQUIRE_AGE_PQ, SEMPERE_REQUIRE_POPPLER and SEMPERE_REQUIRE_TOOLS make a missing tool fail its test
 # instead of skipping it. webdav: SEMPERE_WEBDAV_LARGE_MB defaults to 64 here. SEMPERE_BUILD_JOBS=N caps the
 # build's and the tests' parallelism (the Orin runner's memory is shared with other CI, sysadmin
@@ -45,22 +47,51 @@ install_age() {   # age 1.3 (post-quantum interop; Ubuntu's package is 1.1)
   rm -f /tmp/age.tgz
 }
 
+# Hash-based skipping (docs/design/ci-lean.md): scripts/ci-hash.py hashes each test target's inputs and skips a target
+# that already passed with the same hash, naming the commit that passed it. The records live in the build volume
+# (.build/ci-pass), so they are as durable as the build cache. SEMPERE_CI_FORCE_ALL=1 runs everything.
+ci_store() { echo "${SEMPERE_CI_PASS_DIR:-$PWD/.build/ci-pass}"; }
+
 job_test() {
   # zbar (QR decode), zip (archive interop), poppler (PDF text and background pixel checks), jq (the recovery
-  # kit script), the UCD (BidiTest.txt), iproute2 (the offline guard), util-linux (setpriv)
-  apt_install zlib1g-dev curl zbar-tools zip poppler-utils unicode-data jq iproute2 util-linux
+  # kit script), the UCD (BidiTest.txt), iproute2 (the offline guard), util-linux (setpriv), python3 (ci-hash.py)
+  apt_install zlib1g-dev curl zbar-tools zip poppler-utils unicode-data jq iproute2 util-linux python3
   install_age
+  python3 scripts/ci-hash.py --self-test | tail -1
+  scripts/test-ci-hash-guard.sh | tail -1
+  python3 scripts/ci-hash.py check-reads   # a test reading a file the hash does not cover fails here
+  export SEMPERE_CI_PASS_DIR; SEMPERE_CI_PASS_DIR=$(ci_store)
+  local plan; plan=$(mktemp)
+  python3 scripts/ci-hash.py plan --job linux-test --out "$plan"
+  local skips=() runs=0 t
+  while read -r t; do skips+=(--skip "^$t\\."); done < <(python3 scripts/ci-hash.py skips "$plan")
+  runs=$(python3 scripts/ci-hash.py runs "$plan" | wc -l)
+  # The build always runs (incremental, cheap when warm): the benchmark targets are never tested but must still compile.
   swift build --build-tests ${SEMPERE_BUILD_JOBS:+-j "$SEMPERE_BUILD_JOBS"}
-  SEMPERE_REQUIRE_AGE_PQ=1 SEMPERE_REQUIRE_POPPLER=1 SEMPERE_REQUIRE_TOOLS=zbar,zip,pdftotext,bidi CI=1 \
-    scripts/test-offline.sh --skip-build --parallel --skip 'Benchmarks\.' ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
+  if [[ $runs -eq 0 ]]; then
+    echo "ci-linux: every test target skipped: each passed with its current hash (lines above name the commits)"
+  else
+    SEMPERE_REQUIRE_AGE_PQ=1 SEMPERE_REQUIRE_POPPLER=1 SEMPERE_REQUIRE_TOOLS=zbar,zip,pdftotext,bidi CI=1 \
+      scripts/test-offline.sh --skip-build --parallel --skip 'Benchmarks\.' ${skips[@]+"${skips[@]}"} ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
+    python3 scripts/ci-hash.py record --plan "$plan"   # only after the whole run passed (set -e)
+  fi
   scripts/check-portability.sh
   scripts/check-removable-importers.sh
 }
 
 job_webdav() {
-  apt_install zlib1g-dev curl python3-venv
+  apt_install zlib1g-dev curl python3-venv python3
+  export SEMPERE_CI_PASS_DIR; SEMPERE_CI_PASS_DIR=$(ci_store)
+  # The job runs the tests whose name says Wsgidav, which live in these two targets (docs/ci.md "What runs when").
+  local plan; plan=$(mktemp)
+  python3 scripts/ci-hash.py plan --job linux-webdav --out "$plan" SempereWebDAVTests CLITests
+  if [[ $(python3 scripts/ci-hash.py runs "$plan" | wc -l) -eq 0 ]]; then
+    echo "ci-linux: the WebDAV job skipped: both of its targets passed with their current hash (lines above name the commits)"
+    return 0
+  fi
   [[ -x /opt/dav/bin/wsgidav ]] || { python3 -m venv /opt/dav && /opt/dav/bin/pip install --quiet -r scripts/webdav-server-requirements.txt; }
   SEMPERE_WEBDAV_LARGE_MB=${SEMPERE_WEBDAV_LARGE_MB:-64} PATH=/opt/dav/bin:$PATH scripts/test-webdav.sh ${SEMPERE_BUILD_JOBS:+-j "$SEMPERE_BUILD_JOBS"}
+  python3 scripts/ci-hash.py record --plan "$plan"
 }
 
 job_static() {
@@ -78,7 +109,9 @@ in_docker() {   # JOB or JOB:ARG (static:x86_64)
   [[ $job == test ]] && caps=(--cap-add=SYS_ADMIN --cap-add=NET_ADMIN)   # test-offline's network namespace
   local volume="${SEMPERE_LINUX_BUILD_VOLUME:-sempere-linux-build-${image//[:.]/-}}"   # a name of your own when another run shares the Docker host
   local tty=(); [[ -t 1 ]] && tty=(-t)
-  docker run --rm ${tty[@]+"${tty[@]}"} ${caps[@]+"${caps[@]}"} -v "$PWD:/src" -v "$volume:/src/.build" -v sempere-linux-swiftpm:/root/.swiftpm -w /src "$image" \
+  # The image's id goes into the target hashes: the local default tag floats (the runner's is pinned by digest in the workflow).
+  local image_id; image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || { docker pull -q "$image" >/dev/null && docker image inspect --format '{{.Id}}' "$image"; })
+  docker run --rm -e SEMPERE_CI_FORCE_ALL -e "SEMPERE_CI_IMAGE_ID=$image_id" ${tty[@]+"${tty[@]}"} ${caps[@]+"${caps[@]}"} -v "$PWD:/src" -v "$volume:/src/.build" -v sempere-linux-swiftpm:/root/.swiftpm -w /src "$image" \
     scripts/ci-linux.sh "$job" ${arg:+"$arg"}
 }
 

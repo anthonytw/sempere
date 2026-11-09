@@ -1,0 +1,61 @@
+{
+  "_comment": "Read by scripts/ci-hash.py. implicit_dependencies: targets the tests run without linking. extra_inputs: files and folders the tests read from outside their own (scripts/ci-hash.py check-reads finds them and fails for one that is missing). logic / os_dependent: the split (docs/design/ci-lean.md); a target in neither list is treated as OS-dependent.",
+  "implicit_dependencies": {
+    "CLITests": [
+      "SempereCLI"
+    ],
+    "SempereNotabilityTests": [
+      "SempereCLI"
+    ]
+  },
+  "extra_inputs": {
+    "CLITests": [
+      "Tests/SemperePDFTests/Fixtures",
+      "Tests/SempereRenderTests/Fixtures",
+      "Tests/SempereTests/Fixtures"
+    ],
+    "SempereAppCoreTests": [
+      "Tests/SempereTests/Fixtures"
+    ],
+    "SempereNotabilityTests": [
+      "Tests/SempereTests/Fixtures"
+    ],
+    "SempereRenderTests": [
+      "Tests/SemperePDFTests/Fixtures",
+      "Tests/SempereTests/Fixtures"
+    ],
+    "SempereWebDAVTests": [
+      "Tests/CLITests",
+      "Tests/SempereTests/Fixtures"
+    ],
+    "SempereTests": [
+      "docs/format.md",
+      "docs/design/key-hierarchy.md",
+      "docs/settings-sync.md",
+      "docs/settings.schema.json",
+      "docs/security.md",
+      "Apps",
+      "Sources",
+      "web/test/fixtures",
+      "web/test/golden",
+      "SECURITY.md",
+      "LICENSE",
+      "LICENSE-EXCEPTION"
+    ]
+  },
+  "logic": [
+    "AgeTests",
+    "SempereCaptureSharedTests",
+    "SempereImportTests",
+    "SemperePDFTests"
+  ],
+  "os_dependent": {
+    "CLITests": "runs the built binary; its tests choose paths by Vision, CoreML, Speech, AVFoundation and macOS-only backup (#if canImport in CLIRecognize*, CLIVideo, CLITranscribe, CLIBackup)",
+    "SempereAppCoreTests": "VaultLibrary and the lifecycle tests use Glibc or Darwin file locking",
+    "SempereLocalizationTests": "Apple only: Package.swift does not build it on Linux",
+    "SempereNotabilityTests": "its CLI tests run the built binary; Vision, macOS-only real-file tests",
+    "SempereRenderTests": "Vision, CoreML, PDFKit, PencilKit parity checks, font file access, FoundationXML and JavaScriptCore branches",
+    "SempereTests": "FileIO, VaultFileLock, WriteLedger, VaultTrust, BlobCache and FinderBundleBit pick Glibc, Musl or Darwin calls",
+    "SempereWebDAVTests": "the transport (FoundationNetworking on Linux, URLSession on Darwin), FolderRemote, the slow HTTP server"
+  }
+}

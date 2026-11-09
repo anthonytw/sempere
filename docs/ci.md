@@ -157,8 +157,13 @@ then say so.
   `orin-aarch64-sempere`, sysadmin `docs/fil-ci-runner.md` §2) on every pull request and push to `main`, with
   `SEMPERE_BUILD_JOBS=4`: the runner's memory is shared with other CI. The web viewer's checks (`cd web &&
   npm ci && npm run lint && npm run typecheck && npm test`, and `web/scripts/golden.sh` when the CLI's export
-  changes) are run by the author for now. The CI redesign (docs/design/thin-app.md, wave 7) decides the
-  lean gate, which targets run on which change, and the scheduled runs.
+  changes) are run by the author for now. **Unchanged test targets are skipped** ([design/ci-lean.md](design/ci-lean.md)): `scripts/ci-hash.py`
+  hashes each target's inputs (the whole folders of the target and its dependencies, the docs, sources and other targets' fixtures its tests read (`check-reads` fails for an undeclared read), `Package.swift`, `Package.resolved`, the
+  toolchain, the scripts that run the tests) and the Linux jobs and the gate's `package` step skip a target whose
+  hash already passed, logging the hash and the commit that passed it (`ci-hash: SKIP ...`). The records are in the
+  build volume (`.build/ci-pass`) and `~/.cache/sempere-ci-pass`. `SEMPERE_CI_FORCE_ALL=1` runs everything; `--testflight`,
+  `--release` and `--cli` set it. `scripts/ci-targets.json` classifies targets as logic or OS-dependent (the Mac gate
+  skips the logic ones with `SEMPERE_CI_MAC_PACKAGE=os-dependent`; off for now). The scheduled runs are still to come.
 - **The static (musl) Linux release build** is `scripts/ci-linux.sh static`; `release-build.sh` builds both
   architectures from the tag.
 - **WebDAV integration tests:** `scripts/ci-linux.sh webdav` runs `scripts/test-webdav.sh` against wsgidav
@@ -352,6 +357,9 @@ test target of its own, named `<Module>Benchmarks`, so it is obvious what a test
   `just test` and `scripts/test-linux.sh` all pass `--skip 'Benchmarks\.'`: `swift test --list-tests` names a test
   `Target.Class/testName`, and the regex matches the target part only. A plain `swift test` runs them (they are quick
   at their default sizes), so use the same `--skip` for a package run without them.
+  A serial `swift test` with `--skip` or `--filter` on Linux hands the runner every selected test as one comma-joined
+  argument and dies with `posix_spawn error: Argument list too long` once the names pass 128 KB (Linux's
+  `MAX_ARG_STRLEN`; the suite is ~265 KB): pass `--parallel`, as the CI jobs and `scripts/test-linux.sh` do.
 - **`scripts/bench.sh [sempere|render|webdav|pdf|age ...]`** (`just bench`) builds in release mode
   (`-c release -Xswiftc -enable-testing`, which the tests' `@testable` imports need) and runs each module in a
   process of its own, so a run's peak memory is its own. `SEMPERE_BENCH_DEBUG=1` runs unoptimized; arguments after

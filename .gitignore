@@ -1,4 +1,5 @@
-.build/
+.build
+# (no trailing slash: the Gitea runner links .build to its cache volume, and a symlink is not a directory)
 .swiftpm/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
