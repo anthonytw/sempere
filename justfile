@@ -27,6 +27,10 @@ test-linux *ARGS:
 portability:
     scripts/check-portability.sh
 
+# Secret scan, logging lint and pin checks (docs/audits/README.md "Checks and audits")
+security-check:
+    scripts/check-security.sh
+
 # Release build of the CLI
 cli:
     swift build -c release --product sempere

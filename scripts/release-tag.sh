@@ -16,9 +16,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-usage="usage: $0 [--check | --push] VERSION [REF]"
+usage="usage: $0 [--check | --push | --embargo] VERSION [REF]   (--embargo: a local tag only, REF default HEAD)"
 mode=tag
 case "${1:-}" in
+  --embargo) mode=embargo; shift; if [[ $# -eq 1 ]]; then set -- "$1" HEAD; fi ;;   # see "Embargoed fixes" below
   --check) mode=check; shift ;;
   --push) mode=push; shift ;;
   -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
@@ -88,6 +89,28 @@ not_tagged() {
   if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then echo "FAIL  tag $tag already exists on origin"; return 1; fi
   echo "ok    $tag is free"
 }
+# Embargoed fixes (docs/audits/README.md, "Embargoed fixes"): `--embargo VERSION [REF]` makes the signed tag on a local,
+# never-pushed commit REF (default HEAD) so the release build can be made from it before the fix is public. REF must
+# be one commit on top of origin/main (its one parent is on origin/main; a commit two away, a merge, or a commit
+# already on origin/main is refused), and the working tree must be clean. The tag stays local and nothing is pushed.
+# Once the fix is on main (merged WITHOUT squashing, so this commit is kept), `--push` publishes the tag.
+if [[ $mode == embargo ]]; then
+  base="${remote:-origin}/main"
+  embargo_ok=true
+  [[ -z $(git status --porcelain --untracked-files=no) ]] || { echo "FAIL  the working tree has uncommitted changes"; embargo_ok=false; }
+  parents=$(git rev-list --parents -n 1 "$sha" | wc -w)
+  if git merge-base --is-ancestor "$sha" "$base"; then echo "FAIL  ${sha:0:8} is already on $base: use \`just release-tag $version\`"; embargo_ok=false
+  elif (( parents != 2 )); then echo "FAIL  ${sha:0:8} must have exactly one parent (it is a root or a merge commit)"; embargo_ok=false
+  elif git merge-base --is-ancestor "$sha^" "$base"; then echo "ok    parent ${sha:0:8}^ is on $base"
+  else echo "FAIL  the parent of ${sha:0:8} is not on $base (an embargoed fix is one commit on top of it)"; embargo_ok=false; fi
+  check cli_version; check changelog; check not_tagged
+  echo "warn  release sweep not checked for an unpushed commit: run it locally (just ci-release) before the build"
+  [[ $embargo_ok == true && $ok == true ]] || die "not ready to tag $tag"
+  if [[ ${SEMPERE_TAG_SIGN:-true} == false ]]; then git tag -a "$tag" -m "Sempere $version" "$sha"; else git tag -s "$tag" -m "Sempere $version" "$sha"; fi
+  echo "created signed tag $tag on ${sha:0:8} (local only, embargoed: NOT pushed; push it with just release-push $version once the fix is on main)"
+  exit 0
+fi
+
 check on_main; check cli_version; check changelog; check sweep; check not_tagged
 [[ $ok == true ]] || die "not ready to tag $tag"
 if [[ $mode == check ]]; then echo "ready: just release-tag $version"; exit 0; fi

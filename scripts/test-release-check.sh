@@ -18,6 +18,7 @@ fresh() {
   for t in Age Sempere SempereRender SemperePDF SempereSpeech SempereSync SempereWebDAV CZlib; do cp -R "$here/Sources/$t" "$tmp/root/Sources/"; done
   cp "$here/docs/appstore/privacy-policy.md" "$tmp/root/docs/appstore/"
   cp "$here/docs/privacy/index.html" "$tmp/root/docs/privacy/"
+  cp "$here/SECURITY.md" "$tmp/root/"
 }
 pbx="Apps/Sempere/Sempere.xcodeproj/project.pbxproj"
 
@@ -41,6 +42,17 @@ expect() {
 }
 
 fresh; expect "the committed tree passes" ok "release-check: ok"
+# The audit cadence (SECURITY.md "Audits" table): a warning, never a failure.
+audit_row() { edit SECURITY.md 's.replace("| Audit | Date | Version | Report |\n| --- | --- | --- | --- |\n", "| Audit | Date | Version | Report |\n| --- | --- | --- | --- |\n'"$1"'\n", 1)'; }
+fresh; audit_row '| Full | 2026-11 | 1.0.0 | [report](docs/audits/2026-11-1.0.md) |'
+SEMPERE_TODAY=2027-06-15 expect "a full audit 7 months ago does not warn" ok "release-check: ok"
+SEMPERE_TODAY=2027-06-15 "$check" --root "$tmp/root" 2>&1 | grep -q 'last full audit' && { fail=$((fail + 1)); echo "FAIL a 7-month-old audit warned"; } || { pass=$((pass + 1)); echo "ok   a 7-month-old audit is silent"; }
+SEMPERE_TODAY=2027-07-15 expect "a full audit 8 months ago warns" warn "the last full audit was 2026-11, 8 months ago"
+fresh; audit_row '| Release | 2027-05 | 1.1.0 | [report](docs/audits/2027-05-1.1.md) |'
+SEMPERE_TODAY=2027-07-15 expect "a release audit does not count as a full one" warn "records no full audit"
+fresh; audit_row '| Full + release | 2027-04 | 1.1.0 | [report](docs/audits/2027-04-1.1.md) |'
+SEMPERE_TODAY=2027-07-15 expect "a full + release audit counts as a full one" ok "release-check: ok"
+
 # Captured first: `grep -q` stops reading at the first match, and the check then dies of a broken pipe.
 listing="$("$check" --root "$tmp/root" --list)"
 grep -q $'^FileTimestamp\tSources/Sempere/FileIO.swift:' <<<"$listing" \

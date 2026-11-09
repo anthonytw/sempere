@@ -26,6 +26,7 @@
 #     another version in the project's Package.resolved;
 #   - with --checkouts: a third-party package (SwiftMath) uses networking, or a
 #     required-reason API that neither its own manifest nor the app's declares.
+# It only warns (never fails) when the last full audit in SECURITY.md's "Audits" table is over 7 months old.
 #
 # Usage: scripts/release-check.sh [--root DIR] [--list] [--checkouts DIR] [--app-sources]
 #   --root DIR       check another checkout (scripts/test-release-check.sh uses copies)
@@ -46,7 +47,7 @@ while [ $# -gt 0 ]; do
     --list) list=1; shift ;;
     --checkouts) checkouts="$(cd "$2" && pwd)"; shift 2 ;;
     --app-sources) app_sources=1; shift ;;
-    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -560,6 +561,22 @@ for p in ("docs/privacy/index.html", "docs/appstore/privacy-policy.md"):
     policy_dates[p] = m.group(1)
 if len(set(policy_dates.values())) > 1:
     errors.append(f"the two privacy policy copies differ in date ({policy_dates}): edit both")
+
+# --- Audit cadence: the last full audit in SECURITY.md is under 7 months old (warns, never fails) ------------------
+# SECURITY.md "Audits" table rows: | Full | YYYY-MM | version | report |  ("Full" or "Full + release"; docs/audits/README.md).
+security_md = os.path.join(root, "SECURITY.md")
+if os.path.isfile(security_md):
+    import datetime
+    today = datetime.date.fromisoformat(os.environ.get("SEMPERE_TODAY") or datetime.date.today().isoformat())
+    rows = re.findall(r"^\|\s*Full[^|]*\|\s*(\d{4})-(\d{2})(?:-\d{2})?\s*\|", read(security_md), re.M)
+    if not rows:
+        warnings.append("SECURITY.md records no full audit (docs/audits/README.md: one every six months)")
+    else:
+        y, m = max((int(a), int(b)) for a, b in rows)
+        months = (today.year - y) * 12 + today.month - m
+        if months > 7:
+            warnings.append(f"the last full audit was {y}-{m:02d}, {months} months ago: a full audit is due every six months "
+                            "(docs/audits/README.md)")
 
 for w in warnings:
     print(f"warning: {w}", file=sys.stderr)

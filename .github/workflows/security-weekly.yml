@@ -1,0 +1,40 @@
+name: Security weekly
+
+# Dependency advisories, once a week (docs/audits/README.md "Checks and audits"). Fail-only: it opens no PRs and no issues,
+# so a green week costs nothing and a red one sends the owner GitHub's usual failure email. It needs the network, which is
+# why it is not part of the PR gate. A scheduled workflow stops after 60 days without repository activity: the full audit
+# checks that this one is still enabled.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    name: npm audit and OSV
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: npm audit (web viewer, runtime packages, high and above)
+        working-directory: web
+        run: npm audit --omit=dev --audit-level=high
+      # Plain OSV HTTPS API with curl and jq: osv-scanner would be a third-party binary.
+      - name: OSV (resolved Swift packages)
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS=$'\t' read -r name url version; do
+            repo="${url#https://}"; repo="${repo%.git}"
+            body=$(jq -nc --arg v "$version" --arg n "$repo" '{version: $v, package: {name: $n, ecosystem: "SwiftURL"}}')
+            res=$(curl -fsS --retry 3 --retry-all-errors -H 'Content-Type: application/json' -d "$body" https://api.osv.dev/v1/query)
+            ids=$(jq -r '[.vulns[]?.id] | join(" ")' <<<"$res")
+            if [ -n "$ids" ]; then echo "::error::$name $version has advisories: $ids"; status=1; else echo "ok  $name $version"; fi
+          done < <(jq -r '.pins[] | [.identity, .location, .state.version] | @tsv' Package.resolved)
+          exit $status

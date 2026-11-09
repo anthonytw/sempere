@@ -1,0 +1,23 @@
+# Exceptions to scripts/check-security.sh: `rule | path | reason`. A path ending in / is a prefix.
+# Every entry needs a reason. The audit reviews this list each run (docs/audits/README.md); remove an entry the
+# moment it matches nothing (the script says so).
+#
+# secrets: a test key committed on purpose. None of these protects anything: each is a published test vector, a
+# generated throwaway, or a key printed in a fixture so a test can check what the code does with it.
+secrets | Tests/AgeTests/Vectors/ | the C2SP age test vectors (CCTV); every identity in them is public by design
+secrets | Tests/AgeTests/KeyTests.swift | the age specification's example identity
+secrets | Tests/AgeTests/PostQuantumTests.swift | the age specification's example post-quantum identity
+secrets | Tests/SempereTests/Fixtures/ | throwaway keys of the sample vault and the frozen epoch vectors (docs/design/key-hierarchy.md)
+secrets | Tests/SempereTests/PaperKeyTests.swift | a throwaway key for the paper-key encoding tests
+secrets | Tests/SempereTests/BackupTests.swift | a fake "BEGIN OPENSSH PRIVATE KEY" string: bytes the backup test must not leak
+secrets | Tests/SempereRenderTests/Fixtures/qr-vectors.json | QR-code vectors of throwaway keys
+secrets | Tests/SempereRenderTests/generate_qr_vectors.py | the generator of those vectors (throwaway keys)
+secrets | Tests/SempereRenderTests/QRCodeTests.swift | throwaway key for the QR tests
+secrets | Tests/SempereRenderTests/RecoveryKitTests.swift | throwaway keys for the recovery-kit tests
+secrets | web/test/vault.test.ts | a throwaway key for the web viewer's vault test
+secrets | Apps/Sempere/SempereAppUITests/DemoDeviceKey.swift | the demo vault's device key (a vault of sample notes only)
+secrets | Apps/Sempere/SempereAppUITests/NewVaultSheetUITests.swift | a throwaway key typed by a UI test
+#
+# perf: a PerfSink call the word scan flags, reviewed: neither logs a key or a title.
+perf | Sources/SempereAppCore/AppModel/AppModel+Loading.swift | logs a note COUNT ("byTitle" is a sort function's name inside the closure)
+perf | Sources/SempereAppCore/NoteEditor/NoteEditor.swift | logs a short note id; `key` is the layout-cache key (a size), not key material
