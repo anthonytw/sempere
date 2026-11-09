@@ -99,22 +99,39 @@ struct QuickCaptureLogicTests {
         #expect(try store.load() == nil)
     }
 
-    // MARK: - Delivery
-
-    /// A vault in `dir` and a stored capture profile of it (its bookmark a path bookmark).
-    static func profile(in dir: URL) throws -> (URL, StoredCaptureProfile) {
-        let identity = try NativeIdentity.generate(.postQuantum)
-        let url = dir.appendingPathComponent("sample.sempere")
-        let vault = try TestVaults.create(at: url, identities: [identity])
-        let profile = try vault.captureProfile(device: DeviceID("0badf00d")!)
-        return (url, StoredCaptureProfile(profile: profile, vaultName: "sample",
-                                          bookmark: try PathBookmarks().bookmark(for: url), transcribe: false))
+    /// 1.0.0 stored the vault folder's bookmark in the profile; nothing reads it now, and a profile with it still decodes
+    /// (the extra key is ignored) and is written back without it.
+    @Test func aProfileStoredBy100WithABookmarkStillDecodes() throws {
+        let (_, stored) = try Self.profile(in: try Self.tempDir())
+        var object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(stored)) as? [String: Any])
+        #expect(object["bookmark"] == nil, "a new profile is written without it")
+        object["bookmark"] = Data("sempere-path-bookmark:/somewhere/sample.sempere".utf8).base64EncodedString()
+        let old = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(StoredCaptureProfile.self, from: old)
+        #expect(decoded == stored)
+        let again = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any])
+        #expect(again["bookmark"] == nil)
     }
 
-    static func delivery(_ dir: URL, ledger: MemoryWriteLedger? = nil, delivered: Box? = nil) -> CaptureDelivery {
+    // MARK: - Delivery
+
+    /// A vault in the store `dir/store` (a capture finds its vault there, by id) and a stored capture profile of it.
+    static func profile(in dir: URL) throws -> (URL, StoredCaptureProfile) {
+        let identity = try NativeIdentity.generate(.postQuantum)
+        let source = dir.appendingPathComponent("sample.sempere")
+        let vault = try TestVaults.create(at: source, identities: [identity])
+        let profile = try vault.captureProfile(device: DeviceID("0badf00d")!)
+        let url = try VaultStore(root: dir.appendingPathComponent("store", isDirectory: true)).importVault(from: source).url
+        try FileManager.default.removeItem(at: source)
+        return (url, StoredCaptureProfile(profile: profile, vaultName: "sample", transcribe: false))
+    }
+
+    /// A delivery whose store is `dir/store` (where `profile(in:)` put the vault), or `storeRoot`, another folder: no copy there.
+    static func delivery(_ dir: URL, ledger: MemoryWriteLedger? = nil, delivered: Box? = nil, storeRoot: URL? = nil) -> CaptureDelivery {
         var ledgerFor: (@Sendable (UUID) -> any WriteLedgerStore)?
         if let ledger { ledgerFor = { _ in ledger } }
-        return CaptureDelivery(queueRoot: dir.appendingPathComponent("queue"), vaultStore: nil, bookmarks: PathBookmarks(),
+        return CaptureDelivery(queueRoot: dir.appendingPathComponent("queue"), vaultStore: VaultStore(root: storeRoot ?? dir.appendingPathComponent("store", isDirectory: true)),
+                               bookmarks: PathBookmarks(),
                                ledger: ledgerFor, delivered: { id in delivered?.add(id) })
     }
 
@@ -147,14 +164,13 @@ struct QuickCaptureLogicTests {
         #expect(told.all == [stored.profile.vaultId])
     }
 
-    /// The bookmark names a folder that is not the vault: queued with its epoch, then moved in by a flush.
+    /// The store holds no copy of the vault: queued with its epoch, then moved in by a flush.
     @Test func anUnreachableVaultQueuesTheCaptureWithItsEpoch() throws {
         let dir = try Self.tempDir()
         let (url, original) = try Self.profile(in: dir)
-        var stored = original
-        stored.bookmark = try PathBookmarks().bookmark(for: try Self.tempDir("not-the-vault"))
+        let stored = original
         let ledger = MemoryWriteLedger()
-        let delivery = Self.delivery(dir, ledger: ledger)
+        let delivery = Self.delivery(dir, ledger: ledger, storeRoot: try Self.tempDir("not-the-store"))
         let sealed = try Self.seal(stored)
         #expect(try delivery.deliver(sealed, stored) == .queued)
         let queue = delivery.queueFolder(stored.profile.vaultId)
@@ -175,13 +191,12 @@ struct QuickCaptureLogicTests {
     /// With a ledger and no profile of the vault, nothing is placed unrecorded.
     @Test func aFlushWithoutAProfileLeavesTheQueue() throws {
         let dir = try Self.tempDir()
-        let (url, original) = try Self.profile(in: dir)
-        var stored = original
-        stored.bookmark = Data("not a bookmark".utf8)
+        let (url, stored) = try Self.profile(in: dir)
+        let away = Self.delivery(dir, ledger: MemoryWriteLedger(), storeRoot: try Self.tempDir("not-the-store"))
+        #expect(try away.deliver(try Self.seal(stored), stored) == .queued)
         let delivery = Self.delivery(dir, ledger: MemoryWriteLedger())
-        #expect(try delivery.deliver(try Self.seal(stored), stored) == .queued)
         #expect(delivery.flushQueue(into: url, vaultId: stored.profile.vaultId, profile: nil, files: nil) == 0)
-        #expect(delivery.flushQueue(of: original) == 1, "the stored profile's vault, by its bookmark")
+        #expect(delivery.flushQueue(of: stored) == 1, "the stored profile's vault, by its id in the store")
     }
 
     /// Security review 2026-10 (N2): a vault whose `vault.json` names a newer format is read-only for this version

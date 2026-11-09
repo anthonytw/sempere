@@ -1,7 +1,7 @@
 import Foundation
 
-// Hit-testing for the app's object eraser (`ObjectEraser`, which builds a
-// `StrokeHitShape` from a `PKStroke`), in plain Swift so it is tested on Linux. Coordinates are page points.
+// Hit-testing for the app's object eraser (`ObjectEraseSweep`, which builds a
+// `StrokeHitShape` for each stroke a sweep nears), in plain Swift so it is tested on Linux. Coordinates are page points.
 //
 // A stroke is a chain of capsules: consecutive samples of its path joined by
 // segments, each as thick as the ink there. The eraser sweeps a capsule too,

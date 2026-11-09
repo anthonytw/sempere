@@ -1,14 +1,13 @@
 import Foundation
 import Sempere
-import SempereAppCore
 
 /// What the library window does for a File, Note or View menu command, apart from
 /// the SwiftUI state only `RootView` owns. Extracted from `RootView.perform` so the
 /// rules can be tested without a view (GA-57); `RootView` applies the `Outcome`.
 @MainActor
-enum LibraryCommands {
+public enum LibraryCommands {
     /// What only the view can do.
-    enum Effect: Equatable {
+    public enum Effect: Equatable, Sendable {
         /// Show the vault folder picker (File > Open Vault…).
         case pickVault
         /// Show the New Vault sheet.
@@ -21,16 +20,21 @@ enum LibraryCommands {
 
     /// The result of one command: an effect for the view, and a new stored
     /// column layout when the command changed it.
-    struct Outcome: Equatable {
-        var effect: Effect?
-        var columns: String?
+    public struct Outcome: Equatable, Sendable {
+        public var effect: Effect?
+        public var columns: String?
+
+        public init(effect: Effect? = nil, columns: String? = nil) {
+            self.effect = effect
+            self.columns = columns
+        }
     }
 
     /// Runs the library window's own commands (the editor and import/export commands
     /// are `EditorCommands` and `WindowCommands`, tried first by the caller).
-    /// `storedColumns` is the window's stored column layout (`ColumnLayout`).
-    static func perform(_ command: MenuCommand, model: AppModel, ui: WindowUI, recents: [RecentVault],
-                        storedColumns: String) -> Outcome {
+    /// `storedColumns` is the window's stored column layout (`ColumnChoice`).
+    public static func perform<Host: AppModelHost>(_ command: MenuCommand, model: AppModelCore<Host>, ui: WindowUICore<Host>,
+                                                   recents: [RecentVault], storedColumns: String) -> Outcome {
         let selected = model.selectedNoteID
         var outcome = Outcome()
         switch command {
@@ -55,23 +59,22 @@ enum LibraryCommands {
         case .restoreNote:
             if let selected { Task { await model.report { try await model.restoreNote(selected) } } }
         case .find:
-            if ColumnLayout.visibility(from: storedColumns) == .detailOnly { outcome.columns = "doubleColumn" }
+            if ColumnChoice(stored: storedColumns) == .detailOnly { outcome.columns = ColumnChoice.doubleColumn.stored }
             ui.searchPresented = true
-        case .toggleNoteList: outcome.columns = ColumnLayout.toggled(storedColumns)
+        case .toggleNoteList: outcome.columns = ColumnChoice.toggled(storedColumns)
         default: break
         }
         return outcome
     }
 
     /// File > Open Recent: the entry with `id`, if the list still has it.
-    static func recent(withID id: UUID, in recents: [RecentVault]) -> RecentVault? {
+    public static func recent(withID id: UUID, in recents: [RecentVault]) -> RecentVault? {
         recents.first(where: { $0.id == id })
     }
 
-    /// Reopens a recent vault; on failure explains and says whether the folder
-    /// picker should follow the alert (`pickOnFailure`). Nil when it opened,
-    /// or the user stopped an iCloud download.
-    static func reopen(_ entry: RecentVault, pickOnFailure: Bool, model: AppModel, library: VaultLibrary) async -> Bool? {
+    /// Reopens a recent vault. Nil when it opened, or the user stopped an iCloud download; else the error, which the
+    /// app words (it also says whether the folder picker follows the alert).
+    public static func reopen<Host: AppModelHost>(_ entry: RecentVault, model: AppModelCore<Host>, library: VaultLibrary) async -> (any Error)? {
         do {
             try await model.open(recent: entry, library: library)
             return nil
@@ -79,12 +82,7 @@ enum LibraryCommands {
             // The user stopped the iCloud download.
             return nil
         } catch {
-            let detail = AppModel.describe(error)
-            model.alert = .worded(pickOnFailure
-                ? String(localized: "Could not reopen “\(entry.name)”: \(detail)\n\nChoose the vault folder again.",
-                         comment: "First %@ is the vault's name, second the error (English)")
-                : String(localized: "Could not reopen “\(entry.name)”: \(detail)", comment: "First %@ is the vault's name, second the error (English)"))
-            return pickOnFailure
+            return error
         }
     }
 }

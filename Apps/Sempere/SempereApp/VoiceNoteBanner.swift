@@ -162,13 +162,3 @@ private struct VoiceNoteBannerPlacement: ViewModifier {
         }
     }
 }
-
-/// When a window shows `VoiceNoteBanner`: while a voice note records or saves, and while
-/// its notice ("saved to …", a failure) is up. On a Mac too: File > Start Voice Note
-/// (`VoiceNoteMenu`) records from the app, which has no Live Activity there, so the banner
-/// is the only sign in the window that the microphone is on, and its Stop the nearest.
-enum VoiceNoteBannerRule {
-    static func shows(state: QuickCapture.State, hasNotice: Bool) -> Bool {
-        state == .recording || state == .saving || hasNotice
-    }
-}

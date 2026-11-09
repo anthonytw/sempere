@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import SempereAppCore
 
 /// Unified-log record of a note dragged out of the app (Mac: to the Finder; docs/mac.md "Drag a note out
 /// as PDF"), subsystem `io.github.anthonytw.sempere`, category `drag`. Every step is at debug level (not
@@ -32,11 +33,8 @@ enum DragLog {
         NoteFileDrag.dragTrace("ERROR \(line) error=\(kind)")
     }
 
-    /// An error's type, NSError domain and code: no user data.
-    nonisolated static func classify(_ error: any Error) -> String {
-        let ns = error as NSError
-        return "\(String(reflecting: type(of: error))) domain=\(ns.domain) code=\(ns.code)"
-    }
+    /// An error's type, NSError domain and code: no user data (`DragLogFormat`).
+    nonisolated static func classify(_ error: any Error) -> String { DragLogFormat.classify(error) }
 
     /// A user-data value (title, file name): private in the log.
     nonisolated static func privateValue(_ label: String, _ value: String) {
@@ -44,21 +42,13 @@ enum DragLog {
     }
 
     /// A note id as its first 8 hex digits.
-    nonisolated static func id(_ id: UUID) -> String { String(id.uuidString.lowercased().prefix(8)) }
+    nonisolated static func id(_ id: UUID) -> String { DragLogFormat.id(id) }
 
     /// `thread=main|bg qos=…` for the thread a callback runs on.
-    nonisolated static var thread: String {
-        "thread=\(Thread.isMainThread ? "main" : "bg") qos=\(Thread.current.qualityOfService.rawValue)"
-    }
+    nonisolated static var thread: String { DragLogFormat.thread }
 
-    /// What a file the drag hands back looks like: extension, size, whether it exists, its folder's last
-    /// two components (`SempereExport/<model>/<export>`).
-    nonisolated static func describe(file url: URL) -> String {
-        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-        let folder = url.deletingLastPathComponent().pathComponents.suffix(3).joined(separator: "/")
-        return "ext=\(url.pathExtension) bytes=\(values?.fileSize ?? -1) regular=\(values?.isRegularFile ?? false) "
-            + "exists=\(FileManager.default.fileExists(atPath: url.path)) folder=\(folder)"
-    }
+    /// What a file the drag hands back looks like (`DragLogFormat.describe(file:)`).
+    nonisolated static func describe(file url: URL) -> String { DragLogFormat.describe(file: url) }
 
     /// Logs `released` when the system lets go of `provider` (the drag ended, whatever became of it): SwiftUI's
     /// `onDrag` reports no end, so this is the only sign of it. Holds nothing but a tag in the provider.

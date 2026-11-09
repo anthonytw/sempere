@@ -3,16 +3,6 @@ import SempereImporters
 import SwiftUI
 import SempereAppCore
 
-/// What the file picker returned for "Import from …", waiting for the options sheet.
-struct ImportPick: Identifiable, Equatable {
-    let id = UUID()
-    /// The importer's id (`VaultImporter.id`).
-    var importer: String
-    var urls: [URL]
-    /// The sidebar's notebook when the files were picked (nil: the importer's own rule).
-    var notebook: String?
-}
-
 /// The names the app shows for the options an importer offers (docs/localization.md): the ones the importers use
 /// today are localized here; an option the app does not know shows the importer's English title.
 enum ImportOptionText {

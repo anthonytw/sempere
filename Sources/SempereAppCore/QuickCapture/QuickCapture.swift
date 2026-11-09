@@ -130,7 +130,7 @@ public final class QuickCapture {
     @ObservationIgnored public var liveActivity: any CaptureLiveActivity
     @ObservationIgnored var app: any CaptureAppState
     @ObservationIgnored var backgroundTime: any BackgroundTime
-    /// Resolves the profile's bookmark (the app's security-scoped bookmarks).
+    /// Holds the vault folder's scope while a capture is written (the app's security-scoped bookmarks).
     @ObservationIgnored var bookmarks: any FolderBookmarks
     /// Coordinates a queue flush into a vault in iCloud Drive (`flushQueue(…coordinated: true)`).
     @ObservationIgnored var files: any FileCoordinating

@@ -3,27 +3,6 @@ import SempereAppCore
 import SempereImporters
 import SwiftUI
 
-/// A recent vault, as the File > Open Recent menu lists it.
-struct RecentItem: Identifiable, Hashable {
-    var id: UUID
-    var name: String
-}
-
-/// What the focused window offers the menu bar: its state (for enabling) and
-/// what to do for a command. Each window publishes one with
-/// `focusedSceneValue(\.commandRouter, …)`; `AppCommands` reads the focused one.
-struct CommandRouter {
-    var context: MenuCommand.Context
-    var recents: [RecentItem] = []
-    /// The notes File > Export acts on: the list's selection in a library
-    /// window, the window's note in a note window.
-    var exportIDs: [UUID] = []
-    /// The window's `WindowUI.id` (the export sheet opens there).
-    var windowID: UUID?
-    var perform: (MenuCommand) -> Void
-    var openRecent: (UUID) -> Void = { _ in }
-}
-
 private struct CommandRouterKey: FocusedValueKey {
     typealias Value = CommandRouter
 }
@@ -253,67 +232,4 @@ enum WindowCommands {
         context.hasExportTargets = !exportIDs.isEmpty
         context.voiceNote = VoiceNoteMenu.phase(model.quickCapture.state)
     }
-}
-
-/// Per-window UI state that menu commands set: the sheets and alerts of the
-/// note actions. Each window has its own, so a command opens its sheet in the
-/// window it was chosen in.
-@MainActor
-@Observable
-final class WindowUI {
-    /// Identifies the window (`AppModel.canvasWindow`).
-    let id = UUID()
-    var creatingNote = false
-    /// The New Notebook sheet (`NewNotebookView`), with the notebook it starts in.
-    var creatingNotebook: NewNotebookRequest?
-    /// The note being renamed.
-    var renameNoteID: UUID?
-    /// The note whose tags are being edited.
-    var tagsNoteID: UUID?
-    /// The note a version is being saved of (the Save Version alert).
-    var saveVersionNoteID: UUID?
-    var choosingPaper = false
-    /// The open note's Recordings list (`RecordingsListView`).
-    var showingRecordings = false
-    /// File > Sync Targets… (`SyncTargetsSheet`).
-    var showingSyncTargets = false
-    /// The sidebar's More ▸ Open Vault…: the window's root starts the vault picker (`RootView`) and clears it. The
-    /// open vault stays open until the picked one is copied in (`copyIn`), so a cancel changes nothing.
-    var openVaultRequested = false
-    var searchPresented = false
-    /// A PDF being imported that needs its password (`PDFImportRequest`).
-    var pdfPassword: PDFImportRequest?
-    /// The file importer for a PDF to import as a new note.
-    var importingPDF = false
-    /// The file importer for notes or a backup from another app (`WindowSheets`, `AppModel+Import`).
-    var importingFromApp = false
-    /// Files picked for such an import, waiting for the options sheet (`ImportOptionsSheet`).
-    var importPick: ImportPick?
-    /// The report of the last import, shown from its result alert (`ImportReportView`).
-    var importReport: ImportSummary?
-    /// A menu command for the editor's Insert menu (`InsertRequest`), taken by the window's editor.
-    var insertRequest: InsertRequest?
-    /// About Sempere, the quick tour or the key notice (`ExpectationsSheets`).
-    var expectations: ExpectationsSheet?
-    /// A menu command for the editor's toolbar toggles (`ToolRequest`), taken by the window's editor.
-    var toolRequest: ToolRequest?
-    /// The open note's mode in this window (`NoteMode`, the top bar's pencil and Hand): the menu bar
-    /// reads it for its titles. `EditorView` sets it back to `NoteMode.initial` for every note it opens.
-    var noteMode = NoteMode.initial
-    /// The editor `noteMode` belongs to: a new one (a note opened) starts in `NoteMode.initial`.
-    var noteModeEditor: ObjectIdentifier?
-    /// The note whose Version History sheet is open (`WindowSheets`).
-    var historyNoteID: UUID?
-}
-
-/// File > Insert Photo… and Insert PDF Pages…: the window's editor opens the
-/// same picker as its Insert menu (`InsertMenu`), then clears the request.
-enum InsertRequest: Equatable {
-    case photos, pdfPages
-}
-
-/// Tools > Annotate, Hand and Text: the editor flips the toolbar button of the same name; a tool
-/// picked from the menu (Pen, Marker…) switches to Annotate (`draw`). The editor then clears the request.
-enum ToolRequest: Equatable {
-    case text, annotate, hand, draw
 }

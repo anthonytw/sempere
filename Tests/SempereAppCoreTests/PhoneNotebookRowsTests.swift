@@ -1,12 +1,12 @@
 import Foundation
 import Sempere
 import Testing
-@testable import SempereApp
+@testable import SempereAppCore
 
-/// The iPhone's sidebar draws the notebook tree itself (a tap on an outline row only folded it, so a
+/// (Moved from the app's `PhoneSidebarTests`, wave 6 follow-up F1.) The iPhone's sidebar draws the notebook tree itself (a tap on an outline row only folded it, so a
 /// notebook with sub-notebooks could not be opened): the notebooks in tree order with their depth, folded
 /// like the iPad's outline (a chevron of their own folds and unfolds; the row's tap opens the notebook).
-struct PhoneSidebarTests {
+struct PhoneNotebookRowsTests {
     @Test func rowsFollowTheTreeWithDepth() {
         let tree = NotebookNode.tree(["School/Biology", "School/Physics/Optics", "Personal"])
         let rows = PhoneNotebookRows.rows(tree)

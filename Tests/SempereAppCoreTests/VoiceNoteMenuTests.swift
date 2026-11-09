@@ -1,10 +1,11 @@
 import Foundation
-import Testing
-@testable import SempereApp
 import Sempere
-import SempereAppCore
+@testable import SempereAppCore
+import Testing
 
-/// GA-23: File > Start / Stop Voice Note on a Mac, over the recorder Siri and the widgets use.
+/// GA-23: File > Start / Stop Voice Note on a Mac, over the recorder Siri and the widgets use. Moved from the app's
+/// `VoiceNoteMenuTests` (wave 6 follow-up F1), with `VoiceNoteMenu` and `VoiceNoteBannerRule`; the model tests run
+/// on `CaptureRig`'s fakes instead of the app's recorder.
 struct VoiceNoteMenuActionTests {
     @Test func theItemFollowsTheRecorder() {
         #expect(VoiceNoteMenu.action(setUp: true, state: .idle) == .start)
@@ -49,39 +50,39 @@ struct VoiceNoteMenuActionTests {
 @Suite(.serialized)
 @MainActor
 struct VoiceNoteMenuModelTests {
-    @Test func notSetUpOpensQuickVoiceNotesSettings() async {
-        let model = AppModel()
-        let capture = QuickCapture.testing()
-        model.quickCapture = capture
+    @Test func notSetUpOpensQuickVoiceNotesSettings() async throws {
+        let rig = try CaptureRig(profile: false)
+        let model = AppModel(deviceStateURL: TS.deviceStateURL())
+        model.quickCapture = rig.capture
         await model.toggleVoiceNote()
-        #expect(capture.pendingLink == .settings)
-        #expect(capture.state == .idle)
+        #expect(rig.capture.pendingLink == .settings)
+        #expect(rig.capture.state == .idle)
         #expect(model.alert == nil)
     }
 
     /// Start and stop through the menu's entry point seal a voice note into the vault's inbox
     /// without unlocking anything: the existing capture path.
     @Test func startThenStopSealsIntoTheInbox() async throws {
-        let (url, _, _, capture, _) = try QuickCaptureTests.setUp(transcribe: false, transcriber: nil)
-        let model = AppModel()
-        model.quickCapture = capture
-        #expect(QuickCaptureTests.inbox(url).isEmpty)
+        let rig = try CaptureRig()
+        let model = AppModel(deviceStateURL: TS.deviceStateURL())
+        model.quickCapture = rig.capture
+        #expect(rig.inbox.isEmpty)
         await model.toggleVoiceNote()
-        #expect(capture.state == .recording)
-        #expect(VoiceNoteMenu.phase(capture.state) == .recording)
+        #expect(rig.capture.state == .recording)
+        #expect(VoiceNoteMenu.phase(rig.capture.state) == .recording)
         await model.toggleVoiceNote()
-        #expect(capture.state == .idle)
+        #expect(rig.capture.state == .idle)
         #expect(model.alert == nil)
-        #expect(!QuickCaptureTests.inbox(url).isEmpty)
+        #expect(!rig.inbox.isEmpty)
     }
 
     @Test func aMicrophoneRefusalIsShownAsAnError() async throws {
-        let (_, _, _, capture, _) = try QuickCaptureTests.setUp(transcribe: false, transcriber: nil)
-        capture.appAudio.microphoneAllowed = { false }
-        let model = AppModel()
-        model.quickCapture = capture
+        let rig = try CaptureRig()
+        rig.audio.allowed = { false }
+        let model = AppModel(deviceStateURL: TS.deviceStateURL())
+        model.quickCapture = rig.capture
         await model.toggleVoiceNote()
-        #expect(capture.state == .idle)
+        #expect(rig.capture.state == .idle)
         #expect(model.alert != nil)
     }
 }
