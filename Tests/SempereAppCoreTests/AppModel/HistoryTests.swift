@@ -68,8 +68,8 @@ extension AppModelSuites {
         }
 
         @Test func aNoteWithoutRevisionsHasEmptyHistory() {
-            #expect(HistoryEntry.entries([], thisDevice: nil).isEmpty)
-            #expect(!HistoryEntry.needsCompactionNotice([]))
+            #expect(HistoryRow.entries([], thisDevice: nil).isEmpty)
+            #expect(!HistoryRow.needsCompactionNotice([]))
         }
 
         @Test func compactionNoticeAppearsOnlyForSnapshotsOrIncompletePoints() throws {
@@ -80,14 +80,14 @@ extension AppModelSuites {
                                     wall: Date(timeIntervalSince1970: Double(ms)), app: "test/0", complete: complete)
             }
             var points = [try point(1, .delta), try point(2, .delta)]
-            #expect(!HistoryEntry.needsCompactionNotice(points))
+            #expect(!HistoryRow.needsCompactionNotice(points))
             points[0].complete = false
-            #expect(HistoryEntry.needsCompactionNotice(points))
-            let entries = HistoryEntry.entries(points, thisDevice: device)
+            #expect(HistoryRow.needsCompactionNotice(points))
+            let entries = HistoryRow.entries(points, thisDevice: device)
             #expect(entries.last?.id == points[0].name)
             #expect(entries.last?.isAvailable == false)
             #expect(entries.first?.isAvailable == true)
-            #expect(HistoryEntry.needsCompactionNotice([try point(1, .delta), try point(2, .snapshot)]))
+            #expect(HistoryRow.needsCompactionNotice([try point(1, .delta), try point(2, .snapshot)]))
         }
 
         // MARK: - Preview
@@ -413,7 +413,7 @@ extension AppModelSuites {
             let points = [try point(0, seq: 1, session: "s1"), try point(2, seq: 2, session: "s1"),
                           try point(3, seq: 3, session: "s1", checkpoint: Checkpoint(name: "v1")),
                           try point(4, seq: 4, session: "s1"), try point(30, seq: 5, session: "s1")]
-            let entries = HistoryEntry.entries(points, thisDevice: device)
+            let entries = HistoryRow.entries(points, thisDevice: device)
             let rows = HistoryGroupRow.rows(points, entries: entries)
             #expect(rows.map(\.kind) == [.session, .session, .checkpoint, .session])
             #expect(rows.map(\.saves) == [1, 1, 1, 2])

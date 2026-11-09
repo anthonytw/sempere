@@ -181,17 +181,26 @@ extension AppModelSuites {
             #expect(model.importSummary == nil)
         }
 
+        /// The importer reports the fixture's "Lecture" as the note it wrote: its two pages were never read, so the
+        /// recognition loop reads both (review of #29: a run that writes no note never reached the loop).
         @Test func recognitionAfterTheImportIsReported() async throws {
             let model = try await ExportTests.model()
             defer { model.close() }
-            model.recognizer = FakeRecognizer()
+            let reader = FakeRecognizer()
+            model.recognizer = reader
             let file = try Self.file("fake")
             defer { try? FileManager.default.removeItem(at: file) }
             var options = ImportOptions()
             options.recognizeMissing = true
-            try await model.importFromApp(FakeImporter(), urls: [file], notebook: nil, options: options)
-            #expect(model.importSummary?.details.recognitionAsked == true)
-            #expect(model.importSummary?.details.recognitionFailed == 0)
+            var importer = FakeImporter()
+            importer.notes = [ImporterNoteOutcome(source: file.path, noteID: ModelFixture.lecture, status: .imported)]
+            try await model.importFromApp(importer, urls: [file], notebook: nil, options: options)
+            let details = try #require(model.importSummary?.details)
+            #expect(details.recognitionAsked)
+            #expect(details.recognizedPages == 2)
+            #expect(details.recognitionFailed == 0)
+            #expect(reader.calls.count == 2)
+            #expect(model.notes.first { $0.id == ModelFixture.lecture }?.pagesNeedingRecognition == 0)
         }
 
         // MARK: - Progress and Cancel

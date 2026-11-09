@@ -23,29 +23,29 @@ struct VersionHistoryAppTests {
         let points = [Self.point(0, seq: 1, kind: .snapshot), Self.point(1, seq: 2, complete: false),
                       Self.point(2, seq: 3, checkpoint: Checkpoint(name: "Before the exam")),
                       Self.point(3, seq: 4, checkpoint: Checkpoint())]
-        let mine = HistoryEntry.entries(points, thisDevice: Self.device)
+        let mine = HistoryRow.entries(points, thisDevice: Self.device)
         #expect(mine.map(\.kindLabel) == ["Saved version", "Saved version", "Edit", "Snapshot"])
         #expect(mine.map(\.checkpointTitle) == ["Saved Version", "Before the exam", nil, nil])
         #expect(mine.allSatisfy { $0.deviceLabel == "This device" })
         #expect(mine[2].unavailableReason?.contains("cannot be rebuilt") == true)
         #expect(mine[0].unavailableReason == nil)
-        let theirs = HistoryEntry.entries(points, thisDevice: nil)
+        let theirs = HistoryRow.entries(points, thisDevice: nil)
         #expect(theirs.allSatisfy { $0.deviceLabel == "Device aaaa" })
     }
 
     @Test func theCompactionNoticeIsSaidOnlyForSnapshotsOrIncompletePoints() throws {
-        #expect(HistoryEntry.compactionNotice([]) == nil)
-        #expect(HistoryEntry.compactionNotice([Self.point(0, seq: 1)]) == nil)
-        let notice = try #require(HistoryEntry.compactionNotice([Self.point(0, seq: 1, kind: .snapshot)]))
+        #expect(HistoryRow.compactionNotice([]) == nil)
+        #expect(HistoryRow.compactionNotice([Self.point(0, seq: 1)]) == nil)
+        let notice = try #require(HistoryRow.compactionNotice([Self.point(0, seq: 1, kind: .snapshot)]))
         #expect(notice.contains("compaction"))
-        #expect(HistoryEntry.compactionNotice([Self.point(0, seq: 1, complete: false)]) == notice)
+        #expect(HistoryRow.compactionNotice([Self.point(0, seq: 1, complete: false)]) == notice)
     }
 
     @Test func groupRowLines() {
         let points = [Self.point(0, seq: 1), Self.point(2, seq: 2),
                       Self.point(3, seq: 3, checkpoint: Checkpoint(name: "v1")),
                       Self.point(4, seq: 4), Self.point(30, seq: 5)]
-        let entries = HistoryEntry.entries(points, thisDevice: Self.device)
+        let entries = HistoryRow.entries(points, thisDevice: Self.device)
         let rows = HistoryGroupRow.rows(points, entries: entries)
         #expect(rows[3].summary == "This device · 2 saves")
         #expect(rows[0].summary == "This device · 1 save")

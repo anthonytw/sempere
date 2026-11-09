@@ -24,75 +24,23 @@ enum BlobSizeText {
 /// Graphics can (damaged, or an unsupported filter) is redrawn the same way.
 /// Annotations and form fields are not drawn (§8).
 enum PDFPreparation {
+    /// Why a PDF cannot be prepared, besides its password (`PDFLocked`) and its size (`AttachmentTooLarge.pdf`), which
+    /// the model tells apart.
     enum Failure: Error, Equatable, CustomStringConvertible {
-        /// Encrypted with a user password: ask for it.
-        case needsPassword
-        /// The password given does not open it.
-        case wrongPassword
         /// Not a PDF Sempere can read.
         case unreadable(String)
-        /// Over `maxBytes`; the file's size.
-        case tooLarge(Int64)
         /// No pages, or more than `NoteOps.Limits.pdfPages`, or a page without a usable size.
         case pages(String)
 
         var description: String {
             switch self {
-            case .needsPassword: return String(localized: "This PDF is protected with a password.")
-            case .wrongPassword: return String(localized: "That password does not open this PDF.")
             case .unreadable(let why): return String(localized: "This PDF cannot be read: \(why).", comment: "The value is the reason, in lower case")
-            case .tooLarge(let n):
-                let size = BlobSizeText.string(n)
-                let limit = BlobSizeText.string(Int64(PDFPreparation.maxBytes))
-                return String(localized: "This PDF is too large to add (\(size); at most \(limit)).", comment: "The values are file sizes")
             case .pages(let why): return why.prefix(1).uppercased() + why.dropFirst() + "."
             }
         }
     }
 
-    /// Largest PDF accepted (format.md §8.4: 1 GiB per blob).
-    static let maxBytes = 1 << 30
-
-    /// A folder of its own under the app's temporary directory for one import.
-    static func workFolder() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SempereImport", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
-    /// Copies a picked file (security-scoped, from the file importer or a
-    /// drop) into a work folder; the copy is what `prepare` reads. A file
-    /// larger than `limit` (nil: none) is refused before it is copied.
-    static func copyPicked(_ url: URL, fallbackName: String = "picked.pdf", limit: Int? = maxBytes) throws -> URL {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        if let limit {
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            guard size <= limit else { throw Failure.tooLarge(Int64(size)) }
-        }
-        let copy = try workFolder().appendingPathComponent(url.lastPathComponent.isEmpty ? fallbackName : url.lastPathComponent)
-        try FileManager.default.copyItem(at: url, to: copy)
-        return copy
-    }
-
-    /// Removes a work file and its folder (plaintext).
-    static func discard(_ file: URL) {
-        let dir = file.deletingLastPathComponent()
-        if dir.deletingLastPathComponent().lastPathComponent == "SempereImport" {
-            try? FileManager.default.removeItem(at: dir)
-        } else {
-            try? FileManager.default.removeItem(at: file)
-        }
-    }
-
-    /// Removes every work folder (a crash may leave one behind).
-    static func purge() {
-        try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory
-            .appendingPathComponent("SempereImport", isDirectory: true))
-    }
-
-    /// Checks the PDF at `url` (a copy in a work folder: `copyPicked`) and
+    /// Checks the PDF at `url` (a copy in a work folder: `ImportWorkFolder.copyPicked`) and
     /// returns what to store. `password` unlocks a PDF with a user password.
     /// Runs off the main actor: a redraw costs one pass over every page.
     static func prepare(_ url: URL, password: String? = nil) throws -> PreparedPDF {
@@ -100,7 +48,7 @@ enum PDFPreparation {
         let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
         guard values?.isRegularFile == true else { throw Failure.unreadable(String(localized: "not a file", comment: "Why a PDF cannot be added: lower case, no final period (shown inside a sentence)")) }
         let size = values?.fileSize ?? 0
-        guard size <= maxBytes else { throw Failure.tooLarge(Int64(size)) }
+        guard size <= ImportWorkFolder.maxPDFBytes else { throw AttachmentTooLarge.pdf(Int64(size)) }
         guard let document = CGPDFDocument(url as CFURL) else {
             // Core Graphics cannot open it; the format's reader may still say why.
             _ = try inspect(url)
@@ -108,8 +56,8 @@ enum PDFPreparation {
         }
         if document.isEncrypted {
             if !document.isUnlocked, !document.unlockWithPassword("") {
-                guard let password else { throw Failure.needsPassword }
-                guard document.unlockWithPassword(password) else { throw Failure.wrongPassword }
+                guard let password else { throw PDFLocked.needsPassword }
+                guard document.unlockWithPassword(password) else { throw PDFLocked.wrongPassword }
             }
             let plain = try redraw(document, next: url)
             return PreparedPDF(file: plain, pages: try inspect(plain), decrypted: true, name: name)

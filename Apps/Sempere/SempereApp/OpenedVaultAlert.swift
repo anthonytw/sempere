@@ -21,7 +21,7 @@ struct OpenedVaultAlert: ViewModifier {
             }
             Button("Cancel", role: .cancel) { pending = nil }
         } message: { request in
-            Text("This closes “\(request.current)”. Open a vault you received only if you know where it came from.")
+            Text("This closes “\(request.currentName)”. Open a vault you received only if you know where it came from.")
         }
     }
 }

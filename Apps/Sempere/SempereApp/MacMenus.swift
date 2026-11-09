@@ -269,10 +269,10 @@ final class SempereAppDelegate: UIResponder, UIApplicationDelegate {
     /// Quitting (⌘Q on a Mac): decrypted attachments are deleted where the
     /// system does not encrypt them at rest (`BlobCache.purgeAtQuit`), and so
     /// are the plaintext work copies of PDFs picked or opened for import
-    /// (`PDFPreparation.purge`), which otherwise waited for the next launch.
+    /// (`ImportWorkFolder.purge`), which otherwise waited for the next launch.
     func applicationWillTerminate(_ application: UIApplication) {
         BlobCache.purgeAtQuit()
-        PDFPreparation.purge()
+        ImportWorkFolder.purge()
     }
 
     /// A UIKit menu item of the app chosen with no window focused (the

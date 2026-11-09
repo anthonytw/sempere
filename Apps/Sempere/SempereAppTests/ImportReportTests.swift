@@ -78,9 +78,13 @@ struct ImportReportTests {
                                     leftOut: []) { _, _ in
             ImporterPresentation(lines: notes.map { .init("imported \($0.source)") })
         }
-        let summary = ImportSummary(source: "Slow", result: result)
+        var summary = ImportSummary(source: "Slow", result: result)
+        #expect(!summary.reportText.contains("Handwriting read on"), "no line when nothing was read")
+        summary.details.recognitionAsked = true
+        summary.details.recognizedPages = 4
         let text = summary.reportText
         #expect(text.contains("3 notes imported."))
+        #expect(text.contains("Handwriting read on 4 pages."), "the pages read after the import (review of #29)")
         #expect(text.contains("  Images: 2"))
         for i in 0..<3 { #expect(text.contains("imported /b/N\(i).slow")) }
         let file = try ImportReportText.write(text)

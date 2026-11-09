@@ -18,7 +18,7 @@ public struct HistoryData: Sendable {
     /// once: the views read it on every update.
     public let points: [RestorePoint]
     /// The rows to show, newest first.
-    public let entries: [HistoryEntry]
+    public let entries: [HistoryRow]
     /// The same rows grouped as the list shows them (format.md §5.8.2):
     /// checkpoints and editing sessions, newest first.
     public let groups: [HistoryGroupRow]
@@ -29,7 +29,7 @@ public struct HistoryData: Sendable {
         self.unreadable = unreadable
         self.thisDevice = thisDevice
         points = NoteHistory.restorePoints(revisions, unreadable: unreadable)
-        entries = HistoryEntry.entries(points, thisDevice: thisDevice)
+        entries = HistoryRow.entries(points, thisDevice: thisDevice)
         groups = HistoryGroupRow.rows(points, entries: entries)
     }
 
@@ -46,9 +46,9 @@ public struct HistoryData: Sendable {
         return state
     }
 
-    /// Whether the list says compacted revisions are not restore points (`HistoryEntry.needsCompactionNotice`;
+    /// Whether the list says compacted revisions are not restore points (`HistoryRow.needsCompactionNotice`;
     /// the sentence is the app's).
-    public var needsCompactionNotice: Bool { HistoryEntry.needsCompactionNotice(points) }
+    public var needsCompactionNotice: Bool { HistoryRow.needsCompactionNotice(points) }
 }
 
 /// The last `kept` states a history browser previewed, newest last. Previews
@@ -80,7 +80,7 @@ public final class HistoryPreviews: @unchecked Sendable {
 
 /// A restore point as a row of the history list. Its words (`deviceLabel`, `kindLabel`, `checkpointTitle`,
 /// `unavailableReason`) are the app's, from the typed values here.
-public struct HistoryEntry: Identifiable, Hashable, Sendable {
+public struct HistoryRow: Identifiable, Hashable, Sendable {
     /// What kind of restore point a row is.
     public enum Kind: Hashable, Sendable {
         /// A checkpoint ("Saved version").
@@ -118,9 +118,9 @@ public struct HistoryEntry: Identifiable, Hashable, Sendable {
 
     /// Rows for `points` (oldest first, as `NoteHistory.restorePoints` returns
     /// them), newest first.
-    public static func entries(_ points: [RestorePoint], thisDevice: DeviceID?) -> [HistoryEntry] {
+    public static func entries(_ points: [RestorePoint], thisDevice: DeviceID?) -> [HistoryRow] {
         points.enumerated().reversed().map { i, p in
-            HistoryEntry(point: p, isLatest: i == points.count - 1, isThisDevice: p.device == thisDevice)
+            HistoryRow(point: p, isLatest: i == points.count - 1, isThisDevice: p.device == thisDevice)
         }
     }
 
@@ -137,16 +137,16 @@ public struct HistoryGroupRow: Identifiable, Hashable, Sendable {
     public enum Kind: Hashable, Sendable { case checkpoint, session }
     public let kind: Kind
     /// The group's rows, newest first; never empty.
-    public let entries: [HistoryEntry]
+    public let entries: [HistoryRow]
 
-    public init(kind: Kind, entries: [HistoryEntry]) {
+    public init(kind: Kind, entries: [HistoryRow]) {
         self.kind = kind
         self.entries = entries
     }
 
     /// The newest point's revision.
     public var id: RevisionName { entries[0].id }
-    public var newest: HistoryEntry { entries[0] }
+    public var newest: HistoryRow { entries[0] }
     /// `wall` of the oldest and the newest point.
     public var start: Date { entries[entries.count - 1].date }
     public var end: Date { entries[0].date }
@@ -155,8 +155,8 @@ public struct HistoryGroupRow: Identifiable, Hashable, Sendable {
     public var containsLatest: Bool { entries.contains(where: \.isLatest) }
 
     /// Groups `points` (oldest first) with `NoteHistory.groups` and pairs them
-    /// with their `entries` (newest first, as `HistoryEntry.entries` makes them).
-    public static func rows(_ points: [RestorePoint], entries: [HistoryEntry]) -> [HistoryGroupRow] {
+    /// with their `entries` (newest first, as `HistoryRow.entries` makes them).
+    public static func rows(_ points: [RestorePoint], entries: [HistoryRow]) -> [HistoryGroupRow] {
         let byName = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         return NoteHistory.groups(points).reversed().compactMap { group in
             let rows = group.points.reversed().compactMap { byName[$0.name] }

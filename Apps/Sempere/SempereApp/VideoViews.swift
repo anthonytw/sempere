@@ -78,7 +78,7 @@ struct VideoPlayerSheet: View {
         let type = request.item.blob?.type ?? "video/mp4"
         let asset = AVURLAsset(url: url, options: [AVURLAssetOverrideMIMETypeKey: type])
         let p = AVPlayer(playerItem: AVPlayerItem(asset: asset))
-        AppModel.activateVideoAudio()
+        VideoAudioSession.activate()
         player = p
         p.play()
         await model.addPosterIfMissing(request.item, page: request.page, editor: request.editor, file: url)
@@ -90,7 +90,7 @@ struct VideoPlayerSheet: View {
         player = nil
         if holding {
             holding = false
-            AppModel.deactivateVideoAudio()
+            VideoAudioSession.deactivate()
             model.releaseVideo(request.item, note: request.editor.noteID)
         }
     }
@@ -154,4 +154,21 @@ enum EditorFileImport {
     /// PDF pages for a pageless note: the note is switched to pages only
     /// once a PDF is picked, so canceling the picker changes nothing.
     case pdfSwitchingToPages
+}
+
+/// The audio session for a clip: playback, unless a recording is running (then it stays `.playAndRecord`, as for
+/// recordings).
+@MainActor
+enum VideoAudioSession {
+    static func activate() {
+        guard RecordingSession.active?.isActive != true else { return }
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        try? session.setActive(true)
+    }
+
+    static func deactivate() {
+        guard RecordingSession.active?.isActive != true else { return }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
 }

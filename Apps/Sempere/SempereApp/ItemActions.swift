@@ -148,3 +148,15 @@ extension ItemActions {
         register(String(localized: "Crop", comment: "Undo action name (Edit menu: Undo …)")) { $0.setCrop(id, to: old, on: page) }
     }
 }
+
+extension AppModel {
+    /// Replace Image with its undo step on `actions` (the core's `replaceImage` writes the delta). Returns the new
+    /// image.
+    @discardableResult
+    func replaceImage(_ item: UUID, on page: UUID, with data: Data, in editor: NoteEditor, actions: ItemActions?,
+                      privacy: Bool? = nil) async -> Item? {
+        guard let (old, new) = await replaceImage(item, on: page, with: data, in: editor, privacy: privacy) else { return nil }
+        actions?.replaced(old, by: new, on: page)
+        return new
+    }
+}

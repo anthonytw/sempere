@@ -301,6 +301,10 @@ public final class AppModelCore<Host: AppModelHost> {
     public let exportFolder: URL = NotePDFExport.folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
     /// Bumped when the vault closes: a drag-out export prepared before it writes nothing.
     public let exportEpoch = ExportEpoch()
+    /// PDFs opened from outside the app (Finder's Open With, the share sheet), waiting to be imported as new notes
+    /// (`AppModel+OpenedFiles`). The app's state, not the vault's: they wait while a vault is opened or unlocked, and
+    /// closing a vault keeps them.
+    public var openedPDFs: [OpenedPDF] = []
     public var sortOrder = NoteSort.modified
     /// Favorites at the top of the note list, under any `sortOrder`.
     public var favoritesFirst = false

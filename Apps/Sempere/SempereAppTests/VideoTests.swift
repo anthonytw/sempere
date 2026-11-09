@@ -33,7 +33,7 @@ struct VideoTests {
 
     @Test func aClipIsProbedGivenAPosterAndLosesItsLocation() async throws {
         let file = try Self.clip("clip-h264.mp4")
-        defer { VideoPreparation.discard(file) }
+        defer { ImportWorkFolder.discard(file) }
         let prepared = try await VideoPreparation.prepare(file, privacy: true)
         #expect(prepared.info.codec == "h264")
         #expect(prepared.info.mediaType == "video/mp4")
@@ -49,7 +49,7 @@ struct VideoTests {
 
     @Test func aRotatedClipHasAnUprightPoster() async throws {
         let file = try Self.clip("clip-h264-rotated.mp4")
-        defer { VideoPreparation.discard(file) }
+        defer { ImportWorkFolder.discard(file) }
         let prepared = try await VideoPreparation.prepare(file, privacy: true)
         #expect(prepared.info.rotation == 270)
         #expect(prepared.info.pixelSize == Size(w: 90, h: 160))
@@ -59,7 +59,7 @@ struct VideoTests {
 
     @Test func aCodecTheFormatDoesNotTakeIsConverted() async throws {
         let file = try Self.clip("clip-mpeg4.mp4")
-        defer { VideoPreparation.discard(file) }
+        defer { ImportWorkFolder.discard(file) }
         let prepared = try await VideoPreparation.prepare(file, privacy: true)
         #expect(["h264", "hevc"].contains(prepared.info.codec))
         #expect(prepared.info.mediaType == "video/mp4")
@@ -68,10 +68,10 @@ struct VideoTests {
     }
 
     @Test func somethingThatIsNotAVideoIsRefused() async throws {
-        let dir = try PDFPreparation.workFolder()
+        let dir = try ImportWorkFolder.make()
         let file = dir.appendingPathComponent("notes.mp4")
         try Data("not a video at all".utf8).write(to: file)
-        defer { VideoPreparation.discard(file) }
+        defer { ImportWorkFolder.discard(file) }
         await #expect(throws: (any Error).self) { try await VideoPreparation.prepare(file, privacy: true) }
     }
 
@@ -115,7 +115,7 @@ struct VideoTests {
     @Test func aVideoIsDrawnAsItsPosterAndWithoutOneUnderThePlayMark() async throws {
         let (vault, _) = try TS.unlockedFixture()
         let file = try Self.clip("clip-h264.mp4")
-        defer { VideoPreparation.discard(file) }
+        defer { ImportWorkFolder.discard(file) }
         let prepared = try await VideoPreparation.prepare(file, privacy: true)
         let poster = try #require(prepared.poster)
         let posterRef = try vault.writeBlob(note: Self.lecture, poster.data, type: poster.mediaType)
@@ -156,7 +156,7 @@ struct VideoTests {
         let vault = try #require(model.vault)
         let page = try #require(editor.currentPage).id
         let file = try Self.clip("clip-h264-faststart.mp4")
-        defer { VideoPreparation.discard(file) }
+        defer { ImportWorkFolder.discard(file) }
         let info = try VideoProbe.probe(file: file)
         let clip = try vault.writeBlob(note: Self.lecture, contentsOf: file, type: info.mediaType)
         let item = try editor.addItems([NoteOps.placeVideo(blob: clip, info: info, on: try #require(editor.currentPage),

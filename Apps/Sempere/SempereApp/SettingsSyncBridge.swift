@@ -27,7 +27,7 @@ struct AppSettingsStorage: SettingsSyncStorage {
         case "transcription.enabled": return .bool(TranscriptionSettings.isEnabled(d))
         case "transcription.language": return TranscriptionSettings.localeIdentifier(d).map { .string($0) } ?? .null
         case "math.recognize": return .bool(MathRecognitionPreference.isEnabled(d))
-        case "photos.removeMetadata": return .bool(d.object(forKey: SettingsSyncBridge.photoPrivacyKey) as? Bool ?? true)
+        case "photos.removeMetadata": return .bool(PhotoPrivacy.isOn(d))
         case "history.thinAfterDays":
             guard let n = d.object(forKey: ThinningPreference.key) as? Int else { return .number(Double(ThinningPreference.defaultDays)) }
             return .number(Double(n <= 0 ? 0 : n))
@@ -65,7 +65,7 @@ struct AppSettingsStorage: SettingsSyncStorage {
             case ("transcription.language", .string(let s)): TranscriptionSettings.setLocaleIdentifier(s, in: d)
             case ("transcription.language", .null): TranscriptionSettings.setLocaleIdentifier(nil, in: d)
             case ("math.recognize", .bool(let b)): d.set(b, forKey: MathRecognitionPreference.key)
-            case ("photos.removeMetadata", .bool(let b)): d.set(b, forKey: SettingsSyncBridge.photoPrivacyKey)
+            case ("photos.removeMetadata", .bool(let b)): d.set(b, forKey: PhotoPrivacy.key)
             case ("history.thinAfterDays", .number(let n)): d.set(max(Int(n), 0), forKey: ThinningPreference.key)
             case ("editor.keepScreenOn", .bool(let b)): d.set(b, forKey: KeepScreenOn.key)
             case ("mouse.smoothing", .string(let s)): d.set(s, forKey: MouseSmoothing.key)
@@ -81,9 +81,6 @@ struct AppSettingsStorage: SettingsSyncStorage {
 }
 
 extension SettingsSyncBridge {
-    /// `PhotoPrivacy.key` (ImagePreparation.swift, which needs UIKit).
-    static let photoPrivacyKey = "Sempere.photoPrivacy"
-
     /// This app's values of the settings a device of `type` uses (`AppSettingsStorage`).
     static func values(for type: SettingsDeviceType, defaults: any KeyValueStore, extras: Extras) -> [String: JSONValue] {
         values(for: type, defaults: defaults, extras: extras, storage: AppSettingsStorage())

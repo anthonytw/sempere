@@ -644,7 +644,7 @@ there. Commit messages:
   `scripts/check-help.py` fails the PR gate (`local-ci.sh`'s `help` step) otherwise (`docs/mac.md`
   "Tooltips"). Menu-only view builders are marked `// help-lint: titled`.
 - PDFs opened with the app (`onOpenURL`) are imported as new notes, never
-  opened as vaults (`AppModel+OpenedFiles`, `OpenedFile.kind`). The app's
+  opened as vaults (`AppModel+OpenedFiles` in SempereAppCore, `OpenedFile.kind`). The app's
   import from another app (`AppModel+Import`, SempereAppCore) is the one app write that
   does not go through `NoteWriter`: it runs the CLI's importer (`BuiltInImporters`)
   on the model's `DeviceClock` (`withClock`) under the edit gate, never with
@@ -691,14 +691,15 @@ there. Commit messages:
   whenever `AppModel.vault` changes); never read blobs for display any other way.
   Copied items live in `ItemClipboard`, never the system pasteboard. Selection mode
   turns PencilKit's drawing gesture off like the object eraser does.
-- Adding images and PDFs (tasks E1, E3): bytes go through `ImagePreparation` /
-  `PDFPreparation` (app) into the shared `ImageIngest` / `PDFIngest` and the
+- Adding images and PDFs (tasks E1, E3): the model's paths are SempereAppCore's (`AppModel+Insert`, `+Video`);
+  bytes go through `AppModelServices.attachmentPreparation` (the app's `ImagePreparation` /
+  `PDFPreparation` / `VideoPreparation`; headless `PortableAttachmentPreparation`) into the shared `ImageIngest` / `PDFIngest` and the
   `NoteOps` builders the CLI uses (`placeImage`, `viewFrame`, `newPDFNote`,
   `insertPDFPages`, `setCrop`); never decide stored bytes, sizes or frames in
   the app alone. The photo privacy setting (`PhotoPrivacy`, on by default)
   strips metadata and turns HEIC into JPEG. Stored PDFs never carry `/Encrypt`
   (encrypted ones are redrawn). Picked PDFs are copied to a work folder
-  (`PDFPreparation.copyPicked`, plaintext: `discard` it). PDF page items are
+  (`ImportWorkFolder.copyPicked`, plaintext: `discard` it). PDF page items are
   drawn by `PDFTileLayer` (a `CATiledLayer`, `draw(in:)` on Core Animation's
   threads, so `nonisolated` and lock-protected), not as `ItemRaster` bitmaps.
 - Handwriting search (`PageRecognizer.swift`, `NoteEditor+Recognition.swift` in SempereAppCore, `AppModel+Search.swift`;

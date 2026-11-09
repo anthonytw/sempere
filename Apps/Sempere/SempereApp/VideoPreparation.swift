@@ -12,22 +12,17 @@ import SempereAppCore
 /// AVFoundation, to HEVC (or H.264) in MP4. Nothing is held in memory: the
 /// clip stays a file from the picker to the blob.
 enum VideoPreparation {
+    /// Why a clip cannot be prepared, besides its size (`AttachmentTooLarge.video`: more than 1 GiB after any
+    /// conversion).
     enum Failure: Error, Equatable, CustomStringConvertible {
         /// AVFoundation cannot read it either.
         case unreadable
-        /// More than 1 GiB after any conversion.
-        case tooLarge(Int64)
         /// The conversion to MP4 failed.
         case cannotConvert(String)
 
         var description: String {
             switch self {
             case .unreadable: return String(localized: "This file is not a video Sempere can read.")
-            case .tooLarge(let n):
-                let size = BlobSizeText.string(n)
-                let limit = BlobSizeText.string(VideoIngestRules.maxBytes)
-                return String(localized: "This video is too large to add (\(size); at most \(limit)). Trim it first.",
-                              comment: "The values are file sizes")
             case .cannotConvert(let why):
                 return String(localized: "This video could not be converted to MP4 (\(why)).", comment: "The value is a technical reason")
             }
@@ -38,14 +33,11 @@ enum VideoPreparation {
     /// a provider's or picker's file is only there for a moment. No size
     /// check here: the limit applies after any conversion.
     static func copyPicked(_ url: URL) throws -> URL {
-        try PDFPreparation.copyPicked(url, fallbackName: "clip.mov", limit: nil)
+        try ImportWorkFolder.copyPicked(url, fallbackName: "clip.mov", limit: nil, bookmarks: SecurityScopedBookmarks())
     }
 
-    /// Removes a work file and its folder (plaintext).
-    static func discard(_ file: URL) { PDFPreparation.discard(file) }
-
     /// Prepares the clip at `file` (a work copy). `privacy` is
-    /// `PhotoPrivacy.isOn()`: location and device metadata are removed
+    /// `PhotoPrivacy.isOn`: location and device metadata are removed
     /// unless it is off. A converted clip replaces the work copy (the
     /// returned `file`; discard that one).
     static func prepare(_ file: URL, privacy: Bool, posterTime: Double? = nil) async throws -> PreparedVideo {
@@ -67,7 +59,7 @@ enum VideoPreparation {
             }
         }
         let size = ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.int64Value ?? 0
-        guard size <= VideoIngestRules.maxBytes else { throw Failure.tooLarge(size) }
+        guard size <= VideoIngestRules.maxBytes else { throw AttachmentTooLarge.video(size) }
         let poster = try? await VideoPoster.jpeg(file: file, at: posterTime)
         return PreparedVideo(file: file, info: info, edits: privacy ? VideoMetadata.strippingEdits(info) : [], poster: poster)
     }

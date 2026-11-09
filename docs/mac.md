@@ -385,7 +385,7 @@ iPad in the share sheet and Files' Open In), never made the default PDF app.
 An opened PDF is not a vault: `onOpenURL`
 (library and note windows, `AppModel.handleOpened`) copies it into the work
 folder at once, since its security scope ends with the call, and queues it
-(`openedPDFs`, app state, not the vault's). Then (`OpenedFile.stage`):
+(`openedPDFs`, the model's state in SempereAppCore, not the vault's: closing a vault keeps them). Then (`OpenedFile.stage`):
 
 * no vault open: a bar under the welcome screen says the PDFs wait for one
   (Discard drops them);
@@ -399,7 +399,7 @@ folder at once, since its security scope ends with the call, and queues it
   another vault or Cancel.
 
 Work copies are plaintext: they are removed after the import, on Discard or
-Cancel, at quit and at launch (`PDFPreparation.purge`).
+Cancel, at quit and at launch (`ImportWorkFolder.purge`).
 
 ## Opening a vault from the Finder
 

@@ -49,7 +49,8 @@ public protocol AppModelHost: Sendable {
 /// property at init and read from there (`transcriber`, `playbackBackend`, `recordingRoot`, `iCloudHooks`, the WebDAV
 /// remote and passwords, `quickCapture`, `ownerAuthenticator`, and `settings` as `deviceMemory`); every other one is read from `services` when used (`perf`, `settings`,
 /// `bookmarks`, `platform`, `makeRenderCache`, `recordingsInUse`, `audioFiles`, `settingsStorage`,
-/// `makePageRecognizer`, `files`, `exportRendering`, `pdfTextExtractor`), and a test passes its own at init.
+/// `makePageRecognizer`, `files`, `exportRendering`, `pdfTextExtractor`, `attachmentPreparation`), and a test passes
+/// its own at init.
 public struct AppModelServices {
     /// Timing and log lines (`AppPerfSink` in the app).
     public var perf: any PerfSink
@@ -101,6 +102,10 @@ public struct AppModelServices {
     public var exportRendering: RenderOptions
     /// Reads the text of PDF pages for search in an import (`--pdf-text`): the app's PDFKit; headless, none.
     public var pdfTextExtractor: (any PDFTextExtracting)?
+    /// Turns picked images, PDFs and clips into what is stored, and tells a PDF the system opened the app with by its
+    /// type: the app's PDFKit and Core Graphics, ImageIO, AVFoundation and `UTType`; headless, the package's own
+    /// (`PortableAttachmentPreparation`, as the CLI on Linux).
+    public var attachmentPreparation: any AttachmentPreparing
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,
@@ -114,7 +119,8 @@ public struct AppModelServices {
                 makePageRecognizer: @escaping @MainActor () -> (any PageRecognizing)? = { nil },
                 ownerAuthenticator: any OwnerAuthenticator = NoOwnerCheck(),
                 files: any FileCoordinating = UncoordinatedFiles(),
-                exportRendering: RenderOptions = RenderOptions(), pdfTextExtractor: (any PDFTextExtracting)? = nil) {
+                exportRendering: RenderOptions = RenderOptions(), pdfTextExtractor: (any PDFTextExtracting)? = nil,
+                attachmentPreparation: any AttachmentPreparing = PortableAttachmentPreparation()) {
         self.perf = perf
         self.settings = settings
         self.bookmarks = bookmarks
@@ -136,6 +142,7 @@ public struct AppModelServices {
         self.files = files
         self.exportRendering = exportRendering
         self.pdfTextExtractor = pdfTextExtractor
+        self.attachmentPreparation = attachmentPreparation
     }
 
     /// A quick capture that records nothing (`QuickCapture`'s defaults), its folders under `scratch`.
@@ -151,7 +158,7 @@ public struct AppModelServices {
     }
 
     /// Memory versions: settings in memory, plain paths for bookmarks, an iPad with no haptics, no server, passwords
-    /// in memory, no iCloud, no transcriber.
+    /// in memory, no iCloud, no transcriber, the package's own attachment preparation.
     public static func headless(settings: any KeyValueStore = MemoryKeyValueStore(),
                                 webdavRemote: any WebDAVRemote = OfflineWebDAVRemote()) -> AppModelServices {
         AppModelServices(perf: NoPerfSink(), settings: settings, bookmarks: PathBookmarks(), platform: HeadlessPlatform(),

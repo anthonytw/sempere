@@ -21,7 +21,8 @@ enum AppHost: AppModelHost {
 
     /// The platform's: signposts and `os.Logger`, `UserDefaults.standard`, security-scoped bookmarks, the device,
     /// the network and the Keychain for WebDAV, iCloud, on-device speech, quick capture, Vision, the owner check,
-    /// file coordination, and PDFKit, ImageIO and CoreText for exports and imports.
+    /// file coordination, PDFKit, ImageIO and CoreText for exports and imports, and PDFKit, Core Graphics, ImageIO,
+    /// AVFoundation and `UTType` for inserts and opened files.
     static func makeServices() -> AppModelServices {
         AppModelServices(perf: AppPerfSink(), settings: UserDefaults.standard, bookmarks: SecurityScopedBookmarks(),
                          platform: AppPlatform(), webdavRemote: LiveWebDAVRemote(),
@@ -34,7 +35,7 @@ enum AppHost: AppModelHost {
                          ownerAuthenticator: SystemOwnerAuthenticator(), files: SystemFileCoordinator(),
                          exportRendering: RenderOptions(pdfRasterizer: PDFKitRasterizer(), imageDecoder: ImageIODecoder(),
                                                         shaper: CoreTextShaper()),
-                         pdfTextExtractor: PDFKitTextExtractor())
+                         pdfTextExtractor: PDFKitTextExtractor(), attachmentPreparation: AppAttachmentPreparation())
     }
 
     static func willClose(_ model: AppModel) {
@@ -73,11 +74,6 @@ final class AppModelAppState {
     /// `landedDropDuration` so it is clear where they went (`move(_:to:undoManager:)`).
     var landedDrop: LandedDrop?
 
-    /// PDFs opened from outside the app (Finder's Open With, the share sheet),
-    /// waiting to be imported as new notes (`AppModel+OpenedFiles`). App
-    /// state, not the vault's: they wait while a vault is opened or unlocked.
-    var openedPDFs: [OpenedPDF] = []
-
     /// Background time and scheduled tasks for the sync (`AppModel+Background`); tests pass fakes.
     @ObservationIgnored var backgroundTasks: any BackgroundTaskRunning = UIKitBackgroundTasks()
 
@@ -108,10 +104,6 @@ extension AppModel {
     var landedDrop: LandedDrop? {
         get { appState.landedDrop }
         set { appState.landedDrop = newValue }
-    }
-    var openedPDFs: [OpenedPDF] {
-        get { appState.openedPDFs }
-        set { appState.openedPDFs = newValue }
     }
     var backgroundTasks: any BackgroundTaskRunning {
         get { appState.backgroundTasks }

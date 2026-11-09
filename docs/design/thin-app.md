@@ -93,7 +93,7 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
   `AppThemeWindows`, `AppearancePreferences`,
   `ColumnLayout`, `DragTestSettings`, `DrawingPaletteView`,
   `DrawingToolbox` (its `defaults:` parameter), `EraserPreference`,
-  `ImagePreparation`, `InsertUI`, `MathEditor`, `MathModels`, `MathSettings`, `MouseInk`, `NoteCanvasView`,
+  `InsertUI`, `MathEditor`, `MathModels`, `MathSettings`, `MouseInk`, `NoteCanvasView`,
   `NoteDragSource`, `NoteListView`, `NoteWindowView`, `PageCanvasHost+Appearance`, `PageCanvasView`,
   `PageLayoutChoice`, `PageRecognizer`, `PaperPreference`, `RecordingPreferences`, `RenderCache`, `RootView`,
   `SettingsGroups`, `SettingsSyncBridge`, `SettingsView`, `StatusItemBridge`, `ToolPalette`
@@ -103,7 +103,8 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
   `+SettingsSync`, `+Suspension`, `AppModelEnvironment`, `DragLog`, `FolderPicker`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
   becomes `perf.measure("x", …)`.
 - **`FolderBookmarks`** (bookmarks and security scopes): `AppModel+BulkExport`,
-  `+DeviceNotices`, `+Import`, `ExportSheet`, `FolderPicker`, `InsertUI`, `MathModels`, `NewVaultView`, `PDFPreparation`.
+  `+DeviceNotices`, `+Import`, `ExportSheet`, `FolderPicker`, `InsertUI`, `MathModels`, `NewVaultView`.
+  (`PDFPreparation`'s scope went in step 5c: a picked file's copy is `ImportWorkFolder.copyPicked(_:bookmarks:)`.)
   (`VaultBookmark` went in step 5a: the backup folder's bookmark is `services.bookmarks`.)
 - **`FileCoordinating`**: the callers of `CloudVault.coordinatedRead`/`Write` (`NewVaultView`, `NoteEditor`) pass
   `files:` once their code is in the library; the model's copy-in, restore and thinning read `services.files` (step 5a). Quick capture
@@ -436,7 +437,7 @@ Wave 5b, part 3, step 5b (history, export and import, 2026-11-08) moved:
 - **`+History`, `+Export`, `+BulkExport` and `+Import`** into `Sources/SempereAppCore/AppModel/`, with `ExportJob`
   (the export sheet's run) and `OpenedFile` (the pure part of `+OpenedFiles`: `kind`, `Stage`, `shows`, which
   `WindowTargeted` needs): `loadHistory`, `readHistory` (on `services.perf`, "history.read"), `historyPreview`,
-  `restoreVersion`, `saveVersion`, `HistoryData`, `HistoryPreviews`, `HistoryEntry`, `HistoryGroupRow`; `exportNotes`,
+  `restoreVersion`, `saveVersion`, `HistoryData`, `HistoryPreviews`, `HistoryRow` (`HistoryEntry` until step 5c), `HistoryGroupRow`; `exportNotes`,
   `requestExport` (now taking a `ShareFormat`; `ShareFormat.isAvailable(for:)` is the rule `ExportCommand` enables
   with), `flushEditors`, `loadNoteForExport`, `ExportRequest`, `ExportProgress`, `LoadedForExport`,
   `UnsavedChangesError`; `runBulkExport` with its read-ahead, `BulkExportRequest`, `BulkExportTarget`,
@@ -454,7 +455,7 @@ Wave 5b, part 3, step 5b (history, export and import, 2026-11-08) moved:
   `OpenedFile.kind(of:isPDFType:)` takes a `Bool`, the app reads the URL's `UTType`. No `CGRect` was left in the moved
   code (the editor's `visible:` rectangles are Foundation's `CGRect`, already portable).
 - **Typed values the app words**, same strings (`History+Text.swift`, `Export+Text.swift`, `Import+Text.swift`):
-  `HistoryEntry.kind` (`.savedVersion`, `.snapshot`, `.edit`), `devicePrefix` and `needsCompactionNotice` (the app's
+  `HistoryRow.kind` (`.savedVersion`, `.snapshot`, `.edit`), `devicePrefix` and `needsCompactionNotice` (the app's
   `deviceLabel`, `kindLabel`, `checkpointTitle`, `unavailableReason`, `compactionNotice`, `HistoryGroupRow.summary`
   and `timeRange`); the progress lines (`ExportProgress.description`, `BulkExportProgress.description`),
   `BulkExportRequest.title`, why a run failed (`ExportRunFailure`: `.error`, `.noteFailed`, `.noMedia`,
@@ -462,7 +463,8 @@ Wave 5b, part 3, step 5b (history, export and import, 2026-11-08) moved:
   report's rows are the importer's count ids (`Row.key`, `english`; the app's `label`), the alert's `title` and
   `message`, and the saved report (`ImportSummary.reportText`, from `details.noteLines` and `date`).
   `AppModelError.unsavedChanges` carries the editor's `saveFailure`, which the app words as the editor does.
-  `Sempere` has a `HistoryEntry` of its own, so the app's `History+Text.swift` names the core's with a typealias.
+  `Sempere` has a `HistoryEntry` of its own, so the app's `History+Text.swift` named the core's with a typealias (until
+  step 5c renamed it `HistoryRow`).
 - **State that left `AppModelAppState`**: `exportRequest`, `bulkExportRequest`, `importSummary`, `lastImportReport`
   (now the whole `ImportSummary`, which the report sheet takes), `exportFolder` and `exportEpoch`; the core's
   `close()` forgets them (and purges the drag-out folder), so `willClose` keeps only the drags.
@@ -482,13 +484,57 @@ Wave 5b, part 3, step 5b (history, export and import, 2026-11-08) moved:
   `ThinningTests.unlockedModel`); `FolderTargetTests.world(withB: false)` for the two tests that only use A, and an
   arrival wait of 0.1 s for the two that wait for files that never arrive within a run.
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b, 5a and 5b are done (above). The rest of the family, in an
+Wave 5b, part 3, step 5c (opened files and the PDF, image and video inserts, 2026-11-08) moved:
+
+- **`+OpenedFiles`, `+Insert` and `+Video`** into `Sources/SempereAppCore/AppModel/`: `handleOpened`, `receiveOpenedPDF`,
+  `importOpenedPDFs`, `discardOpenedPDFs`, `sidebarNotebook`, `openedPDFStage`, `OpenedPDF` and
+  `OpenedVaultConfirmation` (whose `current` is now the vault's name or nil: the app's `currentName` words "Vault");
+  `insertImage`, `replaceImage` (it returns the old and the new image; the app's `replaceImage(…actions:)` in
+  `ItemActions.swift` registers the undo step), `importPDF(picked:to:)`, `importPDF(copy:to:password:)`,
+  `importPDF(_:title:notebook:)`, `continuePDFImport`, `cancelPDFImport`, and `PDFDestination`, `PDFImportRequest`,
+  `PDFImportOutcome` (nested in `AppModelCore`, since `.insert` holds the editor; the app's `Insert+Text.swift`
+  keeps the old names as typealiases); `insertVideo`, `acquireVideo`, `releaseVideo`, `addPosterIfMissing`. The photo
+  privacy setting is the core's `PhotoPrivacy` (`isOn(_ settings: any KeyValueStore)`; the inserts read
+  `services.settings` when the caller passes no `privacy`), and `SettingsSyncBridge` uses its key instead of a copy.
+- **The work folders** (`PDFPreparation.workFolder`, `copyPicked`, `discard`, `purge`) are the core's
+  `ImportWorkFolder` (`make`, `copyPicked(_:fallbackName:limit:bookmarks:)`, the scope through `FolderBookmarks`,
+  `discard`, `purge`, `maxPDFBytes`); `VideoPreparation.copyPicked` passes the clip's name and no limit.
+- **Services**: a new `AppModelServices.attachmentPreparation` (`AttachmentPreparing`: `preparePDF`, `prepareImage`,
+  `prepareVideo`, `videoPoster`, `isPDFType`), read from `services` when used. The app's `AppAttachmentPreparation`
+  is PDFKit and Core Graphics (`PDFPreparation`: unlock and redraw), ImageIO (`ImagePreparation`), AVFoundation
+  (`VideoPreparation`, `VideoPoster`) and `UTType` for an opened file's type. Headless, `PortableAttachmentPreparation`
+  does what the CLI does on Linux: `PDFIngest` with the built-in page text, `ImageIngest` without a converter,
+  `VideoProbe` and `VideoMetadata` (no conversion, no poster frame, nothing typed as a PDF but by its extension).
+  The video audio session (`AVAudioSession`) stays in the app as `VideoAudioSession` in `VideoViews.swift`.
+- **Typed values the model tells apart**: a PDF that needs its password throws `PDFLocked` (`.needsPassword`,
+  `.wrongPassword`; they left `PDFPreparation.Failure`), a file over the format's limit `AttachmentTooLarge` (`.pdf`,
+  `.video`; they left `PDFPreparation.Failure` and `VideoPreparation.Failure`). A failure is `errorMessage =
+  "\(InsertNotice.…(error))"` (`.imageNotAdded`, `.imageNotReplaced`, `.pdfNotImported`, `.videoNotAdded`,
+  `.fileNotOpened(name:_:)`).
+- **Words** stay in the app, same strings (`Insert+Text.swift`): `InsertNotice`, `PDFLocked` and `AttachmentTooLarge`
+  (retroactive `CustomStringConvertible`), `AppModel.describe(_:)` (also used by `InsertUI`, `MathEditor` and
+  `VideoViews`), `OpenedVaultConfirmation.currentName`.
+- **State that left `AppModelAppState`**: `openedPDFs` (a stored property of the core; `close()` keeps it: the PDFs
+  wait for the next vault). No host step became unused.
+- **Review of #29, folded in**: the core's `HistoryEntry` is `HistoryRow` and the app's typealias is gone (the history
+  list's private row view is `HistoryRowView`); `ImportTests.recognitionAfterTheImportIsReported` runs the
+  recognition loop (the importer reports the fixture's "Lecture" as written, two pages are read); the app's
+  `ImportReportTests` checks the report's "Handwriting read on N pages." line; "Show Report" is offered when
+  `summary.details.date != nil` rather than building the report text.
+- **Tests** in `Tests/SempereAppCoreTests/AppModel`: `InsertTests` (images, PDFs and clips through the model on the
+  package's preparation or `FakeAttachmentPreparation`: one blob and one delta, the privacy setting from
+  `services.settings`, the password flow with a "redrawn" copy, a pageless note, a picked file's copy and limit, a
+  clip without its location, a codec only the app converts, the poster on first play; the discard case of the app's
+  `KeyExportGapTests`; small hand-written PDFs and a PNG from `PNGEncoder`, the fixture clips) and `OpenedFilesTests`
+  (the opened-PDF cases of `MacPolishBuild7Tests`, the open-without-asking case of `OpenedVaultTests`, a PDF known by
+  its type). The app keeps the platform's preparation (`PDFImportTests`' preparing cases, `VideoTests`,
+  `ImageInsertTests`), the import with Core Graphics' encryption end to end, the canvas and drawing cases
+  (`PhoneInsertTests`, `CanvasSelectionTests`, the display and the 200-page PDF), and the words (`InsertTextTests`,
+  new; `PDFImportTests.aPagelessNoteSaysWhyItTakesNoPDFPages`).
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b and 5a to 5c are done (above). The rest of the family, in an
 order that empties `AppModelAppState` and the host's steps:
 
-5. c. Opened files and the PDF and image inserts (`+OpenedFiles`' extension, `+Insert`, `+Video`): `handleOpened`,
-   `receiveOpenedPDF`, `importOpenedPDFs` and `discardOpenedPDFs` call the app's PDF import (`importPDF(copy:to:password:)`,
-   `PDFPreparation` on PDFKit), so they move with it, PDFKit and AVFoundation behind services. Host state that goes:
-   `openedPDFs`.
 6. App lifecycle and windows (`+Background`, `+Suspension`, `+Windows`, `+MenuBar`, the drags of `+Browser`): the
    background-task and lifecycle protocols move, UIKit's implementations stay; `DragPayload`/`DropTarget` leave
    `SidebarDrop.swift`. "Keep Screen On" (`editorsChanged`, the UIKit `IdleTimerKeeper`) follows the open editors

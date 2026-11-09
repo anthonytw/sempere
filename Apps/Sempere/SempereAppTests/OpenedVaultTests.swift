@@ -9,43 +9,10 @@ import Testing
 /// folder handed to the app from outside closed the open vault without asking, the remembered key was
 /// chosen by the unchecked vault id of the new folder's `vault.json`, and the quick-capture profile was
 /// re-pointed to whatever folder had that id. Every `AppModelTests.fixtureVault()` copy has the same
-/// vault id, so a second copy is exactly such a lookalike.
+/// vault id, so a second copy is exactly such a lookalike. The open-without-asking case is the core's
+/// (`OpenedFilesTests`); the alert's words are `InsertTextTests`.
 @MainActor
 struct OpenedVaultTests {
-    static func library() -> VaultLibrary {
-        VaultLibrary(storeURL: TestTemp.root
-            .appendingPathComponent("lib-\(UUID().uuidString)/recents.json"))
-    }
-
-    @Test func anOpenedVaultDoesNotReplaceTheOpenOneWithoutConfirmation() async throws {
-        let (mine, key) = try AppModelTests.fixtureVault()
-        let (lookalike, _) = try AppModelTests.fixtureVault()
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        let library = Self.library()
-        try await model.openVault(at: mine)
-        try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
-        let asked = try #require(await model.handleOpened(lookalike, library: library))
-        #expect(asked.url == lookalike)
-        #expect(asked.current == "sample")
-        #expect(model.phase == .unlocked, "the open vault stays open and unlocked")
-        #expect(model.vaultURL == mine)
-        // Confirmed: copied onto this device (the in-app store) and the copy opened, as a vault from outside.
-        #expect(await model.handleOpened(lookalike, library: library, confirmed: true) == nil)
-        #expect(model.phase == .locked)
-        let copy = try #require(library.storedVaults.first)
-        #expect(model.vaultURL?.standardizedFileURL == copy.url.standardizedFileURL)
-        #expect(model.vaultOpenedExternally)
-        // With no vault open there is nothing to replace: opened at once. The store holds one copy per
-        // vault id, so a second folder with the same id opens that copy (nothing is copied again).
-        model.close()
-        #expect(!model.vaultOpenedExternally)
-        #expect(await model.handleOpened(mine, library: library) == nil)
-        #expect(model.phase == .locked)
-        #expect(model.vaultURL?.standardizedFileURL == copy.url.standardizedFileURL)
-        #expect(model.vaultOpenedExternally)
-        #expect(library.vaultStore.list().count == 1)
-    }
-
     @Test func aLookalikeVaultNeverTakesOverTheCaptureProfile() async throws {
         let (mine, keyURL) = try AppModelTests.fixtureVault()
         let (lookalike, _) = try AppModelTests.fixtureVault()

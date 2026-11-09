@@ -5,10 +5,7 @@ import SempereAppCore
 // The words of the history list's values (`AppModel+History.swift` in SempereAppCore): the rows' labels, the
 // sessions' lines and the compaction notice.
 
-/// The history list's row (the core's; `Sempere` has a `HistoryEntry` of its own, a revision file's listing).
-typealias HistoryEntry = SempereAppCore.HistoryEntry
-
-extension HistoryEntry {
+extension HistoryRow {
     /// "This device", or "Device " and the id's first four characters.
     var deviceLabel: String {
         if isThisDevice { return String(localized: "This device", comment: "History: a version saved on this device") }
@@ -45,7 +42,7 @@ extension HistoryEntry {
 
 extension HistoryData {
     /// The compaction notice, shown when the note has a snapshot or a point cannot be rebuilt.
-    var compactionNotice: String? { HistoryEntry.compactionNotice(points) }
+    var compactionNotice: String? { HistoryRow.compactionNotice(points) }
 }
 
 extension HistoryGroupRow {

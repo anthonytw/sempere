@@ -9,8 +9,8 @@ import UniformTypeIdentifiers
 
 /// TestFlight build 7, Mac polish: the File menu's import, insert and export
 /// commands (same paths as the toolbars), a note window from a double-click,
-/// PDFs opened with Sempere from the Finder or the share sheet, and the
-/// app's Notability import.
+/// and the app's Notability import. PDFs opened with Sempere from the Finder or
+/// the share sheet are the core's `OpenedFilesTests`.
 @MainActor
 struct MacPolishBuild7Tests {
     static let lecture = AppModelTests.lecture
@@ -146,86 +146,6 @@ struct MacPolishBuild7Tests {
         model.placeholderNoteIDs.remove(Self.lecture)
         model.close()
         #expect(model.noteWindowValue(for: Self.lecture) == nil)
-    }
-
-    // MARK: PDFs opened with Sempere
-
-    @Test func pdfsAreToldFromVaults() {
-        #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/Paper.PDF")) == .pdf)
-        #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/scan"), isPDFType: true) == .pdf)
-        #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/Notes.sempere", isDirectory: true)) == .vault)
-        #expect(OpenedFile.kind(of: URL(fileURLWithPath: "/x/Notes"), isPDFType: false) == .vault)
-    }
-
-    @Test func theImportWaitsForAnUnlockedWritableVault() {
-        #expect(OpenedFile.stage(waiting: 0, phase: .unlocked, busy: false, readOnly: false) == .none)
-        #expect(OpenedFile.stage(waiting: 1, phase: .noVault, busy: false, readOnly: false) == .needsVault)
-        #expect(OpenedFile.stage(waiting: 1, phase: .locked, busy: false, readOnly: false) == .needsUnlock)
-        #expect(OpenedFile.stage(waiting: 2, phase: .unlocked, busy: true, readOnly: false) == .needsUnlock)
-        #expect(OpenedFile.stage(waiting: 2, phase: .unlocked, busy: false, readOnly: true) == .readOnly)
-        #expect(OpenedFile.stage(waiting: 2, phase: .unlocked, busy: false, readOnly: false) == .ready)
-        let a = UUID(), b = UUID()
-        #expect(OpenedFile.shows(in: a, canvasWindow: a))
-        #expect(!OpenedFile.shows(in: b, canvasWindow: a))
-        #expect(OpenedFile.shows(in: b, canvasWindow: nil))
-    }
-
-    @Test func anOpenedPDFWaitsForTheUnlockThenBecomesANote() async throws {
-        let (url, key) = try AppModelTests.fixtureVault()
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        let library = VaultLibrary(storeURL: TestTemp.root
-            .appendingPathComponent("lib-\(UUID().uuidString)/recents.json"))
-        // Opened before any vault: copied at once (the scope ends with the call), and waits.
-        let pdf = try PDFImportTests.makePDF(pages: 2)
-        let outside = TestTemp.root.appendingPathComponent("Opened \(UUID().uuidString).pdf")
-        try FileManager.default.moveItem(at: pdf, to: outside)
-        PDFPreparation.discard(pdf)
-        await model.handleOpened(outside, library: library)
-        #expect(model.openedPDFs.count == 1)
-        #expect(model.openedPDFs.first?.name == outside.lastPathComponent)
-        #expect(model.openedPDFStage == .needsVault)
-        #expect(model.phase == .noVault, "a PDF is never opened as a vault")
-        #expect(model.errorMessage == nil)
-        let copy = try #require(model.openedPDFs.first?.file)
-        #expect(copy != outside && FileManager.default.fileExists(atPath: copy.path))
-
-        try await model.openVault(at: url)
-        #expect(model.openedPDFStage == .needsUnlock)
-        try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
-        #expect(model.openedPDFStage == .ready)
-
-        let before = Set(model.notes.map(\.id))
-        let locked = await model.importOpenedPDFs(notebook: "Inbox/PDFs")
-        #expect(locked.isEmpty)
-        #expect(model.openedPDFs.isEmpty)
-        #expect(model.openedPDFStage == .none)
-        #expect(model.errorMessage == nil)
-        let added = model.notes.filter { !before.contains($0.id) }
-        #expect(added.count == 1)
-        #expect(added.first?.notebook == "Inbox/PDFs")
-        #expect(added.first?.pages == 2)
-        #expect(!FileManager.default.fileExists(atPath: copy.path), "the plaintext work copy is gone")
-        #expect(FileManager.default.fileExists(atPath: outside.path), "the user's file is untouched")
-        try? FileManager.default.removeItem(at: outside)
-        model.close()
-    }
-
-    @Test func discardingForgetsTheWorkCopies() async throws {
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        let pdf = try PDFImportTests.makePDF(pages: 1)
-        defer { PDFPreparation.discard(pdf) }
-        await model.receiveOpenedPDF(pdf)
-        let copy = try #require(model.openedPDFs.first?.file)
-        model.discardOpenedPDFs()
-        #expect(model.openedPDFs.isEmpty)
-        #expect(!FileManager.default.fileExists(atPath: copy.path))
-    }
-
-    @Test func aMissingFileIsReportedNotQueued() async {
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        await model.receiveOpenedPDF(URL(fileURLWithPath: "/nonexistent/\(UUID().uuidString).pdf"))
-        #expect(model.openedPDFs.isEmpty)
-        #expect(model.errorMessage != nil)
     }
 
     // MARK: Notability

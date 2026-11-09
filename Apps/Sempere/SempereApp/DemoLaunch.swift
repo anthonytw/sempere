@@ -137,7 +137,7 @@ enum DemoLaunch {
     @MainActor
     static func importDemoPDF(_ model: AppModel) async {
         do {
-            let url = try PDFPreparation.workFolder().appendingPathComponent("Demo PDF.pdf")
+            let url = try ImportWorkFolder.make().appendingPathComponent("Demo PDF.pdf")
             var box = CGRect(x: 0, y: 0, width: 612, height: 792)
             guard let ctx = CGContext(url as CFURL, mediaBox: &box, nil) else { return }
             for _ in 0..<2 {

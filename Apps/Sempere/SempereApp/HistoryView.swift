@@ -73,11 +73,11 @@ struct HistoryView: View {
     }
 
     @ViewBuilder
-    private func link(_ entry: HistoryEntry) -> some View {
+    private func link(_ entry: HistoryRow) -> some View {
         if entry.isAvailable {
-            NavigationLink(value: entry.id) { HistoryRow(entry: entry) }
+            NavigationLink(value: entry.id) { HistoryRowView(entry: entry) }
         } else {
-            HistoryRow(entry: entry).foregroundStyle(.secondary)
+            HistoryRowView(entry: entry).foregroundStyle(.secondary)
         }
     }
 
@@ -113,8 +113,8 @@ private struct SessionRow: View {
     }
 }
 
-private struct HistoryRow: View {
-    let entry: HistoryEntry
+private struct HistoryRowView: View {
+    let entry: HistoryRow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -138,7 +138,7 @@ private struct HistoryRow: View {
 /// The note as of one restore point, read-only, with the restore button.
 private struct HistoryPreviewView: View {
     let data: HistoryData
-    let entry: HistoryEntry
+    let entry: HistoryRow
     /// Called after a restore, to refresh the list.
     let restored: () async -> Void
     @AppModelEnvironment private var model

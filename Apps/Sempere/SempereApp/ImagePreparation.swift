@@ -2,22 +2,10 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import Sempere
+import SempereAppCore
 import SempereRender
 import UIKit
 import UniformTypeIdentifiers
-
-/// The photo privacy setting (docs/attachments.md §7, §15): *Remove location
-/// and camera data from photos and convert HEIC to JPEG*, on by default, per
-/// device. Exports strip location and camera data whatever it says.
-enum PhotoPrivacy {
-    static let key = "Sempere.photoPrivacy"
-    static let defaultValue = true
-
-    /// The setting as stored (on when never set).
-    static func isOn(_ defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: key) as? Bool ?? defaultValue
-    }
-}
 
 /// Turns picked, pasted, dropped or photographed image bytes into what is
 /// stored (docs/attachments.md §7, §13 "Images"): the rule is the package's
@@ -72,7 +60,7 @@ enum ImagePreparation {
         }
     }
 
-    /// What to store for `data`; `privacy` is `PhotoPrivacy.isOn()`: the shared rule
+    /// What to store for `data`; `privacy` is `PhotoPrivacy.isOn`: the shared rule
     /// (`ImageIngest.prepare(_:privacy:converter:)`, as the CLI) with ImageIO's conversions.
     /// Cost: one decode to check the image; a conversion decodes and encodes once more.
     static func prepare(_ data: Data, privacy: Bool) throws -> PreparedImage {

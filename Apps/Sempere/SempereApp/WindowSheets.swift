@@ -57,7 +57,7 @@ struct WindowSheets: ViewModifier {
             .alert(model.importSummary?.title ?? "", isPresented: Binding(get: { model.importSummary != nil && isFront },
                                                                           set: { if !$0 { model.importSummary = nil } })) {
                 // The report can always be shown and saved (its text lists every note), even with no totals.
-                if let summary = model.importSummary, !summary.details.isEmpty || !summary.reportText.isEmpty {
+                if let summary = model.importSummary, !summary.details.isEmpty || summary.details.date != nil {
                     Button("Show Report") {
                         ui.importReport = summary
                         model.importSummary = nil

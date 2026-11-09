@@ -2,6 +2,7 @@ import Foundation
 import Sempere
 import Testing
 @testable import SempereApp
+import SempereAppCore
 
 /// GA-64: Settings > Photos starts with the privacy setting on.
 @MainActor

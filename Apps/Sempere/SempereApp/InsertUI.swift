@@ -106,7 +106,7 @@ enum CanvasDrop {
     private static func pdfCopy(_ provider: NSItemProvider) async -> URL? {
         await withCheckedContinuation { (done: CheckedContinuation<URL?, Never>) in
             _ = provider.loadFileRepresentation(forTypeIdentifier: UTType.pdf.identifier) { url, _ in
-                done.resume(returning: url.flatMap { try? PDFPreparation.copyPicked($0) })
+                done.resume(returning: url.flatMap { try? ImportWorkFolder.copyPicked($0, bookmarks: SecurityScopedBookmarks()) })
             }
         }
     }
