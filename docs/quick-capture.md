@@ -389,7 +389,7 @@ files read fine before the first unlock, the App Group may not) when ready and
 system symbols otherwise, and is marked
 `unredacted()`: the placeholder iOS shows before the first unlock is
 otherwise redacted to an empty gray box. Without the App Group (an
-unsigned build) the widgets show the plain mic button.
+unsigned build) the widgets show the plain record button.
 
 A stale status cannot trap anyone: the app rewrites it at launch, and Stop on
 a recording the process does not know ends the orphaned Live Activity quietly.
