@@ -111,6 +111,8 @@ public struct PortableAttachmentPreparation: AttachmentPreparing {
         self.pdfText = pdfText
     }
 
+    /// The PDF as it is (`PDFIngest`): `password` is never used, since an encrypted PDF is refused
+    /// (`PDFIngestError`), not unlocked; only the app's PDFKit preparation unlocks one.
     public func preparePDF(_ copy: URL, password: String?) throws -> PreparedPDF {
         let data: Data
         do {
@@ -128,9 +130,10 @@ public struct PortableAttachmentPreparation: AttachmentPreparing {
     }
 
     public func prepareVideo(_ file: URL, privacy: Bool) async throws -> PreparedVideo {
-        let info = try VideoProbe.probe(file: file)
+        // The size first: a clip over the limit is refused before the probe reads it.
         let size = ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.int64Value ?? 0
         guard size <= VideoIngestRules.maxBytes else { throw AttachmentTooLarge.video(size) }
+        let info = try VideoProbe.probe(file: file)
         return PreparedVideo(file: file, info: info, edits: privacy ? VideoMetadata.strippingEdits(info) : [], poster: nil)
     }
 

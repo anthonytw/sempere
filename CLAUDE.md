@@ -719,11 +719,12 @@ there. Commit messages:
 - Notebook fields are combo boxes (`NotebookField`, `NotebookPath.suggestions`): plain views in
   the form's flow, not a popover or `Menu`, so the same code runs on iPad, iPhone and Mac. Moving
   is `NotebookPath.moved(_:into:)` (a notebook keeps its last level; never into itself or a
-  descendant) feeding the prefix rename; drops (`SidebarDrop.swift`) carry ids or a path as
+  descendant) feeding the prefix rename; drops (`SidebarDrop.swift`: the payloads and rules in SempereAppCore, the
+  `UTType`s, providers and delegates in the app) carry ids or a path as
   `.ownProcess` item providers only, and the model holds `draggedPayload` so a row can refuse a drag
   while it hovers (`SidebarDrop.accepts`). One drop = one `commit(ids:)`, one `UndoManager` step
-  (`NotebookMoveRecord`) on the undo manager of the window it happened in, passed to `move` (the
-  model is shared by every Mac window, so it keeps none). The `DropDelegate`s need a real drag session: test the rules, not the UI.
+  (`NotebookMoveRecord`, which the core's `move(_:to:)` returns) on the undo manager of the window it happened in,
+  passed to the app's `move(_:to:undoManager:)` (the model is shared by every Mac window, so it keeps none). The `DropDelegate`s need a real drag session: test the rules, not the UI.
 - Search highlights (`NoteEditor+SearchHighlight.swift` in SempereAppCore, `SearchMatchCursor`): boxes come from the
   page's recognition; recognition whose basis no longer matches the strokes, or of a page edited in
   this session (`dirtyPages`), is left out. The layer is a plain `UIView` of `CALayer`s inside the

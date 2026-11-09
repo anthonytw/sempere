@@ -1,10 +1,5 @@
 import Foundation
-import OSLog
 import Sempere
-import SempereAppCore
-import UIKit
-
-private let suspensionLog = Logger(subsystem: "io.github.anthonytw.sempere", category: "suspension")
 
 /// No lock is held across a suspension (iOS). The vault store lives in the App Group container on an
 /// iPhone or iPad (`VaultLibrary.defaultVaultStoreRoot`), and iOS kills an app that is suspended while it
@@ -13,45 +8,44 @@ private let suspensionLog = Logger(subsystem: "io.github.anthonytw.sempere", cat
 /// was killed every time it left the screen with a vault open.
 ///
 /// When the app enters the background, the editors' last saves finish under background time
-/// (`beginBackgroundTask`), then the lease is let go; when iOS takes the time back first, it is let go
+/// (`beginBackgroundTask`), then the lease is let go; when the system takes the time back first, it is let go
 /// at once. The vault stays open. When the app comes back the lease is taken again; if the vault was
 /// removed meanwhile (the lease is what refuses a removal), the vault closes. The write lock
 /// (`VaultFileLock`) is held only for each write, never across one.
 ///
-/// It follows the application, not a scene: a note window can stay on screen after the library scene
-/// left, and the app is suspended only once every scene has. Sync's background time (`enterBackground`)
-/// follows the same observers, so a run writing under the vault's write lock always has an assertion.
-extension AppModel {
-    /// Starts following the app entering and leaving the background (once, at launch). Tests pass their
-    /// own notification center and the state to start in.
-    ///
-    /// - Parameter inBackground: the process starts in the background (a background task or an intent
-    ///   launched it): no `didEnterBackground` comes, so nothing may be leased until the app comes forward.
-    func observeAppLifecycle(center: NotificationCenter = .default,
-                             inBackground: Bool = UIApplication.shared.applicationState == .background) {
-        guard lifecycleObservers.isEmpty else { return }
-        if releasesLocksInBackground, inBackground { locksSuspended = true }
-        lifecycleObservers = [
-            center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    // A sync in flight finishes under background time; then (or when iOS takes the time
-                    // back) scheduled tasks continue it (`BackgroundSync`).
-                    self?.enterBackground()
-                    self?.prepareForSuspension()
-                }
-            },
-            center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.resumeAfterSuspension()
-                    self?.enterForeground()
-                }
-            },
-        ]
+/// It follows the application, not a scene (`AppLifecycle`): a note window can stay on screen after the library
+/// scene left, and the app is suspended only once every scene has. Sync's background time (`enterBackground`)
+/// follows the same events, so a run writing under the vault's write lock always has an assertion.
+extension AppModelCore {
+    /// The log category of the lease's warnings (`services.perf`).
+    static var suspensionLogCategory: String { "suspension" }
+
+    /// Starts following the app entering and leaving the background (once, at launch), on `lifecycle`
+    /// (`services.lifecycle` unless given). When the process starts in the background (a background task or an
+    /// intent launched it), no `didEnterBackground` comes, so nothing may be leased until the app comes forward.
+    public func observeAppLifecycle(_ lifecycle: (any AppLifecycle)? = nil) {
+        guard lifecycleObservation == nil else { return }
+        let lifecycle = lifecycle ?? services.lifecycle
+        if releasesLocksInBackground, lifecycle.isInBackground { locksSuspended = true }
+        lifecycleObservation = lifecycle.observe { [weak self] event in
+            switch event {
+            case .didEnterBackground:
+                // A sync in flight finishes under background time; then (or when the system takes the time
+                // back) scheduled tasks continue it (`BackgroundSync`).
+                self?.enterBackground()
+                self?.prepareForSuspension()
+            case .willEnterForeground:
+                self?.resumeAfterSuspension()
+                self?.enterForeground()
+            case .didBecomeActive, .willResignActive:
+                break
+            }
+        }
     }
 
     /// The app entered the background: the last saves finish under background time, then the store
-    /// lease is let go (at once when iOS gives no time or takes it back).
-    func prepareForSuspension() {
+    /// lease is let go (at once when the system gives no time or takes it back).
+    public func prepareForSuspension() {
         guard releasesLocksInBackground else { return }
         locksSuspended = true
         guard storeLease != nil || closingEditor != nil else { return }
@@ -61,7 +55,8 @@ extension AppModel {
         let gate = editGate
         guard let token = backgroundTasks.begin(name: "Sempere save", expired: { [weak self] in
             guard let self else { return }
-            suspensionLog.warning("background time ran out before the last saves finished; the vault lease is let go now")
+            self.services.perf.log(.error, Self.suspensionLogCategory,
+                                   "background time ran out before the last saves finished; the vault lease is let go now")
             self.suspensionWait?.cancel()
             self.finishSuspension()
         }) else {
@@ -83,7 +78,7 @@ extension AppModel {
     }
 
     /// Lets the lease go (when the app is still in the background) and ends the background time.
-    func finishSuspension() {
+    public func finishSuspension() {
         if locksSuspended, let lease = storeLease {
             lease.release()
             storeLease = nil
@@ -94,7 +89,7 @@ extension AppModel {
     }
 
     /// The app is coming back: the open store vault's lease is taken again.
-    func resumeAfterSuspension() {
+    public func resumeAfterSuspension() {
         guard releasesLocksInBackground else { return }
         locksSuspended = false
         reacquireStoreLease()
@@ -104,7 +99,7 @@ extension AppModel {
     /// lease can be taken after the app went back to the background (a detached wait could, with no
     /// assertion held). Only a removal holds the lock exclusively: when the vault is gone (removed while
     /// it was unleased) it closes; when the lease cannot be taken, the next return tries again.
-    func reacquireStoreLease() {
+    public func reacquireStoreLease() {
         guard storeLease == nil, !locksSuspended, let id = storeLeaseVault, let store = vaultStore else { return }
         do {
             let lease = try store.lease(id, timeout: 0)
@@ -119,13 +114,15 @@ extension AppModel {
             if store.entry(id: id) == nil {
                 closeRemovedVault()
             } else {
-                suspensionLog.warning("cannot take the vault lease again: \(String(describing: error), privacy: .public)")
+                services.perf.log(.error, Self.suspensionLogCategory,
+                                  "cannot take the vault lease again: \(String(describing: error))")
             }
         }
     }
 
     private func closeRemovedVault() {
-        suspensionLog.warning("the open vault was removed while the app was in the background; closing it")
+        services.perf.log(.error, Self.suspensionLogCategory,
+                          "the open vault was removed while the app was in the background; closing it")
         close()
     }
 }

@@ -136,9 +136,9 @@ struct PinnedServerTrust: WebDAVServerTrust {
 
 /// Tells the WebDAV targets when the network comes back (`SyncCoordinator.networkChanged`: a run soon, the
 /// backoff forgotten; docs/design/device-first-sync.md §4). `NWPathMonitor` only watches the device's own
-/// interfaces: it connects to nothing. Tests drive the coordinator directly.
+/// interfaces: it connects to nothing. Tests drive the coordinator directly. (`AppModelServices.makeReachability`.)
 @MainActor
-final class WebDAVReachability {
+final class WebDAVReachability: NetworkReachability {
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "io.github.anthonytw.sempere.reachability", qos: .utility)
 

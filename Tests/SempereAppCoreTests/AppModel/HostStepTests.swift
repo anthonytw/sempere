@@ -33,9 +33,21 @@ extension AppModelSuites {
             let id = try await model.createNote(title: "Written", paper: .ruled, notebook: nil)
             #expect(await TS.waitUntil(timeout: .seconds(60)) { model.attachmentIndex[id] != nil })
 
-            let before = model.appState.steps.filter { $0 == "willClose" }.count
+            // An editor about to be shown, for the library window or a note window: the host's step (the microphone
+            // half of saved recordings is the app's).
+            let prepared = model.appState.steps.filter { $0 == "prepareEditor" }.count
+            model.selectedNoteID = ModelFixture.lecture
+            try await model.openEditor(for: ModelFixture.lecture)
+            await model.claimNote(id)
+            _ = try await model.openWindowNote(id)
+            #expect(model.appState.steps.filter { $0 == "prepareEditor" }.count == prepared + 2)
+
+            // `close()` forgets a drag in progress itself (step 6: no `willClose` step any more).
+            model.beginDrag(.notes([id]))
+            model.setDropTarget(.topLevel)
             model.close()
-            #expect(model.appState.steps.filter { $0 == "willClose" }.count == before + 1)
+            #expect(model.draggedPayload == nil && model.dropTarget == nil)
+            await model.closingEditor?.value
         }
 
         @concurrent static func open(_ url: URL, _ identity: NativeIdentity) async throws -> Vault {

@@ -352,7 +352,7 @@ extension AppModelCore {
         let shown = editor?.noteID
         let windows = Array(windowEditors.keys)
         try? await openEditor(for: nil)
-        await Host.closeWindowEditors(self)
+        await closeWindowEditors()
         guard generation == gen else { return }
         let keys = unlockKeys
         let trust = keys.root == nil ? self.trust : nil
@@ -381,7 +381,7 @@ extension AppModelCore {
                 editor?.noteReopenedForRemoteChange()
             }
             for id in windows {
-                try? await Host.openWindowNote(id, in: self)
+                _ = try? await openWindowNote(id)
                 windowEditors[id]?.noteReopenedForRemoteChange()
             }
         } catch {

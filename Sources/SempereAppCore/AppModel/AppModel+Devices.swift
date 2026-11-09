@@ -310,7 +310,7 @@ extension AppModelCore {
         let shown = editor?.noteID
         let windows = Array(windowEditors.keys)
         try? await openEditor(for: nil)
-        await Host.closeWindowEditors(self)
+        await closeWindowEditors()
         guard generation == gen else { throw KeyError.vaultChanged }
         let outcome: (Vault, EpochChangeReport)
         do {
@@ -339,7 +339,7 @@ extension AppModelCore {
     /// The note and note windows a device change closed, open again.
     public func reopenEditors(shown: UUID?, windows: [UUID]) async {
         if let shown { try? await openEditor(for: shown) }
-        for id in windows { try? await Host.openWindowNote(id, in: self) }
+        for id in windows { _ = try? await openWindowNote(id) }
     }
 
     /// The best-effort pull before a device change (design §5.2 step 2): one two-way run of every target of the

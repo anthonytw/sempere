@@ -128,7 +128,7 @@ extension AppModelCore {
         let shown = editor?.noteID
         let windows = Array(windowEditors.keys)
         try? await openEditor(for: nil)
-        await Host.closeWindowEditors(self)
+        await closeWindowEditors()
         guard generation == gen, let start = vault else { throw KeyError.vaultChanged }
         let store = syncStore, vaultId = start.vaultId
         let memoURL = ReencryptCoordinator.confirmMemoURL(store: store, vaultId: vaultId)

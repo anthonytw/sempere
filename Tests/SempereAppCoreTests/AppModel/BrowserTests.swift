@@ -22,8 +22,13 @@ extension AppModelSuites {
         static func unlockedFixtureModel() async throws -> AppModel {
             let (url, key) = try await ModelFixture.vault()
             let model = AppModel(deviceStateURL: try tempDir().appendingPathComponent("device.json"))
-            try await model.openVault(at: url)
-            try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
+            do {
+                try await model.openVault(at: url)
+                try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
+            } catch {
+                model.close()   // closed when the setup throws too (review of #30)
+                throw error
+            }
             return model
         }
 

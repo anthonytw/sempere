@@ -15,13 +15,10 @@ enum TestHost: AppModelHost {
     static func makeState() -> TestHostState { TestHostState() }
     static func makeServices() -> AppModelServices { .headless() }
 
-    static func willClose(_ model: AppModel) { model.appState.steps.append("willClose") }
-    static func editorsChanged(_ model: AppModel) {}
-    static func prepareEditor(_ editor: TestEditor, of note: UUID, in model: AppModel) {}
+    static func prepareEditor(_ editor: TestEditor, of note: UUID, in model: AppModel) {
+        model.appState.steps.append("prepareEditor")
+    }
     static func unreadableText(_ editor: TestEditor) -> String { "unreadable" }
-    static func closeWindowEditors(_ model: AppModel) async {}
-    static func openWindowNote(_ id: UUID, in model: AppModel) async throws {}
-    static func reopenWindowNote(_ id: UUID, in model: AppModel) async {}
 }
 
 /// What the test host's steps were asked.

@@ -273,6 +273,14 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored public var attachmentNow: () -> Date = { Date() }
     /// Test seam: what an index update reads (a counting wrapper of the vault).
     @ObservationIgnored public var attachmentIndexSource: (@Sendable (Vault) -> any AttachmentIndexSource)?
+    /// What is being dragged inside the app (set when a drag starts, `beginDrag`), so the
+    /// sidebar can tell whether a row would accept it while the drag is still over it.
+    public var draggedPayload: DragPayload?
+    /// The sidebar row a drag is over that would accept it (highlighted).
+    public var dropTarget: DropTarget?
+    /// The sidebar row a drop just moved notes or a notebook into: flashed for
+    /// `landedDropDuration` so it is clear where they went (`move(_:to:)`).
+    public var landedDrop: LandedDrop?
     /// How long `landedDrop` stays set (tests shorten it).
     @ObservationIgnored public var landedDropDuration: Duration = .seconds(1.6)
     @ObservationIgnored public var recognitionTask: Task<Void, Never>?
@@ -347,6 +355,14 @@ public final class AppModelCore<Host: AppModelHost> {
     /// Cancels that wait (`cancelNoteDownload`); the fetch itself goes on.
     @ObservationIgnored public var noteDownloadCancel: (() -> Void)?
     @ObservationIgnored public var targetsBackgroundWait: Task<Void, Never>?
+    /// Background time and scheduled tasks for the sync (`AppModel+Background`: `services.backgroundTasks` and
+    /// `services.syncScheduler`); tests replace them.
+    @ObservationIgnored public var backgroundTasks: any BackgroundTaskRunning
+    @ObservationIgnored public var syncScheduler: any BackgroundSyncScheduling
+    /// The assertion held while sync targets' runs finish off screen (`finishTargetRunsInBackground`), and its wait.
+    @ObservationIgnored public var targetsBackgroundToken: BackgroundTaskToken?
+    /// Watches the network for the WebDAV targets (`startReachability`); nil until started.
+    @ObservationIgnored public var reachability: (any NetworkReachability)?
     /// The iCloud calls for copying a vault in from iCloud Drive (`copyIn`, a restore); tests replace them.
     @ObservationIgnored public var iCloudHooks: CloudVault.Hooks
     /// The download a sync folder pick asked iCloud for (`requestDownload(of:scope:)`); tests wait for it.
@@ -499,7 +515,7 @@ public final class AppModelCore<Host: AppModelHost> {
     public var editorFailure: (id: UUID, message: String)?
     /// The note open on the canvas, if any (`openEditor(for:)`).
     public private(set) var editor: Editor? {
-        didSet { Host.editorsChanged(self) }   // "Keep Screen On" counts open notes, whichever scene shows them
+        didSet { idleTimer?.update() }   // "Keep Screen On" counts open notes, whichever scene shows them
     }
 
     public private(set) var vault: Vault? {
@@ -534,7 +550,7 @@ public final class AppModelCore<Host: AppModelHost> {
     /// Editors of note windows (Mac), by note id: one per note, each with its
     /// own canvas (`AppModel+Windows`).
     public var windowEditors: [UUID: Editor] = [:] {
-        didSet { Host.editorsChanged(self) }
+        didSet { idleTimer?.update() }
     }
     /// Notes shown by a window of their own; the library window's detail pane
     /// does not open an editor for them.
@@ -642,8 +658,12 @@ public final class AppModelCore<Host: AppModelHost> {
     /// The app is in the background with its locks let go (`prepareForSuspension`).
     @ObservationIgnored public var locksSuspended = false
     @ObservationIgnored public var suspensionWait: Task<Void, Never>?
-    /// The app-lifecycle observers (`observeAppLifecycle`).
-    @ObservationIgnored public var lifecycleObservers: [any NSObjectProtocol] = []
+    /// The assertion held while the last saves finish before the lease is let go, and its wait.
+    @ObservationIgnored public var suspensionToken: BackgroundTaskToken?
+    /// Following the app's lifecycle (`observeAppLifecycle`); nil until started.
+    @ObservationIgnored public var lifecycleObservation: AppLifecycleObservation?
+    /// Applies "Keep Screen On" app-wide (`keepScreenOn`); the app starts it, tests may make their own.
+    @ObservationIgnored public var idleTimer: IdleTimerKeeper?
     /// Bumped by `close()` (and so by every `openVault`): async work started
     /// under an older generation must not publish its result (the vault it
     /// read is gone).
@@ -689,6 +709,8 @@ public final class AppModelCore<Host: AppModelHost> {
         webdavPasswords = services.webdavPasswords
         deviceMemory = services.settings
         ownerAuthenticator = services.ownerAuthenticator
+        backgroundTasks = services.backgroundTasks
+        syncScheduler = services.syncScheduler
         backupStore = BackupStore(defaults: services.settings)
         releasesLocksInBackground = !services.platform.isMac
         searchTranscripts = TranscriptSearchPreference.isOn(services.settings)
@@ -1136,7 +1158,7 @@ public final class AppModelCore<Host: AppModelHost> {
     /// changes whether it may be edited, e.g. delete or restore). Pending
     /// canvas changes are saved first.
     public func reopenEditor(ifShowing id: UUID) async throws {
-        if windowEditors[id] != nil { await Host.reopenWindowNote(id, in: self) }
+        if windowEditors[id] != nil { await reopenWindowNote(id) }
         guard editor?.noteID == id else { return }
         try await openEditor(for: nil)
         try await openEditor(for: id)
@@ -1162,10 +1184,11 @@ public final class AppModelCore<Host: AppModelHost> {
     /// note's pending changes and any edit already being written are saved.
     public func close() {
         generation += 1
-        // Settings sync stops and the app-side state of the vault is forgotten (the extensions still in the app, wave 5b
-        // part 3); a backup, inbox adoption or import still running is canceled below.
+        // Settings sync stops and a drag in progress is forgotten; a backup, inbox adoption or import still running is
+        // canceled below.
         stopSettingsSync()
-        Host.willClose(self)
+        draggedPayload = nil
+        dropTarget = nil
         takeoverAlert = nil
         sightingRowsState = []
         resetAttachmentIndex()

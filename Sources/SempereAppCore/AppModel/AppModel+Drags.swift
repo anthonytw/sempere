@@ -1,20 +1,20 @@
 import Foundation
 import Sempere
-import SempereAppCore
 
-// The sidebar's drags and drops. Opening a recent vault (`open(recent:)`) and the edits themselves are the library's
-// (`AppModel+VaultStore.swift`, `AppModel+Edits.swift` in SempereAppCore).
+// The sidebar's drags and drops (the drags of the app's former `AppModel+Browser`). The item providers, the drop
+// delegates and the undo step stay in the app (`AppModel+Drags.swift`, `SidebarDrop.swift`); opening a recent vault
+// and the edits themselves are `AppModel+VaultStore.swift` and `AppModel+Edits.swift`.
 
 // MARK: - Moving notes and notebooks (drag and drop, Move Notebook To…)
 
-extension AppModel {
+extension AppModelCore {
     /// Puts every note of `ids` that is not there already into the notebook
     /// path `notebook` (nil or blank: none), as ONE commit: a `setMeta`
     /// delta per note, each decided from the note as it is on disk. Deleted notes
     /// and ids the vault does not list are left alone. Returns where the moved
     /// notes were, nil when nothing moved.
     @discardableResult
-    func moveNotes(_ ids: [UUID], toNotebook notebook: String?) async throws -> NotebookMoveRecord? {
+    public func moveNotes(_ ids: [UUID], toNotebook notebook: String?) async throws -> NotebookMoveRecord? {
         let target = NotebookPath.canonical(notebook)
         var seen = Set<UUID>()
         let unique = ids.filter { seen.insert($0).inserted }
@@ -42,9 +42,7 @@ extension AppModel {
                 }
             }
         }
-        return NotebookMoveRecord(previous: previous, actionName: batch.count == 1
-                                  ? String(localized: "Move Note", comment: "Undo action name: one note moved to a notebook")
-                                  : String(localized: "Move Notes", comment: "Undo action name: several notes moved to a notebook"))
+        return NotebookMoveRecord(previous: previous, moved: .notes(count: batch.count))
     }
 
     /// Moves the notebook `path`, with everything below it, into the notebook
@@ -55,7 +53,7 @@ extension AppModel {
     ///
     /// - Throws: `ModelError.invalidNotebookMove` for a move into itself or a descendant.
     @discardableResult
-    func moveNotebook(_ path: String, into parent: String?) async throws -> NotebookMoveRecord? {
+    public func moveNotebook(_ path: String, into parent: String?) async throws -> NotebookMoveRecord? {
         guard let from = NotebookPath.canonical(path), let target = NotebookPath.moved(from, into: parent) else {
             throw ModelError.invalidNotebookMove
         }
@@ -63,13 +61,13 @@ extension AppModel {
         let carriesEmpty = declaredNotebooks.contains { NotebookPath.name($0, isWithin: from) }
         let previous = try await renameNotebook(from, to: target)
         guard !previous.isEmpty || carriesEmpty else { return nil }
-        return NotebookMoveRecord(previous: previous, actionName: String(localized: "Move Notebook", comment: "Undo action name"),
+        return NotebookMoveRecord(previous: previous, moved: .notebook,
                                   emptyNotebooks: carriesEmpty ? NotebookPathMove(from: from, to: target) : nil)
     }
 
     /// Puts the notes of `record` back where they were (undo of a move), one commit,
     /// and the empty notebooks it moved (one notebook record).
-    func restoreNotebooks(_ record: NotebookMoveRecord) async throws {
+    public func restoreNotebooks(_ record: NotebookMoveRecord) async throws {
         if let moved = record.emptyNotebooks, let to = moved.to {
             try await writeNotebookRecords { vault in _ = try vault.renameNotebookRecords(to, to: moved.from) }
         }
@@ -92,12 +90,12 @@ extension AppModel {
         }
     }
 
-    /// A drop (or "Move Notebook To…"): makes the move, reports a failure, and
-    /// registers one undo step that puts the notes back with `undoManager`, the
-    /// undo manager of the window it happened in (the model is shared by every
-    /// window on a Mac, so it keeps none of its own).
-    func move(_ payload: DragPayload, to target: DropTarget, undoManager: UndoManager?) async {
-        guard phase == .unlocked, SidebarDrop.accepts(payload, on: target, notes: notes) else { return }
+    /// A drop (or "Move Notebook To…"): makes the move, reports a failure (`report`) and flashes the row it landed
+    /// on. Returns what moved, for the undo step the caller registers in the window it happened in (the model is
+    /// shared by every window on a Mac, so it keeps no undo manager of its own); nil when nothing moved.
+    @discardableResult
+    public func move(_ payload: DragPayload, to target: DropTarget) async -> NotebookMoveRecord? {
+        guard phase == .unlocked, SidebarDrop.accepts(payload, on: target, notes: notes) else { return nil }
         var record: NotebookMoveRecord?
         await report {
             switch payload {
@@ -105,34 +103,24 @@ extension AppModel {
             case .notebook(let path): record = try await self.moveNotebook(path, into: target.path)
             }
         }
-        guard let record else { return }
+        guard let record else { return nil }
         flashLandedDrop(target)
-        undoManager?.registerUndo(withTarget: self) { model in
-            Task { @MainActor in
-                await model.report { try await model.restoreNotebooks(record) }
-            }
-        }
-        undoManager?.setActionName(record.actionName)
+        return record
     }
 }
 
 // MARK: - Drags inside the app
 
-extension AppModel {
-    /// Starts a drag of `payload` (nil: a drag that moves nothing, a note in
-    /// Recently Deleted) and returns `provider`.
-    func beginDrag(_ payload: DragPayload?, provider: NSItemProvider) -> NSItemProvider {
-        #if DEBUG
-        DropTrace.note("begin \(payload.map { "\($0)" } ?? "nil")")
-        #endif
+extension AppModelCore {
+    /// Starts a drag of `payload` (nil: a drag that moves nothing, a note in Recently Deleted).
+    public func beginDrag(_ payload: DragPayload?) {
         draggedPayload = payload
-        return provider
     }
 
     /// Highlights `target` (nil: no row) while a drag is over it. Unchanged
     /// values are not written again: the sidebar would be rebuilt on every
     /// `dropUpdated` while the finger moves.
-    func setDropTarget(_ target: DropTarget?) {
+    public func setDropTarget(_ target: DropTarget?) {
         if dropTarget != target { dropTarget = target }
     }
 
@@ -142,7 +130,7 @@ extension AppModel {
     /// the app's own types (`carriesAppTypes` false: a photo, text from
     /// another app) is never one: `draggedPayload` may be left over from a
     /// canceled drag, since `onDrag` reports no end.
-    func acceptsDrop(on target: DropTarget, carriesAppTypes: Bool = true) -> Bool {
+    public func acceptsDrop(on target: DropTarget, carriesAppTypes: Bool = true) -> Bool {
         guard carriesAppTypes else { return false }
         return draggedPayload.map { SidebarDrop.accepts($0, on: target, notes: notes) } ?? true
     }
@@ -151,7 +139,7 @@ extension AppModel {
     /// the drop is accepted, nil otherwise. Ends the drag either way. A drop
     /// inside the app never depends on the item provider's data; only a drag
     /// the model did not start is decoded from it.
-    func takeDrop(on target: DropTarget, carriesAppTypes: Bool = true) -> DragPayload? {
+    public func takeDrop(on target: DropTarget, carriesAppTypes: Bool = true) -> DragPayload? {
         let payload = draggedPayload
         endDrag()
         guard carriesAppTypes, let payload, phase == .unlocked, SidebarDrop.accepts(payload, on: target, notes: notes) else { return nil }
@@ -159,29 +147,20 @@ extension AppModel {
     }
 
     /// Forgets the drag in progress (dropped, or the vault closed).
-    func endDrag() {
+    public func endDrag() {
         draggedPayload = nil
         setDropTarget(nil)
     }
 
     /// Flashes `target`'s sidebar row after a drop moved something there (`landedDrop`), until
     /// `landedDropDuration` has passed or another drop lands.
-    func flashLandedDrop(_ target: DropTarget) {
+    public func flashLandedDrop(_ target: DropTarget) {
         let landed = LandedDrop(target: target)
         landedDrop = landed
-        #if DEBUG
-        DropTrace.note("landed target=\(target)")
-        #endif
         let duration = landedDropDuration
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: duration)
             if self?.landedDrop == landed { self?.landedDrop = nil }
         }
     }
-}
-
-/// A drop that just landed on a sidebar row (`AppModel.landedDrop`); each drop is a new value.
-struct LandedDrop: Equatable, Sendable {
-    let target: DropTarget
-    let id = UUID()
 }

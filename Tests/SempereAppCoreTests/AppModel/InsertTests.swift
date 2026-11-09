@@ -455,7 +455,6 @@ extension AppModelSuites {
             let url = try await model.acquireVideo(item, note: Self.lecture)
             #expect(try Data(contentsOf: url) == vault.readBlob(note: Self.lecture, clip))
             await model.addPosterIfMissing(item, page: page, editor: editor, file: url)
-            model.releaseVideo(item, note: Self.lecture)
             let updated = try #require(editor.item(item.id, on: page))
             let stored = try #require(updated.poster, "the first play gives it a poster")
             #expect(stored.kind == .image)
@@ -465,6 +464,8 @@ extension AppModelSuites {
             await model.addPosterIfMissing(updated, page: page, editor: editor, file: url)
             await editor.flush()
             #expect(try Self.revisions(vault, Self.lecture) == before)
+            // Released last: its release task must not race the deferred close (review of #30).
+            model.releaseVideo(item, note: Self.lecture)
         }
 
         /// Without a platform frame (the package's preparation) a posterless clip stays as it is.

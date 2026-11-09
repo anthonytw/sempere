@@ -268,65 +268,6 @@ struct StatusItemHostTests {
     }
 }
 
-@MainActor
-struct MenuBarNewNoteTests {
-    /// A model with the fixture vault open and locked, and its key.
-    static func model() async throws -> (AppModel, String) {
-        let (url, key) = try AppModelTests.fixtureVault()
-        let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .seconds(60))
-        try await model.openVault(at: url)
-        return (model, try String(contentsOf: key, encoding: .utf8))
-    }
-
-    @Test func noRequestMeansNothingToDo() {
-        let model = AppModel()
-        #expect(model.menuBarNewNoteStep() == .none)
-    }
-
-    @Test func aLockedVaultMakesTheRequestWait() async throws {
-        let (model, _) = try await Self.model()
-        #expect(model.phase == .locked)
-        let now = Date()
-        model.requestNewNoteFromMenuBar(now: now)
-        #expect(model.menuBarNewNoteStep(now: now) == .waitForUnlock)
-        #expect(!model.takeMenuBarNewNote(now: now))
-        #expect(model.menuBarNewNoteRequest != nil, "nothing is taken while locked, and the request stays")
-        #expect(model.notes.isEmpty)
-    }
-
-    @Test func noVaultDropsTheRequest() {
-        let model = AppModel()
-        model.requestNewNoteFromMenuBar()
-        #expect(model.menuBarNewNoteStep() == .none)
-        #expect(model.menuBarNewNoteRequest == nil)
-    }
-
-    @Test func anOldRequestIsDroppedAndNeverOpensTheSheet() async throws {
-        let (model, key) = try await Self.model()
-        try await model.unlock(identityText: key)
-        let then = Date()
-        model.requestNewNoteFromMenuBar(now: then)
-        let later = then.addingTimeInterval(AppModel.menuBarRequestLifetime + 1)
-        let before = model.notes.count
-        #expect(!model.takeMenuBarNewNote(now: later))
-        #expect(model.menuBarNewNoteRequest == nil)
-        #expect(model.notes.count == before)
-    }
-
-    @Test func anUnlockedVaultHandsTheRequestToOneWindowAndCreatesNoNote() async throws {
-        let (model, key) = try await Self.model()
-        try await model.unlock(identityText: key)
-        let before = model.notes.count
-        model.requestNewNoteFromMenuBar()
-        #expect(model.menuBarNewNoteStep() == .create)
-        // Two library windows react to one request: only one opens the New Note sheet.
-        let taken = [model.takeMenuBarNewNote(), model.takeMenuBarNewNote()]
-        #expect(taken == [true, false])
-        #expect(model.menuBarNewNoteRequest == nil)
-        #expect(model.notes.count == before, "the sheet creates the note, with the owner's name and style")
-    }
-}
-
 /// On the Mac the AppKit bundle is really embedded and loads (`scripts/app.sh test-mac`).
 @MainActor
 struct MacStatusItemBundleTests {

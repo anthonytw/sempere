@@ -83,6 +83,7 @@ struct VideoTests {
         let (vault, _) = try TS.unlockedFixture()
         let (editor, clock) = try await NoteEditorTests.open(vault, debounce: .seconds(60))
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
+        defer { model.close() }
         let file = try Self.clip("clip-h264.mp4")
         let item = try #require(await model.insertVideo(file: file, into: editor,
                                                         visible: CGRect(x: 0, y: 200, width: 612, height: 400), privacy: true))
@@ -152,6 +153,7 @@ struct VideoTests {
 
     @Test func playingReadsTheVerifiedClipAndGivesAPosterlessClipAPoster() async throws {
         let model = try await RecordingTests.model()
+        defer { model.close() }
         let editor = try #require(model.editor)
         let vault = try #require(model.vault)
         let page = try #require(editor.currentPage).id
@@ -168,7 +170,6 @@ struct VideoTests {
         let asset = AVURLAsset(url: url, options: [AVURLAssetOverrideMIMETypeKey: "video/mp4"])
         #expect(try await asset.load(.isPlayable), "AVFoundation plays the cached file without an extension")
         await model.addPosterIfMissing(item, page: page, editor: editor, file: url)
-        model.releaseVideo(item, note: Self.lecture)
         let updated = try #require(editor.item(item.id, on: page))
         let poster = try #require(updated.poster, "the first play gives it a poster")
         #expect(poster.kind == .image)
@@ -178,6 +179,8 @@ struct VideoTests {
         await model.addPosterIfMissing(updated, page: page, editor: editor, file: url)
         await editor.flush()
         #expect(try vault.loadNote(Self.lecture).revisions.count == before)
+        // Released last: its release task must not race the close (review of #30).
+        model.releaseVideo(item, note: Self.lecture)
     }
 
     @Test func dropsTakeClips() {

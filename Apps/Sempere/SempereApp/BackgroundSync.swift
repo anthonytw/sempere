@@ -33,38 +33,10 @@ enum BackgroundSync {
     }
 }
 
-// MARK: - Seams (tests pass fakes)
-
-/// A background-time assertion (`beginBackgroundTask`).
-struct BackgroundTaskToken: Hashable, Sendable {
-    let raw: Int
-}
-
-/// `UIApplication.beginBackgroundTask` / `endBackgroundTask`.
-@MainActor
-protocol BackgroundTaskRunning: AnyObject {
-    /// Nil when iOS gives no time (the app is about to be suspended anyway).
-    func begin(name: String, expired: @escaping @MainActor @Sendable () -> Void) -> BackgroundTaskToken?
-    func end(_ token: BackgroundTaskToken)
-}
-
-/// What can be scheduled with `BGTaskScheduler`.
-enum BackgroundSyncRequest: Hashable, Sendable {
-    /// `BGAppRefreshTask`: pick up what other devices wrote, from time to time.
-    case refresh
-    /// `BGProcessingTask`: full passes, finishing what the background time did not. It asks iOS for a network
-    /// only when a WebDAV target has uploads waiting (offline audit A-P3): a folder target (a USB drive, a local
-    /// folder, a provider's folder the system uploads) needs none, and a device that is never online would
-    /// otherwise never get the task.
-    case processing(needsNetwork: Bool)
-}
+// MARK: - The platform's services (`AppModelServices`; the protocols are SempereAppCore's `AppLifecycle.swift`)
 
 @MainActor
-protocol BackgroundSyncScheduling: AnyObject {
-    func schedule(_ request: BackgroundSyncRequest)
-}
-
-@MainActor
+/// `UIApplication.beginBackgroundTask` / `endBackgroundTask` (`AppModelServices.backgroundTasks`).
 final class UIKitBackgroundTasks: BackgroundTaskRunning {
     func begin(name: String, expired: @escaping @MainActor @Sendable () -> Void) -> BackgroundTaskToken? {
         let id = UIApplication.shared.beginBackgroundTask(withName: name) {
@@ -79,6 +51,7 @@ final class UIKitBackgroundTasks: BackgroundTaskRunning {
 }
 
 @MainActor
+/// `BGTaskScheduler` (`AppModelServices.syncScheduler`); nothing on a Mac.
 final class BGTaskSyncScheduler: BackgroundSyncScheduling {
     func schedule(_ request: BackgroundSyncRequest) {
         guard !Platform.isMac else { return }
@@ -111,4 +84,53 @@ final class BGTaskSyncScheduler: BackgroundSyncScheduling {
             return r
         }
     }
+}
+
+/// The application's lifecycle (`AppModelServices.lifecycle`): `UIApplication`'s notifications on `center`, delivered
+/// in the turn they are posted (UIKit posts them on the main thread).
+@MainActor
+final class UIKitAppLifecycle: AppLifecycle {
+    private let center: NotificationCenter
+    /// The application's state (tests give their own).
+    private let state: @MainActor () -> UIApplication.State
+
+    init(center: NotificationCenter = .default,
+         state: @escaping @MainActor () -> UIApplication.State = { UIApplication.shared.applicationState }) {
+        self.center = center
+        self.state = state
+    }
+
+    var isInBackground: Bool { state() == .background }
+    var isActive: Bool { state() == .active }
+
+    static let events: [(Notification.Name, AppLifecycleEvent)] = [
+        (UIApplication.didEnterBackgroundNotification, .didEnterBackground),
+        (UIApplication.willEnterForegroundNotification, .willEnterForeground),
+        (UIApplication.didBecomeActiveNotification, .didBecomeActive),
+        (UIApplication.willResignActiveNotification, .willResignActive),
+    ]
+
+    func observe(_ handler: @escaping @MainActor (AppLifecycleEvent) -> Void) -> AppLifecycleObservation {
+        let center = center
+        let tokens = Self.events.map { name, event in
+            // No queue: run in the posting turn (on the main thread, as UIKit posts), so a test that posts sees the
+            // handler's effect at once; a post from another thread hops to the main actor.
+            center.addObserver(forName: name, object: nil, queue: nil) { _ in
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { handler(event) }
+                } else {
+                    Task { @MainActor in handler(event) }
+                }
+            }
+        }
+        let box = ObserverTokens(tokens)
+        return AppLifecycleObservation { box.remove(from: center) }
+    }
+}
+
+/// The observers of one `UIKitAppLifecycle.observe`, removed together.
+private final class ObserverTokens: @unchecked Sendable {
+    private let tokens: [any NSObjectProtocol]
+    init(_ tokens: [any NSObjectProtocol]) { self.tokens = tokens }
+    func remove(from center: NotificationCenter) { for token in tokens { center.removeObserver(token) } }
 }

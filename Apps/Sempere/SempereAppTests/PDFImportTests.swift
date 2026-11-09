@@ -99,7 +99,9 @@ struct PDFImportTests {
     /// its password through the app's preparation (Core Graphics), and what is stored carries no `/Encrypt`.
     @Test func aPasswordProtectedImportWaitsForThePassword() async throws {
         let model = try await BrowserTests.unlockedFixtureModel()
+        defer { model.close() }
         let url = try Self.makePDF(pages: 1, userPassword: "pw", ownerPassword: "owner")
+        let folder = url.deletingLastPathComponent()
         guard case .needsPassword(let request) = await model.importPDF(copy: url, to: .newNote(notebook: nil), password: nil) else {
             Issue.record("did not ask"); return
         }
@@ -115,6 +117,10 @@ struct PDFImportTests {
         let ref = try #require(state.pages.first?.items.first?.blob)
         let stored = try #require(try model.vault?.readBlob(note: id, ref))
         #expect(stored.range(of: Data("/Encrypt".utf8)) == nil)
+        // The work folder went with the import: the copy and Core Graphics' `redrawn-*.pdf` (review of #30).
+        let left = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        #expect(!left.contains { $0.hasPrefix("redrawn-") && $0.hasSuffix(".pdf") }, "no redrawn copy is left")
+        #expect(!FileManager.default.fileExists(atPath: folder.path), "the work folder is gone")
         // Canceling removes the plaintext copy.
         let other = try Self.makePDF(pages: 1, userPassword: "pw", ownerPassword: "owner")   // Core Graphics encrypts only with an owner password
         guard case .needsPassword(let pending) = await model.importPDF(copy: other, to: .newNote(notebook: nil), password: nil) else {

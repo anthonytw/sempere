@@ -65,18 +65,14 @@ struct SempereApp: App {
         // (`QuickCapture.deliveredNotification`).
         model.quickCapture.vaultStore = library.vaultStore
         // No lock is held across a suspension (0xdead10cc, AppModel+Suspension), and "Keep Screen On"
-        // follows the whole app, not one scene (`IdleTimerKeeper`).
+        // follows the whole app, not one scene (`IdleTimerKeeper`); both on `UIApplication`'s lifecycle.
         model.observeAppLifecycle()
         #if DEBUG
         let debugLaunch = DebugLaunch.isActive
         #else
         let debugLaunch = false
         #endif
-        let idleTimer = IdleTimerKeeper(debugLaunch: debugLaunch,
-                                        noteOpen: { [weak model] in model.map { $0.editor != nil || !$0.windowEditors.isEmpty } ?? false },
-                                        appActive: { UIApplication.shared.applicationState == .active })
-        model.idleTimer = idleTimer
-        idleTimer.start()
+        model.keepScreenOn(debugLaunch: debugLaunch)
         AppModel.current = model
         _model = State(initialValue: model)
         // Background sync (iOS): the model the scheduled tasks sync (`.backgroundTask` below).

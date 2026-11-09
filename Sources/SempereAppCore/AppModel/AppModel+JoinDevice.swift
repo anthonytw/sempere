@@ -490,7 +490,7 @@ extension AppModelCore {
         await editGate.acquire()
         defer { editGate.release() }
         try? await openEditor(for: nil)
-        await Host.closeWindowEditors(self)
+        await closeWindowEditors()
         let trust = self.trust, stores = writeStores, root = draft.root, recovery = draft.recovery
         let name = services.platform.deviceName, kind = services.platform.deviceKind
         let next: Vault, report: EpochChangeReport

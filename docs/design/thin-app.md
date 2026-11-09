@@ -80,11 +80,11 @@ app's implementations are in `Apps/Sempere/SempereApp/PlatformServices.swift`.
 
 | Protocol | Library's own version | App's version | Wired now |
 | --- | --- | --- | --- |
-| `KeyValueStore` (`object`/`bool`/`integer`/`double`/`string`/`data(forKey:)`, `set`, `removeObject`, `observeChanges` → `KeyValueObservation`) | `MemoryKeyValueStore` | `UserDefaults` itself (retroactive conformance; change = `didChangeNotification` of that defaults) | `KeepScreenOn.isOn`, `IdleTimerKeeper` (follows the setting through `observeChanges`), `BlobCache.configuredMaxBytes(in:)`, `DrawingCache.configuredCapBytes(in:)`, `ObjectEraserSize.load(from:)`/`save(_:to:)` |
+| `KeyValueStore` (`object`/`bool`/`integer`/`double`/`string`/`data(forKey:)`, `set`, `removeObject`, `observeChanges` → `KeyValueObservation`) | `MemoryKeyValueStore` | `UserDefaults` itself (retroactive conformance; change = `didChangeNotification` of that defaults) | `KeepScreenOn.isOn`, `IdleTimerKeeper` (follows the setting through `observeChanges`; SempereAppCore since step 6), `BlobCache.configuredMaxBytes(in:)`, `DrawingCache.configuredCapBytes(in:)`, `ObjectEraserSize.load(from:)`/`save(_:to:)` |
 | `PerfSink` (`measure`, `event`, `log(level, category, message)`) | `NoPerfSink`, `MemoryPerfSink` | `AppPerfSink` (`Perf` signposts, `os.Logger`) | `DeviceClock`'s writer reads (wave 2), `BundleBitRepair.clear(log:)` |
 | `FolderBookmarks` (`bookmark(for:)`, `resolve(_:mounting:)` → `ResolvedBookmark`, `startAccessing`/`stopAccessing`, `withAccess`) | `PathBookmarks` (a path, no scope) | `SecurityScopedBookmarks` (`options: []`; no `mounting` → `.withoutMounting`) | `AppModel.enableQuickCapture`, `isProfileFolder(_:_:bookmarks:)` |
 | `FileCoordinating` (`coordinateReading`/`coordinateWriting`, `coordinatedRead`/`coordinatedWrite` taking an optional URL) | `UncoordinatedFiles` | `SystemFileCoordinator` (`NSFileCoordinator`, the `reconcile.coordinate` signpost) | `CloudVault.coordinatedRead`/`coordinatedWrite(files:)`, so every caller of those already goes through it |
-| `PlatformServices` (`isMac`, `isPhone`, `setIdleTimerDisabled`, `play(HapticFeedback)`) | `HeadlessPlatform` (records what it was asked) | `AppPlatform` | `IdleTimerKeeper(platform:)`, `PageCanvasView.snapFeedback` |
+| `PlatformServices` (`isMac`, `isPhone`, `setIdleTimerDisabled`, `play(HapticFeedback)`) | `HeadlessPlatform` (records what it was asked) | `AppPlatform` | `IdleTimerKeeper(settings:platform:lifecycle:)` (the model's `keepScreenOn`, `services.platform`), `PageCanvasView.snapFeedback` |
 
 The call sites that are left, by file in `Apps/Sempere/SempereApp/` (2026-11-07). Switch one when its code moves.
 View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the platform API.
@@ -100,7 +100,7 @@ View code (`@AppStorage` in a `View`, UIKit glue) stays in the app and keeps the
   (and `DebugLaunch`, debug only).
 - **`PerfSink`**: `Perf.begin`/`measure`/`event` in `AppModel+History`, `BackgroundSync`, `ItemLayerView`, `ItemRendering`,
   `NoteEditor`, `PageCanvasView`; `os.Logger` in `AppModel+Inbox`,
-  `+SettingsSync`, `+Suspension`, `AppModelEnvironment`, `DragLog`, `FolderPicker`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
+  `+SettingsSync`, `AppModelEnvironment`, `DragLog`, `FolderPicker`. Phases are `Perf.Phase` raw values, so a moved `Perf.measure(.x, …)`
   becomes `perf.measure("x", …)`.
 - **`FolderBookmarks`** (bookmarks and security scopes): `AppModel+BulkExport`,
   `+DeviceNotices`, `+Import`, `ExportSheet`, `FolderPicker`, `InsertUI`, `MathModels`, `NewVaultView`.
@@ -447,7 +447,8 @@ Wave 5b, part 3, step 5b (history, export and import, 2026-11-08) moved:
   app.
 - **Services**: what exports draw with is `AppModelServices.exportRendering` (a `RenderOptions` with the app's
   `PDFKitRasterizer`, `ImageIODecoder` and `CoreTextShaper`; headless, none), the PDF page text of an import
-  `pdfTextExtractor` (`PDFKitTextExtractor`; headless, none), reading handwriting after an import
+  `pdfTextExtractor` (`PDFKitTextExtractor`; headless, the built-in `BuiltinPDFTextExtractor` since step 6, as
+  `PortableAttachmentPreparation` and the CLI), reading handwriting after an import
   `makePageRecognizer` (Vision; headless, none, and nothing is read), and the picked folders' and files' security
   scopes `services.bookmarks`. The import's progress hops to the main actor with a task, not `DispatchQueue.main`.
 - **Library values for the platform's types**: the import picker's types are `ImportFileKind` (`.zip`, `.folder`,
@@ -532,13 +533,81 @@ Wave 5b, part 3, step 5c (opened files and the PDF, image and video inserts, 202
   (`PhoneInsertTests`, `CanvasSelectionTests`, the display and the 200-page PDF), and the words (`InsertTextTests`,
   new; `PDFImportTests.aPagelessNoteSaysWhyItTakesNoPDFPages`).
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b and 5a to 5c are done (above). The rest of the family, in an
+Wave 5b, part 3, step 6 (app lifecycle and windows, 2026-11-08) moved:
+
+- **`+Background`, `+Suspension`, `+Windows` (the note windows and state restoration), `+MenuBar` and the drags of
+  `+Browser`** into `Sources/SempereAppCore/AppModel/`: `enterBackground`, `enterForeground`,
+  `scheduleBackgroundRefresh`, `processingRequest`, `finishTargetRunsInBackground`, `endTargetsBackgroundTime`,
+  `runBackgroundTask`, `startReachability`; `observeAppLifecycle`, `prepareForSuspension`, `finishSuspension`,
+  `resumeAfterSuspension`, `reacquireStoreLease` (their warnings on `services.perf`, category "suspension");
+  `noteWindowValue`, `claimNote`, `releaseNote`, `openWindowNote` (on `services.perf`; its editor gets the host's
+  `prepareEditor` too), `reopenWindowNote`, `closeWindowEditors`, `shouldOpenLibraryWindow`, `selectionDigest`,
+  `restorableSelection`, `restore(_:)`, with `NoteWindowValue` and `RestorableSelection` (`WindowValues.swift`, out
+  of `MacSupport.swift`); the menu-bar item's New Note (`requestNewNoteFromMenuBar`, `menuBarNewNoteStep`,
+  `takeMenuBarNewNote`); `moveNotes`, `moveNotebook`, `restoreNotebooks`, `move(_:to:)` (it returns the
+  `NotebookMoveRecord` the caller's undo step takes), `beginDrag(_:)`, `setDropTarget`, `acceptsDrop`, `takeDrop`,
+  `endDrag`, `flashLandedDrop`, and `KeepScreenOn` with `IdleTimerKeeper` (`KeepScreenOn.swift`; the model's
+  `keepScreenOn(debugLaunch:lifecycle:)` makes and starts it).
+- **The drag types** leave `SidebarDrop.swift`: the core's `SidebarDrop.swift` has `DragPayload` (its `kind`, `data`
+  and `decode(_:kind:)`), `DropTarget`, `SidebarDrop.accepts`, `NotebookMoveRecord`, `NotebookPathMove` and
+  `LandedDrop`. The app keeps the `UTType`s, `DragPayload.type`, `decode(_:as:)` and `provider(…)`, the drop delegates,
+  `SidebarDrop.proposedOperation` (SwiftUI's `DropOperation`) and the undo step: `move(_:to:undoManager:)` and
+  `beginDrag(_:provider:)` in its `AppModel+Drags.swift` call the core's and add the window's undo step and the
+  debug drop trace.
+- **Lifecycle and background protocols** (`AppLifecycle.swift`): `AppLifecycle` (`isInBackground`, `isActive`,
+  `observe` → `AppLifecycleObservation`, events `AppLifecycleEvent`), `BackgroundTaskRunning` with
+  `BackgroundTaskToken`, `BackgroundSyncScheduling` with `BackgroundSyncRequest`, and `NetworkReachability`. New
+  services: `AppModelServices.lifecycle` (the app's `UIKitAppLifecycle`: `UIApplication`'s four notifications, observed
+  with no queue so they run in the posting turn; headless `ManualAppLifecycle`, which a test drives with `send`),
+  `backgroundTasks` (`UIKitBackgroundTasks`; headless `NoBackgroundTasks`, which gives no time) and `syncScheduler`
+  (`BGTaskSyncScheduler`; headless `NoBackgroundSyncScheduler`), both copied into model properties because tests
+  replace them, and `makeReachability` (`WebDAVReachability`; headless none). `BackgroundSync`, the `BGTaskRequest`s
+  and the UIKit implementations stay in the app (`BackgroundSync.swift`).
+- **"Keep Screen On"** follows the open editors: `editor`'s and `windowEditors`' `didSet` call `idleTimer?.update()`,
+  and the keeper sets `services.platform.setIdleTimerDisabled` from the setting (`services.settings`), the app's state
+  (`services.lifecycle`) and whether an editor is open. `PlatformServices` already had the call, so no service was
+  added for it.
+- **Words**: the undo step's name is a typed value, `NotebookMoveRecord.moved` (`.notes(count:)`, `.notebook`); the app's
+  `NotebookMoveRecord.actionName` and `SidebarDrop.actionName(_:)` word it with the same strings ("Move Note", "Move
+  Notes", "Move Notebook").
+- **State that left `AppModelAppState`**: all of it (`draggedPayload`, `dropTarget`, `landedDrop`, `backgroundTasks`,
+  `syncScheduler`, `targetsBackgroundToken`, `reachability`, `suspensionToken`, `idleTimer`): the class is empty and
+  goes with `Host.State` in step 7. `lifecycleObservers` became `lifecycleObservation`.
+- **Host steps gone**: `willClose` (the core's `close()` forgets the drag), `editorsChanged` (the core tells the idle
+  timer), `closeWindowEditors`, `openWindowNote` and `reopenWindowNote` (the core calls its own). Left: `prepareEditor`
+  (now for note windows' editors too) and `unreadableText` (step 7).
+- **Split out (step 6b, below)**: the PDF a note dragged to the Finder becomes (`exportPDF`, `prepareExport`,
+  `PreparedExport`, `NotePDFExport.render`/`write`, `AppModel.ExportError`) stays in the app as
+  `AppModel+DragExport.swift`, with the Markdown and HTML drag formats (`NoteDragFormats.swift`) and `ExportFileName`
+  that build on it.
+- **Review of #30, folded in**: `InsertTests.playingReadsTheVerifiedClip…` and the app's `VideoTests` case release the
+  clip after the last `addPosterIfMissing` (the release task raced the deferred close); `BrowserTests.unlockedFixtureModel`
+  closes the model when its setup throws (so `OpenedFilesTests.closingAVaultKeepsTheWaitingPDFs` does);
+  `PDFImportTests.aPasswordProtectedImportWaitsForThePassword` and `VideoTests.insertingWritesTwoBlobsAndOneDelta` close
+  their models, and the password case checks that the work folder, with Core Graphics' `redrawn-*.pdf`, is gone after
+  `.done`; `PortableAttachmentPreparation.preparePDF` says that it never uses the password (an encrypted PDF is
+  refused), and `prepareVideo` checks the size before the probe; headless imports read PDF page text with
+  `BuiltinPDFTextExtractor`, as headless inserts already did.
+- **Tests** in `Tests/SempereAppCoreTests/AppModel`: `LifecycleTests.swift` (`SuspensionLockTests`, `IdleTimerKeeperTests`,
+  `BackgroundTargetsTests` and `MenuBarNewNoteTests`, moved from the app on `ManualAppLifecycle` and the fakes there;
+  new: a scripted launch stays awake, the model's editors and the app's state reach the idle timer through
+  `services.platform`, reachability comes from the services), `NoteWindowTests` (every case but the drag-out PDF) and
+  `DragTests` (the payloads by kind, the rules, the moves, the flash and the drag session); `HostStepTests` checks
+  `prepareEditor` for both kinds of editor and that `close()` forgets a drag. The app keeps `LifecycleAppTests` (the app's
+  services, `UIKitAppLifecycle`'s notifications, the keeper on the real `UserDefaults`, the `BGTaskRequest`s),
+  `NoteWindowTests` (the drag-out PDF, `SelectionStorage`), `DragAndDropTests` (the `UTType`s and item providers, the
+  proposed operation, the undo steps and their names, the Move Notebook sheet) and `MenuBarItemTests` (the item).
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b and 5a to 6 are done (above). The rest of the family, in an
 order that empties `AppModelAppState` and the host's steps:
 
-6. App lifecycle and windows (`+Background`, `+Suspension`, `+Windows`, `+MenuBar`, the drags of `+Browser`): the
-   background-task and lifecycle protocols move, UIKit's implementations stay; `DragPayload`/`DropTarget` leave
-   `SidebarDrop.swift`. "Keep Screen On" (`editorsChanged`, the UIKit `IdleTimerKeeper`) follows the open editors
-   through `PlatformServices.setIdleTimerDisabled`.
+6. App lifecycle and windows: done (step 6, above), but for the drag-out export, which is 6b.
+6b. The drag-out export (`AppModel+DragExport.swift`, split out of step 6): `prepareExport` and `PreparedExport` into
+   the core, drawing with `services.exportRendering` (its blobs set to the note's) instead of naming PDFKit, ImageIO
+   and CoreText; `NotePDFExport.render`/`write` and `ExportFileName` with them; `AppModel.ExportError` becomes a typed
+   value the app words. `NoteDragFormats.swift` (Markdown and HTML through `ShareExport`) can then take its renderers
+   from the services too. Its tests are the app's `NoteWindowTests` export cases, `RobustnessAuditTests`'
+   prepare cases, `MacCatalystTests` and `AppearanceSettingsTests`' drags.
 7. Then `AppModelAppState`, the host's steps and `Host.State` go; `AppHost` keeps only the canvas and the services, and
    the public surface is narrowed to what the views use. The words still made for the model go with them:
    `unreadableText` returns words, so `editorFailure` becomes a typed value the detail pane words; `errorMessage` and

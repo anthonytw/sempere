@@ -25,21 +25,11 @@ public protocol AppModelHost: Sendable {
 
     // MARK: Steps of the extensions still in the app (wave 5b part 3)
 
-    /// At the start of `close()`, once settings sync stopped: the app-side state of the vault (drags) is forgotten.
-    /// The core's `close()` itself cancels a running backup, inbox adoption and import, and forgets the last import's
-    /// report, the drag-out exports and the export requests.
-    @MainActor static func willClose(_ model: AppModelCore<Self>)
-    /// The open editors changed ("Keep Screen On" follows them).
-    @MainActor static func editorsChanged(_ model: AppModelCore<Self>)
-    /// An editor opened for the library window is about to be shown: what happens to recordings made in it once
+    /// An editor opened for the library window or a note window is about to be shown: what happens to recordings made in it once
     /// saved (the microphone half is the app's).
     @MainActor static func prepareEditor(_ editor: NoteEditorModel<Canvas>, of note: UUID, in model: AppModelCore<Self>)
     /// What the detail pane says for a note whose read failed before it was shown.
     @MainActor static func unreadableText(_ editor: NoteEditorModel<Canvas>) -> String
-    /// The note windows' editors (Mac): close them all, open one, reopen one.
-    @MainActor static func closeWindowEditors(_ model: AppModelCore<Self>) async
-    @MainActor static func openWindowNote(_ id: UUID, in model: AppModelCore<Self>) async throws
-    @MainActor static func reopenWindowNote(_ id: UUID, in model: AppModelCore<Self>) async
 }
 
 /// The platform services the moved `AppModel` code takes (docs/design/thin-app.md "The platform protocols"). Each
@@ -47,10 +37,11 @@ public protocol AppModelHost: Sendable {
 ///
 /// One rule for how the model reads them: a service tests replace on a model after it is made is copied into a model
 /// property at init and read from there (`transcriber`, `playbackBackend`, `recordingRoot`, `iCloudHooks`, the WebDAV
-/// remote and passwords, `quickCapture`, `ownerAuthenticator`, and `settings` as `deviceMemory`); every other one is read from `services` when used (`perf`, `settings`,
-/// `bookmarks`, `platform`, `makeRenderCache`, `recordingsInUse`, `audioFiles`, `settingsStorage`,
-/// `makePageRecognizer`, `files`, `exportRendering`, `pdfTextExtractor`, `attachmentPreparation`), and a test passes
-/// its own at init.
+/// remote and passwords, `quickCapture`, `ownerAuthenticator`, `backgroundTasks`, `syncScheduler`, and `settings` as
+/// `deviceMemory`); every other one is read from `services` when used (`perf`, `settings`, `bookmarks`, `platform`,
+/// `makeRenderCache`, `recordingsInUse`, `audioFiles`, `settingsStorage`, `makePageRecognizer`, `files`,
+/// `exportRendering`, `pdfTextExtractor`, `attachmentPreparation`, `lifecycle`, `makeReachability`), and a test passes
+/// its own at init (or, for `lifecycle`, to `observeAppLifecycle` and `keepScreenOn`).
 public struct AppModelServices {
     /// Timing and log lines (`AppPerfSink` in the app).
     public var perf: any PerfSink
@@ -100,12 +91,23 @@ public struct AppModelServices {
     /// shaper: the app's PDFKit, ImageIO and CoreText); headless, none (PDF pages and images are placeholders, text is
     /// left out as the CLI does without fonts).
     public var exportRendering: RenderOptions
-    /// Reads the text of PDF pages for search in an import (`--pdf-text`): the app's PDFKit; headless, none.
+    /// Reads the text of PDF pages for search in an import (`--pdf-text`): the app's PDFKit; headless, the package's
+    /// own (`BuiltinPDFTextExtractor`, as the CLI and `PortableAttachmentPreparation`).
     public var pdfTextExtractor: (any PDFTextExtracting)?
     /// Turns picked images, PDFs and clips into what is stored, and tells a PDF the system opened the app with by its
     /// type: the app's PDFKit and Core Graphics, ImageIO, AVFoundation and `UTType`; headless, the package's own
     /// (`PortableAttachmentPreparation`, as the CLI on Linux).
     public var attachmentPreparation: any AttachmentPreparing
+    /// The application entering and leaving the background, becoming active and resigning (`observeAppLifecycle`,
+    /// "Keep Screen On"): the app's `UIApplication` notifications; headless, `ManualAppLifecycle`.
+    public var lifecycle: any AppLifecycle
+    /// Background time for the last saves and sync runs when the app leaves the screen (`beginBackgroundTask`);
+    /// headless, none is given (`NoBackgroundTasks`).
+    public var backgroundTasks: any BackgroundTaskRunning
+    /// Scheduled background sync tasks (`BGTaskScheduler`); headless, none (`NoBackgroundSyncScheduler`).
+    public var syncScheduler: any BackgroundSyncScheduling
+    /// Watches the network for the WebDAV targets (`startReachability`: the app's `NWPathMonitor`); headless, none.
+    public var makeReachability: @MainActor () -> (any NetworkReachability)?
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,
@@ -119,8 +121,11 @@ public struct AppModelServices {
                 makePageRecognizer: @escaping @MainActor () -> (any PageRecognizing)? = { nil },
                 ownerAuthenticator: any OwnerAuthenticator = NoOwnerCheck(),
                 files: any FileCoordinating = UncoordinatedFiles(),
-                exportRendering: RenderOptions = RenderOptions(), pdfTextExtractor: (any PDFTextExtracting)? = nil,
-                attachmentPreparation: any AttachmentPreparing = PortableAttachmentPreparation()) {
+                exportRendering: RenderOptions = RenderOptions(), pdfTextExtractor: (any PDFTextExtracting)? = BuiltinPDFTextExtractor(),
+                attachmentPreparation: any AttachmentPreparing = PortableAttachmentPreparation(),
+                lifecycle: any AppLifecycle = ManualAppLifecycle(), backgroundTasks: any BackgroundTaskRunning = NoBackgroundTasks(),
+                syncScheduler: any BackgroundSyncScheduling = NoBackgroundSyncScheduler(),
+                makeReachability: @escaping @MainActor () -> (any NetworkReachability)? = { nil }) {
         self.perf = perf
         self.settings = settings
         self.bookmarks = bookmarks
@@ -143,6 +148,10 @@ public struct AppModelServices {
         self.exportRendering = exportRendering
         self.pdfTextExtractor = pdfTextExtractor
         self.attachmentPreparation = attachmentPreparation
+        self.lifecycle = lifecycle
+        self.backgroundTasks = backgroundTasks
+        self.syncScheduler = syncScheduler
+        self.makeReachability = makeReachability
     }
 
     /// A quick capture that records nothing (`QuickCapture`'s defaults), its folders under `scratch`.
@@ -158,7 +167,8 @@ public struct AppModelServices {
     }
 
     /// Memory versions: settings in memory, plain paths for bookmarks, an iPad with no haptics, no server, passwords
-    /// in memory, no iCloud, no transcriber, the package's own attachment preparation.
+    /// in memory, no iCloud, no transcriber, the package's own attachment preparation and PDF page text, an app
+    /// lifecycle driven by hand, no background time, no scheduled tasks and no network watcher.
     public static func headless(settings: any KeyValueStore = MemoryKeyValueStore(),
                                 webdavRemote: any WebDAVRemote = OfflineWebDAVRemote()) -> AppModelServices {
         AppModelServices(perf: NoPerfSink(), settings: settings, bookmarks: PathBookmarks(), platform: HeadlessPlatform(),

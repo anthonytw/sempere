@@ -11,44 +11,22 @@ extension UTType {
     static let sempereNotebook = UTType(exportedAs: "io.github.anthonytw.sempere.notebook", conformingTo: .data)
 }
 
-/// What a drag inside the app carries. Registered with `.ownProcess`
-/// visibility only: ids and paths never go to another app.
-enum DragPayload: Equatable, Sendable {
-    case notes([UUID])
-    case notebook(String)
+/// The app's types for what a drag inside the app carries (`DragPayload`, SempereAppCore): registered with
+/// `.ownProcess` visibility only, so ids and paths never go to another app.
+extension DragPayload {
+    var type: UTType { Self.type(of: kind) }
 
-    /// Most ids or path bytes decoded from a drop (a hostile provider cannot make us read more).
-    static let maxNotes = 100_000
-    static let maxPathBytes = 4096
-
-    var type: UTType {
-        switch self {
+    static func type(of kind: Kind) -> UTType {
+        switch kind {
         case .notes: return .sempereNotes
         case .notebook: return .sempereNotebook
         }
     }
 
-    var data: Data {
-        switch self {
-        case .notes(let ids): return (try? JSONEncoder().encode(ids.map { $0.uuidString.lowercased() })) ?? Data()
-        case .notebook(let path): return Data(path.utf8)
-        }
-    }
-
-    /// The payload in `data`, nil when it is empty or malformed.
+    /// The payload in `data` of the type `type`, nil when it is empty, malformed or of another type.
     static func decode(_ data: Data, as type: UTType) -> DragPayload? {
-        if type == .sempereNotes {
-            guard data.count <= maxNotes * 48,   // a quoted uuid and a comma are 40 bytes
-                  let names = try? JSONDecoder().decode([String].self, from: data), names.count <= maxNotes else { return nil }
-            let ids = names.compactMap { UUID(uuidString: $0) }
-            return ids.isEmpty ? nil : .notes(ids)
-        }
-        if type == .sempereNotebook {
-            guard data.count <= maxPathBytes, let path = String(data: data, encoding: .utf8),
-                  let canonical = NotebookPath.canonical(path) else { return nil }
-            return .notebook(canonical)
-        }
-        return nil
+        guard let kind = Kind.allCases.first(where: { Self.type(of: $0) == type }) else { return nil }
+        return decode(data, kind: kind)
     }
 
     /// An item provider for a drag: whatever `extra` registers (first: other
@@ -70,48 +48,9 @@ enum DragPayload: Equatable, Sendable {
     }
 }
 
-/// Where a drop lands in the sidebar: a notebook, or the top level (the
-/// "All Notes" row).
-enum DropTarget: Hashable, Sendable {
-    case topLevel
-    case notebook(String)
-
-    /// The target a sidebar row stands for; nil for rows that take no drops
-    /// (tags, Recently Deleted, Recently Recognized).
-    init?(_ item: SidebarItem) {
-        switch item {
-        case .allNotes: self = .topLevel
-        case .notebook(let path): self = NotebookPath.canonical(path).map(DropTarget.notebook) ?? .topLevel
-        case .tag, .deleted, .favorites, .recentlyRecognized: return nil
-        }
-    }
-
-    /// The notebook path notes dropped here get; nil: none.
-    var path: String? {
-        if case .notebook(let p) = self { return NotebookPath.canonical(p) }
-        return nil
-    }
-}
-
-/// The rules of dropping notes and notebooks on the sidebar (pure, tested).
-enum SidebarDrop {
-    /// Whether `payload` dropped on `target` would change something and is allowed.
-    ///
-    /// - Notes: allowed when at least one of them (live ones only; ids not in `notes` are
-    ///   ignored, they may not be listed yet) is not in that notebook already.
-    /// - A notebook: allowed when it can move there (never into itself or a
-    ///   notebook inside it, `NotebookPath.moved`) and is not there already.
-    static func accepts(_ payload: DragPayload, on target: DropTarget, notes: [NoteSummary]) -> Bool {
-        switch payload {
-        case .notes(let ids):
-            let wanted = Set(ids)
-            return notes.contains { wanted.contains($0.id) && !$0.deleted && NotebookPath.canonical($0.notebook) != target.path }
-        case .notebook(let path):
-            guard let moved = NotebookPath.moved(path, into: target.path) else { return false }
-            return moved != NotebookPath.canonical(path)
-        }
-    }
-
+/// The app's half of the drop rules (`SidebarDrop.accepts` is the core's): the operation a row proposes and the undo
+/// step's name.
+extension SidebarDrop {
     /// The operation a sidebar row proposes for a drag over it: `.copy` when
     /// the drop is accepted, never `.move`. The notes are moved by the app
     /// (`AppModel.move`), not by the drag session, and the sessions SwiftUI's
@@ -130,25 +69,26 @@ enum SidebarDrop {
     /// The undo menu title of a drop.
     static func actionName(_ payload: DragPayload) -> String {
         switch payload {
-        case .notes(let ids): return ids.count == 1 ? String(localized: "Move Note", comment: "Undo action name: one note moved to a notebook")
+        case .notes(let ids): return NotebookMoveRecord.Moved.notes(count: ids.count).actionName
+        case .notebook: return NotebookMoveRecord.Moved.notebook.actionName
+        }
+    }
+}
+
+extension NotebookMoveRecord.Moved {
+    /// The undo menu title of a move.
+    var actionName: String {
+        switch self {
+        case .notes(let count): return count == 1 ? String(localized: "Move Note", comment: "Undo action name: one note moved to a notebook")
             : String(localized: "Move Notes", comment: "Undo action name: several notes moved to a notebook")
         case .notebook: return String(localized: "Move Notebook", comment: "Undo action name")
         }
     }
 }
 
-/// Where the notes were before a move, to put them back (undo).
-struct NotebookMoveRecord: Equatable, Sendable {
-    var previous: [UUID: String?]
-    var actionName: String
-    /// The empty notebooks (notebook records, format.md §14) the move renamed, if any.
-    var emptyNotebooks: NotebookPathMove? = nil
-}
-
-/// A notebook path renamed from `from` to `to` (nil: its levels lifted to the top).
-struct NotebookPathMove: Equatable, Sendable {
-    var from: String
-    var to: String?
+extension NotebookMoveRecord {
+    /// The undo menu title of this move.
+    var actionName: String { moved.actionName }
 }
 
 /// The delegate of one sidebar row: validates and highlights while a drag is over it,
