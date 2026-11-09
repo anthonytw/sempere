@@ -51,7 +51,7 @@ public enum NoteToolbar {
         /// A note window of its own (Mac), not the library window's canvas.
         var noteWindow = false
         /// What the focused canvas's undo manager can do (`NoteEditorModel.undoAvailability`).
-        var undo = UndoAvailability()
+        public var undo = UndoAvailability()
 
         public init(device: NoteDevice, mode: NoteMode = NoteMode.initial, readOnly: Bool = false, hasPage: Bool = true,
                     pageCount: Int = 1, pageless: Bool = false, hasRecordings: Bool = false, pageEntries: Bool = true,
