@@ -3,7 +3,8 @@
 A plain-language summary for people using Sempere. The design is in
 [`DESIGN.md`](../DESIGN.md) ("Encryption", "Recovery"), the normative format in
 [`format.md`](format.md), and how to report a problem in
-[`SECURITY.md`](../SECURITY.md). This page describes the design; it is not a
+[`SECURITY.md`](../SECURITY.md); the published security and privacy audits, the evidence for
+these claims, are in [`audits/`](audits/README.md). This page describes the design; it is not a
 guarantee. Sempere is free software and comes with no warranty (GPL v3,
 sections 15 and 16).
 

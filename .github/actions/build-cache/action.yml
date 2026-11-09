@@ -20,7 +20,7 @@ runs:
     - id: cachekey
       shell: bash
       run: echo "key=${{ inputs.prefix }}-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(${{ inputs.version-cmd }} 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
-    - uses: actions/cache/restore@v4
+    - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ inputs.path }}
         key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
