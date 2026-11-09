@@ -579,27 +579,13 @@ struct EditorView: View {
         }
     }
 
-    /// Undo and Redo act on the canvas with the focus through `canvasTarget`, never through the responder chain, so a
-    /// tap leaves the focus where it is (⌘Z keeps working). No `.keyboardShortcut`: ⌘Z already arrives through the
-    /// responder chain, and a second binding would fire twice or take ⌘Z from a text field.
-    /// `state` is the one the toolbar builder read (a toolbar item's closure runs outside the view body's observation,
-    /// so reading `editor.undoAvailability` in it would never redraw; the builder's read does).
+    /// Undo and Redo (`UndoRedoButton`).
     private func undoButton(_ state: NoteToolbar.State) -> some View {
-        let name = state.undo.undoName
-        return Button(name.isEmpty ? String(localized: "Undo") : String(localized: "Undo \(name)"),
-                      systemImage: "arrow.uturn.backward") { editor.canvasTarget?.undo() }
-            .disabled(!NoteToolbar.isEnabled(.undo, in: state))
-            .accessibilityIdentifier("undoButton")
-            .help(name.isEmpty ? String(localized: "Undo the last change") : String(localized: "Undo \(name)"))
+        UndoRedoButton(editor: editor, redo: false, state: state)
     }
 
     private func redoButton(_ state: NoteToolbar.State) -> some View {
-        let name = state.undo.redoName
-        return Button(name.isEmpty ? String(localized: "Redo") : String(localized: "Redo \(name)"),
-                      systemImage: "arrow.uturn.forward") { editor.canvasTarget?.redo() }
-            .disabled(!NoteToolbar.isEnabled(.redo, in: state))
-            .accessibilityIdentifier("redoButton")
-            .help(name.isEmpty ? String(localized: "Redo the last change undone") : String(localized: "Redo \(name)"))
+        UndoRedoButton(editor: editor, redo: true, state: state)
     }
 
     private var textToolToggle: some View {
@@ -723,6 +709,34 @@ struct EditorView: View {
             Label("Drawing Tools", systemImage: "paintbrush.pointed")
         }
         .help("Pick the pen, marker, pencil, eraser or lasso (also in the Tools menu)")
+    }
+}
+
+/// The toolbar's Undo or Redo (issue #8). It reads `editor.undoAvailability` in its OWN body: a toolbar item is not
+/// rebuilt from the note view's observation (the Mac's bar kept the buttons disabled after a drag), but a view
+/// that reads the state itself redraws when it changes. It acts on the canvas with the focus through `canvasTarget`,
+/// never through the responder chain, so a tap leaves the focus where it is (⌘Z keeps working). No
+/// `.keyboardShortcut`: ⌘Z already arrives through the responder chain, and a second binding would fire twice or
+/// take ⌘Z from a text field.
+private struct UndoRedoButton: View {
+    let editor: NoteEditor
+    let redo: Bool
+    /// The toolbar's state without the live undo availability (replaced below).
+    let state: NoteToolbar.State
+
+    var body: some View {
+        var live = state
+        live.undo = editor.undoAvailability
+        let name = redo ? live.undo.redoName : live.undo.undoName
+        let title = redo ? (name.isEmpty ? String(localized: "Redo") : String(localized: "Redo \(name)"))
+                         : (name.isEmpty ? String(localized: "Undo") : String(localized: "Undo \(name)"))
+        return Button(title, systemImage: redo ? "arrow.uturn.forward" : "arrow.uturn.backward") {
+            if redo { editor.canvasTarget?.redo() } else { editor.canvasTarget?.undo() }
+        }
+        .disabled(!NoteToolbar.isEnabled(redo ? .redo : .undo, in: live))
+        .accessibilityIdentifier(redo ? "redoButton" : "undoButton")
+        .help(redo ? (name.isEmpty ? String(localized: "Redo the last change undone") : String(localized: "Redo \(name)"))
+                   : (name.isEmpty ? String(localized: "Undo the last change") : String(localized: "Undo \(name)")))
     }
 }
 
