@@ -715,6 +715,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
             guard let self else { return "" }
             return "pan=\(self.canvas.panGestureRecognizer.minimumNumberOfTouches);ink=\(self.canvas.drawingGestureRecognizer.isEnabled ? 1 : 0)"
                 + ";select=\(self.itemSelectionActive ? 1 : 0);text=\(self.textToolActive ? 1 : 0)"
+                + ";undo=\(self.undoState.canUndo ? 1 : 0)\(self.undoState.canRedo ? 1 : 0)"
                 + self.pageAppearanceReport + self.debugToolReport
         }
         itemSelection.debugEmoji = { [weak self] in self?.textEditor.emojiSummary ?? "0,0" }
@@ -1513,7 +1514,8 @@ extension PageCanvasHost: CanvasCommandTarget {
     /// Tells the note editor that this canvas's undo state may have changed (`onUndoStateChanged`).
     /// Never in the middle of SwiftUI's update (it would write the editor's observed state): right after it.
     func undoStateChanged() {
-        guard CanvasFocus.isUpdating else { return onUndoStateChanged?() ?? () }
+        if !CanvasFocus.isUpdating { onUndoStateChanged?() }
+        // Again after the run loop turn: a group that closes at the end of an event (item steps) is complete then.
         DispatchQueue.main.async { [weak self] in self?.onUndoStateChanged?() }
     }
 

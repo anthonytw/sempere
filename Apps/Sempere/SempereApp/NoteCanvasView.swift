@@ -442,10 +442,10 @@ struct EditorView: View {
     private var noteToolbar: some ToolbarContent {
         let state = toolbarState
         ForEach(NoteToolbar.items(.bar, in: state), id: \.self) { item in
-            ToolbarItem(placement: .primaryAction) { toolbarView(item) }
+            ToolbarItem(placement: .primaryAction) { toolbarView(item, state) }
         }
         ForEach(NoteToolbar.items(.overflow, in: state), id: \.self) { item in
-            ToolbarItem(placement: .secondaryAction) { toolbarView(item) }
+            ToolbarItem(placement: .secondaryAction) { toolbarView(item, state) }
         }
         if NoteToolbar.items(.bottomBar, in: state).contains(.pageNavigation) {
             ToolbarItemGroup(placement: .bottomBar) {
@@ -464,12 +464,12 @@ struct EditorView: View {
 
     /// One toolbar item (`NoteToolbar.Item`), wherever it is placed.
     @ViewBuilder
-    private func toolbarView(_ item: NoteToolbar.Item) -> some View {
+    private func toolbarView(_ item: NoteToolbar.Item, _ state: NoteToolbar.State) -> some View {
         switch item {
         case .annotate: modeButton(.annotate)
         case .hand: modeButton(.hand)
-        case .undo: undoButton
-        case .redo: redoButton
+        case .undo: undoButton(state)
+        case .redo: redoButton(state)
         case .drawingTools: macToolsMenu
         case .text: textToolToggle
         case .eraserSize: eraserSizeMenu
@@ -582,20 +582,22 @@ struct EditorView: View {
     /// Undo and Redo act on the canvas with the focus through `canvasTarget`, never through the responder chain, so a
     /// tap leaves the focus where it is (⌘Z keeps working). No `.keyboardShortcut`: ⌘Z already arrives through the
     /// responder chain, and a second binding would fire twice or take ⌘Z from a text field.
-    private var undoButton: some View {
-        let name = editor.undoAvailability.undoName
+    /// `state` is the one the toolbar builder read (a toolbar item's closure runs outside the view body's observation,
+    /// so reading `editor.undoAvailability` in it would never redraw; the builder's read does).
+    private func undoButton(_ state: NoteToolbar.State) -> some View {
+        let name = state.undo.undoName
         return Button(name.isEmpty ? String(localized: "Undo") : String(localized: "Undo \(name)"),
                       systemImage: "arrow.uturn.backward") { editor.canvasTarget?.undo() }
-            .disabled(!NoteToolbar.isEnabled(.undo, in: toolbarState))
+            .disabled(!NoteToolbar.isEnabled(.undo, in: state))
             .accessibilityIdentifier("undoButton")
             .help(name.isEmpty ? String(localized: "Undo the last change") : String(localized: "Undo \(name)"))
     }
 
-    private var redoButton: some View {
-        let name = editor.undoAvailability.redoName
+    private func redoButton(_ state: NoteToolbar.State) -> some View {
+        let name = state.undo.redoName
         return Button(name.isEmpty ? String(localized: "Redo") : String(localized: "Redo \(name)"),
                       systemImage: "arrow.uturn.forward") { editor.canvasTarget?.redo() }
-            .disabled(!NoteToolbar.isEnabled(.redo, in: toolbarState))
+            .disabled(!NoteToolbar.isEnabled(.redo, in: state))
             .accessibilityIdentifier("redoButton")
             .help(name.isEmpty ? String(localized: "Redo the last change undone") : String(localized: "Redo \(name)"))
     }
