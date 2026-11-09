@@ -92,10 +92,12 @@ struct DrawingPaletteView: View {
             }
             if Platform.isPhone {
                 separator
-                PaletteButton(title: "Undo", systemImage: "arrow.uturn.backward", help: "Undo the last change") {
+                PaletteButton(title: "Undo", systemImage: "arrow.uturn.backward", help: "Undo the last change",
+                              enabled: editor.undoAvailability.canUndo) {
                     editor.canvasTarget?.undo()
                 }
-                PaletteButton(title: "Redo", systemImage: "arrow.uturn.forward", help: "Redo the last change undone") {
+                PaletteButton(title: "Redo", systemImage: "arrow.uturn.forward", help: "Redo the last change undone",
+                              enabled: editor.undoAvailability.canRedo) {
                     editor.canvasTarget?.redo()
                 }
             }
@@ -497,6 +499,7 @@ private struct PaletteButton: View {
     let help: String
     var selected = false
     var tint: UIColor?
+    var enabled = true
     let action: () -> Void
 
     init(label: String, systemImage: String, tip: String, selected: Bool = false, tint: UIColor? = nil,
@@ -511,9 +514,10 @@ private struct PaletteButton: View {
 
     /// For literal titles and help (localized).
     init(title: LocalizedStringResource, systemImage: String, help: LocalizedStringResource, selected: Bool = false,
-         action: @escaping () -> Void) {
+         enabled: Bool = true, action: @escaping () -> Void) {
         self.init(label: String(localized: title), systemImage: systemImage, tip: String(localized: help),
                   selected: selected, tint: nil, action: action)
+        self.enabled = enabled
     }
 
     var body: some View {
@@ -533,6 +537,7 @@ private struct PaletteButton: View {
         }
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
+        .disabled(!enabled)
         .accessibilityLabel(Text(verbatim: title))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .help(Text(verbatim: help))

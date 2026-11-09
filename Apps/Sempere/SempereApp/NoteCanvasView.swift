@@ -389,7 +389,7 @@ struct EditorView: View {
         NoteToolbar.State(device: .current, mode: ui.noteMode, readOnly: editor.isReadOnly,
                           hasPage: editor.currentPage != nil, pageCount: editor.pages.count, pageless: editor.isPageless,
                           hasRecordings: !editor.recordings.isEmpty, pageEntries: !pageEntries.isEmpty,
-                          noteWindow: model.windowEditors[editor.noteID] === editor)
+                          noteWindow: model.windowEditors[editor.noteID] === editor, undo: editor.undoAvailability)
     }
 
     /// The note: its summary in the list (title, tags, favorite, deleted).
@@ -468,6 +468,8 @@ struct EditorView: View {
         switch item {
         case .annotate: modeButton(.annotate)
         case .hand: modeButton(.hand)
+        case .undo: undoButton
+        case .redo: redoButton
         case .drawingTools: macToolsMenu
         case .text: textToolToggle
         case .eraserSize: eraserSizeMenu
@@ -575,6 +577,27 @@ struct EditorView: View {
         }) { providers in
             EditorInsert.add(providers, to: editor, page: editor.currentPage?.id, at: nil, model: model, ui: ui, state: insert)
         }
+    }
+
+    /// Undo and Redo act on the canvas with the focus through `canvasTarget`, never through the responder chain, so a
+    /// tap leaves the focus where it is (⌘Z keeps working). No `.keyboardShortcut`: ⌘Z already arrives through the
+    /// responder chain, and a second binding would fire twice or take ⌘Z from a text field.
+    private var undoButton: some View {
+        let name = editor.undoAvailability.undoName
+        return Button(name.isEmpty ? String(localized: "Undo") : String(localized: "Undo \(name)"),
+                      systemImage: "arrow.uturn.backward") { editor.canvasTarget?.undo() }
+            .disabled(!NoteToolbar.isEnabled(.undo, in: toolbarState))
+            .accessibilityIdentifier("undoButton")
+            .help(name.isEmpty ? String(localized: "Undo the last change") : String(localized: "Undo \(name)"))
+    }
+
+    private var redoButton: some View {
+        let name = editor.undoAvailability.redoName
+        return Button(name.isEmpty ? String(localized: "Redo") : String(localized: "Redo \(name)"),
+                      systemImage: "arrow.uturn.forward") { editor.canvasTarget?.redo() }
+            .disabled(!NoteToolbar.isEnabled(.redo, in: toolbarState))
+            .accessibilityIdentifier("redoButton")
+            .help(name.isEmpty ? String(localized: "Redo the last change undone") : String(localized: "Redo \(name)"))
     }
 
     private var textToolToggle: some View {

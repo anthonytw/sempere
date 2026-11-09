@@ -468,6 +468,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
             }
             return
         }
+        defer { editor?.refreshUndoAvailability() }   // the focused slot may have changed
         // A page being drawn on, or a text box being typed in, already has it.
         if slots.values.contains(where: { $0.host.canvas.isFirstResponder || $0.host.textEditor.isEditing }) { return }
         guard let id = editor?.currentPage?.id, let slot = slots[id] else { return }
@@ -708,6 +709,8 @@ extension PageStackHost: CanvasCommandTarget {
         for slot in slots.values { slot.host.toolPicked() }
         return true
     }
+
+    var undoState: UndoAvailability { focusedSlot?.host.undoState ?? UndoAvailability() }
 
     func undo() {
         focusedSlot?.host.undo()

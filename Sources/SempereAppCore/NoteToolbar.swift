@@ -8,6 +8,8 @@ public enum NoteToolbar {
     public enum Item: Hashable, Sendable, CaseIterable {
         // The modes.
         case annotate, hand
+        // Undo and Redo of the canvas with the focus (the app's `UndoManager`; `State.undo` says what is possible).
+        case undo, redo
         // Annotate's tools. `drawingTools` is the Mac's tool menu (the palette's tools as a menu).
         case drawingTools, text, eraserSize
         // Adding to the note.
@@ -48,10 +50,12 @@ public enum NoteToolbar {
         var pageEntries = true
         /// A note window of its own (Mac), not the library window's canvas.
         var noteWindow = false
+        /// What the focused canvas's undo manager can do (`NoteEditorModel.undoAvailability`).
+        var undo = UndoAvailability()
 
         public init(device: NoteDevice, mode: NoteMode = NoteMode.initial, readOnly: Bool = false, hasPage: Bool = true,
                     pageCount: Int = 1, pageless: Bool = false, hasRecordings: Bool = false, pageEntries: Bool = true,
-                    noteWindow: Bool = false) {
+                    noteWindow: Bool = false, undo: UndoAvailability = UndoAvailability()) {
             self.device = device
             self.mode = mode
             self.readOnly = readOnly
@@ -61,6 +65,7 @@ public enum NoteToolbar {
             self.hasRecordings = hasRecordings
             self.pageEntries = pageEntries
             self.noteWindow = noteWindow
+            self.undo = undo
         }
     }
 
@@ -76,7 +81,7 @@ public enum NoteToolbar {
             return .bar
         case .drawingTools:
             return device == .mac ? .bar : nil
-        case .text, .eraserSize, .insert, .recordings, .favorite, .tags:
+        case .text, .eraserSize, .insert, .recordings, .favorite, .tags, .undo, .redo:
             return device == .phone ? .overflow : .bar
         case .pageNavigation:
             return device == .phone ? .bottomBar : .bar
@@ -93,6 +98,8 @@ public enum NoteToolbar {
         switch item {
         // Read-only notes draw and select nothing; a mode needs a page to act on.
         case .annotate, .hand: return writable && s.hasPage
+        // Item moves in Hand mode are undoable, so these stay in every mode (disabled, not hidden: `isEnabled`).
+        case .undo, .redo: return writable && s.hasPage
         // Annotate's tools: only while annotating.
         case .drawingTools, .text, .eraserSize: return writable && s.hasPage && s.mode == .annotating
         case .insert, .paper: return writable
@@ -109,6 +116,15 @@ public enum NoteToolbar {
         case .pages: return s.pageEntries || s.pageCount > 1
         // A Mac note window: the idle timer follows the library window's note (`RootView.applyIdleTimer`).
         case .keepScreenOn: return !(s.device == .mac && s.noteWindow)
+        }
+    }
+
+    /// Whether an offered `item` can be used now: Undo and Redo follow the focused canvas's undo manager.
+    public static func isEnabled(_ item: Item, in s: State) -> Bool {
+        switch item {
+        case .undo: return s.undo.canUndo
+        case .redo: return s.undo.canRedo
+        default: return true
         }
     }
 

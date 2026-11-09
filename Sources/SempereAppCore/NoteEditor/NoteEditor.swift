@@ -14,6 +14,9 @@ import Sempere
 @Observable
 public final class NoteEditorModel<Canvas: NoteCanvas> {
     public let noteID: UUID
+    /// What the focused canvas's undo manager can do: the toolbar's Undo and Redo follow it. The app's canvas
+    /// glue writes it (observable, so the bar updates); the editor itself holds no undo stack.
+    public var undoAvailability = UndoAvailability()
     /// Pages in display order, as loaded plus pages added here.
     public internal(set) var pages: [Page]
     public internal(set) var meta: NoteMeta

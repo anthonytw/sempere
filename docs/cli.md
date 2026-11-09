@@ -1356,7 +1356,8 @@ no longer be rebuilt: revisions before it were compacted away and no snapshot
 at or before it covers them, or one before it (or any snapshot) is unreadable. Unreadable
 revisions are not listed; a warning on stderr counts them.
 
-`restore` makes the note look as it did at `REVISION` (the merge of every
+`restore` is the CLI's revert (the app's Undo and Redo buttons undo the steps of the open session on one
+canvas and are not available here: a command is one delta, with no session stack). It makes the note look as it did at `REVISION` (the merge of every
 revision up to and including it, `docs/format.md` §5.7) by writing **one new
 delta**; no existing file is changed or deleted. Pages and strokes added since
 are removed, those removed since are re-added under new ids with `parent`

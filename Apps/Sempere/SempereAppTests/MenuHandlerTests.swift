@@ -24,6 +24,7 @@ struct MenuHandlerTests {
         var undos = 0, redos = 0
         func undo() { undos += 1 }
         func redo() { redos += 1 }
+        var undoState: UndoAvailability { UndoAvailability() }
         func zoom(in zoomingIn: Bool) { zooms.append(zoomingIn) }
         func zoomToFit() { fits += 1 }
         func zoomToActualSize() { actuals += 1 }
