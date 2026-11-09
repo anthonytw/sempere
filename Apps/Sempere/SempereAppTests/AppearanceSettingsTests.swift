@@ -191,7 +191,7 @@ struct AppearanceSettingsTests {
     @Test(arguments: [DragExportFormat.markdown, .html])
     func aDraggedNoteIsWrittenInTheChosenFormat(_ format: DragExportFormat) async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
-        defer { try? FileManager.default.removeItem(at: model.exportFolder) }
+        defer { model.close() }   // and the export folder is emptied
         let prepared = try await model.prepareExport(noteID: NoteWindowTests.lecture)
         let url = try await Task.detached { try prepared.write(format: format) }.value
         #expect(url.lastPathComponent == "Fixture lecture.\(format.fileExtension)")

@@ -159,7 +159,7 @@ struct MacDragOutTests {
 
     @Test func theFileIsDeliveredWhileTheMainThreadWaits() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
-        defer { try? FileManager.default.removeItem(at: model.exportFolder) }
+        defer { model.close() }
         let prepare = NoteFileDrag.prepare(Self.lecture, model: model)
         _ = try await prepare.value   // the drag began a moment before the drop
         let delivery = Delivery()
@@ -179,7 +179,7 @@ struct MacDragOutTests {
 
     @Test func theProviderOffersThePDFFirstUnderTheNotesName() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
-        defer { try? FileManager.default.removeItem(at: model.exportFolder) }
+        defer { model.close() }
         let prepare = NoteFileDrag.prepare(Self.lecture, model: model)
         let provider = DragPayload.notes([Self.lecture]).provider { provider in
             NoteFileDrag.register(on: provider, title: "Fixture lecture", prepare: prepare)
@@ -200,7 +200,7 @@ struct MacDragOutTests {
 
     @Test func aFileOnlyProviderOffersJustTheFile() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
-        defer { try? FileManager.default.removeItem(at: model.exportFolder) }
+        defer { model.close() }
         let prepare = NoteFileDrag.prepare(Self.lecture, model: model)
         let provider = DragPayload.notes([Self.lecture]).provider(includePayload: false) { provider in
             NoteFileDrag.register(on: provider, title: "Fixture lecture", prepare: prepare)
@@ -291,15 +291,6 @@ struct MacDragOutTests {
         #expect(NoteDragDebug.load(from: defaults, environment: [:]) == NoteDragDebug(style: .uikit, control: true, fileOnly: true))
         defaults.set("sideways", forKey: NoteDragDebug.styleKey)
         #expect(NoteDragDebug.load(from: defaults, environment: [:]).style == nil, "an unknown style is the shipped one")
-    }
-
-    @Test func aDragFromAClosedVaultWritesNothing() async throws {
-        let (model, _) = try await NoteWindowTests.unlockedModel()
-        let prepared = try await model.prepareExport(noteID: Self.lecture)
-        model.close()
-        #expect(throws: CancellationError.self) { _ = try prepared.write() }
-        let left = (try? FileManager.default.contentsOfDirectory(atPath: model.exportFolder.path)) ?? []
-        #expect(left.isEmpty, "no plaintext PDF after the vault closed")
     }
 
     @Test func droppedFilesAreNamedAfterTheTitle() {

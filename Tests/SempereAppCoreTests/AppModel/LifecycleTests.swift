@@ -23,7 +23,8 @@ final class FakeBackgroundTasks: BackgroundTaskRunning {
     var grant = true
     private(set) var begun: [BackgroundTaskToken] = []
     private(set) var ended: [BackgroundTaskToken] = []
-    private var expiry: (@MainActor @Sendable () -> Void)?
+    /// Each assertion's expiry handler, by its token, until it ends.
+    private var expiries: [BackgroundTaskToken: @MainActor @Sendable () -> Void] = [:]
     private var next = 1
 
     func begin(name: String, expired: @escaping @MainActor @Sendable () -> Void) -> BackgroundTaskToken? {
@@ -31,14 +32,20 @@ final class FakeBackgroundTasks: BackgroundTaskRunning {
         let token = BackgroundTaskToken(raw: next)
         next += 1
         begun.append(token)
-        expiry = expired
+        expiries[token] = expired
         return token
     }
 
-    func end(_ token: BackgroundTaskToken) { ended.append(token) }
+    func end(_ token: BackgroundTaskToken) {
+        ended.append(token)
+        expiries[token] = nil
+    }
 
-    /// The system takes the background time back.
-    func expire() { expiry?() }
+    /// The system takes the background time back: of `token`, or of every assertion still running (oldest first).
+    func expire(_ token: BackgroundTaskToken? = nil) {
+        let tokens = token.map { [$0] } ?? begun.filter { expiries[$0] != nil }
+        for t in tokens { expiries[t]?() }
+    }
 }
 
 @MainActor
@@ -220,6 +227,37 @@ extension AppModelSuites {
         }
     }
 
+    /// `ManualAppLifecycle`, the headless lifecycle the tests drive.
+    @MainActor
+    struct ManualAppLifecycleTests {
+        @MainActor
+        final class Seen {
+            var events: [AppLifecycleEvent] = []
+        }
+
+        /// Whether this runs on the main thread (not readable from an async context directly).
+        nonisolated static func onMainThread() -> Bool { Thread.isMainThread }
+
+        /// A cancel on the main thread stops the observer before it returns, so no event sent after it arrives (review
+        /// of #31). Where the main actor's tests are not on the main thread (Linux), the cancel hops to the main actor.
+        @Test func aCancelStopsTheObserver() async {
+            let lifecycle = ManualAppLifecycle()
+            let seen = Seen()
+            let observation = lifecycle.observe { seen.events.append($0) }
+            lifecycle.send(.didEnterBackground)
+            #expect(lifecycle.observerCount == 1)
+            observation.cancel()
+            if Self.onMainThread() {
+                #expect(lifecycle.observerCount == 0, "removed at once")
+            } else {
+                #expect(await TS.waitUntil(timeout: .seconds(30)) { lifecycle.observerCount == 0 })
+            }
+            lifecycle.send(.willEnterForeground)
+            #expect(seen.events == [.didEnterBackground])
+            #expect(!lifecycle.isInBackground, "the state still follows the events")
+        }
+    }
+
     /// "The iPad seems to keep the screen on, even when it's not enabled": the idle timer is the app's, applied
     /// from the app's state and the stored setting, never left disabled by a scene that went away (moved from the app,
     /// whose `UIKitAppLifecycleTests` keep the notifications and the real `UserDefaults`).
@@ -397,6 +435,7 @@ extension AppModelSuites {
             let log = BackgroundRunLog()
             let refs = [Self.ref(), Self.ref()]
             let coordinator = await Self.coordinator(refs, log: log)
+            defer { for r in refs { _ = coordinator.stop(r.id) } }
             let model = AppModel()
             defer { model.close() }
             let tasks = FakeBackgroundTasks(), scheduler = FakeSyncScheduler()
@@ -409,7 +448,6 @@ extension AppModelSuites {
             #expect(tasks.begun.count == 1)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { tasks.ended == tasks.begun }, "the assertion ends once the runs did")
             model.enterForeground()
-            for r in refs { _ = coordinator.stop(r.id) }
         }
 
         /// The sync's background time follows the app, not the library scene (review of #105, finding 3): on an
@@ -419,6 +457,7 @@ extension AppModelSuites {
             let log = BackgroundRunLog()
             let refs = [Self.ref(), Self.ref()]
             let coordinator = await Self.coordinator(refs, log: log)
+            defer { for r in refs { _ = coordinator.stop(r.id) } }
             let model = AppModel()
             defer { model.close() }
             let tasks = FakeBackgroundTasks(), scheduler = FakeSyncScheduler()
@@ -433,7 +472,6 @@ extension AppModelSuites {
             #expect(await TS.waitUntil(timeout: .seconds(30)) { tasks.ended == tasks.begun })
             center.send(.willEnterForeground)
             #expect(model.targetsBackgroundToken == nil)
-            for r in refs { _ = coordinator.stop(r.id) }
         }
 
         /// Offline audit A-P3: uploads waiting only for folder targets (a USB drive, a local folder) ask for a
@@ -443,6 +481,7 @@ extension AppModelSuites {
             let folder = Self.ref(.folder), dav = Self.ref()
             let davID = dav.id
             let coordinator = await Self.coordinator([folder, dav], log: log, unconfirmed: { $0 == davID ? 0 : 3 })
+            defer { for r in [folder, dav] { _ = coordinator.stop(r.id) } }
             let model = AppModel()
             defer { model.close() }
             let scheduler = FakeSyncScheduler()
@@ -454,7 +493,6 @@ extension AppModelSuites {
             let session = try #require(coordinator.sessions[dav.id])
             session.noteWrite()   // a WebDAV upload waits now
             #expect(model.processingRequest == .processing(needsNetwork: true))
-            for r in [folder, dav] { _ = coordinator.stop(r.id) }
         }
 
         /// Watching the network starts once, from `services.makeReachability`, and a change reaches the coordinator.
@@ -478,6 +516,7 @@ extension AppModelSuites {
             let log = BackgroundRunLog()
             let refs = [Self.ref(), Self.ref()]
             let coordinator = await Self.coordinator(refs, log: log, failing: [refs[0].id], unconfirmed: { _ in 0 })
+            defer { for r in refs { _ = coordinator.stop(r.id) } }
             let model = AppModel()
             defer { model.close() }
             let scheduler = FakeSyncScheduler()
@@ -490,7 +529,6 @@ extension AppModelSuites {
             await model.runBackgroundTask(.refresh)
             #expect(log.targets == [refs[0].id, refs[0].id], "the failed target is retried; the idle one is left out")
             #expect(scheduler.requests == [.refresh])
-            for r in refs { _ = coordinator.stop(r.id) }
         }
     }
 

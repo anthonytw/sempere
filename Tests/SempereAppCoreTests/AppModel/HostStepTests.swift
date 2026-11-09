@@ -42,11 +42,15 @@ extension AppModelSuites {
             _ = try await model.openWindowNote(id)
             #expect(model.appState.steps.filter { $0 == "prepareEditor" }.count == prepared + 2)
 
-            // `close()` forgets a drag in progress itself (step 6: no `willClose` step any more).
+            // `close()` forgets a drag in progress and a row's flash itself (step 6: no `willClose` step any more).
             model.beginDrag(.notes([id]))
             model.setDropTarget(.topLevel)
+            model.landedDropDuration = .seconds(60)
+            model.flashLandedDrop(.topLevel)
+            #expect(model.landedDrop != nil)
             model.close()
             #expect(model.draggedPayload == nil && model.dropTarget == nil)
+            #expect(model.landedDrop == nil, "no flash outlives the vault (step 6b)")
             await model.closingEditor?.value
         }
 

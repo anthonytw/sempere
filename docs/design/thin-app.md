@@ -577,9 +577,9 @@ Wave 5b, part 3, step 6 (app lifecycle and windows, 2026-11-08) moved:
   timer), `closeWindowEditors`, `openWindowNote` and `reopenWindowNote` (the core calls its own). Left: `prepareEditor`
   (now for note windows' editors too) and `unreadableText` (step 7).
 - **Split out (step 6b, below)**: the PDF a note dragged to the Finder becomes (`exportPDF`, `prepareExport`,
-  `PreparedExport`, `NotePDFExport.render`/`write`, `AppModel.ExportError`) stays in the app as
+  `PreparedExport`, `NotePDFExport.render`/`write`, `AppModel.ExportError`) stayed in the app as
   `AppModel+DragExport.swift`, with the Markdown and HTML drag formats (`NoteDragFormats.swift`) and `ExportFileName`
-  that build on it.
+  that build on it, until step 6b moved them.
 - **Review of #30, folded in**: `InsertTests.playingReadsTheVerifiedClip…` and the app's `VideoTests` case release the
   clip after the last `addPosterIfMissing` (the release task raced the deferred close); `BrowserTests.unlockedFixtureModel`
   closes the model when its setup throws (so `OpenedFilesTests.closingAVaultKeepsTheWaitingPDFs` does);
@@ -598,16 +598,45 @@ Wave 5b, part 3, step 6 (app lifecycle and windows, 2026-11-08) moved:
   `NoteWindowTests` (the drag-out PDF, `SelectionStorage`), `DragAndDropTests` (the `UTType`s and item providers, the
   proposed operation, the undo steps and their names, the Move Notebook sheet) and `MenuBarItemTests` (the item).
 
-**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b and 5a to 6 are done (above). The rest of the family, in an
+Wave 5b, part 3, step 6b (the drag-out export, 2026-11-08) moved:
+
+- **`AppModel+DragExport.swift` and `NoteDragFormats.swift`** into `Sources/SempereAppCore/AppModel/AppModel+DragExport.swift`:
+  `exportPDF`, `prepareExport`, `PreparedExport` (`write()`, `write(format:)`), `NotePDFExport.Rendered`, `render` and
+  `write` (next to the core's folder and purge), `NoteDragExport` (Markdown and HTML through `ShareExport`), the pure
+  part of `DragExportFormat` (the cases, `key`, `defaultValue`, `load(from:)`/`save(_:to:)` on a `KeyValueStore`,
+  `fileExtension`) and `ExportFileName` (with `base(title:)`, the name without its extension, which
+  `NoteFileDrag.suggestedName` now returns).
+- **Services, not the platform**: the drag-out draws with `services.exportRendering`, read when the export is prepared
+  and carried in `PreparedExport.rendering` (so the file is still written off the main actor, from any thread); its
+  blobs are set to the note's `vault.blobSource(note:)` for the PDF, and the Markdown and HTML files take its PDF
+  rasterizer, shaper and image decoder. Nothing in the core names PDFKit, ImageIO or CoreText. No service was added.
+- **Typed values the app words**: `AppModel.ExportError` is the core's `DragExportError` (`.unreadableRevisions(n)`);
+  the app's `Export+Text.swift` words it with the same string and catalog key (retroactive
+  `CustomStringConvertible`). `DragExportFormat.title` and the v1 switch `showsInSettings` stay in the app
+  (`AppearancePreferences.swift`), with `load()` on `UserDefaults.standard`.
+- **What stays in the app**: `NoteFileDrag` (the `UTType` of each format, the item providers, the file request's wait
+  and timeout, `DragLog`) and the drag source. They take the core's `PreparedExport`.
+- **Review of #31, folded in**: `ManualAppLifecycle`'s cancel removes the handler at once on the main thread
+  (`MainActor.assumeIsolated`), and hops with a task only from another thread (a release elsewhere);
+  `BackgroundTargetsTests` stop their coordinators in a `defer` right after making them; `FakeBackgroundTasks` keeps
+  one expiry handler per token (`expire(_:)`, all running ones by default); `LifecycleAppTests.leavingTheScreenReachesTheModel`
+  runs on a fake `backgroundTasks` and checks that nothing was asked of the scheduler or the background time; `close()`
+  forgets `landedDrop` (`HostStepTests`).
+- **Tests** in `Tests/SempereAppCoreTests/AppModel/DragExportTests.swift`: `DragExportTests` (the named file in the
+  model's export folder, no collisions, unsaved ink, the refusals without a vault and with an unreadable revision in
+  every format, nothing written after a close, a PDF background and a text box drawn through the services' rendering
+  with its blobs, Markdown and HTML, the purge, the stored format) and `ExportFileNameTests` (from the app's
+  `MacSupportTests`). The app keeps the check that its renderers draw the same pages through the services as before
+  (`NoteWindowTests.theDraggedPDFDrawsThroughTheServicesAsBefore`: a note with a PDF background and a text box, the PDF
+  byte for byte as PDFKit, ImageIO and CoreText named directly drew it), `MacDragOutTests` (the file promise with the
+  main thread blocked, the providers), `RobustnessAuditTests`' timeouts, `AppearanceSettingsTests`' drags (the `UTType`s,
+  Markdown and HTML on the app's renderers) and the words (`ExportTests.progressAndFailureLines`).
+
+**Wave 5b, part 3 (the rest of the plan).** Steps 1 to 4b and 5a to 6b are done (above). The rest of the family, in an
 order that empties `AppModelAppState` and the host's steps:
 
-6. App lifecycle and windows: done (step 6, above), but for the drag-out export, which is 6b.
-6b. The drag-out export (`AppModel+DragExport.swift`, split out of step 6): `prepareExport` and `PreparedExport` into
-   the core, drawing with `services.exportRendering` (its blobs set to the note's) instead of naming PDFKit, ImageIO
-   and CoreText; `NotePDFExport.render`/`write` and `ExportFileName` with them; `AppModel.ExportError` becomes a typed
-   value the app words. `NoteDragFormats.swift` (Markdown and HTML through `ShareExport`) can then take its renderers
-   from the services too. Its tests are the app's `NoteWindowTests` export cases, `RobustnessAuditTests`'
-   prepare cases, `MacCatalystTests` and `AppearanceSettingsTests`' drags.
+6. App lifecycle and windows: done (step 6, above).
+6b. The drag-out export (`AppModel+DragExport.swift`, split out of step 6): done (step 6b, above).
 7. Then `AppModelAppState`, the host's steps and `Host.State` go; `AppHost` keeps only the canvas and the services, and
    the public surface is narrowed to what the views use. The words still made for the model go with them:
    `unreadableText` returns words, so `editorFailure` becomes a typed value the detail pane words; `errorMessage` and

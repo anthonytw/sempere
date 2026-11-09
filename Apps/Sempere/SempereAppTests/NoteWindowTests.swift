@@ -1,12 +1,15 @@
 import Age
 import Foundation
+import PDFKit
 import Sempere
+import SempereRender
 import Testing
 @testable import SempereApp
 import SempereAppCore
 
-/// The PDF a note drags out as (Mac), and the scene storage's rule. The window editors, claims and restoring the
-/// library window's selection are the core's (`Tests/SempereAppCoreTests/AppModel/NoteWindowTests.swift`).
+/// The PDF a note drags out as (Mac) on the app's renderers, and the scene storage's rule. The window editors, claims,
+/// restoring the library window's selection and the drag-out export's model (`exportPDF`, `prepareExport`, the folder
+/// and its purge) are the core's (`Tests/SempereAppCoreTests/AppModel/NoteWindowTests.swift`, `DragExportTests.swift`).
 @MainActor
 struct NoteWindowTests {
     static let lecture = AppModelTests.lecture
@@ -14,8 +17,13 @@ struct NoteWindowTests {
     static func unlockedModel() async throws -> (AppModel, URL) {
         let (url, key) = try AppModelTests.fixtureVault()
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(200))
-        try await model.openVault(at: url)
-        try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
+        do {
+            try await model.openVault(at: url)
+            try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
+        } catch {
+            model.close()
+            throw error
+        }
         return (model, url)
     }
 
@@ -27,53 +35,37 @@ struct NoteWindowTests {
 
     // MARK: - PDF export (drag to Finder)
 
-    @Test func exportWritesANamedPDFOfTheNote() async throws {
+    /// Step 6b: the drag-out PDF is drawn through `services.exportRendering`. A note with a PDF background and a text
+    /// box renders the same pages as the app drew them before, naming PDFKit, ImageIO and CoreText itself, and the
+    /// text box is drawn (without the shaper the PDF differs).
+    @Test func theDraggedPDFDrawsThroughTheServicesAsBefore() async throws {
         let (model, _) = try await Self.unlockedModel()
         defer { model.close() }
-        let url = try await model.exportPDF(noteID: Self.lecture)
-        defer { try? FileManager.default.removeItem(at: model.exportFolder) }
-        #expect(url.lastPathComponent == "Fixture lecture.pdf")
-        let data = try Data(contentsOf: url)
-        #expect(data.starts(with: Data("%PDF-".utf8)))
-        #expect(data.count > 500)
-    }
-
-    @Test func exportsOfOneTitleDoNotCollide() async throws {
-        let (model, _) = try await Self.unlockedModel()
-        defer { model.close() }
-        let a = try await model.exportPDF(noteID: Self.lecture)
-        let b = try await model.exportPDF(noteID: Self.lecture)
-        defer { try? FileManager.default.removeItem(at: model.exportFolder) }
-        #expect(a != b)
-        #expect(a.lastPathComponent == b.lastPathComponent)
-    }
-
-    @Test func exportIncludesInkNotYetSaved() async throws {
-        let (model, _) = try await Self.unlockedModel()
-        defer { model.close() }
-        let before = try await model.exportPDF(noteID: Self.lecture)
-        model.selectedNoteID = Self.lecture
+        model.blobCacheFolder = TestTemp.root.appendingPathComponent(UUID().uuidString)
+        let vault = try #require(model.vault)
+        let source = try PDFImportTests.makePDF(pages: 2)
+        guard case .done(let id) = await model.importPDF(copy: source, to: .newNote(notebook: nil), password: nil) else {
+            Issue.record("not imported: \(model.errorMessage ?? "")")
+            return
+        }
+        model.selectedNoteID = id
         await model.showSelectedNote()
         let editor = try #require(model.editor)
-        editor.addPage()
-        let after = try await model.exportPDF(noteID: Self.lecture)
-        defer { try? FileManager.default.removeItem(at: model.exportFolder) }
-        #expect(try Data(contentsOf: after).count > (try Data(contentsOf: before)).count, "the new page is in the PDF")
-    }
+        let page = try #require(editor.currentPage).id
+        let content = TextContent(size: 18, color: .black, runs: [TextRun("Drawn by CoreText")])
+        #expect(editor.addTextBox(content, frame: Rect(x: 120, y: 120, w: 240, h: 60), on: page) != nil)
 
-    @Test func exportNeedsAnUnlockedVault() async throws {
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        await #expect(throws: AppModel.ModelError.noVaultOpen) { _ = try await model.exportPDF(noteID: Self.lecture) }
-    }
-
-    @Test func oldExportsArePurgedAndNewOnesKept() throws {
-        let folder = TestTemp.root.appendingPathComponent("purge-\(UUID().uuidString)")
-        let rendered = NotePDFExport.Rendered(title: "T", pdf: Data("%PDF-1.4".utf8))
-        let url = try NotePDFExport.write(rendered, in: folder)
-        NotePDFExport.purge(in: folder, olderThan: 600)
-        #expect(FileManager.default.fileExists(atPath: url.path))
-        NotePDFExport.purge(in: folder, olderThan: 600, now: Date().addingTimeInterval(3600))
-        #expect(!FileManager.default.fileExists(atPath: url.path))
-        try? FileManager.default.removeItem(at: folder)
+        let url = try await model.exportPDF(noteID: id)   // saves the text box first
+        let throughServices = try Data(contentsOf: url)
+        let state = try vault.reconstruct(noteId: id)
+        #expect(state.pages.first?.items.contains { $0.kind == .text } == true, "the text box was saved before the export")
+        let before = RenderOptions(blobs: vault.blobSource(note: id), pdfRasterizer: PDFKitRasterizer(),
+                                   imageDecoder: ImageIODecoder(), shaper: CoreTextShaper())
+        #expect(throughServices == (try PDFWriter.render(note: state, options: before)), "the same PDF as before 6b")
+        let document = try #require(PDFDocument(data: throughServices))
+        #expect(document.pageCount == 2, "one page per PDF page")
+        var unshaped = before
+        unshaped.shaper = nil
+        #expect(throughServices != (try PDFWriter.render(note: state, options: unshaped)), "the text box is drawn")
     }
 }

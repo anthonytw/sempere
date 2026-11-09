@@ -1184,11 +1184,12 @@ public final class AppModelCore<Host: AppModelHost> {
     /// note's pending changes and any edit already being written are saved.
     public func close() {
         generation += 1
-        // Settings sync stops and a drag in progress is forgotten; a backup, inbox adoption or import still running is
-        // canceled below.
+        // Settings sync stops and a drag in progress (and a sidebar row's flash) is forgotten; a backup, inbox
+        // adoption or import still running is canceled below.
         stopSettingsSync()
         draggedPayload = nil
         dropTarget = nil
+        landedDrop = nil
         takeoverAlert = nil
         sightingRowsState = []
         resetAttachmentIndex()

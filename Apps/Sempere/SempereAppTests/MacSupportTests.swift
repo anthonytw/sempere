@@ -96,31 +96,3 @@ struct WindowValueTests {
         #expect(odd?.sidebarRef == .item(.allNotes))
     }
 }
-
-struct ExportFileNameTests {
-    @Test func plainTitlesKeepTheirName() {
-        #expect(ExportFileName.pdf(title: "Fixture lecture") == "Fixture lecture.pdf")
-        #expect(ExportFileName.pdf(title: "Física – tema 3") == "Física – tema 3.pdf")
-    }
-
-    @Test func pathCharactersAndControlsAreReplaced() {
-        #expect(ExportFileName.pdf(title: "a/b:c\\d") == "a b c d.pdf")
-        #expect(ExportFileName.pdf(title: "line\none\u{0}two\u{7}") == "line one two.pdf")
-        #expect(ExportFileName.pdf(title: "../../etc/passwd") == "etc passwd.pdf")
-        #expect(ExportFileName.pdf(title: ".hidden") == "hidden.pdf")
-    }
-
-    @Test func emptyTitlesAreUntitled() {
-        #expect(ExportFileName.pdf(title: "") == "Untitled.pdf")
-        #expect(ExportFileName.pdf(title: "  \n ") == "Untitled.pdf")
-        #expect(ExportFileName.pdf(title: "///") == "Untitled.pdf")
-    }
-
-    @Test func longTitlesAreCutOnACharacterBoundary() {
-        let name = ExportFileName.pdf(title: String(repeating: "é", count: 500))
-        let base = String(name.dropLast(4))
-        #expect(base.utf8.count <= ExportFileName.maxBytes)
-        #expect(base.allSatisfy { $0 == "é" })
-        #expect(name.utf8.count <= 255)
-    }
-}

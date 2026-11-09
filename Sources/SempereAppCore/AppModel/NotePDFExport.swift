@@ -2,7 +2,7 @@ import Foundation
 
 /// Where notes dragged out of the app (a Mac drop on the Finder) are written as plaintext files: one folder per
 /// model under `$TMPDIR/SempereExport/` (`AppModelCore.exportFolder`), emptied when the vault closes. Rendering
-/// them (PDFKit, CoreText) is the app's (`NotePDFExport.render`, `write`).
+/// and writing them is `AppModel+DragExport.swift` (`NotePDFExport.render`, `write`, on `services.exportRendering`).
 public enum NotePDFExport {
     /// Folder under the temporary directory holding exported files, one
     /// sub-folder per export so equal titles never collide.

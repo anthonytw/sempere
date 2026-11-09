@@ -40,18 +40,22 @@ struct LifecycleAppTests {
         #expect(box.seen.count == 4, "nothing after the cancel")
     }
 
-    /// The model's lifecycle on UIKit's notifications: leaving the screen lets the sync's background time begin
-    /// (the core's `BackgroundTargetsTests` drive the rest on `ManualAppLifecycle`).
+    /// The model's lifecycle on UIKit's notifications: leaving the screen starts the suspension in the posting turn
+    /// (the core's `SuspensionLockTests` and `BackgroundTargetsTests` drive the rest on `ManualAppLifecycle`). The
+    /// system's services are fakes, so the test host never begins a real assertion or schedules a real task.
     @Test func leavingTheScreenReachesTheModel() {
         let center = NotificationCenter()
         let model = AppModel()
         defer { model.close() }
-        let scheduler = RecordingScheduler()
+        let scheduler = RecordingScheduler(), tasks = RecordingBackgroundTasks()
         model.syncScheduler = scheduler
+        model.backgroundTasks = tasks
         model.observeAppLifecycle(UIKitAppLifecycle(center: center, state: { .active }))
         model.releasesLocksInBackground = true
         center.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
         #expect(model.locksSuspended, "the suspension started in the posting turn")
+        #expect(scheduler.requests.isEmpty, "no sync target: no background task is asked for")
+        #expect(tasks.begun == 0, "no vault and no target: no background time is asked for")
         center.post(name: UIApplication.willEnterForegroundNotification, object: nil)
         #expect(!model.locksSuspended)
     }
@@ -104,4 +108,14 @@ private final class Box {
 private final class RecordingScheduler: BackgroundSyncScheduling {
     private(set) var requests: [BackgroundSyncRequest] = []
     func schedule(_ request: BackgroundSyncRequest) { requests.append(request) }
+}
+
+@MainActor
+private final class RecordingBackgroundTasks: BackgroundTaskRunning {
+    private(set) var begun = 0
+    func begin(name: String, expired: @escaping @MainActor @Sendable () -> Void) -> BackgroundTaskToken? {
+        begun += 1
+        return BackgroundTaskToken(raw: begun)
+    }
+    func end(_ token: BackgroundTaskToken) {}
 }

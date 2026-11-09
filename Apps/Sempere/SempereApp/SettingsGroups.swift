@@ -1,4 +1,5 @@
 import SwiftUI
+import SempereAppCore
 
 /// The groups of the Settings panel, each a page (`SettingsGroupPage`): a list
 /// to drill into on iPad and iPhone, the sidebar of the Settings window on the Mac.

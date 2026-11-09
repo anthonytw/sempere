@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereAppCore
 
 /// Settings ▸ General ▸ Appearance: the app's theme (System, Light, Dark),
 /// applied to every window (`AppThemeWindows`). Synced as `appearance.theme`
@@ -81,36 +82,15 @@ enum NotePagesAppearance: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Settings ▸ General ▸ Drag to Finder: the file a note dragged out of the
-/// note list becomes (Mac). Only formats the share exporter writes as one
-/// file for one note (`ShareExport`); synced as `drag.format` (Mac only).
-enum DragExportFormat: String, CaseIterable, Identifiable, Sendable {
-    case pdf, markdown, html
-
-    var id: String { rawValue }
-
+/// Settings ▸ General ▸ Drag to Finder (the core's `DragExportFormat`): the app's
+/// switch, the stored choice in `UserDefaults` and the titles.
+extension DragExportFormat {
     /// The one switch for v1: false hides Settings ▸ General ▸ Drag to Finder (the Finder
     /// does not accept the drop yet). The stored setting and `drag.format` sync are unchanged.
     static let showsInSettings = false
-    static let key = "Sempere.dragFormat"
-    static let defaultValue = DragExportFormat.pdf
 
-    static func load(from defaults: any KeyValueStore = UserDefaults.standard) -> DragExportFormat {
-        defaults.string(forKey: key).flatMap(DragExportFormat.init(rawValue:)) ?? defaultValue
-    }
-
-    static func save(_ value: DragExportFormat, to defaults: any KeyValueStore = UserDefaults.standard) {
-        defaults.set(value.rawValue, forKey: key)
-    }
-
-    /// The dropped file's extension.
-    var fileExtension: String {
-        switch self {
-        case .pdf: return "pdf"
-        case .markdown: return "md"
-        case .html: return "html"
-        }
-    }
+    /// The choice in the app's defaults.
+    static func load() -> DragExportFormat { load(from: UserDefaults.standard) }
 
     var title: String {
         switch self {

@@ -52,3 +52,14 @@ extension UnsavedChangesError: @retroactive CustomStringConvertible {
         String(localized: "Its latest changes could not be saved, so it was not exported.")
     }
 }
+
+/// Why a note dragged out (`PreparedExport` in SempereAppCore) was not written: the sentence `AppModel.ExportError`
+/// had in the app, same string and catalog key.
+extension DragExportError: @retroactive CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .unreadableRevisions(let n):
+            return String(localized: "\(n) revisions of this note could not be read, so it cannot be exported completely.")
+        }
+    }
+}

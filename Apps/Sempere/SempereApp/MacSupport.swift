@@ -63,36 +63,3 @@ enum PointerCursor {
         return min(max(toolWidth * zoom, range.lowerBound), range.upperBound)
     }
 }
-
-/// File names for exported notes (drag to Finder).
-enum ExportFileName {
-    /// The longest base name in bytes (file systems allow 255 for the whole name).
-    static let maxBytes = 120
-
-    /// `title` as a safe `.pdf` file name: no path separators, colons or
-    /// control characters, no leading dot, bounded length, "Untitled" when
-    /// nothing is left.
-    static func pdf(title: String) -> String {
-        var cleaned = ""
-        for scalar in title.unicodeScalars {
-            switch scalar {
-            case "/", ":", "\\", "\0": cleaned.unicodeScalars.append(" ")
-            default:
-                if scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .format {
-                    cleaned.unicodeScalars.append(" ")
-                } else {
-                    cleaned.unicodeScalars.append(scalar)
-                }
-            }
-        }
-        var words = cleaned.split(whereSeparator: { $0 == " " }).joined(separator: " ")
-        while let first = words.first, first == "." || first == " " { words.removeFirst() }
-        var base = ""
-        for character in words {
-            if base.utf8.count + String(character).utf8.count > maxBytes { break }
-            base.append(character)
-        }
-        base = base.trimmingCharacters(in: .whitespaces)
-        return (base.isEmpty ? "Untitled" : base) + ".pdf"
-    }
-}

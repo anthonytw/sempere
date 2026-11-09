@@ -445,8 +445,9 @@ main-actor part (the
 open note's pending ink is saved and, in iCloud Drive, the note downloaded:
 `AppModel.prepareExport`) starts when the drag begins, and the request only
 waits for it, then renders and writes off the main actor
-(`PreparedExport.write`) with `SempereRender.PDFWriter`, the same renderer as
-`sempere export`. `MacDragOutTests` checks that the file arrives while the main
+(`PreparedExport.write`, SempereAppCore) with `SempereRender.PDFWriter`, the same renderer as
+`sempere export`, drawing PDF pages, images and text boxes with the model's
+`services.exportRendering` (in the app PDFKit, ImageIO and CoreText). `MacDragOutTests` checks that the file arrives while the main
 thread is blocked. A note with unreadable revisions is refused rather than
 exported with pages missing; a drag prepared before the vault closed writes
 nothing (`ExportEpoch`). The file is plaintext, written under

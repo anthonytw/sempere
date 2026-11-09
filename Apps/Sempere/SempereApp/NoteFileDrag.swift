@@ -8,9 +8,11 @@ import SempereAppCore
 ///
 /// On a Mac the drop becomes a file promise, and the system may ask for the
 /// file while the main thread waits for it. So the main-actor part (saving
-/// the note's pending ink, the iCloud download: `AppModel.prepareExport`)
+/// the note's pending ink, the iCloud download: the core's `AppModel.prepareExport`)
 /// starts when the drag begins, and the file request only waits for it and
-/// renders off the main actor: it never needs the main thread itself.
+/// renders off the main actor: it never needs the main thread itself. Rendering
+/// and writing the file are the core's (`PreparedExport`, `AppModel+DragExport.swift`
+/// in SempereAppCore); the file types (`UTType`) and item providers are this file's.
 enum NoteFileDrag {
     /// Starts preparing `noteID` for export (the drag began).
     @MainActor
@@ -20,8 +22,7 @@ enum NoteFileDrag {
 
     /// The name the dropped file gets, without its extension (the system adds `.pdf`, `.md`, `.html`).
     static func suggestedName(title: String) -> String {
-        let name = ExportFileName.pdf(title: title)
-        return String(name.dropLast(".pdf".count))
+        ExportFileName.base(title: title)
     }
 
     /// Registers the note's file in `format` (the setting's, by default) on

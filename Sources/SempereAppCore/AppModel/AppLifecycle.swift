@@ -48,7 +48,13 @@ public final class ManualAppLifecycle: AppLifecycle {
         let id = UUID()
         handlers[id] = handler
         return AppLifecycleObservation { [weak self] in
-            Task { @MainActor in self?.handlers[id] = nil }
+            // A cancel on the main thread stops the observer at once; only a release elsewhere (an off-main deinit)
+            // hops to the main actor.
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { self?.handlers[id] = nil }
+            } else {
+                Task { @MainActor in self?.handlers[id] = nil }
+            }
         }
     }
 
