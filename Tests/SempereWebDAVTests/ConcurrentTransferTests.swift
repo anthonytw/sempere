@@ -24,6 +24,35 @@ final class InFlight: @unchecked Sendable {
     var maximum: Int { lock.lock(); defer { lock.unlock() }; return peak }
 }
 
+/// Makes a cancel land while blobs are in flight, without racing the clock. It holds the second and later segment request
+/// of every blob until `blobs` different blobs are waiting there (each has then written its first segment, so each has a
+/// partial file), sets the cancel flag, and only then lets them all go: whatever the machine's load, that many blobs are cut
+/// short and kept. (A cancel "after a third of the bytes" raced the pool: under load every blob in flight could be between
+/// segments or not yet started, and no partial file was left.) A gate nobody reaches times out instead of hanging the run.
+final class SegmentGate: @unchecked Sendable {
+    private let cond = NSCondition()
+    private var waiting = Set<String>()
+    private var open = false
+    private(set) var timedOut = false
+    let blobs: Int
+    let timeout: TimeInterval
+    let onOpen: @Sendable () -> Void
+    init(blobs: Int, timeout: TimeInterval = 60, onOpen: @escaping @Sendable () -> Void) {
+        self.blobs = blobs; self.timeout = timeout; self.onOpen = onOpen
+    }
+    /// Blocks a later segment of `path` until the gate opens.
+    func arrive(_ path: String) {
+        cond.lock(); defer { cond.unlock() }
+        if open { return }
+        waiting.insert(path)
+        if waiting.count >= blobs { open = true; onOpen(); cond.broadcast(); return }
+        let deadline = Date().addingTimeInterval(timeout)
+        while !open {
+            if !cond.wait(until: deadline) { timedOut = true; open = true; onOpen(); cond.broadcast(); return }
+        }
+    }
+}
+
 /// Task W1: listings and downloads `concurrency` at a time, with progress and
 /// cancellation, keeping every check of a one-at-a-time run (quarantine,
 /// resume, run bounds, blobs before revisions).
@@ -105,6 +134,27 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
             inFlight.leave()
             return nil
         }
+    }
+
+    /// The first-run options and the gate that cancel a pull with `blobs` blobs mid-flight (see `SegmentGate`); the server also
+    /// holds each request a moment, as `slowDown` does.
+    func cancelWhenBlobsAreInFlight(_ server: MockDAV, blobs: Int = 3) -> (gate: SegmentGate, configure: (inout SyncOptions) -> Void) {
+        let stop = Recorder<Bool>()
+        let gate = SegmentGate(blobs: blobs) { stop.append(true) }
+        server.interceptor = { r in
+            if r.method == "GET", r.url.path.contains("/att/"),
+               let range = r.headers["Range"], range.hasPrefix("bytes="),
+               let start = Int(range.dropFirst(6).prefix { $0 != "-" }), start > 0 {
+                gate.arrive(r.url.path)
+            }
+            usleep(2000)
+            return nil
+        }
+        return (gate, { o in
+            o.concurrency = 6
+            o.blobSegmentBytes = 16_384
+            o.isCancelled = { !stop.all.isEmpty }
+        })
     }
 
     // MARK: - The pool
@@ -243,20 +293,16 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
     func testCancelledMidwayWithSeveralInFlightResumes() throws {
         let server = MockDAV()
         try serverVault(server, blobs: 2, blobSize: 200_000)
-        slowDown(server, InFlight(), millis: 2)
-        let stop = Recorder<Bool>()
-        let first = try pull("B", server) {
-            $0.concurrency = 6
-            $0.blobSegmentBytes = 16_384
-            $0.progress = { p in if p.stage == .downloading && p.bytesDone > p.bytesTotal / 3 { stop.append(true) } }
-            $0.isCancelled = { !stop.all.isEmpty }
-        }
+        let armed = cancelWhenBlobsAreInFlight(server)
+        let first = try pull("B", server, configure: armed.configure)
+        XCTAssertFalse(armed.gate.timedOut, "\(armed.gate.blobs) blobs never got to their second segment")
+        server.interceptor = nil
         XCTAssertEqual(first.stoppedEarly, "sync run canceled", "\(first)")
         XCTAssertTrue(first.quarantined.isEmpty, "\(first)")
         let placed = first.downloaded.filter { $0.hasPrefix("notes/") }.count
         XCTAssertLessThan(placed, 6 * 4)
         let cut = partials("B")
-        XCTAssertFalse(cut.isEmpty, "blobs cut short are kept to continue")
+        XCTAssertGreaterThanOrEqual(cut.count, armed.gate.blobs, "blobs cut short are kept to continue")
         let sizes = Dictionary(uniqueKeysWithValues: cut.map {
             (String($0.lastPathComponent.dropFirst(SyncEngine.partialPrefix.count)), (try? Data(contentsOf: $0).count) ?? 0)
         })

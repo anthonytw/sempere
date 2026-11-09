@@ -11,14 +11,10 @@ extension ConcurrentTransferTests {
     func testReviewProgressMonotoneWhenResumeGets200() throws {
         let server = MockDAV()
         try serverVault(server, blobs: 2, blobSize: 200_000)
-        slowDown(server, InFlight(), millis: 2)
-        let stop = Recorder<Bool>()
-        let first = try pull("B", server) {
-            $0.concurrency = 6
-            $0.blobSegmentBytes = 16_384
-            $0.progress = { p in if p.stage == .downloading && p.bytesDone > p.bytesTotal / 3 { stop.append(true) } }
-            $0.isCancelled = { !stop.all.isEmpty }
-        }
+        let armed = cancelWhenBlobsAreInFlight(server)
+        let first = try pull("B", server, configure: armed.configure)
+        XCTAssertFalse(armed.gate.timedOut, "\(armed.gate.blobs) blobs never got to their second segment")
+        server.interceptor = nil
         XCTAssertEqual(first.stoppedEarly, "sync run canceled")
         XCTAssertFalse(partials("B").isEmpty, "precondition: partial blobs to resume")
         let placed = first.downloaded.filter { $0.hasPrefix("notes/") }.count
