@@ -135,6 +135,7 @@ jobs:
           scripts/check-test-defaults.sh
           scripts/check-ui-tests.sh
           scripts/test-mirror-gitea.sh
+          scripts/test-release-flow.sh
           python3 -I scripts/test-runner.py --self-test
       - name: Portability
         run: scripts/check-portability.sh

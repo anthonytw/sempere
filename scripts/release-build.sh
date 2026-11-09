@@ -17,7 +17,7 @@
 #      (scripts/smoke-linux-cli.sh). The architecture Docker runs natively must pass; the emulated one
 #      is reported, because emulation has failed on its own before (tar under qemu on Ubuntu 26.04)
 #   6. SHA256SUMS and notes.md (the CHANGELOG section)
-# Output: build/release/vVERSION/. Next: scripts/release-github.sh VERSION.
+# Output: build/release/vVERSION/. Next: scripts/release-publish.sh VERSION.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo=$PWD
@@ -98,4 +98,4 @@ done
 step "SHA256SUMS"
 (cd "$out" && shasum -a 256 *.tar.gz > SHA256SUMS && cat SHA256SUMS)
 echo
-echo "built $tag in $out. Next: just release-github $version"
+echo "built $tag in $out. Next: just release-publish $version"
