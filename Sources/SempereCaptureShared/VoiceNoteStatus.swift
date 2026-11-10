@@ -93,8 +93,8 @@ public struct VoiceNoteStatus: Codable, Equatable, Sendable {
         }
     }
 
-    /// What the widgets and the control draw: the nib when ready, a system symbol otherwise. The nib is a template
-    /// image in the widget extension's OWN asset catalog (bundle files read fine before the first unlock; the App
+    /// What the widgets and the control draw: the nib when ready, a system symbol otherwise. The nib is a custom
+    /// symbol in the widget extension's OWN asset catalog (bundle files read fine before the first unlock; the App
     /// Group's container may not).
     public var glyph: VoiceNoteGlyph {
         phase == .ready ? .custom(VoiceNoteGlyph.nibName) : .system(symbol)

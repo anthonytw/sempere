@@ -100,7 +100,7 @@ struct VoiceNoteWidgetView: View {
                 Button(intent: status.tapIntent) {
                     ZStack {
                         Color.clear
-                        glyph(.title2, size: 44).widgetAccentable()
+                        glyph(.title2, nib: .system(size: 62)).widgetAccentable()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -117,11 +117,12 @@ struct VoiceNoteWidgetView: View {
         }
     }
 
-    /// The status's glyph: the nib (a template image of this extension's catalog, `size` points tall) when ready,
+    /// The status's glyph: the nib (a custom symbol of this extension's catalog, `SempereNib.symbolset`) when ready,
+    /// at the `nib` font (a symbol is about 0.7 of its font size tall: 62 is about 44 pt, 100 about 70 pt),
     /// otherwise its system symbol at `font`.
-    @ViewBuilder private func glyph(_ font: Font, size: CGFloat) -> some View {
+    @ViewBuilder private func glyph(_ font: Font, nib: Font) -> some View {
         switch status.glyph {
-        case .custom(let name): Image(name).resizable().scaledToFit().frame(height: size)
+        case .custom(let name): Image(name).font(nib)
         case .system(let name): Image(systemName: name).font(font)
         }
     }
@@ -129,10 +130,10 @@ struct VoiceNoteWidgetView: View {
     @ViewBuilder private var label: some View {
         switch family {
         case .accessoryCircular:
-            glyph(.title2, size: 44).widgetAccentable()
+            glyph(.title2, nib: .system(size: 62)).widgetAccentable()
         case .accessoryRectangular:
             HStack(spacing: 6) {
-                glyph(.title3, size: 20).widgetAccentable()
+                glyph(.title3, nib: .title3).widgetAccentable()
                 VStack(alignment: .leading, spacing: 0) {
                     Text(status.title).font(.headline).lineLimit(1)
                     secondLine.font(.caption).lineLimit(1)
@@ -141,7 +142,7 @@ struct VoiceNoteWidgetView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         default:
             VStack(spacing: 8) {
-                glyph(.system(size: 44), size: 70)
+                glyph(.system(size: 44), nib: .system(size: 100))
                     .foregroundStyle(status.phase == .recording ? Color.red : Color.accentColor)
                 Text(status.title).font(.headline).multilineTextAlignment(.center)
                 secondLine.font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)

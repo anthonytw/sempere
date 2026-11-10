@@ -389,7 +389,7 @@ struct EditorView: View {
         NoteToolbar.State(device: .current, mode: ui.noteMode, readOnly: editor.isReadOnly,
                           hasPage: editor.currentPage != nil, pageCount: editor.pages.count, pageless: editor.isPageless,
                           hasRecordings: !editor.recordings.isEmpty, pageEntries: !pageEntries.isEmpty,
-                          noteWindow: model.windowEditors[editor.noteID] === editor, undo: editor.undoAvailability)
+                          noteWindow: model.windowEditors[editor.noteID] === editor)
     }
 
     /// The note: its summary in the list (title, tags, favorite, deleted).

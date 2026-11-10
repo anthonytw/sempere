@@ -383,7 +383,7 @@ notes are set up yet.
 The file is protected until the first unlock after boot. Before it, the
 extension cannot read it (and nothing can record: the capture profile is a
 Keychain item readable only after the first unlock), and the widget shows
-the plain record button. The widget draws the nib (a template image in the
+the plain record button. The widget draws the nib (a custom symbol in the
 widget extension's own asset catalog, `SempereWidgets/Assets.xcassets`; bundle
 files read fine before the first unlock, the App Group may not) when ready and
 system symbols otherwise, and is marked
@@ -409,7 +409,7 @@ for a vault.
 ## Not verified yet
 
 - On an iPhone: reboot; before the first unlock the Lock Screen widget shows the nib (the ready glyph, from the
-  extension's bundle). If it does not render there, the fallback is `mic.fill` on the Lock Screen only.
+  extension's bundle); Control Center shows the nib too (a control draws only symbols). If it does not render there, the fallback is `mic.fill` on the Lock Screen only.
 - On an iPhone (build 7): a Control Center, Action button or Siri start records in the background, with
   Recent Starts showing `session=not mixable` (the order fixed it) or `session=mixable after a refusal`
   (the fallback did), and the recording is audible with music playing in another app in the mixable case.
