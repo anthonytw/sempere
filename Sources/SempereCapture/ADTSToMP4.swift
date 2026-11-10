@@ -171,8 +171,9 @@ public enum ADTSToMP4 {
     }
 
     static func plan(_ segments: [Data], tail: Tail) throws -> Plan {
-        let total = segments.reduce(0) { $0 + $1.count }
-        guard total <= maxInputBytes else { throw ADTSError.tooLarge(maxInputBytes) }
+        // Summed as Int64: segment counts could wrap a 32 bit `Int` (arm64_32).
+        let total = segments.reduce(Int64(0)) { $0 + Int64($1.count) }
+        guard total <= Int64(maxInputBytes) else { throw ADTSError.tooLarge(maxInputBytes) }
         var params: Params?
         var frames: [Frame] = []
         for (i, s) in segments.enumerated() {

@@ -2,8 +2,8 @@
 # Compile the package targets the Apple Watch app links for watchOS (docs/design/1.1-watch.md §5): `Age`, `Sempere` and
 # `SempereCapture`, with the device SDK, unsigned, so a watchOS build failure in `Sources/` (CZlib, file APIs,
 # CryptoKit availability) shows here and not when the watch app lands. Runs nothing. Needs Xcode with the watchOS SDK
-# (`xcodebuild -showsdks` lists it); macOS only. Not part of the PR gate unless the CI image has the SDK
-# (docs/ci.md "watchOS compile").
+# (`xcodebuild -showsdks` lists it); macOS only. It runs in the `iOS build` job of the PR gate (the xcode-27
+# image has the SDK) and in local-ci.sh's `ios-build` step (docs/ci.md "watchOS compile").
 #
 #   scripts/build-watchos-package.sh              # all three
 #   scripts/build-watchos-package.sh SempereCapture   # one (its dependencies build too)

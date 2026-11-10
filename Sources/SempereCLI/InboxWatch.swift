@@ -67,7 +67,7 @@ struct InboxWatchProvision: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("The notebook captures are adopted into.", valueName: "name"))
     var notebook: String = CaptureProfile.defaultNotebook
 
-    @Option(name: .long, help: ArgumentHelp("The payload's counter (default: the time in seconds); a watch takes only a larger one.",
+    @Option(name: .long, help: ArgumentHelp("The payload's counter (default: the time in seconds, which fits until 2038); a watch takes only a larger one.",
                                             valueName: "n"))
     var seq: Int?
 
@@ -81,6 +81,7 @@ struct InboxWatchProvision: ParsableCommand {
     func run() throws {
         let recipient: NativeRecipient
         do { recipient = try NativeRecipient(string: to) } catch { throw CLIError.usage("not a watch recipient: \(to)") }
+        guard recipient.isPostQuantum else { throw CLIError.usage("the watch's key must be a post-quantum (age1pq1…) recipient") }
         let vault = try access.openVault(.required)
         let device = try vault.writerDevice ?? DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
         let profile = try vault.captureProfile(device: device, notebook: notebook)

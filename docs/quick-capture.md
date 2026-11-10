@@ -427,6 +427,10 @@ arrives in a later release, and nothing here is visible yet). Three things are i
   does not hold into a queue for it. Then it acknowledges. A file sealed under an older epoch keeps it in the ledger, and
   `catchUp` re-seals it.
 
+The muxer copies frames and cannot trim the encoder's delay, so every segment joint carries about 88 ms of priming at
+24 kHz (2112 samples): a note of n segments plays about (n - 1) x 88 ms shorter than the manifest's duration, which counts
+every frame (the system also removes one priming from the start of the file).
+
 `sempere inbox watch keygen|provision|seal|receive` run each step from the command line (docs/cli.md "Watch").
 
 ## Not verified yet

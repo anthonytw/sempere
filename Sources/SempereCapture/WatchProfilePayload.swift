@@ -6,6 +6,11 @@ import Sempere
 // D3). The watch has a provisioning key pair of its own (`age1pq1…`); the phone age-encrypts the profile to the watch's
 // recipient, so the capture key never sits in WatchConnectivity's persisted context (which is outside the Keychain) as
 // plaintext. The watch holds the profile and nothing else: no identity, no vault key, no device key.
+//
+// age gives CONFIDENTIALITY here, not sender authentication: anyone who knows the watch's public recipient can encrypt a
+// payload to it. That a profile (or a clear) comes from the paired iPhone rests on the WatchConnectivity channel between
+// paired devices, not on this layer. A forged PROFILE, not only a forged clear, would redirect the watch's audio to a
+// vault the forger holds; the watch app must therefore take provisioning only from the session delegate's callbacks.
 
 /// Why a provisioning payload is not accepted.
 public enum WatchPayloadError: Error, Equatable, Sendable, CustomStringConvertible {
@@ -17,6 +22,8 @@ public enum WatchPayloadError: Error, Equatable, Sendable, CustomStringConvertib
     /// The profile inside does not validate (`CaptureWriter(profile:)` would refuse it).
     case invalidProfile(String)
     case tooLarge
+    /// The watch's recipient is not a post-quantum key (every key here is: format.md §3.1).
+    case classicRecipient
 
     public var description: String {
         switch self {
@@ -25,6 +32,7 @@ public enum WatchPayloadError: Error, Equatable, Sendable, CustomStringConvertib
         case .unsupportedVersion(let v): return "provisioning payload version \(v) is not supported"
         case .invalidProfile(let why): return "the provisioned capture profile is not valid: \(why)"
         case .tooLarge: return "the provisioning payload is too large"
+        case .classicRecipient: return "the watch's key is not a post-quantum (age1pq1…) key"
         }
     }
 }
@@ -62,11 +70,26 @@ public struct WatchProfilePayload: Codable, Equatable, Sendable {
     }
 
     /// The profile the watch seals with.
+    /// Valid payloads have exactly one profile (`validate`, which decoding runs), so these cannot trap.
     public var profile: CaptureProfile { profiles[0].profile }
     public var vaultName: String { profiles[0].vaultName }
 
     /// The longest vault name kept (it is shown on a watch face).
     static let maxNameLength = 200
+
+    enum CodingKeys: String, CodingKey { case version, seq, issued, profiles }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(Int.self, forKey: .version)
+        seq = try c.decode(Int.self, forKey: .seq)
+        issued = try c.decode(Date.self, forKey: .issued)
+        profiles = try c.decode([Entry].self, forKey: .profiles)
+        // Never an empty array behind `profile`: the shape is checked as it is decoded.
+        guard profiles.count == 1 else {
+            throw DecodingError.dataCorruptedError(forKey: .profiles, in: c, debugDescription: "exactly one profile is read")
+        }
+    }
 
     private static func encoder() -> JSONEncoder {
         let e = JSONEncoder()
@@ -85,7 +108,7 @@ public struct WatchProfilePayload: Codable, Equatable, Sendable {
     public func sealed(to recipient: NativeRecipient) throws -> Data {
         try validate()
         // Post-quantum only, like every key here (format.md §3.1).
-        guard recipient.isPostQuantum else { throw WatchPayloadError.invalidProfile("the watch's key is not post-quantum") }
+        guard recipient.isPostQuantum else { throw WatchPayloadError.classicRecipient }
         return try AgeFile.encrypt(try Self.encoder().encode(self), to: [recipient])
     }
 

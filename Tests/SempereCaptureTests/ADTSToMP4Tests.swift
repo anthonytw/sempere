@@ -23,6 +23,17 @@ final class ADTSToMP4Tests: XCTestCase {
         return out
     }
 
+    /// The sample sizes (`stsz`) and the first chunk offset (`stco`) of `mp4`.
+    static func sampleTable(_ mp4: Data) -> (sizes: [Int], firstOffset: Int)? {
+        let bytes = [UInt8](mp4)
+        func find(_ tag: String) -> Int? { bytes.indices.first { bytes[$0...].starts(with: Array(tag.utf8)) } }
+        func u32(_ at: Int) -> Int { bytes[at..<at + 4].reduce(0) { $0 << 8 | Int($1) } }
+        guard let z = find("stsz"), let c = find("stco") else { return nil }
+        let count = u32(z + 12)
+        guard z + 16 + count * 4 <= bytes.count, u32(c + 8) > 0 else { return nil }
+        return ((0..<count).map { u32(z + 16 + $0 * 4) }, u32(c + 12))
+    }
+
     func testGoldenBytes() throws {
         // Three frames of 10, 20 and 30 payload bytes at 24 kHz, mono.
         var stream = Data()

@@ -156,7 +156,7 @@ public enum PublishedSummaries {
 
     /// `deviceMagic ‖ epoch (u32 BE) ‖ version (u64 BE)`.
     static func deviceHeader(epoch: Int, version: Int64) throws -> Data {
-        guard (0...Int(UInt32.max)).contains(epoch) else { throw PublishedSummariesError.damaged("epoch out of range") }
+        guard (0...Int(clamping: UInt32.max)).contains(epoch) else { throw PublishedSummariesError.damaged("epoch out of range") }
         guard (1...maxVersion).contains(version) else { throw PublishedSummariesError.damaged("version out of range") }
         let e = UInt32(epoch), v = UInt64(version)
         return Data(deviceMagic) + Data((0..<4).reversed().map { UInt8(e >> (8 * UInt32($0)) & 0xff) })

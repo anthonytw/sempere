@@ -2184,14 +2184,14 @@ recording's card on its page).
 sempere inbox watch keygen --out FILE                                       (a throwaway watch key)
 sempere inbox watch provision --to RECIPIENT --out FILE [--notebook NAME] [--seq N]   (needs the key once)
 sempere inbox watch seal AUDIO --payload FILE --identity FILE --outbox DIR [--title T] [--started TIME]
-sempere inbox watch receive OUTBOX [--received FILE] [--queue DIR] [--ack FILE] [--store DIR]
+sempere inbox watch receive OUTBOX [--vault PATH] [--received FILE] [--queue DIR] [--ack FILE] [--store DIR]
 ```
 
 The Apple Watch's voice notes (`docs/design/1.1-watch.md`, `docs/quick-capture.md` "Apple Watch"), each step run by the
 same code the watch and the iPhone run, so everything but the screen can be scripted and tested without a watch.
 `keygen` writes a watch **provisioning identity** (an `age1pq1…` key, mode 0600, never over an existing file) and prints its
 recipient. `provision` (it needs the key once, like `enable`) builds this vault's capture profile for the device it was
-unlocked as, with the vault's name and a counter (`--seq`, default the time in seconds; a watch takes only a larger one),
+unlocked as, with the vault's name and a counter (`--seq`, default the time in seconds, which fits the watch's 32-bit counter until 2038 (give `--seq` for a longer-lived setup); a watch takes only a larger one),
 **age-encrypted to the watch's recipient**, so the capture key is never plaintext on the way, and writes it to `--out`.
 `seal` acts as the watch: it opens the payload with the watch's identity (a payload for another watch, or a damaged one, is
 refused), remuxes an ADTS (`.aac`) file to MPEG-4 with the muxer the watch uses (an `.m4a` is sealed as it is; anything else

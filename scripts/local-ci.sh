@@ -89,7 +89,7 @@ describe() {   # step: what it runs
     help)       echo "scripts/check-help.py          (every toolbar and icon-only control has a .help tooltip; tests use TestDefaults; every UI test class is in one of app.sh's device lists)" ;;
     package)    echo "swift build --build-tests && swift test --parallel --skip Benchmarks (through scripts/test-runner.py; benchmarks are scripts/bench.sh); skips targets whose hash already passed (scripts/ci-hash.py)" ;;
     mac)        echo "scripts/app.sh test-mac        (Mac Catalyst unit tests, pseudo-language layouts included)" ;;
-    ios-build)  echo "scripts/app.sh build-ios       (iOS simulator compile check, no tests)" ;;
+    ios-build)  echo "scripts/app.sh build-ios       (iOS simulator compile check, no tests), then scripts/build-watchos-package.sh (the watch's package targets for watchOS)" ;;
     mac-offline) echo "scripts/app.sh test-mac-offline (Mac Catalyst unit tests with the network refused, OfflineModeTests)" ;;
     mac-ui)     echo "scripts/app.sh test-mac-ui     (Mac UI tests; screen)" ;;
     mac-smoke)  echo "scripts/app.sh test-mac-smoke  (Mac launch smoke tests; screen)" ;;
@@ -143,7 +143,7 @@ run_step() {
     help)       scripts/check-help.py --self-test && /usr/bin/python3 -I scripts/ci-hash.py --self-test && scripts/test-ci-hash-guard.sh && /usr/bin/python3 -I scripts/ci-hash.py check-reads && scripts/check-help.py && scripts/check-test-defaults.sh && scripts/check-ui-tests.sh && scripts/test-mirror-gitea.sh >/dev/null && /usr/bin/python3 -I scripts/test-runner.py --self-test ;;
     package)    scripts/ci-mac-package.sh ;;
     mac)        scripts/app.sh test-mac ;;
-    ios-build)  scripts/app.sh build-ios ;;
+    ios-build)  scripts/app.sh build-ios && scripts/build-watchos-package.sh ;;
     mac-offline) scripts/app.sh test-mac-offline ;;
     mac-ui)     scripts/app.sh test-mac-ui ;;
     mac-smoke)  scripts/app.sh test-mac-smoke ;;

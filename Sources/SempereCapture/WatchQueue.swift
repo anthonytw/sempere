@@ -19,8 +19,9 @@ public enum WatchQueue {
     public static func store(_ sealed: SealedCapture, in folder: URL) throws {
         if let epoch = sealed.epoch, let id = sealed.epochId {
             try FileIO.createDirectory(folder)
-            try Data("\(epoch) \(id.map { String(format: "%02x", $0) }.joined())\n".utf8)
-                .write(to: epochSidecar(folder.appendingPathComponent(sealed.name)), options: .atomic)
+            // Durable (flushed, renamed, the folder flushed), as the file itself is.
+            try FileIO.writePrivate(Data("\(epoch) \(id.map { String(format: "%02x", $0) }.joined())\n".utf8),
+                                    to: epochSidecar(folder.appendingPathComponent(sealed.name)))
         }
         try CaptureWriter.store(sealed, in: folder)
     }

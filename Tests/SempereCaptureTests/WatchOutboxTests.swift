@@ -156,4 +156,55 @@ final class WatchOutboxTests: XCTestCase {
         clock.advance(600)
         XCTAssertNil(try WatchOutbox(directory: dir, limits: limits, now: { clock.now }).entry(meta.id))
     }
+
+    /// Review blocker B1: a crash after the capture file and before its sidecar, then a sweep sealing the SAME id to new bytes.
+    func testASealedFileOfACrashedAddIsReplacedNotKeptUnderOtherMetadata() throws {
+        let (box, dir, clock) = try outbox()
+        let profile = try WatchFixture.profile
+        let id = UUID()
+        let a = try WatchFixture.sealed(audio: Data("first".utf8), id: id)
+        let b = try WatchFixture.sealed(audio: Data("second, sealed again".utf8), id: id)
+        XCTAssertNotEqual(a.data, b.data, "every seal is new bytes")
+        // The crash: A's file is there, nothing else.
+        try CaptureWriter.store(a, in: dir)
+        let reopened = try WatchOutbox(directory: dir, now: { clock.now })
+        XCTAssertNil(reopened.entry(id), "a file with no sidecar is not an entry")
+        _ = box
+        let meta = try reopened.add(b, vault: profile.vaultId)
+        XCTAssertEqual(try Data(contentsOf: reopened.fileURL(id)), b.data, "the bytes on disk are B's")
+        XCTAssertEqual(meta.sha256, FileDigest.sha256(try Data(contentsOf: reopened.fileURL(id))))
+        // And the phone accepts it.
+        let intake = try WatchIntakeTests().rig()
+        let result = try intake.intake.receive(file: reopened.fileURL(id), meta: meta)
+        XCTAssertEqual(result.outcome, .placed(.vault))
+    }
+
+    /// A sidecar written for new bytes before a crash can sit beside an older file: it is not recovered as an entry.
+    func testASidecarBesideAnOlderFileIsNotRecovered() throws {
+        let (box, dir, clock) = try outbox()
+        let id = UUID()
+        let a = try WatchFixture.sealed(audio: Data("first".utf8), id: id)
+        let b = try WatchFixture.sealed(audio: Data("second".utf8), id: id)
+        try CaptureWriter.store(a, in: dir)
+        let metaB = try WatchTransferMeta(sealed: b, vault: try WatchFixture.profile.vaultId)
+        let enc = JSONEncoder()
+        try enc.encode(metaB).write(to: dir.appendingPathComponent("\(id.uuidString.lowercased()).meta.json"))
+        _ = box
+        XCTAssertNil(try WatchOutbox(directory: dir, now: { clock.now }).entry(id))
+    }
+
+    /// Review N6: the acked state reaches the disk before the files go; a crash in between leaves files the next load deletes.
+    func testAnAckIsSavedBeforeTheFilesGo() throws {
+        let (box, dir, clock) = try outbox()
+        let meta = try box.add(try WatchFixture.sealed(), vault: try WatchFixture.profile.vaultId)
+        let file = box.fileURL(meta.id)
+        let held = try Data(contentsOf: file)
+        try box.acknowledge([meta.id])
+        // The crash: the index says acked, the file is still there.
+        try held.write(to: file)
+        let again = try WatchOutbox(directory: dir, now: { clock.now })
+        XCTAssertEqual(again.entry(meta.id)?.state, .acked)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "an acked entry's files go at load")
+        XCTAssertEqual(again.unsentCount, 0)
+    }
 }

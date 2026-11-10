@@ -73,7 +73,25 @@ final class WatchProfilePayloadTests: XCTestCase {
 
     func testOnlyPostQuantumWatchKeysAreProvisioned() throws {
         let classic = try NativeIdentity.generate(.x25519)
-        XCTAssertThrowsError(try WatchFixture.payload().sealed(to: classic.recipient))
+        XCTAssertThrowsError(try WatchFixture.payload().sealed(to: classic.recipient)) {
+            XCTAssertEqual($0 as? WatchPayloadError, .classicRecipient)
+        }
+    }
+
+    /// `profile` is `profiles[0]`: the shape is checked as it is decoded, so an empty array never reaches it.
+    func testAnEmptyOrDoubledProfilesArrayDoesNotDecode() throws {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        let good = try e.encode(try WatchFixture.payload())
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: good) as? [String: Any])
+        let one = try XCTUnwrap(json["profiles"] as? [Any])
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        XCTAssertNoThrow(try d.decode(WatchProfilePayload.self, from: good))
+        for list in [[], one + one] as [[Any]] {
+            json["profiles"] = list
+            XCTAssertThrowsError(try d.decode(WatchProfilePayload.self, from: try JSONSerialization.data(withJSONObject: json)))
+        }
     }
 
     // MARK: Messages

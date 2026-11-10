@@ -110,6 +110,8 @@ public final class WatchOutbox: @unchecked Sendable {
         }
         var map: [UUID: Entry] = [:]
         for e in loaded ?? [] { map[e.id] = e }
+        // The files of acked entries (a crash between saving the ack and deleting them) go now.
+        for e in map.values where e.state == .acked { removeFiles(e.id) }
         // Any capture file the index does not know (a crash between the file and the index, or a damaged index) comes back
         // from its sidecar as unsent.
         let names = (try? fm.contentsOfDirectory(atPath: directory.path)) ?? []
@@ -119,6 +121,10 @@ public final class WatchOutbox: @unchecked Sendable {
             guard let data = try? BoundedRead.contents(of: sidecar, maxBytes: 4096),
                   let meta = try? JSONDecoder().decode(WatchTransferMeta.self, from: data), meta.id == parsed.id,
                   meta.name == name else { continue }
+            // Only a file that is the bytes its sidecar describes (a sidecar written for new bytes before a crash can sit
+            // beside an older file: that one is not recovered; its recording is still in the plaintext folder).
+            guard let have = try? FileDigest.sha256(of: directory.appendingPathComponent(name), maxBytes: Int64(CaptureFile.maxSealedBytes(.capture))),
+                  have.hex == meta.sha256, Int(clamping: have.size) == meta.size else { continue }
             map[parsed.id] = Entry(meta: meta, state: .sealed, attempts: 0, created: now(), lastSent: nil, nextAttempt: nil,
                                    ackedAt: nil)
         }
@@ -159,6 +165,11 @@ public final class WatchOutbox: @unchecked Sendable {
 
     public func fileURL(_ id: UUID) -> URL { directory.appendingPathComponent(CaptureFile.name(id, .capture)) }
 
+    private func removeFiles(_ id: UUID) {
+        try? FileManager.default.removeItem(at: fileURL(id))
+        try? FileManager.default.removeItem(at: sidecarURL(id))
+    }
+
     private func sidecarURL(_ id: UUID) -> URL {
         directory.appendingPathComponent("\(id.uuidString.lowercased()).\(Self.sidecarExtension)")
     }
@@ -171,16 +182,19 @@ public final class WatchOutbox: @unchecked Sendable {
 
     // MARK: Adding
 
-    /// Puts a sealed capture in the outbox (file first, then its sidecar, then the index: a crash in between leaves a file
-    /// the next launch finds). Adding an id that is there is a no-op that returns its metadata. Never refuses for size.
+    /// Puts a sealed capture in the outbox: its sidecar FIRST (a sidecar without a file is harmless), then the file, then the
+    /// index (a crash after the file leaves one the next launch finds). Adding an id that is there is a no-op that returns
+    /// its metadata. A capture file with no live entry was never sent (a crash left it, and a sweep sealed the same id
+    /// again to new bytes), so it is replaced, atomically, never kept under metadata of other bytes. Never refuses for size.
     @discardableResult
     public func add(_ sealed: SealedCapture, vault: UUID) throws -> WatchTransferMeta {
         let meta = try WatchTransferMeta(sealed: sealed, vault: vault)
         if let have = entry(meta.id), have.state != .acked { return have.meta }
         do {
-            try CaptureWriter.store(sealed, in: directory)
             let (encoder, _) = Self.coders()
             try FileIO.writePrivate(try encoder.encode(meta), to: sidecarURL(meta.id))
+            // Atomic and durable, replacing a file of the same id nothing had sent.
+            try FileIO.writePrivate(sealed.data, to: fileURL(meta.id))
         } catch { throw WatchOutboxError.io("\(error)") }
         lock.withLock {
             entries[meta.id] = Entry(meta: meta, state: .sealed, attempts: 0, created: now(), lastSent: nil, nextAttempt: nil,
@@ -247,8 +261,6 @@ public final class WatchOutbox: @unchecked Sendable {
         for id in ids {
             let known: Bool = lock.withLock { entries[id].map { $0.state != .acked } ?? false }
             guard known else { continue }
-            try? FileManager.default.removeItem(at: fileURL(id))
-            try? FileManager.default.removeItem(at: sidecarURL(id))
             lock.withLock {
                 entries[id]?.state = .acked
                 entries[id]?.ackedAt = now()
@@ -256,7 +268,11 @@ public final class WatchOutbox: @unchecked Sendable {
             }
             removed.append(id)
         }
-        if !removed.isEmpty { try save() }
+        guard !removed.isEmpty else { return [] }
+        // The acked state is on disk BEFORE any file goes: a crash in between leaves files that the next load deletes (an
+        // acked entry's files), never an index that still says "unsent" for a file that is gone.
+        try save()
+        for id in removed { removeFiles(id) }
         return removed
     }
 
