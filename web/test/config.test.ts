@@ -28,7 +28,9 @@ describe("config.json", () => {
 
   it("is absent on a 404 or a dev server's HTML fallback, and fails closed otherwise", async () => {
     expect(await loadConfig(base, fetcher(404, ""))).toBeUndefined();
-    expect(await loadConfig(base, fetcher(200, "<!doctype html>", "text/html"))).toBeUndefined();
+    expect(await loadConfig(base, fetcher(200, "<!doctype html>", "text/html"), true)).toBeUndefined();
+    // A built viewer: an HTML answer (a single-page fallback) is a broken deployment, not "no config".
+    await expect(loadConfig(base, fetcher(200, "<!doctype html>", "text/html"), false)).rejects.toBeInstanceOf(ConfigError);
     expect(await loadConfig(base, fetcher(200, JSON.stringify({ vault: "./vault/" }))))
       .toMatchObject({ vault: "https://notes.example.org/viewer/vault/" });
     await expect(loadConfig(base, fetcher(500, ""))).rejects.toBeInstanceOf(ConfigError);

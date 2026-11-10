@@ -10,6 +10,8 @@ import type { Transcript } from "../src/format/transcript.ts";
 import { audioCardCommands, audioCardLayout, audioLabel, clipLines, clock, recordingShownBy, transcriptExcerpt } from "../src/render/audio.ts";
 import { layoutText } from "../src/render/text.ts";
 import { topmostPlayable } from "../src/ui/noteview.ts";
+import { playableAudio } from "../src/ui/recordings.ts";
+import { essence } from "../src/vault/blobs.ts";
 
 const itemId = "6f1c2d4e-0000-4000-8000-000000000003";
 const recId = "0d9e5c1a-0000-4000-8000-000000000001";
@@ -89,5 +91,16 @@ describe("taps on cards and videos", () => {
     // The other way round: a card drawn over a video wins.
     topmostPlayable([video, card], 250, 160)?.play();
     expect(played).toEqual(["video", "audio", "audio"]);
+  });
+});
+
+describe("audio the viewer plays", () => {
+  it("takes the types it knows, by their essence, and nothing the writer can shape into markup", () => {
+    for (const type of ["audio/mp4", "audio/mp4; codecs=mp4a.40.2", "AUDIO/MPEG", "audio/x-m4a", "audio/wav"]) {
+      expect(playableAudio.has(essence(type)), type).toBe(true);
+    }
+    for (const type of ["audio/x,text/html", "audio/x-notability", "audio/", "text/html", "audio/*", "audio/mp4,text/html"]) {
+      expect(playableAudio.has(essence(type)), type).toBe(false);
+    }
   });
 });
