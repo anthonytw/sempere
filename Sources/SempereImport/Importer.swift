@@ -147,7 +147,7 @@ public struct ImporterRequest: Sendable {
     /// Turns HEIC image bytes into JPEG bytes without location or camera data (the app's ImageIO, the same conversion a
     /// picked photo gets with Photo Privacy on); nil where the host has none (the CLI), and an importer then stores a
     /// HEIC image as it is and says so.
-    public var convertHEIC: (@Sendable (Data) throws -> Data)?
+    public var convertHEIC: (@Sendable (Data) throws -> PreparedImage)?
     /// The notebook every note goes to (nil: the importer's own rule). The host canonicalizes it.
     public var notebook: String?
     /// Told how far the import is, after each source (any thread; nil: nobody asks).
@@ -158,7 +158,7 @@ public struct ImporterRequest: Sendable {
     public init(paths: [URL], vault: Vault, device: DeviceID, options: ImporterOptionValues = ImporterOptionValues(),
                 pdfText: (any PDFTextExtracting)? = nil, notebook: String? = nil,
                 progress: (@Sendable (ImporterProgress) -> Void)? = nil, cancellation: ImporterCancellation? = nil,
-                convertHEIC: (@Sendable (Data) throws -> Data)? = nil) {
+                convertHEIC: (@Sendable (Data) throws -> PreparedImage)? = nil) {
         self.paths = paths; self.vault = vault; self.device = device; self.options = options
         self.pdfText = pdfText; self.notebook = notebook; self.convertHEIC = convertHEIC
         self.progress = progress; self.cancellation = cancellation

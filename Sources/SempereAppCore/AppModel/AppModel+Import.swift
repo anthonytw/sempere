@@ -181,7 +181,7 @@ extension AppModelCore {
             let request = ImporterRequest(paths: urls, vault: vault, device: device, options: options.appValues(for: importer),
                                           pdfText: extractor, notebook: NotebookPath.canonical(notebook),
                                           progress: { relay.post($0) }, cancellation: cancellation,
-                                          convertHEIC: { try preparation.prepareImage($0, privacy: true).data })
+                                          convertHEIC: { try preparation.prepareImage($0, privacy: true) })
             let bookmarks = services.bookmarks
             let scoped = urls.map { bookmarks.startAccessing($0) }
             defer { for (url, s) in zip(urls, scoped) where s { bookmarks.stopAccessing(url) } }

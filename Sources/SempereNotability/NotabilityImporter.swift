@@ -41,7 +41,7 @@ public enum NotabilityImporter {
         public var pdfText: (any PDFTextExtracting)?
         /// Converts HEIC image bytes to JPEG without metadata when `keepImageMetadata` is off (`ImageImport.prepare`);
         /// nil: a HEIC image is stored as it is, with a warning.
-        public var convertHEIC: (@Sendable (Data) throws -> Data)?
+        public var convertHEIC: (@Sendable (Data) throws -> PreparedImage)?
         /// Told after each source is read and after each is written (from the importing thread).
         public var progress: (@Sendable (ImporterProgress) -> Void)?
         /// Asked before each source is read or written: true stops the import there. Notes written stay

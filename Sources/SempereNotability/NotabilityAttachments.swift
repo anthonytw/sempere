@@ -43,7 +43,7 @@ public struct NotabilityAttachments: Sendable {
     }
 
     /// The host's HEIC-to-JPEG conversion (`ImageImport.prepare`), used while images are read.
-    var convertHEIC: (@Sendable (Data) throws -> Data)?
+    var convertHEIC: (@Sendable (Data) throws -> PreparedImage)?
     /// Bytes to write as blobs before the delta, by `BlobRef.sha256` (one per
     /// content: two PDFs with the same bytes are one blob, format.md §8.1.1).
     public var blobs: [String: (ref: BlobRef, data: Data)] = [:]
@@ -134,14 +134,14 @@ public struct NotabilityAttachments: Sendable {
     public static func resolve(_ note: NotabilityNote, package pkg: NotePackage,
                                keepImageMetadata: Bool = false,
                                pdfText: (any PDFTextExtracting)? = BuiltinPDFTextExtractor(),
-                               convertHEIC: (@Sendable (Data) throws -> Data)? = nil) -> NotabilityAttachments {
+                               convertHEIC: (@Sendable (Data) throws -> PreparedImage)? = nil) -> NotabilityAttachments {
         resolve(note, package: pkg, keepImageMetadata: keepImageMetadata, maxHeldBytes: maxHeldBytes, pdfText: pdfText,
                 convertHEIC: convertHEIC)
     }
 
     static func resolve(_ note: NotabilityNote, package pkg: NotePackage, keepImageMetadata: Bool,
                         maxHeldBytes: Int, pdfText: (any PDFTextExtracting)? = BuiltinPDFTextExtractor(),
-                        convertHEIC: (@Sendable (Data) throws -> Data)? = nil) -> NotabilityAttachments {
+                        convertHEIC: (@Sendable (Data) throws -> PreparedImage)? = nil) -> NotabilityAttachments {
         var r = NotabilityAttachments()
         r.heldLimit = maxHeldBytes
         r.convertHEIC = convertHEIC

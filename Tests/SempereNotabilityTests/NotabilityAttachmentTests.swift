@@ -518,14 +518,17 @@ final class NotabilityAttachmentTests: NotabilityTestCase {
         let heic = Data(box("ftyp", Array("heic".utf8) + [0, 0, 0, 0] + Array("mif1heic".utf8))
             + box("meta", [0, 0, 0, 0] + box("iprp", box("ipco", ispe))))
         let jpeg = AttachmentFixtures.jpeg(width: 10, height: 20, orientation: nil)
-        let convert: @Sendable (Data) throws -> Data = { _ in jpeg }
+        let convert: @Sendable (Data) throws -> PreparedImage = { _ in
+            PreparedImage(data: jpeg, mediaType: "image/jpeg", pixelSize: Size(w: 20, h: 10), orientation: 6)
+        }
 
         let converted = try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: convert)
         XCTAssertEqual(converted.type, "image/jpeg")
         XCTAssertEqual(converted.convertedFrom, .heic)
         XCTAssertTrue(converted.strippedMetadata)
         XCTAssertNotEqual(converted.data, heic)
-        XCTAssertEqual([converted.width, converted.height], [10, 20])
+        XCTAssertEqual([converted.width, converted.height], [20, 10], "the converter's size, after its orientation")
+        XCTAssertEqual(converted.orientation, 6)
 
         let asIs = try ImageImport.prepare(heic, keepMetadata: false)
         XCTAssertEqual(asIs.type, "image/heic"); XCTAssertFalse(asIs.strippedMetadata)
@@ -534,7 +537,7 @@ final class NotabilityAttachmentTests: NotabilityTestCase {
         struct Broken: Error {}
         XCTAssertEqual(try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: { _ in throw Broken() }).type, "image/heic",
                        "a converter that fails leaves it as it is")
-        XCTAssertEqual(try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: { _ in Data([1, 2, 3]) }).type, "image/heic",
+        XCTAssertEqual(try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: { _ in PreparedImage(data: Data([1, 2, 3]), mediaType: "image/jpeg", pixelSize: Size(w: 1, h: 1), orientation: nil) }).type, "image/heic",
                        "bytes that are not a JPEG are not stored")
     }
 }
