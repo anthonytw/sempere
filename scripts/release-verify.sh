@@ -39,6 +39,12 @@ d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
 curl -fsSL -o "$d/SHA256SUMS" "$url/releases/download/$tag/SHA256SUMS"
 for f in $(awk '{print $2}' "$d/SHA256SUMS"); do curl -fsSL -o "$d/$f" "$url/releases/download/$tag/$f"; done
 (cd "$d" && shasum -a 256 -c SHA256SUMS)
+# The signature on the list (a release from 1.1.0 on): the maintainer's key, from packaging/allowed_signers in this checkout.
+if curl -fsSL -o "$d/SHA256SUMS.sig" "$url/releases/download/$tag/SHA256SUMS.sig" 2>/dev/null; then
+  scripts/release-signature.sh verify "$d" || { echo "FAIL  the published SHA256SUMS.sig does not verify"; exit 1; }
+else
+  echo "warn  $tag has no SHA256SUMS.sig (releases before 1.1.0 are not signed)"
+fi
 sums="build/release/$tag/SHA256SUMS"
 if [[ -f $sums ]]; then
   if cmp -s "$sums" "$d/SHA256SUMS"; then echo "ok    the same files as the local build"; else echo "FAIL  the published files differ from $sums"; exit 1; fi

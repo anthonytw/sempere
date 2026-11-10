@@ -15,12 +15,14 @@ A **check** has a yes/no answer a script can give cheaply; it runs on every PR o
 
 | Check | Where | What it answers |
 | --- | --- | --- |
-| `scripts/check-security.sh` (`just security-check`) | PR gate, "Help and portability checks" | no secret-looking text outside `scripts/security-allow.txt`; no `print(`, `NSLog`, `os_log`, `Logger(` or `dump(` in `Sources/` outside `Sources/SempereCLI` and `#if DEBUG`; no PerfSink call naming a key, secret, passphrase, identity, password or title; `Package.resolved` complete; every npm package has an integrity hash; every `uses:` is a full commit SHA; every workflow declares `permissions:` |
+| `scripts/check-security.sh` (`just security-check`) | PR gate, "Help and portability checks" | no secret-looking text outside `scripts/security-allow.txt`; no `print(`, `NSLog`, `os_log`, `Logger(` or `dump(` in `Sources/` outside `Sources/SempereCLI` and `#if DEBUG`; no PerfSink call naming a key, secret, passphrase, identity, password or title or interpolating an error's own text (`LogSafe.describe` is the way to log an error); `Package.resolved` complete; every npm package has an integrity hash; every `uses:` is a full commit SHA; every workflow declares `permissions:` |
 | `scripts/test-check-security.sh` | same job | the check fails on a planted key, log call, unpinned action, lockfile entry without integrity, and passes on a clean tree |
 | `.github/workflows/security-weekly.yml` | weekly, fail-only | `npm audit --omit=dev --audit-level=high` in `web/`, and the OSV database for the resolved Swift packages |
 | `scripts/release-check.sh` | release | warns (never fails) when the last full audit in `SECURITY.md` is over 7 months old |
 
-`scripts/security-allow.txt` lists the exceptions, each with a reason; the check reports an entry that matches nothing.
+`scripts/security-allow.txt` lists the exceptions, each with a reason and the SHA-256 of the one statement or token it
+covers (a failure prints it), so a new call in an allowed file needs its own entry; the check reports an entry that
+matches nothing.
 **Every audit reviews that list**: an entry whose reason no longer holds goes. Actions are pinned by hand: a full
 audit moves each pin to the current release of its action (resolve a tag with
 `gh api repos/OWNER/REPO/git/ref/tags/TAG`; for an annotated tag, read the commit it points at) and keeps the `# vX`
@@ -89,28 +91,41 @@ A public commit, branch, tag or PR title is a disclosure.
 
 1. The fix is one commit, with its regression test, on top of `origin/main`, in a local branch that is never pushed.
    Write no changelog fragment for it before release time.
-2. Gate it locally with `scripts/local-ci.sh --no-status` (`--no-status` posts nothing
-   to Gitea), then build from it. An App Store build of an unpushed commit needs
-   `just testflight --skip-suite-check both <sha>`, because the suite status it looks for lives on Gitea.
-3. Tag it locally: `scripts/release-tag.sh --embargo X.Y.Z` (REF defaults to `HEAD`). It refuses a dirty tree, a commit
-   already on `origin/main`, a merge, and a commit whose parent is not on `origin/main` (a commit two away). It makes a
-   tag (signed unless `SEMPERE_TAG_SIGN=false`) and pushes nothing.
-   **Known gap, until the first embargoed release:** `release-build.sh` cannot build a non-prerelease embargo tag
-   today: it reads the release-sweep status of the tagged commit from Gitea, which an unpushed commit does not have, and
-   only a prerelease warns instead of failing. Likewise `release-tag.sh --push` wants the tag's commit on
-   `origin/main`. The first embargoed release's PR closes both (below).
-4. The repository is squash-merge only (merge commits and rebase merges are off, and a rebase rewrites the SHA anyway),
-   so the fix cannot land on `main` as the tagged commit. When the fixed version is live, open the fix as an ordinary PR
-   (the gate runs on it) and squash-merge it. The tag is then pushed from the unpushed commit: the first embargoed
-   release's PR makes `release-tag.sh --push` accept an embargo tag whose commit is off `main`, whose parent is on `main`,
-   and for which a `main` commit has the same `git patch-id --stable`. Until then, nothing here can publish the tag.
-   The release notes and `CHANGELOG.md` say who is affected and what to do (`SECURITY.md` "What happens next", step 4),
-   and the owner publishes the advisory.
-5. **Before any push**: no exploit detail in a commit message, branch name, PR title or body, issue, changelog fragment
+2. **A release with embargoed fixes** (the standard way, in a scheduled release): make the release commit X locally and
+   never push it. X is `origin/main` plus the release changes (version, changelog), the embargoed fix commits (one per
+   advisory) and, once the fixes are in, the audit report and its changelog fragment. Gate X with
+   `scripts/local-ci.sh --release --no-status` (the full sweep: it posts nothing, and on a clean checkout it records X's
+   tree id in `data/local-ci/release-sweep-trees`), then build from it: an App Store build of an unpushed commit needs
+   `just testflight --skip-suite-check both X`, because the suite status it looks for lives on Gitea. The owner checks the
+   TestFlight build and submits it with **manual release**.
+3. **Freeze `main`** from that build until the release: no merges, so the merge commit's tree will equal X's tree. A
+   public push, branch or PR before step 4 is a disclosure.
+4. **On App Store approval** (minutes before the release): push X as the release PR's branch and squash-merge it when the
+   PR gate passes (the repository is squash-merge only, so `main` gets a new commit id). Check that
+   `git rev-parse X^{tree}` equals the merge commit's tree, then run `scripts/local-ci.sh --post-sweep <merge sha>`: it
+   posts `local/release-sweep` for that commit only because its tree is one the sweep passed, so no second sweep is
+   needed (an edited file, however small, changes the tree and it refuses). Then tag the merge commit
+   (`just release-tag`), `just release-build`, `just release-publish`, Release This Version in App Store Connect,
+   publish the advisories and request the CVEs, and update the formula. The window between the merge and the
+   advisories is about an hour: the PR gate plus the CLI build. The release notes and `CHANGELOG.md` say who is affected
+   and what to do (`SECURITY.md` "What happens next", step 4). Without the `--post-sweep` mode the fallback is
+   `just ci-release` on the merge commit, which stretches the window to the sweep's length. If the release stalls
+   after the merge (the CLI build fails, say), finish it before anything else.
+   `release-build.sh` also refuses to build unless this checkout is clean and its build and packaging scripts equal
+   `origin/main`'s, and it signs `SHA256SUMS` (SECURITY.md "Verifying releases").
+   **The out-of-band path** (a fix that cannot wait for a scheduled release): `scripts/release-tag.sh --embargo X.Y.Z`
+   (REF defaults to `HEAD`) tags a local commit without pushing anything. It refuses a dirty tree, a commit already on
+   `origin/main`, a merge, and a commit whose parent is not on `origin/main`. **Known gaps, closed the first time this
+   path is needed:** `release-build.sh` cannot build a non-prerelease embargo tag, because it reads the release-sweep
+   status of the tagged commit from Gitea, which an unpushed commit does not have (`--post-sweep` is for a commit the
+   forge has); and `release-tag.sh --push` wants the tag's commit on `origin/main` (it would need a rule for a commit off
+   `main` whose parent is on `main` and for which a `main` commit has the same `git patch-id --stable`).
+5. **Before any push** (including X in step 4 and the open-track PR): no exploit detail in a commit message, branch name, PR title or body, issue, changelog fragment
    or test name; the run folder is not under any synced or backed-up path that is public. **Never** run
    `git push --tags` or `--follow-tags` while an embargo tag exists: push single refs by name. `scripts/mirror-gitea.sh`
    copies GitHub's `main`, branches and tags to Gitea, so it only ever sees what has already been pushed to GitHub;
-   still, check before each push.
+   still, check before each push. After an accidental push, delete the ref on GitHub and on Gitea too: the mirror
+   never deletes.
 
 ### Publishing the report
 

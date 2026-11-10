@@ -28,8 +28,10 @@ git add Formula/sempere.rb && git commit -m "sempere X.Y.Z" && git push
 the three checksums (macOS universal, Linux x86_64, Linux aarch64) into the template.
 By hand: replace `@VERSION@` and each `@SHA256_…@` with the value from `SHA256SUMS`.
 
-Before trusting a download you can also verify provenance:
-`gh attestation verify sempere-X.Y.Z-linux-x86_64.tar.gz --repo anthonytw/sempere`.
+Before trusting a download you can also verify it. v1.0.0 and v1.0.1 carry build attestations
+(`gh attestation verify sempere-X.Y.Z-linux-x86_64.tar.gz --repo anthonytw/sempere`); later releases are built on the
+maintainer's Mac, and their `SHA256SUMS` is signed (`SHA256SUMS.sig`, checked with `ssh-keygen -Y verify`: SECURITY.md
+"Verifying releases").
 
 ## Notes
 

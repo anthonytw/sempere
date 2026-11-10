@@ -19,6 +19,10 @@
 #   scripts/local-ci.sh --status      # the gate: also post `local/app-tests` to Gitea (informational; nothing requires it)
 #   scripts/local-ci.sh --no-status   # with any other mode: run, but post nothing to Gitea
 #   scripts/local-ci.sh --list        # with any mode: print its steps and status, run nothing
+#   scripts/local-ci.sh --post-sweep SHA   # runs nothing: posts `local/release-sweep` for SHA if its tree equals the tree of a
+#                                     # commit that passed `--release` here (--no-status or not; the clean checkout's tree is
+#                                     # recorded in data/local-ci/release-sweep-trees); see scripts/release-sweep-tree.sh. For
+#                                     # a release built from a local commit and merged later as a squash: other commit, same tree
 #
 # The gate never needs the screen and runs no simulator: a Mac someone is using can run it. The
 # --testflight and --release steps after the gate are UI tests that take over the screen (the Mac
@@ -43,7 +47,11 @@ gate_context=local/app-tests
 mode=gate
 post=""
 list=false
-usage="usage: $0 [--testflight | --release | --cli] [--status | --no-status] [--list]"
+usage="usage: $0 [--testflight | --release | --cli] [--status | --no-status] [--list] | --post-sweep SHA"
+if [[ ${1:-} == --post-sweep ]]; then
+  [[ $# -eq 2 ]] || { echo "$usage" >&2; exit 2; }
+  exec scripts/release-sweep-tree.sh post "$2"
+fi
 for arg in "$@"; do
   case "$arg" in
     --status) post=true ;;
@@ -142,7 +150,7 @@ status() {   # context, state, description
 
 run_step() {
   case "$1" in
-    help)       scripts/check-help.py --self-test && /usr/bin/python3 -I scripts/ci-hash.py --self-test && scripts/test-ci-hash-guard.sh && /usr/bin/python3 -I scripts/ci-hash.py check-reads && scripts/check-help.py && scripts/check-test-defaults.sh && scripts/check-ui-tests.sh && scripts/test-mirror-gitea.sh >/dev/null && scripts/test-release-flow.sh >/dev/null && /usr/bin/python3 -I scripts/test-runner.py --self-test ;;
+    help)       scripts/check-help.py --self-test && /usr/bin/python3 -I scripts/ci-hash.py --self-test && scripts/test-ci-hash-guard.sh && /usr/bin/python3 -I scripts/ci-hash.py check-reads && scripts/check-help.py && scripts/check-test-defaults.sh && scripts/check-ui-tests.sh && scripts/test-mirror-gitea.sh >/dev/null && scripts/test-release-flow.sh >/dev/null && scripts/test-release-sweep-tree.sh >/dev/null && /usr/bin/python3 -I scripts/test-runner.py --self-test ;;
     package)    scripts/ci-mac-package.sh ;;
     mac)        scripts/app.sh test-mac ;;
     ios-build)  scripts/app.sh build-ios && scripts/build-watchos-package.sh ;;
@@ -275,3 +283,6 @@ if [[ $post == true ]]; then
 else
   echo "local-ci: all passed in $minutes min (nothing posted)"
 fi
+# A full sweep of a clean checkout: remember its tree, so a later commit with that tree (the squash merge of this
+# commit) can be posted without a second sweep (`--post-sweep SHA`).
+if [[ $mode == release && -z "$(git status --porcelain)" ]]; then scripts/release-sweep-tree.sh record "$sha"; fi
