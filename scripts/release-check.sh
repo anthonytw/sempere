@@ -378,6 +378,9 @@ for path in (info_path, os.path.join(app_dir, "SempereWidgetsInfo.plist"), os.pa
             if mode not in WATCH_BACKGROUND_MODES_ALLOWED:
                 errors.append(f"{rel(path)}: background mode {mode!r} is not in the allow-list {sorted(WATCH_BACKGROUND_MODES_ALLOWED)} "
                               "(scripts/release-check.sh): App Store review needs a reason for each")
+        if info.get("WKRunsIndependentlyOfCompanionApp") is not False:
+            errors.append(f"{rel(path)}: WKRunsIndependentlyOfCompanionApp must be false: the watch app does nothing without the "
+                          "iPhone app's profile (design 1.1-watch.md, non-goals)")
         if "audio" not in modes:
             errors.append(f"{rel(path)}: WKBackgroundModes must hold audio: a voice note keeps recording with the wrist down")
     if path == info_path:
@@ -450,7 +453,9 @@ def scan(dirs):
 
 for target, allowed in WATCH_PRODUCTS_ALLOWED.items():
     linked = target_products(target)
-    if linked is not None:
+    if linked is None:
+        errors.append(f"target {target} is not in project.pbxproj: its package products cannot be checked against WATCH_PRODUCTS_ALLOWED")
+    else:
         for extra in sorted(linked - allowed):
             errors.append(f"{target} links package product {extra}, which is not in WATCH_PRODUCTS_ALLOWED of scripts/release-check.sh: "
                           "the watch links no network code (WebDAV, sync) and no app-side library (SempereAppCore)")

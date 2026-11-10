@@ -30,11 +30,25 @@ public struct WatchLinkState: Codable, Equatable, Sendable {
         self.sent = sent
         self.lastNote = lastNote
     }
+
+    enum CodingKeys: String, CodingKey { case enabled, recipient, seq, sent, lastNote }
+
+    /// By hand, so that a file written by an older or newer build (a field missing) still decodes, keeping the counter.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        recipient = try c.decodeIfPresent(String.self, forKey: .recipient)
+        seq = try c.decodeIfPresent(Int.self, forKey: .seq) ?? -1
+        sent = try c.decodeIfPresent(String.self, forKey: .sent)
+        lastNote = try c.decodeIfPresent(Date.self, forKey: .lastNote)
+    }
 }
 
 /// Where the state lives: a file in the app, memory in tests.
 public protocol WatchLinkStore: Sendable {
-    func load() -> WatchLinkState
+    /// The state; the default only when there is none yet. Throws when it exists and cannot be read: the caller must not
+    /// then save anything (the default would replace the real counter).
+    func load() throws -> WatchLinkState
     func save(_ state: WatchLinkState) throws
 }
 
@@ -43,8 +57,15 @@ public final class MemoryWatchLinkStore: WatchLinkStore, @unchecked Sendable {
     private var state: WatchLinkState
     /// Makes the next `save` fail (tests).
     public var failing = false
+    /// Makes `load` fail (tests).
+    public var failingLoad = false
     public init(_ state: WatchLinkState = WatchLinkState()) { self.state = state }
-    public func load() -> WatchLinkState { lock.withLock { state } }
+    public func load() throws -> WatchLinkState {
+        try lock.withLock {
+            if failingLoad { throw WatchProvisionerError.unreadable("failing store") }
+            return state
+        }
+    }
     public func save(_ state: WatchLinkState) throws {
         try lock.withLock {
             if failing { throw WatchProvisionerError.cannotSave("failing store") }
@@ -58,10 +79,11 @@ public struct FileWatchLinkStore: WatchLinkStore {
     public let url: URL
     public init(url: URL = AppSupport.sempere.appendingPathComponent("WatchLink.json")) { self.url = url }
 
-    public func load() -> WatchLinkState {
-        guard let data = try? BoundedRead.contents(of: url, maxBytes: Self.maxBytes),
-              let state = try? JSONDecoder().decode(WatchLinkState.self, from: data) else { return WatchLinkState() }
-        return state
+    public func load() throws -> WatchLinkState {
+        guard FileManager.default.fileExists(atPath: url.path) else { return WatchLinkState() }
+        do {
+            return try JSONDecoder().decode(WatchLinkState.self, from: try BoundedRead.contents(of: url, maxBytes: Self.maxBytes))
+        } catch { throw WatchProvisionerError.unreadable("\(error)") }
     }
 
     public func save(_ state: WatchLinkState) throws {
@@ -79,6 +101,8 @@ public enum WatchProvisionerError: Error, Equatable, Sendable {
     case badRecipient
     case counterExhausted
     case cannotSave(String)
+    /// The state file exists and cannot be read: nothing is sent and nothing is saved over it.
+    case unreadable(String)
 }
 
 public final class WatchProvisioner: @unchecked Sendable {
@@ -103,7 +127,8 @@ public final class WatchProvisioner: @unchecked Sendable {
 
     public init(store: any WatchLinkStore = FileWatchLinkStore()) { self.store = store }
 
-    public var state: WatchLinkState { lock.withLock { store.load() } }
+    /// For display; the default when the state cannot be read (never saved back: `update` and `nextMessage` reload strictly).
+    public var state: WatchLinkState { lock.withLock { (try? store.load()) ?? WatchLinkState() } }
     public var enabled: Bool { state.enabled }
     public var lastNote: Date? { state.lastNote }
 
@@ -132,13 +157,16 @@ public final class WatchProvisioner: @unchecked Sendable {
     /// The watch asked (`transferUserInfo`): remember its recipient and give it the profile again, whether or not it holds
     /// it (a reset or a reinstalled watch app has none and a new key). A request that is not a post-quantum age recipient is
     /// refused. The request is not authenticated beyond WatchConnectivity's own pairing (docs/security.md).
-    public func watchRequested(recipient: String) throws {
+    /// `seq` is the counter the watch holds: the phone's counter is raised to at least it, so a lost or damaged state file can
+    /// never make the phone send a payload the watch would ignore.
+    public func watchRequested(recipient: String, seq watchSeq: Int = -1) throws {
         guard recipient.count <= 4096, let r = try? NativeRecipient(string: recipient), r.isPostQuantum else {
             throw WatchProvisionerError.badRecipient
         }
         try update {
             $0.recipient = r.string
             $0.sent = nil
+            if (0...Int(Int32.max)).contains(watchSeq) { $0.seq = max($0.seq, watchSeq) }
         }
     }
 
@@ -150,7 +178,7 @@ public final class WatchProvisioner: @unchecked Sendable {
     /// message is returned. If the send then fails, call `sendFailed()`.
     public func nextMessage(stored: StoredCaptureProfile?, issued: Date = Date()) throws -> WatchProvisioning.Message? {
         try lock.withLock {
-            var s = store.load()
+            var s = try store.load()
             if s.enabled, let stored, stored.suspended != true {
                 guard let text = s.recipient, let recipient = try? NativeRecipient(string: text) else { return nil }
                 let fingerprint = Self.fingerprint(stored, recipient: text)
@@ -180,7 +208,7 @@ public final class WatchProvisioner: @unchecked Sendable {
 
     private func update(_ change: (inout WatchLinkState) -> Void) throws {
         try lock.withLock {
-            var s = store.load()
+            var s = try store.load()
             change(&s)
             try store.save(s)
         }

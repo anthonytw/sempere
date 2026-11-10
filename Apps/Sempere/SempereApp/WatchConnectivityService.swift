@@ -37,6 +37,9 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     @MainActor let status = WatchLinkStatus()
 
     private let lock = NSLock()
+    /// Held across `nextMessage` and `updateApplicationContext`: this runs from the main actor and from WatchConnectivity's
+    /// queue, and the newer message must be the one left in the persisted context.
+    private let sendLock = NSLock()
     private var receiver: WatchReceiver?
     private var profileStore: (any CaptureProfileStore)?
 
@@ -79,9 +82,11 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         // Nothing to give a watch that is not there; the state is kept for when it is.
         guard session.isPaired, session.isWatchAppInstalled else { return }
         do {
-            guard let message = try provisioner.nextMessage(stored: stored) else { return }
-            do { try session.updateApplicationContext(WatchProvisioning.dictionary(message)) } catch {
-                provisioner.sendFailed()
+            try sendLock.withLock {
+                guard let message = try provisioner.nextMessage(stored: stored) else { return }
+                do { try session.updateApplicationContext(WatchProvisioning.dictionary(message)) } catch {
+                    provisioner.sendFailed()
+                }
             }
         } catch {
             // The counter could not be saved (or is spent): nothing was sent, and the next change tries again.
@@ -117,8 +122,9 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     /// The watch's request for a profile (`transferUserInfo`). Taken only from this callback: WatchConnectivity says it is
     /// the paired watch; the recipient in it is public (docs/security.md: no sender authentication beyond that).
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        guard case .request(let recipient, _)? = WatchProvisioning.message(userInfo) else { return }
-        do { try provisioner.watchRequested(recipient: recipient) } catch { return }
+        guard case .request(let recipient, _, let seq)? = WatchProvisioning.message(userInfo) else { return }
+        // The watch's own counter is a floor for the phone's: a counter lost on the phone can never make the watch ignore it.
+        do { try provisioner.watchRequested(recipient: recipient, seq: seq) } catch { return }
         provisionIfNeeded()
     }
 

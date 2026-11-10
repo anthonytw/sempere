@@ -421,7 +421,7 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
   clear, which carries nothing secret, deletes the profile and keeps an older payload from bringing it back. The phone gives
   the watch a new payload whenever its profile changes (a new epoch, the notebook, the vault, the toggle) and a clear when the
   toggle goes off, Quick Voice Notes is turned off or the profile is suspended; a profile it cannot read (before the first
-  unlock) is never taken for "off". The watch's **Reset** forgets the profile and sets its counter back to -1, then asks again.
+  unlock) is never taken for "off". The watch's request carries the counter it holds, and the phone raises its own to at least that, so a damaged or lost state file on the phone can never make the watch ignore it (a state file that exists but cannot be read stops everything: nothing is sent and nothing is saved over it). The watch's **Reset** forgets the profile, sets its counter back to -1 and makes a new provisioning key, then asks again.
   Its capture key is the phone's, so a lost watch can add voice notes to the inbox as the iPhone until the phone's key is replaced
   by a new epoch; it can read nothing. Turning the toggle off clears the watch and revokes nothing cryptographic (docs/security.md).
 - **The recording.** `WatchRecorder` is a start, stop and sweep state machine over the recorder protocols this document's
@@ -436,7 +436,7 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
   space) only stop a new recording from starting, never a sealed one.
 - **The surfaces.** A complication and a Smart Stack widget (the accessory families, with the nib), a Control, the Action button
   and Siri ("Record a Sempere voice note", the iPhone's phrases) all open the watch app and record at once
-  (`sempere-watch://record`, or `RecordWatchVoiceNoteIntent`); the app grid's launch shows a large Record button instead.
+  (`sempere-watch://record`, or `RecordWatchVoiceNoteIntent`). The Control only starts a recording; Stop is the button in the app, Siri or a shortcut (`StopWatchVoiceNoteIntent`); the app grid's launch shows a large Record button instead.
   What the watch widgets show is the same `VoiceNoteStatus`, written by the watch app into the watch's own App Group container.
 - **The screen.** One screen with states: Not set up (with Reset), Ready (Record, "Saving to <vault>"), Recording (the time, a
   red dot, Stop), Saved (two seconds), "Unsent notes: N" with Send now, and Can't record with the reason (microphone denied,

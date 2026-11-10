@@ -5,11 +5,13 @@
 	<!-- Merged with the generated Info.plist (INFOPLIST_KEY_* build settings). -->
 	<key>WKApplication</key>
 	<true/>
-	<!-- Paired with the iPhone app, which provisions it; it records and seals without the phone near (the notes wait in its outbox). -->
+	<!-- Paired with the iPhone app, which provisions it. -->
 	<key>WKCompanionAppBundleIdentifier</key>
 	<string>io.github.anthonytw.sempere</string>
+	<!-- Not independent of the iPhone app (design 1.1-watch.md, section 1 non-goals): the profile comes from it. The watch still
+	     records and seals without the phone near; the notes wait in its outbox. -->
 	<key>WKRunsIndependentlyOfCompanionApp</key>
-	<true/>
+	<false/>
 	<!-- A voice note keeps recording with the wrist down and the screen off (docs/design/1.1-watch.md §3.5; real-watch check W1). Review note: the app records only after a tap on Record, a complication, a widget, the Control, the Action button or Siri, and the system shows its recording indicator. -->
 	<key>WKBackgroundModes</key>
 	<array>

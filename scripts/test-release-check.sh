@@ -253,6 +253,12 @@ expect "the watch app's companion is another app" fail "WKCompanionAppBundleIden
 fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<dict>\n", "<dict>\n\t<key>CFBundleShortVersionString</key>\n\t<string>9.9</string>\n", 1)'
 expect "the watch Info.plist hard-codes another version" fail "SempereWatchInfo.plist: CFBundleShortVersionString = '9.9'"
 
+fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<key>WKRunsIndependentlyOfCompanionApp</key>\n\t<false/>", "<key>WKRunsIndependentlyOfCompanionApp</key>\n\t<true/>")'
+expect "the watch app claims to run independently of the iPhone app" fail "WKRunsIndependentlyOfCompanionApp must be false"
+
+fresh; edit "$pbx" 's.replace("/* SempereWatchWidgets */ = {\n\t\t\tisa = PBXNativeTarget;", "/* SempereWatchWidgetsGone */ = {\n\t\t\tisa = PBXNativeTarget;")'
+expect "a watch target missing from the project is an error, not a skip" fail "target SempereWatchWidgets is not in project.pbxproj"
+
 fresh; rm "$tmp/root/$wapp/PrivacyInfo.xcprivacy"
 expect "watch app privacy manifest missing" fail "SempereWatch/PrivacyInfo.xcprivacy is missing"
 

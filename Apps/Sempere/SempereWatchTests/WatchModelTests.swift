@@ -64,6 +64,52 @@ final class WatchModelTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(r.transport.requests.first).hasPrefix("age1pq1"), "its own post-quantum key")
     }
 
+    /// A cold launch asks before the session is activated: that request is not lost, and an unsent file is not "failed".
+    func testARequestBeforeTheSessionIsActivatedIsMadeOnceItIs() async throws {
+        let r = try rig()
+        r.transport.activated = false
+        await r.model.activate()
+        XCTAssertTrue(r.transport.requests.isEmpty, "nothing could be queued yet")
+        r.transport.activated = true
+        r.model.requestProvisioningIfNeeded()   // what the session's activation callback does
+        XCTAssertEqual(r.transport.requests.count, 1)
+        XCTAssertEqual(r.transport.requestSeqs, [-1], "the counter the watch holds rides with it")
+        r.model.requestProvisioningIfNeeded()
+        XCTAssertEqual(r.transport.requests.count, 1, "once")
+    }
+
+    func testAnOutboxFlushBeforeActivationDoesNotPushTheRetryBack() async throws {
+        let r = try rig()
+        await r.model.activate()
+        r.model.receive(try provisioning(r, seq: 0))
+        r.transport.activated = false
+        await r.model.record()
+        await r.model.stop()
+        let id = try XCTUnwrap(r.model.outbox.unsent.first?.id)
+        r.model.flushOutbox(launch: true)
+        let entry = try XCTUnwrap(r.model.outbox.entry(id))
+        XCTAssertNil(entry.nextAttempt, "no backoff was set")
+        XCTAssertEqual(entry.attempts, 0)
+        r.transport.activated = true
+        r.model.flushOutbox(launch: true)
+        XCTAssertEqual(r.transport.sent.map(\.id), [id])
+    }
+
+    func testResetMakesANewProvisioningKey() async throws {
+        let r = try rig()
+        await r.model.activate()
+        let old = try XCTUnwrap(r.transport.requests.last)
+        r.model.receive(try provisioning(r, seq: 3))
+        let oldPayload = try provisioning(r, seq: 4)   // what the phone's persisted context still holds
+        r.model.reset()
+        let new = try XCTUnwrap(r.transport.requests.last)
+        XCTAssertNotEqual(new, old)
+        XCTAssertEqual(r.transport.requestSeqs.last, -1)
+        r.model.receive(oldPayload)
+        XCTAssertEqual(r.model.screen, .notSetUp, "the old context cannot be opened any more")
+        XCTAssertNil(r.model.state.payload)
+    }
+
     func testTheProvisioningKeyPersistsAcrossLaunches() async throws {
         let r = try rig()
         await r.model.activate()

@@ -27,13 +27,16 @@ final class WatchConnectivityClient: NSObject, WatchTransport {
         if session.activationState != .activated { session.activate() } else { activated() }
     }
 
-    func requestProvisioning(recipient: String) {
-        guard let session, session.activationState == .activated else { return }
+    var isActivated: Bool { session?.activationState == .activated }
+
+    func requestProvisioning(recipient: String, seq: Int) -> Bool {
+        guard let session, session.activationState == .activated else { return false }
         // One request in flight: a launch does not queue another while the system still holds the last.
         let key = WatchProvisioning.requestKey
-        guard !session.outstandingUserInfoTransfers.contains(where: { $0.userInfo[key] != nil }) else { return }
-        session.transferUserInfo(WatchProvisioning.dictionary(WatchProvisioning.Message.request(recipient: recipient,
-                                                                                            version: WatchProfilePayload.currentVersion)))
+        guard !session.outstandingUserInfoTransfers.contains(where: { $0.userInfo[key] != nil }) else { return true }
+        session.transferUserInfo(WatchProvisioning.dictionary(WatchProvisioning.Message.request(
+            recipient: recipient, version: WatchProfilePayload.currentVersion, seq: seq)))
+        return true
     }
 
     func transfer(file: URL, meta: WatchTransferMeta) -> Bool {
@@ -53,6 +56,7 @@ final class WatchConnectivityClient: NSObject, WatchTransport {
         guard let session else { return }
         let context = session.receivedApplicationContext
         if !context.isEmpty { model?.receive(context) }
+        model?.requestProvisioningIfNeeded()
         model?.flushOutbox(launch: true)
         model?.refreshScreen()
     }

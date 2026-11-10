@@ -39,7 +39,7 @@ struct WatchProvisionerTests {
         let silent = try Self.rig(requested: false)
         #expect(try silent.provisioner.nextMessage(stored: silent.stored) == nil)
         #expect(silent.provisioner.status(stored: silent.stored) == .waitingForWatch)
-        #expect(silent.store.load().seq == -1)
+        #expect(try silent.store.load().seq == -1)
     }
 
     @Test func theProfileIsSentOnceAndAgainOnlyWhenItChanges() throws {
@@ -83,7 +83,7 @@ struct WatchProvisionerTests {
             seqs.append(try WatchProfilePayload.open(data, with: r.watch).seq)
         }
         #expect(seqs == [0, 1, 2, 3])
-        #expect(r.store.load().seq == 3)
+        #expect(try r.store.load().seq == 3)
     }
 
     @Test func aFileStoreKeepsTheCounterAcrossInstances() throws {
@@ -110,7 +110,7 @@ struct WatchProvisionerTests {
         r.store.failing = true
         #expect(throws: WatchProvisionerError.self) { try r.provisioner.nextMessage(stored: r.stored) }
         r.store.failing = false
-        #expect(r.store.load().seq == -1, "the counter did not move")
+        #expect(try r.store.load().seq == -1, "the counter did not move")
         #expect(try r.provisioner.nextMessage(stored: r.stored) != nil)
         r.provisioner.sendFailed()
         guard case .profile(let data)? = try r.provisioner.nextMessage(stored: r.stored) else { Issue.record("not retried"); return }
@@ -180,7 +180,7 @@ struct WatchProvisionerTests {
         for bad in ["", "hello", String(repeating: "a", count: 5000), try NativeIdentity.generate(.x25519).recipient.string] {
             #expect(throws: WatchProvisionerError.badRecipient) { try r.provisioner.watchRequested(recipient: bad) }
         }
-        #expect(r.store.load().recipient == nil)
+        #expect(try r.store.load().recipient == nil)
     }
 
     @Test func theCounterStopsBeforeItOverflowsTheWatchsInt() throws {
@@ -196,16 +196,63 @@ struct WatchProvisionerTests {
         #expect(p.lastNote == Date(timeIntervalSince1970: 100))
     }
 
-    @Test func aDamagedStateFileStartsOver() throws {
+    /// The counter is never replaced by the default: a state file that exists and cannot be read stops everything.
+    @Test func aStateFileThatCannotBeReadIsNeverOverwrittenAndNothingIsSent() throws {
         let url = try QuickCaptureLogicTests.tempDir("link").appendingPathComponent("WatchLink.json")
+        let dir = try QuickCaptureLogicTests.tempDir("provision")
+        let (_, stored) = try QuickCaptureLogicTests.profile(in: dir)
+        let watch = try NativeIdentity.generate(.postQuantum)
+        let p = WatchProvisioner(store: FileWatchLinkStore(url: url))
+        try p.setEnabled(true)
+        try p.watchRequested(recipient: watch.recipient.string)
+        #expect(try p.nextMessage(stored: stored) != nil)
+        let before = try Data(contentsOf: url)
+        // Damaged bytes, and then a file that cannot be opened at all.
         try Data("{not json".utf8).write(to: url)
-        #expect(FileWatchLinkStore(url: url).load() == WatchLinkState())
+        #expect(throws: WatchProvisionerError.self) { try p.nextMessage(stored: stored) }
+        #expect(throws: WatchProvisionerError.self) { try p.setEnabled(false) }
+        p.noteReceived(at: Date())
+        #expect(try Data(contentsOf: url) == Data("{not json".utf8), "nothing was written over it")
+        try before.write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+        if getuid() != 0 {
+            #expect(throws: WatchProvisionerError.self) { try p.nextMessage(stored: stored) }
+            p.noteReceived(at: Date())
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        #expect(try Data(contentsOf: url) == before)
+        #expect(try FileWatchLinkStore(url: url).load().seq == 0, "the counter survived")
+    }
+
+    @Test func aMissingStateFileStartsFreshAndAnOlderOrPartialOneDecodes() throws {
+        let url = try QuickCaptureLogicTests.tempDir("link").appendingPathComponent("WatchLink.json")
+        #expect(try FileWatchLinkStore(url: url).load() == WatchLinkState())
+        try Data(#"{"seq": 41, "enabled": true}"#.utf8).write(to: url)
+        let s = try FileWatchLinkStore(url: url).load()
+        #expect(s.seq == 41 && s.enabled && s.recipient == nil && s.sent == nil)
+    }
+
+    @Test func theWatchsCounterIsAFloorForThePhones() throws {
+        let r = try Self.rig(requested: false)
+        try r.provisioner.watchRequested(recipient: r.watch.recipient.string, seq: 9)
+        #expect(try r.store.load().seq == 9)
+        guard case .profile(let data)? = try r.provisioner.nextMessage(stored: r.stored) else { Issue.record("not sent"); return }
+        #expect(try WatchProfilePayload.open(data, with: r.watch).seq == 10, "above what the watch holds")
+        // A lower claim never lowers the counter; an absurd one is ignored.
+        try r.provisioner.watchRequested(recipient: r.watch.recipient.string, seq: 2)
+        try r.provisioner.watchRequested(recipient: r.watch.recipient.string, seq: Int.max)
+        #expect(try r.store.load().seq == 10)
+        // Through the wire: the request carries it.
+        let message = WatchProvisioning.request(recipient: r.watch.recipient, seq: 33)
+        guard case .request(_, _, let seq)? = WatchProvisioning.message(WatchProvisioning.dictionary(message)) else { Issue.record("no request"); return }
+        #expect(seq == 33)
     }
 }
 
 extension MemoryWatchLinkStore {
     func setSeq(_ seq: Int) {
-        var s = load()
+        guard var s = try? load() else { return }
         s.seq = seq
         try? save(s)
     }

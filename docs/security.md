@@ -133,7 +133,10 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
   Someone who has your lost watch can add voice notes to your inbox as the
   iPhone, until the iPhone's key is replaced (a new epoch). They cannot read any
   note. Turning the setting off, or Reset on the watch, clears the watch's copy but
-  revokes nothing cryptographic: a copy someone already took stays valid. Removing
+  revokes nothing cryptographic: a copy someone already took stays valid. Reset also
+  makes the watch a new provisioning key, so the profile that WatchConnectivity keeps
+  in its persisted context (encrypted to the old key) can no longer be opened by the
+  watch. Removing
   the iPhone from the vault ends the watch's captures too (they verify only under
   the iPhone's listed key). A key of its own for each watch, listed in the vault so
   that it can be revoked alone, is not in 1.1 (decision D1 of the design).

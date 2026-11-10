@@ -14,8 +14,11 @@ import WatchKit
 @MainActor
 protocol WatchTransport: AnyObject {
     func activate()
-    /// Asks the phone for the profile (`transferUserInfo`, queued; wakes the phone app in the background).
-    func requestProvisioning(recipient: String)
+    /// Whether the session is activated: before that nothing can be queued, and nothing counts as a failed transfer.
+    var isActivated: Bool { get }
+    /// Asks the phone for the profile (`transferUserInfo`, queued; wakes the phone app in the background), with the counter
+    /// the watch holds. False when it could not be queued (the session is not activated yet): the caller asks again.
+    func requestProvisioning(recipient: String, seq: Int) -> Bool
     /// Hands a sealed outbox file over (`transferFile`); false when it could not be queued.
     func transfer(file: URL, meta: WatchTransferMeta) -> Bool
     /// Ids whose file transfer the system still holds (so a launch does not queue them twice).
@@ -28,10 +31,19 @@ final class NoWatchTransport: WatchTransport {
     private(set) var requests: [String] = []
     private(set) var sent: [WatchTransferMeta] = []
     var accepts = true
+    /// A session that is not activated yet queues nothing (tests set it false, then true).
+    var activated = true
+    private(set) var requestSeqs: [Int] = []
+    var isActivated: Bool { activated }
     func activate() {}
-    func requestProvisioning(recipient: String) { requests.append(recipient) }
+    func requestProvisioning(recipient: String, seq: Int) -> Bool {
+        guard activated else { return false }
+        requests.append(recipient)
+        requestSeqs.append(seq)
+        return true
+    }
     func transfer(file: URL, meta: WatchTransferMeta) -> Bool {
-        guard accepts else { return false }
+        guard accepts, activated else { return false }
         sent.append(meta)
         return true
     }
@@ -74,10 +86,10 @@ struct WatchEnvironment {
 enum WatchHaptic { case start, stop }
 
 enum WatchStorage {
-    /// The free space on the watch, or nil when it cannot be read (watchOS has no "important usage" capacity).
+    /// The free space on the watch, or nil when it cannot be read. An `Int64` through `NSNumber`: the watch's `Int` may be 32 bits.
     static func freeBytes() -> Int64? {
-        let values = try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityKey])
-        return values?.volumeAvailableCapacity.map { Int64($0) }
+        let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())
+        return (attributes?[.systemFreeSize] as? NSNumber)?.int64Value
     }
 
     static var support: URL {
@@ -307,10 +319,11 @@ final class WatchModel {
     }
 
     /// With no profile the watch asks the phone, once per launch (and again after a Reset).
-    private func requestProvisioningIfNeeded() {
+    /// `requested` is set only when the request was queued: the first one on a cold launch comes before the session is
+    /// activated, and `activated()` asks again.
+    func requestProvisioningIfNeeded() {
         guard !isSetUp, !requested, let identity = try? identityForRequests() else { return }
-        requested = true
-        env.transport.requestProvisioning(recipient: identity.recipient.string)
+        requested = env.transport.requestProvisioning(recipient: identity.recipient.string, seq: state.seq)
     }
 
     /// A message from the paired iPhone, from the session delegate's callbacks only (never a file, a URL or anything else:
@@ -339,6 +352,10 @@ final class WatchModel {
     func reset() {
         state = WatchProfileState()
         try? secrets.save(state)
+        // A new provisioning key too: the phone's persisted application context holds the old profile, encrypted to the old
+        // key, and nothing can open it any more.
+        try? env.secrets.delete(.provisioningKey)
+        identity = nil
         requested = false
         refreshScreen(settle: true)
         publish()
@@ -349,6 +366,8 @@ final class WatchModel {
 
     /// Hands every outbox file that is due to the system (`launch`: every unsent file, as every launch retries).
     func flushOutbox(launch: Bool = false) {
+        // Before the session is activated nothing can be queued: that is not a failed transfer (it would push the retry back).
+        guard env.transport.isActivated else { updateUnsent(); return }
         let pending = env.transport.pendingTransfers
         for entry in outbox.due(launch: launch) where !pending.contains(entry.id) {
             if env.transport.transfer(file: outbox.fileURL(entry.id), meta: entry.meta) {

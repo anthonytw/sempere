@@ -218,6 +218,11 @@ final class WatchCaptureRecording: CaptureRecording {
         guard isActive, isPaused else { return }
         guard shouldResume else { stopBySystem(); return }
         do {
+            // The session is deactivated by the interruption: made active again before the new segment starts (as the
+            // iPhone's `AVAudioCaptureBackend.resume` does).
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .default, options: [])
+            try session.setActive(true)
             try beginSegment()
             timeline.resume(at: now())
             isPaused = false
