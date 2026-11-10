@@ -364,6 +364,10 @@ public struct WebDAVClient: Sendable {
         }
     }
 
+    /// The headers every request carries besides the caller's own. `Accept-Language` is fixed: left out, the system's
+    /// networking adds the device's preferred languages, which tell the server (the user's own) more than it needs.
+    static let fixedHeaders: [String: String] = ["User-Agent": "sempere-webdav/0.1", "Accept-Language": "en"]
+
     /// Creates the base collection and any missing ancestors (`mkcol([])`
     /// answered 409). Ancestors that cannot be created are ignored: only the
     /// base itself has to exist in the end.
@@ -372,7 +376,7 @@ public struct WebDAVClient: Sendable {
             let comps = Array(baseComponents.prefix(depth))
             let isBase = depth >= baseComponents.count
             guard let url = self.url(forAbsolute: comps) else { continue }
-            var h: [String: String] = ["User-Agent": "sempere-webdav/0.1"]
+            var h: [String: String] = Self.fixedHeaders
             if let authorization { h["Authorization"] = authorization }
             let r = try transport.send(WebDAVRequest(method: "MKCOL", url: url, headers: h,
                                                      maxResponseBytes: Self.defaultMaxResponseBytes))
@@ -438,7 +442,7 @@ public struct WebDAVClient: Sendable {
         }
         var h = headers
         if let authorization { h["Authorization"] = authorization }
-        h["User-Agent"] = "sempere-webdav/0.1"
+        for (k, v) in Self.fixedHeaders { h[k] = v }
         let r = try transport.send(WebDAVRequest(method: method, url: url, headers: h, body: body,
                                                  maxResponseBytes: maxResponseBytes, bodyFile: bodyFile,
                                                  responseFile: responseFile, interrupt: interrupt))

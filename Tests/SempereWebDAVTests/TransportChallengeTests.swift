@@ -90,4 +90,45 @@ final class TransportChallengeTests: XCTestCase {
         XCTAssertThrowsError(try transport.send(request)) { XCTAssertEqual($0 as? SyncError, .cancelled) }
         XCTAssertLessThan(Date().timeIntervalSince(start), 10)
     }
+
+    /// Only the headers the client sets go out: the device's preferred languages are not added by the system's
+    /// networking (`Accept-Language` is the fixed value), through the real transport.
+    func testRequestsCarryAFixedAcceptLanguage() throws {
+        let server = try SlowHTTPServer(response: "HTTP/1.1 207 Multi-Status\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        defer { server.stop() }
+        let client = try WebDAVClient(baseURL: URL(string: "http://127.0.0.1:\(server.port)/dav/")!,
+                                      credentials: WebDAVCredentials(user: "u", password: "p"),
+                                      transport: URLSessionTransport(timeout: 5))
+        _ = try? client.list([])
+        _ = try? client.get(["vault.json"])
+        _ = try? client.put(["x.age"], Data("x".utf8), condition: .create)
+        XCTAssertEqual(server.heads.count, 3)
+        for head in server.heads {
+            let languages = head.split(separator: "\r\n").filter { $0.lowercased().hasPrefix("accept-language:") }
+            XCTAssertEqual(languages.map { $0.lowercased().replacingOccurrences(of: " ", with: "") }, ["accept-language:en"], head)
+        }
+    }
+
+    /// A redirect is reported, never followed (docs/io.md): the credentials cannot be forwarded to another origin and a
+    /// method cannot be rewritten. The real transport, because the in-memory server cannot show it; on Linux it rests on
+    /// FoundationNetworking honoring a nil completion handler.
+    func testARedirectIsNeverFollowed() throws {
+        let other = try SlowHTTPServer(response: "HTTP/1.1 207 Multi-Status\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        defer { other.stop() }
+        for code in [301, 302, 303, 307, 308] {
+            let first = try SlowHTTPServer(response: "HTTP/1.1 \(code) Moved\r\nLocation: http://127.0.0.1:\(other.port)/elsewhere/\r\n"
+                + "Content-Length: 0\r\nConnection: close\r\n\r\n")
+            defer { first.stop() }
+            let client = try WebDAVClient(baseURL: URL(string: "http://127.0.0.1:\(first.port)/dav/")!,
+                                          credentials: WebDAVCredentials(user: "u", password: "secret"),
+                                          transport: URLSessionTransport(timeout: 5))
+            XCTAssertThrowsError(try client.list([]), "PROPFIND \(code)") {
+                guard case WebDAVError.redirect = $0 else { return XCTFail("\(code): \($0)") }
+            }
+            XCTAssertThrowsError(try client.get(["vault.json"]), "GET \(code)")
+            XCTAssertThrowsError(try client.put(["x.age"], Data("x".utf8), condition: .create), "PUT \(code)")
+            XCTAssertEqual(first.heads.count, 3, "each request reached the first server once")
+        }
+        XCTAssertEqual(other.heads.count, 0, "the redirect target got a request: \(other.heads)")
+    }
 }
