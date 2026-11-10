@@ -28,7 +28,7 @@ jobs:
         working-directory: web
         run: npm audit --omit=dev --audit-level=high
       # Plain OSV HTTPS API with curl and jq: osv-scanner would be a third-party binary.
-      - name: OSV (resolved Swift packages: the package and the app's lockfile)
+      - name: "OSV (resolved Swift packages: the package and the app's lockfile)"
         run: |
           set -euo pipefail
           status=0
