@@ -39,6 +39,15 @@
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array><string>35F9.1</string></array>
 		</dict>
+		<!-- Disk space: the sync engine reads the free space (statvfs, Sources/SempereSync/Quarantine.swift,
+		     SyncEngine.freeBytes) before it keeps a copy of a download that failed its checks, and keeps none when
+		     little is left (E174.1). It stays on the device, never sent anywhere. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array><string>E174.1</string></array>
+		</dict>
 	</array>
 </dict>
 </plist>

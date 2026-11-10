@@ -1,6 +1,14 @@
 import Foundation
 import Sempere
 
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
 /// Bounds of one sync run (security review 2026-10, W5). Each request is
 /// bounded on its own (`maxFileBytes`, `maxBlobBytes`, listing sizes); these
 /// bound the run as a whole, so a server cannot make it list, download or
@@ -16,6 +24,20 @@ public struct SyncLimits: Sendable, Hashable {
     public var maxDownloadBytes: Int64
     /// Wall-clock seconds; checked before each note and each download.
     public var maxDuration: TimeInterval
+    /// Bytes and files of refused downloads after which the run stops ("the server returns files that fail checks").
+    public var maxRefusedBytes: Int64 = SyncLimits.defaultMaxRefusedBytes
+    public var maxRefusedFiles = SyncLimits.defaultMaxRefusedFiles
+    /// What the quarantine of one target keeps in all (bytes, files); past either a refused download is recorded, not kept.
+    public var maxQuarantineBytes: Int64 = SyncLimits.defaultMaxQuarantineBytes
+    public var maxQuarantineFiles = SyncLimits.defaultMaxQuarantineFiles
+    /// Free space under which refused bytes are not kept.
+    public var minFreeBytes: Int64 = SyncLimits.defaultMinFreeBytes
+
+    public static let defaultMaxRefusedBytes: Int64 = 64 << 20
+    public static let defaultMaxRefusedFiles = 1_000
+    public static let defaultMaxQuarantineBytes: Int64 = 256 << 20
+    public static let defaultMaxQuarantineFiles = 1_000
+    public static let defaultMinFreeBytes: Int64 = 1 << 30
 
     public static let defaultMaxNotes = 100_000
     public static let defaultMaxEntries = 1_000_000
@@ -41,6 +63,10 @@ struct RunBudget {
     /// Listed sizes of the downloads running now (`reserve`), so that
     /// concurrent downloads together stay within `maxDownloadBytes`.
     var reservedBytes: Int64 = 0
+    /// Bytes and files of downloads this run refused (`SyncEngine.quarantine`): past `limits.maxRefusedBytes` or
+    /// `limits.maxRefusedFiles` the run stops.
+    var refusedBytes: Int64 = 0
+    var refusedFiles = 0
 
     init(_ limits: SyncLimits, start: Date = Date()) {
         self.limits = limits
@@ -49,6 +75,9 @@ struct RunBudget {
 
     func checkTime() throws {
         if Date() > deadline { throw Self.timeExceeded(limits) }
+        if refusedBytes >= limits.maxRefusedBytes || refusedFiles >= limits.maxRefusedFiles {
+            throw SyncError.limitExceeded("the server returns files that fail checks (\(refusedFiles) refused in this run)")
+        }
     }
 
     /// The error of a run past `limits.maxDuration`.
@@ -299,6 +328,9 @@ extension SyncEngine {
     private func lockedQuarantine(_ key: String, path: String, entry: RemoteEntry?, reason: String, data: Data?, file: URL?) {
         let fm = FileManager.default
         let sha256 = Self.refusedDigest(data: data, file: file)
+        let refusedSize = data.map { Int64($0.count) } ?? file.flatMap { (try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? NSNumber)?.int64Value } ?? 0
+        budget.refusedBytes += max(refusedSize, 0)
+        budget.refusedFiles += 1
         if lockedRepeatedRefusal(key, path: path, entry: entry, checker: checker(), sha256: sha256, setAside: nil) {
             if let file { try? fm.removeItem(at: file) }
             return
@@ -308,7 +340,7 @@ extension SyncEngine {
         do {
             try fm.createDirectory(at: first.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: quarantineRoot.path)
-            kept = try keepQuarantined(first: first, data: data, file: file)
+            kept = try keepQuarantined(first: first, data: data, file: file, size: refusedSize, sha256: sha256)
         } catch {
             kept = "not kept: \(Self.describe(error))"
         }
@@ -318,17 +350,63 @@ extension SyncEngine {
         let record = lockedRefusalRecord(key, entry: entry, checker: checker(), sha256: sha256, setAside: nil)
         state.quarantined?[key] = record
         refusedThisRun.insert(key)
+        // Saved as it happens: a run that is killed does not download the same refused files again.
+        if !options.dryRun, !keepNoState { try? SyncState.appendRefusal(key, record, to: stateURL) }
+    }
+
+    // The quarantine's totals and the run's refusal limits are `SyncLimits` (`maxQuarantineBytes`, `maxQuarantineFiles`,
+    // `minFreeBytes`, `maxRefusedBytes`, `maxRefusedFiles`): past a total a refused download is recorded (path, size,
+    // digest, time) but its bytes are dropped.
+
+    /// Files and bytes the quarantine folder holds now.
+    private static func measureQuarantine(_ root: URL) -> (files: Int, bytes: Int64) {
+        var files = 0
+        var bytes: Int64 = 0
+        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
+        if let e = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys) {
+            for case let u as URL in e {
+                guard let v = try? u.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
+                files += 1
+                bytes += Int64(v.fileSize ?? 0)
+            }
+        }
+        return (files, bytes)
+    }
+
+    /// Free bytes on the volume holding `url` (or its nearest existing parent); nil when unknown.
+    static func freeBytes(at url: URL) -> Int64? {
+        var dir = url
+        while !FileManager.default.fileExists(atPath: dir.path), dir.pathComponents.count > 1 { dir.deleteLastPathComponent() }
+        var st = statvfs()
+        guard dir.withUnsafeFileSystemRepresentation({ $0.map { statvfs($0, &st) } }) == 0 else { return nil }
+        return Int64(st.f_bavail) * Int64(st.f_frsize)
+    }
+
+    private struct QuarantineFull: LocalizedError {
+        var detail: String
+        var errorDescription: String? { "the quarantine is full (\(detail))" }
     }
 
     /// Keeps one refused copy (`data`, or the file `file`) beside the copies of
     /// the same path kept already, never over one: the report's text says where.
-    private func keepQuarantined(first: URL, data: Data?, file: URL?) throws -> String {
+    private func keepQuarantined(first: URL, data: Data?, file: URL?, size: Int64, sha256: String?) throws -> String {
         let fm = FileManager.default
         let hash: String
         if let file { hash = try FileDigest.sha256(of: file).hex } else if let data { hash = FileDigest.sha256(data) } else {
             return "nothing to keep"
         }
         func place(_ target: URL) throws {
+            // Bounded in all, whatever the paths: past the totals or on a nearly full disk the bytes are dropped.
+            let totals = quarantineTotals ?? Self.measureQuarantine(quarantineRoot)
+            quarantineTotals = totals
+            let detail = "\(size) bytes, sha256 \(sha256 ?? hash), refused \(Self.stampClock())"
+            guard totals.files < options.limits.maxQuarantineFiles, totals.bytes + size <= options.limits.maxQuarantineBytes else {
+                throw QuarantineFull(detail: detail)
+            }
+            if let free = Self.freeBytes(at: quarantineRoot), free < options.limits.minFreeBytes {
+                throw QuarantineFull(detail: "little disk space is left; " + detail)
+            }
+            quarantineTotals = (totals.files + 1, totals.bytes + size)
             // Never over an existing file: a move or a write that finds the name taken fails.
             if let file { try fm.moveItem(at: file, to: target) } else if let data { try data.write(to: target, options: .withoutOverwriting) }
             try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)

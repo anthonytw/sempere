@@ -410,9 +410,56 @@ struct SyncState: Codable, Equatable {
                           to: Self.transfersURL(url), replacing: true)
     }
 
-    /// Removes the transfers file of `url`, if any.
+    // MARK: Refusals as they happen
+
+    /// One refused download, appended to `<state file>.refusals` when it is refused, so a run that is
+    /// killed before it saves the state does not download the same files again.
+    struct RefusalLine: Codable {
+        var key: String
+        var record: QuarantineRecord
+    }
+
+    static func refusalsURL(_ url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".refusals")
+    }
+
+    static func appendRefusal(_ key: String, _ record: QuarantineRecord, to url: URL) throws {
+        let file = refusalsURL(url)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var line = try JSONEncoder().encode(RefusalLine(key: key, record: record))
+        line.append(0x0A)
+        if !FileManager.default.fileExists(atPath: file.path) {
+            guard FileManager.default.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+                throw SyncError.io("cannot create \(file.path)")
+            }
+        }
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: line)
+    }
+
+    /// The refusals a killed run left; lines that do not read are ignored.
+    static func loadRefusals(_ url: URL) -> [RefusalLine] {
+        guard let data = try? BoundedRead.contents(of: refusalsURL(url), maxBytes: BoundedRead.maxManifestBytes) else { return [] }
+        return data.split(separator: 0x0A).compactMap { try? JSONDecoder().decode(RefusalLine.self, from: Data($0)) }
+    }
+
+    static func removeRefusals(_ url: URL) {
+        try? FileManager.default.removeItem(at: refusalsURL(url))
+    }
+
+    mutating func merge(refusals: [RefusalLine]) {
+        guard !refusals.isEmpty else { return }
+        quarantined = quarantined ?? [:]
+        for r in refusals { quarantined?[r.key] = r.record }
+    }
+
+    /// Removes the transfers file of `url`, if any, and its refusals file.
     static func removeTransfers(_ url: URL) {
         try? FileManager.default.removeItem(at: transfersURL(url))
+        // The state was saved (and holds the refusals) or dropped: its refusals file goes with it.
+        removeRefusals(url)
     }
 
     /// Takes in what a killed run saved: its temporary upload names are

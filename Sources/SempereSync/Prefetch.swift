@@ -165,6 +165,9 @@ extension SyncEngine {
             let revisions = (remoteNotes[id] ?? []).compactMap { e -> (RevisionName, RemoteEntry)? in
                 guard !e.isCollection, let n = RevisionName(e.name), n.filename == e.name,
                       !local.contains(e.name), !recorded.contains(n) else { return nil }
+                // Whole revisions are held in memory: only small, listed ones go into the pool (as in the partial
+                // fetch, `FetchScope.concurrentRevisionBytes`); the others come one at a time in the note loop.
+                guard let size = e.size, size >= 0, size <= FetchScope.concurrentRevisionBytes else { return nil }
                 return (n, e)
             }.sorted { $0.0 < $1.0 }.map { n, e in
                 PrefetchItem(note: id, blob: nil, revision: n, entry: e, key: key(id, n), path: "notes/\(key(id, n))")
@@ -225,7 +228,8 @@ extension SyncEngine {
             if let blob = item.blob {
                 placed = try downloadBlob(item.note, blob, entry: item.entry) != nil
             } else if let n = item.revision {
-                placed = try download(item.note, n, entry: item.entry)
+                // A listed size that is wrong fails this one read, not the run's memory.
+                placed = try download(item.note, n, entry: item.entry, maxBytes: FetchScope.concurrentRevisionBytes)
             }
         } catch {
             try rethrowRunLimit(error)
