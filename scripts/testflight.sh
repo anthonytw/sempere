@@ -16,6 +16,10 @@
 #                       warning; for an emergency only, docs/releasing.md)
 #   --keep              keep the temporary worktree after the run
 #   --yes               upload without asking (unattended runs); otherwise an upload asks [y/N] first
+#   --build-number N    the build number (CFBundleVersion) for every target; default: the commit's count on its
+#                       history (`git rev-list --count`), which only grows along main. App Store Connect wants each
+#                       upload higher than the last one of that platform, across versions on the Mac, so a second
+#                       upload of the same commit needs a higher N
 #   -h, --help          print this help
 #
 # Policy (docs/ci.md): a TestFlight build needs `scripts/local-ci.sh --testflight` (`just ci-testflight`)
@@ -50,21 +54,26 @@
 #                                used only when it exists: the agent seat's build queue)
 set -euo pipefail
 
-usage="usage: $0 [--dry-run] [--export-only] [--skip-suite-check] [--keep] [--yes] [ios|mac|both] [REF]"
+usage="usage: $0 [--dry-run] [--export-only] [--skip-suite-check] [--keep] [--yes] [--build-number N] [ios|mac|both] [REF]"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-dry=false export_only=false skip_suite=false keep=false yes=false which="" ref=""
+dry=false export_only=false skip_suite=false keep=false yes=false which="" ref="" build=""
+want_build=false
 for arg in "$@"; do
+  if [[ $want_build == true ]]; then build=$arg; want_build=false; continue; fi
   case "$arg" in
+    --build-number) want_build=true ;;
+    --build-number=*) build=${arg#--build-number=} ;;
     --dry-run) dry=true ;;
     --export-only) export_only=true ;;
     --skip-suite-check) skip_suite=true ;;
     --keep) keep=true ;;
     --yes) yes=true ;;
-    -h|--help) sed -n '2,48p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 0 ;;
     -*) echo "$usage" >&2; exit 2 ;;
     *) if [[ -z $which ]]; then which=$arg; elif [[ -z $ref ]]; then ref=$arg; else echo "$usage" >&2; exit 2; fi ;;
   esac
 done
+[[ $want_build == false ]] || { echo "$usage" >&2; exit 2; }
 which=${which:-both}
 ref=${ref:-main}
 case "$which" in ios|mac|both) ;; *) echo "$usage" >&2; exit 2 ;; esac
@@ -227,7 +236,9 @@ echo "worktree: $work"
 
 targets=$([[ $which == both ]] && echo "ios mac" || echo "$which")
 marketing=$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \([^;]*\);/\1/p' "$work/Apps/Sempere/Sempere.xcodeproj/project.pbxproj" | sort -u | tr '\n' ' ')
-echo "version: ${marketing% } (MARKETING_VERSION; the build number is assigned on upload)"
+build=${build:-$(git -C "$work" rev-list --count HEAD)}
+[[ $build =~ ^[1-9][0-9]{0,8}$ ]] || die "--build-number must be a positive whole number, not '$build'"
+echo "version: ${marketing% } (MARKETING_VERSION), build $build (CURRENT_PROJECT_VERSION for every target)"
 
 # --- Confirm the upload --------------------------------------------------------------------------
 if [[ $dry == false && $export_only == false && $yes == false ]]; then
@@ -281,7 +292,7 @@ export_options() {  # $1 = ios|mac -> $out/ExportOptions-$1.plist
 <key>destination</key><string>$destination</string>
 <key>teamID</key><string>$team</string>
 $signing_keys
-<key>manageAppVersionAndBuildNumber</key><true/>
+<key>manageAppVersionAndBuildNumber</key><false/>
 <key>uploadSymbols</key><true/>
 </dict></plist>
 PLIST
@@ -298,7 +309,7 @@ for t in ios mac; do
   export_options "$t"
   archive=(xcodebuild archive -project "$work/Apps/Sempere/Sempere.xcodeproj" -scheme SempereApp
     -configuration Release -destination "$dest" -archivePath "$out/$t.xcarchive"
-    -derivedDataPath "$out/dd-$t.noindex" "DEVELOPMENT_TEAM=$team" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"})
+    -derivedDataPath "$out/dd-$t.noindex" "DEVELOPMENT_TEAM=$team" "CURRENT_PROJECT_VERSION=$build" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"})
   export_cmd=(xcodebuild -exportArchive -archivePath "$out/$t.xcarchive"
     -exportOptionsPlist "$out/ExportOptions-$t.plist" -exportPath "$out/export-$t"
     -allowProvisioningUpdates ${auth[@]+"${auth[@]}"})

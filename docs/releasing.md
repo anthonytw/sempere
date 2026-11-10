@@ -156,7 +156,7 @@ $EDITOR ~/.config/sempere/release.env
    commit:  48c0b9f summaries: recognition and compaction snapshots no longer move a note's modified date (#96)
    local/testflight-suite: success
    worktree: $TMPDIR/sempere-testflight/src-48c0b9fdcc0f-12345
-   version: 1.0.0 (MARKETING_VERSION; the build number is assigned on upload)
+   version: 1.0.0 (MARKETING_VERSION), build 64 (CURRENT_PROJECT_VERSION for every target)
 
    == ios (dry run) ==
    export options ($TMPDIR/sempere-testflight/ExportOptions-ios.plist):
@@ -207,7 +207,7 @@ one build when a visible chunk of work is ready, not one per merge.
    Expected:
    ```
    local/testflight-suite: success
-   version: 1.0.0 (MARKETING_VERSION; the build number is assigned on upload)
+   version: 1.0.0 (MARKETING_VERSION), build 64 (CURRENT_PROJECT_VERSION for every target)
 
    About to archive and UPLOAD to TestFlight: ios mac, version 1.0.0, commit 1a2b3c4d5e6f.
    Upload to TestFlight? [y/N] y
@@ -218,8 +218,10 @@ one build when a visible chunk of work is ready, not one per merge.
    mac: uploaded
    Done. The build shows in App Store Connect > Sempere > TestFlight after processing (usually 5-30 minutes).
    ```
-   Build numbers are assigned on upload (`manageAppVersionAndBuildNumber`); the version is the project's
-   `MARKETING_VERSION`. `--yes` skips the question (needed when there is no terminal).
+   The build number is the commit's count on its history (`git rev-list --count`), set as `CURRENT_PROJECT_VERSION`
+   on every target: it only grows along `main`, and App Store Connect wants each upload higher than the last of its
+   platform (on the Mac across versions too, which `manageAppVersionAndBuildNumber` did not handle). A second upload
+   of the same commit needs `--build-number N` with a higher N. The version is the project's `MARKETING_VERSION`. `--yes` skips the question (needed when there is no terminal).
 4. **[you] App Store Connect ▸ Sempere ▸ TestFlight.** When the build has processed: add it to the tester
    group(s), fill in "What to Test" (from `[Unreleased]`), and for external groups submit it for Beta App Review.
    Beta App Review opens the Privacy Policy URL under TestFlight ▸ Test Information: it must be live (B.4).

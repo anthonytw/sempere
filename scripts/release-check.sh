@@ -106,7 +106,8 @@ WATCH_ENTITLEMENT_FILES = {
     "SempereWatch.entitlements": {"com.apple.security.application-groups"},
     "SempereWatchWidgets.entitlements": {"com.apple.security.application-groups"},
 }
-# Background modes the watch app may declare (`WKBackgroundModes`): a voice note keeps recording with the wrist down.
+# Background modes the watch app may declare (`UIBackgroundModes`; watchOS takes `audio` there, never in `WKBackgroundModes`,
+# which App Store Connect refuses): a voice note keeps recording with the wrist down.
 WATCH_BACKGROUND_MODES_ALLOWED = {"audio"}
 
 # Calls that put a source file in a category (Swift and C spellings of the APIs
@@ -378,7 +379,10 @@ for path in (info_path, os.path.join(app_dir, "SempereWidgetsInfo.plist"), os.pa
     if os.path.basename(path) == "SempereWatchInfo.plist":
         if info.get("WKCompanionAppBundleIdentifier") != app_id:
             errors.append(f"{rel(path)}: WKCompanionAppBundleIdentifier must be {app_id} (the iPhone app the watch app ships in)")
-        modes = info.get("WKBackgroundModes", [])
+        modes = info.get("UIBackgroundModes", [])
+        if "WKBackgroundModes" in info:
+            errors.append(f"{rel(path)}: WKBackgroundModes is set: the watch app declares no session mode, and App Store Connect "
+                          "refuses audio there (it goes in UIBackgroundModes)")
         for mode in modes:
             if mode not in WATCH_BACKGROUND_MODES_ALLOWED:
                 errors.append(f"{rel(path)}: background mode {mode!r} is not in the allow-list {sorted(WATCH_BACKGROUND_MODES_ALLOWED)} "
@@ -387,7 +391,7 @@ for path in (info_path, os.path.join(app_dir, "SempereWidgetsInfo.plist"), os.pa
             errors.append(f"{rel(path)}: WKRunsIndependentlyOfCompanionApp must be false: the watch app does nothing without the "
                           "iPhone app's profile (design 1.1-watch.md, non-goals)")
         if "audio" not in modes:
-            errors.append(f"{rel(path)}: WKBackgroundModes must hold audio: a voice note keeps recording with the wrist down")
+            errors.append(f"{rel(path)}: UIBackgroundModes must hold audio: a voice note keeps recording with the wrist down")
     if path == info_path:
         enc = info.get("ITSAppUsesNonExemptEncryption")
         if not isinstance(enc, bool):

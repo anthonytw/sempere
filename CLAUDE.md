@@ -299,7 +299,7 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   `SempereWidgets/`). A new entitlement, package product or API category means updating the
   script's tables, and the manifest in the same PR.
   The Apple Watch targets have their own rules in it: the bundle ids `….watchkitapp` and `….watchkitapp.widgets` with the app's
-  versions, the watch app embedded in the iPhone app, entitlements limited to the App Group, `WKBackgroundModes` limited to
+  versions, the watch app embedded in the iPhone app, entitlements limited to the App Group, `UIBackgroundModes` limited to
   `audio`, a microphone string, and only the package products in `WATCH_PRODUCTS_ALLOWED` (no network code, no `SempereAppCore`).
   It also fails on networking (`URLSession`, Network.framework, sockets, WebKit, …) in any
   non-test folder of `Apps/Sempere` or a linked `Sources/` target outside `NETWORK_ALLOWED` (the

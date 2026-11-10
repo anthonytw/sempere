@@ -12,8 +12,8 @@
 	     records and seals without the phone near; the notes wait in its outbox. -->
 	<key>WKRunsIndependentlyOfCompanionApp</key>
 	<false/>
-	<!-- A voice note keeps recording with the wrist down and the screen off (docs/design/1.1-watch.md §3.5; real-watch check W1). Review note: the app records only after a tap on Record, a complication, a widget, the Control, the Action button or Siri, and the system shows its recording indicator. -->
-	<key>WKBackgroundModes</key>
+	<!-- A voice note keeps recording with the wrist down and the screen off (docs/design/1.1-watch.md §3.5; real-watch check W1). Review note: the app records only after a tap on Record, a complication, a widget, the Control, the Action button or Siri, and the system shows its recording indicator. On watchOS the audio mode is a UIBackgroundModes value: WKBackgroundModes takes only the watch's own session modes (workout, self care, …), and App Store Connect refuses `audio` there. -->
+	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 	</array>
