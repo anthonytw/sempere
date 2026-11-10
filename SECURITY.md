@@ -81,7 +81,7 @@ stated guarantee in released versions. Low, Info, hardening and findings only in
 | Audit | Date | Version | Report |
 | --- | --- | --- | --- |
 
-No audit is published yet. The first, a full audit of 1.0, is planned; its row goes here when its fixes have shipped.
+No audit is published yet. The first, a full audit of 1.1, is planned before 1.1 is submitted to the App Store; its row goes here when its fixes have shipped.
 
 ## Verifying releases
 
