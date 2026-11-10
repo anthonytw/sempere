@@ -21,6 +21,8 @@ fresh() {
   cp "$here/SECURITY.md" "$tmp/root/"
 }
 pbx="Apps/Sempere/Sempere.xcodeproj/project.pbxproj"
+# The app version as committed (the edits below match it, so a version bump needs no test change).
+ver=$(sed -n "s/.*MARKETING_VERSION = \([0-9.]*\);.*/\1/p" "$here/$pbx" | head -1)
 
 # edit FILE PYTHON-EXPR: rewrites FILE (relative to the copy) as expr(s).
 edit() { python3 -I -c 'import sys; p=sys.argv[1]; s=open(p).read(); exec("s="+sys.argv[2]); open(p,"w").write(s)' "$tmp/root/$1" "$2"; }
@@ -74,13 +76,13 @@ expect "the ledger key file fallback in the #else of #if DEBUG" fail "outside .#
 fresh; edit "$pbx" 's.replace("SWIFT_COMPILATION_MODE = wholemodule;", "OTHER_SWIFT_FLAGS = \"-D DEBUG\";\n\t\t\t\tSWIFT_COMPILATION_MODE = wholemodule;", 1)'
 expect "-D DEBUG in a Release configuration" fail "a Release configuration sets DEBUG .OTHER_SWIFT_FLAGS."
 
-fresh; edit "$pbx" 's.replace("MARKETING_VERSION = 1.0.0;", "MARKETING_VERSION = 1.0.1;", 1)'
+fresh; edit "$pbx" 's.replace("MARKETING_VERSION = '"$ver"';", "MARKETING_VERSION = 9.9.9;", 1)'
 expect "marketing version mismatch" fail "MARKETING_VERSION differs"
 
 fresh; edit "$pbx" 's[::-1].replace(";1 = NOISREV_TCEJORP_TNERRUC", ";2 = NOISREV_TCEJORP_TNERRUC", 1)[::-1]'
 expect "build number mismatch (the last target's)" fail "CURRENT_PROJECT_VERSION differs"
 
-fresh; edit "$pbx" 's.replace("MARKETING_VERSION = 1.0.0;", "MARKETING_VERSION = beta;")'
+fresh; edit "$pbx" 's.replace("MARKETING_VERSION = '"$ver"';", "MARKETING_VERSION = beta;")'
 expect "non-numeric version" fail "not 1 to 3 dot-separated integers"
 
 fresh; edit "Apps/Sempere/SempereWidgetsInfo.plist" 's.replace("<dict>\n", "<dict>\n\t<key>CFBundleVersion</key>\n\t<string>7</string>\n", 1)'
@@ -217,8 +219,8 @@ extra=()
 # The Apple Watch app and its widgets (docs/design/1.1-watch.md): ids, versions, embedding, entitlements, background modes,
 # privacy manifests and no network code or network product.
 wapp="Apps/Sempere/SempereWatch"
-fresh; edit "$pbx" 's.replace("MARKETING_VERSION = 1.0.0;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;", "MARKETING_VERSION = 1.0.1;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;")'
-expect "the watch app's version differs from the app's" fail "io.github.anthonytw.sempere.watchkitapp has version .*1.0.1.* but the app has"
+fresh; edit "$pbx" 's.replace("MARKETING_VERSION = '"$ver"';\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;", "MARKETING_VERSION = 9.9.9;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;")'
+expect "the watch app's version differs from the app's" fail "io.github.anthonytw.sempere.watchkitapp has version .*9.9.9.* but the app has"
 
 fresh; edit "$pbx" 's.replace("CURRENT_PROJECT_VERSION = 1;\n\t\t\t\tGENERATE_INFOPLIST_FILE = YES;\n\t\t\t\tINFOPLIST_FILE = SempereWatchWidgetsInfo.plist;", "CURRENT_PROJECT_VERSION = 2;\n\t\t\t\tGENERATE_INFOPLIST_FILE = YES;\n\t\t\t\tINFOPLIST_FILE = SempereWatchWidgetsInfo.plist;")'
 expect "the watch widgets' build number differs from the app's" fail "io.github.anthonytw.sempere.watchkitapp.widgets has version"
@@ -229,7 +231,7 @@ expect "the watch widgets' bundle id is gone" fail "the watch bundle id io.githu
 fresh; edit "$pbx" 's.replace("SempereWatch.app in Embed Watch Content", "SempereWatch.app in Other")'
 expect "the watch app is not embedded in the iPhone app" fail "SempereWatch.app is not in SempereApp's Embed Watch Content phase"
 
-fresh; edit "$pbx" 's.replace("INFOPLIST_KEY_NSMicrophoneUsageDescription = \"Sempere uses the microphone to record audio into your notes. Recordings are encrypted in your vault.\";\n\t\t\t\tLD_RUNPATH_SEARCH_PATHS = (\n\t\t\t\t\t\"$(inherited)\",\n\t\t\t\t\t\"@executable_path/Frameworks\",\n\t\t\t\t);\n\t\t\t\tMARKETING_VERSION = 1.0.0;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;", "LD_RUNPATH_SEARCH_PATHS = (\n\t\t\t\t\t\"$(inherited)\",\n\t\t\t\t\t\"@executable_path/Frameworks\",\n\t\t\t\t);\n\t\t\t\tMARKETING_VERSION = 1.0.0;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;", 1)'
+fresh; edit "$pbx" 's.replace("INFOPLIST_KEY_NSMicrophoneUsageDescription = \"Sempere uses the microphone to record audio into your notes. Recordings are encrypted in your vault.\";\n\t\t\t\tLD_RUNPATH_SEARCH_PATHS = (\n\t\t\t\t\t\"$(inherited)\",\n\t\t\t\t\t\"@executable_path/Frameworks\",\n\t\t\t\t);\n\t\t\t\tMARKETING_VERSION = '"$ver"';\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;", "LD_RUNPATH_SEARCH_PATHS = (\n\t\t\t\t\t\"$(inherited)\",\n\t\t\t\t\t\"@executable_path/Frameworks\",\n\t\t\t\t);\n\t\t\t\tMARKETING_VERSION = '"$ver"';\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;", 1)'
 expect "the watch app has no microphone usage string" fail "the watch app needs INFOPLIST_KEY_NSMicrophoneUsageDescription"
 
 fresh; edit "Apps/Sempere/SempereWatch.entitlements" 's.replace("</dict>", "\t<key>com.apple.security.device.audio-input</key>\n\t<true/>\n</dict>")'
