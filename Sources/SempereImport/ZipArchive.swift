@@ -274,17 +274,27 @@ public final class ZipArchive {
                                  modified: modified))
             p = extraEnd + commentLen
         }
-        try checkDisjoint(entries)
+        // The local header's own name and extra-field lengths decide where an entry's bytes start (`read`), so
+        // they count in the overlap check: read once per entry, in offset order. A header that cannot be read or
+        // has no signature counts as its 30 fixed bytes here, and `read` refuses it when the entry is read.
+        var variable: [UInt64: UInt64] = [:]
+        for entry in entries.sorted(by: { $0.localHeaderOffset < $1.localHeaderOffset }) where variable[entry.localHeaderOffset] == nil {
+            if let h = try? read(entry.localHeaderOffset, 30), h.count == 30, h.u32(0) == 0x0403_4B50 {
+                variable[entry.localHeaderOffset] = UInt64(h.u16(26)) + UInt64(h.u16(28))
+            }
+        }
+        try checkDisjoint(entries, variableLength: variable)
         return entries
     }
 
     /// Refuses entries whose local header and stored bytes overlap another's
-    /// (at least 30 header bytes plus `compressedSize` each, in offset order):
+    /// (30 header bytes, the header's name and extra field (`variableLength`, by
+    /// local header offset) and `compressedSize` each, in offset order):
     /// many records pointing at one deflate bomb would each inflate it.
-    static func checkDisjoint(_ entries: [Entry]) throws {
+    static func checkDisjoint(_ entries: [Entry], variableLength: [UInt64: UInt64] = [:]) throws {
         let sorted = entries.sorted { $0.localHeaderOffset < $1.localHeaderOffset }
         for (a, b) in zip(sorted, sorted.dropFirst()) {
-            let (withHeader, o1) = a.localHeaderOffset.addingReportingOverflow(30)
+            let (withHeader, o1) = a.localHeaderOffset.addingReportingOverflow(30 + (variableLength[a.localHeaderOffset] ?? 0))
             let (end, o2) = withHeader.addingReportingOverflow(a.compressedSize)
             guard !o1, !o2, end <= b.localHeaderOffset else {
                 throw ImportError.zip("entries \(a.path) and \(b.path) overlap")

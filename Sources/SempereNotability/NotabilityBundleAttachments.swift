@@ -161,7 +161,7 @@ extension NotabilityAttachments {
             let result: Result<ImageImport.Prepared, ImageImport.Failure>
             if let hit = prepared[name] { result = hit } else {
                 do {
-                    let p = try ImageImport.prepare(try pkg.read(prefix + name), keepMetadata: keepMetadata)
+                    let p = try ImageImport.prepare(try pkg.read(prefix + name), keepMetadata: keepMetadata, convertHEIC: convertHEIC)
                     guard hold(p.data.count) else {
                         unreadable[name] = "\(name): over the attachment budget for one note"
                         drop(unreadable[name]!); continue

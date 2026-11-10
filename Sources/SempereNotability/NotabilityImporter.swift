@@ -39,6 +39,9 @@ public enum NotabilityImporter {
         /// Extracts the text of PDF pages Notability's own PDF index does not
         /// cover (format.md §8.2.6 `pageText`); nil stores the index's text only.
         public var pdfText: (any PDFTextExtracting)?
+        /// Converts HEIC image bytes to JPEG without metadata when `keepImageMetadata` is off (`ImageImport.prepare`);
+        /// nil: a HEIC image is stored as it is, with a warning.
+        public var convertHEIC: (@Sendable (Data) throws -> Data)?
         /// Told after each source is read and after each is written (from the importing thread).
         public var progress: (@Sendable (ImporterProgress) -> Void)?
         /// Asked before each source is read or written: true stops the import there. Notes written stay
@@ -1030,7 +1033,7 @@ public enum NotabilityImporter {
         // Read only for a note that is written.
         let attachments = options.attachments
             ? NotabilityAttachments.resolve(note, package: pkg, keepImageMetadata: options.keepImageMetadata,
-                                            pdfText: options.pdfText) : nil
+                                            pdfText: options.pdfText, convertHEIC: options.convertHEIC) : nil
         result.dropped = dropped(note, attachments: attachments)
         result.warnings = attachments?.warnings ?? []
         if !note.unsupportedKinds.isEmpty {

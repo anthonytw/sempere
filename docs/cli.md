@@ -1836,7 +1836,7 @@ Notability kept with a recording becomes its transcript blob, `engine` `notabili
 counted as `transcripts`);
 blobs are written before the note's delta.
 JPEG and PNG metadata (camera, location) is stripped unless
-`--keep-image-metadata`; HEIC is stored as is; GIF (first frame) and baseline
+`--keep-image-metadata`; HEIC is stored as is, with a warning (the CLI has no converter; the app converts it); GIF (first frame) and baseline
 TIFF are converted to PNG; WebP and other formats are reported and left out. `--no-attachments` imports ink, recognized
 handwriting and metadata only and reports every attachment as dropped. A note with
 no ink and none of its PDF pages imported gets a `no ink in …` line. A note
