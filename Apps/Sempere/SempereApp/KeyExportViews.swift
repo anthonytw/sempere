@@ -84,7 +84,7 @@ struct KeyFileActions: View {
         } header: {
             Text("Paper recovery kit")
         } footer: {
-            Text("A printed page with the recovery key as a QR code and checked text, the vault's root fingerprint, and how to open the vault with stock tools. Print it now and keep it somewhere safe: no device keeps the recovery key, so the kit cannot be printed later. Do not keep the PDF.")
+            Text("A printed page with the recovery key as a QR code and checked text, the vault's root fingerprint, and how to open the vault with stock tools. Print it now and keep it somewhere safe: no device keeps the recovery key, so the kit cannot be printed later. Do not keep the PDF. Print to a printer you trust, connected directly or on your own network.")
         }
         .onDisappear {
             unshare()

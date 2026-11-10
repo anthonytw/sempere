@@ -3169,14 +3169,14 @@
         }
       }
     },
-    "A printed page with the recovery key as a QR code and checked text, the vault's root fingerprint, and how to open the vault with stock tools. Print it now and keep it somewhere safe: no device keeps the recovery key, so the kit cannot be printed later. Do not keep the PDF." : {
+    "A printed page with the recovery key as a QR code and checked text, the vault's root fingerprint, and how to open the vault with stock tools. Print it now and keep it somewhere safe: no device keeps the recovery key, so the kit cannot be printed later. Do not keep the PDF. Print to a printer you trust, connected directly or on your own network." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una página impresa con la clave de recuperación como código QR y como texto con comprobación, la huella raíz de la bóveda y cómo abrirla con herramientas estándar. Imprímela ahora y guárdala en un lugar seguro: ningún dispositivo guarda la clave de recuperación, así que el kit no se puede imprimir más tarde. No conserves el PDF."
+            "value" : "Una página impresa con la clave de recuperación como código QR y como texto con comprobación, la huella raíz de la bóveda y cómo abrirla con herramientas estándar. Imprímela ahora y guárdala en un lugar seguro: ningún dispositivo guarda la clave de recuperación, así que el kit no se puede imprimir más tarde. No conserves el PDF. Imprímela en una impresora de confianza, conectada directamente o en tu propia red."
           }
         }
       }
@@ -13263,7 +13263,7 @@
         }
       }
     },
-    "Notes are encrypted on your devices. There is no Sempere server: your storage sees encrypted files, their sizes and times." : {
+    "Notes are encrypted on your devices. There is no Sempere server: your storage sees encrypted files, their sizes and times, and the list of this vault's devices." : {
       "comment" : "Quick tour page 5",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -13271,7 +13271,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las notas se cifran en tus dispositivos. No hay servidor de Sempere: tu almacenamiento ve archivos cifrados, su tamaño y sus fechas."
+            "value" : "Las notas se cifran en tus dispositivos. No hay servidor de Sempere: tu almacenamiento ve archivos cifrados, su tamaño y sus fechas, y la lista de dispositivos de esta bóveda."
           }
         }
       }

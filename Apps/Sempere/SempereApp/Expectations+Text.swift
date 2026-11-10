@@ -89,7 +89,7 @@ extension TourPage {
             return [
                 String(localized: "Every vault is a folder of encrypted files kept on this device, so it opens offline. A vault from a WebDAV server stays in sync with the server, both ways.",
                        comment: "Quick tour page 5"),
-                String(localized: "Notes are encrypted on your devices. There is no Sempere server: your storage sees encrypted files, their sizes and times.",
+                String(localized: "Notes are encrypted on your devices. There is no Sempere server: your storage sees encrypted files, their sizes and times, and the list of this vault's devices.",
                        comment: "Quick tour page 5"),
             ]
         case .export:
