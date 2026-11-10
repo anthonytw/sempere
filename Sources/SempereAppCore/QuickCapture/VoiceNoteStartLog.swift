@@ -23,12 +23,13 @@ public struct VoiceNoteErrorInfo: Codable, Equatable, Sendable {
 
     public init(_ error: Error) {
         let ns = error as NSError
-        // A Swift error's own text (`RecordingError` carries the audio system's domain and code in it). Not the text
-        // of a Foundation or Objective-C error (a file error's names the path and the file, as does its
-        // `description`, which repeats the whole user info): its reason, which names neither.
-        let system = Swift.type(of: error) is NSError.Type || ns.domain.hasPrefix("NS") || ns.domain.hasPrefix("kCF")
-            || ns.domain == NSPOSIXErrorDomain || ns.domain == NSURLErrorDomain
-        let text = system ? (ns.localizedFailureReason ?? "") : String(describing: error)
+        // A Swift error's own text (`RecordingError` carries the audio system's domain and code in it); an
+        // Objective-C error's localized text. Not the text of a Foundation file or URL error (its description and its
+        // localized description name the path and the file, which a vault folder's user-chosen name makes personal):
+        // those give their reason, which names neither.
+        let namesFiles = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain].contains(ns.domain)
+        let text = namesFiles ? (ns.localizedFailureReason ?? "")
+            : Swift.type(of: error) is NSError.Type ? ns.localizedDescription : String(describing: error)
         self.init(type: String(reflecting: Swift.type(of: error)), domain: ns.domain, code: ns.code, description: text)
     }
 
