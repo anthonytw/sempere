@@ -1,28 +1,22 @@
 #!/usr/bin/env bash
-# The signature on a release's SHA256SUMS (SECURITY.md "Verifying releases"). Releases are built on the maintainer's
-# Mac, so there is no build attestation; the maintainer's SSH signing key signs the list of checksums instead.
+# Checks on the maintainer's signatures (SECURITY.md "Verifying releases"). The maintainer signs release tags and each
+# release's SHA256SUMS with their own SSH key, on their own account, never on the build account (scripts/release-sign.sh
+# signs; docs/releasing.md). This script only verifies:
 #
-#   scripts/release-signature.sh sign   DIR      writes DIR/SHA256SUMS.sig with the git signing key, then verifies it
-#   scripts/release-signature.sh verify DIR      checks DIR/SHA256SUMS against DIR/SHA256SUMS.sig
-#   scripts/release-signature.sh ready           checks that signing can work (a key, and its line in the signers file)
+#   scripts/release-signature.sh verify DIR        checks DIR/SHA256SUMS against DIR/SHA256SUMS.sig
+#   scripts/release-signature.sh verify-tag VERSION   a release tag from 1.1.0 on (not a prerelease) must be a tag object
+#                                                  named vVERSION that verifies against the signers file; older
+#                                                  versions and prereleases pass unchecked
+#   scripts/release-signature.sh owned PATH UID|any   PATH (a folder or file) is not a symlink, is owned by UID (or any)
+#                                                  and is not writable by group or world: the hand-off folders have
+#                                                  one writer each (docs/releasing.md)
 #
 # The signers file is packaging/allowed_signers (`ssh-keygen -Y verify` format; its lines are published in SECURITY.md);
-# SEMPERE_RELEASE_SIGNERS names another one. The key is SEMPERE_RELEASE_SIGNING_KEY or `git config user.signingkey`
-# (a key file, or `key::ssh-ed25519 ...` for a key in an agent). The namespace is `file`.
+# there is no way to name another one. The namespace of SHA256SUMS.sig is `file`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-signers=${SEMPERE_RELEASE_SIGNERS:-packaging/allowed_signers}
+signers=packaging/allowed_signers
 die() { echo "error: $*" >&2; exit 1; }
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-
-key_file() {   # prints a path ssh-keygen -Y sign -f accepts
-  local k=${SEMPERE_RELEASE_SIGNING_KEY:-$(git config --get user.signingkey || true)}
-  [[ -n $k ]] || die "no signing key: set git's user.signingkey (or SEMPERE_RELEASE_SIGNING_KEY)"
-  if [[ $k == key::* ]]; then printf '%s\n' "${k#key::}" > "$tmp/key.pub"; echo "$tmp/key.pub"; return; fi
-  k=${k/#\~/$HOME}
-  [[ -f $k ]] || die "the signing key $k is not a file"
-  echo "$k"
-}
 
 verify() {   # DIR
   local d=$1
@@ -36,21 +30,34 @@ verify() {   # DIR
   echo "ok    SHA256SUMS signed by $who"
 }
 
+verify_tag() {   # VERSION
+  local version=${1#v} tag=v${1#v} major minor
+  [[ $version =~ ^([0-9]+)\.([0-9]+)\.[0-9]+(-.+)?$ ]] || die "'$1' is not a version"
+  major=${BASH_REMATCH[1]} minor=${BASH_REMATCH[2]}
+  if [[ $version == *-* ]] || (( major < 1 || (major == 1 && minor < 1) )); then
+    echo "warn  $tag's signature is not checked (only releases from 1.1.0 on, not prereleases, must be signed by the maintainer)"
+    return 0
+  fi
+  [[ -f $signers ]] || die "no $signers: add the maintainer's line (see SECURITY.md)"
+  git -c gpg.ssh.allowedSignersFile="$signers" tag -v "$tag" >/dev/null 2>&1 \
+    || die "tag $tag is not signed by a key in $signers: the maintainer makes and pushes release tags (scripts/release-tag.sh --owner-commands)"
+  # A maintainer-signed tag object put under another name would verify too: the ref must be a tag object that says vX.
+  [[ $(git cat-file -t "refs/tags/$tag" 2>/dev/null) == tag ]] || die "$tag is not an annotated tag object"
+  [[ $(git cat-file tag "refs/tags/$tag" | sed -n 's/^tag //p;/^$/q') == "$tag" ]] || die "the tag object at $tag is named something else (a renamed tag)"
+  echo "ok    $tag is signed by a key in $signers"
+}
+
+owned() {   # PATH UID|any
+  local f=$1 want=$2 uid perm
+  [[ -e $f && ! -L $f ]] || die "$f is missing or a symlink"
+  read -r uid perm < <(stat -c '%u %a' "$f" 2>/dev/null || stat -f '%u %Lp' "$f")
+  [[ $want == any || $uid == "$want" ]] || die "$f is owned by uid $uid, not $want"
+  (( (8#$perm & 8#022) == 0 )) || die "$f (mode $perm) is writable by group or world"
+}
+
 case ${1:-} in
-  sign)
-    d=${2:?usage: $0 sign DIR}
-    [[ -f $d/SHA256SUMS ]] || die "no $d/SHA256SUMS"
-    [[ -f $signers ]] || die "no $signers: add the maintainer's line (see SECURITY.md)"
-    k=$(key_file)
-    rm -f "$d/SHA256SUMS.sig"
-    ssh-keygen -Y sign -f "$k" -n file "$d/SHA256SUMS" >/dev/null 2>&1 || die "ssh-keygen could not sign with $k (an agent that holds the key must be running)"
-    verify "$d" ;;
+  owned) owned "${2:?usage: $0 owned PATH UID|any}" "${3:?usage: $0 owned PATH UID|any}" ;;
   verify) verify "${2:?usage: $0 verify DIR}" ;;
-  ready)
-    [[ -f $signers ]] || die "no $signers: add the maintainer's line (see SECURITY.md)"
-    k=$(key_file); echo probe > "$tmp/probe"
-    ssh-keygen -Y sign -f "$k" -n file "$tmp/probe" >/dev/null 2>&1 || die "cannot sign with $k (is the agent that holds the key running?)"
-    ssh-keygen -Y find-principals -f "$signers" -s "$tmp/probe.sig" >/dev/null 2>&1 || die "$k is not a key in $signers"
-    echo "ok    release signing: $k is in $signers" ;;
-  *) sed -n '2,13p' "$0" >&2; exit 2 ;;
+  verify-tag) verify_tag "${2:?usage: $0 verify-tag VERSION}" ;;
+  *) sed -n '2,9p' "$0" >&2; exit 2 ;;
 esac

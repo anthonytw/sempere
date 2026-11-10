@@ -7,11 +7,14 @@
 #   scripts/release-publish.sh --publish VERSION   checks, then runs `gh release create` after you type the version
 #
 # Checks: the local tag exists and is on GitHub at the same commit, build/release/vVERSION (scripts/release-build.sh)
-# was built from that commit (its COMMIT file), has SHA256SUMS that verify, are signed (SHA256SUMS.sig, checked against
-# packaging/allowed_signers) and list every tarball, notes.md and a tarball
+# was built from that commit (its COMMIT file), has SHA256SUMS that verify, are signed by the maintainer (SHA256SUMS.sig,
+# checked against packaging/allowed_signers; it is taken from the maintainer's output folder, SEMPERE_SIGN_OUT
+# (default /Users/Shared/sempere-sign)/vVERSION, when the build lacks it and the SHA256SUMS signed there is
+# byte-identical to the build's, and owned by the maintainer account (SEMPERE_MAINTAINER_USER, default awertz); scripts/ and packaging/ must equal origin/main's) and list every tarball, notes.md and a tarball
 # per platform, and the release does not exist yet. `gh release create` needs a `gh auth login` that can write to the
-# repository; it never needs admin. The seat (splarg-bot) can push tags and create Releases, but only with the owner's
-# explicit OK: the typed version is a human gate, and an agent must never answer it for the owner. --publish may come
+# repository; it never needs admin. The seat (splarg-bot) can create Releases, but only with the owner's explicit OK:
+# the typed version is a human gate, and an agent must never answer it for the owner. A release from 1.1.0 on (not a
+# prerelease) is refused unless its tag is signed by a key in packaging/allowed_signers (the maintainer pushes the tag). --publish may come
 # before or after VERSION. Homebrew stays a separate step (`just formula`), as does the app.
 # Environment: SEMPERE_RELEASE_REMOTE (default origin: GitHub), SEMPERE_RELEASE_REPO (default anthonytw/sempere).
 set -euo pipefail
@@ -23,7 +26,7 @@ version=""
 for a in "$@"; do   # --publish may come before or after VERSION
   case "$a" in
     --publish) publish=true ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) sed -n "2,20p" "$0"; exit 0 ;;
     -*) echo "usage: $0 [--publish] VERSION" >&2; exit 2 ;;
     *) version=$a ;;
   esac
@@ -32,6 +35,8 @@ done
 version=${version#v}
 tag=v$version
 die() { echo "error: $*" >&2; exit 1; }
+git fetch -q "$remote" main || die "cannot fetch $remote main to compare the scripts with"
+git diff --quiet "$remote/main" -- scripts/ packaging/ || die "scripts/ or packaging/ differ from $remote/main: publish from a checkout of main"
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
 local_sha=$(git rev-parse "$tag^{commit}")
@@ -39,6 +44,7 @@ remote_sha=$(git ls-remote "$remote" "refs/tags/$tag^{}" "refs/tags/$tag" | awk 
 [[ -n $remote_sha ]] || die "$tag is not on $remote yet (just release-push $version)"
 [[ $remote_sha == "$local_sha" ]] || die "$tag is ${remote_sha:0:8} on $remote but ${local_sha:0:8} here: the binaries must come from the pushed tag"
 echo "ok    $tag on $remote is ${local_sha:0:8}: $(git log --oneline -1 "$local_sha")"
+scripts/release-signature.sh verify-tag "$version" || die "refusing to publish a release whose tag the maintainer did not sign"
 
 dist=build/release/$tag
 [[ -f $dist/SHA256SUMS && -f $dist/notes.md && -f $dist/COMMIT ]] || die "no build in $dist (just release-build $version)"
@@ -51,8 +57,17 @@ done
 for f in "$dist"/*.tar.gz; do
   grep -q "  ${f##*/}\$" "$dist/SHA256SUMS" || die "${f##*/} is in $dist but not in SHA256SUMS"
 done
+signed=${SEMPERE_SIGN_OUT:-/Users/Shared/sempere-sign}/$tag
+if [[ ! -f $dist/SHA256SUMS.sig && -f $signed/SHA256SUMS.sig ]]; then   # the maintainer signed (scripts/release-sign.sh)
+  maintainer=$(id -u "${SEMPERE_MAINTAINER_USER:-awertz}" 2>/dev/null) || die "no maintainer account ${SEMPERE_MAINTAINER_USER:-awertz} (SEMPERE_MAINTAINER_USER)"
+  for f in "$signed" "$signed/SHA256SUMS" "$signed/SHA256SUMS.sig"; do scripts/release-signature.sh owned "$f" "$maintainer" >&2 || die "$f must belong to the maintainer account, not be a symlink and not be writable by group or world"; done
+  cmp -s "$signed/SHA256SUMS" "$dist/SHA256SUMS" || die "$signed/SHA256SUMS is not the $dist/SHA256SUMS that was built: the .sig there signs another list (just release-build $version again)"
+  cp "$signed/SHA256SUMS.sig" "$dist/SHA256SUMS.sig"
+  echo "ok    took SHA256SUMS.sig from $signed"
+fi
+[[ -f $dist/SHA256SUMS.sig ]] || die "no $dist/SHA256SUMS.sig: the maintainer signs with scripts/release-sign.sh $version from their own clone"
 sig=$(scripts/release-signature.sh verify "$dist" 2>&1) || die "${sig#error: } (just release-build $version)"
-echo "ok    $dist: built from ${built:0:8}, SHA256SUMS verify and are signed, notes.md and three tarballs"
+echo "ok    $dist: built from ${built:0:8}, SHA256SUMS verify and are signed by the maintainer, notes.md and three tarballs"
 
 pre=(); [[ $version == *-* ]] && pre=(--prerelease)
 cmd=(gh release create "$tag" --repo "$repo" --verify-tag --title "Sempere CLI $tag" --notes-file "$dist/notes.md"

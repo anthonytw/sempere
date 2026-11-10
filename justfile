@@ -91,6 +91,10 @@ release-check *ARGS:
 release-ready VERSION ref="origin/main":
     scripts/release-tag.sh --check {{VERSION}} {{ref}}
 
+# The maintainer's commands to sign and push tag vVERSION on SHA (the full commit id), after the release checks; tags nothing
+release-owner-commands VERSION sha:
+    scripts/release-tag.sh --owner-commands {{VERSION}} {{sha}}
+
 # Signed tag vVERSION on REF (default origin/main, GitHub) after the checks; asks before pushing it to GitHub
 release-tag VERSION ref="origin/main":
     scripts/release-tag.sh {{VERSION}} {{ref}}

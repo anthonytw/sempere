@@ -4,7 +4,8 @@
 #
 #   scripts/release-build.sh VERSION
 #
-# Needs the tag vVERSION (scripts/release-tag.sh), Docker and the maintainer's SSH signing key. Builds from a clean
+# Needs the tag vVERSION, made and pushed by the maintainer (scripts/release-tag.sh --owner-commands), and Docker. A
+# release from 1.1.0 on (not a prerelease) is refused unless the tag is signed by a key in packaging/allowed_signers. Builds from a clean
 # worktree of the tag, so the binaries are built from exactly the tagged sources. The build and packaging scripts are
 # this checkout's (so an older tag gets the current ones), and the script refuses to run unless this tree is clean and
 # scripts/ and packaging/ equal origin/main's: nothing local can slip into a release. Every image is pinned by digest. Steps:
@@ -17,9 +18,11 @@
 #   5. the Linux tarballs installed and run in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20
 #      (scripts/smoke-linux-cli.sh). The architecture Docker runs natively must pass; the emulated one
 #      is reported, because emulation has failed on its own before (tar under qemu on Ubuntu 26.04)
-#   6. SHA256SUMS and notes.md (the CHANGELOG section); SHA256SUMS is signed with the maintainer's SSH key
-#      (scripts/release-signature.sh: SHA256SUMS.sig, checked against packaging/allowed_signers)
-# Output: build/release/vVERSION/. Next: scripts/release-publish.sh VERSION.
+#   6. SHA256SUMS and notes.md (the CHANGELOG section). This build account cannot use the maintainer's key, so it signs
+#      nothing: SHA256SUMS goes to a hand-off folder (SEMPERE_SIGN_DROP, default /Users/Shared/sempere-release, then
+#      vVERSION/; owned by this account, never group- or world-writable, checked before the long build). The maintainer
+#      signs from their own clone of GitHub (scripts/release-sign.sh at origin/main; docs/releasing.md)
+# Output: build/release/vVERSION/. Next: the maintainer signs, then scripts/release-publish.sh VERSION.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo=$PWD
@@ -44,12 +47,18 @@ unset SEMPERE_LINUX_BUILD_VOLUME   # a release build always starts from fresh vo
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
 sha=$(git rev-parse "$tag^{commit}")
-command -v docker >/dev/null || die "Docker is needed for the Linux builds"
-scripts/release-signature.sh ready >&2 || die "SHA256SUMS cannot be signed; fix that before the long build"
 remote=${SEMPERE_RELEASE_REMOTE:-origin}
 git fetch -q "$remote" main || die "cannot fetch $remote main to compare the build scripts with"
 [[ -z $(git status --porcelain --untracked-files=no) ]] || die "this tree has uncommitted changes; the build scripts must be main's"
 git diff --quiet "$remote/main" -- scripts/ packaging/ || die "scripts/ or packaging/ differ from $remote/main: build from a checkout of main"
+scripts/release-signature.sh verify-tag "$version" >&2 || die "$tag must be signed by the maintainer before it is built"
+# The hand-off folder has one writer, this account: a folder anyone else can write to would let them swap the list the maintainer signs.
+drop=${SEMPERE_SIGN_DROP:-/Users/Shared/sempere-release}
+[[ -e $drop ]] || mkdir -m 755 -p "$drop"
+scripts/release-signature.sh owned "$drop" "$(id -u)" >&2 || die "the hand-off folder $drop must be owned by this account and not writable by group or world"
+[[ -e $drop/$tag ]] || mkdir -m 755 "$drop/$tag"
+scripts/release-signature.sh owned "$drop/$tag" "$(id -u)" >&2 || die "the hand-off folder $drop/$tag must be owned by this account and not writable by group or world"
+command -v docker >/dev/null || die "Docker is needed for the Linux builds"
 out=$repo/build/release/$tag
 src=$repo/build/release/$tag-src
 rm -rf "$out"; mkdir -p "$out"
@@ -120,6 +129,11 @@ done
 
 step "SHA256SUMS"
 (cd "$out" && shasum -a 256 *.tar.gz > SHA256SUMS && cat SHA256SUMS)
-"$repo/scripts/release-signature.sh" sign "$out"
-echo
-echo "built $tag in $out. Next: just release-publish $version"
+
+step "hand-off to the maintainer"
+rm -f "$drop/$tag/SHA256SUMS"
+cp "$out/SHA256SUMS" "$drop/$tag/SHA256SUMS"; chmod 0644 "$drop/$tag/SHA256SUMS"
+echo "built $tag in $out. Hand-off folder: $drop/$tag (SHA256SUMS only; the list above is what the maintainer should see)"
+echo "Next, from the maintainer's own account, in their clone of GitHub:"
+echo "  git fetch origin && git checkout --detach origin/main && bash scripts/release-sign.sh $version"
+echo "then, here: just release-publish $version"

@@ -31,10 +31,11 @@ site are each their own recipe; an upload asks `[y/N]` and a tag push asks you t
 | `just release-check` | App Store checks (versions, no team ID, privacy manifests, entitlements, networking) | no |
 | `just ci-cli` | a CLI-only release's checks: package tests here, Linux + WebDAV + static build in Docker; posts `local/cli-suite` | a commit status |
 | `just release-ready X.Y.Z [REF]` | the release checks on REF (default `origin/main`) | no |
-| `just release-tag X.Y.Z [REF]` | the checks, a signed tag on GitHub's `main`, then asks before pushing it to GitHub | **pushes the tag to GitHub** (after you type the version) |
+| `just release-owner-commands X.Y.Z SHA` | the checks on SHA, then the exact commands the maintainer runs to sign and push the tag (from 1.1.0 on, the tag is the maintainer's: B.1) | no |
+| `just release-tag X.Y.Z [REF]` | the checks, a signed tag on GitHub's `main`, then asks before pushing it to GitHub (run it only as the maintainer, with their key; the build refuses a tag the maintainer did not sign) | **pushes the tag to GitHub** (after you type the version) |
 | `just release-push X.Y.Z` | push a tag made earlier to GitHub (asks first) | **pushes the tag to GitHub** |
-| `just release-build X.Y.Z` | the CLI binaries from the tag, built here: Linux static in Docker (fresh volumes, images pinned by digest), macOS universal, smoke tests, `SHA256SUMS` and its signature; refuses a dirty tree or build scripts that differ from `origin/main`'s | no |
-| `just release-publish X.Y.Z` | checks the pushed tag and the local build, prints the `gh release create` command | no |
+| `just release-build X.Y.Z` | the CLI binaries from the tag, built here: Linux static in Docker (fresh volumes, images pinned by digest), macOS universal, smoke tests, `SHA256SUMS`, then the hand-off folder (`SHA256SUMS` only) for the maintainer's signature; refuses a dirty tree, build scripts that differ from `origin/main`'s, and (from 1.1.0 on) a tag the maintainer did not sign | no |
+| `just release-publish X.Y.Z` | checks the pushed tag (and its signature), the local build and the maintainer's `SHA256SUMS.sig`, prints the `gh release create` command | no |
 | `just release-publish X.Y.Z --publish` | the same, then creates the GitHub Release after you type the version | **publishes the GitHub Release** |
 | `just release-verify X.Y.Z` | the published release: GitHub's tag = the built commit, the Gitea mirror has it, assets match `SHA256SUMS` and the local build | no |
 | `just formula X.Y.Z [TAP]` | the Homebrew formula, to stdout or into a tap clone, then `brew audit` | no (you push the tap) |
@@ -69,14 +70,19 @@ Merge these two PRs once; B.4 and B.7 depend on them:
    The suites post commit statuses with it, and the TestFlight and tag checks read them (`scripts/forge.sh`;
    `SEMPERE_FORGE_TOKEN` instead of tea works too). **GitHub CLI** (`gh auth login`, write access to
    `anthonytw/sempere`; admin is never needed) is needed for pull requests and the GitHub Release in B.6.
-4. **Signed tags:** `git tag -s` uses your git signing key. With an SSH key:
+4. **One-time owner setup (the maintainer's account):** a clone of GitHub of your own (`git clone
+   https://github.com/anthonytw/sempere ~/dev/sempere-clone`; it needs no access to the build account's files), and
+   the folder for your signatures, created once and owned by you: `mkdir -m 755 /Users/Shared/sempere-sign`. The build
+   account creates `/Users/Shared/sempere-release` itself.
+5. **Signed tags:** from 1.1.0 on the maintainer signs release tags and `SHA256SUMS` with their own SSH key, from their
+   own account (the build account cannot use it). `git tag -s` uses your git signing key. With an SSH key:
    ```bash
    git config --global gpg.format ssh
    git config --global user.signingkey ~/.ssh/id_ed25519.pub
    ```
    Add the same public key on GitHub as a **signing** key (Settings ▸ SSH and GPG keys) so the tag and your
    commits show Verified. To let `git tag -v` check it locally too, list it in `gpg.ssh.allowedSignersFile`.
-5. **Checkouts** (the website recipes assume this layout; `SEMPERE_SITE` overrides it):
+6. **Checkouts** (the website recipes assume this layout; `SEMPERE_SITE` overrides it):
    ```bash
    mkdir -p ~/dev/website && cd ~/dev
    git clone git@github.com:anthonytw/sempere.git               # development and releases: GitHub is origin
@@ -327,7 +333,7 @@ Wait for processing, then install it from TestFlight on an iPad, an iPhone and t
 opens a vault **[you]**. This build is what you submit in B.5.
 
 **[you]** For a minor release (1.1, 1.2, ...): **release audit done** (`docs/audits/README.md`): its report is published, or
-its findings are embargoed in private advisories with the fixes on this build (`scripts/release-tag.sh --embargo`). The
+its findings are embargoed in private advisories with the fixes on this build (`docs/audits/README.md` "Embargoed fixes", step 2). The
 coordinator prepares a one-paragraph status. A script cannot see private advisories, so this is not enforced.
 
 ### B.4 Website live before the submission
@@ -431,6 +437,22 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    Type the version (1.0.0) to push v1.0.0 to origin, anything else to stop: 1.0.0
    pushed v1.0.0. Next: just release-build 1.0.0, then just release-publish 1.0.0
    ```
+   **From 1.1.0 on the tag is the maintainer's, not the build account's.** The build account (`claude`) runs the checks
+   and prints the commands, with the full commit id of the merged release PR:
+   ```bash
+   scripts/release-tag.sh --check 1.1.0 "$sha"              # or: just release-ready 1.1.0 "$sha"
+   scripts/release-tag.sh --owner-commands 1.1.0 "$sha"     # or: just release-owner-commands 1.1.0 "$sha"
+   ```
+   **[you]** run the printed block from your own account, in a clone of GitHub (`git clone
+   https://github.com/anthonytw/sempere` once; see "One-time owner setup" below). It is one `( set -e; … )` block: it fetches,
+   checks that the commit is on `origin/main`, shows `git log -1` of it (read it) and checks that its `Version.swift` says the
+   version, takes the signers from `origin/main:packaging/allowed_signers`, runs `git tag -s v1.1.0 SHA -m …`, `git tag -v`
+   (it must say `Good "git" signature for maintainer`) and `git push origin refs/tags/v1.1.0`: one tag by name, nothing
+   else. A failed step stops the block before the tag is pushed (after a failed `tag -v`, delete the local tag with
+   `git tag -d v1.1.0`). `release-build.sh` and `release-publish.sh` refuse a release from 1.1.0 on (prereleases excepted)
+   whose tag is not an annotated tag object named `v1.1.0` that verifies against `packaging/allowed_signers`.
+   The rest of this step describes `just release-tag`, for a maintainer who works in this checkout.
+
    **[you]** typing the version is the approval. Anything else leaves the tag local: push it later with
    `just release-push 1.0.0`, or drop it with `git tag -d v1.0.0`. The checks: the tag's commit is on GitHub's
    `main`, it passed the release sweep, itself or through a swept ancestor with only release-neutral changes since
@@ -439,16 +461,39 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    `CHANGELOG.md` has a non-empty `## [X.Y.Z] - YYYY-MM-DD` section with no `TODO(user)`
    (`scripts/changelog-section.sh`). The push needs write access to the repository, not admin, and a tag ruleset that
    forbids creating tags would stop it: allow the owner to create `v*` tags.
-2. **Build the binaries here.** `just release-build 1.0.0` (about 20 minutes, Docker running). From a clean
+2. **Build the binaries here.** `just release-build 1.0.0` (about 20 minutes, Docker running; as the build account, once
+   the maintainer's signed tag is on GitHub). From a clean
    worktree of the tag it re-runs the checks, builds the fully static Linux binaries for x86_64 and aarch64
    (Static Linux SDK in `swift:6.4.2-noble`, `scripts/build-linux-static.sh`) and the macOS universal binary,
    checks each prints the tag's version, packages `sempere-X.Y.Z-<platform>.tar.gz` (binary, LICENSE,
    LICENSE-EXCEPTION, README, CHANGELOG, `docs/cli.md`, `fonts/`; `scripts/package-cli.sh`), installs and runs the
    Linux tarballs in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20 (`scripts/smoke-linux-cli.sh`;
    the architecture Docker emulates only warns), and writes `SHA256SUMS` and `notes.md` (the CHANGELOG section)
-   into `build/release/v1.0.0/`. Nothing leaves the Mac. Not included: a man page (`sempere --help` and
+   into `build/release/v1.0.0/`. Nothing leaves the Mac. The build signs nothing: it copies `SHA256SUMS` (data only, no
+   code) into the hand-off folder `/Users/Shared/sempere-release/v1.1.0/` (`SEMPERE_SIGN_DROP` moves it) and prints the
+   command for the next step. That folder has one writer, the build account: mode 755 and owned by it, which the build
+   checks before it starts (it refuses a folder owned by someone else or writable by group or world). Not included: a man page (`sempere --help` and
    `docs/cli.md` ship instead) and Apple notarization of the macOS CLI binary.
-3. **The GitHub Release.** The tag is already on GitHub's `main`, so there is no commit to make or push.
+3. **Sign the checksums [you].** From your own account, in your own clone of GitHub, never from anything the build
+   account wrote:
+   ```bash
+   cd ~/dev/sempere-clone && git fetch origin && git checkout --detach origin/main
+   bash scripts/release-sign.sh 1.1.0            # -k KEY names a key; the default is `git config user.signingkey`
+   ```
+   The script is the repository's, at `origin/main` (it refuses if `scripts/` or `packaging/` differ), and takes the signers
+   from `origin/main:packaging/allowed_signers`. It checks that the hand-off folder and its `SHA256SUMS` belong to the
+   build account and are not writable by group or world, copies the list to a private temp folder, refuses it unless it
+   is exactly one line per expected tarball (`sempere-1.1.0-{macos-universal,linux-x86_64,linux-aarch64}.tar.gz`, 64-hex
+   hashes), shows it, signs the copy (namespace `file`), verifies it against the signers, and only then moves
+   `SHA256SUMS` and `SHA256SUMS.sig` into `/Users/Shared/sempere-sign/v1.1.0/` (`SEMPERE_SIGN_OUT` moves it), which only you
+   can write. Compare the list it shows with the one `release-build` printed in its "SHA256SUMS" step. You cannot check
+   the hashes without rebuilding, so the signature means "the maintainer approved what the build account produced"; it keeps
+   other local accounts and stale lists out. A `user.signingkey` that is a `.pub` path needs ssh-agent to hold the key
+   (or pass `-k key::ssh-ed25519 AAAA…`). Then, in the build account, `just release-publish` takes the `.sig` from your
+   folder when the build lacks one, after checking that the `SHA256SUMS` signed there is byte-identical to the build's and
+   that the folder is not writable by group or world, and verifies it against `packaging/allowed_signers` (it also
+   requires `scripts/` and `packaging/` to equal `origin/main`; it refuses a missing or wrong signature).
+4. **The GitHub Release.** The tag is already on GitHub's `main`, so there is no commit to make or push.
    `just release-publish 1.0.0` checks that GitHub's tag is the commit the binaries were built from and that
    `SHA256SUMS` verifies, then prints the command (it publishes nothing):
    ```bash
@@ -468,7 +513,7 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    it was already copied) and tag again. To try the whole path without a release, prepare and tag a prerelease
    (`just release-prep 1.0.1-rc.1`, …) and stop before the push (`just release-ready` and `scripts/test-release-flow.sh`
    exercise the tag and Release checks against local repositories and push nothing).
-4. **Homebrew tap.** One-time **[you]**: create the public repo `anthonytw/homebrew-tap` (the `homebrew-` prefix
+5. **Homebrew tap.** One-time **[you]**: create the public repo `anthonytw/homebrew-tap` (the `homebrew-` prefix
    is required) with a `Formula/` folder (`packaging/homebrew/README.md`). Then:
    ```bash
    git clone git@github.com:anthonytw/homebrew-tap.git ~/dev/homebrew-tap    # once
@@ -529,7 +574,8 @@ has a tag with the same version, so a hotfix is a short release:
 `sha256sum -c SHA256SUMS` (or `shasum -a 256 -c SHA256SUMS` on a Mac). Releases from v1.0.2 on are built on the
 maintainer's Mac, so they carry no GitHub build-provenance attestation (v1.0.0 and v1.0.1 do:
 `gh attestation verify FILE --repo anthonytw/sempere`). From 1.1.0 on `SHA256SUMS` is signed with the maintainer's
-SSH signing key (`SHA256SUMS.sig`, `scripts/release-signature.sh`; the public key line, principal `maintainer`, is
-`packaging/allowed_signers`, which `release-build.sh` refuses to run without). `just release-verify X.Y.Z` checks the
-published files against `SHA256SUMS`, the signature and the local build. One-time setup:
-`echo "maintainer $(cut -d' ' -f1,2 ~/.ssh/YOUR_SIGNING_KEY.pub)" >> packaging/allowed_signers`, in a PR.
+SSH signing key, on the maintainer's own account after the build (`SHA256SUMS.sig`, made by `scripts/release-sign.sh`,
+checked by `scripts/release-signature.sh`), and so are the release tags. The public key line, principal `maintainer`, is
+`packaging/allowed_signers`; its fingerprint is in `SECURITY.md`. `just release-verify X.Y.Z` checks the
+published files against `SHA256SUMS`, the signature and the local build. To change the key, replace the line in a PR the
+maintainer merges (it is the trust anchor).

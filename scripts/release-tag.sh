@@ -3,16 +3,25 @@
 # GitHub (`origin`) holds the real history, so a tag is made on a commit of its `main` and pushed there; the Gitea
 # mirror (scripts/mirror-gitea.sh) copies it. The push is asked for separately; after it come `just release-build`
 # (the binaries, built here) and `just release-publish` (the GitHub Release; the owner or the script, see there).
-# Pushing a tag needs write access only, never admin. The seat (splarg-bot) can push, but only with the owner's explicit OK:
-# the typed version is a human gate, and an agent must never answer it for the owner.
+# From 1.1.0 on the MAINTAINER makes and pushes the release tag with their own key, from their own account, and
+# release-build.sh / release-publish.sh refuse a tag that does not verify against packaging/allowed_signers. The seat
+# (splarg-bot) only runs --check and prints the maintainer's commands (--owner-commands); it pushes a tag only with the
+# owner's explicit OK, and the typed version is a human gate an agent must never answer for the owner.
 #
 #   scripts/release-tag.sh VERSION [REF]          checks, then a signed tag on REF (default origin/main),
 #                                                 then asks before pushing it
-#   scripts/release-tag.sh --check VERSION [REF]  the checks only: no tag, no push; or --embargo VERSION [REF]: a LOCAL tag on an unpushed fix commit (see "Embargoed fixes" below)
+#   scripts/release-tag.sh --check VERSION [REF]  the checks only: no tag, no push
+#   scripts/release-tag.sh --owner-commands VERSION SHA   the checks on SHA (a full commit id on origin/main), then the exact
+#                                                 commands the maintainer runs to sign and push vVERSION from any clone of GitHub
+#   scripts/release-tag.sh --embargo VERSION [REF]: a LOCAL tag on an unpushed fix commit (see "Embargoed fixes" below)
 #   scripts/release-tag.sh --push VERSION         push an existing local tag (asks first); it re-checks only that
 #                                                 the tag is on origin/main (scripts/release-build.sh checks the rest)
 # Environment: SEMPERE_RELEASE_REMOTE (default origin: GitHub), SEMPERE_TAG_SIGN=false for an unsigned annotated tag
 # (the tests only).
+#
+# Known gap: --embargo tags are signed by whoever runs this (the build account), so from 1.1.0 release-build.sh refuses
+# them. Like the other gaps (docs/audits/README.md "Embargoed fixes"), it is closed when that path is first needed: the
+# maintainer would sign the tag on the fix commit themselves, for example from a `git bundle` of it.
 #
 # The checks, run before anything is published: the commit is on
 # origin/main, Version.swift there says VERSION, CHANGELOG.md there has a dated section for VERSION with no
@@ -21,13 +30,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-usage="usage: $0 [--check | --push | --embargo] VERSION [REF]   (--embargo: a local tag only, REF default HEAD)"
+usage="usage: $0 [--check | --push | --embargo] VERSION [REF] | --owner-commands VERSION SHA   (--embargo: a local tag only, REF default HEAD)"
 mode=tag
 case "${1:-}" in
   --embargo) mode=embargo; shift; if [[ $# -eq 1 ]]; then set -- "$1" HEAD; fi ;;   # see "Embargoed fixes" below
   --check) mode=check; shift ;;
+  --owner-commands) mode=owner; shift; [[ $# -eq 2 && ${2:-} =~ ^[0-9a-f]{40}$ ]] || { echo "usage: $0 --owner-commands VERSION SHA   (SHA: the full 40-digit commit id)" >&2; exit 2; } ;;
   --push) mode=push; shift ;;
-  -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 0 ;;
 esac
 [[ $# -ge 1 && $# -le 2 ]] || { echo "$usage" >&2; exit 2; }
 version=${1#v}
@@ -123,7 +133,28 @@ fi
 check on_main; check cli_version; check changelog; check sweep; check not_tagged
 [[ $ok == true ]] || die "not ready to tag $tag"
 if [[ $mode == check ]]; then echo "ready: just release-tag $version"; exit 0; fi
+if [[ $mode == owner ]]; then
+  cat <<EOF2
 
+The maintainer signs and pushes $tag, from their own account. Any clone of GitHub works (the first time:
+\`git clone https://github.com/anthonytw/sempere && cd sempere\`); git's SSH signing must be set up (gpg.format=ssh,
+user.signingkey). The block stops at the first failed step, so nothing is pushed after a failure; it pushes this one tag,
+by name. Read the commit it shows. After a failed \`tag -v\`, delete the local tag with \`git tag -d $tag\`.
+
+( set -e
+  git fetch origin main
+  git log -1 --format='%H %s' $sha
+  git merge-base --is-ancestor $sha origin/main
+  git show $sha:Sources/SempereCLI/Version.swift | grep -Fqx 'let sempereVersion = "$version"'
+  git show origin/main:packaging/allowed_signers > "\${TMPDIR:-/tmp}/sempere-allowed-signers"
+  git tag -s $tag $sha -m "Sempere $version"
+  git -c gpg.ssh.allowedSignersFile="\${TMPDIR:-/tmp}/sempere-allowed-signers" tag -v $tag
+  git push origin refs/tags/$tag )
+
+\`git tag -v\` must say Good "git" signature for maintainer. Then the build account runs: just release-build $version
+EOF2
+  exit 0
+fi
 if [[ ${SEMPERE_TAG_SIGN:-true} == false ]]; then git tag -a "$tag" -m "Sempere $version" "$sha"; else git tag -s "$tag" -m "Sempere $version" "$sha"; fi
 echo "created signed tag $tag on ${sha:0:8} (local only)"
 confirm_push
