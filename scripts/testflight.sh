@@ -35,6 +35,8 @@
 #   SEMPERE_ASC_ISSUER_ID        api: the issuer ID (App Store Connect > Users and Access > Integrations)
 #   SEMPERE_PROFILE_IOS          api: profile name for io.github.anthonytw.sempere on iOS (default "Sempere iOS App Store")
 #   SEMPERE_PROFILE_WIDGETS_IOS  api: profile for ….widgets (default "Sempere Widgets iOS App Store")
+#   SEMPERE_PROFILE_WATCH        api: profile for ….watchkitapp, the Apple Watch app (watchOS; default "Sempere Watch App Store")
+#   SEMPERE_PROFILE_WATCH_WIDGETS api: profile for ….watchkitapp.widgets (watchOS; default "Sempere Watch Widgets App Store")
 #   SEMPERE_PROFILE_MAC          api: Mac Catalyst profile (default "Sempere Mac App Store")
 #   SEMPERE_DIST_CERT            api: signing certificate (default "Apple Distribution")
 #   SEMPERE_INSTALLER_CERT       api: Mac installer certificate (default "3rd Party Mac Developer Installer")
@@ -111,6 +113,8 @@ case "$signing" in
 esac
 profile_ios=${SEMPERE_PROFILE_IOS:-Sempere iOS App Store}
 profile_widgets=${SEMPERE_PROFILE_WIDGETS_IOS:-Sempere Widgets iOS App Store}
+profile_watch=${SEMPERE_PROFILE_WATCH:-Sempere Watch App Store}
+profile_watch_widgets=${SEMPERE_PROFILE_WATCH_WIDGETS:-Sempere Watch Widgets App Store}
 profile_mac=${SEMPERE_PROFILE_MAC:-Sempere Mac App Store}
 dist_cert=${SEMPERE_DIST_CERT:-Apple Distribution}
 installer_cert=${SEMPERE_INSTALLER_CERT:-3rd Party Mac Developer Installer}
@@ -261,7 +265,7 @@ export_options() {  # $1 = ios|mac -> $out/ExportOptions-$1.plist
       profiles="<key>io.github.anthonytw.sempere</key><string>$profile_mac</string>"
       installer="<key>installerSigningCertificate</key><string>$installer_cert</string>"
     else
-      profiles="<key>io.github.anthonytw.sempere</key><string>$profile_ios</string><key>io.github.anthonytw.sempere.widgets</key><string>$profile_widgets</string>"
+      profiles="<key>io.github.anthonytw.sempere</key><string>$profile_ios</string><key>io.github.anthonytw.sempere.widgets</key><string>$profile_widgets</string><key>io.github.anthonytw.sempere.watchkitapp</key><string>$profile_watch</string><key>io.github.anthonytw.sempere.watchkitapp.widgets</key><string>$profile_watch_widgets</string>"
     fi
     signing_keys="<key>signingStyle</key><string>manual</string>
 <key>signingCertificate</key><string>$dist_cert</string>$installer

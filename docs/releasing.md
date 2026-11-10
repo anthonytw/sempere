@@ -89,7 +89,9 @@ Merge these two PRs once; B.4 and B.7 depend on them:
 ### Apple account and signing **[you]**
 
 The app record, the bundle ids (`io.github.anthonytw.sempere` and `io.github.anthonytw.sempere.widgets`, with the
-App Group) and earlier TestFlight builds already exist in App Store Connect. `scripts/testflight.sh` signs in one
+App Group) and earlier TestFlight builds already exist in App Store Connect. The Apple Watch app (1.1) adds two bundle
+ids, `io.github.anthonytw.sempere.watchkitapp` and `….watchkitapp.widgets`, each with the same App Group: register them
+and make their profiles before the first build that has the watch targets (the PR that added them lists the steps). `scripts/testflight.sh` signs in one
 of two modes:
 
 - **`api`: the mode every TestFlight build so far was uploaded with.** An App Store Connect API key uploads;
@@ -102,8 +104,9 @@ of two modes:
      Keychain Access and installed by double-clicking.
   3. developer.apple.com ▸ Profiles: three **App Store** profiles, named exactly (or set the names in
      `release.env`): "Sempere iOS App Store" (iOS, `io.github.anthonytw.sempere`), "Sempere Widgets iOS App
-     Store" (iOS, `….widgets`) and "Sempere Mac App Store" (Mac Catalyst, `io.github.anthonytw.sempere`).
-     Download and double-click each.
+     Store" (iOS, `….widgets`) and "Sempere Mac App Store" (Mac Catalyst, `io.github.anthonytw.sempere`); with the Apple
+     Watch app, two more, **App Store** profiles for watchOS: "Sempere Watch App Store" (`….watchkitapp`) and "Sempere
+     Watch Widgets App Store" (`….watchkitapp.widgets`). Download and double-click each.
 
   An App Manager key cannot cloud-sign, which is why this mode signs with the local certificates.
 - **`xcode`: no API key, not yet proven by an upload.** Xcode ▸ Settings ▸ Accounts ▸ **+** ▸ Apple ID, sign in
@@ -131,7 +134,7 @@ $EDITOR ~/.config/sempere/release.env
 | `SEMPERE_TEAM_ID` | always | the team ID (developer.apple.com ▸ Account ▸ Membership details) |
 | `SEMPERE_SIGNING` | always | `api` or `xcode` (default: `api` when `SEMPERE_ASC_KEY_ID` is set) |
 | `SEMPERE_ASC_KEY_PATH`, `SEMPERE_ASC_KEY_ID`, `SEMPERE_ASC_ISSUER_ID` | `api` | the `.p8` path, the key ID, the issuer ID |
-| `SEMPERE_PROFILE_IOS`, `SEMPERE_PROFILE_WIDGETS_IOS`, `SEMPERE_PROFILE_MAC`, `SEMPERE_DIST_CERT`, `SEMPERE_INSTALLER_CERT` | `api`, only if your names differ | profile and certificate names |
+| `SEMPERE_PROFILE_IOS`, `SEMPERE_PROFILE_WIDGETS_IOS`, `SEMPERE_PROFILE_WATCH`, `SEMPERE_PROFILE_WATCH_WIDGETS`, `SEMPERE_PROFILE_MAC`, `SEMPERE_DIST_CERT`, `SEMPERE_INSTALLER_CERT` | `api`, only if your names differ | profile and certificate names |
 | `SEMPERE_KEYCHAIN`, `SEMPERE_KEYCHAIN_PASSWORD_FILE` | optional | a separate keychain holding the signing identities, unlocked first (without the password file, `security` asks) |
 | `SEMPERE_TF_OUT` | optional | where archives, logs and exports go (default `$TMPDIR/sempere-testflight`; one run at a time per folder) |
 

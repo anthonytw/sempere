@@ -169,6 +169,16 @@ jobs:
       - name: Compile the watch's package targets for watchOS (no tests)
         shell: bash
         run: scripts/build-watchos-package.sh
+      # The Apple Watch app, its widgets and its tests for the generic watchOS Simulator destination, and the app and widgets
+      # for a watch (docs/ci.md "watchOS compile"). This needs the watchOS simulator SDK (Xcode's watchOS platform), not a
+      # runtime: the watch's unit and UI tests run on a Mac with the runtime (`local-ci.sh`'s `watch-test`), never here. The
+      # step prints what the image has, so the log says whether a runtime is there to run them on one day.
+      - name: Build the Apple Watch app and its widgets (no tests)
+        shell: bash
+        run: |
+          xcodebuild -showsdks | grep -i watch || true
+          xcrun simctl list runtimes | grep -i watch || echo "no watchOS simulator runtime on this image (the SDK is enough to compile)"
+          scripts/app.sh build-watch 2>&1 | tee build/watch-build.log
       - name: Save the build cache
         if: ${{ success() && env.SAVE_BUILD_CACHE == 'true' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0

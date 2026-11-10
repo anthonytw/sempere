@@ -47,8 +47,10 @@ manual string, and the build fails on keys that map to one symbol ("Thin Now" an
 `LocalizationCatalogTests.testNoManualStringGeneratesASymbol` fails without it.
 
 `InfoPlist.xcstrings` and `AppShortcuts.xcstrings` stay in `Apps/Sempere/Localization/`, a folder-synchronized group
-of **both** the app and the `SempereWidgets` targets (the intents in `SempereShared` are compiled into both): the
-system reads them from the app bundle. `project.pbxproj` lists `es` in `knownRegions`.
+of the app, the `SempereWidgets` targets (the intents in `SempereShared` are compiled into both) and the watch app `SempereWatch`:
+the system reads them from the app bundle. The watch's Siri phrases are the iPhone's (the same `AppShortcuts.xcstrings`), and its
+microphone string is the app's exact text, because the key is the same. `Localizable.xcstrings` is also compiled into the watch app
+and its widgets (`SempereWatch`, `SempereWatchWidgets`, `SempereWatchShared`), and `LocalizationCatalogTests` scans their folders. `project.pbxproj` lists `es` in `knownRegions`.
 
 ## How strings get in
 

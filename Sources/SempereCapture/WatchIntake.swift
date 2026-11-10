@@ -59,6 +59,11 @@ public struct WatchIntakeResult: Equatable, Sendable {
     public var id: UUID
     public var outcome: Outcome
 
+    public init(id: UUID, outcome: Outcome) {
+        self.id = id
+        self.outcome = outcome
+    }
+
     /// Whether the watch may drop its copy: the file is in the vault or its queue.
     public var acknowledged: Bool {
         switch outcome {

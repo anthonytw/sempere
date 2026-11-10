@@ -206,7 +206,8 @@ public struct VoiceNoteStatusStore: Sendable {
     /// The App Group's store, or nil when the build has no App Group (unsigned
     /// builds, a provisioning profile without it).
     public static var shared: VoiceNoteStatusStore? {
-        #if os(iOS) && !targetEnvironment(macCatalyst)
+        // The watch has an App Group of its own (the same id, a separate container): its app writes the status, its widgets read it.
+        #if (os(iOS) && !targetEnvironment(macCatalyst)) || os(watchOS)
         guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) else { return nil }
         return VoiceNoteStatusStore(directory: dir)
         #else

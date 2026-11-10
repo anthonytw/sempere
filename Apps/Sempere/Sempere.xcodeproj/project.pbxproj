@@ -29,6 +29,17 @@
 		A1000000000000000000B0A5 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F0A2 /* Localizable.xcstrings */; };
 		A1000000000000000000B006 /* SempereWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F005 /* SempereWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A1000000000000000000B00A /* SempereStatusItem.bundle in Embed Mac Plug-Ins */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F006 /* SempereStatusItem.bundle */; platformFilter = maccatalyst; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A200000000000000000B0201 /* Sempere in Frameworks */ = {isa = PBXBuildFile; productRef = A200000000000000000D0101 /* Sempere */; };
+		A200000000000000000B0202 /* Age in Frameworks */ = {isa = PBXBuildFile; productRef = A200000000000000000D0102 /* Age */; };
+		A200000000000000000B0203 /* SempereCapture in Frameworks */ = {isa = PBXBuildFile; productRef = A200000000000000000D0103 /* SempereCapture */; };
+		A200000000000000000B0204 /* SempereCaptureShared in Frameworks */ = {isa = PBXBuildFile; productRef = A200000000000000000D0104 /* SempereCaptureShared */; };
+		A200000000000000000B0205 /* SempereLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = A200000000000000000D0105 /* SempereLocalization */; };
+		A200000000000000000B0206 /* SempereLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = A200000000000000000D0106 /* SempereLocalization */; };
+		A200000000000000000B0207 /* SempereCaptureShared in Frameworks */ = {isa = PBXBuildFile; productRef = A200000000000000000D0107 /* SempereCaptureShared */; };
+		A200000000000000000B0301 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F0A2 /* Localizable.xcstrings */; };
+		A200000000000000000B0302 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F0A2 /* Localizable.xcstrings */; };
+		A200000000000000000B0101 /* SempereWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A200000000000000000F0101 /* SempereWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A200000000000000000B0102 /* SempereWatchWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A200000000000000000F0102 /* SempereWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +71,34 @@
 			remoteGlobalIDString = A1000000000000000000A005;
 			remoteInfo = SempereStatusItem;
 		};
+		A200000000000000000C0101 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A200000000000000000A0101;
+			remoteInfo = SempereWatch;
+		};
+		A200000000000000000C0102 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A200000000000000000A0102;
+			remoteInfo = SempereWatchWidgets;
+		};
+		A200000000000000000C0103 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A200000000000000000A0101;
+			remoteInfo = SempereWatch;
+		};
+		A200000000000000000C0104 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A200000000000000000A0101;
+			remoteInfo = SempereWatch;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -85,6 +124,28 @@
 			name = "Embed Mac Plug-Ins";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A20000000000000000009101 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				A200000000000000000B0101 /* SempereWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000009102 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A200000000000000000B0102 /* SempereWatchWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -98,6 +159,10 @@
 		A1000000000000000000F008 /* LICENSE-EXCEPTION */ = {isa = PBXFileReference; lastKnownFileType = text; name = "LICENSE-EXCEPTION"; path = "../../LICENSE-EXCEPTION"; sourceTree = SOURCE_ROOT; };
 		A1000000000000000000F0A2 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; name = Localizable.xcstrings; path = ../../Sources/SempereLocalization/Resources/Localizable.xcstrings; sourceTree = SOURCE_ROOT; };
 		A1000000000000000000F0A1 /* privacy-policy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = "privacy-policy.md"; path = "../../docs/appstore/privacy-policy.md"; sourceTree = SOURCE_ROOT; };
+		A200000000000000000F0101 /* SempereWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SempereWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A200000000000000000F0102 /* SempereWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SempereWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A200000000000000000F0103 /* SempereWatchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SempereWatchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A200000000000000000F0104 /* SempereWatchUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SempereWatchUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -139,6 +204,31 @@
 		A1000000000000000000E008 /* StatusItemShared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = StatusItemShared;
+			sourceTree = "<group>";
+		};
+		A200000000000000000E0101 /* SempereWatch */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SempereWatch;
+			sourceTree = "<group>";
+		};
+		A200000000000000000E0102 /* SempereWatchWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SempereWatchWidgets;
+			sourceTree = "<group>";
+		};
+		A200000000000000000E0103 /* SempereWatchShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SempereWatchShared;
+			sourceTree = "<group>";
+		};
+		A200000000000000000E0104 /* SempereWatchTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SempereWatchTests;
+			sourceTree = "<group>";
+		};
+		A200000000000000000E0105 /* SempereWatchUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SempereWatchUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -193,6 +283,41 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A20000000000000000004101 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A200000000000000000B0201 /* Sempere in Frameworks */,
+				A200000000000000000B0202 /* Age in Frameworks */,
+				A200000000000000000B0203 /* SempereCapture in Frameworks */,
+				A200000000000000000B0204 /* SempereCaptureShared in Frameworks */,
+				A200000000000000000B0205 /* SempereLocalization in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000004102 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A200000000000000000B0206 /* SempereLocalization in Frameworks */,
+				A200000000000000000B0207 /* SempereCaptureShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000004103 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000004104 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -207,9 +332,14 @@
 				A1000000000000000000E006 /* Localization */,
 				A1000000000000000000E007 /* SempereStatusItem */,
 				A1000000000000000000E008 /* StatusItemShared */,
+				A200000000000000000E0101 /* SempereWatch */,
+				A200000000000000000E0102 /* SempereWatchWidgets */,
+				A200000000000000000E0103 /* SempereWatchShared */,
+				A200000000000000000E0104 /* SempereWatchTests */,
+				A200000000000000000E0105 /* SempereWatchUITests */,
 				A10000000000000000001003 /* Fixtures (shared with the package tests) */,
 				A10000000000000000001004 /* Licence (the repository's, bundled in the app) */,
-				A10000000000000000001005 /* String catalog (the package's, compiled into the app and the widget) */,
+				A10000000000000000001005 /* String catalog (the package's, compiled into the app, the widget and the watch targets) */,
 				A10000000000000000001002 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -222,6 +352,10 @@
 				A1000000000000000000F004 /* SempereAppUITests.xctest */,
 				A1000000000000000000F005 /* SempereWidgets.appex */,
 				A1000000000000000000F006 /* SempereStatusItem.bundle */,
+				A200000000000000000F0101 /* SempereWatch.app */,
+				A200000000000000000F0102 /* SempereWatchWidgets.appex */,
+				A200000000000000000F0103 /* SempereWatchTests.xctest */,
+				A200000000000000000F0104 /* SempereWatchUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -244,7 +378,7 @@
 			name = Licence;
 			sourceTree = "<group>";
 		};
-		A10000000000000000001005 /* String catalog (the package's, compiled into the app and the widget) */ = {
+		A10000000000000000001005 /* String catalog (the package's, compiled into the app, the widget and the watch targets) */ = {
 			isa = PBXGroup;
 			children = (
 				A1000000000000000000F0A2 /* Localizable.xcstrings */,
@@ -264,12 +398,14 @@
 				A10000000000000000005001 /* Resources */,
 				A10000000000000000009001 /* Embed Foundation Extensions */,
 				A10000000000000000009002 /* Embed Mac Plug-Ins */,
+				A20000000000000000009101 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				A10000000000000000007003 /* PBXTargetDependency */,
 				A10000000000000000007004 /* PBXTargetDependency */,
+				A20000000000000000007101 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A1000000000000000000E001 /* SempereApp */,
@@ -385,6 +521,104 @@
 			productReference = A1000000000000000000F006 /* SempereStatusItem.bundle */;
 			productType = "com.apple.product-type.bundle";
 		};
+		A200000000000000000A0101 /* SempereWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A20000000000000000003101 /* Build configuration list for PBXNativeTarget "SempereWatch" */;
+			buildPhases = (
+				A20000000000000000006101 /* Sources */,
+				A20000000000000000004101 /* Frameworks */,
+				A20000000000000000005101 /* Resources */,
+				A20000000000000000009102 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A20000000000000000007102 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A200000000000000000E0101 /* SempereWatch */,
+				A200000000000000000E0103 /* SempereWatchShared */,
+				A1000000000000000000E006 /* Localization */,
+			);
+			name = SempereWatch;
+			packageProductDependencies = (
+				A200000000000000000D0101 /* Sempere */,
+				A200000000000000000D0102 /* Age */,
+				A200000000000000000D0103 /* SempereCapture */,
+				A200000000000000000D0104 /* SempereCaptureShared */,
+				A200000000000000000D0105 /* SempereLocalization */,
+			);
+			productName = SempereWatch;
+			productReference = A200000000000000000F0101 /* SempereWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A200000000000000000A0102 /* SempereWatchWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A20000000000000000003102 /* Build configuration list for PBXNativeTarget "SempereWatchWidgets" */;
+			buildPhases = (
+				A20000000000000000006102 /* Sources */,
+				A20000000000000000004102 /* Frameworks */,
+				A20000000000000000005102 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A200000000000000000E0102 /* SempereWatchWidgets */,
+				A200000000000000000E0103 /* SempereWatchShared */,
+			);
+			name = SempereWatchWidgets;
+			packageProductDependencies = (
+				A200000000000000000D0106 /* SempereLocalization */,
+				A200000000000000000D0107 /* SempereCaptureShared */,
+			);
+			productName = SempereWatchWidgets;
+			productReference = A200000000000000000F0102 /* SempereWatchWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A200000000000000000A0103 /* SempereWatchTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A20000000000000000003103 /* Build configuration list for PBXNativeTarget "SempereWatchTests" */;
+			buildPhases = (
+				A20000000000000000006103 /* Sources */,
+				A20000000000000000004103 /* Frameworks */,
+				A20000000000000000005103 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A20000000000000000007103 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A200000000000000000E0104 /* SempereWatchTests */,
+			);
+			name = SempereWatchTests;
+			productName = SempereWatchTests;
+			productReference = A200000000000000000F0103 /* SempereWatchTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A200000000000000000A0104 /* SempereWatchUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A20000000000000000003104 /* Build configuration list for PBXNativeTarget "SempereWatchUITests" */;
+			buildPhases = (
+				A20000000000000000006104 /* Sources */,
+				A20000000000000000004104 /* Frameworks */,
+				A20000000000000000005104 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A20000000000000000007104 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A200000000000000000E0105 /* SempereWatchUITests */,
+			);
+			name = SempereWatchUITests;
+			productName = SempereWatchUITests;
+			productReference = A200000000000000000F0104 /* SempereWatchUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -412,6 +646,20 @@
 					A1000000000000000000A005 = {
 						CreatedOnToolsVersion = 26.0;
 					};
+					A200000000000000000A0101 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					A200000000000000000A0102 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					A200000000000000000A0103 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A200000000000000000A0101;
+					};
+					A200000000000000000A0104 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A200000000000000000A0101;
+					};
 				};
 			};
 			buildConfigurationList = A10000000000000000003001 /* Build configuration list for PBXProject "Sempere" */;
@@ -438,6 +686,10 @@
 				A1000000000000000000A003 /* SempereAppUITests */,
 				A1000000000000000000A004 /* SempereWidgets */,
 				A1000000000000000000A005 /* SempereStatusItem */,
+				A200000000000000000A0101 /* SempereWatch */,
+				A200000000000000000A0102 /* SempereWatchWidgets */,
+				A200000000000000000A0103 /* SempereWatchTests */,
+				A200000000000000000A0104 /* SempereWatchUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -484,6 +736,36 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A20000000000000000005101 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A200000000000000000B0301 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000005102 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A200000000000000000B0302 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000005103 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000005104 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -522,6 +804,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A20000000000000000006101 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000006102 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000006103 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000006104 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -546,6 +856,27 @@
 			platformFilter = maccatalyst;
 			target = A1000000000000000000A005 /* SempereStatusItem */;
 			targetProxy = A1000000000000000000C004 /* PBXContainerItemProxy */;
+		};
+		A20000000000000000007101 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = A200000000000000000A0101 /* SempereWatch */;
+			targetProxy = A200000000000000000C0101 /* PBXContainerItemProxy */;
+		};
+		A20000000000000000007102 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A200000000000000000A0102 /* SempereWatchWidgets */;
+			targetProxy = A200000000000000000C0102 /* PBXContainerItemProxy */;
+		};
+		A20000000000000000007103 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A200000000000000000A0101 /* SempereWatch */;
+			targetProxy = A200000000000000000C0103 /* PBXContainerItemProxy */;
+		};
+		A20000000000000000007104 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A200000000000000000A0101 /* SempereWatch */;
+			targetProxy = A200000000000000000C0104 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -842,6 +1173,188 @@
 			};
 			name = Release;
 		};
+		A20000000000000000008201 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SempereWatch.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SempereWatchInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sempere;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sempere uses the microphone to record audio into your notes. Recordings are encrypted in your vault.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;
+				PRODUCT_NAME = SempereWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		A20000000000000000008202 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SempereWatch.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SempereWatchInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sempere;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sempere uses the microphone to record audio into your notes. Recordings are encrypted in your vault.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;
+				PRODUCT_NAME = SempereWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		A20000000000000000008203 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SempereWatchWidgets.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SempereWatchWidgetsInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sempere;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		A20000000000000000008204 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SempereWatchWidgets.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SempereWatchWidgetsInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sempere;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		A20000000000000000008205 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SempereWatch.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SempereWatch";
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		A20000000000000000008206 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SempereWatch.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SempereWatch";
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		A20000000000000000008207 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = SempereWatch;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		A20000000000000000008208 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = SempereWatch;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -895,6 +1408,42 @@
 			buildConfigurations = (
 				A10000000000000000008101 /* Debug */,
 				A10000000000000000008102 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A20000000000000000003101 /* Build configuration list for PBXNativeTarget "SempereWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A20000000000000000008201 /* Debug */,
+				A20000000000000000008202 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A20000000000000000003102 /* Build configuration list for PBXNativeTarget "SempereWatchWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A20000000000000000008203 /* Debug */,
+				A20000000000000000008204 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A20000000000000000003103 /* Build configuration list for PBXNativeTarget "SempereWatchTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A20000000000000000008205 /* Debug */,
+				A20000000000000000008206 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A20000000000000000003104 /* Build configuration list for PBXNativeTarget "SempereWatchUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A20000000000000000008207 /* Debug */,
+				A20000000000000000008208 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -974,6 +1523,34 @@
 			productName = SempereCaptureShared;
 		};
 		A1000000000000000000D0D2 /* SempereCaptureShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereCaptureShared;
+		};
+		A200000000000000000D0101 /* Sempere */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Sempere;
+		};
+		A200000000000000000D0102 /* Age */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Age;
+		};
+		A200000000000000000D0103 /* SempereCapture */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereCapture;
+		};
+		A200000000000000000D0104 /* SempereCaptureShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereCaptureShared;
+		};
+		A200000000000000000D0105 /* SempereLocalization */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereLocalization;
+		};
+		A200000000000000000D0106 /* SempereLocalization */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereLocalization;
+		};
+		A200000000000000000D0107 /* SempereCaptureShared */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SempereCaptureShared;
 		};

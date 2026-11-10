@@ -64,6 +64,9 @@ struct SempereApp: App {
         // Voice notes go straight into their vault's in-app inbox, and its targets upload them
         // (`QuickCapture.deliveredNotification`).
         model.quickCapture.vaultStore = library.vaultStore
+        // The Apple Watch (iPhone only): gives it the capture profile on "Use on Apple Watch" and takes the notes it records,
+        // delivered through the same vault store and ledger. A launch by WatchConnectivity comes through here too.
+        WatchConnectivityService.shared.start(quickCapture: model.quickCapture)
         // No lock is held across a suspension (0xdead10cc, AppModel+Suspension), and "Keep Screen On"
         // follows the whole app, not one scene (`IdleTimerKeeper`); both on `UIApplication`'s lifecycle.
         model.observeAppLifecycle()

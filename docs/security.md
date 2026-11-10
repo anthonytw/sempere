@@ -128,6 +128,24 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 - **The locked device's voice capture.** If you turn on quick voice notes,
   anyone holding your locked device can record a voice note into your vault.
   They cannot listen to existing ones ([`quick-capture.md`](quick-capture.md)).
+- **A lost Apple Watch.** With Use on Apple Watch on, the watch holds the same
+  capture key as the iPhone (the key that can add voice notes and read nothing).
+  Someone who has your lost watch can add voice notes to your inbox as the
+  iPhone, until the iPhone's key is replaced (a new epoch). They cannot read any
+  note. Turning the setting off, or Reset on the watch, clears the watch's copy but
+  revokes nothing cryptographic: a copy someone already took stays valid. Removing
+  the iPhone from the vault ends the watch's captures too (they verify only under
+  the iPhone's listed key). A key of its own for each watch, listed in the vault so
+  that it can be revoked alone, is not in 1.1 (decision D1 of the design).
+- **Who asks the iPhone for the watch's profile.** The watch asks with a public
+  key, over WatchConnectivity, and the iPhone encrypts the profile to the key in
+  the request. Nothing authenticates the request beyond the pairing: age gives
+  confidentiality, not sender authentication. Someone who can already send
+  messages to the iPhone as the paired watch (code running on the watch or the
+  phone) could name a key of their own and get the capture key, which is the case
+  above. The iPhone sends nothing until the setting is on and a profile exists, and
+  the watch takes a profile only from the session's callbacks, never from a file
+  or a link.
 - **Metadata,** as listed above.
 - **Bugs.** Sempere's code has been through a multi-agent security review with
   Claude (October 2026), and its age implementation is checked against the public test vectors and the reference

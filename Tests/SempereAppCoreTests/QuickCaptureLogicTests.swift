@@ -188,12 +188,15 @@ struct QuickCaptureLogicTests {
         #expect(try ledger.entries().first?.epoch == original.profile.epoch)
     }
 
-    /// With a ledger and no profile of the vault, nothing is placed unrecorded.
+    /// With a ledger and no profile of the vault, a file whose epoch is unknown (no sidecar: a queue from before
+    /// sidecars) is not placed unrecorded. (A file WITH a sidecar needs no profile: `WatchReceiverTests`.)
     @Test func aFlushWithoutAProfileLeavesTheQueue() throws {
         let dir = try Self.tempDir()
         let (url, stored) = try Self.profile(in: dir)
         let away = Self.delivery(dir, ledger: MemoryWriteLedger(), storeRoot: try Self.tempDir("not-the-store"))
-        #expect(try away.deliver(try Self.seal(stored), stored) == .queued)
+        let sealed = try Self.seal(stored)
+        #expect(try away.deliver(sealed, stored) == .queued)
+        try FileManager.default.removeItem(at: CaptureDelivery.epochSidecar(away.queueFolder(stored.profile.vaultId).appendingPathComponent(sealed.name)))
         let delivery = Self.delivery(dir, ledger: MemoryWriteLedger())
         #expect(delivery.flushQueue(into: url, vaultId: stored.profile.vaultId, profile: nil, files: nil) == 0)
         #expect(delivery.flushQueue(of: stored) == 1, "the stored profile's vault, by its id in the store")

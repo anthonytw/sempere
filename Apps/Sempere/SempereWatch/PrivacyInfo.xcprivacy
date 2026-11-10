@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Apple Watch app (docs/design/1.1-watch.md) collects nothing and tracks nothing: it records a voice note, encrypts it
+	     on the watch and hands the file to the paired iPhone over WatchConnectivity. It makes no connection of its own and
+	     links no network code (scripts/release-check.sh fails if it does). Every API use behind the entries below is listed with
+	     file:line by the list option of scripts/release-check.sh; the script fails if the sources use a category not declared here. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!-- File timestamps: dates of the watch app's own recording segments and outbox files in its container (the crash
+		     sweep orders what a quit left, `CaptureSegments.Leftover`; the file helpers of `Sempere` stat their own files)
+		     (C617.1). -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array><string>C617.1</string></array>
+		</dict>
+		<!-- Disk space: the free space on the watch is read before a recording starts, so that a note is never recorded with
+		     no room to save it (`WatchStorage.freeBytes`, E174.1). It stays on the watch. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array><string>E174.1</string></array>
+		</dict>
+	</array>
+</dict>
+</plist>

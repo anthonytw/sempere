@@ -174,7 +174,8 @@ public enum WatchProvisioning {
         case notForTheWatch
     }
 
-    static let requestKey = "provisionRequest"
+    /// The key of the watch's request in its property list.
+    public static let requestKey = "provisionRequest"
     static let versionKey = "version"
     static let profileKey = "profile"
     static let clearKey = "clear"
