@@ -1354,6 +1354,8 @@ public final class SyncEngine {
         var remoteAtt: RemoteEntry?
         for e in remoteEntries ?? [] {
             if e.name == Vault.attachmentsName && e.isCollection { remoteAtt = e; continue }
+            // Another device's upload in flight (`placeRevisionFile`).
+            if !e.isCollection && e.name.hasPrefix(FileIO.tempPrefix) { continue }
             guard !e.isCollection, let n = RevisionName(e.name), n.filename == e.name else {
                 report.ignored.append(SyncReport.printable("notes/\(id)/\(e.name)"))
                 remoteJunk.append([Vault.notesName, id, e.name])
@@ -1533,6 +1535,11 @@ public final class SyncEngine {
             }
         }
 
+        // A cut upload an older client left under a revision's name is replaced by a complete copy (design F11).
+        for n in L.intersection(R).sorted() where !waitsForLarge {
+            try attempt(n) { _ = try repairCutRevision(id, n, entry: entries[n], localDir: dir) }
+        }
+
         // Both sides hold the path, with other bytes (design §5.4 step 4): the accepted copy replaces an
         // unaccepted one, after it is set aside (KH4, `EpochSync.swift`).
         for n in L.intersection(R).sorted() {
@@ -1680,12 +1687,75 @@ public final class SyncEngine {
         let data = try BoundedRead.contents(of: root.appendingPathComponent("notes/\(id)/\(n.filename)"),
                                             maxBytes: options.maxFileBytes)
         try ensureCollection([Vault.notesName, id])
-        // A 412 means the server already has it: write-once, so it is the same file.
-        try transport.write([Vault.notesName, id, n.filename], .data(data), condition: .create)
+        try placeRevisionFile(id, n, data: data)
         locked { report.uploaded.append(path); placedShas[key(id, n)] = FileDigest.sha256(data) }
         if Self.epochMutations.contains(.pruneLedgerOnUpload), let ledger = vault?.ledger, let entries = try? ledger.entries() {
             try? ledger.remove(entries.filter { $0.path == path })
         }
+    }
+
+    /// Writes a revision to the server the way a blob goes (`uploadBlobOnce`): to a temporary name beside it
+    /// (recorded in the transfers state, so an interrupted run's is cleaned up), then `MOVE`d to its own name
+    /// without overwriting, so a cut connection never leaves a partial file under the revision's name even on a
+    /// server that writes a body in place (design F11). A name the server already holds counts as success only
+    /// when that file is the same bytes (listed size, then a re-read hash); otherwise it is an error.
+    /// With `damaged`, the server's copy under that name is removed first (only that version, when its ETag is
+    /// strong), after the new bytes are safely on the server: the repair of a file an earlier client left cut.
+    /// Returns false when `damaged` changed on the server meanwhile (nothing is replaced).
+    @discardableResult
+    func placeRevisionFile(_ id: String, _ n: RevisionName, data: Data, damaged: RemoteEntry? = nil) throws -> Bool {
+        let final = [Vault.notesName, id, n.filename]
+        let temp = [Vault.notesName, id, FileIO.tempPrefix + UUID().uuidString.lowercased()]
+        let tempRel = temp.joined(separator: "/")
+        locked { state.remoteTemps.append(tempRel) }
+        checkpoint()
+        var moved = false
+        defer {
+            // Gone after a MOVE; otherwise removed now, or by the next run if that fails.
+            if moved || (try? transport.delete(temp)) != nil { locked { state.remoteTemps.removeAll { $0 == tempRel } } }
+        }
+        guard try transport.write(temp, .data(data), condition: .create) else {
+            throw SyncError.io("notes/\(key(id, n)): the temporary upload name already exists on the server")
+        }
+        if let damaged {
+            let etag = damaged.etag.flatMap { Self.isStrong($0) ? $0 : nil }
+            guard try transport.delete(final, ifETag: etag) else { return false }
+        }
+        moved = try transport.moveNoOverwrite(temp, to: final)
+        if !moved, !serverHolds(final, data) {
+            throw SyncError.io("notes/\(key(id, n)): the server already holds a different file under this name; not replaced")
+        }
+        return true
+    }
+
+    /// True when the server's file at `path` is exactly `data` (its size, then its bytes).
+    func serverHolds(_ path: [String], _ data: Data) -> Bool {
+        guard let listed = try? transport.stat(path) else { return false }
+        if let size = listed.size, size != data.count { return false }
+        guard let got = try? transport.read(path, maxBytes: data.count) else { return false }
+        return FileDigest.sha256(got.data) == FileDigest.sha256(data)
+    }
+
+    /// For a revision both sides list, with a listed size below the local one: a cut upload an earlier client left
+    /// under the final name (the file is only a prefix of the local one) is replaced by a complete copy through a
+    /// temporary name. A listed size that differs for any other reason (a re-encryption, a rewritten copy) is left
+    /// to the comparisons below. Returns true when the server's copy was repaired.
+    func repairCutRevision(_ id: String, _ n: RevisionName, entry: RemoteEntry?, localDir: URL) throws -> Bool {
+        guard !options.dryRun, let entry, let listed = entry.size,
+              let have = LocalFS.regularFileSize(localDir.appendingPathComponent(n.filename)), listed < have,
+              have <= options.maxFileBytes else { return false }
+        let file = localDir.appendingPathComponent(n.filename)
+        guard let local = try? BoundedRead.contents(of: file, maxBytes: options.maxFileBytes),
+              let got = try? transport.read([Vault.notesName, id, n.filename], maxBytes: have),
+              got.data.count < local.count, local.starts(with: got.data) else { return false }
+        guard try placeRevisionFile(id, n, data: local, damaged: entry) else { return false }
+        let path = "notes/\(key(id, n))"
+        locked {
+            report.uploaded.append(path)
+            report.replaced.append(.init(side: "remote", path: path))
+            placedShas[key(id, n)] = FileDigest.sha256(local)
+        }
+        return true
     }
 
     /// True when this run must not upload `id`'s revisions (`blobsHeldBack`).

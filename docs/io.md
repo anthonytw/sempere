@@ -1090,7 +1090,7 @@ sets with the set recorded at the last sync (`SyncState.files`):
 
 | local | remote | in last sync | action |
 | --- | --- | --- | --- |
-| yes | no | no | upload (`If-None-Match: *`) |
+| yes | no | no | upload (to a temporary name, then `MOVE` with `Overwrite: F`) |
 | no | yes | no | download |
 | yes | no | yes | the server dropped it: delete locally if compaction allows, else upload it again |
 | no | yes | yes | this side dropped it: delete remotely if compaction allows, else download it again |
@@ -1161,7 +1161,12 @@ revisions still sync, and readers draw a placeholder for it meanwhile
   that race is success, since the name is keyed by the content hash. The
   temporary name is recorded in the state before the upload and deleted
   afterwards, or by the next run if this one dies. Other devices' temporary
-  names are skipped silently.
+  names are skipped silently. Revisions go the same way (`notes/<id>/.sempere-tmp-<uuid>`, then `MOVE` with
+  `Overwrite: F`); a revision the server already holds counts as uploaded only when its size and a re-read hash
+  match the local file, else it is an error. A revision both sides list whose listed size is below the local
+  one, and whose server copy is a prefix of the local file (a cut upload an older client left under the final
+  name), is replaced: the complete copy goes to a temporary name, the cut one is deleted under its ETag, and the
+  `MOVE` places the new one (reported as uploaded and replaced).
 - *Resumable.* A download goes to `att/.sempere-tmp-part-<name>` and is linked
   into place (`link(2)`). If the run is cut off, the partial file stays and
   the remote ETag is recorded in the state (saved at once); the next run asks
@@ -1386,8 +1391,7 @@ the note loop, what it would upload as new on this side (a two-way run: what
 the server's listing lacks and the last sync did not record; a push-only run:
 what the listing lacks) is uploaded the same number at a time, a note's blobs
 first and its revisions once they all finished, each through the note loop's
-own `upload` / `uploadBlob` (`If-None-Match: *`; a blob to a temporary name,
-then `MOVE` without overwrite), so nothing on the server is ever replaced.
+own `upload` / `uploadBlob` (a temporary name, then `MOVE` without overwrite), so nothing on the server is ever replaced.
 The note loop counts those as its own uploads (also for the folder-ETag check
 of "Unchanged notes"), decides deletions and restores exactly as before, and
 does not try a failed one again in the same run. Revisions over 8 MiB, read
@@ -1544,7 +1548,7 @@ downloaded"; `notes list` shows such notes with that problem. The app fetches
 what it needs instead (below).
 
 **Testing.** `scripts/test-webdav.sh` starts a local wsgidav
-(`pip install -r scripts/webdav-server-requirements.txt`, the pinned versions;
+(`pip install --require-hashes --no-deps -r scripts/webdav-server-requirements.txt`, the pinned versions with their hashes;
 the script refuses another wsgidav unless `SEMPERE_WEBDAV_ANY_SERVER=1`) and runs
 the integration tests, which are skipped unless `SEMPERE_WEBDAV_TEST_URL` is
 set; the script sets it and fails if any of them skipped. CI runs the script on

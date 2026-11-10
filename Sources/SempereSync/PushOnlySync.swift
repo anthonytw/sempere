@@ -93,6 +93,7 @@ extension SyncEngine {
         var remoteAtt: RemoteEntry?
         for e in remoteEntries ?? [] {
             if e.name == Vault.attachmentsName && e.isCollection { remoteAtt = e; continue }
+            if !e.isCollection && e.name.hasPrefix(FileIO.tempPrefix) { continue }   // another device's upload in flight
             guard !e.isCollection, let n = RevisionName(e.name), n.filename == e.name else {
                 report.ignored.append(SyncReport.printable("notes/\(id)/\(e.name)"))
                 remoteJunk.append([Vault.notesName, id, e.name])

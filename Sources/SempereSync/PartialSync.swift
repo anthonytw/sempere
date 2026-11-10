@@ -475,7 +475,7 @@ extension SyncEngine {
         try budget.list(entries.count + (listing.att?.count ?? 0))
         var R = Set<RevisionName>()
         var byName: [RevisionName: RemoteEntry] = [:]
-        for e in entries where !e.isCollection {
+        for e in entries where !e.isCollection && !e.name.hasPrefix(FileIO.tempPrefix) {   // not another device's upload in flight
             guard let n = RevisionName(e.name), n.filename == e.name else {
                 report.ignored.append(SyncReport.printable("notes/\(w.id)/\(e.name)"))
                 continue
