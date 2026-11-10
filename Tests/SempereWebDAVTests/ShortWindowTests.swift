@@ -131,7 +131,7 @@ final class ShortWindowTests: TempDirTestCase {
         try seed(w, notes: 100)
         var schedule = SyncSchedule()
         var delays: [TimeInterval] = []
-        for _ in 0..<8 {
+        for _ in 0..<16 {   // an upload is two requests now (a temporary name, then the move)
             let (_, r) = w.run(w.a, w.wa, k: 40)
             let report = try XCTUnwrap(r)
             XCTAssertTrue(WebDAVSyncProblem.from(report: report).isEmpty, "\(report.errors.prefix(3))")

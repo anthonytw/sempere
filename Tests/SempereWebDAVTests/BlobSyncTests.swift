@@ -31,7 +31,8 @@ final class BlobSyncTests: BlobSyncTestCase {
         XCTAssertTrue(log[move].headers["Destination"]?.hasSuffix("/att/\(name)") == true)
         let putTemp = try XCTUnwrap(log.firstIndex { $0.method == "PUT" && $0.path.contains("/att/.sempere-tmp-") })
         XCTAssertEqual(log[putTemp].headers["If-None-Match"], "*")
-        let putDelta = try XCTUnwrap(log.firstIndex { $0.method == "PUT" && $0.path.hasSuffix(d.name.filename) })
+        // The revision goes to a temporary name and is moved into place, after the blob's move.
+        let putDelta = try XCTUnwrap(log.firstIndex { $0.method == "MOVE" && $0.headers["Destination"]?.hasSuffix(d.name.filename) == true })
         XCTAssertLessThan(move, putDelta, "the blob is on the server before the revision that references it")
 
         let down = try sync("B", server)

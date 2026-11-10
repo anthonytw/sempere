@@ -215,7 +215,7 @@ final class SyncChangeTests: BlobSyncTestCase {
 
         // A run whose upload failed records nothing for the note.
         let e = try delta(a, device: devA, t: 10, title: "four")
-        server.interceptor = { r in r.method == "PUT" && r.url.path.hasSuffix(e.name.filename) ? WebDAVResponse(status: 503) : nil }
+        server.interceptor = { r in r.method == "MOVE" && r.headers["Destination"]?.hasSuffix(e.name.filename) == true ? WebDAVResponse(status: 503) : nil }
         let s = try syncer("A", server, skip: true)
         XCTAssertFalse(try s.run().errors.isEmpty)
         server.interceptor = nil

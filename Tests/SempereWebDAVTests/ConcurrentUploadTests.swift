@@ -87,7 +87,7 @@ final class ConcurrentUploadTests: BlobSyncTestCase {
             let methods = parallelServer.requestLog.map(\.method)
             XCTAssertEqual(methods.filter { $0 == "PUT" }.count, serialServer.requestLog.filter { $0.method == "PUT" }.count,
                            "nothing is uploaded twice")
-            XCTAssertEqual(methods.filter { $0 == "MOVE" }.count, 6 * 2)
+            XCTAssertEqual(methods.filter { $0 == "MOVE" }.count, 6 * 4, "every blob and every revision is moved into place")
             XCTAssertTrue(try push("A", parallelServer, pushOnly: pushOnly).isEmpty, "a second run has nothing to do")
 
             // The server copy reads back whole.
@@ -132,7 +132,8 @@ final class ConcurrentUploadTests: BlobSyncTestCase {
         let attempts = Recorder<String>()
         server.interceptor = { r in
             usleep(1000)
-            guard r.method == "PUT", r.url.path.hasSuffix(victim) else { return nil }
+            // The revision goes to a temporary name; the move into its own name is the step that fails.
+            guard r.method == "MOVE", r.headers["Destination"]?.hasSuffix(victim) == true else { return nil }
             attempts.append(r.url.path)
             return WebDAVResponse(status: 507)
         }
@@ -227,7 +228,7 @@ final class ConcurrentUploadTests: BlobSyncTestCase {
         let r = try push("A", server, pushOnly: true) { $0.concurrency = 6 }
         XCTAssertTrue(r.errors.isEmpty, "\(r)")
         XCTAssertEqual(server.file(rel), Data("server copy".utf8))
-        XCTAssertFalse(server.requestLog.contains { $0.method == "PUT" && $0.path.hasSuffix(name) && !$0.path.contains("/att/") },
+        XCTAssertFalse(server.headers.contains { ($0.method == "PUT" && $0.path.hasSuffix(name)) || ($0.method == "MOVE" && $0.headers["Destination"]?.hasSuffix(name) == true) },
                        "listed on the server: not uploaded")
     }
 
