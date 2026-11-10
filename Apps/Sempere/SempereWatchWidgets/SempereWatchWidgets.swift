@@ -128,8 +128,10 @@ struct WatchVoiceNoteControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: VoiceNoteStatus.controlKind, provider: WatchVoiceNoteControlProvider()) { status in
             ControlWidgetButton(action: RecordWatchVoiceNoteIntent()) {
-                // A system symbol, as the iPhone's control: Control Center draws a custom symbol as an empty circle.
-                Label(status.watchTitle, systemImage: status.symbol)
+                switch status.glyph {
+                case .custom(let name): Label(status.watchTitle, image: name)
+                case .system(let name): Label(status.watchTitle, systemImage: name)
+                }
                 Text(status.watchSubtitle)
             }
         }
