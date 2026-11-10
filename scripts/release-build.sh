@@ -4,7 +4,8 @@
 #
 #   scripts/release-build.sh VERSION
 #
-# Needs the tag vVERSION (scripts/release-tag.sh), Docker and the maintainer's SSH signing key. Builds from a clean
+# Needs the tag vVERSION, made and pushed by the maintainer (scripts/release-tag.sh --owner-commands), and Docker. A
+# release from 1.1.0 on (not a prerelease) is refused unless the tag is signed by a key in packaging/allowed_signers. Builds from a clean
 # worktree of the tag, so the binaries are built from exactly the tagged sources. The build and packaging scripts are
 # this checkout's (so an older tag gets the current ones), and the script refuses to run unless this tree is clean and
 # scripts/ and packaging/ equal origin/main's: nothing local can slip into a release. Every image is pinned by digest. Steps:
@@ -17,9 +18,11 @@
 #   5. the Linux tarballs installed and run in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20
 #      (scripts/smoke-linux-cli.sh). The architecture Docker runs natively must pass; the emulated one
 #      is reported, because emulation has failed on its own before (tar under qemu on Ubuntu 26.04)
-#   6. SHA256SUMS and notes.md (the CHANGELOG section); SHA256SUMS is signed with the maintainer's SSH key
-#      (scripts/release-signature.sh: SHA256SUMS.sig, checked against packaging/allowed_signers)
-# Output: build/release/vVERSION/. Next: scripts/release-publish.sh VERSION.
+#   6. SHA256SUMS and notes.md (the CHANGELOG section). This build account cannot use the maintainer's key, so it signs
+#      nothing: SHA256SUMS, packaging/allowed_signers and scripts/release-sign.sh go to a hand-off folder
+#      (SEMPERE_SIGN_DROP, default /Users/Shared/sempere-release, then vVERSION/; a sticky world-writable folder) and the
+#      maintainer signs from their own account (docs/releasing.md)
+# Output: build/release/vVERSION/. Next: the maintainer signs, then scripts/release-publish.sh VERSION.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo=$PWD
@@ -44,8 +47,9 @@ unset SEMPERE_LINUX_BUILD_VOLUME   # a release build always starts from fresh vo
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
 sha=$(git rev-parse "$tag^{commit}")
+scripts/release-signature.sh verify-tag "$version" >&2 || die "$tag must be signed by the maintainer before it is built"
+[[ -f packaging/allowed_signers ]] || die "no packaging/allowed_signers: the hand-off needs it"
 command -v docker >/dev/null || die "Docker is needed for the Linux builds"
-scripts/release-signature.sh ready >&2 || die "SHA256SUMS cannot be signed; fix that before the long build"
 remote=${SEMPERE_RELEASE_REMOTE:-origin}
 git fetch -q "$remote" main || die "cannot fetch $remote main to compare the build scripts with"
 [[ -z $(git status --porcelain --untracked-files=no) ]] || die "this tree has uncommitted changes; the build scripts must be main's"
@@ -120,6 +124,13 @@ done
 
 step "SHA256SUMS"
 (cd "$out" && shasum -a 256 *.tar.gz > SHA256SUMS && cat SHA256SUMS)
-"$repo/scripts/release-signature.sh" sign "$out"
-echo
-echo "built $tag in $out. Next: just release-publish $version"
+
+step "hand-off to the maintainer"
+drop=${SEMPERE_SIGN_DROP:-/Users/Shared/sempere-release}
+mkdir -p "$drop/$tag"; chmod 1777 "$drop" "$drop/$tag" 2>/dev/null || true   # like /tmp: anyone may add files, only owners delete
+rm -f "$drop/$tag"/{SHA256SUMS,allowed_signers,release-sign.sh,SHA256SUMS.sig} 2>/dev/null || true   # a stale .sig the maintainer made is replaced by their next run
+cp "$out/SHA256SUMS" "$repo/packaging/allowed_signers" "$repo/scripts/release-sign.sh" "$drop/$tag/"
+chmod 0644 "$drop/$tag"/{SHA256SUMS,allowed_signers,release-sign.sh}
+echo "built $tag in $out. Hand-off folder: $drop/$tag"
+echo "Next, from the maintainer's own account:  bash $drop/$tag/release-sign.sh"
+echo "then, here: just release-publish $version"

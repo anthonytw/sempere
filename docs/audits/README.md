@@ -112,7 +112,7 @@ A public commit, branch, tag or PR title is a disclosure.
    `just ci-release` on the merge commit, which stretches the window to the sweep's length. If the release stalls
    after the merge (the CLI build fails, say), finish it before anything else.
    `release-build.sh` also refuses to build unless this checkout is clean and its build and packaging scripts equal
-   `origin/main`'s, and it signs `SHA256SUMS` (SECURITY.md "Verifying releases").
+   `origin/main`'s, and it hands `SHA256SUMS` to the maintainer to sign (SECURITY.md "Verifying releases"; the release tag is the maintainer's too, docs/releasing.md B.1).
    **The out-of-band path** (a fix that cannot wait for a scheduled release): `scripts/release-tag.sh --embargo X.Y.Z`
    (REF defaults to `HEAD`) tags a local commit without pushing anything. It refuses a dirty tree, a commit already on
    `origin/main`, a merge, and a commit whose parent is not on `origin/main`. **Known gaps, closed the first time this

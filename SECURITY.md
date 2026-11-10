@@ -87,11 +87,21 @@ No audit is published yet. The first, a full audit of 1.1, is planned before 1.1
 
 The tarballs of v1.0.0 and v1.0.1 carry GitHub build provenance attestations:
 `gh attestation verify FILE --repo anthonytw/sempere`. Later releases are built on the maintainer's Mac and carry
-none. From 1.1.0 on, each release lists its tarballs' checksums in `SHA256SUMS` and signs that file with the
-maintainer's SSH signing key (the key that signs the release tags): `SHA256SUMS.sig`. To check a download, take the
-public key from this repository (`packaging/allowed_signers`, never from the release itself), then:
+none. From 1.1.0 on, each release's tag and its `SHA256SUMS` (the checksums of the tarballs) are signed by the
+maintainer, the person, with their own SSH key on their own account after the build: `SHA256SUMS.sig`. To check a
+download, take the public key from this repository (`packaging/allowed_signers`, never from the release itself):
+
+```
+maintainer ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKpJBs4KAzf5EO5EadPEzOliAJDlItvTr7OtnnAeUCI3
+fingerprint SHA256:u94X5C2t2zAT9krLN4+LLwC3UI/z8d0v0tmuq6y90fM (awertz@pm.me)
+```
+
+Then:
 
 ```
 shasum -a 256 -c SHA256SUMS        # sha256sum -c on Linux
 ssh-keygen -Y verify -f packaging/allowed_signers -I maintainer -n file -s SHA256SUMS.sig < SHA256SUMS
 ```
+
+To check a release tag the same way (`git show origin/main:packaging/allowed_signers > signers` in a clone):
+`git -c gpg.ssh.allowedSignersFile=signers tag -v vX.Y.Z`.
