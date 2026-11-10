@@ -97,6 +97,11 @@ run scripts/release-verify.sh 1.2.3; check "verify checks the published signatur
 echo tampered >> "$t/dl/releases/download/v1.2.3/SHA256SUMS"
 run scripts/release-verify.sh 1.2.3; check "verify refuses a published list its signature does not cover" '[[ $rc != 0 ]]'
 cp $d/SHA256SUMS "$t/dl/releases/download/v1.2.3/SHA256SUMS"
+mv "$t/dl/releases/download/v1.2.3/SHA256SUMS.sig" "$t/sig.bak"
+run scripts/release-verify.sh 1.2.3; check "verify fails a release from 1.1.0 on without its signature" '[[ $rc != 0 && $out == *"has no SHA256SUMS.sig"* ]]'
+mv "$t/sig.bak" "$t/dl/releases/download/v1.2.3/SHA256SUMS.sig"
+run scripts/release-signature.sh ready; check "ready signs a probe with the key in the signers file" '[[ $rc == 0 ]]'
+SEMPERE_RELEASE_SIGNING_KEY="$t/other" run scripts/release-signature.sh ready; check "ready refuses a key the signers file lacks" '[[ $rc != 0 && $out == *"is not a key in"* ]]'
 git push -q gitea refs/tags/v1.2.3 refs/heads/main
 run scripts/release-verify.sh 1.2.3; check "verify sees the mirror's tag" '[[ $rc == 0 && $out == *"the Gitea mirror has v1.2.3 at the same commit"* ]]'
 exit $fail

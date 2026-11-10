@@ -133,6 +133,7 @@ fi
 source scripts/run-tmp.sh
 
 # A result belongs to a commit: nothing uncommitted (tracked or not) may be in the build.
+start_clean=false; [[ -z "$(git status --porcelain)" ]] && start_clean=true
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "local-ci: the checkout has uncommitted changes; commit them (or run with --no-status)" >&2
   if [[ $post == true ]]; then exit 1; fi
@@ -285,4 +286,6 @@ else
 fi
 # A full sweep of a clean checkout: remember its tree, so a later commit with that tree (the squash merge of this
 # commit) can be posted without a second sweep (`--post-sweep SHA`).
-if [[ $mode == release && -z "$(git status --porcelain)" ]]; then scripts/release-sweep-tree.sh record "$sha"; fi
+if [[ $mode == release && $start_clean == true && "$(git rev-parse HEAD)" == "$sha" && -z "$(git status --porcelain)" ]]; then
+  scripts/release-sweep-tree.sh record "$sha"
+fi

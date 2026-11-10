@@ -95,7 +95,7 @@ describe("taps on cards and videos", () => {
 });
 
 describe("audio the viewer plays", () => {
-  it("takes the types it knows, by their essence, and nothing the writer can shape into markup", () => {
+  it("plays only the listed types, by their essence", () => {
     for (const type of ["audio/mp4", "audio/mp4; codecs=mp4a.40.2", "AUDIO/MPEG", "audio/x-m4a", "audio/wav"]) {
       expect(playableAudio.has(essence(type)), type).toBe(true);
     }

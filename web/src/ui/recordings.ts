@@ -22,8 +22,7 @@ export const maxAudioBytes = 256 * 1024 * 1024;
 
 /**
  * The audio types the viewer plays (what Sempere and its importers write). The blob gets exactly one of these, never
- * the writer's own string: a type like `audio/x,text/html` could make a browser parse the file as a page if the
- * user opened the audio's blob URL as a document.
+ * the writer's own string.
  */
 export const playableAudio: ReadonlySet<string> = new Set([
   "audio/mp4", "audio/x-m4a", "audio/m4a", "audio/aac", "audio/mpeg",

@@ -7,7 +7,7 @@
 # Needs the tag vVERSION (scripts/release-tag.sh), Docker and the maintainer's SSH signing key. Builds from a clean
 # worktree of the tag, so the binaries are built from exactly the tagged sources. The build and packaging scripts are
 # this checkout's (so an older tag gets the current ones), and the script refuses to run unless this tree is clean and
-# those files equal origin/main's: nothing local can slip into a release. Every image is pinned by digest. Steps:
+# scripts/ and packaging/ equal origin/main's: nothing local can slip into a release. Every image is pinned by digest. Steps:
 #   1. checks: the tag passed the release sweep or, for a CLI-only release, local/cli-suite
 #      (scripts/release-sweep-check.sh; a prerelease only warns), Version.swift and CHANGELOG.md say VERSION
 #   2. Linux x86_64 and aarch64: the fully static binaries (Static Linux SDK, scripts/ci-linux.sh static),
@@ -40,6 +40,7 @@ SMOKE_IMAGES=(
 )
 # The scripts this one copies from this checkout into the tag's worktree.
 TOOLING=(scripts/ci-linux.sh scripts/package-cli.sh scripts/smoke-linux-cli.sh)
+unset SEMPERE_LINUX_BUILD_VOLUME   # a release build always starts from fresh volumes
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
 sha=$(git rev-parse "$tag^{commit}")
@@ -48,7 +49,7 @@ scripts/release-signature.sh ready >&2 || die "SHA256SUMS cannot be signed; fix 
 remote=${SEMPERE_RELEASE_REMOTE:-origin}
 git fetch -q "$remote" main || die "cannot fetch $remote main to compare the build scripts with"
 [[ -z $(git status --porcelain --untracked-files=no) ]] || die "this tree has uncommitted changes; the build scripts must be main's"
-git diff --quiet "$remote/main" -- "${TOOLING[@]}" || die "${TOOLING[*]} differ from $remote/main: build from a checkout of main"
+git diff --quiet "$remote/main" -- scripts/ packaging/ || die "scripts/ or packaging/ differ from $remote/main: build from a checkout of main"
 out=$repo/build/release/$tag
 src=$repo/build/release/$tag-src
 rm -rf "$out"; mkdir -p "$out"

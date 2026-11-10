@@ -22,6 +22,9 @@ run scripts/release-sweep-tree.sh post "$local_sha"; check "nothing is posted be
 echo dirty >> f
 run scripts/release-sweep-tree.sh record; check "a dirty checkout is not recorded" '[[ $rc != 0 && $out == *"uncommitted"* && ! -f $SEMPERE_SWEEP_TREES ]]'
 git checkout -q f
+git commit -q --allow-empty -m "later"; run scripts/release-sweep-tree.sh record "$local_sha"
+check "an explicit commit that is not HEAD is refused" '[[ $rc != 0 && $out == *"not HEAD"* && ! -f $SEMPERE_SWEEP_TREES ]]'
+git reset -q --hard "$local_sha"
 run scripts/release-sweep-tree.sh record; check "a clean checkout is recorded" '[[ $rc == 0 && -f $SEMPERE_SWEEP_TREES ]]'
 
 # The squash merge on main: another commit id, the same tree (here: a root commit with the same files).

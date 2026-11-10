@@ -48,7 +48,9 @@ case ${1:-} in
   verify) verify "${2:?usage: $0 verify DIR}" ;;
   ready)
     [[ -f $signers ]] || die "no $signers: add the maintainer's line (see SECURITY.md)"
-    key_file >/dev/null
-    echo "ok    release signing: a key and $signers" ;;
+    k=$(key_file); echo probe > "$tmp/probe"
+    ssh-keygen -Y sign -f "$k" -n file "$tmp/probe" >/dev/null 2>&1 || die "cannot sign with $k (is the agent that holds the key running?)"
+    ssh-keygen -Y find-principals -f "$signers" -s "$tmp/probe.sig" >/dev/null 2>&1 || die "$k is not a key in $signers"
+    echo "ok    release signing: $k is in $signers" ;;
   *) sed -n '2,13p' "$0" >&2; exit 2 ;;
 esac

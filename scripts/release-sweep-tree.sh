@@ -4,7 +4,7 @@
 # built and swept locally (`scripts/local-ci.sh --release --no-status`) and the squash merge of the same changes on main
 # have different commit ids and the same tree. Nothing is run here and nothing is trusted but the record.
 #
-#   scripts/release-sweep-tree.sh record [SHA]   remember the tree of SHA (default HEAD) as one a full sweep passed:
+#   scripts/release-sweep-tree.sh record [SHA]   remember the tree of HEAD (SHA, if given, must be HEAD) as one a full sweep passed:
 #                                                local-ci.sh calls it after a passing `--release` run on a clean checkout
 #   scripts/release-sweep-tree.sh post SHA       post `local/release-sweep` (success) on SHA, only if its tree was recorded
 #   scripts/release-sweep-tree.sh --list         the recorded trees
@@ -21,7 +21,8 @@ case ${1:-} in
   record)
     sha=$(git rev-parse "${2:-HEAD}^{commit}")
     # A tree is only the sweep's if the checkout was the commit exactly.
-    if [[ ${2:-HEAD} == HEAD && -n $(git status --porcelain) ]]; then die "the checkout has uncommitted changes; not recorded"; fi
+    [[ $sha == "$(git rev-parse HEAD)" ]] || die "${sha:0:8} is not HEAD: only the checked-out commit can be recorded"
+    [[ -z $(git status --porcelain) ]] || die "the checkout has uncommitted changes; not recorded"
     tree=$(git rev-parse "$sha^{tree}")
     mkdir -p "$(dirname "$records")"
     printf '%s %s %s %s\n' "$tree" "$sha" "$(date +%s)" "$(scutil --get ComputerName 2>/dev/null || hostname -s | tr ' ' '_')" >> "$records"
