@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs the WebDAV integration tests against a local wsgidav server.
-#   pip install -r scripts/webdav-server-requirements.txt      (once; the versions CI uses)
+#   pip install --require-hashes --no-deps -r scripts/webdav-server-requirements.txt      (once; the versions CI uses)
 #   scripts/test-webdav.sh
 # Another wsgidav version is refused (SEMPERE_WEBDAV_ANY_SERVER=1 runs anyway): servers differ in
 # how they answer conditional requests, so a run against another version does not show what CI shows.
@@ -18,10 +18,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 PORT="${PORT:-8765}"
 PROXY_PORT="${PROXY_PORT:-$((PORT + 1))}"
-want="$(sed -n 's/^wsgidav==//p' scripts/webdav-server-requirements.txt)"
+want="$(sed -n 's/^wsgidav==\([^ ]*\).*/\1/p' scripts/webdav-server-requirements.txt)"
 have="$(wsgidav --version 2>/dev/null | tail -1 || true)"
 if [ "$have" != "$want" ] && [ "${SEMPERE_WEBDAV_ANY_SERVER:-}" != 1 ]; then
-  echo "error: wsgidav ${have:-not found}, the tests pin $want: pip install -r scripts/webdav-server-requirements.txt" >&2
+  echo "error: wsgidav ${have:-not found}, the tests pin $want: pip install --require-hashes --no-deps -r scripts/webdav-server-requirements.txt" >&2
   exit 1
 fi
 work="$(mktemp -d)"

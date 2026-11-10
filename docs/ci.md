@@ -61,7 +61,8 @@ The second build is skipped too when it already passed (job `linux-removable`, b
   `RFC3339.string(from:)` and `parse` (milliseconds since 1970 in an `Int`: every capture's manifest dates went through it),
   `Int(UInt32.max)` in `Gzip` and `PublishedSummaries`, and sums in `ADTSToMP4` and `WatchOutbox`; use `Int64` or `Int(clamping:)`. Locally: `xc-lock scripts/build-watchos-package.sh [TARGET]`.
 - **The watch app's build and tests.** The iPhone app embeds `SempereWatch` (with `SempereWatchWidgets`; `Apps/Sempere/Sempere.xcodeproj`), so `build-ios` needs the watchOS **simulator SDK** (Xcode's watchOS platform, which carries the device SDK the step above uses) and builds the watch app on every run. `scripts/app.sh build-watch` builds the scheme `SempereWatch` for `generic/platform=watchOS Simulator` (app, widgets, unit and UI test bundles) and the app and widgets for `generic/platform=watchOS` unsigned, which is the only build that compiles the Control (the watchOS Simulator has no Shortcuts services behind a Control's intent and the extension dies rendering it, so simulator builds leave it out). Neither needs a simulator runtime. The unit and UI tests (`test-watch`, `test-watch-ui`: `SempereWatchTests`, `SempereWatchUITests`, a fake recorder that writes real ADTS frames) need the watchOS runtime, which GitHub's image is not known to have (the `iOS build` step prints `xcrun simctl list runtimes`), so they run on a Mac: `local-ci.sh`'s step `watch-test`, in `--testflight` and `--release`, or by hand: `XC_KIND=sim XC_NO_CLONE=1 xc-lock scripts/app.sh test-watch-ui` (xc-lock's simulator clones are iPads and iPhones). A Keychain test skips itself in an unsigned test host.
-- **The Linux image** is pinned by digest (`env.SEMPERE_CI_IMAGE_ID` and the `container:` lines of `ci.yml`). The digest goes into every
+- **The Linux images** are pinned by digest: the test image (`env.SEMPERE_CI_IMAGE_ID` and the `container:` lines of `ci.yml`),
+  and the static-build, packaging and smoke-test images (`STATIC_IMAGE` in `ci-linux.sh`, `release-build.sh`). The digest goes into every
   Linux hash, so a moved tag cannot reuse a record. To update: `docker buildx imagetools inspect swift:6.4-noble`, change the
   digest in all four places, and the next run runs every Linux target once.
 - **Pass records** (hash skipping, [design/ci-lean.md](design/ci-lean.md)) live in `actions/cache` (`ci-pass-<job>-<run>`,
@@ -108,6 +109,11 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
   `--testflight` and `--release` steps after the gate are UI tests that take over the screen (a
   Mac UI test fails with "Running Background" when the app cannot come to the front): leave the
   Mac alone while they run. Both also post `local/app-tests` once their gate steps passed.
+- **A sweep for a commit with the same tree.** A passing `--release` run on a clean checkout records the commit's tree id
+  (`data/local-ci/release-sweep-trees`, git-ignored; `scripts/release-sweep-tree.sh`), also with `--no-status`.
+  `scripts/local-ci.sh --post-sweep SHA` runs nothing: it posts `local/release-sweep` for SHA when its tree is one that
+  passed. A release built from a local commit and merged later as a squash is another commit with the same tree, so it
+  needs no second sweep (docs/audits/README.md "Embargoed fixes"). Any other tree is refused.
 - **Targeted tests**: the gate runs no UI test and no simulator, so the author picks the tests
   the change calls for (a Mac UI test for a window or menu change, `test-ui` for an iPad drag,
   `test-phone` for an iPhone layout, …), runs them with
@@ -356,8 +362,11 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
 - **Age is compiled with `-O` even in debug builds** (`Package.swift`): unoptimized scrypt
   makes the passphrase tests take minutes.
 - **Build caches:** `scripts/ci-linux.sh docker` keeps the Linux `.build` in a Docker volume per image
-  (`sempere-linux-build-…`) and the Static Linux SDK in `sempere-linux-swiftpm`. If a Linux build fails in a
-  way a clean build would not, `docker volume rm` the volume and re-run.
+  (`sempere-linux-build-…`). The test and webdav jobs never mount the Static Linux SDK. A `static` job (the
+  release binaries, `release-build.sh`) uses a fresh `.build` volume and a fresh `~/.swiftpm` volume on every
+  run and removes both afterwards, so its SDK is downloaded and checked against its checksum each time and
+  nothing a test job wrote can reach a release binary. If a Linux build fails in a way a clean build would
+  not, `docker volume rm` the volume and re-run.
 
 ## Temp-folder guard
 

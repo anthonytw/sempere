@@ -7,7 +7,7 @@
 # that has one differs from SHA only in release-neutral files: the changelog, docs, CI config,
 # release tooling, root Markdown. Those cannot change what the release builds, so a changelog date
 # fix or a release-script fix after the sweep does not need a second ~2 h sweep. Any other file
-# (Sources/, the app, Package.swift, fonts/, …) needs a new sweep.
+# (Sources/, the app, Package.swift, fonts/, scripts/ci-linux.sh, which builds the Linux binaries, …) needs a new sweep.
 #
 # A CLI-only release (`just release-prep X.Y.Z --no-app`: Version.swift differs from the app's
 # MARKETING_VERSION, so no App Store build goes with it) needs no sweep: the sweep gates App Store
@@ -24,7 +24,7 @@ source scripts/forge.sh
 max_back=${SEMPERE_SWEEP_LOOKBACK:-50}
 
 # Paths that do not reach the built app or CLI. Keep this list small and boring.
-neutral='^(CHANGELOG\.md|changelog\.d/.*|docs/.*|\.github/.*|\.gitea/.*|[^/]+\.md|justfile|packaging/homebrew/.*|scripts/(release-[^/]*|test-release-[^/]*|test-mirror-gitea|changelog-[^/]*|update-formula|forge|ci-linux|local-ci)\.(sh|py))$'
+neutral='^(CHANGELOG\.md|changelog\.d/.*|docs/.*|\.github/.*|\.gitea/.*|[^/]+\.md|justfile|packaging/homebrew/.*|packaging/allowed_signers|scripts/(release-[^/]*|test-release-[^/]*|test-mirror-gitea|changelog-[^/]*|update-formula|forge|local-ci)\.(sh|py))$'
 
 status_of() {   # sha context -> state, "missing", or "unknown" when Gitea cannot be asked
   local out

@@ -10,10 +10,13 @@
 #                                      image), host architecture by default
 #   scripts/ci-linux.sh docker JOB...  run each JOB (or JOB:ARG, e.g. static:x86_64) in the right image with Docker, from a Mac or any Linux host. The
 #                                      checkout is mounted, but .build is a Docker volume of its own
-#                                      (sempere-linux-build-…), so the host's build folder is never touched;
-#                                      ~/.swiftpm (the Static Linux SDK) is the volume sempere-linux-swiftpm.
-#                                      SEMPERE_LINUX_BUILD_VOLUME=NAME uses a build volume of your own; SEMPERE_LINUX_CPUS=1.2 caps
-#                                      the container's CPUs (to reproduce a test that fails on a loaded runner).
+#                                      (sempere-linux-build-…), so the host's build folder is never touched.
+#                                      test and webdav never see the Static Linux SDK. A static job gets a fresh build volume
+#                                      and a fresh ~/.swiftpm volume of its own on every run, removed when it ends, so the SDK is
+#                                      downloaded and checked against its checksum each time (build-linux-static.sh) and nothing a
+#                                      test job could have written is ever reused in a release binary.
+#                                      SEMPERE_LINUX_BUILD_VOLUME=NAME uses a build volume of your own (not for a release build);
+#                                      SEMPERE_LINUX_CPUS=1.2 caps the container's CPUs (to reproduce a test that fails on a loaded runner).
 #
 # test and webdav skip a test target whose inputs hash to one that already passed (scripts/ci-hash.py, docs/design/ci-lean.md),
 # say which commit passed it, and record what they ran once it passed (in Docker, in the host's ~/.cache/sempere-ci-pass,
@@ -27,7 +30,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TEST_IMAGE=${SEMPERE_LINUX_IMAGE:-swift:6.4-noble}
-STATIC_IMAGE=swift:6.4.2-noble   # scripts/build-linux-static.sh pins the SDK to exactly this compiler
+# scripts/build-linux-static.sh pins the SDK to exactly this compiler. Pinned by digest, as the workflow pins the test image
+# (docs/ci.md): the release binaries are never built in a tag's new content.
+STATIC_IMAGE=swift:6.4.2-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
 AGE_VERSION=1.3.2
 age_sha256() {
   case $1 in
@@ -136,7 +141,7 @@ job_webdav() {
     echo "ci-linux: the WebDAV job skipped: both of its targets passed with their current hash (lines above name the commits)"
     return 0
   fi
-  [[ -x /opt/dav/bin/wsgidav ]] || { python3 -m venv /opt/dav && /opt/dav/bin/pip install --quiet -r scripts/webdav-server-requirements.txt; }
+  [[ -x /opt/dav/bin/wsgidav ]] || { python3 -m venv /opt/dav && /opt/dav/bin/pip install --quiet --require-hashes --no-deps -r scripts/webdav-server-requirements.txt; }
   SEMPERE_WEBDAV_LARGE_MB=${SEMPERE_WEBDAV_LARGE_MB:-64} PATH=/opt/dav/bin:$PATH scripts/test-webdav.sh ${SEMPERE_BUILD_JOBS:+-j "$SEMPERE_BUILD_JOBS"}
   python3 scripts/ci-hash.py record --plan "$plan"
 }
@@ -144,7 +149,7 @@ job_webdav() {
 job_static() {
   local arch=${1:-$(uname -m)}
   [[ $arch == arm64 ]] && arch=aarch64
-  apt_install curl
+  apt_install curl ca-certificates
   scripts/build-linux-static.sh "$arch" "build/linux-static/sempere-$arch"
 }
 
@@ -154,7 +159,15 @@ in_docker() {   # JOB or JOB:ARG (static:x86_64)
   [[ $1 == *:* ]] && arg=${1#*:}
   [[ $job == static ]] && image=$STATIC_IMAGE
   [[ $job == test ]] && caps=(--cap-add=SYS_ADMIN --cap-add=NET_ADMIN)   # test-offline's network namespace
-  local volume="${SEMPERE_LINUX_BUILD_VOLUME:-sempere-linux-build-${image//[:.]/-}}"   # a name of your own when another run shares the Docker host
+  local volume="${SEMPERE_LINUX_BUILD_VOLUME:-sempere-linux-build-$(sed 's/@.*//; s/[:.]/-/g' <<<"$image")}"   # a name of your own when another run shares the Docker host
+  # A static (release) build starts from nothing: new volumes for .build and ~/.swiftpm, removed afterwards (F-01).
+  local mounts=() fresh=()
+  if [[ $job == static ]]; then
+    local run; run="sempere-static-$(date +%s)-$$-$RANDOM"
+    [[ -n ${SEMPERE_LINUX_BUILD_VOLUME:-} ]] || volume="$run-build"
+    fresh=("$run-swiftpm"); [[ $volume == "$run-build" ]] && fresh+=("$volume")
+    mounts=(-v "$run-swiftpm:/root/.swiftpm")
+  fi
   local tty=(); [[ -t 1 ]] && tty=(-t)
   # The pass records (docs/design/ci-lean.md) live on the host, in the Mac gate's store, not in the build volume: a record is
   # the content hash of a target, so a pass recorded for one commit is honored for any later commit with the same hashes, and
@@ -164,8 +177,11 @@ in_docker() {   # JOB or JOB:ARG (static:x86_64)
   # The image's id goes into the target hashes: the local default tag floats (the runner's is pinned by digest in the workflow).
   local image_id; image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || { docker pull -q "$image" >/dev/null && docker image inspect --format '{{.Id}}' "$image"; })
   local cpus=(); [[ -n ${SEMPERE_LINUX_CPUS:-} ]] && cpus=(--cpus "$SEMPERE_LINUX_CPUS")   # e.g. 1.2: a loaded runner, to reproduce a flake
-  docker run --rm --init ${cpus[@]+"${cpus[@]}"} --label "sempere-ci-run=${SEMPERE_CI_RUN_ID:-manual}" -e SEMPERE_CI_FORCE_ALL -e SEMPERE_CI_HOST -e "SEMPERE_CI_IMAGE_ID=$image_id" ${tty[@]+"${tty[@]}"} ${caps[@]+"${caps[@]}"} ${store[@]+"${store[@]}"} -v "$PWD:/src" -v "$volume:/src/.build" -v sempere-linux-swiftpm:/root/.swiftpm -w /src "$image" \
-    scripts/ci-linux.sh "$job" ${arg:+"$arg"}
+  local rc=0
+  docker run --rm --init ${cpus[@]+"${cpus[@]}"} --label "sempere-ci-run=${SEMPERE_CI_RUN_ID:-manual}" -e SEMPERE_CI_FORCE_ALL -e SEMPERE_CI_HOST -e "SEMPERE_CI_IMAGE_ID=$image_id" ${tty[@]+"${tty[@]}"} ${caps[@]+"${caps[@]}"} ${store[@]+"${store[@]}"} ${mounts[@]+"${mounts[@]}"} -v "$PWD:/src" -v "$volume:/src/.build" -w /src "$image" \
+    scripts/ci-linux.sh "$job" ${arg:+"$arg"} || rc=$?
+  [[ ${#fresh[@]} -eq 0 ]] || docker volume rm -f "${fresh[@]}" >/dev/null 2>&1 || true
+  return $rc
 }
 
 case ${1:-} in
