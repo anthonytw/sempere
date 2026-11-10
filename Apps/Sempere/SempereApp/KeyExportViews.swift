@@ -164,7 +164,7 @@ enum SecretPasteboard {
     }
 
     #if targetEnvironment(macCatalyst)
-    private static var pending: (changeCount: Int, quit: NSObjectProtocol)?
+    @MainActor private static var pending: (changeCount: Int, quit: NSObjectProtocol)?
 
     /// Clears the pasteboard after `lifetime`, and at quit, if nothing else was copied since this item.
     @MainActor private static func expireItself(afterChangeCount count: Int) {
