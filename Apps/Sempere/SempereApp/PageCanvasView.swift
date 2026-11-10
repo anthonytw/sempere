@@ -122,6 +122,7 @@ struct PageCanvasView: UIViewRepresentable {
             self.editor = editor
             editor.attachInkView(self)
             self.host = host
+            host.onUndoStateChanged = { [weak editor] in editor?.refreshUndoAvailability() }
             if self.pageID != pageID || editorID != ObjectIdentifier(editor) || generation != content.generation {
                 let samePage = self.pageID == pageID && editorID == ObjectIdentifier(editor)
                 self.pageID = pageID
@@ -149,6 +150,7 @@ struct PageCanvasView: UIViewRepresentable {
             }
             host.onItemSelectionEnded = content.onSelectingItemsEnded
             host.onPencilAnnotate = content.onPencilAnnotate
+            host.undoStateChanged()   // the canvas target may be new (deferred while SwiftUI updates)
             host.itemSelectionActive = content.selectingItems && !editor.isReadOnly && !content.input.drawingSuspended
             if let onDrop = content.onDrop {
                 host.dropHandler = { providers, point in onDrop(providers, pageID, point) }
@@ -201,6 +203,7 @@ struct PageCanvasView: UIViewRepresentable {
             isLoading = true
             host.canvas.drawing = PKDrawing()
             host.canvas.undoManager?.removeAllActions()
+            host.undoStateChanged()
             isLoading = false
         }
 
@@ -222,6 +225,7 @@ struct PageCanvasView: UIViewRepresentable {
             }
             host.canvas.drawing = PKDrawing()
             host.canvas.undoManager?.removeAllActions()   // the previous page's undo must not run on this one
+            host.undoStateChanged()
             host.isPreparing = true
             let visible = host.visiblePageRect
             loadTask = Task { @MainActor [weak self, weak host, weak editor] in
@@ -258,7 +262,10 @@ struct PageCanvasView: UIViewRepresentable {
                           keepUndo: Bool = false) {
             isLoading = true
             host.canvas.drawing = drawing
-            if !keepUndo { host.canvas.undoManager?.removeAllActions() }   // undo must not cross pages or notes
+            if !keepUndo {
+                host.canvas.undoManager?.removeAllActions()   // undo must not cross pages or notes
+                host.undoStateChanged()
+            }
             isLoading = false
             host.isPreparing = false
             host.inkDidChange()
@@ -368,6 +375,11 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     var onPencilAnnotate: (() -> Void)?
     /// Typing in text boxes (the text tool, and "Edit Text" in selection mode).
     let textEditor = TextBoxEditorController()
+    /// Called when this canvas's undo state may have changed (a step registered, undone or redone; the stack
+    /// cleared): the note editor refreshes the toolbar's Undo and Redo (`NoteEditor.refreshUndoAvailability`).
+    var onUndoStateChanged: (() -> Void)?
+    /// Watches the undo managers this canvas acts on (the canvas's and the text box's).
+    private var undoObserver: UndoChangeObserver?
     /// Called when picking a tool ends the text tool, or it placed its one box.
     var onTextToolEnded: ((CanvasModes.TextToolEnd) -> Void)?
     /// The text tool started a new box: when its edit ends, the tool has done its one placement.
@@ -691,6 +703,11 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         textEditor.attach(to: canvas, itemLayer: itemLayer)
         textEditor.actions = { [weak self] in self?.itemSelection.actions }
         textEditor.onEditingChanged = { [weak self] editing in self?.textEditingChanged(editing) }
+        undoObserver = UndoChangeObserver { [weak self] manager in
+            guard let self, manager === self.canvas.undoManager || manager === self.textEditor.textView?.undoManager
+            else { return }
+            self.undoStateChanged()
+        }
         #if DEBUG
         itemSelection.debugTyping = { [weak self] in self?.textEditor.textView?.text }
         itemSelection.debugStrokes = { [weak self] in self?.canvas.drawing.strokes.count ?? 0 }
@@ -698,6 +715,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
             guard let self else { return "" }
             return "pan=\(self.canvas.panGestureRecognizer.minimumNumberOfTouches);ink=\(self.canvas.drawingGestureRecognizer.isEnabled ? 1 : 0)"
                 + ";select=\(self.itemSelectionActive ? 1 : 0);text=\(self.textToolActive ? 1 : 0)"
+                + ";undo=\(self.undoState.canUndo ? 1 : 0)\(self.undoState.canRedo ? 1 : 0)"
                 + self.pageAppearanceReport + self.debugToolReport
         }
         itemSelection.debugEmoji = { [weak self] in self?.textEditor.emojiSummary ?? "0,0" }
@@ -1164,6 +1182,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     /// meanwhile; afterwards the canvas takes the focus back.
     private func textEditingChanged(_ editing: Bool) {
         updateSelectionMode()
+        undoStateChanged()   // Undo acts on the text box while it is edited
         guard !editing else { return }
         // The text tool is one-shot (`CanvasModes`): the box it started is done, the canvas goes back.
         if placingTextBox {
@@ -1473,14 +1492,31 @@ extension PageCanvasHost: CanvasCommandTarget {
         return true
     }
 
+    /// The manager Undo and Redo act on: the text view's while a text box is edited (its own steps; the
+    /// button and ⌘Z agree), else the canvas's.
+    var effectiveUndoManager: UndoManager? {
+        if textEditor.isEditing, let manager = textEditor.textView?.undoManager { return manager }
+        return canvas.undoManager
+    }
+
+    var undoState: UndoAvailability { isReadOnly ? UndoAvailability() : UndoAvailability(effectiveUndoManager) }
+
     func undo() {
-        guard !isReadOnly, let undo = canvas.undoManager, undo.canUndo else { return }
+        guard !isReadOnly, let undo = effectiveUndoManager, undo.canUndo else { return }
         undo.undo()
     }
 
     func redo() {
-        guard !isReadOnly, let undo = canvas.undoManager, undo.canRedo else { return }
+        guard !isReadOnly, let undo = effectiveUndoManager, undo.canRedo else { return }
         undo.redo()
+    }
+
+    /// Tells the note editor that this canvas's undo state may have changed (`onUndoStateChanged`).
+    /// Never in the middle of SwiftUI's update (it would write the editor's observed state): right after it.
+    func undoStateChanged() {
+        if !CanvasFocus.isUpdating { onUndoStateChanged?() }
+        // Again after the run loop turn: a group that closes at the end of an event (item steps) is complete then.
+        DispatchQueue.main.async { [weak self] in self?.onUndoStateChanged?() }
     }
 
     func zoom(in zoomingIn: Bool) {

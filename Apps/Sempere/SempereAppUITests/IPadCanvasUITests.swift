@@ -243,6 +243,34 @@ final class IPadCanvasUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["playerBar"].exists, "a tap does not play")
     }
 
+    /// The toolbar's Undo and Redo (issue #8) with a finger: a drag of the selected image enables Undo, the
+    /// button puts it back and enables Redo, the other button moves it again.
+    @MainActor
+    func testTheToolbarsUndoAndRedoButtonsUndoAnItemMove() throws {
+        let app = launch()
+        defer { app.terminate() }
+        guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
+        tapHand(app)
+        let undo = app.descendants(matching: .any).matching(identifier: "undoButton").firstMatch
+        let redo = app.descendants(matching: .any).matching(identifier: "redoButton").firstMatch
+        XCTAssertTrue(undo.waitForExistence(timeout: 10) && redo.exists, "the buttons are in the bar")
+        XCTAssertFalse(undo.isEnabled || redo.isEnabled, "nothing to undo yet")
+        guard let image = middle(of: "image", on: canvas, app: app), let r0 = report(canvas),
+              let f0 = r0.frame("image") else { return XCTFail("no image") }
+        image.tap()
+        waitReport(canvas, "a tap selects the image") { $0.selected == "image" }
+        image.press(forDuration: 0.2, thenDragTo: image.withOffset(CGVector(dx: 40, dy: 30)))
+        guard let moved = waitReport(canvas, "a drag moves the image", { ($0.frame("image")?.minX ?? 0) > f0.minX + 5 }) else { return }
+        XCTAssertTrue(UIWait.until(5) { undo.isEnabled }, "Undo is enabled after the move")
+        undo.tap()
+        waitReport(canvas, "the Undo button puts the image back") { abs(($0.frame("image")?.minX ?? 0) - f0.minX) < 0.5 }
+        XCTAssertTrue(UIWait.until(5) { redo.isEnabled }, "Redo is enabled")
+        redo.tap()
+        waitReport(canvas, "the Redo button moves it again") {
+            abs(($0.frame("image")?.minX ?? 0) - (moved.frame("image")?.minX ?? 0)) < 0.5
+        }
+    }
+
     /// The selection bar's Delete deletes the item: one delta.
     @MainActor
     func testTheSelectionBarDeletes() throws {

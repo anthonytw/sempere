@@ -58,6 +58,16 @@ struct VoiceNoteStatusTests {
         #expect(VoiceNoteStatus.unknown.symbol == "mic.fill")
     }
 
+    /// Ready is the nib (a custom image); every other phase keeps its system symbol.
+    @Test func readyDrawsTheNibAndTheOtherPhasesKeepSystemSymbols() {
+        #expect(VoiceNoteStatus.unknown.glyph == .custom("SempereNib"))
+        #expect(VoiceNoteStatus(phase: .ready).glyph == .custom(VoiceNoteGlyph.nibName))
+        for phase in [VoiceNoteStatus.Phase.recording, .saving, .notSetUp, .liveActivitiesOff] {
+            let status = VoiceNoteStatus(phase: phase)
+            #expect(status.glyph == .system(status.symbol), "\(phase)")
+        }
+    }
+
     @Test func linksRoundTripAndIgnoreOtherURLs() throws {
         for link in VoiceNoteLink.allCases {
             #expect(VoiceNoteLink(url: link.url) == link)

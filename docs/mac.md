@@ -100,7 +100,7 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | File | Reload Vault | ⌘R |
 | File | Export to Folder or Zip… (the ticked notes, else the sidebar's notebook, else the vault, into a chosen folder or a zip; docs/io.md "Bulk export") | (none) |
 | File | Start / Stop Voice Note | ⇧⌘M |
-| Edit | Undo, Redo | ⌘Z, ⇧⌘Z (the system's: the canvas's undo manager, or the text field being edited) |
+| Edit | Undo, Redo | ⌘Z, ⇧⌘Z (the system's: the canvas's undo manager, or the text field being edited; the note toolbar's Undo and Redo buttons, after Annotate and Hand, act on the same manager, are disabled when it has nothing to undo or redo, and show the step in their tooltip, "Undo Move") |
 | Edit | Find Notes (focuses the title search) | ⌘F |
 | Note | Rename Note… | ⇧⌘R |
 | Note | Edit Tags… | ⌥⌘T |

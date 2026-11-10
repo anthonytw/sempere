@@ -42,6 +42,44 @@ enum ToolChoice: String, CaseIterable, Sendable {
     }
 }
 
+extension UndoAvailability {
+    /// A manager's state, with its action names ("Move", "Typing"); nil manager: nothing to undo.
+    init(_ manager: UndoManager?) {
+        guard let manager else { self.init(); return }
+        self.init(canUndo: manager.canUndo, canRedo: manager.canRedo,
+                  undoName: manager.undoActionName, redoName: manager.redoActionName)
+    }
+}
+
+extension NoteEditor {
+    /// Writes the focused canvas's undo state to `undoAvailability` (the toolbar's buttons), only when it changed.
+    func refreshUndoAvailability() {
+        let state = canvasTarget?.undoState ?? UndoAvailability()
+        if state != undoAvailability { undoAvailability = state }
+    }
+}
+
+/// Calls `handler` with the manager of every `UndoManager` close-group, undo and redo notification. The
+/// manager's `removeAllActions()` posts none: callers refresh after it themselves.
+final class UndoChangeObserver {
+    private var tokens: [NSObjectProtocol] = []
+
+    @MainActor
+    init(handler: @escaping @MainActor (UndoManager) -> Void) {
+        let names: [Notification.Name] = [.NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidUndoChange,
+                                          .NSUndoManagerDidRedoChange]
+        tokens = names.map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { note in
+                // Synchronous, on the posting thread: undo managers are used on the main thread.
+                guard Thread.isMainThread, let manager = note.object as? UndoManager else { return }
+                MainActor.assumeIsolated { handler(manager) }
+            }
+        }
+    }
+
+    deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
+}
+
 /// What the menu bar can ask of the canvas on screen (`PageCanvasHost`).
 /// A note editor remembers its canvas as its target; the Mac menus reach the
 /// canvas of the focused window through it.
@@ -57,6 +95,8 @@ protocol CanvasCommandTarget: AnyObject {
     /// Undoes or redoes the last change of the canvas with the focus (the iPhone palette's buttons).
     func undo()
     func redo()
+    /// What the manager that Undo and Redo act on can do now (the note toolbar's buttons follow it).
+    var undoState: UndoAvailability { get }
     /// Shows or hides PencilKit's ruler (straight lines with a mouse).
     func toggleRuler()
     /// Runs an item command (`duplicateItem`, `bringItemToFront`, `deleteItem`) on the

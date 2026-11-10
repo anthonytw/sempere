@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Sempere
 @testable import SempereAppCore
 import Testing
@@ -44,6 +45,22 @@ extension NoteEditorSuites {
             let saved = try #require(state.pages.first { $0.id == page.id })
             #expect(saved.strokes.count == 4)
             #expect(Set(saved.strokes.map(\.id)) == Set(editor.liveStrokes(of: page.id).map(\.id)))
+        }
+
+        /// The toolbar's Undo and Redo follow `undoAvailability`, written by the app's canvas glue: disabled at
+        /// first, observable (the bar redraws), and the editor itself holds no undo stack.
+        @Test func undoAvailabilityStartsDisabledAndIsObservable() async throws {
+            #expect(UndoAvailability() == UndoAvailability(canUndo: false, canRedo: false, undoName: "", redoName: ""))
+            let vault = try await F.vault()
+            let (editor, _) = try await F.open(vault)
+            #expect(editor.undoAvailability == UndoAvailability())
+            final class Count: @unchecked Sendable { var n = 0 }
+            let changes = Count()
+            withObservationTracking { _ = editor.undoAvailability } onChange: { changes.n += 1 }
+            editor.undoAvailability = UndoAvailability(canUndo: true, undoName: "Move")
+            #expect(changes.n == 1)
+            #expect(editor.undoAvailability.canUndo && !editor.undoAvailability.canRedo)
+            #expect(editor.undoAvailability.undoName == "Move")
         }
 
         @Test func closeFlushesImmediately() async throws {

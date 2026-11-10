@@ -16500,6 +16500,19 @@
         }
       }
     },
+    "Redo %@" : {
+      "comment" : "Note toolbar Redo: %@ is the name of the step it redoes (\"Move\", \"Typing\")",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rehacer %@"
+          }
+        }
+      }
+    },
     "Redo the last change undone" : {
       "comment" : "Tooltip of the iPhone drawing palette's Redo",
       "extractionState" : "manual",
@@ -24457,6 +24470,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deshacer"
+          }
+        }
+      }
+    },
+    "Undo %@" : {
+      "comment" : "Note toolbar Undo: %@ is the name of the step it undoes (\"Move\", \"Typing\")",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deshacer %@"
           }
         }
       }

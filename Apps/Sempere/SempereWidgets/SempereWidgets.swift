@@ -100,7 +100,7 @@ struct VoiceNoteWidgetView: View {
                 Button(intent: status.tapIntent) {
                     ZStack {
                         Color.clear
-                        Image(systemName: status.symbol).font(.title2).widgetAccentable()
+                        glyph(.title2, nib: .system(size: 62)).widgetAccentable()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -117,13 +117,23 @@ struct VoiceNoteWidgetView: View {
         }
     }
 
+    /// The status's glyph: the nib (a custom symbol of this extension's catalog, `SempereNib.symbolset`) when ready,
+    /// at the `nib` font (a symbol is about 0.7 of its font size tall: 62 is about 44 pt, 100 about 70 pt),
+    /// otherwise its system symbol at `font`.
+    @ViewBuilder private func glyph(_ font: Font, nib: Font) -> some View {
+        switch status.glyph {
+        case .custom(let name): Image(name).font(nib)
+        case .system(let name): Image(systemName: name).font(font)
+        }
+    }
+
     @ViewBuilder private var label: some View {
         switch family {
         case .accessoryCircular:
-            Image(systemName: status.symbol).font(.title2).widgetAccentable()
+            glyph(.title2, nib: .system(size: 62)).widgetAccentable()
         case .accessoryRectangular:
             HStack(spacing: 6) {
-                Image(systemName: status.symbol).font(.title3).widgetAccentable()
+                glyph(.title3, nib: .title3).widgetAccentable()
                 VStack(alignment: .leading, spacing: 0) {
                     Text(status.title).font(.headline).lineLimit(1)
                     secondLine.font(.caption).lineLimit(1)
@@ -132,8 +142,7 @@ struct VoiceNoteWidgetView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         default:
             VStack(spacing: 8) {
-                Image(systemName: status.phase == .ready ? "mic.circle.fill" : status.symbol)
-                    .font(.system(size: 44))
+                glyph(.system(size: 44), nib: .system(size: 100))
                     .foregroundStyle(status.phase == .recording ? Color.red : Color.accentColor)
                 Text(status.title).font(.headline).multilineTextAlignment(.center)
                 secondLine.font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -170,7 +179,10 @@ struct VoiceNoteControl: ControlWidget {
         StaticControlConfiguration(kind: VoiceNoteStatus.controlKind, provider: VoiceNoteControlProvider()) { status in
             // One template: the action is decided when tapped (`VoiceNoteControlIntent`).
             ControlWidgetButton(action: VoiceNoteControlIntent(shown: status.phase)) {
-                Label(status.title, systemImage: status.symbol)
+                switch status.glyph {
+                case .custom(let name): Label(status.title, image: name)
+                case .system(let name): Label(status.title, systemImage: name)
+                }
                 Text(status.subtitle)
             }
         }

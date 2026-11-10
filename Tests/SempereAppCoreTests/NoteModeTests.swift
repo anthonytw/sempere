@@ -184,10 +184,42 @@ struct NoteToolbarTests {
         }
         #expect(NoteToolbar.items(.bar, in: state(.phone, .annotating)) == [.annotate, .hand])
         #expect(NoteToolbar.items(.bar, in: state(.pad, .annotating))
-                == [.annotate, .hand, .text, .eraserSize, .insert, .recordings, .favorite, .tags, .pageNavigation, .addPage, .thumbnails])
+                == [.annotate, .hand, .undo, .redo, .text, .eraserSize, .insert, .recordings, .favorite, .tags, .pageNavigation, .addPage, .thumbnails])
         #expect(NoteToolbar.items(.bar, in: state(.pad, .reading))
-                == [.annotate, .hand, .insert, .recordings, .favorite, .tags, .pageNavigation, .addPage, .thumbnails])
-        #expect(NoteToolbar.items(.bar, in: state(.mac, .annotating)).prefix(3) == [.annotate, .hand, .drawingTools])
+                == [.annotate, .hand, .undo, .redo, .insert, .recordings, .favorite, .tags, .pageNavigation, .addPage, .thumbnails])
+        #expect(NoteToolbar.items(.bar, in: state(.mac, .annotating)).prefix(5) == [.annotate, .hand, .undo, .redo, .drawingTools])
+    }
+
+    /// Undo and Redo (issue #8): in the bar on the iPad and the Mac, first in the iPhone's overflow menu, after
+    /// the modes in the one order; offered in every mode of a writable note with a page, never read-only.
+    @Test func undoAndRedoFollowTheModesAndOpenTheOverflowOnAPhone() {
+        #expect(NoteToolbar.order.firstIndex(of: .undo) == NoteToolbar.order.firstIndex(of: .hand)! + 1)
+        #expect(NoteToolbar.order.firstIndex(of: .redo) == NoteToolbar.order.firstIndex(of: .undo)! + 1)
+        for mode in NoteMode.allCases {
+            for device in NoteDevice.allCases {
+                let placed = NoteToolbar.items(in: state(device, mode)).filter { $0.item == .undo || $0.item == .redo }
+                #expect(placed.map(\.item) == [.undo, .redo], "\(device) \(mode)")
+                #expect(placed.allSatisfy { $0.placement == (device == .phone ? .overflow : .bar) }, "\(device) \(mode)")
+                if device == .phone {
+                    #expect(Array(NoteToolbar.items(.overflow, in: state(device, mode)).prefix(2)) == [.undo, .redo], "\(mode)")
+                }
+                #expect(!NoteToolbar.items(in: state(device, mode, readOnly: true)).map(\.item).contains(.undo), "\(device) \(mode)")
+                #expect(!NoteToolbar.items(in: state(device, mode, pages: 0)).map(\.item).contains(.redo), "\(device) \(mode)")
+            }
+        }
+    }
+
+    /// `isEnabled` follows the focused canvas's undo manager for Undo and Redo, and is true for every other item.
+    @Test func undoAndRedoAreEnabledByTheManagersState() {
+        var s = state(.pad, .annotating)
+        #expect(!NoteToolbar.isEnabled(.undo, in: s) && !NoteToolbar.isEnabled(.redo, in: s), "disabled at first")
+        s.undo = UndoAvailability(canUndo: true)
+        #expect(NoteToolbar.isEnabled(.undo, in: s) && !NoteToolbar.isEnabled(.redo, in: s))
+        s.undo = UndoAvailability(canUndo: false, canRedo: true, redoName: "Move")
+        #expect(!NoteToolbar.isEnabled(.undo, in: s) && NoteToolbar.isEnabled(.redo, in: s))
+        for item in NoteToolbar.Item.allCases where item != .undo && item != .redo {
+            #expect(NoteToolbar.isEnabled(item, in: s), "\(item)")
+        }
     }
 
     /// Text and the object eraser's size are Annotate's tools on every device; there is no Select toggle (the

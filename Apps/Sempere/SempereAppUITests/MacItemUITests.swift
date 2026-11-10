@@ -152,6 +152,45 @@ final class MacItemUITests: XCTestCase {
         a.click(forDuration: 0.15, thenDragTo: b, withVelocity: 400, thenHoldForDuration: 0.15)
     }
 
+    /// The toolbar's Undo and Redo (issue #8): a drag enables Undo, a tap on it puts the item back and enables
+    /// Redo, a tap on Redo moves it again, and the buttons leave the focus on the canvas: ⌘Z afterwards still
+    /// undoes (the same step).
+    @MainActor
+    func testTheToolbarsUndoAndRedoButtonsActOnTheCanvasAndKeepTheFocus() throws {
+        let app = launch()
+        defer { app.terminate() }
+        guard let canvas = canvas(app, holding: "image") else { return XCTFail("no canvas reports the demo items") }
+        app.typeKey("5", modifierFlags: [.command, .option])   // Tools > Lasso
+        app.typeKey("7", modifierFlags: [.command, .option])   // Tools > Select
+        Thread.sleep(forTimeInterval: 1)
+        let undo = app.descendants(matching: .any).matching(identifier: "undoButton").firstMatch
+        let redo = app.descendants(matching: .any).matching(identifier: "redoButton").firstMatch
+        XCTAssertTrue(undo.waitForExistence(timeout: 30) && redo.exists, "the buttons are in the bar")
+        XCTAssertFalse(undo.isEnabled || redo.isEnabled, "nothing to undo yet")
+        bringIntoView("image", on: canvas, app: app)
+        guard let r0 = report(canvas), let f0 = r0.frame("image") else { return XCTFail("image: not reported") }
+        point(CGPoint(x: f0.midX, y: f0.midY), on: canvas, r0, app: app).click()
+        guard let r1 = waitReport(canvas, "a click selects it", { $0.selected == "image" }) else { return }
+        Thread.sleep(forTimeInterval: 0.5)
+        let start = point(CGPoint(x: f0.midX, y: f0.midY), on: canvas, r1, app: app)
+        drag(from: start, to: start.withOffset(CGVector(dx: 40, dy: 30)))
+        guard let moved = waitReport(canvas, "a drag moves it", { r in (r.frame("image")?.minX ?? 0) > f0.minX + 5 }) else { return }
+        XCTAssertTrue(UIWait.until(5) { undo.isEnabled }, "Undo is enabled after the move")
+        XCTAssertFalse(redo.isEnabled)
+
+        undo.click()
+        waitReport(canvas, "the Undo button puts the item back") { r in abs((r.frame("image")?.minX ?? 0) - f0.minX) < 0.5 }
+        XCTAssertTrue(UIWait.until(5) { redo.isEnabled && !undo.isEnabled }, "Redo is enabled, Undo is not")
+        redo.click()
+        waitReport(canvas, "the Redo button moves it again") { r in abs((r.frame("image")?.minX ?? 0) - (moved.frame("image")?.minX ?? 0)) < 0.5 }
+        XCTAssertTrue(UIWait.until(5) { undo.isEnabled && !redo.isEnabled })
+
+        // The button did not take the focus: ⌘Z still reaches the canvas.
+        app.typeKey("z", modifierFlags: .command)
+        waitReport(canvas, "⌘Z after the button undoes the same step") { r in abs((r.frame("image")?.minX ?? 0) - f0.minX) < 0.5 }
+        XCTAssertTrue(UIWait.until(5) { redo.isEnabled && !undo.isEnabled }, "and the buttons follow it")
+    }
+
     /// Each kind a user places: a click selects it, a drag inside moves it, a drag on the
     /// bottom-right handle resizes it (pictures keep their proportions), each gesture writes
     /// one delta, and ⌘Z puts the frame back.

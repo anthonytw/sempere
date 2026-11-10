@@ -442,10 +442,10 @@ struct EditorView: View {
     private var noteToolbar: some ToolbarContent {
         let state = toolbarState
         ForEach(NoteToolbar.items(.bar, in: state), id: \.self) { item in
-            ToolbarItem(placement: .primaryAction) { toolbarView(item) }
+            ToolbarItem(placement: .primaryAction) { toolbarView(item, state) }
         }
         ForEach(NoteToolbar.items(.overflow, in: state), id: \.self) { item in
-            ToolbarItem(placement: .secondaryAction) { toolbarView(item) }
+            ToolbarItem(placement: .secondaryAction) { toolbarView(item, state) }
         }
         if NoteToolbar.items(.bottomBar, in: state).contains(.pageNavigation) {
             ToolbarItemGroup(placement: .bottomBar) {
@@ -464,10 +464,12 @@ struct EditorView: View {
 
     /// One toolbar item (`NoteToolbar.Item`), wherever it is placed.
     @ViewBuilder
-    private func toolbarView(_ item: NoteToolbar.Item) -> some View {
+    private func toolbarView(_ item: NoteToolbar.Item, _ state: NoteToolbar.State) -> some View {
         switch item {
         case .annotate: modeButton(.annotate)
         case .hand: modeButton(.hand)
+        case .undo: undoButton(state)
+        case .redo: redoButton(state)
         case .drawingTools: macToolsMenu
         case .text: textToolToggle
         case .eraserSize: eraserSizeMenu
@@ -575,6 +577,15 @@ struct EditorView: View {
         }) { providers in
             EditorInsert.add(providers, to: editor, page: editor.currentPage?.id, at: nil, model: model, ui: ui, state: insert)
         }
+    }
+
+    /// Undo and Redo (`UndoRedoButton`).
+    private func undoButton(_ state: NoteToolbar.State) -> some View {
+        UndoRedoButton(editor: editor, redo: false, state: state)
+    }
+
+    private func redoButton(_ state: NoteToolbar.State) -> some View {
+        UndoRedoButton(editor: editor, redo: true, state: state)
     }
 
     private var textToolToggle: some View {
@@ -698,6 +709,34 @@ struct EditorView: View {
             Label("Drawing Tools", systemImage: "paintbrush.pointed")
         }
         .help("Pick the pen, marker, pencil, eraser or lasso (also in the Tools menu)")
+    }
+}
+
+/// The toolbar's Undo or Redo (issue #8). It reads `editor.undoAvailability` in its OWN body: a toolbar item is not
+/// rebuilt from the note view's observation (the Mac's bar kept the buttons disabled after a drag), but a view
+/// that reads the state itself redraws when it changes. It acts on the canvas with the focus through `canvasTarget`,
+/// never through the responder chain, so a tap leaves the focus where it is (⌘Z keeps working). No
+/// `.keyboardShortcut`: ⌘Z already arrives through the responder chain, and a second binding would fire twice or
+/// take ⌘Z from a text field.
+private struct UndoRedoButton: View {
+    let editor: NoteEditor
+    let redo: Bool
+    /// The toolbar's state without the live undo availability (replaced below).
+    let state: NoteToolbar.State
+
+    var body: some View {
+        var live = state
+        live.undo = editor.undoAvailability
+        let name = redo ? live.undo.redoName : live.undo.undoName
+        let title = redo ? (name.isEmpty ? String(localized: "Redo") : String(localized: "Redo \(name)"))
+                         : (name.isEmpty ? String(localized: "Undo") : String(localized: "Undo \(name)"))
+        return Button(title, systemImage: redo ? "arrow.uturn.forward" : "arrow.uturn.backward") {
+            if redo { editor.canvasTarget?.redo() } else { editor.canvasTarget?.undo() }
+        }
+        .disabled(!NoteToolbar.isEnabled(redo ? .redo : .undo, in: live))
+        .accessibilityIdentifier(redo ? "redoButton" : "undoButton")
+        .help(redo ? (name.isEmpty ? String(localized: "Redo the last change undone") : String(localized: "Redo \(name)"))
+                   : (name.isEmpty ? String(localized: "Undo the last change") : String(localized: "Undo \(name)")))
     }
 }
 

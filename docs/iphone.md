@@ -69,6 +69,13 @@ Read-first:
   truncating the title badly. Edits are ordinary deltas through `NoteWriter`, exactly as on the iPad.
   (TestFlight build 5: the Hand turned Annotate on too, so going back to reading took both buttons, and turning
   the pencil off with the Hand on left both buttons off while a finger still drew.)
+- **Undo and Redo** (issue #8) are in the overflow menu on the iPhone, first, above Text and Insert (the iPad and the
+  Mac have them in the top bar, after the mode buttons), in every mode of a writable note. They act on the canvas
+  with the focus and are disabled when it has nothing to undo or redo; the menu entries name the step ("Undo Move").
+  The compact palette's own Undo and Redo stay, the fast path while drawing, now disabled the same way
+  (`NoteToolbar.isEnabled`, `NoteEditorModel.undoAvailability`, written by the canvas through `CanvasCommandTarget.undoState`).
+  A text box being typed in has its own steps: the buttons then act on them. A remote change to a page drops that
+  page's steps, so Undo goes dark there. The buttons add no shortcut, and the system's gestures keep working.
 - **The palette has no Hand** (owner, 2026-10-19: "It serves no purpose there"), on any device: the top bar's Hand
   is the only one. (Build 5's palette Hand item, `ToolPalette.handItem`, is gone, and with it the canvas keeping
   the palette's pick in step with the mode.)
@@ -251,7 +258,7 @@ why not share the palette across all devices for consistency?" So every device d
   none). Full (iPad, Mac): every tool, the choices inline where the window is wide enough, else behind the color
   button, and the ruler; a window too narrow for every tool gets the compact one. Compact (always on an iPhone;
   Compact Palette elsewhere): pen, marker, eraser and lasso (plus a tool picked elsewhere, so the tool in use always
-  shows), the choices in a popover; the iPhone's also has Undo and Redo. Pointer-friendly on a Mac: 36-point
+  shows), the choices in a popover; the iPhone's also has Undo and Redo (disabled when there is nothing to undo or redo). Pointer-friendly on a Mac: 36-point
   targets, hover highlights and a tooltip on every control.
 - **Apple Pencil**: double-tap and squeeze (`UIPencilInteraction`, while annotating) do what the user set in
   Settings ▸ Apple Pencil: switch to the eraser and back, switch to the previous tool, or show the color and width
