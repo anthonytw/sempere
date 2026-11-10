@@ -14,7 +14,7 @@
 # submissions. Instead SHA itself must have passed the CLI's checks: `local/cli-suite`
 # (`just ci-cli`: the package tests on a Mac, then the Linux, WebDAV and static-build jobs in Docker).
 #
-# The statuses are read from Gitea (scripts/forge.sh). Prints one "ok"/"FAIL" line; exit 0 = swept,
+# The statuses are read from Gitea (scripts/forge.sh); the mirror gives the same commit the same SHA there. Prints one "ok"/"FAIL" line; exit 0 = swept,
 # 1 = not, 2 = usage. Used by scripts/release-tag.sh and scripts/release-build.sh.
 set -euo pipefail
 
@@ -24,7 +24,7 @@ source scripts/forge.sh
 max_back=${SEMPERE_SWEEP_LOOKBACK:-50}
 
 # Paths that do not reach the built app or CLI. Keep this list small and boring.
-neutral='^(CHANGELOG\.md|changelog\.d/.*|docs/.*|\.github/.*|\.gitea/.*|[^/]+\.md|justfile|packaging/homebrew/.*|scripts/(release-[^/]*|changelog-[^/]*|update-formula|forge|ci-linux|local-ci)\.(sh|py))$'
+neutral='^(CHANGELOG\.md|changelog\.d/.*|docs/.*|\.github/.*|\.gitea/.*|[^/]+\.md|justfile|packaging/homebrew/.*|scripts/(release-[^/]*|test-release-[^/]*|test-mirror-gitea|changelog-[^/]*|update-formula|forge|ci-linux|local-ci)\.(sh|py))$'
 
 status_of() {   # sha context -> state, "missing", or "unknown" when Gitea cannot be asked
   local out

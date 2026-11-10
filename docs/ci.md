@@ -20,7 +20,7 @@ is updated):
 | `iOS build` | `xcode-27` (macOS 27.0.1, Xcode 27.1, iOS 27 SDK) | `scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run | step `ios-build` |
 | `Mac package tests` | `xcode-27` | `scripts/ci-mac-package.sh`: `swift build --build-tests` and `swift test --parallel`, skipping targets whose hash passed | step `package` |
 | (not required) `Mac app tests` | `xcode-27`, on demand only | `scripts/app.sh test-mac`: the Mac Catalyst unit tests, the pseudo-language layout check among them. A manual run (`gh workflow run CI --ref <branch>`) includes it. | step `mac`, the gate for these |
-| `Linux package tests` | `swift:6.4-noble` container, offline (`NET_ADMIN`, `SYS_ADMIN`) | `scripts/ci-linux.sh test`: package tests with no network, portability, removable importers | step `linux` |
+| `Linux package tests` | `swift:6.4-noble` container, offline (`NET_ADMIN`, `SYS_ADMIN`) | `scripts/ci-linux.sh test`: package tests with no network, portability, removable importers (the isolation grep always; the build without the module only when `CLITests`' hash has no record) | step `linux` |
 | `Linux WebDAV tests` | `swift:6.4-noble` container | `scripts/ci-linux.sh webdav`: the WebDAV integration tests against wsgidav | step `webdav` |
 | `Web viewer` | `ubuntu-24.04`, Node 22 | `cd web`: `npm ci`, lint, typecheck, `npm test` (which cross-checks the renderer with the committed Swift goldens), the strict-CSP build. The goldens themselves are checked against the CLI inside `Linux package tests` (`web/scripts/golden.sh`, every run, never skipped by hash). | none |
 | `PR lists tests run` | `ubuntu-24.04` | `pr-description.yml`: the description has a non-empty `## Tests run` section; **a PR that changes files under `Apps/` must also name a run of `scripts/local-ci.sh` or `scripts/app.sh test-mac` with its result** (`check-tests-run.py --app-changed`), because the hosted gate does not run the Mac Catalyst tests | none |
@@ -30,6 +30,7 @@ is updated):
 Wall times on the hosted runners (the first run on the branch that added the workflow, 2026-11-09). Cold: every test ran, no
 cache. Warm: every test target skipped by hash, the iOS cache restored. The build always runs: `Linux package tests` builds
 twice (the package, then `check-removable-importers.sh` without the importers), so skipping tests saves ~12 of its ~24 minutes.
+The second build is skipped too when it already passed (job `linux-removable`, below): warm, the job is the package build, the golden diff and the checks that always run.
 
 | Job | Cold | Warm |
 |---|---|---|
@@ -61,6 +62,14 @@ twice (the package, then `check-removable-importers.sh` without the importers), 
   later PR restores it: the squash reruns no test whose hash the PR passed. The honesty rules are the script's, not the
   workflow's: a record is written only for a clean tree equal to the planned commit, and never when a `SEMPERE_*` variable
   outside the allow-list is set (the workflow sets only allowed ones).
+- **Removable importers** (`check-removable-importers.sh`: a second, full build of a copy without the Notability module, then
+  `CLITests`) is hash-skipped under its own job name, `linux-removable`: the record is keyed on the `CLITests` closure and the built
+  CLI (as for any target), `Package.swift`/`Package.resolved`, both scripts (`check-removable-importers.sh`,
+  `check-importer-isolation.sh`) and the Docker image id. `check-importer-isolation.sh` (a grep of every Swift file for the
+  module's names) is cheap and always runs, so the build can be skipped for a change outside `CLITests`' closure: only code that
+  names the module can break a build without it. The honesty rules are those of every record (clean tree, no `SEMPERE_*` mode
+  variable, hashes unmoved during the run, `SEMPERE_CI_FORCE_ALL=1` runs it). A failed golden diff prints a bounded real diff
+  (80 lines), not only the file names.
 - **Build cache**: only the iOS build's derived data (`.build/xcode.noindex`): pushes to `main` save it, pull requests restore
   it (`.github/actions/build-cache`; 7 minutes cold, 4 warm). The SwiftPM `.build` folders are not cached: a fresh checkout's
   file times make SwiftPM rebuild everything, and the Linux job took as long with a restored cache as without.

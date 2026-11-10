@@ -45,9 +45,11 @@ enum Sync {
         return coordinator
     }
 
-    /// Polls `condition` every 10 ms until it holds or `timeout` passes.
+    /// Polls `condition` every 10 ms until it holds or `timeout` passes. A positive wait returns the moment the condition
+    /// holds, so the bound only matters when the test would fail anyway: keep it generous (a 5 s bound lost to concurrent
+    /// gates on a loaded machine, #41 and #42). Never use it to prove that something does NOT happen: sleep for that.
     @MainActor
-    static func waitUntil(timeout: Duration = .seconds(5), _ condition: () -> Bool) async -> Bool {
+    static func waitUntil(timeout: Duration = .seconds(30), _ condition: () -> Bool) async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
         while !condition() {
@@ -179,7 +181,7 @@ struct SyncCoordinatorTests {
         coordinator.tick = .milliseconds(10)
         coordinator.start()
         #expect(coordinator.sessions.count == 4)
-        #expect(await Sync.waitUntil(timeout: .seconds(5)) { fine.allSatisfy { coordinator.sessions[$0.id]?.lastSuccess != nil } })
+        #expect(await Sync.waitUntil { fine.allSatisfy { coordinator.sessions[$0.id]?.lastSuccess != nil } })
         #expect(coordinator.sessions[failing.id]?.lastSuccess == nil)
         #expect(coordinator.sessions[failing.id]?.needsAttention == true)
         #expect(most.value <= coordinator.maxConcurrentRuns - 1)
@@ -533,11 +535,13 @@ struct SyncSessionTests {
         // looked for a third run that never came.
         let before = runs.value
         let sync = Task { await s.syncNow() }
-        #expect(await Sync.waitUntil { s.isSyncing })
+        // The run's own count, not `isSyncing`: the run lasts 400 ms, and a loaded machine can resume this test after it ended.
+        #expect(await Sync.waitUntil { runs.value > before })
         s.noteWrite()
         _ = await sync.value
         #expect(runs.value >= before + 1, "Sync Now ran")
-        #expect(await Sync.waitUntil(timeout: .seconds(3)) { runs.value >= before + 2 }, "the write was synced soon after Sync Now")
+        // Soon, not after the loop's longest sleep (maxSleep 30 s): the bound must stay below it to mean anything.
+        #expect(await Sync.waitUntil(timeout: .seconds(20)) { runs.value >= before + 2 }, "the write was synced soon after Sync Now")
         s.stop()
     }
 

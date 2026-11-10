@@ -6,9 +6,12 @@ and a hotfix ([C](#c-a-hotfix)). Everything runs through `just` in this repo (or
 `dev/` workspace root); each recipe is a thin wrapper around a script you can also run directly.
 
 > **Since 2026-11-09 GitHub is the primary remote** and Gitea a mirror ([design/local-first.md](design/local-first.md)).
-> The steps below that tag on Gitea, open pull requests with `tea`, or build the one-commit GitHub squash were written for
-> the Gitea-first arrangement and **must be reworked before the next release** (`release-tag.sh` and the checks use
-> `origin/main`, which is GitHub now; a follow-up, not done in the move to GitHub); the build, sweep and smoke-test steps are unchanged.
+> GitHub's `main` is the real history: pull requests are squash-merged there (`gh`), a release is a tag on a commit of
+> that `main`, pushed to GitHub, and `scripts/mirror-gitea.sh` copies the tag to Gitea. There is no squash-per-release
+> commit any more. The binaries stay local builds, and the GitHub Release is created from them by a recipe or by hand.
+> Nothing in the release path needs GitHub admin: pushing a tag and creating a Release need write access only. The
+> suites' commit statuses (`local/release-sweep`, `local/cli-suite`) are still posted to and read from Gitea, which has the
+> same commit under the same SHA once the mirror has copied it.
 
 Steps marked **[you]** need the maintainer personally: Apple's web UI, signing into Xcode, submitting for App
 Store review, the release date in `CHANGELOG.md`, and approving anything that publishes (tag push, deploys,
@@ -28,11 +31,12 @@ site are each their own recipe; an upload asks `[y/N]` and a tag push asks you t
 | `just release-check` | App Store checks (versions, no team ID, privacy manifests, entitlements, networking) | no |
 | `just ci-cli` | a CLI-only release's checks: package tests here, Linux + WebDAV + static build in Docker; posts `local/cli-suite` | a commit status |
 | `just release-ready X.Y.Z [REF]` | the release checks on REF (default `origin/main`) | no |
-| `just release-tag X.Y.Z [REF]` | the checks, a signed tag, then asks before pushing it to Gitea | **pushes the tag to Gitea** (after you type the version) |
-| `just release-push X.Y.Z` | push a tag made earlier to Gitea (asks first) | **pushes the tag to Gitea** |
+| `just release-tag X.Y.Z [REF]` | the checks, a signed tag on GitHub's `main`, then asks before pushing it to GitHub | **pushes the tag to GitHub** (after you type the version) |
+| `just release-push X.Y.Z` | push a tag made earlier to GitHub (asks first) | **pushes the tag to GitHub** |
 | `just release-build X.Y.Z` | the CLI binaries from the tag, built here: Linux static in Docker, macOS universal, smoke tests, `SHA256SUMS` | no |
-| `just release-github X.Y.Z` | the one squashed GitHub commit for the release, and the commands to publish it | no (you push) |
-| `just release-verify X.Y.Z` | the published GitHub release: tree = the Gitea tag's, assets match `SHA256SUMS` and the local build | no |
+| `just release-publish X.Y.Z` | checks the pushed tag and the local build, prints the `gh release create` command | no |
+| `just release-publish X.Y.Z --publish` | the same, then creates the GitHub Release after you type the version | **publishes the GitHub Release** |
+| `just release-verify X.Y.Z` | the published release: GitHub's tag = the built commit, the Gitea mirror has it, assets match `SHA256SUMS` and the local build | no |
 | `just formula X.Y.Z [TAP]` | the Homebrew formula, to stdout or into a tap clone, then `brew audit` | no (you push the tap) |
 | `just screenshots [ipad\|iphone\|mac]` | App Store screenshots into `build/screenshots/` | no |
 | `just site-sync` | copy the privacy policy and CHANGELOG into the `sempere-site` checkout | no (edits that tree) |
@@ -59,24 +63,24 @@ Merge these two PRs once; B.4 and B.7 depend on them:
    xcodebuild -runFirstLaunch
    xcodebuild -downloadPlatform iOS          # the iOS simulator runtime, about 8 GB (ci-release needs it)
    ```
-2. **Command-line tools:** `brew install just tea gh pnpm node`, and **Docker Desktop** (the Linux builds and
+2. **Command-line tools:** `brew install just gh pnpm node` (and `tea` for the Gitea statuses), and **Docker Desktop** (the Linux builds and
    tests). Python 3 comes with Xcode's tools.
 3. **Gitea:** `tea login add --url https://git.lab.gulwertz.net` with a token that can write commit statuses.
    The suites post commit statuses with it, and the TestFlight and tag checks read them (`scripts/forge.sh`;
-   `SEMPERE_FORGE_TOKEN` instead of tea works too). **GitHub CLI** (`gh auth login`) is needed only for the
-   GitHub Release in B.6.
+   `SEMPERE_FORGE_TOKEN` instead of tea works too). **GitHub CLI** (`gh auth login`, write access to
+   `anthonytw/sempere`; admin is never needed) is needed for pull requests and the GitHub Release in B.6.
 4. **Signed tags:** `git tag -s` uses your git signing key. With an SSH key:
    ```bash
    git config --global gpg.format ssh
    git config --global user.signingkey ~/.ssh/id_ed25519.pub
    ```
-   Add the same public key on GitHub as a **signing** key (Settings ▸ SSH and GPG keys) so the GitHub release
-   commit shows Verified. To let `git tag -v` check it locally too, list it in `gpg.ssh.allowedSignersFile`.
+   Add the same public key on GitHub as a **signing** key (Settings ▸ SSH and GPG keys) so the tag and your
+   commits show Verified. To let `git tag -v` check it locally too, list it in `gpg.ssh.allowedSignersFile`.
 5. **Checkouts** (the website recipes assume this layout; `SEMPERE_SITE` overrides it):
    ```bash
    mkdir -p ~/dev/website && cd ~/dev
-   git clone git@git-ssh.lab.gulwertz.net:awertz/sempere.git    # development happens here (origin)
-   git -C sempere remote add github git@github.com:anthonytw/sempere.git   # public, one commit per release
+   git clone git@github.com:anthonytw/sempere.git               # development and releases: GitHub is origin
+   git -C sempere remote add gitea git@git-ssh.lab.gulwertz.net:awertz/sempere.git   # the mirror (statuses, fallback); never push by hand
    git clone git@git-ssh.lab.gulwertz.net:awertz/sempere-site.git website/sempere-site   # private, branch first-version
    git clone git@git-ssh.lab.gulwertz.net:awertz/astro-site.git website/astro-site       # the blog
    ```
@@ -231,9 +235,9 @@ It prints a large warning and waits ten seconds. Prefer running the suite.
 
 ## B. A release (v1.0.0, or any vX.Y.Z)
 
-A release is one commit on Gitea's `main`, tagged `vX.Y.Z` there. It is the App Store build, the CLI binaries
-built from the tag on this Mac, one squashed commit on GitHub with the GitHub Release, the Homebrew formula, the
-website's changelog and, for v1, the blog post (`docs/design/local-first.md`). The order matters: the
+A release is one commit on GitHub's `main`, tagged `vX.Y.Z` there (the mirror copies the tag to Gitea). It is the
+App Store build, the CLI binaries built from the tag on this Mac, the GitHub Release that carries them, the Homebrew
+formula, the website's changelog and, for v1, the blog post (`docs/design/local-first.md`). The order matters: the
 website must be live before App Review looks at it (B.4), and nothing public about the version (tag, GitHub
 Release, formula, blog) goes out until Apple has approved the app (B.6), so all of it lands on one day.
 
@@ -244,7 +248,7 @@ Release, formula, blog) goes out until Apple has approved the app (B.6), so all 
 | B.3 | App Store build of that SHA | you approve the upload |
 | B.4 | website live with `/privacy` and `/support` | you approve the deploy |
 | B.5 | App Store submission, manual release | **[you]** |
-| B.6 | launch day, after approval: tag, local build, GitHub commit and Release, Homebrew, Release This Version, site, blog | you |
+| B.6 | launch day, after approval: tag, local build, GitHub Release, Homebrew, Release This Version, site, blog | you |
 
 ### B.1 The release PR
 
@@ -286,17 +290,17 @@ CLI-only release) leaves the app alone. A prerelease such as `1.1.0-rc.1` sets t
    ```bash
    git add -A && git commit -s -m "release: 1.0.0"
    git push -u origin release/1.0.0
-   tea pr create --title "release: 1.0.0" --description "…"
+   gh pr create --base main --title "release: 1.0.0" --body-file …
    ```
    In the PR's `## Tests run`: `just release-check`: passed; `swift test --filter CLICommandTests`: passed.
-5. `just ci` on the branch (the PR gate, `local/app-tests`), CI green, then squash-merge on Gitea.
+5. GitHub's checks green (the PR gate; `just ci` is its local twin), then squash-merge on GitHub.
 
 ### B.2 The release sweep, and the release SHA
 
 ```bash
 git switch main && git pull --ff-only
 sha=$(git rev-parse HEAD); echo "release commit: $sha"    # keep this SHA: B.3 and B.6 use it
-just ci-release
+just ci-release        # posts local/release-sweep to Gitea: wait until the mirror has this commit (or run scripts/mirror-gitea.sh)
 ```
 
 Every suite, iPad and iPhone simulators included; it takes over the screen for a long time. Expected end:
@@ -401,9 +405,10 @@ purchase); each platform has its own version page.
 
 Approval with manual release leaves the version "Pending Developer Release". On the CHANGELOG date:
 
-1. **Tag on Gitea.**
+1. **Tag on GitHub.**
    ```bash
    cd ~/dev/sempere
+   git fetch origin
    just release-ready 1.0.0 "$sha"      # checks only
    just release-tag 1.0.0 "$sha"        # checks, signed tag, then asks
    ```
@@ -417,17 +422,18 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    ok    v1.0.0 is free
    created signed tag v1.0.0 on 1a2b3c4d (local only)
 
-   Pushing v1.0.0 to origin (Gitea) makes it the release. Nothing is published to GitHub yet.
+   Pushing v1.0.0 to origin (GitHub) makes it the release. The Gitea mirror copies it within minutes.
    Type the version (1.0.0) to push v1.0.0 to origin, anything else to stop: 1.0.0
-   pushed v1.0.0. Next: just release-build 1.0.0, then just release-github 1.0.0
+   pushed v1.0.0. Next: just release-build 1.0.0, then just release-publish 1.0.0
    ```
    **[you]** typing the version is the approval. Anything else leaves the tag local: push it later with
-   `just release-push 1.0.0`, or drop it with `git tag -d v1.0.0`. The checks: the tag's commit is on `main`, it
-   passed the release sweep, itself or through a swept ancestor with only release-neutral changes since
+   `just release-push 1.0.0`, or drop it with `git tag -d v1.0.0`. The checks: the tag's commit is on GitHub's
+   `main`, it passed the release sweep, itself or through a swept ancestor with only release-neutral changes since
    (`scripts/release-sweep-check.sh`; a CLI-only release, `--no-app`, needs `local/cli-suite` instead, see C; a
    prerelease tag `vX.Y.Z-rc.N` only warns), the tag is `vMAJOR.MINOR.PATCH[-pre]` and equals `Version.swift`, and
    `CHANGELOG.md` has a non-empty `## [X.Y.Z] - YYYY-MM-DD` section with no `TODO(user)`
-   (`scripts/changelog-section.sh`).
+   (`scripts/changelog-section.sh`). The push needs write access to the repository, not admin, and a tag ruleset that
+   forbids creating tags would stop it: allow the owner to create `v*` tags.
 2. **Build the binaries here.** `just release-build 1.0.0` (about 20 minutes, Docker running). From a clean
    worktree of the tag it re-runs the checks, builds the fully static Linux binaries for x86_64 and aarch64
    (Static Linux SDK in `swift:6.4.2-noble`, `scripts/build-linux-static.sh`) and the macOS universal binary,
@@ -437,22 +443,26 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    the architecture Docker emulates only warns), and writes `SHA256SUMS` and `notes.md` (the CHANGELOG section)
    into `build/release/v1.0.0/`. Nothing leaves the Mac. Not included: a man page (`sempere --help` and
    `docs/cli.md` ship instead) and Apple notarization of the macOS CLI binary.
-3. **The GitHub commit and Release.** `just release-github 1.0.0` makes one commit whose tree is the tag's and
-   whose parent is GitHub's `main` (read anonymously), signed by you, kept as `refs/github-release/v1.0.0`, and
-   prints the commands. **[you]** run them:
+3. **The GitHub Release.** The tag is already on GitHub's `main`, so there is no commit to make or push.
+   `just release-publish 1.0.0` checks that GitHub's tag is the commit the binaries were built from and that
+   `SHA256SUMS` verifies, then prints the command (it publishes nothing):
    ```bash
-   git push git@github.com:anthonytw/sempere.git <commit>:refs/heads/main <commit>:refs/tags/v1.0.0
    gh release create v1.0.0 --repo anthonytw/sempere --verify-tag --title "Sempere CLI v1.0.0" \
       --notes-file build/release/v1.0.0/notes.md build/release/v1.0.0/*.tar.gz build/release/v1.0.0/SHA256SUMS
    ```
-   GitHub runs no workflows. Then `just release-verify 1.0.0`. Expected: `ok    GitHub's v1.0.0 has the Gitea tag's
-   tree`, `OK` for each tarball in `SHA256SUMS`, `ok    the same files as the local build`, and `sempere 1.0.0`
-   from the macOS binary.
+   **[you]** run it, or let the recipe run it after you type the version: `just release-publish 1.0.0 --publish`.
+   Either needs a `gh auth login` with write access (the Release is created by whoever holds it; admin is not
+   needed). GitHub runs no release workflow. Then `just release-verify 1.0.0`. Expected: `ok    GitHub's v1.0.0 is
+   1a2b3c4d, the commit tagged here`, `ok    the Gitea mirror has v1.0.0 at the same commit` (a `warn` just means the
+   mirror has not run yet), `OK` for each tarball in `SHA256SUMS`, `ok    the same files as the local build`, and
+   `sempere 1.0.0` from the macOS binary.
 
    If a check fails before anything is published, fix the cause on `main` (a commit that changes built files needs
    a new sweep; a changelog, docs or release-tooling fix does not), delete the tag
-   (`git push origin :refs/tags/v1.0.0 && git tag -d v1.0.0`) and tag again. To try the whole path without a
-   release, prepare and tag a prerelease (`just release-prep 1.0.1-rc.1`, …) and stop before the GitHub push.
+   (`git push origin :refs/tags/v1.0.0 && git tag -d v1.0.0`; the mirror never deletes, so remove it on Gitea too if
+   it was already copied) and tag again. To try the whole path without a release, prepare and tag a prerelease
+   (`just release-prep 1.0.1-rc.1`, …) and stop before the push (`just release-ready` and `scripts/test-release-flow.sh`
+   exercise the tag and Release checks against local repositories and push nothing).
 4. **Homebrew tap.** One-time **[you]**: create the public repo `anthonytw/homebrew-tap` (the `homebrew-` prefix
    is required) with a `Formula/` folder (`packaging/homebrew/README.md`). Then:
    ```bash
@@ -504,8 +514,8 @@ has a tag with the same version, so a hotfix is a short release:
 5. **[you]** App Store Connect: a new version `1.0.1` on each platform (exactly the `MARKETING_VERSION`), pick
    the build, "What's New" from the CHANGELOG section, manual release, submit (B.5). For an urgent fix, ask for
    an expedited review on the submission form.
-6. On approval: `just release-tag 1.0.1 "$sha"`, `just release-build 1.0.1`, `just release-github 1.0.1` and
-   **[you]** its push and `gh release create`, `just release-verify 1.0.1`,
+6. On approval: `just release-tag 1.0.1 "$sha"`, `just release-build 1.0.1`, `just release-publish 1.0.1`
+   (**[you]** or `--publish`), `just release-verify 1.0.1`,
    `just formula 1.0.1 ~/dev/homebrew-tap`, **[you]** Release This Version, and `just site-sync` + PR +
    **[you]** `just deploy` in sempere-site for the changelog (B.6).
 

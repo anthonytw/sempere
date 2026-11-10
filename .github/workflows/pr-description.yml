@@ -36,6 +36,9 @@ jobs:
         run: |
           python3 scripts/check-tests-run.py --self-test
           # The hosted gate does not run the Mac Catalyst app tests: a PR that touches Apps/ must list its own run of them.
+          # The list is captured first: a failed `gh api` fails this step (bash -e) instead of reading as "no Apps/ files",
+          # which `gh api ... | grep -q` did (a pipeline's status is grep's, so the check failed open).
+          files=$(gh api "repos/$R/pulls/$N/files" --paginate --jq '.[].filename')
           flag=""
-          if gh api "repos/$R/pulls/$N/files" --paginate --jq '.[].filename' | grep -q '^Apps/'; then flag=--app-changed; fi
+          if grep -q '^Apps/' <<<"$files"; then flag=--app-changed; fi
           python3 scripts/check-tests-run.py $flag

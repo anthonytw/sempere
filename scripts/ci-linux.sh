@@ -12,6 +12,8 @@
 #                                      checkout is mounted, but .build is a Docker volume of its own
 #                                      (sempere-linux-build-…), so the host's build folder is never touched;
 #                                      ~/.swiftpm (the Static Linux SDK) is the volume sempere-linux-swiftpm.
+#                                      SEMPERE_LINUX_BUILD_VOLUME=NAME uses a build volume of your own; SEMPERE_LINUX_CPUS=1.2 caps
+#                                      the container's CPUs (to reproduce a test that fails on a loaded runner).
 #
 # test and webdav skip a test target whose inputs hash to one that already passed (scripts/ci-hash.py, docs/design/ci-lean.md),
 # say which commit passed it, and record what they ran once it passed (in Docker, in the host's ~/.cache/sempere-ci-pass,
@@ -92,10 +94,34 @@ job_test() {
   # target cannot hide a mismatch. The CLI is built above.
   local golden; golden=$(mktemp -d)
   SEMPERE="$PWD/.build/debug/sempere" web/scripts/golden.sh "$golden" >/dev/null
-  diff -r web/test/golden "$golden" >/dev/null || { echo "ci-linux: web/test/golden differs from the CLI's output (web/scripts/golden.sh)"; diff -rq web/test/golden "$golden" | head; exit 1; }
+  if ! diff -r web/test/golden "$golden" >/dev/null; then
+    echo "ci-linux: web/test/golden differs from the CLI's output (web/scripts/golden.sh)"
+    diff -rq web/test/golden "$golden" | head -20 || true
+    # The real differences, bounded: 80 lines of at most 300 characters (a changed golden file can be thousands of lines, or one). Left is the committed file, right the CLI's.
+    echo "ci-linux: first lines of the diff (committed < > CLI):"
+    { diff -ru web/test/golden "$golden" || true; } | head -80 | cut -c1-300 | sed "s|$golden|CLI-output|" || true
+    exit 1
+  fi
   rm -rf "$golden"
   scripts/check-portability.sh
+  removable_importers
+}
+
+# check-removable-importers.sh (a full build of a copy without the Notability module, then CLITests) is skipped when CLITests'
+# hash passed before, under the job name linux-removable: the hash covers CLITests' closure and the built CLI, both scripts and the
+# image id (scripts/ci-hash.py JOB_FILES). The isolation check, which greps every Swift file for a name of the module, always runs
+# (a second): that is what lets the build be skipped for a change outside CLITests' closure.
+removable_importers() {
+  local plan; plan=$(mktemp)
+  python3 scripts/ci-hash.py plan --job linux-removable --out "$plan" CLITests
+  local n; n=$(python3 scripts/ci-hash.py runs "$plan" | wc -l)   # assigned first: a crash of `runs` fails here, never reads as "skip"
+  if [[ $n -eq 0 ]]; then
+    scripts/check-importer-isolation.sh
+    echo "ci-linux: removable-importers build skipped: CLITests passed without the module with its current hash (line above names the commit)"
+    return 0
+  fi
   scripts/check-removable-importers.sh
+  python3 scripts/ci-hash.py record --plan "$plan"
 }
 
 job_webdav() {
@@ -105,7 +131,8 @@ job_webdav() {
   # The job runs the tests whose name says Wsgidav, which live in these two targets (docs/ci.md "What runs when").
   local plan; plan=$(mktemp)
   python3 scripts/ci-hash.py plan --job linux-webdav --out "$plan" SempereWebDAVTests CLITests
-  if [[ $(python3 scripts/ci-hash.py runs "$plan" | wc -l) -eq 0 ]]; then
+  local n; n=$(python3 scripts/ci-hash.py runs "$plan" | wc -l)
+  if [[ $n -eq 0 ]]; then
     echo "ci-linux: the WebDAV job skipped: both of its targets passed with their current hash (lines above name the commits)"
     return 0
   fi
@@ -136,7 +163,8 @@ in_docker() {   # JOB or JOB:ARG (static:x86_64)
   if [[ $job == test || $job == webdav ]]; then mkdir -p "$store_dir"; store=(-v "$store_dir:/ci-pass" -e SEMPERE_CI_PASS_DIR=/ci-pass); fi
   # The image's id goes into the target hashes: the local default tag floats (the runner's is pinned by digest in the workflow).
   local image_id; image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || { docker pull -q "$image" >/dev/null && docker image inspect --format '{{.Id}}' "$image"; })
-  docker run --rm --init --label "sempere-ci-run=${SEMPERE_CI_RUN_ID:-manual}" -e SEMPERE_CI_FORCE_ALL -e SEMPERE_CI_HOST -e "SEMPERE_CI_IMAGE_ID=$image_id" ${tty[@]+"${tty[@]}"} ${caps[@]+"${caps[@]}"} ${store[@]+"${store[@]}"} -v "$PWD:/src" -v "$volume:/src/.build" -v sempere-linux-swiftpm:/root/.swiftpm -w /src "$image" \
+  local cpus=(); [[ -n ${SEMPERE_LINUX_CPUS:-} ]] && cpus=(--cpus "$SEMPERE_LINUX_CPUS")   # e.g. 1.2: a loaded runner, to reproduce a flake
+  docker run --rm --init ${cpus[@]+"${cpus[@]}"} --label "sempere-ci-run=${SEMPERE_CI_RUN_ID:-manual}" -e SEMPERE_CI_FORCE_ALL -e SEMPERE_CI_HOST -e "SEMPERE_CI_IMAGE_ID=$image_id" ${tty[@]+"${tty[@]}"} ${caps[@]+"${caps[@]}"} ${store[@]+"${store[@]}"} -v "$PWD:/src" -v "$volume:/src/.build" -v sempere-linux-swiftpm:/root/.swiftpm -w /src "$image" \
     scripts/ci-linux.sh "$job" ${arg:+"$arg"}
 }
 

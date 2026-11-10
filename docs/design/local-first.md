@@ -60,6 +60,7 @@ let the mirror run again.
   hash-skipping of [ci-lean.md](ci-lean.md). GitHub's `main` (release 1.0.1, `d175447`) is an ancestor of Gitea's, so the owner
   fast-forwards it once instead of replaying history.
 
-The release tooling written for the squash-per-release flow (`release-github.sh`, `release-tag.sh`, `release-verify`)
-still describes it; the tag/squash steps there are to be reworked once the owner decides how releases are tagged on a
-history GitHub now holds in full. Building the binaries, the sweeps and the smoke tests are unchanged.
+Releases follow GitHub's history now: `release-tag.sh` tags a commit of GitHub's `main` and pushes the tag to GitHub,
+the mirror copies it to Gitea, the binaries are still built on the Mac (`release-build.sh`), and `release-publish.sh`
+creates the GitHub Release from them (the owner, or the script with `--publish`). The squash-per-release commit
+(`release-github.sh`) is gone. Nothing in that path needs GitHub admin ([releasing.md](../releasing.md)).

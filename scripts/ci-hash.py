@@ -61,6 +61,11 @@ JOB_FILES = {
     "linux-webdav": COMMON + ["scripts/ci-linux.sh", "scripts/test-webdav.sh", "scripts/dav-fault-proxy.py",
                               "scripts/webdav-server-requirements.txt"],
     "mac-package": COMMON + ["scripts/ci-mac-package.sh", "scripts/test-runner.py"],
+    # check-removable-importers.sh: build every target without the Notability module, run CLITests. Planned for the one target
+    # CLITests (its closure and the built CLI); check-importer-isolation.sh, which the first script runs, is the other input.
+    # ci-linux.sh always runs the isolation check itself, even when this job is skipped (it greps every .swift file), and it
+    # holds the skip logic, so it is in the hash.
+    "linux-removable": COMMON + ["scripts/ci-linux.sh", "scripts/check-removable-importers.sh", "scripts/check-importer-isolation.sh"],
 }
 IGNORED_NAMES = {".DS_Store"}
 
@@ -550,7 +555,7 @@ def self_test() -> int:
         # B3: every script a job's test scripts run is in the job's hash files
         real = Path(__file__).resolve().parent.parent
         for job, scripts in (("linux-test", ["scripts/test-offline.sh"]), ("linux-webdav", ["scripts/test-webdav.sh"]),
-                             ("mac-package", ["scripts/test-runner.py"])):
+                             ("mac-package", ["scripts/test-runner.py"]), ("linux-removable", ["scripts/check-removable-importers.sh"])):
             missing = set()
             for sc in scripts:
                 for line in (real / sc).read_text().splitlines():

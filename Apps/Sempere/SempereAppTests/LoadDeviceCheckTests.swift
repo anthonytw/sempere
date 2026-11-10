@@ -192,7 +192,10 @@ struct LoadDeviceCheckTests {
         print("PERF-REPORT c20 \(k) strokes in \(String(format: "%.1f", elapsed)) s: \(editor.deltasWritten - written) deltas, "
               + "\(fake.calls.count) recognitions, \(made) summary-cache saves")
         #expect(fake.calls.count >= 4, "recognition ran while writing")
-        #expect(editor.deltasWritten - written >= 8, "the ink was saved as it was written")
+        // Relative to the strokes drawn (k): a loaded machine fits only 7 of the 14 in the 6 s window (#42), and a fixed count
+        // failed there. Nearly every stroke must still have been saved by the time the last pause ended.
+        #expect(k >= 3, "only \(k) strokes fit the window: too loaded to say anything")
+        #expect(editor.deltasWritten - written >= k - 2, "the ink was saved as it was written (\(k) strokes)")
         #expect(Double(made) <= elapsed / 2 + 1, "\(made) saves in \(elapsed) s")
         #expect(made >= 1, "the index is still saved as the notes change")
     }

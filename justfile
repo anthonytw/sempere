@@ -91,11 +91,11 @@ release-check *ARGS:
 release-ready VERSION ref="origin/main":
     scripts/release-tag.sh --check {{VERSION}} {{ref}}
 
-# Signed tag vVERSION on REF (default origin/main) after the checks; asks before pushing it
+# Signed tag vVERSION on REF (default origin/main, GitHub) after the checks; asks before pushing it to GitHub
 release-tag VERSION ref="origin/main":
     scripts/release-tag.sh {{VERSION}} {{ref}}
 
-# Push an existing local tag vVERSION to origin (asks first)
+# Push an existing local tag vVERSION to GitHub (asks first)
 release-push VERSION:
     scripts/release-tag.sh --push {{VERSION}}
 
@@ -103,30 +103,13 @@ release-push VERSION:
 release-build VERSION:
     scripts/release-build.sh {{VERSION}}
 
-# The one squashed GitHub commit for vVERSION, and the owner's push / gh release / formula commands (pushes nothing)
-release-github VERSION:
-    scripts/release-github.sh {{VERSION}}
+# The GitHub Release for vVERSION from the local build: checks the pushed tag, prints the `gh release create` command (--publish runs it)
+release-publish *ARGS:
+    scripts/release-publish.sh {{ARGS}}
 
-# Check a published GitHub release: its tree is the Gitea tag's, the assets match SHA256SUMS (and the local build)
+# Check a published release: GitHub's tag is the built commit, the Gitea mirror has it, the assets match SHA256SUMS (and the local build)
 release-verify VERSION:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    v="{{trim_start_match(VERSION, 'v')}}"; url=https://github.com/anthonytw/sempere
-    git fetch -q --no-tags "$url.git" "refs/tags/v$v"
-    if [ "$(git rev-parse 'FETCH_HEAD^{tree}')" = "$(git rev-parse "v$v^{tree}")" ]; then echo "ok    GitHub's v$v has the Gitea tag's tree"
-    else echo "FAIL  GitHub's v$v tree differs from the Gitea tag's"; exit 1; fi
-    d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
-    curl -fsSL -o "$d/SHA256SUMS" "$url/releases/download/v$v/SHA256SUMS"
-    for f in $(awk '{print $2}' "$d/SHA256SUMS"); do curl -fsSL -o "$d/$f" "$url/releases/download/v$v/$f"; done
-    (cd "$d" && shasum -a 256 -c SHA256SUMS)
-    sums="build/release/v$v/SHA256SUMS"
-    if [ -f "$sums" ]; then
-      if cmp -s "$sums" "$d/SHA256SUMS"; then echo "ok    the same files as the local build"; else echo "FAIL  the published files differ from $sums"; exit 1; fi
-    fi
-    if [ "$(uname)" = Darwin ]; then
-      tar -xzf "$d/sempere-$v-macos-universal.tar.gz" -C "$d"
-      "$d/sempere-$v-macos-universal/sempere" --version | head -1
-    fi
+    scripts/release-verify.sh {{VERSION}}
 
 # Homebrew formula for a release (the local build's checksums, else the published ones): to stdout, or into TAP/Formula/sempere.rb and audited (no push)
 formula VERSION TAP="":
