@@ -142,12 +142,23 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 - **A lost Apple Watch.** With Use on Apple Watch on, the watch holds the same
   capture key as the iPhone (the key that can add voice notes and read nothing).
   Someone who has your lost watch can add voice notes to your inbox as the
-  iPhone, until the iPhone's key is replaced (a new epoch). They cannot read any
-  note. Turning the setting off, or Reset on the watch, clears the watch's copy but
-  revokes nothing cryptographic: a copy someone already took stays valid. Reset also
+  iPhone, until you do three things, in this order: **turn off Use on Apple
+  Watch** (the iPhone stops accepting the watch's files and stops sending it keys at
+  once, forgets the watch's key, and holds anything that still arrives for you to add
+  or delete), **unpair or erase the watch** (Find My), then **replace the key** (a
+  new epoch), which retires the copied capture key against someone who also has
+  storage access. WatchConnectivity can reach the iPhone through Apple's cloud
+  relay, not only within Bluetooth range, so being far from the watch is no
+  protection. They cannot read any note. Turning the setting off, or Reset on the
+  watch, clears the watch's copy but revokes nothing cryptographic by itself: a copy
+  someone already took stays valid against storage until the key is replaced. Reset also
   makes the watch a new provisioning key, so the profile that WatchConnectivity keeps
   in its persisted context (encrypted to the old key) can no longer be opened by the
-  watch. Removing
+  watch. Files the iPhone does not admit (the setting was off, or the key changed
+  since, or an epoch it never held) are kept on the iPhone only, never in the vault
+  or the ledger, and need your **Add to inbox** (a note under an epoch or vault the
+  iPhone never held can only be deleted); **Delete** removes them. At most 200
+  files / 500 MB are held; past that the watch keeps them. Removing
   the iPhone from the vault ends the watch's captures too (they verify only under
   the iPhone's listed key). A key of its own for each watch, listed in the vault so
   that it can be revoked alone, is not in 1.1 (decision D1 of the design).

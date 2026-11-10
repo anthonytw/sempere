@@ -32,11 +32,13 @@ struct WatchRecorderTests {
         let audio: FakeAudio
         let outbox: WatchOutbox
         let recorder: WatchRecorder
+        let keeper = MemoryRecordingProfileKeeper()
         let root = CaptureFixture.temp("watch-root")
         let status = CaptureFixture.temp("watch-status")
         let vault: URL
         let identity: NativeIdentity
         var payload: WatchProfilePayload?
+        var readable = true
 
         init(limits: WatchOutbox.Limits = .init(), profile: Bool = true, maxDuration: TimeInterval = WatchRecorder.defaultMaxDuration,
              freeBytes: Int64? = nil) throws {
@@ -48,7 +50,7 @@ struct WatchRecorderTests {
             let clock = self.clock
             outbox = try WatchOutbox(directory: CaptureFixture.temp("watch-outbox"), limits: limits, now: { Date(timeIntervalSince1970: 1_800_000_000) })
             var holder: Rig?
-            recorder = WatchRecorder(audio: audio, outbox: outbox, profile: { holder?.payload }, root: root,
+            recorder = WatchRecorder(audio: audio, outbox: outbox, profile: { holder?.payload }, root: root, keeper: keeper, profileReadable: { holder?.readable ?? true },
                                      statusStore: VoiceNoteStatusStore(directory: status), freeBytes: { freeBytes },
                                      timeZone: TimeZone(identifier: "UTC") ?? .current, maxDuration: maxDuration, now: { clock.now })
             holder = self
@@ -181,6 +183,104 @@ struct WatchRecorderTests {
         #expect(await rig.recorder.sweep().isEmpty)
     }
 
+    // MARK: The profile a recording starts with (docs/design/1.1-watch.md §3.5)
+
+    /// The manifest names the vault and the epoch the recording started under.
+    @Test func startBindsTheRecordingToTheProfilesVault() async throws {
+        let rig = try Rig()
+        let rec = try await rig.record()
+        let p = try #require(rig.payload).profile
+        #expect(rec.bound?.vault == p.vaultId)
+        #expect(rec.bound?.epochId == p.epochId)
+        #expect(rig.keeper.load(for: rec.id) == rig.payload, "kept for the length of the recording")
+        let manifest = RecordingManifest(note: UUID(), recording: rec.id, started: nil, codec: "aac", segments: [], finished: 0,
+                                         vault: p.vaultId, epochId: p.epochId)
+        let back = try JSONDecoder().decode(RecordingManifest.self, from: try JSONEncoder().encode(manifest))
+        #expect(back.vault == p.vaultId && back.epochId == p.epochId)
+        // A manifest an earlier build wrote has neither.
+        let old = Data(#"{"note":"\#(UUID().uuidString)","recording":"\#(UUID().uuidString)","codec":"aac","segments":[],"finished":0}"#.utf8)
+        #expect(try JSONDecoder().decode(RecordingManifest.self, from: old).vault == nil)
+    }
+
+    /// C-03: with no profile at all (a clear, Reset), leftovers are deleted, as the phone's sweep does.
+    @Test func leftoversWithNoProfileAreDeletedNotKeptForever() async throws {
+        let rig = try Rig()
+        let id = UUID()
+        let folder = rig.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
+        rig.payload = nil
+        #expect(await rig.recorder.sweep().isEmpty)
+        #expect(rig.folders.isEmpty, "the plaintext does not wait for a profile that may never come")
+        #expect(rig.outbox.all.isEmpty)
+    }
+
+    /// C-03: a leftover is sealed only with a profile of the same vault; another vault's stays, never sealed into this one.
+    @Test func aLeftoverIsSealedOnlyWithAProfileOfItsOwnVault() async throws {
+        let rig = try Rig()
+        let id = UUID()
+        let folder = rig.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
+        let write = { (vault: UUID) throws in
+            let m = RecordingManifest(note: UUID(), recording: id, started: rig.clock.now, codec: "aac", segments: ["segment-001.aac"],
+                                      finished: 1, vault: vault, epochId: String(repeating: "ab", count: 32))
+            try JSONEncoder().encode(m).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
+        }
+        try write(UUID())
+        #expect(await rig.recorder.sweep().isEmpty)
+        #expect(rig.folders == [folder.lastPathComponent], "kept, not sealed into another vault")
+        try write(try #require(rig.payload).profile.vaultId)
+        #expect(await rig.recorder.sweep().map(\.id) == [id])
+        #expect(rig.folders.isEmpty)
+    }
+
+    /// A clear that arrived mid-recording and then a crash: the kept start-time profile still seals the leftover, once.
+    @Test func aKeptProfileSealsALeftoverAfterAClearAndACrash() async throws {
+        let rig = try Rig()
+        let id = UUID()
+        let folder = rig.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
+        try rig.keeper.keep(try #require(rig.payload), for: id)
+        rig.payload = nil
+        #expect(await rig.recorder.sweep().map(\.id) == [id])
+        #expect(rig.folders.isEmpty)
+        #expect(rig.keeper.count == 0)
+    }
+
+    /// A sweep while the stored profile cannot be read deletes nothing: that is not "no profile".
+    @Test func anUnreadableProfileIsNotNoProfile() async throws {
+        let rig = try Rig()
+        let folder = rig.root.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
+        rig.payload = nil
+        rig.readable = false
+        #expect(await rig.recorder.sweep().isEmpty)
+        #expect(rig.folders == [folder.lastPathComponent])
+        rig.readable = true
+        #expect(await rig.recorder.sweep().isEmpty)
+        #expect(rig.folders.isEmpty)
+    }
+
+    /// A kept-profile seal that fails after a clear is deleted, and kept profiles with no folder are collected.
+    @Test func aFailedSealWithoutAProfileIsDeletedAndOrphanKeptProfilesGo() async throws {
+        let rig = try Rig()
+        let id = UUID()
+        let folder = rig.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("not audio".utf8).write(to: folder.appendingPathComponent("segment-001.aac"))
+        try Self.adts(frames: 3).write(to: folder.appendingPathComponent("segment-002.aac"))
+        let payload = try #require(rig.payload)
+        try rig.keeper.keep(payload, for: id)
+        try rig.keeper.keep(payload, for: UUID())   // an orphan: no folder
+        rig.payload = nil
+        #expect(await rig.recorder.sweep().isEmpty)
+        #expect(rig.folders.isEmpty, "the plaintext that cannot be sealed does not wait forever")
+        #expect(rig.keeper.count == 0)
+    }
+
     @Test func aSweepSkipsTheRecordingInProgress() async throws {
         let rig = try Rig()
         _ = try await rig.record()
@@ -199,16 +299,15 @@ struct WatchRecorderTests {
         #expect(rig.folders.count == 1, "never delete audio that was not sealed")
         #expect(rig.outbox.all.isEmpty)
 
-        // The profile is gone when it stops: the folder waits, and the next sweep seals it once there is one again.
+        // The profile is gone when it stops (a clear arrived mid-recording): it takes effect after the seal.
         let rig2 = try Rig()
         let rec2 = try await rig2.record()
         rig2.payload = nil
-        await #expect(throws: WatchRecorderError.notSetUp) { _ = try await rig2.recorder.stop() }
-        #expect(rig2.folders == [rec2.folder.lastPathComponent])
-        #expect(await rig2.recorder.sweep().isEmpty, "no profile, no sweep")
-        rig2.payload = try Rig().payload
-        #expect(await rig2.recorder.sweep().count == 1)
-        #expect(rig2.folders.isEmpty)
+        let sealed2 = try await rig2.recorder.stop()
+        #expect(rig2.outbox.entry(sealed2.id)?.state == .sealed)
+        #expect(rig2.folders.isEmpty, "the plaintext is gone")
+        #expect(rig2.keeper.count == 0, "the kept profile goes with the seal")
+        _ = rec2
 
         // The outbox cannot be written.
         let rig3 = try Rig()

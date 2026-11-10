@@ -46,6 +46,32 @@ public struct WatchSavedNote: Equatable, Sendable {
     public var recovered: Bool
 }
 
+/// Where the watch keeps the profile a recording started with, until the note is sealed (docs/design/1.1-watch.md §3.5): a
+/// clear that arrives mid-recording takes effect after the seal, and a crash in between does not leave audio nothing can
+/// seal. The watch app keeps it in the Keychain, keyed by the recording id.
+public protocol RecordingProfileKeeper: Sendable {
+    func keep(_ payload: WatchProfilePayload, for recording: UUID) throws
+    func load(for recording: UUID) -> WatchProfilePayload?
+    func discard(_ recording: UUID)
+    /// Reset: nothing is kept any more.
+    func discardAll()
+    /// The recordings something is kept for.
+    func recordings() -> [UUID]
+}
+
+/// `RecordingProfileKeeper` in memory (tests).
+public final class MemoryRecordingProfileKeeper: RecordingProfileKeeper, @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [UUID: WatchProfilePayload] = [:]
+    public init() {}
+    public func keep(_ payload: WatchProfilePayload, for recording: UUID) throws { lock.withLock { items[recording] = payload } }
+    public func load(for recording: UUID) -> WatchProfilePayload? { lock.withLock { items[recording] } }
+    public func discard(_ recording: UUID) { lock.withLock { items[recording] = nil } }
+    public func discardAll() { lock.withLock { items = [:] } }
+    public func recordings() -> [UUID] { lock.withLock { Array(items.keys) } }
+    public var count: Int { lock.withLock { items.count } }
+}
+
 @MainActor
 public final class WatchRecorder {
     public enum Phase: Equatable, Sendable {
@@ -60,6 +86,12 @@ public final class WatchRecorder {
     private let audio: any CaptureAudio
     private let outbox: WatchOutbox
     private let profile: @MainActor () -> WatchProfilePayload?
+    private let keeper: (any RecordingProfileKeeper)?
+    /// False while the watch's stored profile cannot be read (the Keychain before the first unlock): "no profile" would be
+    /// a guess, so the sweep deletes nothing then.
+    private let profileReadable: @MainActor () -> Bool
+    /// The profile each recording in progress started with.
+    private var startProfiles: [UUID: WatchProfilePayload] = [:]
     private let root: URL
     private let statusStore: VoiceNoteStatusStore?
     private let freeBytes: @MainActor () -> Int64?
@@ -80,12 +112,15 @@ public final class WatchRecorder {
     ///   - root: where recording folders go (`Application Support/SempereWatch/Capture`).
     ///   - freeBytes: the device's free space, nil when unknown.
     public init(audio: any CaptureAudio, outbox: WatchOutbox, profile: @escaping @MainActor () -> WatchProfilePayload?, root: URL,
+                keeper: (any RecordingProfileKeeper)? = nil, profileReadable: @escaping @MainActor () -> Bool = { true },
                 statusStore: VoiceNoteStatusStore? = nil, freeBytes: @escaping @MainActor () -> Int64? = { nil },
                 timeZone: TimeZone = .current, maxDuration: TimeInterval = WatchRecorder.defaultMaxDuration,
                 now: @escaping @MainActor () -> Date = { Date() }) {
         self.audio = audio
         self.outbox = outbox
         self.profile = profile
+        self.keeper = keeper
+        self.profileReadable = profileReadable
         self.root = root
         self.statusStore = statusStore
         self.freeBytes = freeBytes
@@ -138,7 +173,7 @@ public final class WatchRecorder {
     /// session (never mixable: nothing plays on the watch) and the recorder.
     public func start() async throws {
         guard !isRecording, !saving, !starting else { throw WatchRecorderError.alreadyRecording }
-        guard profile() != nil else { throw WatchRecorderError.notSetUp }
+        guard let startProfile = profile() else { throw WatchRecorderError.notSetUp }
         do { try outbox.canStartRecording(freeBytes: freeBytes()) } catch let e as WatchOutboxError {
             throw e == .lowStorage ? WatchRecorderError.lowStorage : WatchRecorderError.outboxFull
         }
@@ -154,9 +189,15 @@ public final class WatchRecorder {
             guard let self, let s, self.session === s else { return }
             Task { @MainActor in self.lastSystemStop = await self.finishCatching(s) }
         }
+        // The manifest names the vault, and the profile is kept for the length of the recording (and past a crash).
+        s.bind(vault: startProfile.profile.vaultId, epochId: startProfile.profile.epochId)
+        startProfiles[s.id] = startProfile
+        try? keeper?.keep(startProfile, for: s.id)
         do { try s.start() } catch {
             capture.deactivate()
             s.discardFiles()
+            startProfiles[s.id] = nil
+            keeper?.discard(s.id)
             throw WatchRecorderError.cannotStart("\(error)")
         }
         recorder = capture
@@ -200,21 +241,31 @@ public final class WatchRecorder {
             capture?.deactivate()
             publishStatus()
         }
-        guard let p = profile() else { throw WatchRecorderError.notSetUp }   // the folder waits for the next sweep
+        // The profile the recording started with: a clear that arrived meanwhile takes effect after this seal.
+        guard let p = startProfiles[s.id] ?? keeper?.load(for: s.id) ?? profile() else { throw WatchRecorderError.notSetUp }
         let note = try seal(folder: s.folder, id: s.id, listed: s.segments, finished: nil, started: began ?? now(), profile: p,
                             reachedLimit: reachedLimit, recovered: false)
         lastSaved = note
         return note
     }
 
+    /// Reset: nothing kept for a recording, in memory or in the keeper, outlives it.
+    public func discardKeptProfiles() {
+        startProfiles = [:]
+        keeper?.discardAll()
+    }
+
     // MARK: Sweep
 
     /// Seals what recordings a crash, a quit or a restart left in `root` (at launch and when the app becomes active):
-    /// `CaptureSegments.Leftover`'s rules, a folder that cannot be sealed stays. Returns the notes sealed.
+    /// `CaptureSegments.Leftover`'s rules, a folder that cannot be sealed stays. A leftover is sealed with the profile it
+    /// started with when the watch kept it, else with the current profile of the SAME vault (one that started under another
+    /// vault stays). With no profile at all (a clear, Reset) the leftovers are deleted, as the phone's sweep does. Returns the
+    /// notes sealed.
     @discardableResult
     public func sweep() async -> [WatchSavedNote] {
-        guard !saving, !starting else { return [] }
-        guard let p = profile() else { return [] }
+        guard !saving, !starting, profileReadable() else { return [] }
+        let current = profile()
         let fm = FileManager.default
         let names = ((try? fm.contentsOfDirectory(atPath: root.path)) ?? []).sorted()
         var out: [WatchSavedNote] = []
@@ -223,13 +274,37 @@ public final class WatchRecorder {
             guard folder != activeFolder, folder.standardizedFileURL != activeFolder?.standardizedFileURL,
                   let leftover = CaptureSegments.Leftover(folder: folder) else { continue }
             let id = leftover.id ?? UUID()
+            let kept = leftover.id.flatMap { keeper?.load(for: $0) }
+            let p: WatchProfilePayload
+            if let kept {
+                p = kept
+            } else if let current {
+                if let vault = leftover.vault, vault != current.profile.vaultId { continue }
+                p = current
+            } else {
+                try? fm.removeItem(at: folder)
+                if let lid = leftover.id { keeper?.discard(lid) }
+                continue
+            }
             do {
                 let note = try seal(folder: folder, id: id, listed: leftover.segments, finished: leftover.finished,
                                     started: leftover.started ?? now(), profile: p, reachedLimit: false, recovered: true)
                 out.append(note)
+                keeper?.discard(id)
             } catch {
-                continue   // nothing recorded was deleted by `seal`; the others wait
+                // Nothing recorded was deleted by `seal`; the others wait. With a kept profile but no current one (a clear
+                // arrived), a seal that fails would keep the plaintext for good: it is deleted, as with no profile at all.
+                if kept != nil, current == nil {
+                    try? fm.removeItem(at: folder)
+                    keeper?.discard(id)
+                }
+                continue
             }
+        }
+        // Kept profiles whose recording is gone (a folder deleted, a crash before it was made) are not kept for good.
+        for orphan in keeper?.recordings() ?? [] where startProfiles[orphan] == nil
+            && !fm.fileExists(atPath: root.appendingPathComponent(orphan.uuidString.lowercased()).path) {
+            keeper?.discard(orphan)
         }
         if let last = out.last { lastSaved = last }
         return out
@@ -258,6 +333,8 @@ public final class WatchRecorder {
         switch CaptureSegments.plan(held: held, listed: listed, finished: finished) {
         case .nothingRecorded:
             try? FileManager.default.removeItem(at: folder)
+            startProfiles[id] = nil
+            keeper?.discard(id)
             throw WatchRecorderError.nothingRecorded
         case .completeSegmentUndecodable(let name): throw WatchRecorderError.segmentUndecodable(name)
         case .noReadableAudio: throw WatchRecorderError.noReadableAudio
@@ -277,6 +354,8 @@ public final class WatchRecorder {
             throw WatchRecorderError.sealFailed("\(error)")
         }
         try? FileManager.default.removeItem(at: folder)
+        startProfiles[id] = nil
+        keeper?.discard(id)
         return WatchSavedNote(id: id, vault: profile.profile.vaultId, vaultName: profile.vaultName,
                               duration: info.duration, reachedLimit: reachedLimit, recovered: recovered)
     }

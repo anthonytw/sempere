@@ -20,18 +20,23 @@ public struct WatchLinkState: Codable, Equatable, Sendable {
     public var seq = -1
     /// A hash of what the watch was last given (profile, vault name, recipient); nil when it holds nothing.
     public var sent: String?
+    /// Whether the watch may hold a profile (one was generated for it and no clear has been generated since). Kept apart from
+    /// `sent`, which a failed send resets: a toggle-off after a failed send must still owe the watch a clear.
+    public var mayHoldProfile = false
     /// When the last note from the watch arrived ("Last note from Watch").
     public var lastNote: Date?
 
-    public init(enabled: Bool = false, recipient: String? = nil, seq: Int = -1, sent: String? = nil, lastNote: Date? = nil) {
+    public init(enabled: Bool = false, recipient: String? = nil, seq: Int = -1, sent: String? = nil, lastNote: Date? = nil,
+                mayHoldProfile: Bool? = nil) {
         self.enabled = enabled
         self.recipient = recipient
         self.seq = seq
         self.sent = sent
         self.lastNote = lastNote
+        self.mayHoldProfile = mayHoldProfile ?? (sent != nil)
     }
 
-    enum CodingKeys: String, CodingKey { case enabled, recipient, seq, sent, lastNote }
+    enum CodingKeys: String, CodingKey { case enabled, recipient, seq, sent, lastNote, mayHoldProfile }
 
     /// By hand, so that a file written by an older or newer build (a field missing) still decodes, keeping the counter.
     public init(from decoder: Decoder) throws {
@@ -41,6 +46,7 @@ public struct WatchLinkState: Codable, Equatable, Sendable {
         seq = try c.decodeIfPresent(Int.self, forKey: .seq) ?? -1
         sent = try c.decodeIfPresent(String.self, forKey: .sent)
         lastNote = try c.decodeIfPresent(Date.self, forKey: .lastNote)
+        mayHoldProfile = try c.decodeIfPresent(Bool.self, forKey: .mayHoldProfile) ?? (sent != nil)
     }
 }
 
@@ -134,8 +140,13 @@ public final class WatchProvisioner: @unchecked Sendable {
 
     // MARK: Settings
 
+    /// Turning it off sends the clear (`nextMessage`) and forgets the watch's recipient: nothing is encrypted to that key again
+    /// until a watch sends a fresh request after the toggle is turned back on.
     public func setEnabled(_ on: Bool) throws {
-        try update { $0.enabled = on }
+        try update {
+            $0.enabled = on
+            if !on { $0.recipient = nil }
+        }
     }
 
     /// The note that arrived last (`WatchReceiver` receipts).
@@ -164,9 +175,11 @@ public final class WatchProvisioner: @unchecked Sendable {
             throw WatchProvisionerError.badRecipient
         }
         try update {
+            if (0...Int(Int32.max)).contains(watchSeq) { $0.seq = max($0.seq, watchSeq) }
+            // Turned off: the recipient is not kept (a cleared watch asks again by itself, which must not bring it back).
+            guard $0.enabled else { return }
             $0.recipient = r.string
             $0.sent = nil
-            if (0...Int(Int32.max)).contains(watchSeq) { $0.seq = max($0.seq, watchSeq) }
         }
     }
 
@@ -189,13 +202,15 @@ public final class WatchProvisioner: @unchecked Sendable {
                                                               issued: issued, to: recipient)
                 s.seq = seq
                 s.sent = fingerprint
+                s.mayHoldProfile = true
                 try store.save(s)
                 return message
             }
-            guard s.sent != nil else { return nil }
+            guard s.mayHoldProfile || s.sent != nil else { return nil }
             guard s.seq < Int(Int32.max) else { throw WatchProvisionerError.counterExhausted }
             s.seq += 1
             s.sent = nil
+            s.mayHoldProfile = false
             try store.save(s)
             return .clear(seq: s.seq)
         }
@@ -203,7 +218,8 @@ public final class WatchProvisioner: @unchecked Sendable {
 
     /// A message `nextMessage` returned could not be sent: the next call gives it again (with the next counter).
     public func sendFailed() {
-        try? update { $0.sent = nil }
+        // Whatever was being sent, the watch may hold a profile (a failed clear is owed again).
+        try? update { $0.sent = nil; $0.mayHoldProfile = true }
     }
 
     private func update(_ change: (inout WatchLinkState) -> Void) throws {
