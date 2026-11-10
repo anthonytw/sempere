@@ -14449,14 +14449,14 @@
         }
       }
     },
-    "Opens Sempere on your watch and records a voice note. It is encrypted on the watch and sent to your iPhone's vault inbox." : {
+    "Opens Sempere on your watch and records a voice note, encrypted on the watch and sent to your vault's inbox." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre Sempere en tu reloj y graba una nota de voz. Se cifra en el reloj y se envía a la bandeja de entrada de la bóveda en tu iPhone."
+            "value" : "Abre Sempere en tu reloj y graba una nota de voz, cifrada en el reloj y enviada a la bandeja de entrada de tu bóveda."
           }
         }
       }
@@ -20166,14 +20166,14 @@
         }
       }
     },
-    "Stops the voice note being recorded on your watch and saves it, encrypted, to be sent to your iPhone." : {
+    "Stops the voice note being recorded on your watch and saves it, encrypted, for your vault's inbox." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Detiene la nota de voz que se está grabando en tu reloj y la guarda, cifrada, para enviarla a tu iPhone."
+            "value" : "Detiene la nota de voz que se graba en tu reloj y la guarda, cifrada, para la bandeja de entrada de tu bóveda."
           }
         }
       }

@@ -14,6 +14,8 @@
 #   - the Mac build would get its own bundle id (no universal purchase);
 #   - ITSAppUsesNonExemptEncryption is missing from the app's Info.plist;
 #   - the two copies of the privacy policy (docs/privacy, docs/appstore) differ in date;
+#   - an App Intent's IntentDescription names a device ("iPhone", "iPad"): App Store Connect refuses the build
+#     (ITMS-90626, "Invalid Siri Support"), so it says "your watch", "this device" or "your vault's inbox" instead;
 #   - networking (URLSession, Network.framework, sockets, web views, CloudKit, …)
 #     appears in a shipping app folder (every folder of Apps/Sempere but the test
 #     targets) or a Sources/ target the app links, outside NETWORK_ALLOWED below
@@ -641,6 +643,21 @@ if checkouts:
               f"privacy manifest {'present: ' + ', '.join(os.path.relpath(m, base) for m in manifests) if manifests else 'absent'}; "
               f"required-reason APIs: {', '.join(uses_list) or 'none'}; networking: "
               f"{'see errors' if network_uses(src) else 'none'}")
+
+# --- App Intent descriptions: App Store Connect refuses one that names a device (ITMS-90626) -------------------------
+
+INTENT_DESCRIPTION = re.compile(r'IntentDescription\(\s*"((?:[^"\\]|\\.)*)"')
+INTENT_FORBIDDEN = re.compile(r"\b(iphone|ipad)\b", re.IGNORECASE)
+for dirpath, dirnames, filenames in os.walk(app_dir):
+    dirnames[:] = [d for d in dirnames if not d.endswith("Tests") and d != "build"]
+    for f in filenames:
+        if not f.endswith(".swift"):
+            continue
+        path = os.path.join(dirpath, f)
+        for m in INTENT_DESCRIPTION.finditer(read(path)):
+            if INTENT_FORBIDDEN.search(m.group(1)):
+                errors.append(f"{rel(path)}: IntentDescription {m.group(1)!r} names a device; App Store Connect refuses it "
+                              "(ITMS-90626): say \"your watch\" or \"your vault's inbox\" instead")
 
 # --- Privacy policy: the Pages copy and the Markdown copy carry the same date ----------
 

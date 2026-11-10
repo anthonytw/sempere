@@ -252,6 +252,9 @@ expect "a background mode outside the allow-list" fail "background mode 'locatio
 fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<string>audio</string>", "<string>workout-processing</string>")'
 expect "no audio background mode" fail "UIBackgroundModes must hold audio"
 
+fresh; edit "Apps/Sempere/SempereWatchShared/WatchLaunch.swift" 's.replace("on the watch and sent to your vault", "on the watch and sent to your iPhone vault", 1)'
+expect "an App Intent description that names the iPhone" fail "names a device; App Store Connect refuses it"
+
 fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<key>UIBackgroundModes</key>", "<key>WKBackgroundModes</key>")'
 expect "audio under WKBackgroundModes (App Store Connect refuses it)" fail "WKBackgroundModes is set"
 
