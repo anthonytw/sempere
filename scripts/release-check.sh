@@ -175,9 +175,9 @@ THIRD_PARTY = {"SwiftMath": "SwiftMath"}
 NETWORK_PATTERN = re.compile(
     r"\bURLSession\w*\b|\bNSURLSession\w*\b|\bNSURLConnection\b|\bURLRequest\b|\bNSURLRequest\b"
     r"|^\s*(@\w+\s+)*import\s+(Network|CloudKit|MultipeerConnectivity|WebKit|SafariServices|AuthenticationServices"
-    r"|NetworkExtension|FoundationNetworking)\b"
+    r"|NetworkExtension|FoundationNetworking|WatchConnectivity)\b"
     r"|\bNW(Connection|Listener|Browser|PathMonitor|Endpoint|Parameters)\b|\bnw_\w+\s*\("
-    r"|\bCK(Container|Database)\b|\bWKWebView\b|\bSFSafariViewController\b|\bASWebAuthenticationSession\b"
+    r"|\bWCSession\w*\b|\bCK(Container|Database)\b|\bWKWebView\b|\bSFSafariViewController\b|\bASWebAuthenticationSession\b"
     r"|\bCF\w*Stream\w*Socket\w*\b|\bCFSocket\w*\b|\bCFNetwork\b"
     r"|(?<![.\w])(socket|getaddrinfo|gethostbyname|connect)\s*\(")
 
@@ -186,10 +186,15 @@ NETWORK_PATTERN = re.compile(
 # means updating them in the same PR.
 NETWORK_ALLOWED = {
     # WebDAV vaults (docs/io.md "WebDAV vaults in the app"): connections only to the server the user
-    # enters, uploading the already encrypted vault (push-only); the privacy policy says so.
+    # enters, syncing the vault both ways (the files are encrypted; vault.json is the one plaintext file the privacy
+    # policy names); the privacy policy says so.
     "Apps/Sempere/SempereApp/WebDAVRemote.swift",
     "Sources/SempereWebDAV/Transport.swift",
     "Sources/SempereWebDAV/WebDAVClient.swift",
+    # The Apple Watch link (WatchConnectivity, docs/quick-capture.md "Apple Watch"): the iPhone app and the watch app
+    # talk to each other through the system, with no other connection ("The watch app makes no other connection").
+    "Apps/Sempere/SempereApp/WatchConnectivityService.swift",
+    "Apps/Sempere/SempereWatch/WatchConnectivityClient.swift",
     # The handwritten-math model downloader (URLSessionModelFetcher): runs only when the user
     # taps Download on a MathModelCatalog entry, and the catalog is empty (checked below).
     "Apps/Sempere/SempereApp/MathModels.swift",

@@ -165,6 +165,9 @@ expect "URLSession outside the allow-list" fail "SempereApp/Ping.swift:2: networ
 fresh; printf 'import Network\n' > "$tmp/root/Apps/Sempere/SempereShared/Reach.swift"
 expect "Network.framework in the shared intents" fail "SempereShared/Reach.swift:1: networking"
 
+fresh; printf 'import WatchConnectivity\nlet s = WCSession.default\n' > "$tmp/root/Apps/Sempere/SempereWidgets/Link.swift"
+expect "WatchConnectivity outside the two watch-link files" fail "SempereWidgets/Link.swift:1: networking"
+
 fresh; printf 'import WebKit\n' > "$tmp/root/Apps/Sempere/SempereWidgets/Web.swift"
 expect "WebKit in the widget" fail "SempereWidgets/Web.swift:1: networking"
 
