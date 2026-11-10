@@ -19,6 +19,10 @@
 # Environment: SEMPERE_RELEASE_REMOTE (default origin: GitHub), SEMPERE_TAG_SIGN=false for an unsigned annotated tag
 # (the tests only).
 #
+# Known gap: --embargo tags are signed by whoever runs this (the build account), so from 1.1.0 release-build.sh refuses
+# them. Like the other gaps (docs/audits/README.md "Embargoed fixes"), it is closed when that path is first needed: the
+# maintainer would sign the tag on the fix commit themselves, for example from a `git bundle` of it.
+#
 # The checks, run before anything is published: the commit is on
 # origin/main, Version.swift there says VERSION, CHANGELOG.md there has a dated section for VERSION with no
 # TODO(user) (scripts/changelog-section.sh), and the commit passed the release sweep (`just ci-release`): itself, or
@@ -132,22 +136,25 @@ if [[ $mode == check ]]; then echo "ready: just release-tag $version"; exit 0; f
 if [[ $mode == owner ]]; then
   cat <<EOF2
 
-The maintainer signs and pushes $tag (from their own account; any clone of GitHub works, and a first-time
-\`git clone https://github.com/anthonytw/sempere && cd sempere\` is enough). It needs git's SSH signing set up
-(gpg.format=ssh, user.signingkey). Only this one tag is pushed, by name:
+The maintainer signs and pushes $tag, from their own account. Any clone of GitHub works (the first time:
+\`git clone https://github.com/anthonytw/sempere && cd sempere\`); git's SSH signing must be set up (gpg.format=ssh,
+user.signingkey). The block stops at the first failed step, so nothing is pushed after a failure; it pushes this one tag,
+by name. Read the commit it shows. After a failed \`tag -v\`, delete the local tag with \`git tag -d $tag\`.
 
+( set -e
   git fetch origin main
-  git merge-base --is-ancestor $sha origin/main && echo "on main" || echo "STOP: not on origin/main"
-  git tag -s $tag $sha -m "Sempere $version"
+  git merge-base --is-ancestor $sha origin/main
+  git log -1 --format='%H %s' $sha
+  git show $sha:Sources/SempereCLI/Version.swift | grep -qx 'let sempereVersion = "$version"'
   git show origin/main:packaging/allowed_signers > "\${TMPDIR:-/tmp}/sempere-allowed-signers"
+  git tag -s $tag $sha -m "Sempere $version"
   git -c gpg.ssh.allowedSignersFile="\${TMPDIR:-/tmp}/sempere-allowed-signers" tag -v $tag
-  git push origin refs/tags/$tag
+  git push origin refs/tags/$tag )
 
 \`git tag -v\` must say Good "git" signature for maintainer. Then the build account runs: just release-build $version
 EOF2
   exit 0
 fi
-
 if [[ ${SEMPERE_TAG_SIGN:-true} == false ]]; then git tag -a "$tag" -m "Sempere $version" "$sha"; else git tag -s "$tag" -m "Sempere $version" "$sha"; fi
 echo "created signed tag $tag on ${sha:0:8} (local only)"
 confirm_push

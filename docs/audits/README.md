@@ -118,7 +118,7 @@ A public commit, branch, tag or PR title is a disclosure.
    `origin/main`, a merge, and a commit whose parent is not on `origin/main`. **Known gaps, closed the first time this
    path is needed:** `release-build.sh` cannot build a non-prerelease embargo tag, because it reads the release-sweep
    status of the tagged commit from Gitea, which an unpushed commit does not have (`--post-sweep` is for a commit the
-   forge has); and `release-tag.sh --push` wants the tag's commit on `origin/main` (it would need a rule for a commit off
+   forge has); from 1.1.0, `release-build.sh` also refuses an `--embargo` tag, which the build account signs (the maintainer would sign the tag on the fix commit themselves, for example from a `git bundle` of it); and `release-tag.sh --push` wants the tag's commit on `origin/main` (it would need a rule for a commit off
    `main` whose parent is on `main` and for which a `main` commit has the same `git patch-id --stable`).
 5. **Before any push** (including X in step 4 and the open-track PR): no exploit detail in a commit message, branch name, PR title or body, issue, changelog fragment
    or test name; the run folder is not under any synced or backed-up path that is public. **Never** run

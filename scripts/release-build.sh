@@ -19,9 +19,9 @@
 #      (scripts/smoke-linux-cli.sh). The architecture Docker runs natively must pass; the emulated one
 #      is reported, because emulation has failed on its own before (tar under qemu on Ubuntu 26.04)
 #   6. SHA256SUMS and notes.md (the CHANGELOG section). This build account cannot use the maintainer's key, so it signs
-#      nothing: SHA256SUMS, packaging/allowed_signers and scripts/release-sign.sh go to a hand-off folder
-#      (SEMPERE_SIGN_DROP, default /Users/Shared/sempere-release, then vVERSION/; a sticky world-writable folder) and the
-#      maintainer signs from their own account (docs/releasing.md)
+#      nothing: SHA256SUMS goes to a hand-off folder (SEMPERE_SIGN_DROP, default /Users/Shared/sempere-release, then
+#      vVERSION/; owned by this account, never group- or world-writable, checked before the long build). The maintainer
+#      signs from their own clone of GitHub (scripts/release-sign.sh at origin/main; docs/releasing.md)
 # Output: build/release/vVERSION/. Next: the maintainer signs, then scripts/release-publish.sh VERSION.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -47,13 +47,18 @@ unset SEMPERE_LINUX_BUILD_VOLUME   # a release build always starts from fresh vo
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
 sha=$(git rev-parse "$tag^{commit}")
-scripts/release-signature.sh verify-tag "$version" >&2 || die "$tag must be signed by the maintainer before it is built"
-[[ -f packaging/allowed_signers ]] || die "no packaging/allowed_signers: the hand-off needs it"
-command -v docker >/dev/null || die "Docker is needed for the Linux builds"
 remote=${SEMPERE_RELEASE_REMOTE:-origin}
 git fetch -q "$remote" main || die "cannot fetch $remote main to compare the build scripts with"
 [[ -z $(git status --porcelain --untracked-files=no) ]] || die "this tree has uncommitted changes; the build scripts must be main's"
 git diff --quiet "$remote/main" -- scripts/ packaging/ || die "scripts/ or packaging/ differ from $remote/main: build from a checkout of main"
+scripts/release-signature.sh verify-tag "$version" >&2 || die "$tag must be signed by the maintainer before it is built"
+# The hand-off folder has one writer, this account: a folder anyone else can write to would let them swap the list the maintainer signs.
+drop=${SEMPERE_SIGN_DROP:-/Users/Shared/sempere-release}
+[[ -e $drop ]] || mkdir -m 755 -p "$drop"
+scripts/release-signature.sh owned "$drop" "$(id -u)" >&2 || die "the hand-off folder $drop must be owned by this account and not writable by group or world"
+[[ -e $drop/$tag ]] || mkdir -m 755 "$drop/$tag"
+scripts/release-signature.sh owned "$drop/$tag" "$(id -u)" >&2 || die "the hand-off folder $drop/$tag must be owned by this account and not writable by group or world"
+command -v docker >/dev/null || die "Docker is needed for the Linux builds"
 out=$repo/build/release/$tag
 src=$repo/build/release/$tag-src
 rm -rf "$out"; mkdir -p "$out"
@@ -126,11 +131,9 @@ step "SHA256SUMS"
 (cd "$out" && shasum -a 256 *.tar.gz > SHA256SUMS && cat SHA256SUMS)
 
 step "hand-off to the maintainer"
-drop=${SEMPERE_SIGN_DROP:-/Users/Shared/sempere-release}
-mkdir -p "$drop/$tag"; chmod 1777 "$drop" "$drop/$tag" 2>/dev/null || true   # like /tmp: anyone may add files, only owners delete
-rm -f "$drop/$tag"/{SHA256SUMS,allowed_signers,release-sign.sh,SHA256SUMS.sig} 2>/dev/null || true   # a stale .sig the maintainer made is replaced by their next run
-cp "$out/SHA256SUMS" "$repo/packaging/allowed_signers" "$repo/scripts/release-sign.sh" "$drop/$tag/"
-chmod 0644 "$drop/$tag"/{SHA256SUMS,allowed_signers,release-sign.sh}
-echo "built $tag in $out. Hand-off folder: $drop/$tag"
-echo "Next, from the maintainer's own account:  bash $drop/$tag/release-sign.sh"
+rm -f "$drop/$tag/SHA256SUMS"
+cp "$out/SHA256SUMS" "$drop/$tag/SHA256SUMS"; chmod 0644 "$drop/$tag/SHA256SUMS"
+echo "built $tag in $out. Hand-off folder: $drop/$tag (SHA256SUMS only; the list above is what the maintainer should see)"
+echo "Next, from the maintainer's own account, in their clone of GitHub:"
+echo "  git fetch origin && git checkout --detach origin/main && bash scripts/release-sign.sh $version"
 echo "then, here: just release-publish $version"

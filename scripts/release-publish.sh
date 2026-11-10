@@ -8,8 +8,9 @@
 #
 # Checks: the local tag exists and is on GitHub at the same commit, build/release/vVERSION (scripts/release-build.sh)
 # was built from that commit (its COMMIT file), has SHA256SUMS that verify, are signed by the maintainer (SHA256SUMS.sig,
-# checked against packaging/allowed_signers; it is taken from the hand-off folder, SEMPERE_SIGN_DROP/vVERSION, when
-# the build lacks it and the folder's SHA256SUMS is byte-identical) and list every tarball, notes.md and a tarball
+# checked against packaging/allowed_signers; it is taken from the maintainer's output folder, SEMPERE_SIGN_OUT
+# (default /Users/Shared/sempere-sign)/vVERSION, when the build lacks it and the SHA256SUMS signed there is
+# byte-identical to the build's; scripts/ and packaging/ must equal origin/main's) and list every tarball, notes.md and a tarball
 # per platform, and the release does not exist yet. `gh release create` needs a `gh auth login` that can write to the
 # repository; it never needs admin. The seat (splarg-bot) can create Releases, but only with the owner's explicit OK:
 # the typed version is a human gate, and an agent must never answer it for the owner. A release from 1.1.0 on (not a
@@ -34,6 +35,8 @@ done
 version=${version#v}
 tag=v$version
 die() { echo "error: $*" >&2; exit 1; }
+git fetch -q "$remote" main || die "cannot fetch $remote main to compare the scripts with"
+git diff --quiet "$remote/main" -- scripts/ packaging/ || die "scripts/ or packaging/ differ from $remote/main: publish from a checkout of main"
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
 local_sha=$(git rev-parse "$tag^{commit}")
@@ -54,13 +57,14 @@ done
 for f in "$dist"/*.tar.gz; do
   grep -q "  ${f##*/}\$" "$dist/SHA256SUMS" || die "${f##*/} is in $dist but not in SHA256SUMS"
 done
-drop=${SEMPERE_SIGN_DROP:-/Users/Shared/sempere-release}/$tag
-if [[ ! -f $dist/SHA256SUMS.sig && -f $drop/SHA256SUMS.sig ]]; then   # the maintainer signed in the hand-off folder
-  cmp -s "$drop/SHA256SUMS" "$dist/SHA256SUMS" || die "$drop/SHA256SUMS is not the $dist/SHA256SUMS that was built: the .sig there signs another list (just release-build $version again)"
-  cp "$drop/SHA256SUMS.sig" "$dist/SHA256SUMS.sig"
-  echo "ok    took SHA256SUMS.sig from $drop"
+signed=${SEMPERE_SIGN_OUT:-/Users/Shared/sempere-sign}/$tag
+if [[ ! -f $dist/SHA256SUMS.sig && -f $signed/SHA256SUMS.sig ]]; then   # the maintainer signed (scripts/release-sign.sh)
+  for f in "$signed" "$signed/SHA256SUMS" "$signed/SHA256SUMS.sig"; do scripts/release-signature.sh owned "$f" any >&2 || die "$f must not be a symlink or writable by group or world"; done
+  cmp -s "$signed/SHA256SUMS" "$dist/SHA256SUMS" || die "$signed/SHA256SUMS is not the $dist/SHA256SUMS that was built: the .sig there signs another list (just release-build $version again)"
+  cp "$signed/SHA256SUMS.sig" "$dist/SHA256SUMS.sig"
+  echo "ok    took SHA256SUMS.sig from $signed"
 fi
-[[ -f $dist/SHA256SUMS.sig ]] || die "no $dist/SHA256SUMS.sig: the maintainer signs from their own account (bash $drop/release-sign.sh)"
+[[ -f $dist/SHA256SUMS.sig ]] || die "no $dist/SHA256SUMS.sig: the maintainer signs with scripts/release-sign.sh $version from their own clone"
 sig=$(scripts/release-signature.sh verify "$dist" 2>&1) || die "${sig#error: } (just release-build $version)"
 echo "ok    $dist: built from ${built:0:8}, SHA256SUMS verify and are signed by the maintainer, notes.md and three tarballs"
 
