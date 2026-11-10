@@ -460,6 +460,8 @@ public final class QuickCapture {
         // recording cut off by a restart keeps its audio.
         let s = capture.makeRecording(format: CaptureSegments.captureFormat(audio.preferredFormat), root: root,
                                       segmentExtension: CaptureSegments.segmentExtension)
+        // The manifest names the vault: a leftover is sealed only under a profile of the same vault (`sweep`).
+        s.bind(vault: stored.profile.vaultId, epochId: stored.profile.epochId)
         // Ended by the system (media services reset, no new segment file): sealed as after Stop.
         s.onStoppedBySystem = { [weak self, weak s] in
             guard let self, let s, self.session === s else { return }
@@ -777,6 +779,9 @@ public final class QuickCapture {
         for dir in dirs {
             // A manifest that is there but cannot be read now: so are its segments; later.
             guard let leftover = CaptureSegments.Leftover(folder: dir) else { continue }
+            // Started under another vault's profile (the user switched since): never sealed into this one. It stays,
+            // protected, until quick voice notes are turned off (then the no-profile rule deletes it).
+            if let vault = leftover.vault, vault != stored?.profile.vaultId { continue }
             guard let id = leftover.id else {
                 // Not a folder a session made (its name is not an id) and no manifest names one: deleted
                 // only when it holds no audio, else left alone rather than sealed under a made-up id.

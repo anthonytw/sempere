@@ -155,7 +155,7 @@ let package = Package(
         .testTarget(name: "AgeTests", dependencies: ["Age", "CZlib", "FuzzSupport", "TempDirSupport"],
                     resources: [.copy("Vectors")]),
         .testTarget(name: "SempereTests",
-                    dependencies: ["Sempere", "FuzzSupport", "TempDirSupport", "VaultTestSupport",
+                    dependencies: ["Sempere", "SempereCapture", "FuzzSupport", "TempDirSupport", "VaultTestSupport",
                                    .product(name: "Crypto", package: "swift-crypto")],
                     resources: [.copy("Fixtures")]),
         .testTarget(name: "SempereRenderTests", dependencies: ["SempereRender", "SempereFonts", "Age", "FuzzSupport", "TempDirSupport",

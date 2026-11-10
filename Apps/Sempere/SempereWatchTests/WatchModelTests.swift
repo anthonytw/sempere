@@ -167,6 +167,21 @@ final class WatchModelTests: XCTestCase {
         XCTAssertEqual(r.model.unsent, 1, "the pending note is kept and still sent")
     }
 
+    /// A clear that arrives mid-recording takes effect after the seal, and a cleared watch asks the phone again by itself.
+    func testAClearMidRecordingIsSealedWithTheStartProfileAndTheWatchAsksAgain() async throws {
+        let r = try rig()
+        await r.model.activate()
+        r.model.receive(try provisioning(r, seq: 0))
+        await r.model.record()
+        r.model.receive(WatchProvisioning.dictionary(.clear(seq: 1)))
+        XCTAssertNil(r.model.state.payload)
+        XCTAssertEqual(r.transport.requests.count, 2, "a cleared watch asks again")
+        await r.model.stop()
+        XCTAssertEqual(r.model.unsent, 1, "sealed with the profile the recording started with")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: r.support.appendingPathComponent("Capture").path), [],
+                       "no plaintext left")
+    }
+
     func testResetDeletesTheProfileAndTheCounterAndAsksAgain() async throws {
         let r = try rig()
         await r.model.activate()

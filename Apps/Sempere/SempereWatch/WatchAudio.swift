@@ -78,6 +78,9 @@ final class WatchCaptureRecording: CaptureRecording {
     private(set) var isActive = false
     private(set) var isPaused = false
     var onStoppedBySystem: (@MainActor () -> Void)?
+    private var bound: (vault: UUID, epochId: String)?
+
+    func bind(vault: UUID, epochId: String) { bound = (vault, epochId) }
 
     /// A new segment starts after this many seconds of audio.
     var segmentSeconds: Double = 300
@@ -235,7 +238,8 @@ final class WatchCaptureRecording: CaptureRecording {
 
     private func writeManifest() throws {
         let manifest = RecordingManifest(note: id, recording: id, started: timeline.started, codec: format.codec.rawValue,
-                                         segments: segments.map(\.lastPathComponent), finished: finishedSegments)
+                                         segments: segments.map(\.lastPathComponent), finished: finishedSegments,
+                                         vault: bound?.vault, epochId: bound?.epochId)
         // The default coding: `CaptureSegments.Leftover` reads it back with a plain `JSONDecoder`.
         try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingManifest.fileName),
                                                      options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])

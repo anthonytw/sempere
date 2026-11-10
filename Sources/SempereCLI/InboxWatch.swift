@@ -13,7 +13,8 @@ struct InboxWatchCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "watch",
         abstract: "Apple Watch voice notes: provision a watch, seal as the watch, receive as the phone.",
-        subcommands: [InboxWatchKeygen.self, InboxWatchProvision.self, InboxWatchSeal.self, InboxWatchReceive.self]
+        subcommands: [InboxWatchKeygen.self, InboxWatchProvision.self, InboxWatchSeal.self, InboxWatchReceive.self,
+                      InboxWatchHeld.self]
     )
 }
 
@@ -236,6 +237,27 @@ struct CLIWatchDelivery: WatchDelivery {
 
     func holds(vault: UUID) -> Bool { store.entry(id: vault) != nil }
 
+    func hasLedger(for vault: UUID) -> Bool { captureLedger(vaultId: vault) != nil }
+
+    /// `receive` is an explicit command, so the link counts as on.
+    var linkEnabled: Bool { true }
+
+    /// The newest epoch whose key this machine's ledger remembers for `vault` (`inbox watch provision` remembers the
+    /// profile's); nil without a ledger.
+    func knownEpoch(of vault: UUID) throws -> (epoch: Int, id: Data)? {
+        guard let keys = try? captureLedger(vaultId: vault)?.epochKeys(), let newest = keys.max(by: { $0.epoch < $1.epoch }) else { return nil }
+        return (newest.epoch, newest.key.epochId)
+    }
+
+    func holdsKey(of epochId: Data, vault: UUID) throws -> Bool {
+        ((try? captureLedger(vaultId: vault)?.epochKeys()) ?? []).contains { $0.key.epochId == epochId }
+    }
+
+    func folderEpoch(of vault: UUID) -> Int? {
+        guard let url = url(of: vault), let v = try? Vault.open(at: url), v.vaultId == vault else { return nil }
+        return v.manifest.epoch
+    }
+
     func recordAndPlace(_ sealed: SealedCapture, in vault: UUID) throws -> Bool {
         guard let url = store.entry(id: vault)?.url, accepts(url, vault: vault) else { return false }
         try WatchLedger.record(sealed, in: captureLedger(vaultId: vault))
@@ -277,16 +299,22 @@ struct InboxWatchReceive: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("Where to write the acknowledgement (default: <outbox>/ack.json).", valueName: "file"))
     var ack: String?
 
+    @Option(name: .long, help: ArgumentHelp("Where files that are not admitted are held (default: "
+                                            + "$XDG_STATE_HOME/sempere/capture/watch-held).", valueName: "dir"))
+    var held: String?
+
     @OptionGroup var store: StoreOptions
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
 
     struct FileResult: Encodable {
         var capture: String
-        /// `placed`, `duplicate` or `refused`.
+        /// `placed`, `held`, `duplicate` or `refused`.
         var outcome: String
         /// Where a placed capture went: `vault`, `queued`, `otherVault`, `otherVaultQueued`.
         var placement: String?
+        /// Why a held capture is held: `linkOff`, `oldEpoch`, `newerEpoch`, `unknownEpoch`, `unknownVault`.
+        var reason: String?
         var problem: String?
     }
 
@@ -314,7 +342,7 @@ struct InboxWatchReceive: ParsableCommand {
                                         queueRoot: queue.map { URL(fileURLWithPath: $0, isDirectory: true) }
                                             ?? stateDir.appendingPathComponent("watch-queue", isDirectory: true))
         let set = WatchReceivedSet(url: received.map { URL(fileURLWithPath: $0) } ?? stateDir.appendingPathComponent("watch-received.json"))
-        let intake = WatchIntake(received: set, delivery: delivery)
+        let intake = WatchIntake(received: set, delivery: delivery, held: WatchHeldFolder.store(held))
 
         let names = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".\(WatchOutbox.sidecarExtension)") }.sorted()
         var results: [FileResult] = []
@@ -336,9 +364,11 @@ struct InboxWatchReceive: ParsableCommand {
                 if r.acknowledged { acked.append(r.id) }
                 switch r.outcome {
                 case .placed(let p): results.append(FileResult(capture: meta.id.uuidString.lowercased(), outcome: "placed",
-                                                               placement: Self.name(p), problem: nil))
+                                                               placement: Self.name(p), reason: nil, problem: nil))
+                case .held(let why): results.append(FileResult(capture: meta.id.uuidString.lowercased(), outcome: "held",
+                                                               placement: nil, reason: why.rawValue, problem: nil))
                 case .duplicate: results.append(FileResult(capture: meta.id.uuidString.lowercased(), outcome: "duplicate",
-                                                           placement: nil, problem: nil))
+                                                           placement: nil, reason: nil, problem: nil))
                 case .refused(let problem):
                     failures += 1
                     results.append(FileResult(capture: meta.id.uuidString.lowercased(), outcome: "refused", placement: nil,
@@ -346,7 +376,7 @@ struct InboxWatchReceive: ParsableCommand {
                 }
             } catch {
                 failures += 1
-                results.append(FileResult(capture: meta.id.uuidString.lowercased(), outcome: "refused", placement: nil,
+                results.append(FileResult(capture: meta.id.uuidString.lowercased(), outcome: "refused", placement: nil, reason: nil,
                                           problem: CLIError.from(error).message))
             }
         }
@@ -362,12 +392,186 @@ struct InboxWatchReceive: ParsableCommand {
             try output.emitJSON(Out(files: results, acked: acked.map { $0.uuidString.lowercased() }, ack: ackURL.path))
         } else {
             for r in results {
-                output.info("\(r.capture.prefix(8)) \(r.outcome)\(r.placement.map { " (\($0))" } ?? "")\(r.problem.map { ": \($0)" } ?? "")")
+                output.info("\(r.capture.prefix(8)) \(r.outcome)\(r.placement.map { " (\($0))" } ?? "")\(r.reason.map { " (\($0))" } ?? "")\(r.problem.map { ": \($0)" } ?? "")")
             }
             let placed = results.filter { $0.outcome == "placed" }.count
-            output.info("\(placed) placed, \(results.filter { $0.outcome == "duplicate" }.count) already there, "
+            output.info("\(placed) placed, \(results.filter { $0.outcome == "held" }.count) held, "
+                        + "\(results.filter { $0.outcome == "duplicate" }.count) already there, "
                         + "\(failures) refused; acknowledgement in \(ackURL.path)")
         }
         if failures > 0 { throw CLIError.failure("\(failures) file(s) could not be received") }
+    }
+}
+
+/// Where the CLI keeps held files: `--held`, else beside the received set.
+enum WatchHeldFolder {
+    static func store(_ path: String?) -> WatchHeldStore {
+        let stateDir = DeviceState.defaultURL().deletingLastPathComponent().appendingPathComponent("capture", isDirectory: true)
+        return WatchHeldStore(root: path.map { URL(fileURLWithPath: $0, isDirectory: true) }
+                              ?? stateDir.appendingPathComponent("watch-held", isDirectory: true))
+    }
+}
+
+/// `sempere inbox watch held`: the files `receive` did not admit (the toggle was off, or the epoch is not the one this machine
+/// holds), kept here until they are added to the inbox or deleted.
+struct InboxWatchHeld: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "held",
+        abstract: "Watch notes that were not admitted: list, add to the inbox, or delete.",
+        discussion: """
+            `receive` admits a file only while the link is on and its epoch is the one this machine holds for its vault. Any \
+            other file is acknowledged but kept here, never in a vault folder, the ledger or a sync, until you decide: `add` \
+            takes it into the inbox as `receive` would (catch-up then re-seals it under the current key), `delete` removes it. \
+            A file sealed under an epoch this machine never held cannot be added. At most 200 files or 500 MB are held; \
+            past that a file is refused, unacknowledged, and the watch keeps it.
+            """,
+        subcommands: [InboxWatchHeldList.self, InboxWatchHeldAdd.self, InboxWatchHeldDelete.self]
+    )
+}
+
+struct HeldOptions: ParsableArguments {
+    @Option(name: .long, help: ArgumentHelp("The held folder (default: $XDG_STATE_HOME/sempere/capture/watch-held).", valueName: "dir"))
+    var held: String?
+}
+
+struct HeldRow: Encodable {
+    var capture: String
+    var vault: String
+    var epoch: Int
+    var reason: String
+    var canAdd: Bool
+    var bytes: Int
+    var receivedAt: String
+
+    init(_ h: HeldCapture) {
+        capture = h.id.uuidString.lowercased()
+        vault = h.vault.uuidString.lowercased()
+        epoch = h.epoch
+        reason = h.reason.rawValue
+        canAdd = h.canAdd
+        bytes = h.bytes
+        receivedAt = RFC3339.string(from: h.receivedAt) ?? ""
+    }
+}
+
+struct InboxWatchHeldList: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "list", abstract: "List the held Watch notes.")
+
+    @OptionGroup var options: HeldOptions
+    @OptionGroup var output: OutputOptions
+
+    func run() throws {
+        let rows = WatchHeldFolder.store(options.held).list().map(HeldRow.init)
+        if output.json {
+            try output.emitJSON(rows)
+        } else if rows.isEmpty {
+            output.info("No Watch notes are held.")
+        } else {
+            for r in rows {
+                print("\(r.capture)  \(r.reason)\(r.canAdd ? "" : " (delete only)")  vault \(r.vault.prefix(8))  \(r.bytes) bytes  \(r.receivedAt)")
+            }
+        }
+    }
+}
+
+struct InboxWatchHeldAdd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "add",
+        abstract: "Add held Watch notes to the inbox (ledger first, as `receive` does).",
+        discussion: "Names are ids or unique id prefixes (4 or more characters). `--all` takes every held note that can be added."
+    )
+
+    @Argument(help: ArgumentHelp("Held capture ids or prefixes.", valueName: "id"))
+    var ids: [String] = []
+
+    @Flag(name: .long, help: "Every held note that can be added.")
+    var all = false
+
+    @OptionGroup var options: HeldOptions
+
+    @Option(name: .long, help: ArgumentHelp("Where captures for a vault this machine cannot write now wait (default: "
+                                            + "$XDG_STATE_HOME/sempere/capture/watch-queue).", valueName: "dir"))
+    var queue: String?
+
+    @OptionGroup var store: StoreOptions
+    @OptionGroup var access: AccessOptions
+    @OptionGroup var output: OutputOptions
+
+    func validate() throws {
+        if ids.isEmpty == !all { throw ValidationError("give held ids, or --all") }
+    }
+
+    func run() throws {
+        let stateDir = DeviceState.defaultURL().deletingLastPathComponent().appendingPathComponent("capture", isDirectory: true)
+        var current: (id: UUID, url: URL)?
+        if access.vault != nil || Env.vars["SEMPERE_VAULT"] != nil {
+            let url = try access.vaultURL()
+            current = (try Vault.open(at: url).vaultId, url)
+        }
+        let delivery = CLIWatchDelivery(current: current, store: store.open(),
+                                        queueRoot: queue.map { URL(fileURLWithPath: $0, isDirectory: true) }
+                                            ?? stateDir.appendingPathComponent("watch-queue", isDirectory: true))
+        let held = WatchHeldFolder.store(options.held)
+        let intake = WatchIntake(received: WatchReceivedSet(url: nil), delivery: delivery, held: held)
+        let targets: [HeldCapture]
+        do { targets = all ? held.list().filter(\.canAdd) : try ids.map { try held.find($0) } } catch {
+            throw CLIError.failure("\(error)")
+        }
+        struct Out: Encodable { var capture: String; var outcome: String; var placement: String?; var problem: String? }
+        var out: [Out] = []
+        var failures = 0
+        for t in targets {
+            let id = t.id.uuidString.lowercased()
+            do {
+                let p = try intake.addHeld(t)
+                out.append(Out(capture: id, outcome: "added", placement: InboxWatchReceive.name(p), problem: nil))
+            } catch {
+                failures += 1
+                out.append(Out(capture: id, outcome: "failed", placement: nil, problem: CLIError.from(error).message))
+            }
+        }
+        if output.json {
+            try output.emitJSON(out)
+        } else {
+            for o in out {
+                output.info("\(o.capture.prefix(8)) \(o.outcome)\(o.placement.map { " (\($0))" } ?? "")\(o.problem.map { ": \($0)" } ?? "")")
+            }
+        }
+        if failures > 0 { throw CLIError.failure("\(failures) note(s) could not be added") }
+    }
+}
+
+struct InboxWatchHeldDelete: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "delete",
+        abstract: "Delete held Watch notes.",
+        discussion: "Names are ids or unique id prefixes (4 or more characters). `--all` deletes every held note."
+    )
+
+    @Argument(help: ArgumentHelp("Held capture ids or prefixes.", valueName: "id"))
+    var ids: [String] = []
+
+    @Flag(name: .long, help: "Every held note.")
+    var all = false
+
+    @OptionGroup var options: HeldOptions
+    @OptionGroup var output: OutputOptions
+
+    func validate() throws {
+        if ids.isEmpty == !all { throw ValidationError("give held ids, or --all") }
+    }
+
+    func run() throws {
+        let held = WatchHeldFolder.store(options.held)
+        let targets: [HeldCapture]
+        do { targets = all ? held.list() : try ids.map { try held.find($0) } } catch { throw CLIError.failure("\(error)") }
+        for t in targets { held.delete(t) }
+        let names = targets.map { $0.id.uuidString.lowercased() }
+        if output.json {
+            struct Out: Encodable { var deleted: [String] }
+            try output.emitJSON(Out(deleted: names))
+        } else {
+            output.info("Deleted \(names.count) held Watch note(s).")
+        }
     }
 }

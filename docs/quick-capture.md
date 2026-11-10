@@ -422,8 +422,23 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
   the watch a new payload whenever its profile changes (a new epoch, the notebook, the vault, the toggle) and a clear when the
   toggle goes off, Quick Voice Notes is turned off or the profile is suspended; a profile it cannot read (before the first
   unlock) is never taken for "off". The watch's request carries the counter it holds, and the phone raises its own to at least that, so a damaged or lost state file on the phone can never make the watch ignore it (a state file that exists but cannot be read stops everything: nothing is sent and nothing is saved over it). The watch's **Reset** forgets the profile, sets its counter back to -1 and makes a new provisioning key, then asks again.
-  Its capture key is the phone's, so a lost watch can add voice notes to the inbox as the iPhone until the phone's key is replaced
-  by a new epoch; it can read nothing. Turning the toggle off clears the watch and revokes nothing cryptographic (docs/security.md).
+  Its capture key is the phone's, so a lost watch can add voice notes to the inbox as the iPhone until you turn the toggle off,
+  unpair or erase the watch and replace the key (a new epoch); it can read nothing. Turning the toggle off clears the watch and
+  makes the phone forget the watch's key and hold what the watch still sends, but revokes nothing cryptographic by itself
+  (docs/security.md "A lost Apple Watch").
+- **What the phone admits.** A watch file gets a write-ledger entry only while Use on Apple Watch is on and its epoch is the one
+  the phone holds for its vault (the plaintext `vault.json` epoch of the folder must not be ahead either). Anything else is
+  **held**: kept on the phone only (`Application Support/Sempere/WatchHeld/`), never in a vault folder, never synced, never in
+  the ledger, and acknowledged so the watch drops its copy, at most 200 files and 500 MB (past that the file is refused and the
+  watch keeps it). Settings shows "N Watch notes held" with **Add to inbox**, which runs the normal path (catch-up then re-seals
+  an older epoch's note under the current key), and **Delete**. A note sealed under an epoch the phone never held, or for a vault
+  it does not hold, can only be deleted. A watch that was offline across an epoch change has its notes held until you add them.
+  The CLI has `sempere inbox watch held list|add|delete`. WatchConnectivity can reach the phone through Apple's cloud relay, not
+  only within Bluetooth range, so a lost watch needs the steps above, not distance.
+- **A recording and a clear.** The watch keeps the profile a recording started with until the note is sealed (in memory, and in
+  its Keychain keyed by the recording id), so a clear that arrives mid-recording takes effect after the seal. A recording's
+  manifest names its vault; a leftover is sealed only with a profile of the same vault (on the watch and on the phone), and
+  with no profile at all (a clear, Reset) the watch's leftovers are deleted, as the phone's are.
 - **The recording.** `WatchRecorder` is a start, stop and sweep state machine over the recorder protocols this document's
   phone recorder uses (`CaptureRecorder`, `CaptureRecording`, in `SempereCapture`); the watch app implements them on
   `AVAudioRecorder` (`WatchAudio.swift`): ADTS segments as above, a segment per five minutes, mono AAC-LC at 24 kHz and

@@ -409,6 +409,21 @@ struct QuickCaptureFlowTests {
         #expect(rig.capture.notice?.kind == .interruptedSaved && rig.capture.notice?.result == .savedToInbox)
     }
 
+    /// A leftover that started under another vault's profile is never sealed into the stored profile's vault; one that
+    /// started under this vault's is.
+    @Test func sweepSealsOnlyUnderAProfileOfTheRecordingsVault() async throws {
+        let rig = try CaptureRig()
+        let other = try rig.crashLeftRecording(vault: UUID())
+        await rig.capture.sweep()
+        #expect(rig.inbox.isEmpty, "another vault's recording is not sealed here")
+        #expect(rig.leftovers == [other.lastPathComponent], "and it is not deleted either")
+        let own = try rig.crashLeftRecording(vault: try rig.stored.profile.vaultId)
+        let ownId = try #require(UUID(uuidString: own.lastPathComponent))
+        await rig.capture.sweep()
+        #expect(rig.inbox == [CaptureFile.name(ownId, .capture)])
+        #expect(rig.leftovers == [other.lastPathComponent])
+    }
+
     /// The sweep also runs each time the app becomes active, which at launch overlaps the launch's sweep: one
     /// recording is sealed by one of them only (two seals would merge into the same file at once).
     @Test func overlappingSweepsSealARecordingOnce() async throws {

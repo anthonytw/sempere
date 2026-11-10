@@ -2185,7 +2185,10 @@ recording's card on its page).
 sempere inbox watch keygen --out FILE                                       (a throwaway watch key)
 sempere inbox watch provision --to RECIPIENT --out FILE [--notebook NAME] [--seq N]   (needs the key once)
 sempere inbox watch seal AUDIO --payload FILE --identity FILE --outbox DIR [--title T] [--started TIME]
-sempere inbox watch receive OUTBOX [--vault PATH] [--received FILE] [--queue DIR] [--ack FILE] [--store DIR]
+sempere inbox watch receive OUTBOX [--vault PATH] [--received FILE] [--queue DIR] [--held DIR] [--ack FILE] [--store DIR]
+sempere inbox watch held list [--held DIR]
+sempere inbox watch held add ID… | --all [--held DIR] [--queue DIR] [--vault PATH] [--store DIR]
+sempere inbox watch held delete ID… | --all [--held DIR]
 ```
 
 The Apple Watch's voice notes (`docs/design/1.1-watch.md`, `docs/quick-capture.md` "Apple Watch"), each step run by the
@@ -2206,12 +2209,24 @@ or already finds in the inbox, and delivers by the **vault the metadata names**,
 `--vault`'s `inbox/` when the file is that vault's (recorded first in this machine's write ledger, like `inbox capture`), into
 another vault of the store (`--store`, as for `sempere store`) with that vault's own ledger, else into this machine's queue
 for that vault (`--queue`, default `$XDG_STATE_HOME/sempere/capture/watch-queue/<vault id>/`, each file with its epoch beside
-it, unrecorded until placed). Received ids are kept in `--received` (default
+it, unrecorded until placed). A file is placed only if it is **admitted**: its epoch is the one this machine's write ledger holds for
+its vault (a machine with no device key, so no ledger, has nothing to protect and admits it) and the vault folder's
+`vault.json` is not on a newer epoch, and its vault is `--vault` or in the store. Any other file is acknowledged but **held**, in
+`--held` (default `$XDG_STATE_HOME/sempere/capture/watch-held/<vault id>/`, at most 200 files and 500 MB; past that it is refused,
+exit 1, and not acknowledged), never in a vault folder, the ledger or a queue. Received ids are kept in `--received` (default
 `$XDG_STATE_HOME/sempere/capture/watch-received.json`, 180 days), so running it twice places nothing the second time. It then
 writes the acknowledgement the phone would send (`{acked, have}`) to `--ack` (default `<outbox>/ack.json`). `inbox import`
 adopts the captures as notes. `--json`: `keygen` gives `{identity, recipient}`; `provision` `{payload, vault, seq, bytes}`;
-`seal` `{capture, vault, file, meta, bytes}`; `receive` `{files: [{capture, outcome, placement, problem}], acked, ack}` (`outcome`
-is `placed`, `duplicate` or `refused`; `placement` is `vault`, `queued`, `otherVault` or `otherVaultQueued`).
+`seal` `{capture, vault, file, meta, bytes}`; `receive` `{files: [{capture, outcome, placement, reason, problem}], acked, ack}` (`outcome`
+is `placed`, `held`, `duplicate` or `refused`; `placement` is `vault`, `queued`, `otherVault` or `otherVaultQueued`; `reason` of a held file is
+`linkOff`, `oldEpoch`, `newerEpoch`, `unknownEpoch` or `unknownVault`).
+
+`held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, bytes, receivedAt}]`). `held add` is the
+decision to take a held note: it records it in this machine's ledger and places it in its vault's inbox as `receive` would
+(`--vault`, `--store`, `--queue` as there), and the next catch-up re-seals an older epoch's note under the current key
+(`--json`: `[{capture, outcome, placement, problem}]`, `outcome` `added` or `failed`; exit 1 if any failed). A note whose epoch
+this machine never held, or whose vault it does not hold, has `canAdd: false` and only `held delete` takes it. IDs are full ids or
+unique prefixes of 4 or more characters; `--all` takes every addable note (`add`) or every note (`delete`; `--json`: `{deleted}`).
 
 ### Shared settings
 

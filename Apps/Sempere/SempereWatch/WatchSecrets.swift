@@ -15,9 +15,17 @@ enum WatchSecretItem: String, Sendable {
 }
 
 protocol WatchSecretStore: Sendable {
-    func load(_ item: WatchSecretItem) throws -> Data?
-    func save(_ data: Data, as item: WatchSecretItem) throws
-    func delete(_ item: WatchSecretItem) throws
+    func load(account: String) throws -> Data?
+    func save(_ data: Data, account: String) throws
+    func delete(account: String) throws
+    /// The accounts that start with `prefix`.
+    func accounts(prefix: String) throws -> [String]
+}
+
+extension WatchSecretStore {
+    func load(_ item: WatchSecretItem) throws -> Data? { try load(account: item.rawValue) }
+    func save(_ data: Data, as item: WatchSecretItem) throws { try save(data, account: item.rawValue) }
+    func delete(_ item: WatchSecretItem) throws { try delete(account: item.rawValue) }
 }
 
 struct KeychainWatchSecretStore: WatchSecretStore {
@@ -25,13 +33,13 @@ struct KeychainWatchSecretStore: WatchSecretStore {
 
     enum Failure: Error, Equatable { case status(OSStatus) }
 
-    private func query(_ item: WatchSecretItem) -> [String: Any] {
+    private func query(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service,
-         kSecAttrAccount as String: item.rawValue]
+         kSecAttrAccount as String: account]
     }
 
-    func load(_ item: WatchSecretItem) throws -> Data? {
-        var q = query(item)
+    func load(account: String) throws -> Data? {
+        var q = query(account)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
@@ -41,31 +49,67 @@ struct KeychainWatchSecretStore: WatchSecretStore {
         return data
     }
 
-    func save(_ data: Data, as item: WatchSecretItem) throws {
+    func save(_ data: Data, account: String) throws {
         let attributes: [String: Any] = [kSecValueData as String: data,
                                          kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
-        var status = SecItemUpdate(query(item) as CFDictionary, attributes as CFDictionary)
+        var status = SecItemUpdate(query(account) as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
-            var add = query(item)
+            var add = query(account)
             add.merge(attributes) { $1 }
             status = SecItemAdd(add as CFDictionary, nil)
         }
         guard status == errSecSuccess else { throw Failure.status(status) }
     }
 
-    func delete(_ item: WatchSecretItem) throws {
-        let status = SecItemDelete(query(item) as CFDictionary)
+    func delete(account: String) throws {
+        let status = SecItemDelete(query(account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw Failure.status(status) }
+    }
+
+    func accounts(prefix: String) throws -> [String] {
+        var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service,
+                                kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
+        var out: CFTypeRef?
+        let status = SecItemCopyMatching(q as CFDictionary, &out)
+        q = [:]
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess, let rows = out as? [[String: Any]] else { throw Failure.status(status) }
+        return rows.compactMap { $0[kSecAttrAccount as String] as? String }.filter { $0.hasPrefix(prefix) }
     }
 }
 
 /// In memory (tests, and the debug launch that must not touch the Keychain).
 final class MemoryWatchSecretStore: WatchSecretStore, @unchecked Sendable {
     private let lock = NSLock()
-    private var items: [WatchSecretItem: Data] = [:]
-    func load(_ item: WatchSecretItem) throws -> Data? { lock.withLock { items[item] } }
-    func save(_ data: Data, as item: WatchSecretItem) throws { lock.withLock { items[item] = data } }
-    func delete(_ item: WatchSecretItem) throws { lock.withLock { items[item] = nil } }
+    private var items: [String: Data] = [:]
+    func load(account: String) throws -> Data? { lock.withLock { items[account] } }
+    func save(_ data: Data, account: String) throws { lock.withLock { items[account] = data } }
+    func delete(account: String) throws { lock.withLock { items[account] = nil } }
+    func accounts(prefix: String) throws -> [String] { lock.withLock { items.keys.filter { $0.hasPrefix(prefix) }.sorted() } }
+}
+
+/// The profile each recording in progress started with (`RecordingProfileKeeper`), one Keychain item per recording id,
+/// deleted after the seal (docs/design/1.1-watch.md §3.5).
+struct KeychainRecordingProfileKeeper: RecordingProfileKeeper {
+    static let prefix = "recording-profile-"
+    let store: any WatchSecretStore
+
+    private func account(_ id: UUID) -> String { Self.prefix + id.uuidString.lowercased() }
+
+    func keep(_ payload: WatchProfilePayload, for recording: UUID) throws {
+        try store.save(try JSONEncoder.watch.encode(payload), account: account(recording))
+    }
+
+    func load(for recording: UUID) -> WatchProfilePayload? {
+        guard let data = try? store.load(account: account(recording)) else { return nil }
+        return try? JSONDecoder.watch.decode(WatchProfilePayload.self, from: data)
+    }
+
+    func discard(_ recording: UUID) { try? store.delete(account: account(recording)) }
+
+    func discardAll() {
+        for a in (try? store.accounts(prefix: Self.prefix)) ?? [] { try? store.delete(account: a) }
+    }
 }
 
 /// The watch's provisioning identity and profile state over a `WatchSecretStore`.

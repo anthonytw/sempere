@@ -52,7 +52,9 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         #if targetEnvironment(macCatalyst)
         return
         #else
-        let receiver = WatchReceiver(quickCapture: quickCapture)
+        // Admitted only while "Use on Apple Watch" is on; anything else is held (WatchIntake).
+        let provisioner = self.provisioner
+        let receiver = WatchReceiver(quickCapture: quickCapture, enabled: { provisioner.enabled })
         receiver.sweepQuarantine()
         lock.withLock {
             self.receiver = receiver
@@ -69,6 +71,30 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     /// Settings' count: Watch notes that wait for a vault this device has not opened.
     @MainActor
     func waitingForOtherVaults(_ quickCapture: QuickCapture) -> Int { quickCapture.queuedForOtherVaults() }
+
+    // MARK: Held notes (Settings)
+
+    /// The Watch files that were not admitted (the toggle was off, or the key changed since), oldest first.
+    func heldNotes() -> [HeldCapture] { lock.withLock { receiver }?.heldNotes() ?? [] }
+
+    /// "Add to inbox": every held note that can be added. Returns how many could not be (a vault that cannot be written now).
+    @discardableResult
+    func addHeldNotes() -> Int {
+        guard let receiver = lock.withLock({ receiver }) else { return 0 }
+        var failed = 0
+        for note in receiver.heldNotes() where note.canAdd {
+            do { try receiver.addHeld(note) } catch { failed += 1 }
+        }
+        Task { @MainActor in self.status.touch() }
+        return failed
+    }
+
+    /// "Delete": every held note.
+    func deleteHeldNotes() {
+        guard let receiver = lock.withLock({ receiver }) else { return }
+        for note in receiver.heldNotes() { receiver.deleteHeld(note) }
+        Task { @MainActor in self.status.touch() }
+    }
 
     // MARK: Provisioning
 

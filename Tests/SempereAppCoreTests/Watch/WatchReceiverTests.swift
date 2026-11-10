@@ -33,6 +33,9 @@ struct WatchReceiverTests {
         var current: (url: URL, stored: StoredCaptureProfile)
         var profileStore: MemoryCaptureProfileStore
         var received = WatchReceivedSet(url: nil)
+        /// "Use on Apple Watch".
+        var enabled = true
+        var held: WatchHeldStore { WatchHeldStore(root: dir.appendingPathComponent("held")) }
 
         var delivery: CaptureDelivery {
             let ledgers = self.ledgers, told = self.told
@@ -40,8 +43,9 @@ struct WatchReceiverTests {
                                    bookmarks: PathBookmarks(), ledger: { ledgers.ledger($0) }, delivered: { told.add($0) })
         }
         var receiver: WatchReceiver {
-            WatchReceiver(delivery: delivery, store: profileStore, received: received,
-                          quarantine: dir.appendingPathComponent("quarantine"))
+            let on = enabled
+            return WatchReceiver(delivery: delivery, store: profileStore, received: received,
+                                 quarantine: dir.appendingPathComponent("quarantine"), held: held, enabled: { on })
         }
         var quarantineNames: [String] { QuickCaptureLogicTests.names(dir.appendingPathComponent("quarantine")) }
     }
@@ -58,7 +62,10 @@ struct WatchReceiverTests {
     static func otherVault(_ rig: Rig, inStore: Bool) throws -> (url: URL?, profile: CaptureProfile, source: URL) {
         let identity = try NativeIdentity.generate(.postQuantum)
         let source = rig.dir.appendingPathComponent("other-\(UUID().uuidString).sempere")
-        let vault = try TestVaults.create(at: source, identities: [identity])
+        let created = try TestVaults.create(at: source, identities: [identity])
+        // Opened with this device's ledger for it: making the profile remembers the epoch's key there, which is how the
+        // phone knows the epoch of a vault it holds but whose profile it does not store.
+        let vault = try Vault.open(at: source, identities: [identity], ledger: rig.ledgers.ledger(created.vaultId))
         let profile = try vault.captureProfile(device: DeviceID("0badf00d")!)
         guard inStore else { return (nil, profile, source) }
         let url = try VaultStore(root: rig.storeRoot).importVault(from: source).url
@@ -178,14 +185,28 @@ struct WatchReceiverTests {
         #expect(rig.told.all == [other.profile.vaultId])
     }
 
-    @Test func aFileOfAVaultTheDeviceDoesNotHoldWaitsInItsQueueUntilThatVaultOpens() throws {
+    @Test func aFileOfAVaultTheDeviceDoesNotHoldIsHeldForDeleteOnly() throws {
         let rig = try Self.rig()
         let other = try Self.otherVault(rig, inStore: false)
         let t = try Self.transfer(other.profile, in: rig)
-        #expect(try rig.receiver.receive(file: t.file, metadata: t.metadata)?.result.outcome == .placed(.otherVaultQueued))
-        let queue = rig.delivery.queueFolder(other.profile.vaultId)
-        #expect(QuickCaptureLogicTests.names(queue) == [t.sealed.name, t.sealed.name + ".epoch"])
+        #expect(try rig.receiver.receive(file: t.file, metadata: t.metadata)?.result.outcome == .held(.unknownVault))
+        #expect(rig.delivery.queuedCount(excluding: rig.current.stored.profile.vaultId) == 0, "not queued")
         #expect(Self.inbox(rig.current.url).isEmpty)
+        #expect(try rig.ledgers.ledger(other.profile.vaultId).entries().isEmpty)
+        let note = try #require(rig.receiver.heldNotes().first)
+        #expect(!note.canAdd)
+        #expect(throws: (any Error).self) { try rig.receiver.addHeld(note) }
+        rig.receiver.deleteHeld(note)
+        #expect(rig.receiver.heldNotes().isEmpty)
+    }
+
+    @Test func aQueuedFileOfAVaultThatArrivesIsFlushedUnderItsOwnEpoch() throws {
+        let rig = try Self.rig()
+        let other = try Self.otherVault(rig, inStore: false)
+        let t = try Self.transfer(other.profile, in: rig)
+        let queue = rig.delivery.queueFolder(other.profile.vaultId)
+        try WatchQueue.store(t.sealed, in: queue)
+        #expect(QuickCaptureLogicTests.names(queue) == [t.sealed.name, t.sealed.name + ".epoch"])
         #expect(rig.delivery.queuedCount(excluding: rig.current.stored.profile.vaultId) == 1)
         #expect(rig.delivery.queuedCount(excluding: other.profile.vaultId) == 0)
         #expect(try rig.ledgers.ledger(other.profile.vaultId).entries().isEmpty, "unrecorded until placed (one hour grace)")
@@ -197,6 +218,53 @@ struct WatchReceiverTests {
         #expect(Self.inbox(arrived) == [t.sealed.name])
         #expect(try rig.ledgers.ledger(other.profile.vaultId).entries().first?.epoch == other.profile.epoch)
         #expect(QuickCaptureLogicTests.names(queue).isEmpty)
+    }
+
+    // MARK: Held files (the toggle, the epoch)
+
+    @Test func aFileThatArrivesWhileTheToggleIsOffIsHeldUntilTheUserAddsIt() throws {
+        var rig = try Self.rig()
+        rig.enabled = false
+        let t = try Self.transfer(rig.current.stored.profile, in: rig)
+        let receipt = try #require(try rig.receiver.receive(file: t.file, metadata: t.metadata))
+        #expect(receipt.result.outcome == .held(.linkOff))
+        #expect(rig.receiver.ack([receipt]).acked == [t.meta.id], "acknowledged: the watch drops its copy")
+        #expect(Self.inbox(rig.current.url).isEmpty)
+        #expect(try rig.ledgers.ledger(rig.current.stored.profile.vaultId).entries().isEmpty)
+        let note = try #require(rig.receiver.heldNotes().first)
+        #expect(note.canAdd)
+        #expect(try rig.receiver.addHeld(note) == .vault)
+        #expect(Self.inbox(rig.current.url) == [t.sealed.name])
+        #expect(try rig.ledgers.ledger(rig.current.stored.profile.vaultId).entries().count == 1)
+        #expect(rig.receiver.heldNotes().isEmpty)
+    }
+
+    @Test func aFileOfAnEpochThePhoneMovedPastIsHeldNotLaunderedThroughTheLedger() throws {
+        let rig = try Self.rig()
+        // The watch holds the epoch the profile had; the phone's stored profile has moved on.
+        var moved = rig.current.stored
+        moved.profile.epoch += 1
+        moved.profile.epochId = String(repeating: "ee", count: 32)
+        try rig.profileStore.save(moved)
+        let t = try Self.transfer(rig.current.stored.profile, in: rig)
+        #expect(try rig.receiver.receive(file: t.file, metadata: t.metadata)?.result.outcome == .held(.unknownEpoch))
+        #expect(Self.inbox(rig.current.url).isEmpty)
+        #expect(try rig.ledgers.ledger(rig.current.stored.profile.vaultId).entries().isEmpty)
+    }
+
+    @Test func anUnreadableProfileLeavesTheFileUnacknowledgedNotHeld() throws {
+        struct Unreadable: CaptureProfileStore {
+            func load() throws -> StoredCaptureProfile? { throw QuickCaptureError.profileUnreadable }
+            func save(_ profile: StoredCaptureProfile) throws {}
+            func delete() throws {}
+        }
+        let rig = try Self.rig()
+        let t = try Self.transfer(rig.current.stored.profile, in: rig)
+        let r = WatchReceiver(delivery: rig.delivery, store: Unreadable(), received: rig.received,
+                              quarantine: rig.dir.appendingPathComponent("quarantine"), held: rig.held, enabled: { true })
+        #expect(throws: QuickCaptureError.profileUnreadable) { try r.receive(file: t.file, metadata: t.metadata) }
+        #expect(rig.held.list().isEmpty)
+        #expect(!rig.received.contains(t.meta.id))
     }
 
     // MARK: One flush, both kinds of sidecar
@@ -214,7 +282,7 @@ struct WatchReceiverTests {
         var older = rig.current.stored.profile
         older.epoch = max(0, older.epoch - 1)
         let t = try Self.transfer(older, in: rig)
-        #expect(try rig.receiver.receive(file: t.file, metadata: t.metadata)?.result.outcome == .placed(.queued))
+        try WatchQueue.store(t.sealed, in: rig.delivery.queueFolder(vault))
         // ... and one a version before sidecars were durable (plain bytes): all in one folder.
         let legacy = try QuickCaptureLogicTests.seal(rig.current.stored)
         let queue = rig.delivery.queueFolder(vault)
@@ -251,20 +319,5 @@ struct WatchReceiverTests {
         let t = try Self.transfer(rig.current.stored.profile, in: rig)
         #expect(try rig.receiver.receive(file: t.file, metadata: t.metadata)?.result.outcome == .placed(.queued))
         #expect(Self.inbox(rig.current.url).isEmpty)
-    }
-
-    @Test func aStoredProfileThatCannotBeReadRoutesByTheStoreAndStillPlaces() throws {
-        struct Unreadable: CaptureProfileStore {
-            func load() throws -> StoredCaptureProfile? { throw QuickCaptureError.profileUnreadable }
-            func save(_ profile: StoredCaptureProfile) throws {}
-            func delete() throws {}
-        }
-        var rig = try Self.rig()
-        let t = try Self.transfer(rig.current.stored.profile, in: rig)
-        let r = WatchReceiver(delivery: rig.delivery, store: Unreadable(), received: rig.received,
-                              quarantine: rig.dir.appendingPathComponent("quarantine"))
-        #expect(try r.receive(file: t.file, metadata: t.metadata)?.result.outcome == .placed(.otherVault))
-        #expect(Self.inbox(rig.current.url) == [t.sealed.name])
-        rig.received = WatchReceivedSet(url: nil)
     }
 }

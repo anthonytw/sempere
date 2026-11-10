@@ -21,8 +21,27 @@ final class WatchIntakeTests: XCTestCase {
         var ledgers: [UUID: [SealedCapture]] = [:]
         var order: [String] = []
         var failRecord = false
+        /// "Use on Apple Watch".
+        var enabled = true
+        /// The epoch the device holds for a vault it knows (default: the fixture profile's, for the current and held vaults).
+        var epochs: [UUID: (epoch: Int, id: Data)] = [:]
+        /// Epoch ids whose key the ledger remembers (old epochs).
+        var keys: Set<Data> = []
+        /// `vault.json`'s plaintext epoch number per vault.
+        var folderEpochs: [UUID: Int] = [:]
+        var unreadableProfile = false
 
         var currentVault: UUID? { current }
+        var linkEnabled: Bool { enabled }
+        func knownEpoch(of vault: UUID) throws -> (epoch: Int, id: Data)? {
+            if unreadableProfile { throw QuickCaptureProbe.unreadable }
+            if let e = epochs[vault] { return e }
+            guard vault == current || held.contains(vault), let p = try? WatchFixture.profile,
+                  let id = Hex.decode(p.epochId) else { return nil }
+            return (p.epoch, id)
+        }
+        func holdsKey(of epochId: Data, vault: UUID) throws -> Bool { keys.contains(epochId) }
+        func folderEpoch(of vault: UUID) -> Int? { folderEpochs[vault] }
         func inboxHolds(id: UUID, vault: UUID) -> Bool {
             lock.withLock { inboxes[vault]?.contains { CaptureFile.parse(name: $0.name)?.id == id } ?? false }
         }
@@ -53,6 +72,8 @@ final class WatchIntakeTests: XCTestCase {
         }
     }
 
+    enum QuickCaptureProbe: Error { case unreadable }
+
     struct Rig {
         var intake: WatchIntake
         var delivery: FakeDelivery
@@ -64,8 +85,10 @@ final class WatchIntakeTests: XCTestCase {
         let d = FakeDelivery()
         let vault = try WatchFixture.profile.vaultId
         if current { d.current = vault }
-        return Rig(intake: WatchIntake(received: WatchReceivedSet(url: nil), delivery: d), delivery: d,
-                   dir: makeScratch("intake"), vault: vault)
+        let dir = makeScratch("intake")
+        return Rig(intake: WatchIntake(received: WatchReceivedSet(url: nil), delivery: d,
+                                       held: WatchHeldStore(root: dir.appendingPathComponent("held"))),
+                   delivery: d, dir: dir, vault: vault)
     }
 
     /// A capture file on disk and its metadata.
@@ -107,6 +130,8 @@ final class WatchIntakeTests: XCTestCase {
         try refused(m, file, .sizeMismatch)
         m = meta; m.size = CaptureFile.maxSealedBytes(.capture) + 1
         try refused(m, file, .tooLarge)
+        m = meta; m.size = WatchIntake.maxTransferBytes + 1
+        try refused(m, file, .tooLarge)
         m = meta; m.size = 0
         try refused(m, file, .tooLarge)
         m = meta; m.name = CaptureFile.name(UUID(), .capture)
@@ -141,7 +166,7 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertTrue(again.acknowledged)
         XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 1)
         // A forgotten received set (a reinstall) still finds it in the inbox.
-        let fresh = WatchIntake(received: WatchReceivedSet(url: nil), delivery: r.delivery)
+        let fresh = WatchIntake(received: WatchReceivedSet(url: nil), delivery: r.delivery, held: r.intake.held)
         XCTAssertEqual(try fresh.receive(file: file, meta: meta).outcome, .duplicate)
         XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 1)
         // And one already adopted (gone from the inbox) is in the received set.
@@ -167,18 +192,22 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertTrue(result.acknowledged)
     }
 
-    func testAFileOfAVaultTheDeviceDoesNotHoldIsQueuedUnrecorded() throws {
+    func testAFileOfAVaultTheDeviceDoesNotHoldIsHeldNotQueuedOrRecorded() throws {
         let r = try rig()
         let other = UUID()
         let (file, meta, sealed) = try transfer(r, vault: other)
         let result = try r.intake.receive(file: file, meta: meta)
-        XCTAssertEqual(result.outcome, .placed(.otherVaultQueued))
-        XCTAssertEqual(r.delivery.queues[other]?.first?.data, sealed.data)
-        XCTAssertEqual(r.delivery.queues[other]?.first?.epoch, meta.epoch, "its epoch goes with it")
-        XCTAssertTrue(r.delivery.ledgers.isEmpty, "recorded when placed, not when queued")
+        XCTAssertEqual(result.outcome, .held(.unknownVault))
+        XCTAssertTrue(result.acknowledged, "it is safe in the held store")
+        XCTAssertTrue(r.delivery.queues.isEmpty)
+        XCTAssertTrue(r.delivery.ledgers.isEmpty, "never recorded")
         XCTAssertTrue(r.delivery.inboxes.isEmpty)
-        XCTAssertTrue(result.acknowledged, "it is safe in the queue")
-        // A vault the device holds but cannot write now (read-only) queues as well.
+        let held = try XCTUnwrap(r.intake.held?.list().first)
+        XCTAssertEqual(held.id, meta.id)
+        XCTAssertFalse(held.canAdd, "a vault this device does not hold: delete only")
+        XCTAssertEqual(try r.intake.held?.load(held).data, sealed.data)
+        XCTAssertThrowsError(try r.intake.addHeld(held))
+        // A vault the device holds but cannot write now (read-only) queues, as before.
         let ro = UUID()
         r.delivery.held = [ro]
         r.delivery.readOnly = [ro]
@@ -215,17 +244,124 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertEqual(try r.intake.receive(file: f2, meta: m2).outcome, .placed(.vault))
     }
 
-    func testAFileOfAnOlderEpochKeepsItsOwnEpoch() throws {
+    // MARK: Admission (docs/design/1.1-watch.md §3.4)
+
+    func testAFileOfAnOlderEpochTheDeviceKeptIsHeldAndAddKeepsItsOwnEpoch() throws {
         let r = try rig()
         var older = try WatchFixture.profile
         older.epoch += 3
         older.epochId = String(repeating: "ab", count: 32)
-        // Sealed under an epoch other than the stored profile's: the metadata and the ledger carry the file's own.
+        r.delivery.keys = [Data(repeating: 0xab, count: 32)]
         let (file, meta, _) = try transfer(r, profile: older)
-        XCTAssertEqual(meta.epoch, older.epoch)
-        _ = try r.intake.receive(file: file, meta: meta)
+        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .held(.oldEpoch))
+        XCTAssertNil(r.delivery.ledgers[r.vault], "no ledger entry until the user adds it")
+        XCTAssertNil(r.delivery.inboxes[r.vault])
+        let held = try XCTUnwrap(r.intake.held?.list().first)
+        XCTAssertTrue(held.canAdd)
+        XCTAssertEqual(try r.intake.addHeld(held), .vault)
         XCTAssertEqual(r.delivery.ledgers[r.vault]?.first?.epoch, older.epoch)
         XCTAssertEqual(r.delivery.ledgers[r.vault]?.first?.epochId, Data(repeating: 0xab, count: 32))
+        XCTAssertEqual(r.delivery.order, ["record", "place"])
+        XCTAssertEqual(r.intake.held?.list().count, 0, "added: no longer held")
+    }
+
+    /// C-04: an epoch this device never held is held, never recorded, and can only be deleted.
+    func testAnUnknownEpochIsHeldForDeleteOnlyAndNeverReachesTheLedger() throws {
+        let r = try rig()
+        var meta = try transfer(r).1
+        let (file, m2, _) = try transfer(r)
+        meta = m2
+        meta.epoch = 77
+        meta.epochId = String(repeating: "cd", count: 32)
+        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .held(.unknownEpoch))
+        XCTAssertTrue(r.delivery.ledgers.isEmpty)
+        let held = try XCTUnwrap(r.intake.held?.list().first)
+        XCTAssertFalse(held.canAdd)
+        XCTAssertThrowsError(try r.intake.addHeld(held))
+        r.intake.held?.delete(held)
+        XCTAssertEqual(r.intake.held?.list().count, 0)
+    }
+
+    /// C-01 and C-02: with the toggle off, everything that arrives is held, whatever its epoch.
+    func testAFileThatArrivesWhileTheToggleIsOffIsHeldAndAddPlacesIt() throws {
+        let r = try rig()
+        r.delivery.enabled = false
+        let (file, meta, _) = try transfer(r)
+        let result = try r.intake.receive(file: file, meta: meta)
+        XCTAssertEqual(result.outcome, .held(.linkOff))
+        XCTAssertTrue(result.acknowledged)
+        XCTAssertTrue(r.delivery.ledgers.isEmpty)
+        XCTAssertTrue(r.delivery.inboxes.isEmpty)
+        XCTAssertTrue(r.intake.received.contains(meta.id), "a resend is a duplicate")
+        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .duplicate)
+        XCTAssertEqual(r.intake.held?.list().count, 1)
+        // The user's decision: Add runs the normal path.
+        r.delivery.enabled = true
+        XCTAssertEqual(try r.intake.addHeld(try XCTUnwrap(r.intake.held?.list().first)), .vault)
+        XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 1)
+        XCTAssertEqual(r.delivery.ledgers[r.vault]?.count, 1)
+    }
+
+    /// The vault folder's plaintext epoch is ahead of the device's: held (it can only hold, never admit).
+    func testAFolderOnANewerEpochHoldsTheFile() throws {
+        let r = try rig()
+        let known = try XCTUnwrap(r.delivery.knownEpoch(of: r.vault)).epoch
+        r.delivery.folderEpochs[r.vault] = known + 1
+        let (f1, m1, _) = try transfer(r)
+        XCTAssertEqual(try r.intake.receive(file: f1, meta: m1).outcome, .held(.newerEpoch))
+        r.delivery.folderEpochs[r.vault] = known
+        let (f2, m2, _) = try transfer(r)
+        XCTAssertEqual(try r.intake.receive(file: f2, meta: m2).outcome, .placed(.vault))
+    }
+
+    func testAnUnreadableProfileLeavesTheFileUnacknowledged() throws {
+        let r = try rig()
+        r.delivery.unreadableProfile = true
+        let (file, meta, _) = try transfer(r)
+        XCTAssertThrowsError(try r.intake.receive(file: file, meta: meta))
+        XCTAssertEqual(r.intake.held?.list().count, 0)
+        XCTAssertFalse(r.intake.received.contains(meta.id))
+    }
+
+    func testWithoutAHeldStoreANonAdmittedFileIsRefusedUnacknowledged() throws {
+        let r = try rig()
+        r.delivery.enabled = false
+        let bare = WatchIntake(received: WatchReceivedSet(url: nil), delivery: r.delivery)
+        let (file, meta, _) = try transfer(r)
+        let result = try bare.receive(file: file, meta: meta)
+        XCTAssertEqual(result.outcome, .refused(.heldFull))
+        XCTAssertFalse(result.acknowledged)
+    }
+
+    // MARK: The held store
+
+    func testTheHeldStoreCapsFilesAndBytesAndSelectsByPrefix() throws {
+        XCTAssertEqual(WatchHeldStore.maxFiles, 200)
+        XCTAssertEqual(WatchHeldStore.maxTotalBytes, 500 << 20)
+        let store = WatchHeldStore(root: makeScratch("heldcap"), maxFiles: 3)
+        let vault = UUID()
+        let first = try WatchFixture.sealed(audio: Data("a0".utf8))
+        try store.hold(first, vault: vault, reason: .linkOff)
+        for i in 1..<3 { try store.hold(try WatchFixture.sealed(audio: Data("a\(i)".utf8)), vault: vault, reason: .linkOff) }
+        XCTAssertEqual(store.count, 3)
+        XCTAssertThrowsError(try store.hold(try WatchFixture.sealed(), vault: vault, reason: .linkOff)) {
+            XCTAssertEqual($0 as? WatchHeldError, .full)
+        }
+        // Holding the same file again is not a new file, even at the cap.
+        try store.hold(first, vault: vault, reason: .linkOff)
+        XCTAssertEqual(store.count, 3)
+        let one = try XCTUnwrap(store.list().first)
+        XCTAssertEqual(try store.find(String(one.id.uuidString.lowercased().prefix(8))), one)
+        XCTAssertThrowsError(try store.find("zzzz")) { XCTAssertEqual($0 as? WatchHeldError, .notFound("zzzz")) }
+        store.delete(one)
+        XCTAssertEqual(store.count, 2)
+        // The byte cap.
+        let small = WatchHeldStore(root: makeScratch("heldbytes"), maxBytes: 4000)
+        let a = try WatchFixture.sealed(audio: Data(count: 1500))
+        try small.hold(a, vault: vault, reason: .linkOff)
+        XCTAssertThrowsError(try small.hold(try WatchFixture.sealed(audio: Data(count: 3000)), vault: vault, reason: .linkOff)) {
+            XCTAssertEqual($0 as? WatchHeldError, .full)
+        }
     }
 
     // MARK: The received set

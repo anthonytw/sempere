@@ -140,24 +140,82 @@ final class CLIWatchTests: CLITestCase {
                        try Data(contentsOf: URL(fileURLWithPath: Self.tone)))
     }
 
-    func testAFileOfAnotherVaultIsQueuedNotPlacedInTheCurrentInbox() throws {
+    /// A sealed watch file of `vault` in `outbox` (as the watch would write it): its capture id.
+    func sealedNote(_ vault: (vault: Vault, identity: NativeIdentity, keyPath: String), outbox: String, name: String = "watch") throws -> String {
+        let watch = try provisioned(["--vault", vault.vault.url.path, "--identity", vault.keyPath], name: name)
+        let aac = path("\(name).aac")
+        try adts(frames: 10).write(to: URL(fileURLWithPath: aac))
+        return try XCTUnwrap(try json(try cli(["inbox", "watch", "seal", aac, "--payload", watch.payload, "--identity",
+                                               watch.identity, "--outbox", outbox, "--json"]))["capture"] as? String)
+    }
+
+    /// A file of a vault this machine does not hold is not admitted: it is acknowledged and held, never queued, recorded or
+    /// placed in the current inbox, and only `held delete` takes it (`held add` refuses).
+    func testAFileOfAnotherVaultIsHeldNotPlacedInTheCurrentInbox() throws {
         let a = try makeVault(named: "a.sempere")
         let b = try makeVault(named: "b.sempere")
-        let watch = try provisioned(["--vault", b.vault.url.path, "--identity", b.keyPath])
-        let aac = path("n.aac")
-        try adts(frames: 10).write(to: URL(fileURLWithPath: aac))
         let outbox = path("outbox")
-        let capture = try XCTUnwrap(try json(try cli(["inbox", "watch", "seal", aac, "--payload", watch.payload, "--identity",
-                                                      watch.identity, "--outbox", outbox, "--json"]))["capture"] as? String)
+        let capture = try sealedNote(b, outbox: outbox)
         // The phone's stored profile is vault A's; the file is B's, and B is not in its store.
         let r = try json(try cli(["inbox", "watch", "receive", outbox, "--received", path("r.json"), "--queue", path("q"),
-                                  "--store", path("store"), "--json", "--vault", a.vault.url.path]))
-        XCTAssertEqual((r["files"] as? [[String: Any]])?.first?["placement"] as? String, "otherVaultQueued")
+                                  "--held", path("held"), "--store", path("store"), "--json", "--vault", a.vault.url.path]))
+        let file = try XCTUnwrap((r["files"] as? [[String: Any]])?.first)
+        XCTAssertEqual(file["outcome"] as? String, "held")
+        XCTAssertEqual(file["reason"] as? String, "unknownVault")
         XCTAssertEqual(r["acked"] as? [String], [capture])
         let inboxA = a.vault.url.appendingPathComponent("inbox").path
         XCTAssertEqual(((try? FileManager.default.contentsOfDirectory(atPath: inboxA)) ?? []).filter { $0.hasSuffix(".capture.age") }, [])
-        let queued = try FileManager.default.contentsOfDirectory(atPath: "\(path("q"))/\(b.vault.vaultId.uuidString.lowercased())").sorted()
-        XCTAssertEqual(queued, ["\(capture).capture.age", "\(capture).capture.age.epoch"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path("q")), "not queued")
+
+        let listed = try XCTUnwrap(try cli(["inbox", "watch", "held", "list", "--held", path("held"), "--json"]).json as? [[String: Any]])
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed.first?["capture"] as? String, capture)
+        XCTAssertEqual(listed.first?["reason"] as? String, "unknownVault")
+        XCTAssertEqual(listed.first?["canAdd"] as? Bool, false)
+        let add = try cli(["inbox", "watch", "held", "add", String(capture.prefix(8)), "--held", path("held"), "--queue", path("q"),
+                           "--store", path("store"), "--vault", a.vault.url.path])
+        XCTAssertNotEqual(add.status, 0, "delete only")
+        XCTAssertEqual((try cli(["inbox", "watch", "held", "list", "--held", path("held"), "--json"]).json as? [[String: Any]])?.count, 1)
+        let deleted = try json(try cli(["inbox", "watch", "held", "delete", String(capture.prefix(8)), "--held", path("held"), "--json"]))
+        XCTAssertEqual(deleted["deleted"] as? [String], [capture])
+        XCTAssertEqual((try cli(["inbox", "watch", "held", "list", "--held", path("held"), "--json"]).json as? [[String: Any]])?.count, 0)
+        // A second receive finds it already received.
+        let again = try json(try cli(["inbox", "watch", "receive", outbox, "--received", path("r.json"), "--queue", path("q"),
+                                      "--held", path("held"), "--store", path("store"), "--json", "--vault", a.vault.url.path]))
+        XCTAssertEqual((again["files"] as? [[String: Any]])?.first?["outcome"] as? String, "duplicate")
+    }
+
+    /// `held add` takes an addable held note into the inbox (ledger first), `--all` takes every addable one, and an id that is
+    /// not held fails. The held entries are written as the phone's `receive` would for an epoch the machine kept the key of.
+    func testHeldAddPlacesTheNoteInTheInbox() throws {
+        let vault = try makeVault()
+        let outbox = path("outbox")
+        let capture = try sealedNote(vault, outbox: outbox)
+        let meta = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "\(outbox)/\(capture).meta.json"))) as? [String: Any])
+        let vaultId = vault.vault.vaultId.uuidString.lowercased()
+        let held = path("held")
+        let dir = "\(held)/\(vaultId)"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let bytes = try Data(contentsOf: URL(fileURLWithPath: "\(outbox)/\(capture).capture.age"))
+        try bytes.write(to: URL(fileURLWithPath: "\(dir)/\(capture).capture.age"))
+        let sidecar: [String: Any] = ["id": capture, "vault": vaultId, "epoch": try XCTUnwrap(meta["epoch"] as? Int),
+                                      "epochId": try XCTUnwrap(meta["epochId"] as? String), "receivedAt": "2026-11-10T12:00:00Z",
+                                      "reason": "oldEpoch", "bytes": bytes.count]
+        try JSONSerialization.data(withJSONObject: sidecar).write(to: URL(fileURLWithPath: "\(dir)/\(capture).capture.age.held.json"))
+
+        let listed = try XCTUnwrap(try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [[String: Any]])
+        XCTAssertEqual(listed.first?["canAdd"] as? Bool, true)
+        let missing = try cli(["inbox", "watch", "held", "add", "ffffffff", "--held", held, "--queue", path("q"), "--store", path("store"),
+                               "--vault", vault.vault.url.path])
+        XCTAssertNotEqual(missing.status, 0)
+        XCTAssertNotEqual(try cli(["inbox", "watch", "held", "add", "--held", held]).status, 0, "ids or --all")
+        let added = try XCTUnwrap(try cli(["inbox", "watch", "held", "add", "--all", "--held", held, "--queue", path("q"),
+                                           "--store", path("store"), "--json", "--vault", vault.vault.url.path]).json as? [[String: Any]])
+        XCTAssertEqual(added.first?["outcome"] as? String, "added")
+        XCTAssertEqual(added.first?["placement"] as? String, "vault")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: vault.vault.url.appendingPathComponent("inbox").path)
+            .filter { $0.hasSuffix(".capture.age") }, ["\(capture).capture.age"])
+        XCTAssertEqual((try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [[String: Any]])?.count, 0)
     }
 
     func testAFileThatFailsTheChecksIsRefusedAndNotAcknowledged() throws {

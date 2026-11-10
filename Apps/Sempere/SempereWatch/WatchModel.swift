@@ -141,6 +141,7 @@ final class WatchModel {
         state = secrets.state()
         recorder = WatchRecorder(audio: environment.audio, outbox: outbox, profile: { [weak self] in self?.state.payload },
                                  root: environment.support.appendingPathComponent("Capture", isDirectory: true),
+                                 keeper: KeychainRecordingProfileKeeper(store: environment.secrets),
                                  statusStore: environment.statusStore, freeBytes: environment.freeBytes)
         recorder.now = environment.now
         vaultName = state.payload?.vaultName
@@ -336,6 +337,10 @@ final class WatchModel {
             case .stored, .cleared:
                 try secrets.save(next)
                 state = next
+                // A watch the phone cleared asks again by itself; the phone keeps the request only while "Use on Apple
+                // Watch" is on (docs/design/1.1-watch.md §3.4), so it asks once more at its next launch after the toggle is on.
+                if next.payload == nil { requested = false }
+                if next.payload == nil { sweepLeftovers() }
             case .ignored, .notForTheWatch:
                 return
             }
@@ -345,6 +350,12 @@ final class WatchModel {
         }
         refreshScreen()
         publish()
+        requestProvisioningIfNeeded()
+    }
+
+    /// Seals or deletes what a recording left behind, by the recorder's rules (a recording in progress is left alone).
+    private func sweepLeftovers() {
+        Task { [weak self] in _ = await self?.recorder.sweep() }
     }
 
     /// "Reset": deletes the profile and its counter (back to -1, so the phone's next payload is taken) and asks again.
@@ -357,6 +368,9 @@ final class WatchModel {
         try? env.secrets.delete(.provisioningKey)
         identity = nil
         requested = false
+        // Nothing kept for a recording in progress outlives a Reset; recordings left without a profile are deleted.
+        KeychainRecordingProfileKeeper(store: env.secrets).discardAll()
+        sweepLeftovers()
         refreshScreen(settle: true)
         publish()
         requestProvisioningIfNeeded()
