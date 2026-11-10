@@ -250,7 +250,10 @@ fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<string>audio</str
 expect "a background mode outside the allow-list" fail "background mode 'location' is not in the allow-list"
 
 fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<string>audio</string>", "<string>workout-processing</string>")'
-expect "no audio background mode" fail "WKBackgroundModes must hold audio"
+expect "no audio background mode" fail "UIBackgroundModes must hold audio"
+
+fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<key>UIBackgroundModes</key>", "<key>WKBackgroundModes</key>")'
+expect "audio under WKBackgroundModes (App Store Connect refuses it)" fail "WKBackgroundModes is set"
 
 fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<string>io.github.anthonytw.sempere</string>", "<string>io.github.other</string>")'
 expect "the watch app's companion is another app" fail "WKCompanionAppBundleIdentifier must be io.github.anthonytw.sempere"
