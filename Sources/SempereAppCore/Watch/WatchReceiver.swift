@@ -10,6 +10,8 @@ struct CaptureWatchDelivery: WatchDelivery {
     var delivery: CaptureDelivery
     /// The stored capture profile (the Keychain in the app); nil or unreadable means no current vault.
     var store: any CaptureProfileStore
+    /// "Use on Apple Watch" (`WatchProvisioner.enabled`).
+    var enabled: @Sendable () -> Bool
 
     private var stored: StoredCaptureProfile? { try? store.load() }
 
@@ -33,6 +35,45 @@ struct CaptureWatchDelivery: WatchDelivery {
     }
 
     func holds(vault: UUID) -> Bool { vaultFolder(vault) != nil }
+
+    var linkEnabled: Bool { enabled() }
+
+    func isSuspended(vault: UUID) -> Bool {
+        guard let stored else { return false }
+        return stored.profile.vaultId == vault && stored.suspended == true
+    }
+
+    /// The stored profile's epoch for the current vault; for another vault the device holds, the newest epoch whose key its
+    /// write ledger remembers (the last one it verified).
+    func knownEpoch(of vault: UUID) throws -> (epoch: Int, id: Data)? {
+        // An unreadable profile (before the first unlock) is not "no profile": nothing is decided, the watch resends.
+        let stored = try loadProfile()
+        if let stored, stored.profile.vaultId == vault {
+            guard let id = Hex.decode(stored.profile.epochId) else { return nil }
+            return (stored.profile.epoch, id)
+        }
+        guard holds(vault: vault), let keys = try delivery.ledger?(vault).epochKeys(),
+              let newest = keys.max(by: { $0.epoch < $1.epoch }) else { return nil }
+        return (newest.epoch, newest.key.epochId)
+    }
+
+    func holdsKey(of epochId: Data, vault: UUID) throws -> Bool {
+        if let stored = try loadProfile(), stored.profile.vaultId == vault, Hex.decode(stored.profile.epochId) == epochId { return true }
+        return try (delivery.ledger?(vault).epochKeys() ?? []).contains { $0.key.epochId == epochId }
+    }
+
+    private func loadProfile() throws -> StoredCaptureProfile? {
+        do { return try store.load() } catch { throw QuickCaptureError.profileUnreadable }
+    }
+
+    /// `vault.json`'s plaintext epoch number (unverified), when the folder can be reached.
+    func folderEpoch(of vault: UUID) -> Int? {
+        guard let url = vaultFolder(vault) else { return nil }
+        return delivery.bookmarks.withAccess(to: url) { () -> Int? in
+            guard let v = try? Vault.open(at: url), v.vaultId == vault else { return nil }
+            return v.manifest.epoch
+        }
+    }
 
     /// Recorded in `vault`'s ledger under the file's own epoch (no profile of that vault is needed), then placed.
     func recordAndPlace(_ sealed: SealedCapture, in vault: UUID) throws -> Bool {
@@ -69,8 +110,10 @@ public struct WatchReceiver: Sendable {
     /// `Application Support/Sempere/WatchQuarantine`.
     public let quarantine: URL
 
-    init(delivery: CaptureDelivery, store: any CaptureProfileStore, received: WatchReceivedSet, quarantine: URL) {
-        self.intake = WatchIntake(received: received, delivery: CaptureWatchDelivery(delivery: delivery, store: store))
+    init(delivery: CaptureDelivery, store: any CaptureProfileStore, received: WatchReceivedSet, quarantine: URL,
+         held: WatchHeldStore, enabled: @escaping @Sendable () -> Bool) {
+        self.intake = WatchIntake(received: received, delivery: CaptureWatchDelivery(delivery: delivery, store: store, enabled: enabled),
+                                  held: held)
         self.quarantine = quarantine
     }
 
@@ -82,10 +125,28 @@ public struct WatchReceiver: Sendable {
 
     /// The app's receiver: the quick capture's delivery rules and profile store.
     @MainActor
-    public init(quickCapture: QuickCapture, received: WatchReceivedSet = WatchReceiver.defaultReceivedSet(),
-                quarantine: URL = WatchReceiver.defaultQuarantine) {
-        self.init(delivery: quickCapture.delivery, store: quickCapture.store, received: received, quarantine: quarantine)
+    public init(quickCapture: QuickCapture, enabled: @escaping @Sendable () -> Bool,
+                received: WatchReceivedSet = WatchReceiver.defaultReceivedSet(),
+                quarantine: URL = WatchReceiver.defaultQuarantine, held: WatchHeldStore = WatchReceiver.defaultHeld()) {
+        self.init(delivery: quickCapture.delivery, store: quickCapture.store, received: received, quarantine: quarantine,
+                  held: held, enabled: enabled)
     }
+
+    public nonisolated static func defaultHeld() -> WatchHeldStore {
+        WatchHeldStore(root: AppSupport.sempere.appendingPathComponent("WatchHeld", isDirectory: true))
+    }
+
+    // MARK: Held files (Settings ▸ Quick Voice Notes)
+
+    /// The files that were not admitted, oldest first.
+    public func heldNotes() -> [HeldCapture] { intake.held?.list() ?? [] }
+
+    /// "Add to inbox".
+    @discardableResult
+    public func addHeld(_ item: HeldCapture) throws -> WatchPlacement { try intake.addHeld(item) }
+
+    /// "Delete".
+    public func deleteHeld(_ item: HeldCapture) { intake.held?.delete(item) }
 
     public nonisolated static var defaultQuarantine: URL { AppSupport.folder("WatchQuarantine") }
     public nonisolated static func defaultReceivedSet() -> WatchReceivedSet {

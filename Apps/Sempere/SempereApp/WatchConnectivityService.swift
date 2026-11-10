@@ -19,6 +19,13 @@ final class WatchLinkStatus {
     private(set) var isWatchAppInstalled = false
     /// Bumped when the provisioner's or the receiver's state changed, so the settings re-read them.
     private(set) var revision = 0
+    /// The held Watch files, read off the main actor and cached here (Settings reads this, never the disk).
+    private(set) var held: [HeldCapture] = []
+
+    func setHeld(_ notes: [HeldCapture]) {
+        held = notes
+        revision += 1
+    }
 
     func update(from session: WCSession?) {
         isSupported = session != nil
@@ -52,13 +59,16 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         #if targetEnvironment(macCatalyst)
         return
         #else
-        let receiver = WatchReceiver(quickCapture: quickCapture)
+        // Admitted only while "Use on Apple Watch" is on; anything else is held (WatchIntake).
+        let provisioner = self.provisioner
+        let receiver = WatchReceiver(quickCapture: quickCapture, enabled: { provisioner.enabled })
         receiver.sweepQuarantine()
         lock.withLock {
             self.receiver = receiver
             self.profileStore = quickCapture.store
         }
         quickCapture.profileChanged = { [weak self] in self?.provisionIfNeeded() }
+        refreshHeld()
         guard let session else { return }
         session.delegate = self
         session.activate()
@@ -69,6 +79,44 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     /// Settings' count: Watch notes that wait for a vault this device has not opened.
     @MainActor
     func waitingForOtherVaults(_ quickCapture: QuickCapture) -> Int { quickCapture.queuedForOtherVaults() }
+
+    // MARK: Held notes (Settings)
+
+    /// The Watch files that were not admitted (the toggle was off, or the key changed since), oldest first.
+    func heldNotes() -> [HeldCapture] { lock.withLock { receiver }?.heldNotes() ?? [] }
+
+    /// Reads the held list off the main actor and hands it to Settings.
+    func refreshHeld() {
+        guard let receiver = lock.withLock({ receiver }) else { return }
+        Task.detached { [weak self] in
+            let notes = receiver.heldNotes()
+            await MainActor.run { self?.status.setHeld(notes) }
+        }
+    }
+
+    /// "Add to inbox": every held note that can be added, off the main actor. Returns how many could not be (a vault that
+    /// cannot be written now).
+    func addHeldNotes() async -> Int {
+        guard let receiver = lock.withLock({ receiver }) else { return 0 }
+        let failed = await Task.detached { () -> Int in
+            var failed = 0
+            for note in receiver.heldNotes() where note.canAdd {
+                do { try receiver.addHeld(note) } catch { failed += 1 }
+            }
+            return failed
+        }.value
+        refreshHeld()
+        return failed
+    }
+
+    /// "Delete": every held note.
+    func deleteHeldNotes() {
+        guard let receiver = lock.withLock({ receiver }) else { return }
+        Task.detached { [weak self] in
+            for note in receiver.heldNotes() { receiver.deleteHeld(note) }
+            self?.refreshHeld()
+        }
+    }
 
     // MARK: Provisioning
 
@@ -144,5 +192,6 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
             // the file again.
         }
         Task { @MainActor in self.status.touch() }
+        refreshHeld()
     }
 }

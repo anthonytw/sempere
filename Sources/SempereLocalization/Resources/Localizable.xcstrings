@@ -333,6 +333,55 @@
         }
       }
     },
+    "%lld Watch notes held (sent while Use on Apple Watch was off or after the key changed)" : {
+      "comment" : "Settings: Watch voice notes the phone did not add to the inbox, with Add to inbox and Delete below",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Watch note held (sent while Use on Apple Watch was off or after the key changed)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Watch notes held (sent while Use on Apple Watch was off or after the key changed)"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas del Watch retenidas (enviadas con Usar en Apple Watch desactivado o tras cambiar la clave)"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota del Watch retenida (enviada con Usar en Apple Watch desactivado o tras cambiar la clave)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas del Watch retenidas (enviadas con Usar en Apple Watch desactivado o tras cambiar la clave)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld Watch notes waiting for another vault" : {
       "comment" : "Settings: voice notes recorded on the Apple Watch for a vault this device has not opened yet",
       "extractionState" : "manual",
@@ -1959,6 +2008,55 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld de ellos son notas de voz que aún no están en una nota: solo Guardar archivos las conserva."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld of them can only be deleted: they were sealed with a key this device never held" : {
+      "comment" : "Settings: held Watch notes that cannot be added to the inbox",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld of them can only be deleted: it was sealed with a key this device never held"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld of them can only be deleted: they were sealed with a key this device never held"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de ellas solo se pueden eliminar: se cifraron con una clave que este dispositivo nunca tuvo"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld solo se puede eliminar: se cifró con una clave que este dispositivo nunca tuvo"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de ellas solo se pueden eliminar: se cifraron con una clave que este dispositivo nunca tuvo"
                 }
               }
             }
@@ -3671,6 +3769,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Añadir a Favoritas"
+          }
+        }
+      }
+    },
+    "Add to inbox" : {
+      "comment" : "Button: add the held Watch voice notes to the vault's inbox",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir a la bandeja"
           }
         }
       }
@@ -6950,6 +7061,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eliminar de este dispositivo…"
+          }
+        }
+      }
+    },
+    "Delete the held Watch notes?" : {
+      "comment" : "Confirmation title: delete every held Watch voice note",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar las notas del Watch retenidas?"
           }
         }
       }
@@ -19494,6 +19618,18 @@
         }
       }
     },
+    "Some notes could not be added now; try again when the vault can be written." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron añadir algunas notas ahora; inténtalo de nuevo cuando se pueda escribir en la bóveda."
+          }
+        }
+      }
+    },
     "Some of them are changes this device checked, such as its own removal. Forgetting them lets it write and upload again until a sync meets the change again." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -22021,6 +22157,19 @@
         }
       }
     },
+    "The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some" : {
+      "comment" : "Settings: the held Watch notes store is full",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se alcanzó el límite de notas del Watch retenidas: el reloj conserva las demás hasta que añadas o elimines algunas."
+          }
+        }
+      }
+    },
     "The new device then shows six words: type them here." : {
       "comment" : "Add Device",
       "extractionState" : "manual",
@@ -22823,6 +22972,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estos archivos se reintentan en el próximo Continuar."
+          }
+        }
+      }
+    },
+    "They are removed from this device and cannot be recovered." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se eliminan de este dispositivo y no se pueden recuperar."
           }
         }
       }
@@ -25739,14 +25900,14 @@
         }
       }
     },
-    "Voice notes recorded on your watch are encrypted on the watch with the same capture key as this device, and sent here; they become notes the next time the vault is unlocked. Turning this off clears the watch but does not revoke it: someone who has your lost watch can add voice notes to your inbox until you replace this device's key. They cannot read any note." : {
+    "Voice notes recorded on your watch are encrypted on the watch with the same capture key as this device, and sent here; they become notes the next time the vault is unlocked. If you lose the watch: turn this off, unpair or erase the watch, then replace this device's key. Notes sent while this is off, or under an older key, are held here for you to add or delete. Nobody who has the watch can read your notes." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las notas de voz grabadas en tu reloj se cifran en el reloj con la misma clave de captura que este dispositivo y se envían aquí; se convierten en notas la próxima vez que se desbloquea la bóveda. Desactivar esto borra el perfil del reloj, pero no lo revoca: quien tenga tu reloj perdido puede añadir notas de voz a tu bandeja de entrada hasta que sustituyas la clave de este dispositivo. No puede leer ninguna nota."
+            "value" : "Las notas de voz grabadas en tu reloj se cifran en el reloj con la misma clave de captura que este dispositivo y se envían aquí; se convierten en notas la próxima vez que se desbloquea la bóveda. Si pierdes el reloj: desactiva esto, desvincula o borra el reloj y sustituye la clave de este dispositivo. Las notas enviadas mientras esto está desactivado, o con una clave anterior, se retienen aquí para que las añadas o las elimines. Nadie que tenga el reloj puede leer tus notas."
           }
         }
       }

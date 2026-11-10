@@ -115,6 +115,10 @@ final class FakeRecording: CaptureRecording {
     @ObservationIgnored let clock: CaptureClock
     @ObservationIgnored var content = Data("AUDIO-FRAMES".utf8)
     @ObservationIgnored var failStart = false
+    /// What `bind` was given (before `start`).
+    @ObservationIgnored private(set) var bound: (vault: UUID, epochId: String)?
+
+    func bind(vault: UUID, epochId: String) { bound = (vault, epochId) }
 
     init(root: URL, segmentExtension: String, clock: CaptureClock) {
         folder = root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
@@ -367,13 +371,14 @@ final class CaptureRig {
     /// A folder a crash left in `root`: one finished segment (`content`) and a manifest naming it.
     @discardableResult
     func crashLeftRecording(content: Data = Data("AUDIO-FRAMES".utf8), name: String = "segment-001.aac",
-                            manifest: Bool = true) throws -> URL {
+                            manifest: Bool = true, vault: UUID? = nil) throws -> URL {
         let id = UUID()
         let folder = capture.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try content.write(to: folder.appendingPathComponent(name))
         if manifest {
-            let m = RecordingManifest(note: UUID(), recording: id, started: clock.now, codec: "aac", segments: [name], finished: 1)
+            let m = RecordingManifest(note: UUID(), recording: id, started: clock.now, codec: "aac", segments: [name], finished: 1,
+                                      vault: vault, epochId: vault.map { _ in String(repeating: "ab", count: 32) })
             try JSONEncoder().encode(m).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
         }
         return folder

@@ -62,6 +62,10 @@ public final class RecordingSession {
     /// or no new segment file could be started): its owner saves what was
     /// recorded, as after `stop`.
     @ObservationIgnored public var onStoppedBySystem: (@MainActor () -> Void)?
+    /// The vault and epoch id the recording started under (`CaptureRecording.bind`), kept in the manifest.
+    @ObservationIgnored private var bound: (vault: UUID, epochId: String)?
+
+    public func bind(vault: UUID, epochId: String) { bound = (vault, epochId) }
 
     /// The session recording now, app-wide (the audio session is shared).
     public static weak var active: RecordingSession?
@@ -243,7 +247,8 @@ public final class RecordingSession {
 
     public var manifest: RecordingManifest {
         RecordingManifest(note: noteID, recording: id, started: timeline.started, codec: format.codec.rawValue,
-                          segments: segments.map(\.lastPathComponent), finished: finishedSegments)
+                          segments: segments.map(\.lastPathComponent), finished: finishedSegments,
+                          vault: bound?.vault, epochId: bound?.epochId)
     }
 
     private func writeManifest() throws {

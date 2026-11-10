@@ -19,8 +19,15 @@ public struct RecordingManifest: Codable, Equatable, Sendable {
     public var segments: [String]
     /// Segments known to be complete.
     public var finished: Int
+    /// The vault and the epoch (id, lowercase hex) of the profile the recording started under (`CaptureRecording.bind`): a
+    /// leftover is sealed only with a profile of the same vault. Nil in a manifest an earlier build wrote.
+    public var vault: UUID?
+    public var epochId: String?
 
-    public init(note: UUID, recording: UUID, started: Date?, codec: String, segments: [String], finished: Int) {
+    public init(note: UUID, recording: UUID, started: Date?, codec: String, segments: [String], finished: Int,
+                vault: UUID? = nil, epochId: String? = nil) {
+        self.vault = vault
+        self.epochId = epochId
         self.note = note
         self.recording = recording
         self.started = started
@@ -129,6 +136,9 @@ public enum CaptureSegments {
         public var segments: [URL]
         public var finished: Int?
         public var started: Date?
+        /// The vault the recording started under, from its manifest; nil without one (or from an earlier build).
+        public var vault: UUID?
+        public var epochId: String?
 
         public static let maxManifestBytes = 1 << 20
 
@@ -150,6 +160,8 @@ public enum CaptureSegments {
                 id = manifest.recording
                 finished = min(max(0, manifest.finished), listed.count)
                 started = manifest.started
+                vault = manifest.vault
+                epochId = manifest.epochId
             } else {
                 id = UUID(uuidString: folder.lastPathComponent)
                 finished = max(0, segments.count - 1)

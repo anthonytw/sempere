@@ -27,12 +27,20 @@ public protocol CaptureRecording: AnyObject, Sendable {
     /// Called when the recording stops by itself (the media server was reset, no new segment file): its owner seals
     /// what was recorded, as after `stop`.
     var onStoppedBySystem: (@MainActor () -> Void)? { get set }
+    /// Records the vault and the epoch (id, lowercase hex) of the profile this recording starts under, in its manifest, so a
+    /// leftover is sealed only with a profile of the same vault. Called before `start()`; a recording that does not keep a
+    /// manifest ignores it.
+    func bind(vault: UUID, epochId: String)
     /// Starts writing (throws when the recorder will not start).
     func start() throws
     /// Stops; the segment files are complete afterwards.
     func stop()
     /// Deletes the recording's files.
     func discardFiles()
+}
+
+extension CaptureRecording {
+    public func bind(vault: UUID, epochId: String) {}
 }
 
 /// The recorder of one start (the app: an `AudioCaptureBackend` and the shared audio session). Made per start.

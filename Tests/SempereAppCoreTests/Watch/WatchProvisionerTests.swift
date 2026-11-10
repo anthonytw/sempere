@@ -127,8 +127,11 @@ struct WatchProvisionerTests {
         #expect(try Self.apply(clear, r, &watch) == .cleared)
         #expect(watch.payload == nil)
         #expect(try r.provisioner.nextMessage(stored: r.stored) == nil, "nothing left to clear")
-        // On again: the watch gets the profile with a counter above the clear's, or it would ignore it.
+        // On again: the watch asks (it forgot nothing; the phone forgot the key), and gets the profile with a counter above the
+        // clear's, or it would ignore it.
         try r.provisioner.setEnabled(true)
+        #expect(try r.provisioner.nextMessage(stored: r.stored) == nil, "nothing is encrypted to the old key")
+        try r.provisioner.watchRequested(recipient: r.watch.recipient.string)
         guard case .stored(let p)? = try Self.apply(try r.provisioner.nextMessage(stored: r.stored), r, &watch) else {
             Issue.record("not provisioned again"); return
         }
@@ -136,6 +139,54 @@ struct WatchProvisionerTests {
         // Quick voice notes off: no profile, so a clear.
         #expect(try r.provisioner.nextMessage(stored: nil) == .clear(seq: 3))
         #expect(r.provisioner.status(stored: nil) == .needsQuickVoiceNotes)
+    }
+
+    /// C-02: turning the toggle off forgets the watch's key, so a new epoch's capture key is never encrypted to a watch that
+    /// has not asked since the toggle was turned back on.
+    @Test func turningItOffForgetsTheWatchSoANewEpochIsNotSentToIt() throws {
+        let r = try Self.rig()
+        var watch = WatchProfileState()
+        _ = try Self.apply(try r.provisioner.nextMessage(stored: r.stored), r, &watch)
+        try r.provisioner.setEnabled(false)
+        #expect(try r.store.load().recipient == nil)
+        #expect(try Self.apply(try r.provisioner.nextMessage(stored: r.stored), r, &watch) == .cleared)
+        // The cleared watch asks again by itself. Off, the phone does not keep the request.
+        try r.provisioner.watchRequested(recipient: r.watch.recipient.string, seq: 4)
+        #expect(try r.store.load().recipient == nil)
+        #expect(try r.store.load().seq >= 4, "the counter floor still applies")
+        // Back on, and the owner replaces the key: nothing goes to the watch until it asks after the toggle came back.
+        try r.provisioner.setEnabled(true)
+        var rotated = r.stored
+        rotated.profile.epoch += 1
+        rotated.profile.key = Data(repeating: 0xcd, count: 32)
+        #expect(try r.provisioner.nextMessage(stored: rotated) == nil, "the lost watch gets no new key")
+        #expect(r.provisioner.status(stored: rotated) == .waitingForWatch)
+        try r.provisioner.watchRequested(recipient: r.watch.recipient.string)
+        guard case .stored(let p)? = try Self.apply(try r.provisioner.nextMessage(stored: rotated), r, &watch) else {
+            Issue.record("not sent after a fresh request"); return
+        }
+        #expect(p.profile.key == rotated.profile.key)
+        // While it stays on, a new epoch still reaches the watch that asked (a good watch needs it).
+        var again = rotated
+        again.profile.epoch += 1
+        #expect(try r.provisioner.nextMessage(stored: again) != nil)
+    }
+
+    /// C-05: a failed send leaves the watch possibly holding the previous profile; turning the toggle off still owes a clear.
+    @Test func aToggleOffAfterAFailedSendStillSendsTheClear() throws {
+        let r = try Self.rig()
+        var watch = WatchProfileState()
+        _ = try Self.apply(try r.provisioner.nextMessage(stored: r.stored), r, &watch)
+        var later = r.stored
+        later.profile.epoch += 1
+        #expect(try r.provisioner.nextMessage(stored: later) != nil)
+        r.provisioner.sendFailed()
+        try r.provisioner.setEnabled(false)
+        guard case .clear? = try r.provisioner.nextMessage(stored: later) else { Issue.record("no clear owed"); return }
+        #expect(try r.provisioner.nextMessage(stored: later) == nil, "once")
+        // A failed clear is owed again.
+        r.provisioner.sendFailed()
+        guard case .clear? = try r.provisioner.nextMessage(stored: later) else { Issue.record("the failed clear is not owed"); return }
     }
 
     @Test func aSuspendedProfileClearsTheWatchAndALiftedOneProvisionsIt() throws {
