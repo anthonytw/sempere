@@ -12,6 +12,8 @@ public enum WatchHeldReason: String, Codable, Equatable, Sendable, CaseIterable 
     case oldEpoch
     /// The vault's folder is already on a newer epoch than this device holds a profile for.
     case newerEpoch
+    /// This device's profile is suspended (it was removed from the vault's device list).
+    case suspended
     /// Sealed under an epoch this device never held. Only Delete is offered.
     case unknownEpoch
     /// For a vault this device does not hold. Only Delete is offered.

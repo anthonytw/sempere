@@ -127,6 +127,9 @@ final class WatchModel {
     @ObservationIgnored private(set) var recorder: WatchRecorder!
     @ObservationIgnored private var identity: NativeIdentity?
     @ObservationIgnored private(set) var state: WatchProfileState
+    /// The stored state could not be read (the Keychain before the first unlock): the empty state is a stand-in, not "no
+    /// profile", so nothing is deleted on its account, and it is read again at activation.
+    @ObservationIgnored private(set) var stateUnreadable = false
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var savedTask: Task<Void, Never>?
     @ObservationIgnored private var requested = false
@@ -138,10 +141,13 @@ final class WatchModel {
         secrets = WatchSecrets(store: environment.secrets)
         outbox = try WatchOutbox(directory: environment.support.appendingPathComponent("Outbox", isDirectory: true),
                                  limits: environment.outboxLimits, now: { Date() })
-        state = secrets.state()
+        let loaded = try? WatchSecrets(store: environment.secrets).loadState()
+        state = loaded ?? WatchProfileState()
+        stateUnreadable = loaded == nil
         recorder = WatchRecorder(audio: environment.audio, outbox: outbox, profile: { [weak self] in self?.state.payload },
                                  root: environment.support.appendingPathComponent("Capture", isDirectory: true),
                                  keeper: KeychainRecordingProfileKeeper(store: environment.secrets),
+                                 profileReadable: { [weak self] in !(self?.stateUnreadable ?? false) },
                                  statusStore: environment.statusStore, freeBytes: environment.freeBytes)
         recorder.now = environment.now
         vaultName = state.payload?.vaultName
@@ -156,10 +162,18 @@ final class WatchModel {
     /// outbox's hand-off, and the status the widgets show.
     func activate() async {
         env.transport.activate()
+        if stateUnreadable, let loaded = try? secrets.loadState() {
+            state = loaded
+            stateUnreadable = false
+            vaultName = state.payload?.vaultName
+        }
         _ = try? identityForRequests()
         let swept = await recorder.sweep()
         if let note = swept.last { show(saved: note) }
         flushOutbox(launch: true)
+        // With no profile the watch asks on every activation: the phone keeps no request while "Use on Apple Watch" is off,
+        // and the transport drops a duplicate that is still outstanding.
+        if !isSetUp { requested = false }
         requestProvisioningIfNeeded()
         refreshScreen()
         publish()
@@ -369,7 +383,7 @@ final class WatchModel {
         identity = nil
         requested = false
         // Nothing kept for a recording in progress outlives a Reset; recordings left without a profile are deleted.
-        KeychainRecordingProfileKeeper(store: env.secrets).discardAll()
+        recorder.discardKeptProfiles()
         sweepLeftovers()
         refreshScreen(settle: true)
         publish()

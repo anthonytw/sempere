@@ -781,7 +781,13 @@ public final class QuickCapture {
             guard let leftover = CaptureSegments.Leftover(folder: dir) else { continue }
             // Started under another vault's profile (the user switched since): never sealed into this one. It stays,
             // protected, until quick voice notes are turned off (then the no-profile rule deletes it).
-            if let vault = leftover.vault, vault != stored?.profile.vaultId { continue }
+            if let vault = leftover.vault, vault != stored?.profile.vaultId {
+                // Said once, rather than skipped silently.
+                if let id = leftover.id, reportedKept.insert(id).inserted {
+                    show(Notice(result: .failed, kind: .interruptedNotSaved, error: nil, kept: true, persists: true))
+                }
+                continue
+            }
             guard let id = leftover.id else {
                 // Not a folder a session made (its name is not an id) and no manifest names one: deleted
                 // only when it holds no audio, else left alone rather than sealed under a made-up id.

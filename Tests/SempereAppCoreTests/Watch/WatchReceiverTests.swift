@@ -118,13 +118,16 @@ struct WatchReceiverTests {
         #expect(Self.inbox(rig.current.url).count == 1)
     }
 
-    @Test func aSuspendedProfileStillDeliversAPendingFile() throws {
+    @Test func aSuspendedProfileHoldsAWatchNoteUntilTheUserAddsIt() throws {
         let rig = try Self.rig()
         var suspended = rig.current.stored
         suspended.suspended = true
         try rig.profileStore.save(suspended)
         let t = try Self.transfer(rig.current.stored.profile, in: rig)
-        #expect(try rig.receiver.receive(file: t.file, metadata: t.metadata)?.result.outcome == .placed(.vault))
+        #expect(try rig.receiver.receive(file: t.file, metadata: t.metadata)?.result.outcome == .held(.suspended))
+        #expect(Self.inbox(rig.current.url).isEmpty)
+        let note = try #require(rig.receiver.heldNotes().first)
+        #expect(try rig.receiver.addHeld(note) == .vault)
         #expect(Self.inbox(rig.current.url) == [t.sealed.name])
     }
 

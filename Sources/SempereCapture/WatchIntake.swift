@@ -109,6 +109,8 @@ public protocol WatchDelivery: Sendable {
     /// could re-seal a file: epoch admission has nothing to protect, and only the toggle applies (the CLI on a machine with no
     /// stored device key). The app always has one.
     func hasLedger(for vault: UUID) -> Bool
+    /// Whether this device's profile for `vault` is suspended (it was removed from the device list): matching notes are held.
+    func isSuspended(vault: UUID) -> Bool
     /// The epoch number in the plaintext `vault.json` of `vault`'s folder, when that can be read (unverified).
     func folderEpoch(of vault: UUID) -> Int?
     /// Puts `sealed` in `vault`'s queue with its epoch beside it, unrecorded (it is recorded when it is placed: a ledger
@@ -118,6 +120,7 @@ public protocol WatchDelivery: Sendable {
 
 extension WatchDelivery {
     public func hasLedger(for vault: UUID) -> Bool { true }
+    public func isSuspended(vault: UUID) -> Bool { false }
 }
 
 /// The ids already received (`Application Support/Sempere/WatchReceived.json`): 180 days, bounded in number. Losing it only
@@ -259,7 +262,14 @@ public struct WatchIntake: Sendable {
     /// the one this device holds for its vault; and the vault folder's plaintext epoch number is not higher than that (it is
     /// unverified, so it can only make a file held, never admitted).
     func holdReason(_ sealed: SealedCapture, vault: UUID) throws -> WatchHeldReason? {
-        guard delivery.linkEnabled else { return .linkOff }
+        // The vault and epoch verdict comes first, so a note that is also unusable is never recorded as merely "toggle off"
+        // (and so offered an Add that would recreate a catch-up that never finishes).
+        if let verdict = try epochVerdict(sealed, vault: vault) { return verdict }
+        return delivery.linkEnabled ? nil : .linkOff
+    }
+
+    /// The part of admission that does not depend on the toggle: nil when the file's vault and epoch are the phone's.
+    func epochVerdict(_ sealed: SealedCapture, vault: UUID) throws -> WatchHeldReason? {
         guard delivery.currentVault == vault || delivery.holds(vault: vault) else { return .unknownVault }
         guard delivery.hasLedger(for: vault) else { return nil }
         guard let epoch = sealed.epoch, let epochId = sealed.epochId else { return .unknownEpoch }
@@ -267,6 +277,7 @@ public struct WatchIntake: Sendable {
         guard known.id == epochId, known.epoch == epoch else {
             return try delivery.holdsKey(of: epochId, vault: vault) ? .oldEpoch : .unknownEpoch
         }
+        if delivery.isSuspended(vault: vault) { return .suspended }
         if let folder = delivery.folderEpoch(of: vault), folder > known.epoch { return .newerEpoch }
         return nil
     }
@@ -290,6 +301,11 @@ public struct WatchIntake: Sendable {
         guard let held else { throw WatchHeldError.notFound(item.id.uuidString) }
         guard item.canAdd else { throw WatchHeldError.unreadable("this note was sealed under a key this device never held: delete it") }
         let sealed = try held.load(item)
+        // The state may have changed since it was held: checked again, with the toggle treated as on. An epoch or vault this
+        // device never held cannot be added, whatever the stored reason says.
+        if let now = try epochVerdict(sealed, vault: item.vault), !now.canAdd {
+            throw WatchHeldError.unreadable("this note was sealed under a key this device never held: delete it")
+        }
         let placement = try place(sealed, vault: item.vault)
         held.delete(item)
         return placement

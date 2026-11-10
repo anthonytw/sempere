@@ -245,12 +245,12 @@ struct CLIWatchDelivery: WatchDelivery {
     /// The newest epoch whose key this machine's ledger remembers for `vault` (`inbox watch provision` remembers the
     /// profile's); nil without a ledger.
     func knownEpoch(of vault: UUID) throws -> (epoch: Int, id: Data)? {
-        guard let keys = try? captureLedger(vaultId: vault)?.epochKeys(), let newest = keys.max(by: { $0.epoch < $1.epoch }) else { return nil }
+        guard let keys = try captureLedger(vaultId: vault)?.epochKeys(), let newest = keys.max(by: { $0.epoch < $1.epoch }) else { return nil }
         return (newest.epoch, newest.key.epochId)
     }
 
     func holdsKey(of epochId: Data, vault: UUID) throws -> Bool {
-        ((try? captureLedger(vaultId: vault)?.epochKeys()) ?? []).contains { $0.key.epochId == epochId }
+        try (captureLedger(vaultId: vault)?.epochKeys() ?? []).contains { $0.key.epochId == epochId }
     }
 
     func folderEpoch(of vault: UUID) -> Int? {

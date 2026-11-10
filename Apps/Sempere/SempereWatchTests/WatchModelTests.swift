@@ -60,7 +60,7 @@ final class WatchModelTests: XCTestCase {
         XCTAssertEqual(r.model.screen, .notSetUp)
         XCTAssertEqual(r.transport.requests.count, 1)
         await r.model.activate()
-        XCTAssertEqual(r.transport.requests.count, 1, "once per launch")
+        XCTAssertEqual(r.transport.requests.count, 2, "with no profile it asks at every activation (the transport drops a duplicate)")
         XCTAssertTrue(try XCTUnwrap(r.transport.requests.first).hasPrefix("age1pq1"), "its own post-quantum key")
     }
 

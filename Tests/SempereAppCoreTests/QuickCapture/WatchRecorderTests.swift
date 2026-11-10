@@ -38,6 +38,7 @@ struct WatchRecorderTests {
         let vault: URL
         let identity: NativeIdentity
         var payload: WatchProfilePayload?
+        var readable = true
 
         init(limits: WatchOutbox.Limits = .init(), profile: Bool = true, maxDuration: TimeInterval = WatchRecorder.defaultMaxDuration,
              freeBytes: Int64? = nil) throws {
@@ -49,7 +50,7 @@ struct WatchRecorderTests {
             let clock = self.clock
             outbox = try WatchOutbox(directory: CaptureFixture.temp("watch-outbox"), limits: limits, now: { Date(timeIntervalSince1970: 1_800_000_000) })
             var holder: Rig?
-            recorder = WatchRecorder(audio: audio, outbox: outbox, profile: { holder?.payload }, root: root, keeper: keeper,
+            recorder = WatchRecorder(audio: audio, outbox: outbox, profile: { holder?.payload }, root: root, keeper: keeper, profileReadable: { holder?.readable ?? true },
                                      statusStore: VoiceNoteStatusStore(directory: status), freeBytes: { freeBytes },
                                      timeZone: TimeZone(identifier: "UTC") ?? .current, maxDuration: maxDuration, now: { clock.now })
             holder = self
@@ -245,6 +246,38 @@ struct WatchRecorderTests {
         rig.payload = nil
         #expect(await rig.recorder.sweep().map(\.id) == [id])
         #expect(rig.folders.isEmpty)
+        #expect(rig.keeper.count == 0)
+    }
+
+    /// A sweep while the stored profile cannot be read deletes nothing: that is not "no profile".
+    @Test func anUnreadableProfileIsNotNoProfile() async throws {
+        let rig = try Rig()
+        let folder = rig.root.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
+        rig.payload = nil
+        rig.readable = false
+        #expect(await rig.recorder.sweep().isEmpty)
+        #expect(rig.folders == [folder.lastPathComponent])
+        rig.readable = true
+        #expect(await rig.recorder.sweep().isEmpty)
+        #expect(rig.folders.isEmpty)
+    }
+
+    /// A kept-profile seal that fails after a clear is deleted, and kept profiles with no folder are collected.
+    @Test func aFailedSealWithoutAProfileIsDeletedAndOrphanKeptProfilesGo() async throws {
+        let rig = try Rig()
+        let id = UUID()
+        let folder = rig.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("not audio".utf8).write(to: folder.appendingPathComponent("segment-001.aac"))
+        try Self.adts(frames: 3).write(to: folder.appendingPathComponent("segment-002.aac"))
+        let payload = try #require(rig.payload)
+        try rig.keeper.keep(payload, for: id)
+        try rig.keeper.keep(payload, for: UUID())   // an orphan: no folder
+        rig.payload = nil
+        #expect(await rig.recorder.sweep().isEmpty)
+        #expect(rig.folders.isEmpty, "the plaintext that cannot be sealed does not wait forever")
         #expect(rig.keeper.count == 0)
     }
 

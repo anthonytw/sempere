@@ -38,6 +38,11 @@ struct CaptureWatchDelivery: WatchDelivery {
 
     var linkEnabled: Bool { enabled() }
 
+    func isSuspended(vault: UUID) -> Bool {
+        guard let stored else { return false }
+        return stored.profile.vaultId == vault && stored.suspended == true
+    }
+
     /// The stored profile's epoch for the current vault; for another vault the device holds, the newest epoch whose key its
     /// write ledger remembers (the last one it verified).
     func knownEpoch(of vault: UUID) throws -> (epoch: Int, id: Data)? {

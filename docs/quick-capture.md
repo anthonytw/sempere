@@ -438,7 +438,9 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
 - **A recording and a clear.** The watch keeps the profile a recording started with until the note is sealed (in memory, and in
   its Keychain keyed by the recording id), so a clear that arrives mid-recording takes effect after the seal. A recording's
   manifest names its vault; a leftover is sealed only with a profile of the same vault (on the watch and on the phone), and
-  with no profile at all (a clear, Reset) the watch's leftovers are deleted, as the phone's are.
+  with no profile at all (a clear, Reset) the watch's leftovers are deleted, as the phone's are (not while the watch's stored
+  state cannot be read, before its first unlock: that is not "no profile"). The phone says once that a leftover of another vault
+  is kept.
 - **The recording.** `WatchRecorder` is a start, stop and sweep state machine over the recorder protocols this document's
   phone recorder uses (`CaptureRecorder`, `CaptureRecording`, in `SempereCapture`); the watch app implements them on
   `AVAudioRecorder` (`WatchAudio.swift`): ADTS segments as above, a segment per five minutes, mono AAC-LC at 24 kHz and

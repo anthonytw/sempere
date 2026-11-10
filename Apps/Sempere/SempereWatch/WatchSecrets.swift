@@ -107,6 +107,10 @@ struct KeychainRecordingProfileKeeper: RecordingProfileKeeper {
 
     func discard(_ recording: UUID) { try? store.delete(account: account(recording)) }
 
+    func recordings() -> [UUID] {
+        ((try? store.accounts(prefix: Self.prefix)) ?? []).compactMap { UUID(uuidString: String($0.dropFirst(Self.prefix.count))) }
+    }
+
     func discardAll() {
         for a in (try? store.accounts(prefix: Self.prefix)) ?? [] { try? store.delete(account: a) }
     }
@@ -128,13 +132,15 @@ struct WatchSecrets: Sendable {
         return identity
     }
 
-    /// The stored state; `WatchProfileState()` (no profile, counter -1) when there is none or it does not decode.
-    func state() -> WatchProfileState {
-        guard let data = try? store.load(.profileState), let state = try? JSONDecoder.watch.decode(WatchProfileState.self, from: data) else {
-            return WatchProfileState()
-        }
-        return state
+    /// The stored state; `WatchProfileState()` (no profile, counter -1) when there is none. Throws when it exists and cannot
+    /// be read or does not decode (the Keychain before the first unlock): "unreadable" is not "absent".
+    func loadState() throws -> WatchProfileState {
+        guard let data = try store.load(.profileState) else { return WatchProfileState() }
+        return try JSONDecoder.watch.decode(WatchProfileState.self, from: data)
     }
+
+    /// `loadState()`, or the empty state when it cannot be read.
+    func state() -> WatchProfileState { (try? loadState()) ?? WatchProfileState() }
 
     func save(_ state: WatchProfileState) throws {
         try store.save(try JSONEncoder.watch.encode(state), as: .profileState)

@@ -55,6 +55,8 @@ public protocol RecordingProfileKeeper: Sendable {
     func discard(_ recording: UUID)
     /// Reset: nothing is kept any more.
     func discardAll()
+    /// The recordings something is kept for.
+    func recordings() -> [UUID]
 }
 
 /// `RecordingProfileKeeper` in memory (tests).
@@ -66,6 +68,7 @@ public final class MemoryRecordingProfileKeeper: RecordingProfileKeeper, @unchec
     public func load(for recording: UUID) -> WatchProfilePayload? { lock.withLock { items[recording] } }
     public func discard(_ recording: UUID) { lock.withLock { items[recording] = nil } }
     public func discardAll() { lock.withLock { items = [:] } }
+    public func recordings() -> [UUID] { lock.withLock { Array(items.keys) } }
     public var count: Int { lock.withLock { items.count } }
 }
 
@@ -84,6 +87,9 @@ public final class WatchRecorder {
     private let outbox: WatchOutbox
     private let profile: @MainActor () -> WatchProfilePayload?
     private let keeper: (any RecordingProfileKeeper)?
+    /// False while the watch's stored profile cannot be read (the Keychain before the first unlock): "no profile" would be
+    /// a guess, so the sweep deletes nothing then.
+    private let profileReadable: @MainActor () -> Bool
     /// The profile each recording in progress started with.
     private var startProfiles: [UUID: WatchProfilePayload] = [:]
     private let root: URL
@@ -106,13 +112,15 @@ public final class WatchRecorder {
     ///   - root: where recording folders go (`Application Support/SempereWatch/Capture`).
     ///   - freeBytes: the device's free space, nil when unknown.
     public init(audio: any CaptureAudio, outbox: WatchOutbox, profile: @escaping @MainActor () -> WatchProfilePayload?, root: URL,
-                keeper: (any RecordingProfileKeeper)? = nil, statusStore: VoiceNoteStatusStore? = nil, freeBytes: @escaping @MainActor () -> Int64? = { nil },
+                keeper: (any RecordingProfileKeeper)? = nil, profileReadable: @escaping @MainActor () -> Bool = { true },
+                statusStore: VoiceNoteStatusStore? = nil, freeBytes: @escaping @MainActor () -> Int64? = { nil },
                 timeZone: TimeZone = .current, maxDuration: TimeInterval = WatchRecorder.defaultMaxDuration,
                 now: @escaping @MainActor () -> Date = { Date() }) {
         self.audio = audio
         self.outbox = outbox
         self.profile = profile
         self.keeper = keeper
+        self.profileReadable = profileReadable
         self.root = root
         self.statusStore = statusStore
         self.freeBytes = freeBytes
@@ -241,6 +249,12 @@ public final class WatchRecorder {
         return note
     }
 
+    /// Reset: nothing kept for a recording, in memory or in the keeper, outlives it.
+    public func discardKeptProfiles() {
+        startProfiles = [:]
+        keeper?.discardAll()
+    }
+
     // MARK: Sweep
 
     /// Seals what recordings a crash, a quit or a restart left in `root` (at launch and when the app becomes active):
@@ -250,7 +264,7 @@ public final class WatchRecorder {
     /// notes sealed.
     @discardableResult
     public func sweep() async -> [WatchSavedNote] {
-        guard !saving, !starting else { return [] }
+        guard !saving, !starting, profileReadable() else { return [] }
         let current = profile()
         let fm = FileManager.default
         let names = ((try? fm.contentsOfDirectory(atPath: root.path)) ?? []).sorted()
@@ -278,8 +292,19 @@ public final class WatchRecorder {
                 out.append(note)
                 keeper?.discard(id)
             } catch {
-                continue   // nothing recorded was deleted by `seal`; the others wait
+                // Nothing recorded was deleted by `seal`; the others wait. With a kept profile but no current one (a clear
+                // arrived), a seal that fails would keep the plaintext for good: it is deleted, as with no profile at all.
+                if kept != nil, current == nil {
+                    try? fm.removeItem(at: folder)
+                    keeper?.discard(id)
+                }
+                continue
             }
+        }
+        // Kept profiles whose recording is gone (a folder deleted, a crash before it was made) are not kept for good.
+        for orphan in keeper?.recordings() ?? [] where startProfiles[orphan] == nil
+            && !fm.fileExists(atPath: root.appendingPathComponent(orphan.uuidString.lowercased()).path) {
+            keeper?.discard(orphan)
         }
         if let last = out.last { lastSaved = last }
         return out

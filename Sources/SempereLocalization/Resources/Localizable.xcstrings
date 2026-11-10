@@ -333,7 +333,7 @@
         }
       }
     },
-    "%lld Watch notes held (sent after the watch was turned off or the key changed)" : {
+    "%lld Watch notes held (sent while Use on Apple Watch was off or after the key changed)" : {
       "comment" : "Settings: Watch voice notes the phone did not add to the inbox, with Add to inbox and Delete below",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -344,13 +344,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld Watch note held (sent after the watch was turned off or the key changed)"
+                  "value" : "%lld Watch note held (sent while Use on Apple Watch was off or after the key changed)"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld Watch notes held (sent after the watch was turned off or the key changed)"
+                  "value" : "%lld Watch notes held (sent while Use on Apple Watch was off or after the key changed)"
                 }
               }
             }
@@ -362,19 +362,19 @@
               "many" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld de notas del Watch retenidas (enviadas después de desactivar el reloj o de cambiar la clave)"
+                  "value" : "%lld de notas del Watch retenidas (enviadas con Usar en Apple Watch desactivado o tras cambiar la clave)"
                 }
               },
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld nota del Watch retenida (enviada después de desactivar el reloj o de cambiar la clave)"
+                  "value" : "%lld nota del Watch retenida (enviada con Usar en Apple Watch desactivado o tras cambiar la clave)"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld notas del Watch retenidas (enviadas después de desactivar el reloj o de cambiar la clave)"
+                  "value" : "%lld notas del Watch retenidas (enviadas con Usar en Apple Watch desactivado o tras cambiar la clave)"
                 }
               }
             }
@@ -22153,6 +22153,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido descargar el modelo de idioma: %@"
+          }
+        }
+      }
+    },
+    "The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some" : {
+      "comment" : "Settings: the held Watch notes store is full",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se alcanzó el límite de notas del Watch retenidas: el reloj conserva las demás hasta que añadas o elimines algunas."
           }
         }
       }

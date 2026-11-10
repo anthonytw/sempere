@@ -417,6 +417,7 @@ struct QuickCaptureFlowTests {
         await rig.capture.sweep()
         #expect(rig.inbox.isEmpty, "another vault's recording is not sealed here")
         #expect(rig.leftovers == [other.lastPathComponent], "and it is not deleted either")
+        #expect(rig.capture.notice?.kind == .interruptedNotSaved && rig.capture.notice?.kept == true, "and it is said, once")
         let own = try rig.crashLeftRecording(vault: try rig.stored.profile.vaultId)
         let ownId = try #require(UUID(uuidString: own.lastPathComponent))
         await rig.capture.sweep()

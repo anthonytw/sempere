@@ -185,6 +185,30 @@ final class CLIWatchTests: CLITestCase {
         XCTAssertEqual((again["files"] as? [[String: Any]])?.first?["outcome"] as? String, "duplicate")
     }
 
+    /// A held note whose epoch this machine never held cannot be added even if it was held while the link was off
+    /// (its sidecar says `linkOff`): `held add` re-checks and fails, and `--all` skips it.
+    func testHeldAddRefusesAnUnknownEpochWhateverTheStoredReason() throws {
+        let a = try makeVault(named: "a.sempere")
+        let b = try makeVault(named: "b.sempere")
+        let outbox = path("outbox")
+        let capture = try sealedNote(b, outbox: outbox)
+        let held = path("held")
+        let dir = "\(held)/\(b.vault.vaultId.uuidString.lowercased())"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let bytes = try Data(contentsOf: URL(fileURLWithPath: "\(outbox)/\(capture).capture.age"))
+        try bytes.write(to: URL(fileURLWithPath: "\(dir)/\(capture).capture.age"))
+        let sidecar: [String: Any] = ["id": capture, "vault": b.vault.vaultId.uuidString.lowercased(), "epoch": 1,
+                                      "epochId": String(repeating: "ab", count: 32), "receivedAt": "2026-11-10T12:00:00Z",
+                                      "reason": "linkOff", "bytes": bytes.count]
+        try JSONSerialization.data(withJSONObject: sidecar).write(to: URL(fileURLWithPath: "\(dir)/\(capture).capture.age.held.json"))
+        // B is not in the store: not addable now.
+        let add = try cli(["inbox", "watch", "held", "add", capture, "--held", held, "--queue", path("q"), "--store", path("store"),
+                           "--vault", a.vault.url.path])
+        XCTAssertNotEqual(add.status, 0)
+        XCTAssertEqual((try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [[String: Any]])?.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path("q")))
+    }
+
     /// `held add` takes an addable held note into the inbox (ledger first), `--all` takes every addable one, and an id that is
     /// not held fails. The held entries are written as the phone's `receive` would for an epoch the machine kept the key of.
     func testHeldAddPlacesTheNoteInTheInbox() throws {

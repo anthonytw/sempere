@@ -30,6 +30,7 @@ final class WatchIntakeTests: XCTestCase {
         /// `vault.json`'s plaintext epoch number per vault.
         var folderEpochs: [UUID: Int] = [:]
         var unreadableProfile = false
+        var suspendedVaults: Set<UUID> = []
 
         var currentVault: UUID? { current }
         var linkEnabled: Bool { enabled }
@@ -42,6 +43,7 @@ final class WatchIntakeTests: XCTestCase {
         }
         func holdsKey(of epochId: Data, vault: UUID) throws -> Bool { keys.contains(epochId) }
         func folderEpoch(of vault: UUID) -> Int? { folderEpochs[vault] }
+        func isSuspended(vault: UUID) -> Bool { suspendedVaults.contains(vault) }
         func inboxHolds(id: UUID, vault: UUID) -> Bool {
             lock.withLock { inboxes[vault]?.contains { CaptureFile.parse(name: $0.name)?.id == id } ?? false }
         }
@@ -312,6 +314,38 @@ final class WatchIntakeTests: XCTestCase {
         r.delivery.folderEpochs[r.vault] = known
         let (f2, m2, _) = try transfer(r)
         XCTAssertEqual(try r.intake.receive(file: f2, meta: m2).outcome, .placed(.vault))
+    }
+
+    /// A note that is also of an unknown epoch or vault is held for that reason, not as "toggle off", and is never addable.
+    func testToggleOffPlusAnUnknownEpochOrVaultIsNotAddable() throws {
+        let r = try rig()
+        r.delivery.enabled = false
+        var (file, meta, _) = try transfer(r)
+        meta.epoch = 77
+        meta.epochId = String(repeating: "cd", count: 32)
+        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .held(.unknownEpoch))
+        let (f2, m2, _) = try transfer(r, vault: UUID())
+        XCTAssertEqual(try r.intake.receive(file: f2, meta: m2).outcome, .held(.unknownVault))
+        XCTAssertEqual(r.intake.held?.list().map(\.canAdd), [false, false])
+        // Even a held entry that says toggle-off is refused when its epoch is unknown now.
+        r.delivery.enabled = true
+        let (f3, m3, s3) = try transfer(r)
+        r.delivery.enabled = false
+        XCTAssertEqual(try r.intake.receive(file: f3, meta: m3).outcome, .held(.linkOff))
+        let item = try XCTUnwrap(r.intake.held?.list().first { $0.id == m3.id })
+        XCTAssertTrue(item.canAdd)
+        r.delivery.epochs[r.vault] = (99, Data(repeating: 9, count: 32))   // the phone moved on: this epoch is unknown now
+        XCTAssertThrowsError(try r.intake.addHeld(item))
+        _ = s3
+        XCTAssertNil(r.delivery.inboxes[r.vault])
+    }
+
+    func testASuspendedProfileHoldsMatchingNotes() throws {
+        let r = try rig()
+        r.delivery.suspendedVaults = [r.vault]
+        let (file, meta, _) = try transfer(r)
+        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .held(.suspended))
+        XCTAssertTrue(r.delivery.ledgers.isEmpty)
     }
 
     func testAnUnreadableProfileLeavesTheFileUnacknowledged() throws {

@@ -37,19 +37,30 @@ struct WatchSettingsSection: View {
                 if waiting > 0 {
                     Text("\(waiting) Watch notes waiting for another vault").font(.footnote).foregroundStyle(.orange)
                 }
-                let held = service.heldNotes()
+                let held = link.held
                 if !held.isEmpty {
                     let addable = held.filter(\.canAdd).count
-                    Text("\(held.count) Watch notes held (sent after the watch was turned off or the key changed)")
+                    Text("\(held.count) Watch notes held (sent while Use on Apple Watch was off or after the key changed)")
                         .font(.footnote).foregroundStyle(.orange)
+                    if held.count >= WatchHeldStore.maxFiles {
+                        Text("The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
+                    ForEach(held.prefix(5), id: \.id) { note in
+                        LabeledContent(note.receivedAt.formatted(date: .abbreviated, time: .shortened),
+                                       value: ByteCountFormatter.string(fromByteCount: Int64(note.bytes), countStyle: .file))
+                            .font(.footnote)
+                    }
                     if addable < held.count {
                         Text("\(held.count - addable) of them can only be deleted: they were sealed with a key this device never held")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     HStack {
                         Button("Add to inbox") {
-                            let failed = service.addHeldNotes()
-                            problem = failed > 0 ? String(localized: "Some notes could not be added now; try again when the vault can be written.") : nil
+                            Task {
+                                let failed = await service.addHeldNotes()
+                                problem = failed > 0 ? String(localized: "Some notes could not be added now; try again when the vault can be written.") : nil
+                            }
                         }
                         .disabled(addable == 0)
                         Spacer()
