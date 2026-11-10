@@ -70,11 +70,17 @@ struct WatchVoiceNoteView: View {
 
     /// The status's glyph: the nib (a custom symbol of this extension's catalog, `SempereNib.symbolset`) when ready, a
     /// system symbol otherwise.
-    @ViewBuilder private var glyph: some View {
+    private var glyph: Image {
         switch status.glyph {
         case .custom(let name): Image(name)
         case .system(let name): Image(systemName: name)
         }
+    }
+
+    /// The glyph scaled to fit its slot, whatever the watch's size: at a fixed font the nib (about 0.7 of the font
+    /// size tall) overflowed the corner slot and was cropped (TestFlight 1.1.0 (67)).
+    private func fittedGlyph(padding: CGFloat) -> some View {
+        glyph.resizable().scaledToFit().padding(padding).widgetAccentable()
     }
 
     @ViewBuilder private var content: some View {
@@ -82,10 +88,11 @@ struct WatchVoiceNoteView: View {
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
-                glyph.font(.system(size: 62)).widgetAccentable()
+                fittedGlyph(padding: 9)
             }
         case .accessoryCorner:
-            glyph.font(.system(size: 62)).widgetAccentable().widgetLabel { Text(status.watchTitle) }
+            // The icon alone: no curved label beside it (owner, build 67).
+            fittedGlyph(padding: 2)
         case .accessoryInline:
             Label { Text(status.watchTitle) } icon: { glyph }
         default:
@@ -121,10 +128,8 @@ struct WatchVoiceNoteControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: VoiceNoteStatus.controlKind, provider: WatchVoiceNoteControlProvider()) { status in
             ControlWidgetButton(action: RecordWatchVoiceNoteIntent()) {
-                switch status.glyph {
-                case .custom(let name): Label(status.watchTitle, image: name)
-                case .system(let name): Label(status.watchTitle, systemImage: name)
-                }
+                // A system symbol, as the iPhone's control: Control Center draws a custom symbol as an empty circle.
+                Label(status.watchTitle, systemImage: status.symbol)
                 Text(status.watchSubtitle)
             }
         }

@@ -179,10 +179,9 @@ struct VoiceNoteControl: ControlWidget {
         StaticControlConfiguration(kind: VoiceNoteStatus.controlKind, provider: VoiceNoteControlProvider()) { status in
             // One template: the action is decided when tapped (`VoiceNoteControlIntent`).
             ControlWidgetButton(action: VoiceNoteControlIntent(shown: status.phase)) {
-                switch status.glyph {
-                case .custom(let name): Label(status.title, image: name)
-                case .system(let name): Label(status.title, systemImage: name)
-                }
+                // Always a system symbol: Control Center drew the nib (a custom symbol of this extension's catalog)
+                // as an empty circle, in the gallery and once added (TestFlight 1.1.0 (67), iPhone).
+                Label(status.title, systemImage: status.symbol)
                 Text(status.subtitle)
             }
         }
