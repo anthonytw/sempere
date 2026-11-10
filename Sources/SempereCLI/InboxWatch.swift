@@ -514,7 +514,7 @@ struct InboxWatchHeldAdd: ParsableCommand {
         let held = WatchHeldFolder.store(options.held)
         let intake = WatchIntake(received: WatchReceivedSet(url: nil), delivery: delivery, held: held)
         let targets: [HeldCapture]
-        do { targets = all ? held.list().filter(\.canAdd) : try ids.map { try held.find($0) } } catch {
+        do { targets = all ? held.list().filter(intake.canAddNow) : try ids.map { try held.find($0) } } catch {
             throw CLIError.failure("\(error)")
         }
         struct Out: Encodable { var capture: String; var outcome: String; var placement: String?; var problem: String? }
@@ -524,7 +524,7 @@ struct InboxWatchHeldAdd: ParsableCommand {
             let id = t.id.uuidString.lowercased()
             do {
                 let p = try intake.addHeld(t)
-                out.append(Out(capture: id, outcome: "added", placement: InboxWatchReceive.name(p), problem: nil))
+                out.append(Out(capture: id, outcome: "added", placement: p.map(InboxWatchReceive.name), problem: nil))
             } catch {
                 failures += 1
                 out.append(Out(capture: id, outcome: "failed", placement: nil, problem: CLIError.from(error).message))

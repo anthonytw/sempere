@@ -39,10 +39,10 @@ struct WatchSettingsSection: View {
                 }
                 let held = link.held
                 if !held.isEmpty {
-                    let addable = held.filter(\.canAdd).count
+                    let addable = link.addableIds.count
                     Text("\(held.count) Watch notes held (sent while Use on Apple Watch was off or after the key changed)")
                         .font(.footnote).foregroundStyle(.orange)
-                    if held.count >= WatchHeldStore.maxFiles {
+                    if WatchHeldStore.isFull(held) {
                         Text("The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some")
                             .font(.footnote).foregroundStyle(.orange)
                     }
@@ -62,9 +62,10 @@ struct WatchSettingsSection: View {
                                 problem = failed > 0 ? String(localized: "Some notes could not be added now; try again when the vault can be written.") : nil
                             }
                         }
-                        .disabled(addable == 0)
+                        .disabled(addable == 0 || link.busy)
                         Spacer()
                         Button("Delete", role: .destructive) { confirmingDelete = true }
+                            .disabled(link.busy)
                     }
                     .buttonStyle(.borderless)
                     .confirmationDialog("Delete the held Watch notes?", isPresented: $confirmingDelete, titleVisibility: .visible) {

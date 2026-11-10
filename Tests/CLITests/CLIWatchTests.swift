@@ -207,6 +207,12 @@ final class CLIWatchTests: CLITestCase {
         XCTAssertNotEqual(add.status, 0)
         XCTAssertEqual((try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [[String: Any]])?.count, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: path("q")))
+        // `--all` makes the same re-check, so it skips the note (nothing to add) rather than trying it and failing.
+        let all = try cli(["inbox", "watch", "held", "add", "--all", "--held", held, "--queue", path("q"), "--store", path("store"),
+                           "--vault", a.vault.url.path, "--json"])
+        XCTAssertEqual(all.status, 0, "a stale-reason note is not addable, so --all does not try it")
+        XCTAssertEqual((try XCTUnwrap(all.json as? [[String: Any]])).count, 0)
+        XCTAssertEqual((try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [[String: Any]])?.count, 1)
     }
 
     /// `held add` takes an addable held note into the inbox (ledger first), `--all` takes every addable one, and an id that is

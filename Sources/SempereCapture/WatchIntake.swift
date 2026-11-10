@@ -293,22 +293,29 @@ public struct WatchIntake: Sendable {
         return .otherVaultQueued
     }
 
+    /// Whether "Add to inbox" can take `item` now: the admission check `addHeld` makes, with the toggle treated as on. The
+    /// stored reason can be stale (an epoch or vault this device never held since), so counts and `--all` ask this, not
+    /// `item.canAdd`.
+    public func canAddNow(_ item: HeldCapture) -> Bool {
+        guard item.canAdd, let held, let sealed = try? held.load(item) else { return false }
+        do { return try epochVerdict(sealed, vault: item.vault)?.canAdd ?? true } catch { return true }   // unreadable state: let the add try, and fail loudly
+    }
+
     /// "Add to inbox": the user's decision to take a held file. It runs the normal record-and-place path, and catch-up then
     /// re-seals it under the current key as for any file of an earlier epoch. A file whose epoch this device never held cannot be
-    /// added (`WatchHeldError.unreadable`): only Delete.
+    /// added (`WatchHeldError.unreadable`): only Delete. A note that is no longer held (added a moment ago) is a no-op: nil.
     @discardableResult
-    public func addHeld(_ item: HeldCapture) throws -> WatchPlacement {
+    public func addHeld(_ item: HeldCapture) throws -> WatchPlacement? {
         guard let held else { throw WatchHeldError.notFound(item.id.uuidString) }
         guard item.canAdd else { throw WatchHeldError.unreadable("this note was sealed under a key this device never held: delete it") }
-        let sealed = try held.load(item)
-        // The state may have changed since it was held: checked again, with the toggle treated as on. An epoch or vault this
-        // device never held cannot be added, whatever the stored reason says.
-        if let now = try epochVerdict(sealed, vault: item.vault), !now.canAdd {
-            throw WatchHeldError.unreadable("this note was sealed under a key this device never held: delete it")
+        return try held.take(item) { sealed in
+            // The state may have changed since it was held: checked again, with the toggle treated as on. An epoch or vault this
+            // device never held cannot be added, whatever the stored reason says.
+            if let now = try epochVerdict(sealed, vault: item.vault), !now.canAdd {
+                throw WatchHeldError.unreadable("this note was sealed under a key this device never held: delete it")
+            }
+            return try place(sealed, vault: item.vault)
         }
-        let placement = try place(sealed, vault: item.vault)
-        held.delete(item)
-        return placement
     }
 
     /// What the phone sends at the watch's activation: the ids it holds.

@@ -351,6 +351,7 @@ final class WatchModel {
             case .stored, .cleared:
                 try secrets.save(next)
                 state = next
+                stateUnreadable = false   // written: this state is the stored one now
                 // A watch the phone cleared asks again by itself; the phone keeps the request only while "Use on Apple
                 // Watch" is on (docs/design/1.1-watch.md §3.4), so it asks once more at its next launch after the toggle is on.
                 if next.payload == nil { requested = false }
@@ -376,7 +377,8 @@ final class WatchModel {
     /// Notes already sealed stay in the outbox and are still sent.
     func reset() {
         state = WatchProfileState()
-        try? secrets.save(state)
+        // Saved: the stored state is this empty one, so it is readable (and the sweep may delete) again.
+        if (try? secrets.save(state)) != nil { stateUnreadable = false }
         // A new provisioning key too: the phone's persisted application context holds the old profile, encrypted to the old
         // key, and nothing can open it any more.
         try? env.secrets.delete(.provisioningKey)

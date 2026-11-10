@@ -21,9 +21,19 @@ final class WatchLinkStatus {
     private(set) var revision = 0
     /// The held Watch files, read off the main actor and cached here (Settings reads this, never the disk).
     private(set) var held: [HeldCapture] = []
+    /// Which of them "Add to inbox" can take now (the admission check `addHeld` makes, not the stored reason).
+    private(set) var addableIds: Set<UUID> = []
+    /// Notes with an add or a delete under way: their buttons stay off, so a second tap cannot start a second add.
+    private(set) var busy = false
 
-    func setHeld(_ notes: [HeldCapture]) {
+    func setHeld(_ notes: [HeldCapture], addable: Set<UUID>) {
         held = notes
+        addableIds = addable
+        revision += 1
+    }
+
+    func setBusy(_ value: Bool) {
+        busy = value
         revision += 1
     }
 
@@ -90,7 +100,8 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         guard let receiver = lock.withLock({ receiver }) else { return }
         Task.detached { [weak self] in
             let notes = receiver.heldNotes()
-            await MainActor.run { self?.status.setHeld(notes) }
+            let addable = Set(notes.filter { receiver.canAddNow($0) }.map(\.id))
+            await MainActor.run { self?.status.setHeld(notes, addable: addable) }
         }
     }
 
@@ -98,13 +109,16 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     /// cannot be written now).
     func addHeldNotes() async -> Int {
         guard let receiver = lock.withLock({ receiver }) else { return 0 }
+        guard !(await status.busy) else { return 0 }
+        await MainActor.run { status.setBusy(true) }
         let failed = await Task.detached { () -> Int in
             var failed = 0
-            for note in receiver.heldNotes() where note.canAdd {
+            for note in receiver.heldNotes() where receiver.canAddNow(note) {
                 do { try receiver.addHeld(note) } catch { failed += 1 }
             }
             return failed
         }.value
+        await MainActor.run { status.setBusy(false) }
         refreshHeld()
         return failed
     }
@@ -113,7 +127,9 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     func deleteHeldNotes() {
         guard let receiver = lock.withLock({ receiver }) else { return }
         Task.detached { [weak self] in
+            await MainActor.run { self?.status.setBusy(true) }
             for note in receiver.heldNotes() { receiver.deleteHeld(note) }
+            await MainActor.run { self?.status.setBusy(false) }
             self?.refreshHeld()
         }
     }

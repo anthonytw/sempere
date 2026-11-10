@@ -82,7 +82,15 @@ struct KeychainWatchSecretStore: WatchSecretStore {
 final class MemoryWatchSecretStore: WatchSecretStore, @unchecked Sendable {
     private let lock = NSLock()
     private var items: [String: Data] = [:]
-    func load(account: String) throws -> Data? { lock.withLock { items[account] } }
+    /// Tests: the profile state cannot be read (the Keychain before the first unlock).
+    var failProfileStateLoads = false
+    struct Locked: Error {}
+    func load(account: String) throws -> Data? {
+        try lock.withLock {
+            if failProfileStateLoads, account == WatchSecretItem.profileState.rawValue { throw Locked() }
+            return items[account]
+        }
+    }
     func save(_ data: Data, account: String) throws { lock.withLock { items[account] = data } }
     func delete(account: String) throws { lock.withLock { items[account] = nil } }
     func accounts(prefix: String) throws -> [String] { lock.withLock { items.keys.filter { $0.hasPrefix(prefix) }.sorted() } }

@@ -65,6 +65,18 @@ public final class WatchHeldStore: @unchecked Sendable {
     private let maxBytes: Int
     private let now: @Sendable () -> Date
     private let lock = NSLock()
+    /// Serializes "Add to inbox" (`take`), so two adds of one note cannot both place it.
+    private let takeLock = NSLock()
+
+    /// Whether a store that holds `held` refuses another file: the rule `hold` applies (`adding` is the new file's size; with
+    /// none, the least a file weighs).
+    public static func isFull(_ held: [HeldCapture], adding: Int = 1, maxFiles: Int = maxFiles,
+                              maxBytes: Int = maxTotalBytes) -> Bool {
+        held.count >= maxFiles || held.reduce(0, { $0 + $1.bytes }) + adding > maxBytes
+    }
+
+    /// Whether the next file would be refused: 200 files or 500 MB (or this store's lower caps) are held.
+    public var isFull: Bool { Self.isFull(list(), maxFiles: maxFiles, maxBytes: maxBytes) }
 
     /// - Parameters:
     ///   - maxFiles: the most files held (tests lower it).
@@ -118,8 +130,9 @@ public final class WatchHeldStore: @unchecked Sendable {
             }
             let existing = scan()
             if existing.contains(where: { $0.id == parsed.id && $0.vault == vault }) { return }
-            guard existing.count < maxFiles,
-                  existing.reduce(0, { $0 + $1.bytes }) + sealed.data.count <= maxBytes else { throw WatchHeldError.full }
+            guard !Self.isFull(existing, adding: sealed.data.count, maxFiles: maxFiles, maxBytes: maxBytes) else {
+                throw WatchHeldError.full
+            }
             let held = HeldCapture(id: parsed.id, vault: vault, epoch: epoch, epochId: Hex.encode(epochId), receivedAt: now(),
                                    reason: reason, bytes: sealed.data.count)
             let dir = folder(vault)
@@ -158,6 +171,17 @@ public final class WatchHeldStore: @unchecked Sendable {
             let data = try BoundedRead.contents(of: file, maxBytes: CaptureFile.maxSealedBytes(.capture))
             return SealedCapture(name: file.lastPathComponent, data: data, epoch: held.epoch, epochId: id)
         } catch { throw WatchHeldError.unreadable("\(error)") }
+    }
+
+    /// Runs `body` on the held file, then removes it: one at a time, so a second add of the same note (a double tap) finds it
+    /// gone. Returns nil when it is no longer held; a throwing `body` leaves the file held.
+    public func take<T>(_ held: HeldCapture, _ body: (SealedCapture) throws -> T) throws -> T? {
+        try takeLock.withLock {
+            guard list().contains(where: { $0.id == held.id && $0.vault == held.vault }) else { return nil }
+            let result = try body(try load(held))
+            delete(held)
+            return result
+        }
     }
 
     /// Removes the file and its sidecar.

@@ -143,7 +143,10 @@ public struct WatchReceiver: Sendable {
 
     /// "Add to inbox".
     @discardableResult
-    public func addHeld(_ item: HeldCapture) throws -> WatchPlacement { try intake.addHeld(item) }
+    public func addHeld(_ item: HeldCapture) throws -> WatchPlacement? { try intake.addHeld(item) }
+
+    /// Whether "Add to inbox" can take `item` now (the same check `addHeld` makes).
+    public func canAddNow(_ item: HeldCapture) -> Bool { intake.canAddNow(item) }
 
     /// "Delete".
     public func deleteHeld(_ item: HeldCapture) { intake.held?.delete(item) }
