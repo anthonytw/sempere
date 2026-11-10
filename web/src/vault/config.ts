@@ -73,7 +73,7 @@ export async function loadConfig(base: string, fetcher: typeof fetch = fetch.bin
   if (!res.ok) throw new ConfigError(`cannot fetch ${configFileName}: HTTP ${res.status}`);
   if ((res.headers.get("content-type") ?? "").includes("text/html")) {
     if (devServer) return undefined;
-    throw new ConfigError(`${configFileName} was answered with an HTML page, not JSON`);
+    throw new ConfigError(`${configFileName} was answered with an HTML page, not JSON (add config.json, or have the server answer 404)`);
   }
   const body = await res.arrayBuffer();
   if (body.byteLength > maxConfigBytes) throw new ConfigError(`${configFileName} is larger than ${maxConfigBytes} bytes`);

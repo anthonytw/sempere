@@ -1741,15 +1741,17 @@ public final class SyncEngine {
     /// temporary name. A listed size that differs for any other reason (a re-encryption, a rewritten copy) is left
     /// to the comparisons below. Returns true when the server's copy was repaired.
     func repairCutRevision(_ id: String, _ n: RevisionName, entry: RemoteEntry?, localDir: URL) throws -> Bool {
-        guard !options.dryRun, let entry, let listed = entry.size,
+        let path = "notes/\(key(id, n))"
+        // Not in a pull-only run (its writes are no-ops), and never a copy this device set aside (it is not uploaded).
+        guard !options.dryRun, !options.pullOnly, unacceptedHere[path] == nil, let entry, let listed = entry.size,
               let have = LocalFS.regularFileSize(localDir.appendingPathComponent(n.filename)), listed < have,
               have <= options.maxFileBytes else { return false }
         let file = localDir.appendingPathComponent(n.filename)
         guard let local = try? BoundedRead.contents(of: file, maxBytes: options.maxFileBytes),
-              let got = try? transport.read([Vault.notesName, id, n.filename], maxBytes: have),
-              got.data.count < local.count, local.starts(with: got.data) else { return false }
+              let got = try? transport.read([Vault.notesName, id, n.filename], maxBytes: have) else { return false }
+        try locked { try budget.downloaded(got.data.count) }
+        guard got.data.count < local.count, local.starts(with: got.data) else { return false }
         guard try placeRevisionFile(id, n, data: local, damaged: entry) else { return false }
-        let path = "notes/\(key(id, n))"
         locked {
             report.uploaded.append(path)
             report.replaced.append(.init(side: "remote", path: path))

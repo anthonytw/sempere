@@ -64,7 +64,7 @@ The second build is skipped too when it already passed (job `linux-removable`, b
 - **The Linux images** are pinned by digest: the test image (`env.SEMPERE_CI_IMAGE_ID` and the `container:` lines of `ci.yml`),
   and the static-build, packaging and smoke-test images (`STATIC_IMAGE` in `ci-linux.sh`, `release-build.sh`). The digest goes into every
   Linux hash, so a moved tag cannot reuse a record. To update: `docker buildx imagetools inspect swift:6.4-noble`, change the
-  digest in all four places, and the next run runs every Linux target once.
+  digest in every place (the `ci.yml` lines, `STATIC_IMAGE` in `ci-linux.sh`, the images at the top of `release-build.sh`), and the next run runs every Linux target once.
 - **Pass records** (hash skipping, [design/ci-lean.md](design/ci-lean.md)) live in `actions/cache` (`ci-pass-<job>-<run>`,
   restored by prefix, so the newest wins, saved after the job passed) and as an artifact of each pull request run. A
   cache saved by a pull request is readable only by that PR, so a later push to the same PR skips what already passed. The

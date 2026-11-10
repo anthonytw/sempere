@@ -129,4 +129,112 @@ final class RevisionUploadTests: BlobSyncTestCase {
         XCTAssertTrue(report.errors.isEmpty, "\(report)")
         XCTAssertEqual(server.file("notes/\(id)/\(name)"), local)
     }
+
+    // MARK: Edges
+
+    private func pushOnlyRun(_ name: String, _ server: MockDAV, deleteExtraneous: Bool = false) throws -> SyncReport {
+        var o = SyncOptions(deviceLabel: name)
+        o.pushOnly = true
+        o.deleteExtraneous = deleteExtraneous
+        return try SyncEngine(directory: dir(name), vault: try openVault(name), client: try client(server),
+                              stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
+    }
+
+    /// A revision's data, and the server copy of it cut to `bytes` (what an older client left).
+    private func cutServerCopy(_ server: MockDAV, title: String, bytes: Int = 40) throws -> (name: String, local: Data) {
+        let a = try makeVault("A")
+        _ = try delta(a, device: devA, t: 0, title: "one")
+        XCTAssertTrue(try sync("A", server).errors.isEmpty)
+        let r2 = try delta(a, device: devA, t: 10, title: title)
+        let name = revisionName(r2)
+        let local = try Data(contentsOf: dir("A").appendingPathComponent("notes/\(id)/\(name)"))
+        server.putDirect("notes/\(id)/\(name)", local.prefix(bytes))
+        return (name, local)
+    }
+
+    /// Another device's upload in flight (its temporary name) is left alone: not reported as ignored by a two-way run,
+    /// not listed as extraneous or deleted by a push-only run that deletes extraneous files.
+    func testAnotherDevicesTemporaryNameIsSkipped() throws {
+        let server = MockDAV()
+        let a = try makeVault("A")
+        _ = try delta(a, device: devA, t: 0, title: "one")
+        XCTAssertTrue(try sync("A", server).errors.isEmpty)
+        let temp = "notes/\(id)/\(FileIO.tempPrefix)other-device-upload"
+        server.putDirect(temp, Data("part".utf8))
+        let twoWay = try sync("A", server)
+        XCTAssertTrue(twoWay.ignored.isEmpty, "\(twoWay)")
+        let pushOnly = try pushOnlyRun("A", server, deleteExtraneous: true)
+        XCTAssertTrue(pushOnly.ignored.isEmpty && pushOnly.extraneous.isEmpty && pushOnly.deleted.isEmpty, "\(pushOnly)")
+        XCTAssertEqual(server.file(temp), Data("part".utf8), "still there")
+    }
+
+    /// The cut copy changes after the listing: the delete under its ETag is refused, nothing is replaced and no
+    /// temporary name is left; the next run repairs the new copy.
+    func testARepairNeverReplacesACopyThatChangedAfterTheListing() throws {
+        let server = MockDAV()
+        let (name, local) = try cutServerCopy(server, title: "two")
+        let changed = Data(local.prefix(30))
+        server.interceptor = { [server, id] r in
+            if r.method == "DELETE", r.url.path.hasSuffix(name) { server.putDirect("notes/\(id)/\(name)", changed) }
+            return nil
+        }
+        let first = try sync("A", server)
+        XCTAssertTrue(first.replaced.isEmpty, "\(first)")
+        XCTAssertEqual(server.file("notes/\(id)/\(name)"), changed, "the changed copy is untouched")
+        XCTAssertEqual(server.names(under: "notes/\(id)").filter { $0.hasPrefix(FileIO.tempPrefix) }, [])
+        server.interceptor = nil
+        let second = try sync("A", server)
+        XCTAssertTrue(second.errors.isEmpty, "\(second)")
+        XCTAssertEqual(server.file("notes/\(id)/\(name)"), local)
+    }
+
+    /// The move after the repair's delete fails: the file is missing on the server, and a device that holds it (or
+    /// the writer) restores it in its next run.
+    func testAFailedMoveAfterTheRepairIsHealedByTheNextRun() throws {
+        let server = MockDAV()
+        let a = try makeVault("A")
+        _ = try delta(a, device: devA, t: 0, title: "one")
+        let r2 = try delta(a, device: devA, t: 10, title: "two")
+        let name = revisionName(r2)
+        XCTAssertTrue(try sync("A", server).errors.isEmpty)
+        XCTAssertTrue(try sync("B", server).errors.isEmpty)
+        let local = try Data(contentsOf: dir("A").appendingPathComponent("notes/\(id)/\(name)"))
+        server.putDirect("notes/\(id)/\(name)", local.prefix(40))
+        server.interceptor = { r in
+            r.method == "MOVE" && r.headers["Destination"]?.hasSuffix(name) == true ? WebDAVResponse(status: 503) : nil
+        }
+        let failed = try sync("A", server)
+        XCTAssertFalse(failed.errors.isEmpty, "\(failed)")
+        XCTAssertNil(server.file("notes/\(id)/\(name)"), "deleted, and the move did not happen")
+        server.interceptor = nil
+        XCTAssertTrue(try sync("B", server).errors.isEmpty)
+        XCTAssertEqual(server.file("notes/\(id)/\(name)"), local, "B restored it")
+        XCTAssertTrue(try sync("A", server).errors.isEmpty)
+        XCTAssertEqual(server.names(under: "notes/\(id)").filter { $0.hasPrefix(FileIO.tempPrefix) }, [])
+    }
+
+    /// A server whose ETags are all weak: the cut copy is deleted without a condition, and the repair still works.
+    func testTheRepairWorksWithWeakETags() throws {
+        let server = MockDAV()
+        server.weakFileETags = true
+        let (name, local) = try cutServerCopy(server, title: "two")
+        let report = try sync("A", server)
+        XCTAssertTrue(report.errors.isEmpty, "\(report)")
+        XCTAssertEqual(server.file("notes/\(id)/\(name)"), local)
+    }
+
+    /// A push-only run (the web viewer's mirror) repairs a cut copy too, and a pull-only run writes nothing.
+    func testPushOnlyRepairsAndPullOnlyDoesNot() throws {
+        let server = MockDAV()
+        let (name, local) = try cutServerCopy(server, title: "two")
+        var pull = SyncOptions(deviceLabel: "A")
+        pull.pullOnly = true
+        let pulled = try SyncEngine(directory: dir("A"), vault: try openVault("A"), client: try client(server),
+                                    stateURL: tmp.appendingPathComponent("state-A.json"), options: pull).run()
+        XCTAssertTrue(pulled.replaced.isEmpty && pulled.uploaded.isEmpty, "\(pulled)")
+        XCTAssertEqual(server.file("notes/\(id)/\(name)"), local.prefix(40))
+        let pushed = try pushOnlyRun("A", server)
+        XCTAssertTrue(pushed.errors.isEmpty, "\(pushed)")
+        XCTAssertEqual(server.file("notes/\(id)/\(name)"), local)
+    }
 }

@@ -90,6 +90,7 @@ extension SyncEngine {
     func syncNotePushOnly(_ id: String, remoteEntries: [RemoteEntry]?) throws {
         let dir = root.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
         var R = Set<RevisionName>()
+        var entries: [RevisionName: RemoteEntry] = [:]
         var remoteAtt: RemoteEntry?
         for e in remoteEntries ?? [] {
             if e.name == Vault.attachmentsName && e.isCollection { remoteAtt = e; continue }
@@ -100,6 +101,7 @@ extension SyncEngine {
                 continue
             }
             R.insert(n)
+            entries[n] = e
         }
         defer { remoteRevisions[id] = R.isEmpty ? nil : R.map(\.filename).sorted() }
         // Blobs first, so a revision never reaches the server before the blobs it references.
@@ -130,6 +132,9 @@ extension SyncEngine {
             case .notTried: attempt(n) { try upload(id, n); R.insert(n) }
             }
         }
+
+        // A cut upload an older client left under a revision's name is replaced by a complete copy (as in `syncNote`).
+        for n in L.intersection(R).sorted() where !waits { attempt(n) { _ = try repairCutRevision(id, n, entry: entries[n], localDir: dir) } }
 
         // Read only when a deletion is judged or a shared snapshot's coverage
         // is not recorded yet (see syncNote); the cover is of what the server

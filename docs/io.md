@@ -1161,7 +1161,7 @@ revisions still sync, and readers draw a placeholder for it meanwhile
   that race is success, since the name is keyed by the content hash. The
   temporary name is recorded in the state before the upload and deleted
   afterwards, or by the next run if this one dies. Other devices' temporary
-  names are skipped silently. Revisions go the same way (`notes/<id>/.sempere-tmp-<uuid>`, then `MOVE` with
+  names are skipped silently. A server must support `MOVE` (blobs and the inbox already needed it). Revisions go the same way (`notes/<id>/.sempere-tmp-<uuid>`, then `MOVE` with
   `Overwrite: F`); a revision the server already holds counts as uploaded only when its size and a re-read hash
   match the local file, else it is an error. A revision both sides list whose listed size is below the local
   one, and whose server copy is a prefix of the local file (a cut upload an older client left under the final
