@@ -25,9 +25,12 @@ if [[ $have != "$SWIFT_VERSION" ]]; then
   echo "error: the compiler is Swift $have; the pinned Static Linux SDK needs exactly $SWIFT_VERSION (use swift:$SWIFT_VERSION-noble)" >&2
   exit 1
 fi
-if ! swift sdk list 2>/dev/null | grep -qx "swift-$SWIFT_VERSION-RELEASE_static-linux-0.1.0"; then
-  swift sdk install "$SDK_URL" --checksum "$SDK_SHA256" >&2
-fi
+# An SDK already installed is never trusted (its files are writable, and a checksum is only checked on install):
+# it is removed and installed again from the checksummed archive, so the SDK of every build is the pinned one.
+name="swift-$SWIFT_VERSION-RELEASE_static-linux-0.1.0"
+if swift sdk list 2>/dev/null | grep -qx "$name"; then swift sdk remove "$name" >&2; fi
+swift sdk install "$SDK_URL" --checksum "$SDK_SHA256" >&2
+swift sdk list 2>/dev/null | grep -qx "$name" || { echo "error: the Static Linux SDK $name is not installed" >&2; exit 1; }
 
 flags=(-c release --product sempere --swift-sdk "$arch-swift-linux-musl" -Xlinker -s)
 swift build "${flags[@]}" >&2

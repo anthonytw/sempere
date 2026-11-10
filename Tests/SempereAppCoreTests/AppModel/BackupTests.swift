@@ -18,6 +18,8 @@ final class FakeBackupNotifier: BackupNotifying {
         return allow
     }
 
+    func isAuthorized() async -> Bool { allow }
+
     func schedule(id: String, at date: Date, notice: LocalNotice) async { scheduled[id] = (date, notice) }
 
     func cancel(id: String) async {

@@ -57,8 +57,13 @@ final class MemoryRemoteTests: TempDirTestCase {
         XCTAssertThrowsError(try r.write(["notes", "c.age"], .file(body), condition: .create))
         let part = try XCTUnwrap(store.file(["v", "notes", "c.age"]))
         XCTAssertLessThan(part.count, 10_000)
-        // A small body sent in one piece (`.data`) is never cut.
-        XCTAssertTrue(try r.write(["notes", "d.age"], .data(Data([4])), condition: .create))
+        // A body of bytes (`.data`, a revision) is cut the same way: a part on a store that writes in place.
+        let bytes = Data(repeating: 5, count: 10_000)
+        XCTAssertThrowsError(try r.write(["notes", "d.age"], .data(bytes), condition: .create)) { XCTAssertTrue(transient($0)) }
+        XCTAssertLessThan(try XCTUnwrap(store.file(["v", "notes", "d.age"])).count, bytes.count)
+        (r, store) = try remote(MemoryFaults.Rates([.cutBody: 1]), seed: 3)
+        XCTAssertThrowsError(try r.write(["notes", "d.age"], .data(bytes), condition: .create))
+        XCTAssertNil(store.file(["v", "notes", "d.age"]), "an atomic store keeps nothing of a cut body")
     }
 
     func testHostileAnswers() throws {

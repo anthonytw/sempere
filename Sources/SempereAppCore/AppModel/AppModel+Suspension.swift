@@ -115,7 +115,7 @@ extension AppModelCore {
                 closeRemovedVault()
             } else {
                 services.perf.log(.error, Self.suspensionLogCategory,
-                                  "cannot take the vault lease again: \(String(describing: error))")
+                                  "cannot take the vault lease again: \(LogSafe.describe(error))")
             }
         }
     }

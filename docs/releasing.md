@@ -33,7 +33,7 @@ site are each their own recipe; an upload asks `[y/N]` and a tag push asks you t
 | `just release-ready X.Y.Z [REF]` | the release checks on REF (default `origin/main`) | no |
 | `just release-tag X.Y.Z [REF]` | the checks, a signed tag on GitHub's `main`, then asks before pushing it to GitHub | **pushes the tag to GitHub** (after you type the version) |
 | `just release-push X.Y.Z` | push a tag made earlier to GitHub (asks first) | **pushes the tag to GitHub** |
-| `just release-build X.Y.Z` | the CLI binaries from the tag, built here: Linux static in Docker, macOS universal, smoke tests, `SHA256SUMS` | no |
+| `just release-build X.Y.Z` | the CLI binaries from the tag, built here: Linux static in Docker (fresh volumes, images pinned by digest), macOS universal, smoke tests, `SHA256SUMS` and its signature; refuses a dirty tree or build scripts that differ from `origin/main`'s | no |
 | `just release-publish X.Y.Z` | checks the pushed tag and the local build, prints the `gh release create` command | no |
 | `just release-publish X.Y.Z --publish` | the same, then creates the GitHub Release after you type the version | **publishes the GitHub Release** |
 | `just release-verify X.Y.Z` | the published release: GitHub's tag = the built commit, the Gitea mirror has it, assets match `SHA256SUMS` and the local build | no |
@@ -310,8 +310,8 @@ Every suite, iPad and iPhone simulators included; it takes over the screen for a
 `local-ci: all passed in N min; local/release-sweep posted for 1a2b3c4d`. The sweep gates the App Store
 submission: it runs once, here, before B.3. At tag time (B.6) the release checks only ask that the tagged commit
 builds the same thing: it has this status, or it is a later commit on `main` whose changes since a swept one are
-all release-neutral (`scripts/release-sweep-check.sh`: the changelog, docs, CI config, release tooling, root
-Markdown). The sweep also satisfies the TestFlight gate, so there is no need
+all release-neutral (`scripts/release-sweep-check.sh`: the changelog, docs, CI config, release tooling other than
+`scripts/ci-linux.sh`, root Markdown). The sweep also satisfies the TestFlight gate, so there is no need
 to run `ci-testflight` as well. From here on, pass `$sha` (in a new shell, paste it) instead of `main`, so the
 App Store build and the tag are provably the same commit even if something merges meanwhile.
 
@@ -526,5 +526,8 @@ has a tag with the same version, so a hotfix is a short release:
 
 `sha256sum -c SHA256SUMS` (or `shasum -a 256 -c SHA256SUMS` on a Mac). Releases from v1.0.2 on are built on the
 maintainer's Mac, so they carry no GitHub build-provenance attestation (v1.0.0 and v1.0.1 do:
-`gh attestation verify FILE --repo anthonytw/sempere`). `just release-verify X.Y.Z` checks the published files
-against `SHA256SUMS` and the local build.
+`gh attestation verify FILE --repo anthonytw/sempere`). From 1.1.0 on `SHA256SUMS` is signed with the maintainer's
+SSH signing key (`SHA256SUMS.sig`, `scripts/release-signature.sh`; the public key line, principal `maintainer`, is
+`packaging/allowed_signers`, which `release-build.sh` refuses to run without). `just release-verify X.Y.Z` checks the
+published files against `SHA256SUMS`, the signature and the local build. One-time setup:
+`echo "maintainer $(cut -d' ' -f1,2 ~/.ssh/YOUR_SIGNING_KEY.pub)" >> packaging/allowed_signers`, in a PR.

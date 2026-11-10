@@ -505,6 +505,41 @@ final class NotabilityAttachmentTests: NotabilityTestCase {
             + box("meta", [0, 0, 0, 0] + box("iprp", box("ipco", ispe(60_000, 60_000)))))
         XCTAssertThrowsError(try ImageImport.prepare(huge))
     }
+
+    /// A HEIC image with the metadata setting off goes through the host's converter (the app's ImageIO, as a picked
+    /// photo does): what is stored is the converted JPEG, not the HEIC with its location data. No converter, a
+    /// converter that fails, or the setting on: the image is stored as it is.
+    func testHEICIsConvertedWhenTheHostHasAConverterAndMetadataIsOff() throws {
+        func box(_ type: String, _ body: [UInt8]) -> [UInt8] {
+            let n = body.count + 8
+            return [UInt8(n >> 24), UInt8(n >> 16 & 0xFF), UInt8(n >> 8 & 0xFF), UInt8(n & 0xFF)] + Array(type.utf8) + body
+        }
+        let ispe = box("ispe", [0, 0, 0, 0, 0, 0, 0x01, 0x40, 0, 0, 0, 0xF0])
+        let heic = Data(box("ftyp", Array("heic".utf8) + [0, 0, 0, 0] + Array("mif1heic".utf8))
+            + box("meta", [0, 0, 0, 0] + box("iprp", box("ipco", ispe))))
+        let jpeg = AttachmentFixtures.jpeg(width: 10, height: 20, orientation: nil)
+        let convert: @Sendable (Data) throws -> PreparedImage = { _ in
+            PreparedImage(data: jpeg, mediaType: "image/jpeg", pixelSize: Size(w: 20, h: 10), orientation: 6)
+        }
+
+        let converted = try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: convert)
+        XCTAssertEqual(converted.type, "image/jpeg")
+        XCTAssertEqual(converted.convertedFrom, .heic)
+        XCTAssertTrue(converted.strippedMetadata)
+        XCTAssertNotEqual(converted.data, heic)
+        XCTAssertEqual([converted.width, converted.height], [20, 10], "the converter's size, after its orientation")
+        XCTAssertEqual(converted.orientation, 6)
+
+        let asIs = try ImageImport.prepare(heic, keepMetadata: false)
+        XCTAssertEqual(asIs.type, "image/heic"); XCTAssertFalse(asIs.strippedMetadata)
+        XCTAssertEqual(try ImageImport.prepare(heic, keepMetadata: true, convertHEIC: convert).type, "image/heic",
+                       "the setting on keeps the image as it is")
+        struct Broken: Error {}
+        XCTAssertEqual(try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: { _ in throw Broken() }).type, "image/heic",
+                       "a converter that fails leaves it as it is")
+        XCTAssertEqual(try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: { _ in PreparedImage(data: Data([1, 2, 3]), mediaType: "image/jpeg", pixelSize: Size(w: 1, h: 1), orientation: nil) }).type, "image/heic",
+                       "bytes that are not a JPEG are not stored")
+    }
 }
 
 /// `Tests/SempereNotabilityTests/Fixtures/synthetic-attachments.note`, the CLI tests' note

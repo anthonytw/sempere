@@ -503,7 +503,10 @@ note id, file name and body, §4), and cannot make the viewer run code:
   'script'; trusted-types sempere-pdf-worker sempere-key-worker`. No inline script or style, no
   `eval`, no WebAssembly, no third-party origin. `blob:` URLs are created by
   the page only, from verified blobs with a type the viewer sets (`image/jpeg`,
-  `image/png`, PNGs it rendered itself, `audio/*`); the DOM builder refuses
+  `image/png`, PNGs it rendered itself, the video types it plays (`video/mp4`,
+  `video/quicktime`), and the audio types on its own list in
+  `src/ui/recordings.ts`: a recording of any other type is not played, and the
+  blob never gets the writer's type string); the DOM builder refuses
   any other image reference. Each of the two Trusted Types policies admits
   exactly one URL: the bundled pdf.js worker, and the key worker that runs
   scrypt for a passphrase-wrapped key.
@@ -558,7 +561,10 @@ note id, file name and body, §4), and cannot make the viewer run code:
 - **`config.json`** (deploy time, "Hosting") holds no secret and is only
   read: it names the vault's URL and listing and whether other vaults may be
   opened. One that exists but cannot be read or parsed stops the viewer
-  (fail closed) rather than falling back to ad-hoc loading.
+  (fail closed) rather than falling back to ad-hoc loading. An answer of type
+  `text/html` (a single-page fallback, a login page returned with 200) is
+  unreadable too in a built viewer; only the development server's own fallback
+  counts as "no `config.json`".
 - **The passphrase copy** (`keys/`, "Unlocking with a passphrase") comes from
   the server too. One the server swapped can only fail: without the passphrase
   it cannot make a file that your passphrase decrypts, and a key it chose would

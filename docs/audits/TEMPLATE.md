@@ -58,7 +58,7 @@ Store labels.
 ## Dependencies and release integrity
 
 Swift and npm packages with versions; advisories found; the pins (`Package.resolved`, the lockfile, the Actions);
-`gh attestation verify` run on the current release, summarized; the allow-list review (`scripts/security-allow.txt`).
+the release's checksums and their signature (`just release-verify`; `gh attestation verify` for v1.0.0 and v1.0.1, the last releases that have attestations), summarized; the allow-list review (`scripts/security-allow.txt`).
 
 ## Follow-ups
 

@@ -63,7 +63,7 @@ extension AppModelCore {
         quickCapture.profileChanged()   // the watch gets what it is missing (cheap when it has it)
         do { try quickCapture.flushStoredQueue() } catch {
             // They stay queued; unlocking the vault moves them too.
-            services.perf.log(.error, "capture", "voice notes stay queued: \(String(describing: error))")
+            services.perf.log(.error, "capture", "voice notes stay queued: \(LogSafe.describe(error))")
         }
         let capture = quickCapture
         return Task {
@@ -108,7 +108,7 @@ extension AppModelCore {
         let current: StoredCaptureProfile?
         do { current = try storedQuickCaptureProfile() } catch {
             // Left as it is: Settings and a start say it cannot be read; turning it off and on again replaces it.
-            services.perf.log(.error, "capture", "quick capture profile not refreshed: \(String(describing: error))")
+            services.perf.log(.error, "capture", "quick capture profile not refreshed: \(LogSafe.describe(error))")
             return
         }
         guard let vault, vault.canRead, !vault.isRecoveryOpen, vault.listStatus.allowsWriting, var stored = current,
@@ -140,7 +140,7 @@ extension AppModelCore {
             quickCapture.publishStatus()
             quickCapture.profileChanged()
         } catch {
-            services.perf.log(.error, "capture", "quick capture suspension not saved: \(String(describing: error))")
+            services.perf.log(.error, "capture", "quick capture suspension not saved: \(LogSafe.describe(error))")
         }
     }
 

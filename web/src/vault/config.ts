@@ -54,10 +54,14 @@ export function parseConfig(text: string, base: string): ViewerConfig {
 
 /**
  * Fetches `config.json` beside the page. Undefined when there is none (404,
- * or a dev server answering with its HTML page); a config that exists but
- * cannot be read or parsed throws, so a locked-down deployment fails closed.
+ * or, only under the dev server, its HTML fallback page); a config that exists
+ * but cannot be read or parsed throws, so a locked-down deployment fails
+ * closed. A built viewer treats an HTML answer (a server's single-page fallback,
+ * a login page returned with 200) as unreadable too: it must not silently drop
+ * the lock.
  */
-export async function loadConfig(base: string, fetcher: typeof fetch = fetch.bind(globalThis)): Promise<ViewerConfig | undefined> {
+export async function loadConfig(base: string, fetcher: typeof fetch = fetch.bind(globalThis),
+                                 devServer: boolean = import.meta.env.DEV): Promise<ViewerConfig | undefined> {
   const url = new URL(configFileName, base);
   let res: Response;
   try {
@@ -67,7 +71,10 @@ export async function loadConfig(base: string, fetcher: typeof fetch = fetch.bin
   }
   if (res.status === 404 || res.status === 410) return undefined;
   if (!res.ok) throw new ConfigError(`cannot fetch ${configFileName}: HTTP ${res.status}`);
-  if ((res.headers.get("content-type") ?? "").includes("text/html")) return undefined;
+  if ((res.headers.get("content-type") ?? "").includes("text/html")) {
+    if (devServer) return undefined;
+    throw new ConfigError(`${configFileName} was answered with an HTML page, not JSON (add config.json, or have the server answer 404)`);
+  }
   const body = await res.arrayBuffer();
   if (body.byteLength > maxConfigBytes) throw new ConfigError(`${configFileName} is larger than ${maxConfigBytes} bytes`);
   let text: string;

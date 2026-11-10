@@ -407,6 +407,7 @@ extension AppModelSuites {
             #expect(alert.vaultName == "Mine")
             #expect(await TS.waitUntil(timeout: .seconds(30)) { notifier.scheduled["takeover-\(alert.vaultID.uuidString)"]?.notice == .takeover(alert) },
                     "and a notification")
+            #expect(notifier.prompts == 0, "no permission prompt for a notice nobody asked for")
             again.dismissTakeoverAlert()
             #expect(again.takeoverAlert == nil)
             await again.checkTakeovers()
@@ -419,6 +420,28 @@ extension AppModelSuites {
             again.takeoverAlert = alert
             again.close()
             #expect(again.takeoverAlert == nil)
+        }
+
+        /// Where notifications are not allowed, the banner is the notice: the model does not ask for permission to show one.
+        @Test func aTakeoverNeverAsksForNotificationPermission() async throws {
+            let w = try await DeviceWorld.make(others: ["Phone"])
+            let memory = MemoryKeyValueStore()
+            let first = try await w.model("Phone", memory: memory)
+            first.close()
+            let phone = try #require(w.others["Phone"])
+            _ = try await w.takeover(by: try DeviceKeys.generate(), keep: [phone.keys.fingerprint], name: "New iPad",
+                                     trust: MemoryEpochTrustStore(), root: try await w.root())
+            let notifier = RecordingNotifier()
+            notifier.allowed = false
+            let again = AppModel(deviceStateURL: TS.deviceStateURL(), trust: phone.trust, backupNotifier: notifier)
+            again.deviceMemory = memory
+            try await again.openVault(at: w.url)
+            try await again.unlock(device: phone.keys)
+            defer { again.close() }
+            let alert = try #require(again.takeoverAlert, "the banner is raised")
+            try await Task.sleep(for: .seconds(1))
+            #expect(notifier.prompts == 0)
+            #expect(notifier.scheduled["takeover-\(alert.vaultID.uuidString)"] == nil)
         }
 
         /// Review of #26, note (a): a takeover by another device that arrives while the vault is open reopens it

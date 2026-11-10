@@ -106,8 +106,10 @@ final class SyncTests: SyncTestCase {
         XCTAssertEqual(try Data(contentsOf: localFile), Data("age-encryption.org/v1\nlocal".utf8))
         XCTAssertEqual(server.file(rel), Data("age-encryption.org/v1\nremote".utf8))
         // Uploads are conditional so a racing server-side copy survives too.
-        let put = server.requestLog.filter { $0.method == "PUT" && $0.path.hasSuffix(r.name.filename) }
-        XCTAssertEqual(put.count, 1)
+        // (A revision is uploaded to a temporary name and moved into place without overwriting.)
+        let moves = server.headers.filter { $0.method == "MOVE" && $0.headers["Destination"]?.hasSuffix(r.name.filename) == true }
+        XCTAssertEqual(moves.count, 1)
+        XCTAssertEqual(moves.first?.headers["Overwrite"], "F")
     }
 
     func testDownloadNeverLeavesPartialFile() throws {

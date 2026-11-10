@@ -148,6 +148,21 @@ final class ZipArchiveTests: TempDirTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(t0), 5)
     }
 
+    /// Entries whose local headers declare a long name or extra field, so that their data starts inside the next
+    /// entry, overlap even though the central directory's sizes alone would not show it.
+    func testOverlapThroughTheLocalHeaderLengthsIsRefused() throws {
+        let first = Data(repeating: 0x41, count: 200)
+        var bytes = try TestZip.write([TestZip.File(path: "a", data: first, deflate: false),
+                                       TestZip.File(path: "b", data: Data("second".utf8), deflate: false)])
+        XCTAssertEqual(try ZipArchive(data: bytes).entries.count, 2)
+        // The first local header (offset 0) now claims an extra field long enough to reach into the second entry.
+        bytes[28] = UInt8(200 & 0xFF); bytes[29] = UInt8(200 >> 8)
+        XCTAssertThrowsError(try ZipArchive(data: bytes)) {
+            guard case ImportError.zip(let msg) = $0 else { return XCTFail("\($0)") }
+            XCTAssertTrue(msg.contains("overlap"), msg)
+        }
+    }
+
     func testDuplicateNamesAreRefused() throws {
         var files = [TestZip.File(path: "Session.plist", data: Data("one".utf8)),
                      TestZip.File(path: "Session.plist", data: Data("two".utf8))]

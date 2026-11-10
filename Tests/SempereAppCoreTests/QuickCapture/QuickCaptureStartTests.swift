@@ -441,4 +441,13 @@ struct QuickCaptureStartTests {
         #expect(VoiceNoteErrorInfo(type: "T", domain: "D", code: 1, description: String(repeating: "x", count: 1000)).description.count
                 == VoiceNoteErrorInfo.maxDescription)
     }
+
+    /// A Foundation file error's text names the path and the file (a vault folder is named by the user): the
+    /// summary, which the app logs as public, keeps its domain and code and the system's reason, not that text.
+    @Test func aFileErrorSummaryNamesNoPath() {
+        let folder = URL(fileURLWithPath: "/Users/someone/Synthetic Private Name.sempere")
+        let info = VoiceNoteErrorInfo(CocoaError(.fileWriteNoPermission, userInfo: [NSFilePathErrorKey: folder.path, NSURLErrorKey: folder]))
+        #expect(!info.summary.contains("Synthetic") && !info.summary.contains("someone"), "\(info.summary)")
+        #expect(info.domain == "NSCocoaErrorDomain" && info.code == 513)
+    }
 }

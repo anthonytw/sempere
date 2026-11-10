@@ -7,7 +7,8 @@
 #   scripts/release-publish.sh --publish VERSION   checks, then runs `gh release create` after you type the version
 #
 # Checks: the local tag exists and is on GitHub at the same commit, build/release/vVERSION (scripts/release-build.sh)
-# was built from that commit (its COMMIT file), has SHA256SUMS that verify and list every tarball, notes.md and a tarball
+# was built from that commit (its COMMIT file), has SHA256SUMS that verify, are signed (SHA256SUMS.sig, checked against
+# packaging/allowed_signers) and list every tarball, notes.md and a tarball
 # per platform, and the release does not exist yet. `gh release create` needs a `gh auth login` that can write to the
 # repository; it never needs admin. The seat (splarg-bot) can push tags and create Releases, but only with the owner's
 # explicit OK: the typed version is a human gate, and an agent must never answer it for the owner. --publish may come
@@ -50,11 +51,12 @@ done
 for f in "$dist"/*.tar.gz; do
   grep -q "  ${f##*/}\$" "$dist/SHA256SUMS" || die "${f##*/} is in $dist but not in SHA256SUMS"
 done
-echo "ok    $dist: built from ${built:0:8}, SHA256SUMS verify, notes.md and three tarballs"
+sig=$(scripts/release-signature.sh verify "$dist" 2>&1) || die "${sig#error: } (just release-build $version)"
+echo "ok    $dist: built from ${built:0:8}, SHA256SUMS verify and are signed, notes.md and three tarballs"
 
 pre=(); [[ $version == *-* ]] && pre=(--prerelease)
 cmd=(gh release create "$tag" --repo "$repo" --verify-tag --title "Sempere CLI $tag" --notes-file "$dist/notes.md"
-     ${pre[@]+"${pre[@]}"} "$dist"/*.tar.gz "$dist/SHA256SUMS")
+     ${pre[@]+"${pre[@]}"} "$dist"/*.tar.gz "$dist/SHA256SUMS" "$dist/SHA256SUMS.sig")
 
 # The Release must not exist yet. Print mode asks only when gh is here (it may not be logged in: then it cannot say).
 if command -v gh >/dev/null && gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then die "the GitHub release $tag already exists"; fi

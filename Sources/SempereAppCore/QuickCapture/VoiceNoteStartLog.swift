@@ -23,9 +23,13 @@ public struct VoiceNoteErrorInfo: Codable, Equatable, Sendable {
 
     public init(_ error: Error) {
         let ns = error as NSError
-        // A Swift error's own text (`RecordingError` carries the audio system's domain and code in it);
-        // an Objective-C error's localized text (its `description` repeats the whole user info).
-        let text = Swift.type(of: error) is NSError.Type ? ns.localizedDescription : String(describing: error)
+        // A Swift error's own text (`RecordingError` carries the audio system's domain and code in it); an
+        // Objective-C error's localized text. Not the text of a Foundation file or URL error (its description and its
+        // localized description name the path and the file, which a vault folder's user-chosen name makes personal):
+        // those give their reason, which names neither.
+        let namesFiles = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain].contains(ns.domain)
+        let text = namesFiles ? (ns.localizedFailureReason ?? "")
+            : Swift.type(of: error) is NSError.Type ? ns.localizedDescription : String(describing: error)
         self.init(type: String(reflecting: Swift.type(of: error)), domain: ns.domain, code: ns.code, description: text)
     }
 
@@ -195,7 +199,7 @@ public final class VoiceNoteStartLog {
                 #endif
             } catch {
                 // Before the first unlock after boot nothing can be written; the log still has it.
-                perf.log(.error, Self.logCategory, "could not keep the voice note start: \(String(describing: error))")
+                perf.log(.error, Self.logCategory, "could not keep the voice note start: \(LogSafe.describe(error))")
             }
         }
     }

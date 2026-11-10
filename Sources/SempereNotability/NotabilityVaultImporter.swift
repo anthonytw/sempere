@@ -55,6 +55,7 @@ public struct NotabilityVaultImporter: VaultImporter {
                                                  attachments: attachments,
                                                  keepImageMetadata: o.bool("keepImageMetadata", default: false),
                                                  pdfText: request.pdfText)
+        options.convertHEIC = request.convertHEIC
         options.progress = request.progress
         if let stop = request.cancellation { options.shouldStop = { stop.isCancelled } }
         let report = try NotabilityImporter.import(paths: request.paths, into: request.vault, device: request.device,

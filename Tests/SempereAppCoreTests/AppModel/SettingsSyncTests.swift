@@ -9,7 +9,11 @@ import Testing
 @MainActor
 final class RecordingNotifier: BackupNotifying {
     private(set) var scheduled: [String: (date: Date, notice: LocalNotice)] = [:]
-    func authorize() async -> Bool { true }
+    /// Whether the permission is already given, and the times the system's prompt was asked for.
+    var allowed = true
+    private(set) var prompts = 0
+    func authorize() async -> Bool { prompts += 1; return allowed }
+    func isAuthorized() async -> Bool { allowed }
     func schedule(id: String, at date: Date, notice: LocalNotice) async { scheduled[id] = (date, notice) }
     func cancel(id: String) async { scheduled[id] = nil }
 }
@@ -215,6 +219,22 @@ extension AppModelSuites {
             }
             #expect(name == "sample" && record.reminderDays == 7)
             #expect(model.currentSettingsValues()["quickCapture.notebook"] == .string("Voice/Inbox"))
+            #expect(notifier.prompts == 0, "a setting from another device never asks for permission")
+        }
+
+        /// A reminder switched on by another device's synced setting stays quiet where notifications are not allowed,
+        /// and asks nothing (the permission prompt belongs to the user's own Remind Me).
+        @Test func aSyncedReminderNeverPromptsWhereNotificationsAreOff() async throws {
+            let notifier = RecordingNotifier()
+            notifier.allowed = false
+            let (model, _, _) = try await model(notifier: notifier)
+            defer { model.close() }
+            model.applySharedSettings(["backup.reminderDays": .number(7)])
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.backupRecord()?.reminderDays == 7 })
+            #expect(notifier.prompts == 0)
+            // The user's own switch is the one that asks.
+            #expect(await model.setBackupReminder(days: 3) == false)
+            #expect(notifier.prompts == 1)
         }
     }
 }

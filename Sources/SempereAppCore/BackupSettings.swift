@@ -250,8 +250,12 @@ public enum LocalNotice: Equatable, Sendable {
 /// `BackupNotifications.swift`; a fake in tests).
 @MainActor
 public protocol BackupNotifying: AnyObject {
-    /// Asks for permission to notify; true when granted.
+    /// Asks for permission to notify (the system's prompt, only when the user has not decided yet); true when
+    /// granted. Only an action of the user on this device may call it (switching Remind Me on).
     func authorize() async -> Bool
+    /// Whether notifying is allowed now, without asking: for a notice nobody asked for on this device (the takeover
+    /// notice, a reminder switched on by another device's synced setting).
+    func isAuthorized() async -> Bool
     /// Replaces the pending notification `id` with one at `date`.
     func schedule(id: String, at date: Date, notice: LocalNotice) async
     func cancel(id: String) async
@@ -262,6 +266,7 @@ public protocol BackupNotifying: AnyObject {
 final class NoBackupNotifier: BackupNotifying {
     init() {}
     func authorize() async -> Bool { false }
+    func isAuthorized() async -> Bool { false }
     func schedule(id: String, at date: Date, notice: LocalNotice) async {}
     func cancel(id: String) async {}
 }

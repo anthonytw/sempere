@@ -20,6 +20,15 @@ import { formatDate, h } from "./dom.ts";
  */
 export const maxAudioBytes = 256 * 1024 * 1024;
 
+/**
+ * The audio types the viewer plays (what Sempere and its importers write). The blob gets exactly one of these, never
+ * the writer's own string.
+ */
+export const playableAudio: ReadonlySet<string> = new Set([
+  "audio/mp4", "audio/x-m4a", "audio/m4a", "audio/aac", "audio/mpeg",
+  "audio/wav", "audio/x-wav", "audio/wave", "audio/aiff", "audio/x-caf",
+]);
+
 /** `m:ss` or `h:mm:ss`. */
 export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "";
@@ -96,7 +105,7 @@ export class RecordingsPanel {
           status.textContent = t("The audio is not available.");
           return undefined;
         }
-        if (!essence(ref.type).startsWith("audio/")) {
+        if (!playableAudio.has(essence(ref.type))) {
           status.textContent = t("This recording's type ({type}) cannot be played here.", { type: ref.type });
           return undefined;
         }

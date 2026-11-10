@@ -83,8 +83,24 @@ public enum ImageImport {
     /// Prepares `data` for storing: sniffs it, reads its size and
     /// orientation, and strips metadata unless `keepMetadata`.
     ///
+    /// A HEIC image is stored as it is (its metadata cannot be stripped here: `strippedMetadata` is false), unless
+    /// `convertHEIC` is given and `keepMetadata` is off: the host's converter (the app's ImageIO, as for a picked
+    /// photo with Photo Privacy on) then turns it into JPEG or PNG bytes without location or camera data, with the
+    /// size and orientation it reports, and those are what is stored. A converter that fails leaves the image as it is.
+    ///
     /// - Throws: `Failure`.
-    public static func prepare(_ data: Data, keepMetadata: Bool = false) throws -> Prepared {
+    public static func prepare(_ data: Data, keepMetadata: Bool = false,
+                               convertHEIC: (@Sendable (Data) throws -> PreparedImage)? = nil) throws -> Prepared {
+        if !keepMetadata, let convertHEIC, format(of: data) == .heic, let c = try? convertHEIC(data),
+           [.jpeg, .png].contains(format(of: c.data)), var converted = try? prepare(c.data, keepMetadata: false),
+           c.pixelSize.w >= 1, c.pixelSize.h >= 1 {
+            // The converter's own size (after its orientation) and orientation: `prepare` read the stored pixels of
+            // bytes that no longer carry an orientation.
+            converted.width = Int(c.pixelSize.w); converted.height = Int(c.pixelSize.h)
+            converted.orientation = (c.orientation ?? 1) == 1 ? nil : c.orientation
+            converted.convertedFrom = .heic
+            return converted
+        }
         let p = try prepareUnchecked(data, keepMetadata: keepMetadata)
         // format.md §8.4: writers stay within 100 megapixels (renderers draw a placeholder beyond).
         guard Double(p.width) * Double(p.height) <= Double(ImageLimits.maxPixels) else {

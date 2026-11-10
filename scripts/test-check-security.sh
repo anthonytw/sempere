@@ -86,8 +86,10 @@ expect "a tracked AuthKey_*.p8 file fails" fail "secret-looking text: keys/AuthK
 fresh; put Sources/Lib/a.mobileprovision "x"
 expect "a tracked .mobileprovision file fails" fail "a.mobileprovision"
 fresh; put Sources/Lib/K.swift "let k = \"$key\""
-put scripts/security-allow.txt "perf | Sources/Lib/K.swift |"
-expect "an allow-list entry without a reason fails" fail "needs 'rule \| path \| reason'"
+put scripts/security-allow.txt "perf | Sources/Lib/K.swift | sha256:$keyhash |"
+expect "an allow-list entry without a reason fails" fail "needs 'perf \| path \| sha256:HASH \| reason'"
+fresh; put scripts/security-allow.txt "perf | Sources/Lib/K.swift | because"
+expect "a non-secret entry without a statement hash fails" fail "needs 'perf \| path \| sha256:HASH \| reason'"
 fresh; put scripts/security-allow.txt "secrets | nowhere/ | sha256:$keyhash | nothing"
 expect "a stale allow-list entry is reported" ok "matches nothing"
 
@@ -119,9 +121,24 @@ expect "print ( with a space fails" fail "logging in Sources/"
 fresh; put Sources/Lib/L.swift "// print(\"in a comment\")" "func f(p: Printer) { p.print(1) }"
 expect "a comment and a method named print pass" ok
 fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, passphrase: String) {" "    perf.event(\"unlock\"," "               \"with \\(passphrase)\")" "}"
-expect "a PerfSink call naming passphrase fails" fail "PerfSink call names a sensitive word: Sources/Lib/P.swift:2"
+expect "a PerfSink call naming passphrase fails" fail "PerfSink call names a sensitive word or interpolates an error's text: Sources/Lib/P.swift:2"
 fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, n: Int) { perf.event(\"list\", \"notes=\\(n)\") }"
 expect "a PerfSink call with a count passes" ok
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, error: Error) { perf.log(.error, \"c\", \"failed: \\(String(describing: error))\") }"
+expect "a PerfSink call with an error's own text fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, e: Error) { perf.log(.error, \"c\", \"failed: \\(e)\") }"
+expect "a PerfSink call interpolating the error itself fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, e: Error) { perf.log(.error, \"c\", \"failed: \\(e.localizedDescription)\") }"
+expect "a PerfSink call with localizedDescription fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, e: Error) { perf.log(.error, \"c\", \"failed: \\(LogSafe.describe(e))\") }"
+expect "a PerfSink call through LogSafe passes" ok
+# An entry covers one statement, not the file: a second call in the same file needs its own entry.
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, e: Error) { perf.log(.error, \"c\", \"one: \\(e)\") }"
+stmt_hash="$(hash_of "$(printf '%s' 'func f(perf: PerfSink, e: Error) { perf.log(.error, "c", "one: \(e)") }' | python3 -I -c 'import sys; print(" ".join(sys.stdin.read().split()), end="")')")"
+put scripts/security-allow.txt "perf | Sources/Lib/P.swift | sha256:$stmt_hash | reviewed: a test statement"
+expect "a per-statement entry allows its statement" ok
+put Sources/Lib/P.swift "func f(perf: PerfSink, e: Error) { perf.log(.error, \"c\", \"one: \\(e)\") }" "func g(perf: PerfSink, e: Error) { perf.log(.error, \"c\", \"two: \\(e)\") }"
+expect "a second call in the same file needs its own entry" fail "interpolates an error's text: Sources/Lib/P.swift:2"
 fresh; put Apps/App/Log.swift "func f(logger: Logger, title: String) { logger.info(\"opened \\(title, privacy: .public)\") }"
 expect "an Apps log of a title with .public fails" fail "Apps/ log interpolates"
 fresh; put Apps/App/Log.swift "func f(logger: Logger, title: String) { logger.info(\"opened \\(title)\") }"

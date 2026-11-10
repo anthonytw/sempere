@@ -507,7 +507,7 @@ public final class MemoryFaults: @unchecked Sendable {
         /// The store refuses without applying it (an HTTP 5xx; not transient).
         case serverError
         /// A body cut midway (a transient error): a download keeps part of the
-        /// bytes in its file; a write of a file body stores nothing on an
+        /// bytes in its file; a write (a file body or bytes) stores nothing on an
         /// atomic store, the part that arrived on another.
         case cutBody
         // A hostile or broken server (each independently).
@@ -638,10 +638,10 @@ public final class MemoryFaults: @unchecked Sendable {
         return z ^ (z >> 31)
     }
 
-    private static func applies(_ kind: Kind, to verb: MemoryRemote.Verb, fileBody: Bool) -> Bool {
+    private static func applies(_ kind: Kind, to verb: MemoryRemote.Verb) -> Bool {
         switch kind {
         case .dropBefore, .loseAnswer, .serverError: return true
-        case .cutBody: return verb == .download || (verb == .write && fileBody)
+        case .cutBody: return verb == .download || verb == .write
         case .wrongBytes: return verb == .read || verb == .download
         case .omitEntry, .phantomEntry: return verb == .list || verb == .listTree
         case .wrongSize: return verb == .list || verb == .listTree || verb == .stat
@@ -649,7 +649,7 @@ public final class MemoryFaults: @unchecked Sendable {
         }
     }
 
-    func decide(_ verb: MemoryRemote.Verb, _ path: [String], fileBody: Bool = false) -> Decision {
+    func decide(_ verb: MemoryRemote.Verb, _ path: [String]) -> Decision {
         withLock {
             _requests[verb, default: 0] += 1
             let key = verb.rawValue + " /" + path.joined(separator: "/")
@@ -660,7 +660,7 @@ public final class MemoryFaults: @unchecked Sendable {
             var d = Decision()
             let roll = uniform()
             var edge = 0.0
-            for kind in Kind.transport where Self.applies(kind, to: verb, fileBody: fileBody) {
+            for kind in Kind.transport where Self.applies(kind, to: verb) {
                 edge += _rates[kind]
                 if roll < edge {
                     if _eligible(kind, verb, path) { d.transport = kind }
@@ -669,7 +669,7 @@ public final class MemoryFaults: @unchecked Sendable {
             }
             for kind in Kind.hostile {
                 let r = uniform()
-                if Self.applies(kind, to: verb, fileBody: fileBody), r < _rates[kind], _eligible(kind, verb, path) {
+                if Self.applies(kind, to: verb), r < _rates[kind], _eligible(kind, verb, path) {
                     d.hostile.insert(kind)
                 }
             }
@@ -761,10 +761,10 @@ public struct MemoryRemote: SyncRemote {
     /// Starts an operation: checks the path, asks `interrupt`, decides the
     /// faults, waits the latency, and throws a fault that stops it before
     /// the store sees it.
-    private func begin(_ verb: Verb, _ path: [String], fileBody: Bool = false) throws -> MemoryFaults.Decision {
+    private func begin(_ verb: Verb, _ path: [String]) throws -> MemoryFaults.Decision {
         try Self.validate(path)
         try checkInterrupt()
-        let d = faults?.decide(verb, path, fileBody: fileBody) ?? .none
+        let d = faults?.decide(verb, path) ?? .none
         if let latency = faults?.latency, latency > 0 { try pause(latency) }
         let shown = "/" + path.joined(separator: "/")
         switch d.transport {
@@ -927,9 +927,7 @@ public struct MemoryRemote: SyncRemote {
 
     @discardableResult
     public func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool {
-        var isFile = false
-        if case .file = body { isFile = true }
-        let d = try begin(.write, path, fileBody: isFile)
+        let d = try begin(.write, path)
         let data: Data
         switch body {
         case .data(let bytes): data = bytes

@@ -3,8 +3,9 @@
 A plain-language summary for people using Sempere. The design is in
 [`DESIGN.md`](../DESIGN.md) ("Encryption", "Recovery"), the normative format in
 [`format.md`](format.md), and how to report a problem in
-[`SECURITY.md`](../SECURITY.md); the published security and privacy audits, the evidence for
-these claims, are in [`audits/`](audits/README.md). This page describes the design; it is not a
+[`SECURITY.md`](../SECURITY.md); the security and privacy audits, the evidence for these
+claims, are published in [`audits/`](audits/README.md) (none yet: the first, a full audit of 1.1, is
+planned before 1.1 is submitted). This page describes the design; it is not a
 guarantee. Sempere is free software and comes with no warranty (GPL v3,
 sections 15 and 16).
 
@@ -13,8 +14,9 @@ sections 15 and 16).
 Notes are encrypted on your devices before they are written, with
 [age](https://age-encryption.org) and its hybrid post-quantum recipient type
 (ML-KEM-768 with X25519). The folder that holds a vault, and every copy of it
-(iCloud Drive, another Files provider, a WebDAV server, a backup), holds only
-encrypted files. Someone who gets those files but not a key cannot read the
+(iCloud Drive, another Files provider, a WebDAV server, a backup), holds encrypted
+files and one file in the clear, `vault.json`, the vault's device list (see "What others can see").
+Someone who gets those files but not a key cannot read the
 notes, their titles, tags, attachments, recordings or transcripts.
 
 Each note also carries a tag that only key holders can compute, so someone who
@@ -32,7 +34,10 @@ your use (no telemetry).
   is wrapped once for each listed device and once for the recovery key, which
   is printed in the recovery kit when the vault is created and kept by no
   device ([`format.md`](format.md) §2, §3). The kit is a way in: protect it
-  like the notes themselves.
+  like the notes themselves. Printing it hands the key to the print path (the
+  system's print service, the printer, its queue and any print server): print to
+  a printer you trust, connected directly or on your own network, or save the PDF
+  and print it offline.
 - **The recovery key reads; it does not write.** Opened with the kit, a vault
   can be read and exported but not changed.
 - **A passphrase copy is only as strong as its passphrase.** If you chose one,
@@ -87,8 +92,10 @@ storage, and check it now and then (Verify Backup).
 
 Your storage provider, and anyone with a copy of the files, can see:
 
-- that a vault exists, how many notes it has, and roughly how big each note and
-  attachment is (attachments are padded to size classes);
+- that a vault exists, its folder's name (the app sets none, so it is whatever the
+  folder is called), how many notes it has, how big each saved change to a note is
+  (exactly: only attachments are padded to size classes), and roughly how big each
+  attachment is;
 - when files were written, and by which device (file names carry random ids,
   device ids, counters and a timestamp, never titles);
 - what kind each attachment is (image, PDF, audio, video or transcript: the
@@ -96,10 +103,13 @@ Your storage provider, and anyone with a copy of the files, can see:
   inbox or notebook records exist;
 - the public keys of the vault's devices and of its recovery key, the devices'
   names (by default the model and a short tag, such as "MacBook Pro 3F2A",
-  never the computer's name; rename them in Devices), which device manages
-  the others, the vault's own display name if you set one, its id and when it
-  was created (all in `vault.json`, which is not encrypted), and the
-  requests of devices waiting to join (`joins/`).
+  never the computer's name; rename them in Devices), each device's kind (iPad,
+  iPhone, Mac or command line), when it was added and by which device, which
+  device manages the others, the vault's own display name if you set one, its id
+  and when it was created, the epoch number and the reason for each key change
+  (a device removed, the home handed over, a takeover with the recovery kit, the
+  kit replaced) (all in `vault.json`, which is not encrypted), and the
+  requests of devices waiting to join (`joins/`, also in the clear).
 
 They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 
@@ -116,7 +126,8 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
   opened for display, a recording until it is saved into the note, a voice note
   until it is sealed, and files staged for an export or a drag; on a Mac, the
   titles of note windows open when the app quits, which the system keeps to
-  restore its windows. They rely on the
+  restore its windows; and the system's picture of the last screen, which it keeps
+  for the app switcher while the app is in the background. They rely on the
   system's data protection where the platform has it (on a Mac, which has none,
   the attachment cache is deleted when the app quits, and after a crash at the
   next launch, before any vault opens). The caches of note

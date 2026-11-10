@@ -319,7 +319,7 @@ same numbers:
 ### WebDAV
 
 Each note's `att/` is a synced collection with the same write-once table as
-revisions (`docs/io.md`): upload with `If-None-Match: *`, download to a
+revisions (`docs/io.md`): upload to a temporary name and `MOVE` without overwrite, download to a
 temporary file and `link(2)` into place, never overwrite. The note listing
 shows whether `att/` exists, so only notes with attachments cost one extra
 PROPFIND. A blob dropped on one side is deleted on the other only if

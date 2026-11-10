@@ -19,10 +19,14 @@ git init -q --bare "$t/github.git"
 git init -q -b main "$t/w"; cd "$t/w"
 git config commit.gpgsign false
 mkdir -p scripts Sources/SempereCLI
-cp "$src"/scripts/{release-tag.sh,release-publish.sh,release-verify.sh,changelog-section.sh} scripts/
+cp "$src"/scripts/{release-tag.sh,release-publish.sh,release-verify.sh,release-signature.sh,changelog-section.sh} scripts/
 printf '#!/usr/bin/env bash\necho "ok    local/release-sweep: stub on ${1:0:8}"\n' > scripts/release-sweep-check.sh; chmod +x scripts/release-sweep-check.sh
 printf 'let sempereVersion = "1.2.3"\n' > Sources/SempereCLI/Version.swift
 printf '# Changelog\n\n## [1.2.3] - 2026-11-09\n\n### Fixed\n\n- A thing.\n\n## [1.2.2] - 2026-10-01\n\n- Older.\n' > CHANGELOG.md
+# The maintainer's signing key (a throwaway one) and its line in the signers file.
+mkdir -p packaging; ssh-keygen -q -t ed25519 -N "" -C test -f "$t/key"; ssh-keygen -q -t ed25519 -N "" -C other -f "$t/other"
+echo "maintainer $(cut -d' ' -f1,2 "$t/key.pub")" > packaging/allowed_signers
+export SEMPERE_RELEASE_SIGNING_KEY="$t/key"
 git add -A; git commit -q -m "release: 1.2.3"
 git remote add origin "$t/github.git"; git push -q origin main; git fetch -q origin
 git checkout -q -b side; git commit -q --allow-empty -m "off main"; git checkout -q main
@@ -51,15 +55,19 @@ tarballs
 scripts/changelog-section.sh 1.2.3 > $d/notes.md
 git rev-parse v1.2.3^{commit} > $d/COMMIT
 (cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS)
+run scripts/release-publish.sh 1.2.3; check "publish refuses unsigned sums" '[[ $rc != 0 && $out == *"no $d/SHA256SUMS.sig"* ]]'
+scripts/release-signature.sh sign $d >/dev/null
+SEMPERE_RELEASE_SIGNING_KEY="$t/other" run scripts/release-signature.sh sign $d; check "signing with a key the signers file lacks is refused" '[[ $rc != 0 && $out == *"not signed by a key"* ]]'
+scripts/release-signature.sh sign $d >/dev/null
 run scripts/release-publish.sh 1.2.3
-check "publish prints the gh command and publishes nothing" '[[ $rc == 0 && $out == *"gh release create v1.2.3 --repo example/none --verify-tag"* && $out == *"just formula 1.2.3"* ]]'
+check "publish prints the gh command and publishes nothing" '[[ $rc == 0 && $out == *"SHA256SUMS.sig"* && $out == *"gh release create v1.2.3 --repo example/none --verify-tag"* && $out == *"just formula 1.2.3"* ]]'
 check "no squash machinery is left" '[[ ! -e $src/scripts/release-github.sh && $out != *squash* ]]'
 run env GH_EXISTS=1 scripts/release-publish.sh 1.2.3; check "print mode refuses a Release that exists" '[[ $rc != 0 && $out == *"already exists"* ]]'
 run scripts/release-publish.sh 1.2.3-rc.1; check "an unknown tag is refused" '[[ $rc != 0 && $out == *"no tag v1.2.3-rc.1"* ]]'
 echo tampered >> $d/sempere-1.2.3-linux-x86_64.tar.gz
 run scripts/release-publish.sh 1.2.3; check "publish refuses files that do not match SHA256SUMS" '[[ $rc != 0 && $out == *"does not match"* ]]'
 tarballs   # restore the files; a rebuilt tar can differ by its mtime, so make the sums again
-(cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS)
+(cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS); scripts/release-signature.sh sign $d >/dev/null
 git checkout -q side; git tag -a v9.9.9 -m x; git push -q origin refs/tags/v9.9.9 2>/dev/null; git tag -d v9.9.9 >/dev/null; git tag -a v9.9.9 -m y main
 run scripts/release-publish.sh 9.9.9; check "publish refuses a tag that differs from GitHub's" '[[ $rc != 0 && $out == *"binaries must come from the pushed tag"* ]]'
 git checkout -q main
@@ -78,13 +86,22 @@ rm $d/sempere-1.2.3-extra.tar.gz
 
 # release-verify: GitHub's tag against this checkout, and the Gitea mirror when a `gitea` remote exists.
 git init -q --bare "$t/gitea.git"; git remote add gitea "$t/gitea.git"
-tarballs; (cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS)
+tarballs; (cd $d && shasum -a 256 sempere-1.2.3-*.tar.gz > SHA256SUMS); scripts/release-signature.sh sign $d >/dev/null
 mkdir -p "$t/dl/releases/download/v1.2.3"; cp $d/* "$t/dl/releases/download/v1.2.3/"
 export SEMPERE_RELEASE_URL="file://$t/dl"
 cp $d/COMMIT $t/COMMIT.bak; git rev-parse retag > $d/COMMIT
 run scripts/release-verify.sh 1.2.3; check "verify refuses a local build of another commit" '[[ $rc != 0 && $out == *"local build is of"* ]]'
 cp $t/COMMIT.bak $d/COMMIT
 run scripts/release-verify.sh 1.2.3; check "verify warns while the mirror lacks the tag" '[[ $rc == 0 && $out == *"ok    GitHub'"'"'s v1.2.3"* && $out == *"warn  the Gitea mirror has"* ]]'
+run scripts/release-verify.sh 1.2.3; check "verify checks the published signature" '[[ $out == *"SHA256SUMS signed by maintainer"* ]]'
+echo tampered >> "$t/dl/releases/download/v1.2.3/SHA256SUMS"
+run scripts/release-verify.sh 1.2.3; check "verify refuses a published list its signature does not cover" '[[ $rc != 0 ]]'
+cp $d/SHA256SUMS "$t/dl/releases/download/v1.2.3/SHA256SUMS"
+mv "$t/dl/releases/download/v1.2.3/SHA256SUMS.sig" "$t/sig.bak"
+run scripts/release-verify.sh 1.2.3; check "verify fails a release from 1.1.0 on without its signature" '[[ $rc != 0 && $out == *"has no SHA256SUMS.sig"* ]]'
+mv "$t/sig.bak" "$t/dl/releases/download/v1.2.3/SHA256SUMS.sig"
+run scripts/release-signature.sh ready; check "ready signs a probe with the key in the signers file" '[[ $rc == 0 ]]'
+SEMPERE_RELEASE_SIGNING_KEY="$t/other" run scripts/release-signature.sh ready; check "ready refuses a key the signers file lacks" '[[ $rc != 0 && $out == *"is not a key in"* ]]'
 git push -q gitea refs/tags/v1.2.3 refs/heads/main
 run scripts/release-verify.sh 1.2.3; check "verify sees the mirror's tag" '[[ $rc == 0 && $out == *"the Gitea mirror has v1.2.3 at the same commit"* ]]'
 exit $fail

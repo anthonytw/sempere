@@ -600,7 +600,9 @@ scaled with the ink); the item goes into the content layer (`100`) in
 Notability's order. The bytes are sniffed: JPEG and PNG are stored with
 metadata stripped (`format.md` §8.2.5; the EXIF orientation becomes the
 item's `orientation`, `pixelSize` is after it) unless `--keep-image-metadata`;
-HEIC is stored as is (sized from the primary item's `ispe`, its `irot`/`imir`
+HEIC is converted to a JPEG without location or camera data where the host has a converter and the metadata is not
+kept (the app: Notability imports follow Settings ▸ Photos, as a picked photo does), and otherwise stored as is (the
+CLI: sized from the primary item's `ispe`, its `irot`/`imir`
 become the item's `orientation`, metadata not stripped, with a warning); a GIF (its first frame, on a transparent canvas of the logical
 screen) or a baseline TIFF (gray, palette or RGB(A), 1–16 bits, strips,
 uncompressed, PackBits, LZW or Deflate, orientation applied) is decoded by the
