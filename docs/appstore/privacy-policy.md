@@ -1,6 +1,6 @@
 # Sempere Privacy Policy
 
-*Effective: 2026-10-06. Last updated: 2026-11-09.*
+*Effective: 2026-10-06. Last updated: 2026-11-10.*
 
 This page is the Privacy Policy URL's text. The URL is `https://sempere.anthonywertz.com/privacy`: the app's
 About screen links it (`SempereAbout.privacyPolicyURL`) and App Store Connect must name it. The website builds
@@ -35,13 +35,14 @@ recordings and their transcripts), are saved only where you choose:
 - in a folder you pick in the Files app, such as iCloud Drive or another provider;
 - on a WebDAV server you run or rent and connect to in the app (Open from WebDAV). The app then
   connects to that server's address, over HTTPS, with the user name and password you enter, to
-  upload your encrypted notes. The password is kept only in your device's Keychain. Nothing is
+  upload your encrypted notes and the vault's device list (one file that is not encrypted). The password is kept only in your device's Keychain. Nothing is
   sent to us or to anyone else.
 
 Those storage services are run by you or by their providers (for example Apple, for iCloud
 Drive), under their own terms and privacy policies; we have no access to them. Notes are
 encrypted before they are saved, so a storage provider sees file names, sizes and modification
-times, but not what you wrote, drew or recorded.
+times and the vault's device list (device names and public keys, kept in one file that is not
+encrypted), but not what you wrote, drew or recorded.
 
 ## Your keys
 
@@ -59,8 +60,8 @@ your key, nobody can decrypt your notes.**
 - **Transcription** of recordings uses Apple's on-device speech recognition. Audio is never
   sent to a server. The system may download a speech model for your language from Apple; that
   download contains none of your data.
-- **Photos** you add have their location and camera data removed by default (Settings →
-  Photos).
+- **Photos** you add, or that come with notes you import, have their location and camera data removed by
+  default (Settings → Photos).
 - **Quick voice notes** from the Lock Screen or Control Center are encrypted on the device
   before they are saved, without unlocking your vault. On an Apple Watch with Sempere's watch
   app (if you turn on Use on Apple Watch), a voice note is recorded on the watch, encrypted
@@ -87,13 +88,15 @@ policy will be updated before such a version is released.
 
 ## Device permissions
 
-Sempere asks for a permission only when you use the feature that needs it:
+Sempere asks for a permission when a feature needs it:
 
 - the camera, to add photos and video, and to scan the codes of another device or of a recovery kit (iPad and iPhone);
 - the microphone, to record audio (also on an Apple Watch you have paired, where Sempere's watch app records a voice note);
 - speech recognition, to transcribe recordings on the device;
 - Face ID or Touch ID, to unlock a vault that you set to ask for it, and to confirm it is you before letting a device into a vault or replacing its recovery kit;
-- Live Activities, to show a voice note in progress.
+- Live Activities, to show a voice note in progress;
+- notifications, for backup reminders you switch on and, where you allowed them, to tell you when another device took over a vault with its recovery kit;
+- the local network, when your WebDAV server is on it (iPad and iPhone; the system asks).
 
 Photos and files are chosen with the system pickers, which give the app only what you pick.
 Face ID and Touch ID data never leaves the system and is never seen by the app.

@@ -24,7 +24,7 @@
 </head>
 <body>
 <h1>Sempere Privacy Policy</h1>
-<p class="date">Effective: 2026-10-06. Last updated: <span id="updated">2026-11-09</span>.</p>
+<p class="date">Effective: 2026-10-06. Last updated: <span id="updated">2026-11-10</span>.</p>
 
 <p class="short">Short version: Sempere does not collect, transmit or share any data about you. It has no
 servers, no accounts, no analytics and no advertising. The only network connections it makes are to a WebDAV
@@ -52,7 +52,8 @@ transcripts), are saved only where you choose:</p>
 </ul>
 <p>Those storage services are run by you or by their providers (for example Apple, for iCloud Drive), under their
 own terms and privacy policies; we have no access to them. Notes are encrypted before they are saved, so a
-storage provider sees file names, sizes and modification times, but not what you wrote, drew or recorded.</p>
+storage provider sees file names, sizes and modification times and the vault’s device list (device names and public
+keys, kept in one file that is not encrypted), but not what you wrote, drew or recorded.</p>
 
 <h2>Your keys</h2>
 <p>Each of your devices generates its own keys, which never leave it: its decryption key is kept in that
@@ -69,8 +70,8 @@ notes.</strong></p>
   <li><strong>Transcription</strong> of recordings uses Apple’s on-device speech recognition. Audio is never sent
     to a server. The system may download a speech model for your language from Apple; that download contains none
     of your data.</li>
-  <li><strong>Photos</strong> you add have their location and camera data removed by default (Settings →
-    Photos).</li>
+  <li><strong>Photos</strong> you add, or that come with notes you import, have their location and camera data
+    removed by default (Settings → Photos).</li>
   <li><strong>Quick voice notes</strong> from the Lock Screen or Control Center are encrypted on the device before
     they are saved, without unlocking your vault. On an Apple Watch with Sempere’s watch app (if you turn on Use on
     Apple Watch), a voice note is recorded on the watch, encrypted there before it is saved, and sent to your iPhone
@@ -81,7 +82,7 @@ notes.</strong></p>
 <h2>Network connections</h2>
 <p>Sempere connects only to a WebDAV server you set up yourself, and only if you open a vault there (Open from
 WebDAV): it then downloads the vault from that server’s address, and uploads your already encrypted vault files
-to it, over HTTPS, with the user
+(and the vault’s device list, one file that is not encrypted) to it, over HTTPS, with the user
 name and password you entered (the password stays in your device’s Keychain). Nothing is sent to us or to anyone
 else. Otherwise your notes reach iCloud Drive or another storage provider only through the system’s Files and
 iCloud services, which copy the encrypted files you saved there; the speech model download above is the system’s
@@ -94,13 +95,15 @@ download request carries nothing from your vault, and the model then runs on you
 it. This policy will be updated before such a version is released.</p>
 
 <h2>Device permissions</h2>
-<p>Sempere asks for a permission only when you use the feature that needs it:</p>
+<p>Sempere asks for a permission when a feature needs it:</p>
 <ul>
   <li>the camera, to add photos and video, and to scan the codes of another device or of a recovery kit (iPad and iPhone);</li>
   <li>the microphone, to record audio (also on an Apple Watch you have paired, where Sempere’s watch app records a voice note);</li>
   <li>speech recognition, to transcribe recordings on the device;</li>
   <li>Face ID or Touch ID, to unlock a vault that you set to ask for it, and to confirm it is you before letting a device into a vault or replacing its recovery kit;</li>
-  <li>Live Activities, to show a voice note in progress.</li>
+  <li>Live Activities, to show a voice note in progress;</li>
+  <li>notifications, for backup reminders you switch on and, where you allowed them, to tell you when another device took over a vault with its recovery kit;</li>
+  <li>the local network, when your WebDAV server is on it (iPad and iPhone; the system asks).</li>
 </ul>
 <p>Photos and files are chosen with the system pickers, which give the app only what you pick. Face ID and
 Touch ID data never leaves the system and is never seen by the app.</p>
