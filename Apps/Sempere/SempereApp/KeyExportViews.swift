@@ -143,9 +143,43 @@ struct KeyFileActions: View {
 
 /// Puts a secret on this device's clipboard only (no Universal Clipboard),
 /// cleared after three minutes.
+///
+/// UIKit's `expirationDate` is not enforced by Mac Catalyst (measured: the item was still on the general pasteboard
+/// after it passed), so on a Mac the app clears the pasteboard itself after the same time, and when it quits, unless
+/// something else was copied since (the change count moved). The item also carries the markers that clipboard managers
+/// on the Mac skip (nspasteboard.org's concealed and transient types).
 enum SecretPasteboard {
-    static func copy(_ text: String) {
-        UIPasteboard.general.setItems([[UTType.plainText.identifier: text]],
-                                      options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(180)])
+    static let lifetime: TimeInterval = 180
+    /// Marker types of nspasteboard.org: the item is a secret and short-lived, so clipboard history tools leave it out.
+    static let markers = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"]
+
+    @MainActor static func copy(_ text: String) {
+        var item: [String: Any] = [UTType.plainText.identifier: text]
+        for marker in markers { item[marker] = Data([0]) }
+        UIPasteboard.general.setItems([item], options: [.localOnly: true,
+                                                        .expirationDate: Date().addingTimeInterval(lifetime)])
+        #if targetEnvironment(macCatalyst)
+        expireItself(afterChangeCount: UIPasteboard.general.changeCount)
+        #endif
     }
+
+    #if targetEnvironment(macCatalyst)
+    private static var pending: (changeCount: Int, quit: NSObjectProtocol)?
+
+    /// Clears the pasteboard after `lifetime`, and at quit, if nothing else was copied since this item.
+    @MainActor private static func expireItself(afterChangeCount count: Int) {
+        if let old = pending { NotificationCenter.default.removeObserver(old.quit) }
+        let quit = NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil,
+                                                          queue: .main) { _ in
+            MainActor.assumeIsolated { clearIfUnchanged(count) }
+        }
+        pending = (count, quit)
+        DispatchQueue.main.asyncAfter(deadline: .now() + lifetime) { clearIfUnchanged(count) }
+    }
+
+    @MainActor private static func clearIfUnchanged(_ count: Int) {
+        guard UIPasteboard.general.changeCount == count else { return }
+        UIPasteboard.general.items = []
+    }
+    #endif
 }

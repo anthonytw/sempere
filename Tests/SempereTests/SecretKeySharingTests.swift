@@ -39,8 +39,14 @@ final class SecretKeySharingTests: XCTestCase {
                 writes.append(name + ": " + line.trimmingCharacters(in: .whitespaces))
             }
         }
-        XCTAssertEqual(writes.count, 1, "\(writes)")
-        XCTAssertTrue(writes.allSatisfy { $0.hasPrefix("KeyExportViews.swift: UIPasteboard.general.setItems") }, "\(writes)")
+        // SecretPasteboard is the one writer; on a Mac it also clears the item itself (Catalyst ignores the
+        // expiration date), and the line that sets the item is the one with `setItems`.
+        XCTAssertTrue(writes.allSatisfy { $0.hasPrefix("KeyExportViews.swift:") }, "\(writes)")
+        XCTAssertEqual(writes.filter { $0.contains("UIPasteboard.general.setItems") }.count, 1, "\(writes)")
+        let board = try source("KeyExportViews.swift")
+        XCTAssertTrue(board.contains("targetEnvironment(macCatalyst)") && board.contains("UIPasteboard.general.items = []"),
+                      "a Mac clears the copied key itself")
+        XCTAssertTrue(board.contains("org.nspasteboard.ConcealedType") && board.contains("org.nspasteboard.TransientType"))
         // Every share sheet of a key leaves Copy out.
         let exports = try source("KeyExportViews.swift")
         XCTAssertTrue(exports.contains("ShareSheet(items: [shared], secret: true)"))

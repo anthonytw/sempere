@@ -144,7 +144,7 @@ public struct VoiceNoteTapLog: Sendable {
             try data.write(to: file, options: .atomic)
             #endif
         } catch {
-            Self.logLine?(.error, "could not keep the voice note tap: \(String(describing: error))")
+            Self.logLine?(.error, "could not keep the voice note tap: \((error as NSError).domain) \((error as NSError).code)")
         }
     }
 

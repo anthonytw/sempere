@@ -19,6 +19,8 @@ extension LocalNotice {
 final class UserNotificationBackupNotifier: BackupNotifying {
     func authorize() async -> Bool { await Self.authorize() }
 
+    func isAuthorized() async -> Bool { await Self.allowed() }
+
     func schedule(id: String, at date: Date, notice: LocalNotice) async {
         let text = notice.text
         await Self.schedule(id: id, after: max(date.timeIntervalSinceNow, 60), title: text.title, body: text.body)
@@ -30,6 +32,13 @@ final class UserNotificationBackupNotifier: BackupNotifying {
 
     // The center's objects are built and used off the main actor, so nothing
     // that is not Sendable crosses an isolation boundary.
+
+    private nonisolated static func allowed() async -> Bool {
+        switch await UNUserNotificationCenter.current().notificationSettings().authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return true
+        default: return false
+        }
+    }
 
     private nonisolated static func authorize() async -> Bool {
         let center = UNUserNotificationCenter.current()

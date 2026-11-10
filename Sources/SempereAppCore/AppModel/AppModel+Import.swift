@@ -175,9 +175,13 @@ extension AppModelCore {
             let clock = try deviceClockForWriting()
             let device = clock.device
             let extractor: (any PDFTextExtracting)? = importer.usesPDFText && options.pdfText ? services.pdfTextExtractor : nil
+            // A HEIC image of the source is converted the way a picked photo is with Photo Privacy on (location and
+            // camera data gone), unless the import keeps image metadata.
+            let preparation = services.attachmentPreparation
             let request = ImporterRequest(paths: urls, vault: vault, device: device, options: options.appValues(for: importer),
                                           pdfText: extractor, notebook: NotebookPath.canonical(notebook),
-                                          progress: { relay.post($0) }, cancellation: cancellation)
+                                          progress: { relay.post($0) }, cancellation: cancellation,
+                                          convertHEIC: { try preparation.prepareImage($0, privacy: true).data })
             let bookmarks = services.bookmarks
             let scoped = urls.map { bookmarks.startAccessing($0) }
             defer { for (url, s) in zip(urls, scoped) where s { bookmarks.stopAccessing(url) } }

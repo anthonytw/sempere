@@ -189,7 +189,7 @@ extension AppModelCore {
                 log.log(.error, "settings", "settings.age does not verify and vault.json changed; not replaced until the vault is reopened")
                 return
             }
-            log.log(.error, "settings", "settings.age unreadable, will be replaced: \(String(describing: e))")
+            log.log(.error, "settings", "settings.age unreadable, will be replaced: \(LogSafe.describe(e))")
             file = nil
         } catch is CancellationError {
             return
@@ -276,7 +276,7 @@ extension AppModelCore {
                 setSearchTranscripts(on)
             case ("backup.reminderDays", .number(let days)):
                 let n = Int(days)
-                Task { await self.setBackupReminder(days: n) }
+                Task { await self.setBackupReminder(days: n, ask: false) }   // no prompt for another device's setting
             case ("quickCapture.notebook", .string(let name)):
                 updateCaptureProfile { $0.profile.notebook = NoteOps.normalizedNotebook(name) ?? CaptureProfile.defaultNotebook }
             case ("quickCapture.transcribe", .bool(let on)):
@@ -307,7 +307,7 @@ extension AppModelCore {
             try quickCapture.store.save(stored)
             quickCapture.publishStatus()
         } catch {
-            services.perf.log(.error, "settings", "quick capture profile not updated: \(String(describing: error))")
+            services.perf.log(.error, "settings", "quick capture profile not updated: \(LogSafe.describe(error))")
         }
     }
 }

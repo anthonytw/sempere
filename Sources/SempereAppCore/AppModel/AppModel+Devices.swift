@@ -432,7 +432,8 @@ extension AppModelCore {
         takeoverAlert = alert
         let notifier = backupNotifier
         Task {
-            guard await notifier.authorize() else { return }
+            // The banner is the notice; a notification only where the user already allowed them (no prompt here).
+            guard await notifier.isAuthorized() else { return }
             await notifier.schedule(id: "takeover-\(alert.vaultID.uuidString)", at: Date().addingTimeInterval(1),
                                     notice: .takeover(alert))
         }

@@ -89,3 +89,14 @@ public final class MemoryPerfSink: PerfSink, @unchecked Sendable {
         lock.withLock { kept.append(.measured(phase: interval.phase, detail: detail)) }
     }
 }
+
+/// An error as a log line may carry it. Messages go to the unified log as public, so they hold no text an error made
+/// up: `String(describing:)` and `localizedDescription` of a Foundation file error print the path and the file's
+/// name (a vault folder's name is the user's own words). Only what names the failure is kept: the error's type, and
+/// its domain and code (for a Swift error, the type's name and the case's number).
+public enum LogSafe {
+    public static func describe(_ error: any Error) -> String {
+        let ns = error as NSError
+        return "\(String(reflecting: type(of: error))) \(ns.domain) \(ns.code)"
+    }
+}

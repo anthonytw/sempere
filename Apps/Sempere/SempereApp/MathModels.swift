@@ -52,7 +52,7 @@ extension MathModels.Failure: @retroactive CustomStringConvertible {
     }
 }
 
-/// Fetches one URL to a local file (the app's only network use, and only
+/// Fetches one URL to a local file (the app's only network use besides the WebDAV client, and only
 /// when the user asks for a model; tests use a fake).
 /// The app's fetcher: `URLSession` is the platform part (`MathModelDownload` in SempereAppCore does the checking).
 struct URLSessionModelFetcher: MathModelFetching {
