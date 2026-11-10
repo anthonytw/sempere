@@ -7,15 +7,19 @@
 #                tracked *.p12, *.p8, AuthKey_* and *.mobileprovision files
 #   2. logging   print( NSLog os_log Logger( dump( in Sources/ (not Sources/SempereCLI, whose output is its interface,
 #                and not inside #if DEBUG); PerfSink calls whose arguments name a key, secret, passphrase, identity,
-#                password or title; Apps/ Logger calls that interpolate those words without `privacy: .private`
+#                password or title, or interpolate an error's own text (`String(describing: error)`, `\(error)`,
+#                `localizedDescription`: log it with LogSafe.describe); Apps/ Logger calls that interpolate those
+#                words without `privacy: .private`
 #   3. pins      Package.resolved entries have revisions and cover Package.swift; every package in
 #                web/package-lock.json has an integrity hash; every `uses:` in .github is a full commit SHA (local
 #                ./.github/actions paths excepted); every workflow declares `permissions:`
 #
-# scripts/security-allow.txt lists the exceptions, one per line: `rule | path | reason`; for `secrets`, `secrets | path |
-# sha256:HASH | reason`, where HASH is the SHA-256 of the matched token (never the key itself), so a NEW key in an
-# allowed file still fails. `file` instead of a hash allows a tracked file name (*.p12 and the like). A path ending in `/`
-# is a prefix. A line without a reason is an error; an entry that matches nothing is reported (so the list cannot rot).
+# scripts/security-allow.txt lists the exceptions, one per line: `rule | path | sha256:HASH | reason`. For `secrets`, HASH is
+# the SHA-256 of the matched token (never the key itself); for the other rules it is the SHA-256 of the flagged statement
+# (its text with runs of white space made one space; a failure prints it), so a NEW call in an allowed file needs its own
+# entry. Either way a new key or call in an allowed file still fails. `file` instead of a hash allows a tracked file name
+# (*.p12 and the like). A path ending in `/` is a prefix. A line without a hash and a reason is an error; an entry that
+# matches nothing is reported (so the list cannot rot).
 #
 # Usage: scripts/check-security.sh [--root DIR]     (DIR must be a git work tree; default: this repository)
 set -euo pipefail
@@ -50,36 +54,39 @@ if [ -f "$allow_file" ]; then
     IFS='|' read -r rule path hash reason <<<"$line"
     rule="$(trim "$rule")"; path="$(trim "$path")"
     case "$rule" in secrets|logging|perf|apps-logging) ;; *) fail "security-allow.txt:$n: unknown rule '$rule'"; continue ;; esac
+    hash="$(trim "$hash")"; reason="$(trim "${reason:-}")"; hash="${hash#sha256:}"
     if [ "$rule" = secrets ]; then
-      hash="$(trim "$hash")"; reason="$(trim "${reason:-}")"; hash="${hash#sha256:}"
       [ -n "$path" ] && [ -n "$reason" ] && { [ "$hash" = file ] || [[ $hash =~ ^[0-9a-f]{64}$ ]]; } \
         || { fail "security-allow.txt:$n: a secrets entry needs 'secrets | path | sha256:HASH | reason'"; continue; }
     else
-      reason="$(trim "${hash:-}${reason:+|$reason}")"; hash=""
-      [ -n "$path" ] && [ -n "$reason" ] || { fail "security-allow.txt:$n: an entry needs 'rule | path | reason'"; continue; }
+      [ -n "$path" ] && [ -n "$reason" ] && [[ $hash =~ ^[0-9a-f]{64}$ ]] \
+        || { fail "security-allow.txt:$n: an entry needs '$rule | path | sha256:HASH | reason' (HASH: the statement's, printed by the failure)"; continue; }
     fi
     allow_rules+=("$rule"); allow_paths+=("$path"); allow_hashes+=("$hash"); allow_used+=(0)
   done < "$allow_file"
 fi
 
-# allowed RULE FILE [HASH]: true if an allow-list entry covers FILE (and, for secrets, the token's hash); marks it used
+# allowed RULE FILE [HASH]: true if an allow-list entry covers FILE and the hash of the token (secrets) or of the
+# flagged statement (the other rules); marks it used
 allowed() {
   local i p
   for i in "${!allow_rules[@]}"; do
     [ "${allow_rules[$i]}" = "$1" ] || continue
-    [ "$1" != secrets ] || [ "${allow_hashes[$i]}" = "${3:-}" ] || continue
+    [ "${allow_hashes[$i]}" = "${3:-}" ] || continue
     p="${allow_paths[$i]}"
     if [ "$p" = "$2" ] || { [ "${p%/}" != "$p" ] && [ "${2#"$p"}" != "$2" ]; }; then allow_used[$i]=1; return 0; fi
   done
   return 1
 }
 
-# report RULE LABEL: reads "file:line:text" lines on stdin, fails on each one that is not allowed
+# report RULE LABEL: reads "file:line:text" lines on stdin, fails on each one that is not allowed (an entry covers one
+# statement: the hash is of its text with white space runs made one space)
 report() {
-  local rule="$1" label="$2" line file
+  local rule="$1" label="$2" line file text hash
   while IFS= read -r line; do
-    file="${line%%:*}"
-    allowed "$rule" "$file" || fail "$label: ${line:0:200}"
+    file="${line%%:*}"; text="${line#*:}"; text="${text#*:}"
+    hash="$(printf '%s' "$text" | python3 -I -c 'import sys, hashlib; print(hashlib.sha256(" ".join(sys.stdin.read().split()).encode()).hexdigest())')"
+    allowed "$rule" "$file" "$hash" || fail "$label: ${line:0:200} (sha256:$hash)"
   done
 }
 
@@ -112,7 +119,7 @@ for l in sys.stdin:
 # --- 2. Logging -------------------------------------------------------------------------------------------------
 # awk: reads Swift files, skips comment lines and #if DEBUG regions (a debug build is not a shipped one).
 # mode=bad prints print/debugPrint/NSLog/os_log/Logger/dump lines; mode=perf prints PerfSink calls (joined across lines) that name
-# a sensitive word.
+# a sensitive word or interpolate an error's own text.
 swift_scan() {
   awk -v mode="$1" '
     FNR == 1 { depth = 0; dbg = 0; neg = 0; stmt = ""; pdepth = 0 }
@@ -144,7 +151,9 @@ swift_scan() {
         pdepth += gsub(/\(/, "(", l) - gsub(/\)/, ")", l)
       }
       if (stmt != "" && pdepth <= 0) {
-        if (tolower(stmt) ~ /key|secret|passphrase|identity|password|title/) print FILENAME ":" startl ":" stmt
+        # A sensitive word, or the text of an error (String(describing:), \(error), localizedDescription): messages are public.
+        if (tolower(stmt) ~ /key|secret|passphrase|identity|password|title/ ||
+            stmt ~ /String\((describing|reflecting): *(e|err|error)\)|\\\((e|err|error)\)|localizedDescription/) print FILENAME ":" startl ":" stmt
         stmt = ""
       }
     }
@@ -158,7 +167,7 @@ while IFS= read -r f; do
 done < <(swift_files Sources)
 if [ ${#src_files[@]} -gt 0 ]; then
   report logging "logging in Sources/" < <(swift_scan bad "${src_files[@]}")
-  report perf "PerfSink call names a sensitive word" < <(swift_scan perf "${src_files[@]}")
+  report perf "PerfSink call names a sensitive word or interpolates an error's text" < <(swift_scan perf "${src_files[@]}")
 fi
 # Apps/: a Logger call must not interpolate a sensitive word with `privacy: .public` (unified logging redacts strings
 # by default, so only an explicit .public publishes it).
