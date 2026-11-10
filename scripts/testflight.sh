@@ -191,8 +191,20 @@ statuses=$(forge_statuses "$sha" 2>/dev/null | awk -F'\t' '$1 == "local/testflig
   || statuses="gh-api-failed"
 state=$(sed -n 's|^local/testflight-suite=||p' <<<"$statuses" | head -1)
 sweep=$(sed -n 's|^local/release-sweep=||p' <<<"$statuses" | head -1)
-[[ $statuses == gh-api-failed ]] && state="unknown (the Gitea API failed)"
+if [[ $statuses == gh-api-failed ]]; then
+  state="unknown (the Gitea API failed)"
+fi
 state=${state:-missing}
+if [[ $state == missing || $state == unknown* ]]; then
+  # Statuses live on Gitea (scripts/local-ci.sh posts only there, and only for a commit Gitea has), though GitHub is primary:
+  # a commit GitHub has but the mirror has not copied yet has none. Say so only when Gitea answers and lacks the commit.
+  if forge_has_commit "$sha"; then :
+  elif forge_api GET "repos/$FORGE_REPO" >/dev/null 2>&1; then
+    state="$state: Gitea does not have ${sha:0:8} yet (the mirror, scripts/mirror-gitea.sh, has not caught up, so no status can exist)"
+  else
+    state="unknown (Gitea cannot be reached)"
+  fi
+fi
 if [[ $state == success || $sweep == success ]]; then
   if [[ $state == success ]]; then echo "local/testflight-suite: success"; else echo "local/release-sweep: success (covers the TestFlight suite)"; fi
 elif [[ $skip_suite == true ]]; then

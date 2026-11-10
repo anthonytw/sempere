@@ -2224,8 +2224,8 @@ is `placed`, `held`, `duplicate` or `refused`; `placement` is `vault`, `queued`,
 `held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, bytes, receivedAt}]`). `held add` is the
 decision to take a held note: it records it in this machine's ledger and places it in its vault's inbox as `receive` would
 (`--vault`, `--store`, `--queue` as there), and the next catch-up re-seals an older epoch's note under the current key
-(`--json`: `[{capture, outcome, placement, problem}]`, `outcome` `added` or `failed`; exit 1 if any failed). A note whose epoch
-this machine never held, or whose vault it does not hold, has `canAdd: false` and only `held delete` takes it. IDs are full ids or
+(`--json`: `[{capture, outcome, placement, problem}]`, `outcome` `added`, `notHeld` (already taken by an earlier add: a no-op, not a failure) or `failed`; exit 1 if any failed). A note whose epoch
+this machine never held, or whose vault it does not hold, has `canAdd: false` and only `held delete` takes it (`held list` shows the reason stored when the note was held; `held add` checks again, so a note whose epoch or vault has since become unknown fails, and `--all` skips it and says so on stderr). IDs are full ids or
 unique prefixes of 4 or more characters; `--all` takes every addable note (`add`) or every note (`delete`; `--json`: `{deleted}`).
 
 ### Shared settings

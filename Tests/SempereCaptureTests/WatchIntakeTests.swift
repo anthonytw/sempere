@@ -338,6 +338,69 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertThrowsError(try r.intake.addHeld(item))
         _ = s3
         XCTAssertNil(r.delivery.inboxes[r.vault])
+        // The count and "add all" ask the same question: the stored reason says addable, the re-check says no.
+        XCTAssertTrue(item.canAdd)
+        XCTAssertFalse(r.intake.canAddNow(item))
+        r.delivery.epochs[r.vault] = nil
+        XCTAssertTrue(r.intake.canAddNow(item))
+    }
+
+    /// A second add of one held note (a double tap, two callers at once) is a no-op, not a failure or a second placement.
+    func testAddingTheSameHeldNoteTwiceIsANoOp() throws {
+        let r = try rig()
+        r.delivery.enabled = false
+        let (file, meta, _) = try transfer(r)
+        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .held(.linkOff))
+        r.delivery.enabled = true
+        let item = try XCTUnwrap(r.intake.held?.list().first)
+        XCTAssertEqual(try r.intake.addHeld(item), .vault)
+        XCTAssertNil(try r.intake.addHeld(item), "already added")
+        XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 1)
+        XCTAssertEqual(r.delivery.ledgers[r.vault]?.count, 1)
+        // Concurrently: one placement.
+        r.delivery.enabled = false
+        let (f2, m2, _) = try transfer(r)
+        XCTAssertEqual(try r.intake.receive(file: f2, meta: m2).outcome, .held(.linkOff))
+        r.delivery.enabled = true
+        let second = try XCTUnwrap(r.intake.held?.list().first)
+        let intake = r.intake
+        DispatchQueue.concurrentPerform(iterations: 8) { _ in _ = try? intake.addHeld(second) }
+        XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 2)
+        XCTAssertEqual(r.intake.held?.list().count, 0)
+    }
+
+    /// An epoch check that cannot run (the profile is unreadable) does not hide the note from the count, and the add itself fails
+    /// before anything is recorded or placed: the note stays held.
+    func testAThrowingEpochCheckFailsTheAddAndKeepsTheNoteHeld() throws {
+        let r = try rig()
+        r.delivery.enabled = false
+        let (file, meta, _) = try transfer(r)
+        _ = try r.intake.receive(file: file, meta: meta)
+        r.delivery.enabled = true
+        let item = try XCTUnwrap(r.intake.held?.list().first)
+        r.delivery.unreadableProfile = true
+        XCTAssertTrue(r.intake.canAddNow(item))
+        XCTAssertThrowsError(try r.intake.addHeld(item))
+        XCTAssertEqual(r.intake.held?.list().count, 1)
+        XCTAssertNil(r.delivery.ledgers[r.vault])
+        XCTAssertNil(r.delivery.inboxes[r.vault])
+        r.delivery.unreadableProfile = false
+        XCTAssertEqual(try r.intake.addHeld(item), .vault)
+    }
+
+    /// A failed add leaves the note held (a later add can still take it).
+    func testAFailedAddKeepsTheNoteHeld() throws {
+        let r = try rig()
+        r.delivery.enabled = false
+        let (file, meta, _) = try transfer(r)
+        _ = try r.intake.receive(file: file, meta: meta)
+        r.delivery.enabled = true
+        r.delivery.failRecord = true
+        let item = try XCTUnwrap(r.intake.held?.list().first)
+        XCTAssertThrowsError(try r.intake.addHeld(item))
+        XCTAssertEqual(r.intake.held?.list().count, 1)
+        r.delivery.failRecord = false
+        XCTAssertEqual(try r.intake.addHeld(item), .vault)
     }
 
     func testASuspendedProfileHoldsMatchingNotes() throws {
@@ -396,6 +459,14 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertThrowsError(try small.hold(try WatchFixture.sealed(audio: Data(count: 3000)), vault: vault, reason: .linkOff)) {
             XCTAssertEqual($0 as? WatchHeldError, .full)
         }
+        // The one "full" rule: the store's, and the Settings notice's (which only has the cached list).
+        XCTAssertFalse(small.isFull)
+        XCTAssertFalse(store.isFull, "2 of 3 files held is not full")
+        XCTAssertTrue(WatchHeldStore.isFull(small.list(), adding: 3000, maxBytes: 4000))
+        let held = small.list()
+        XCTAssertTrue(WatchHeldStore.isFull(held, maxFiles: 200, maxBytes: held[0].bytes), "the byte limit alone is full")
+        XCTAssertFalse(WatchHeldStore.isFull(held, maxFiles: 200, maxBytes: held[0].bytes + 1))
+        XCTAssertTrue(WatchHeldStore.isFull(store.list(), maxFiles: 2), "the file limit alone is full")
     }
 
     // MARK: The received set

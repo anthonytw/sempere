@@ -199,6 +199,40 @@ final class WatchModelTests: XCTestCase {
         XCTAssertEqual(reloaded.model.state.seq, 0, "Reset was saved")
     }
 
+    /// The sweep deletes nothing while the stored state is unreadable; once a Reset or a new profile has written the state, it
+    /// is readable again and the sweep is back on without waiting for the next activation.
+    func testAResetAndANewProfileEndTheUnreadableState() async throws {
+        let secrets = MemoryWatchSecretStore()
+        secrets.failProfileStateLoads = true
+        let a = WatchModelTests.makeModel(secrets: secrets, support: try TestTemp.directory("watch-unreadable-a"))
+        XCTAssertTrue(a.model.stateUnreadable)
+        a.model.reset()
+        XCTAssertFalse(a.model.stateUnreadable, "Reset wrote the state")
+
+        let secrets2 = MemoryWatchSecretStore()
+        secrets2.failProfileStateLoads = true
+        let support = try TestTemp.directory("watch-unreadable-b")
+        let b = WatchModelTests.makeModel(secrets: secrets2, support: support)
+        XCTAssertTrue(b.model.stateUnreadable)
+        b.model.requestProvisioningIfNeeded()
+        let r = Rig(model: b.model, transport: b.transport, audio: FakeWatchAudio(), secrets: secrets2, support: support,
+                    haptics: HapticLog())
+        b.model.receive(try provisioning(r, seq: 0))
+        XCTAssertNotNil(b.model.state.payload)
+        XCTAssertFalse(b.model.stateUnreadable, "a stored profile is the state now")
+    }
+
+    /// The safety half: a Reset whose save fails leaves the state unreadable, so the sweep still deletes nothing.
+    func testAResetWhoseSaveFailsKeepsTheStateUnreadable() async throws {
+        let secrets = MemoryWatchSecretStore()
+        secrets.failProfileStateLoads = true
+        let a = WatchModelTests.makeModel(secrets: secrets, support: try TestTemp.directory("watch-unreadable-c"))
+        XCTAssertTrue(a.model.stateUnreadable)
+        secrets.failProfileStateSaves = true
+        a.model.reset()
+        XCTAssertTrue(a.model.stateUnreadable, "nothing was written: still a stand-in, not \"no profile\"")
+    }
+
     // MARK: Recording
 
     func testRecordStopSealsIntoTheOutboxAndHandsItOver() async throws {

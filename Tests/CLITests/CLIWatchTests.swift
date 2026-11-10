@@ -207,6 +207,37 @@ final class CLIWatchTests: CLITestCase {
         XCTAssertNotEqual(add.status, 0)
         XCTAssertEqual((try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [[String: Any]])?.count, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: path("q")))
+        // `--all` makes the same re-check, so it skips the note (nothing to add) rather than trying it and failing.
+        let all = try cli(["inbox", "watch", "held", "add", "--all", "--held", held, "--queue", path("q"), "--store", path("store"),
+                           "--vault", a.vault.url.path, "--json"])
+        XCTAssertEqual(all.status, 0, "a stale-reason note is not addable, so --all does not try it")
+        XCTAssertEqual((try XCTUnwrap(all.json as? [[String: Any]])).count, 0)
+        XCTAssertEqual((try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [[String: Any]])?.count, 1)
+    }
+
+    /// The same id twice: the first adds, the second finds it gone: `notHeld`, not a failure, and one inbox file.
+    func testHeldAddOfTheSameIdTwiceIsANoOpTheSecondTime() throws {
+        let vault = try makeVault()
+        let outbox = path("outbox")
+        let capture = try sealedNote(vault, outbox: outbox)
+        let meta = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "\(outbox)/\(capture).meta.json"))) as? [String: Any])
+        let vaultId = vault.vault.vaultId.uuidString.lowercased()
+        let held = path("held")
+        let dir = "\(held)/\(vaultId)"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let bytes = try Data(contentsOf: URL(fileURLWithPath: "\(outbox)/\(capture).capture.age"))
+        try bytes.write(to: URL(fileURLWithPath: "\(dir)/\(capture).capture.age"))
+        let sidecar: [String: Any] = ["id": capture, "vault": vaultId, "epoch": try XCTUnwrap(meta["epoch"] as? Int),
+                                      "epochId": try XCTUnwrap(meta["epochId"] as? String), "receivedAt": "2026-11-10T12:00:00Z",
+                                      "reason": "oldEpoch", "bytes": bytes.count]
+        try JSONSerialization.data(withJSONObject: sidecar).write(to: URL(fileURLWithPath: "\(dir)/\(capture).capture.age.held.json"))
+        let r = try cli(["inbox", "watch", "held", "add", capture, capture, "--held", held, "--queue", path("q"),
+                         "--store", path("store"), "--json", "--vault", vault.vault.url.path])
+        XCTAssertEqual(r.status, 0)
+        let rows = try XCTUnwrap(r.json as? [[String: Any]])
+        XCTAssertEqual(rows.map { $0["outcome"] as? String }, ["added", "notHeld"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: vault.vault.url.appendingPathComponent("inbox").path)
+            .filter { $0.hasSuffix(".capture.age") }, ["\(capture).capture.age"])
     }
 
     /// `held add` takes an addable held note into the inbox (ledger first), `--all` takes every addable one, and an id that is
