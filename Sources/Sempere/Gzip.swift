@@ -80,9 +80,9 @@ public enum Gzip {
     /// zip64 entry) would trap converting its length. Tests pass a small
     /// slice to exercise the refill.
     static func inflateStream(_ data: Data, windowBits: Int32, maxOutput: Int,
-                              maxInputSlice: Int = Int(UInt32.max)) throws -> Data {
+                              maxInputSlice: Int = Int(clamping: UInt32.max)) throws -> Data {
         guard !data.isEmpty else { throw GzipError.inflate(Z_DATA_ERROR) }
-        let slice = max(1, min(maxInputSlice, Int(UInt32.max)))
+        let slice = max(1, min(maxInputSlice, Int(clamping: UInt32.max)))
         var stream = z_stream()
         var rc = inflateInit2_(&stream, windowBits, zlibVersion(), Int32(MemoryLayout<z_stream>.size))
         guard rc == Z_OK else { throw GzipError.inflate(rc) }

@@ -67,9 +67,10 @@ public enum RFC3339 {
             return nil
         }
         guard i == b.count else { return nil }
-        let seconds = daysFromCivil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second - offset
+        // Int64: seconds since 1970 are 38 bits, which a 32-bit `Int` (the Apple Watch's arm64_32) would trap on.
+        let seconds = Int64(daysFromCivil(year, month, day)) * 86_400 + Int64(hour * 3600 + minute * 60 + second - offset)
         // As ICU computes it: milliseconds since 1970 as a Double, then seconds since 2001.
-        let date = Date(timeIntervalSinceReferenceDate: Double(seconds * 1000 + millis) / 1000 - secondsFrom1970To2001)
+        let date = Date(timeIntervalSinceReferenceDate: Double(seconds * 1000 + Int64(millis)) / 1000 - secondsFrom1970To2001)
         // An offset can move a date at either end out of 0001...9999
         // (`0001-01-01T00:00:00+01:00`): writers could not write it back.
         guard date >= earliest, date < end else { return nil }
@@ -87,12 +88,13 @@ public enum RFC3339 {
     public static func string(from date: Date) -> String? {
         guard date >= earliest, date < end else { return nil }
         let udate = (date.timeIntervalSinceReferenceDate + secondsFrom1970To2001) * 1000
-        let total = Int((udate + 0.5).rounded(.down))   // milliseconds, rounded half up
-        let millis = ((total % 1000) + 1000) % 1000
-        let seconds = (total - millis) / 1000
+        // Int64 throughout: milliseconds since 1970 are 41 bits (a 32-bit `Int` would trap).
+        let total = Int64((udate + 0.5).rounded(.down))   // milliseconds, rounded half up
+        let millis = Int(((total % 1000) + 1000) % 1000)
+        let seconds = (total - Int64(millis)) / 1000
         let days = (seconds >= 0 ? seconds : seconds - 86_399) / 86_400
-        let rest = seconds - days * 86_400
-        let (y, m, d) = civil(fromDays: days)
+        let rest = Int(seconds - days * 86_400)
+        let (y, m, d) = civil(fromDays: Int(days))   // at most about 3.7 million days either way
         guard y <= 9999 else { return nil }   // 9999-12-31T23:59:59.9995 rounds into year 10000
         func p(_ v: Int, _ width: Int) -> String { pad(String(v), width) }
         return "\(p(y, 4))-\(p(m, 2))-\(p(d, 2))T\(p(rest / 3600, 2)):\(p(rest / 60 % 60, 2)):\(p(rest % 60, 2))."

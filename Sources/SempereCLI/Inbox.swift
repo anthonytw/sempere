@@ -11,7 +11,8 @@ struct InboxCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "inbox",
         abstract: "Capture voice notes without the key, and adopt them as notes.",
-        subcommands: [InboxEnable.self, InboxCapture.self, InboxTranscript.self, InboxList.self, InboxImport.self]
+        subcommands: [InboxEnable.self, InboxCapture.self, InboxTranscript.self, InboxList.self, InboxImport.self,
+                      InboxWatchCommand.self]
     )
 }
 

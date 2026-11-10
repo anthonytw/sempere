@@ -17,6 +17,9 @@
     "SempereAppCoreTests": [
       "Tests/SempereTests/Fixtures"
     ],
+    "SempereCaptureTests": [
+      "Tests/SempereTests/Fixtures"
+    ],
     "SempereNotabilityTests": [
       "Tests/SempereTests/Fixtures"
     ],
@@ -52,6 +55,7 @@
   "os_dependent": {
     "CLITests": "runs the built binary; its tests choose paths by Vision, CoreML, Speech, AVFoundation and macOS-only backup (#if canImport in CLIRecognize*, CLIVideo, CLITranscribe, CLIBackup)",
     "SempereAppCoreTests": "VaultLibrary and the lifecycle tests use Glibc or Darwin file locking",
+    "SempereCaptureTests": "the outbox and the received set use FileIO (Glibc, Musl or Darwin calls); the muxer's AVFoundation check is macOS-only (#if canImport)",
     "SempereLocalizationTests": "Apple only: Package.swift does not build it on Linux",
     "SempereNotabilityTests": "its CLI tests run the built binary; Vision, macOS-only real-file tests",
     "SempereRenderTests": "Vision, CoreML, PDFKit, PencilKit parity checks, font file access, FoundationXML and JavaScriptCore branches",

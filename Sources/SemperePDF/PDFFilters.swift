@@ -67,7 +67,7 @@ public enum PDFFilters {
             while true {
                 if stream.avail_in == 0 {
                     guard fed < inp.count else { return true }   // truncated: keep what we have
-                    let n = min(inp.count - fed, Int(UInt32.max))
+                    let n = min(inp.count - fed, Int(clamping: UInt32.max))
                     stream.next_in = base + fed
                     stream.avail_in = uInt(n)
                     fed += n

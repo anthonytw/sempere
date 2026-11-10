@@ -52,6 +52,14 @@ The second build is skipped too when it already passed (job `linux-removable`, b
   app, and on demand on Actions (a manual run). Revisit when the image's macOS catches up with the Xcode.
   The two handwriting tests in `CLIRecognizeTests` that run a real Vision recognition skip themselves in a virtual machine
   (`kern.hv_vmm_present`: Vision cannot read there); a Mac runs them.
+- **watchOS compile.** `iOS build` also runs `scripts/build-watchos-package.sh`: `Age`, `Sempere` and `SempereCapture`, built with
+  the watchOS device SDK (`-destination 'generic/platform=watchOS'`, unsigned, so arm64 and arm64_32; no simulator runtime), about
+  2 minutes. The `xcode-27` image has the SDK (watchOS 27.0 on 2026-11-09, probed in the run of the watch core PR). Apple Watches
+  with arm64_32 have a 32-bit `Int`: code in `Sources/` that the watch links must not use an integer literal or a product
+  that needs more (`Revision.maxSeq` was the one that failed). The compile check does not catch a runtime trap: an `Int(someInt64)` or `Int(someDouble)` of a value over 2^31, or an
+  arithmetic overflow, compiles and then traps on the watch. A grep audit of the seal path (2026-11-09) found and fixed
+  `RFC3339.string(from:)` and `parse` (milliseconds since 1970 in an `Int`: every capture's manifest dates went through it),
+  `Int(UInt32.max)` in `Gzip` and `PublishedSummaries`, and sums in `ADTSToMP4` and `WatchOutbox`; use `Int64` or `Int(clamping:)`. Locally: `xc-lock scripts/build-watchos-package.sh [TARGET]`.
 - **The Linux image** is pinned by digest (`env.SEMPERE_CI_IMAGE_ID` and the `container:` lines of `ci.yml`). The digest goes into every
   Linux hash, so a moved tag cannot reuse a record. To update: `docker buildx imagetools inspect swift:6.4-noble`, change the
   digest in all four places, and the next run runs every Linux target once.

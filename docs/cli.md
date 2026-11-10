@@ -2123,6 +2123,7 @@ sempere inbox capture FILE [--title T] [--started TIME] [--type MEDIA] [--transc
 sempere inbox transcript CAPTURE JSON --audio FILE [--profile PATH]
 sempere inbox list
 sempere inbox import [CAPTURE...] [--dry-run] [--retry]          (needs the key)
+sempere inbox watch keygen|provision|seal|receive …              (the Apple Watch's notes, "Watch" below)
 ```
 
 Voice notes without the key (`format.md` §11, `docs/quick-capture.md`), the
@@ -2177,6 +2178,40 @@ fingerprint of the key the capture is attributed to, `capturedBy` its device's n
 `import` gives `{dryRun, captures: [{capture, note, title, created,
 transcript, card, file, removed, error, captured, capturedBy}]}` (`card`: the new note shows the
 recording's card on its page).
+
+#### Watch
+
+```
+sempere inbox watch keygen --out FILE                                       (a throwaway watch key)
+sempere inbox watch provision --to RECIPIENT --out FILE [--notebook NAME] [--seq N]   (needs the key once)
+sempere inbox watch seal AUDIO --payload FILE --identity FILE --outbox DIR [--title T] [--started TIME]
+sempere inbox watch receive OUTBOX [--vault PATH] [--received FILE] [--queue DIR] [--ack FILE] [--store DIR]
+```
+
+The Apple Watch's voice notes (`docs/design/1.1-watch.md`, `docs/quick-capture.md` "Apple Watch"), each step run by the
+same code the watch and the iPhone run, so everything but the screen can be scripted and tested without a watch.
+`keygen` writes a watch **provisioning identity** (an `age1pq1…` key, mode 0600, never over an existing file) and prints its
+recipient. `provision` (it needs the key once, like `enable`) builds this vault's capture profile for the device it was
+unlocked as, with the vault's name and a counter (`--seq`, default the time in seconds, which fits the watch's 32-bit counter until 2038 (give `--seq` for a longer-lived setup); a watch takes only a larger one),
+**age-encrypted to the watch's recipient**, so the capture key is never plaintext on the way, and writes it to `--out`.
+`seal` acts as the watch: it opens the payload with the watch's identity (a payload for another watch, or a damaged one, is
+refused), remuxes an ADTS (`.aac`) file to MPEG-4 with the muxer the watch uses (an `.m4a` is sealed as it is; anything else
+is refused), seals it with the provisioned profile as `Watch voice note <date> <time>` (or `--title`), and writes
+`<id>.capture.age` and its transfer metadata `<id>.meta.json` (plus an index, `outbox.json`) into the `--outbox` folder, as
+the watch's outbox holds them.
+
+`receive` acts as the phone's receiver, and needs no key. For each file in the outbox it checks the metadata against the
+file (name, size, SHA-256, epoch; a file that fails is reported, exit 1, and never acknowledged), skips an id it has received
+or already finds in the inbox, and delivers by the **vault the metadata names**, never into the wrong vault's inbox: into
+`--vault`'s `inbox/` when the file is that vault's (recorded first in this machine's write ledger, like `inbox capture`), into
+another vault of the store (`--store`, as for `sempere store`) with that vault's own ledger, else into this machine's queue
+for that vault (`--queue`, default `$XDG_STATE_HOME/sempere/capture/watch-queue/<vault id>/`, each file with its epoch beside
+it, unrecorded until placed). Received ids are kept in `--received` (default
+`$XDG_STATE_HOME/sempere/capture/watch-received.json`, 180 days), so running it twice places nothing the second time. It then
+writes the acknowledgement the phone would send (`{acked, have}`) to `--ack` (default `<outbox>/ack.json`). `inbox import`
+adopts the captures as notes. `--json`: `keygen` gives `{identity, recipient}`; `provision` `{payload, vault, seq, bytes}`;
+`seal` `{capture, vault, file, meta, bytes}`; `receive` `{files: [{capture, outcome, placement, problem}], acked, ack}` (`outcome`
+is `placed`, `duplicate` or `refused`; `placement` is `vault`, `queued`, `otherVault` or `otherVaultQueued`).
 
 ### Shared settings
 
