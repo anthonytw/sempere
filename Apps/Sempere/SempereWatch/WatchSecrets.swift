@@ -91,7 +91,14 @@ final class MemoryWatchSecretStore: WatchSecretStore, @unchecked Sendable {
             return items[account]
         }
     }
-    func save(_ data: Data, account: String) throws { lock.withLock { items[account] = data } }
+    /// Tests: the profile state cannot be written.
+    var failProfileStateSaves = false
+    func save(_ data: Data, account: String) throws {
+        try lock.withLock {
+            if failProfileStateSaves, account == WatchSecretItem.profileState.rawValue { throw Locked() }
+            items[account] = data
+        }
+    }
     func delete(account: String) throws { lock.withLock { items[account] = nil } }
     func accounts(prefix: String) throws -> [String] { lock.withLock { items.keys.filter { $0.hasPrefix(prefix) }.sorted() } }
 }

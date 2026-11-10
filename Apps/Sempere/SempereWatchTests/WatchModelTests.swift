@@ -222,6 +222,17 @@ final class WatchModelTests: XCTestCase {
         XCTAssertFalse(b.model.stateUnreadable, "a stored profile is the state now")
     }
 
+    /// The safety half: a Reset whose save fails leaves the state unreadable, so the sweep still deletes nothing.
+    func testAResetWhoseSaveFailsKeepsTheStateUnreadable() async throws {
+        let secrets = MemoryWatchSecretStore()
+        secrets.failProfileStateLoads = true
+        let a = WatchModelTests.makeModel(secrets: secrets, support: try TestTemp.directory("watch-unreadable-c"))
+        XCTAssertTrue(a.model.stateUnreadable)
+        secrets.failProfileStateSaves = true
+        a.model.reset()
+        XCTAssertTrue(a.model.stateUnreadable, "nothing was written: still a stand-in, not \"no profile\"")
+    }
+
     // MARK: Recording
 
     func testRecordStopSealsIntoTheOutboxAndHandsItOver() async throws {

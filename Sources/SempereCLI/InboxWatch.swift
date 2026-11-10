@@ -514,7 +514,17 @@ struct InboxWatchHeldAdd: ParsableCommand {
         let held = WatchHeldFolder.store(options.held)
         let intake = WatchIntake(received: WatchReceivedSet(url: nil), delivery: delivery, held: held)
         let targets: [HeldCapture]
-        do { targets = all ? held.list().filter(intake.canAddNow) : try ids.map { try held.find($0) } } catch {
+        do {
+            if all {
+                let everything = held.list()
+                targets = everything.filter(intake.canAddNow)
+                if targets.count < everything.count {
+                    printStderr("\(everything.count - targets.count) held note(s) cannot be added now (see `held list`); skipped")
+                }
+            } else {
+                targets = try ids.map { try held.find($0) }
+            }
+        } catch {
             throw CLIError.failure("\(error)")
         }
         struct Out: Encodable { var capture: String; var outcome: String; var placement: String?; var problem: String? }
@@ -524,7 +534,9 @@ struct InboxWatchHeldAdd: ParsableCommand {
             let id = t.id.uuidString.lowercased()
             do {
                 let p = try intake.addHeld(t)
-                out.append(Out(capture: id, outcome: "added", placement: p.map(InboxWatchReceive.name), problem: nil))
+                // nil: no longer held (an earlier add took it), a no-op rather than a failure.
+                out.append(Out(capture: id, outcome: p == nil ? "notHeld" : "added", placement: p.map(InboxWatchReceive.name),
+                               problem: p == nil ? "no longer held (added already)" : nil))
             } catch {
                 failures += 1
                 out.append(Out(capture: id, outcome: "failed", placement: nil, problem: CLIError.from(error).message))

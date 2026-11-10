@@ -369,6 +369,25 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertEqual(r.intake.held?.list().count, 0)
     }
 
+    /// An epoch check that cannot run (the profile is unreadable) does not hide the note from the count, and the add itself fails
+    /// before anything is recorded or placed: the note stays held.
+    func testAThrowingEpochCheckFailsTheAddAndKeepsTheNoteHeld() throws {
+        let r = try rig()
+        r.delivery.enabled = false
+        let (file, meta, _) = try transfer(r)
+        _ = try r.intake.receive(file: file, meta: meta)
+        r.delivery.enabled = true
+        let item = try XCTUnwrap(r.intake.held?.list().first)
+        r.delivery.unreadableProfile = true
+        XCTAssertTrue(r.intake.canAddNow(item))
+        XCTAssertThrowsError(try r.intake.addHeld(item))
+        XCTAssertEqual(r.intake.held?.list().count, 1)
+        XCTAssertNil(r.delivery.ledgers[r.vault])
+        XCTAssertNil(r.delivery.inboxes[r.vault])
+        r.delivery.unreadableProfile = false
+        XCTAssertEqual(try r.intake.addHeld(item), .vault)
+    }
+
     /// A failed add leaves the note held (a later add can still take it).
     func testAFailedAddKeepsTheNoteHeld() throws {
         let r = try rig()

@@ -32,8 +32,16 @@ final class WatchLinkStatus {
         revision += 1
     }
 
-    func setBusy(_ value: Bool) {
-        busy = value
+    /// One test-and-set: false when an add or a delete is under way already.
+    func begin() -> Bool {
+        guard !busy else { return false }
+        busy = true
+        revision += 1
+        return true
+    }
+
+    func end() {
+        busy = false
         revision += 1
     }
 
@@ -109,8 +117,7 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     /// cannot be written now).
     func addHeldNotes() async -> Int {
         guard let receiver = lock.withLock({ receiver }) else { return 0 }
-        guard !(await status.busy) else { return 0 }
-        await MainActor.run { status.setBusy(true) }
+        guard await MainActor.run(body: { status.begin() }) else { return 0 }
         let failed = await Task.detached { () -> Int in
             var failed = 0
             for note in receiver.heldNotes() where receiver.canAddNow(note) {
@@ -118,7 +125,7 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
             }
             return failed
         }.value
-        await MainActor.run { status.setBusy(false) }
+        await MainActor.run { status.end() }
         refreshHeld()
         return failed
     }
@@ -127,9 +134,9 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     func deleteHeldNotes() {
         guard let receiver = lock.withLock({ receiver }) else { return }
         Task.detached { [weak self] in
-            await MainActor.run { self?.status.setBusy(true) }
+            guard await MainActor.run(body: { self?.status.begin() ?? false }) else { return }
             for note in receiver.heldNotes() { receiver.deleteHeld(note) }
-            await MainActor.run { self?.status.setBusy(false) }
+            await MainActor.run { self?.status.end() }
             self?.refreshHeld()
         }
     }

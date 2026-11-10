@@ -297,8 +297,10 @@ public struct WatchIntake: Sendable {
     /// stored reason can be stale (an epoch or vault this device never held since), so counts and `--all` ask this, not
     /// `item.canAdd`.
     public func canAddNow(_ item: HeldCapture) -> Bool {
-        guard item.canAdd, let held, let sealed = try? held.load(item) else { return false }
-        do { return try epochVerdict(sealed, vault: item.vault)?.canAdd ?? true } catch { return true }   // unreadable state: let the add try, and fail loudly
+        // From the sidecar alone (epoch and epoch id): the sealed file, up to 500 MB held, is not read for a count.
+        guard item.canAdd, held != nil, let epochId = Hex.decode(item.epochId) else { return false }
+        let probe = SealedCapture(name: CaptureFile.name(item.id, .capture), data: Data(), epoch: item.epoch, epochId: epochId)
+        do { return try epochVerdict(probe, vault: item.vault)?.canAdd ?? true } catch { return true }   // unreadable state: let the add try, and fail loudly
     }
 
     /// "Add to inbox": the user's decision to take a held file. It runs the normal record-and-place path, and catch-up then
