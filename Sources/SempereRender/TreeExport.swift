@@ -38,6 +38,10 @@ struct ExportManifest: Codable {
         /// The note id, nil for an index file.
         var note: String?
         var notebook: String?
+        /// What the file held when this exporter wrote it. `--clean` deletes a file only when it still
+        /// has this size and SHA-256 (an entry without them is forgotten, never deleted).
+        var size: Int64?
+        var sha256: String?
     }
     struct NoteEntry: Codable {
         var title: String
@@ -278,7 +282,8 @@ public struct TreeExporter: Sendable {
         guard !outputs.isEmpty else { return nil }
         var result = TreeResult(noteId: id, files: [], changed: [])
         for rel in outputs.keys.sorted() {
-            guard files[rel]?.note == id, let stamp = outputs[rel], matches(root.appendingPathComponent(rel), stamp) else { return nil }
+            guard files[rel]?.note == id, let stamp = outputs[rel], BoundedRead.firstLink(under: root, rel) == nil,
+                  matches(root.appendingPathComponent(rel), stamp) else { return nil }
             result.files.append(root.appendingPathComponent(rel).path)
         }
         return result
@@ -305,14 +310,22 @@ public struct TreeExporter: Sendable {
     /// `onFile(path, changed)` after each file.
     public func run(_ notes: [TreeNote], protected: Set<String>, vaultSource: String,
                     onNote: (Int, Int) -> Void = { _, _ in }, onFile: (String, Bool) -> Void = { _, _ in }) throws -> (results: [TreeResult], failures: Int, errors: [String]) {
-        let fm = FileManager.default
         // Plaintext: folders and files this run creates are the owner's only (an existing folder keeps its mode).
         try FileIO.createPrivateDirectory(root)
+        // Every file operation below goes through `tree`: relative to the resolved root, never through a
+        // link made by someone else in the folder (the folder may be shared).
+        let tree: TreeRoot
+        do { tree = try TreeRoot(root) } catch {
+            throw TreeExportError.cannotWrite(path: root.path, reason: "\(error)")
+        }
+        let manifestName = ".sempere-export-\(format.rawValue).json"
         let (enc, dec) = Self.coder()
-        var manifest = (try? dec.decode(ExportManifest.self,
-                                        from: BoundedRead.contents(of: manifestURL, maxBytes: Self.maxManifestBytes)))
+        var manifest = (try? dec.decode(ExportManifest.self, from: tree.read(manifestName, maxBytes: Self.maxManifestBytes)))
             ?? ExportManifest()
         manifest.dropUnsafeEntries()
+        // What manifests from before the digests recorded for each note's files: size and a content hash.
+        var legacyStamps: [String: ExportManifest.FileStamp] = [:]
+        for n in manifest.notes.values { for (rel, stamp) in n.outputs ?? [:] { legacyStamps[rel] = stamp } }
         let folderMap = Self.folders(for: notes.map { NotebookPath.canonical($0.summary.notebook) })
         var runFiles = Set<String>()
         var results: [TreeResult] = [], errors: [String] = []
@@ -321,32 +334,33 @@ public struct TreeExporter: Sendable {
 
         /// Writes `data` unless the file already holds exactly that.
         func put(_ rel: String, _ data: Data) throws -> Bool {
-            let url = root.appendingPathComponent(rel)
-            if let old = try? BoundedRead.contents(of: url, maxBytes: data.count), old == data { return false }
-            try FileIO.createPrivateDirectory(url.deletingLastPathComponent())
-            do { try FileIO.writePrivate(data, to: url) } catch {
-                throw TreeExportError.cannotWrite(path: url.path, reason: error.localizedDescription)
+            if let old = try? tree.read(rel, maxBytes: data.count), old == data { return false }
+            do { try tree.replace(rel, with: data) } catch let e as SkippedPath { throw e } catch {
+                throw TreeExportError.cannotWrite(path: root.appendingPathComponent(rel).path, reason: error.localizedDescription)
             }
             return true
         }
         /// Writes the PDF `body` renders into a file, unless the file already holds exactly that: streamed to a
         /// temporary name next to it (embedded content is never held in memory), compared, then moved into place.
         func putPDF(_ rel: String, _ body: (URL) throws -> Void) throws -> Bool {
-            let url = root.appendingPathComponent(rel)
-            try FileIO.createPrivateDirectory(url.deletingLastPathComponent())
-            let tmp = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
-            defer { try? fm.removeItem(at: tmp) }
-            do { try body(tmp) } catch let e as RenderError {
-                guard case .cannotWrite = e else { throw e }
-                throw TreeExportError.cannotWrite(path: url.path, reason: e.localizedDescription)
-            }
-            if Self.sameContents(url, tmp) { return false }
             do {
-                if fm.fileExists(atPath: url.path) { _ = try fm.replaceItemAt(url, withItemAt: tmp) } else { try fm.moveItem(at: tmp, to: url) }
-            } catch {
-                throw TreeExportError.cannotWrite(path: url.path, reason: error.localizedDescription)
+                return try tree.place(rel) { tmp in
+                    do { try body(tmp) } catch let e as RenderError {
+                        guard case .cannotWrite = e else { throw e }
+                        throw TreeExportError.cannotWrite(path: root.appendingPathComponent(rel).path, reason: e.localizedDescription)
+                    }
+                }
+            } catch let e as SkippedPath { throw e } catch let e as TreeExportError { throw e } catch let e as RenderError { throw e } catch {
+                throw TreeExportError.cannotWrite(path: root.appendingPathComponent(rel).path, reason: error.localizedDescription)
             }
-            return true
+        }
+        /// Records `rel` as written by this exporter, with what it holds now.
+        func record(_ rel: String, note: String?, notebook: String?, data: Data? = nil) {
+            var entry = ExportManifest.FileEntry(note: note, notebook: notebook)
+            if let data { entry.size = Int64(data.count); entry.sha256 = FileDigest.sha256(data) } else if let d = tree.digest(rel) {
+                entry.size = d.size; entry.sha256 = d.sha256
+            }
+            manifest.files[rel] = entry
         }
 
         for (n, note) in notes.enumerated() {
@@ -367,6 +381,7 @@ public struct TreeExporter: Sendable {
                let result = Self.upToDate(outputs, note: id, root: root, files: manifest.files) {
                 for rel in outputs.keys.sorted() {
                     runFiles.insert(rel)
+                    if manifest.files[rel]?.sha256 == nil { record(rel, note: id, notebook: manifest.files[rel]?.notebook) }
                     onFile(root.appendingPathComponent(rel).path, false)
                 }
                 results.append(result)
@@ -440,7 +455,9 @@ public struct TreeExporter: Sendable {
                         let url = root.appendingPathComponent(rel)
                         let changed: Bool
                         do {
-                            changed = try ExportVideos.write(clip, from: source, to: url, keepMetadata: options.keepImageMetadata)
+                            try tree.prepare(rel)
+                            changed = try ExportVideos.write(clip, from: source, to: tree.url.appendingPathComponent(rel),
+                                                             keepMetadata: options.keepImageMetadata)
                         } catch {
                             report.warn("\(clip.label) could not be written: \(errorText(error))")
                             complete = false
@@ -450,7 +467,7 @@ public struct TreeExporter: Sendable {
                         if changed { result.changed.append(url.path) }
                         runFiles.insert(rel)
                         written[rel] = Self.stamp(url, data: nil)
-                        manifest.files[rel] = .init(note: id, notebook: nb)
+                        record(rel, note: id, notebook: nb)
                         onFile(url.path, changed)
                     }
                 }
@@ -460,8 +477,8 @@ public struct TreeExporter: Sendable {
                     runFiles.insert(rel)
                     // Outputs are already on disk (written as made), so the content hash is read back.
                     let url = root.appendingPathComponent(rel)
-                    written[rel] = Self.stamp(url, data: try? BoundedRead.contents(of: url, maxBytes: Self.stampHashLimit))
-                    manifest.files[rel] = .init(note: id, notebook: nb)
+                    written[rel] = Self.stamp(url, data: try? tree.read(rel, maxBytes: Self.stampHashLimit))
+                    record(rel, note: id, notebook: nb)
                     onFile(root.appendingPathComponent(rel).path, changed)
                 }
                 manifest.notes[id] = .init(title: state.meta.title, stem: stem, folder: folder, notebook: nb,
@@ -475,7 +492,7 @@ public struct TreeExporter: Sendable {
             } catch {
                 // Files written before the failure are tracked, and kept like the note's earlier ones.
                 for (rel, _) in outputs where manifest.files[rel] == nil {
-                    manifest.files[rel] = .init(note: id, notebook: NotebookPath.canonical(s.notebook))
+                    record(rel, note: id, notebook: NotebookPath.canonical(s.notebook))
                 }
                 failures += 1
                 failedIDs.insert(id)
@@ -507,10 +524,13 @@ public struct TreeExporter: Sendable {
                     .sorted().map { (name: $0, href: $0 + "/README.md") }
                 let md = MarkdownExport.folderIndex(title: f.last ?? "Sempere export", subfolders: subs, notes: entries)
                 let rel = (f + ["README.md"]).joined(separator: "/")
-                let changed = try put(rel, Data(md.utf8))
-                runFiles.insert(rel)
-                manifest.files[rel] = .init(note: nil, notebook: nil)
-                onFile(root.appendingPathComponent(rel).path, changed)
+                let data = Data(md.utf8)
+                do {
+                    let changed = try put(rel, data)
+                    runFiles.insert(rel)
+                    record(rel, note: nil, notebook: nil, data: data)
+                    onFile(root.appendingPathComponent(rel).path, changed)
+                } catch let e as SkippedPath { errors.append("\(e)"); failures += 1 }
             }
         case .html:
             let entries = known.map {
@@ -518,37 +538,47 @@ public struct TreeExporter: Sendable {
                                  notebook: $0.notebook, tags: $0.tags, pages: $0.pages, modified: $0.modified,
                                  searchText: $0.searchText ?? "")
             }
-            let changed = try put("index.html", Data(HTMLExport.indexPage(entries: entries).utf8))
-            runFiles.insert("index.html")
-            manifest.files["index.html"] = .init(note: nil, notebook: nil)
-            onFile(root.appendingPathComponent("index.html").path, changed)
+            let data = Data(HTMLExport.indexPage(entries: entries).utf8)
+            do {
+                let changed = try put("index.html", data)
+                runFiles.insert("index.html")
+                record("index.html", note: nil, notebook: nil, data: data)
+                onFile(root.appendingPathComponent("index.html").path, changed)
+            } catch let e as SkippedPath { errors.append("\(e)"); failures += 1 }
         default:
             break
         }
 
-        // --clean: delete files of ours that this run did not produce.
+        // --clean: delete files of ours that this run did not produce, and only a file that still is what
+        // was written (size and digest). Nothing reached through a link is touched.
         if clean {
-            let rootPath = root.standardizedFileURL.path
-            for (rel, entry) in manifest.files where !runFiles.contains(rel) {
+            for (rel, entry) in manifest.files.sorted(by: { $0.key < $1.key }) where !runFiles.contains(rel) {
                 if let n = entry.note, failedIDs.contains(n) { continue }
                 if entry.note != nil && !inScope(entry.notebook) { continue }
-                manifest.files[rel] = nil
-                let parts = rel.split(separator: "/", omittingEmptySubsequences: false)
-                guard !rel.hasPrefix("/"), !parts.contains(".."), !parts.contains("") else { continue }
-                var url = root.appendingPathComponent(rel).standardizedFileURL
-                guard url.path.hasPrefix(rootPath + "/") else { continue }
-                if (try? fm.removeItem(at: url)) != nil { onFile(url.path, true) }
-                // Remove folders this left empty.
-                url.deleteLastPathComponent()
-                while url.path.hasPrefix(rootPath + "/"),
-                      (try? fm.contentsOfDirectory(atPath: url.path))?.isEmpty == true {
-                    try? fm.removeItem(at: url)
-                    url.deleteLastPathComponent()
+                let outcome: TreeRoot.Removal
+                if let size = entry.size, let sha = entry.sha256 {
+                    outcome = tree.remove(rel, size: size, sha256: sha)
+                } else if let stamp = legacyStamps[rel], let want = stamp.hash, stamp.size <= Int64(Self.stampHashLimit) {
+                    // An entry from before digests: the size and hash its note recorded for the file.
+                    outcome = tree.remove(rel, size: stamp.size) { h in
+                        guard let data = try? h.read(upToCount: Int(stamp.size) + 1), Int64(data.count) == stamp.size else { return false }
+                        return Self.hash(data) == want
+                    }
+                } else {
+                    outcome = .skipped("the export did not record its digest")
+                }
+                switch outcome {
+                case .removed: manifest.files[rel] = nil; onFile(root.appendingPathComponent(rel).path, true)
+                case .missing: manifest.files[rel] = nil
+                // Kept in the manifest, so the next --clean reports it again.
+                case .skipped(let why): errors.append("not removed \(rel): \(why)")
                 }
             }
         }
 
-        try FileIO.writePrivate(try enc.encode(manifest), to: manifestURL)
+        do { try tree.replace(manifestName, with: try enc.encode(manifest), anyLeaf: true) } catch {
+            throw TreeExportError.cannotWrite(path: manifestURL.path, reason: "\(error)")
+        }
         return (results, failures, errors)
     }
 }
