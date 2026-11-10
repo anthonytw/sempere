@@ -2,7 +2,7 @@ import SempereCapture
 import SwiftUI
 
 // The one screen (docs/design/1.1-watch.md §3.7): Not set up, Ready (a large Record), Recording (the time, a large Stop, a
-// red dot), Saved (two seconds), Unsent notes: N (with "Send now"), Can't record (the reason). No lists, no settings but
+// red dot), Saved (two seconds; until the app goes to the background, alone, after a surface's recording), Unsent notes: N (with "Send now"), Can't record (the reason). No lists, no settings but
 // Reset. Every state has an accessibility identifier for the simulator UI tests.
 
 struct WatchContentView: View {
@@ -104,7 +104,8 @@ struct WatchContentView: View {
                 Text("This note reached the 60 minute limit.").font(.footnote).multilineTextAlignment(.center)
                     .accessibilityIdentifier("watch.limit")
             }
-            unsentLine
+            // After a surface's recording, "Saved" alone: no Send now (the note is sent by itself), nothing to tap.
+            if !model.savedStays { unsentLine }
         }
     }
 

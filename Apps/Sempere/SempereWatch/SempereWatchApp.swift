@@ -37,6 +37,7 @@ struct SempereWatchApp: App {
                     .task { await model.activate() }
                     .onChange(of: scenePhase) { _, phase in
                         if phase == .active { Task { await model.activate() } }
+                        if phase == .background { model.enteredBackground() }
                     }
             } else {
                 VStack(spacing: 6) {

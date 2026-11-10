@@ -317,6 +317,33 @@ final class WatchModelTests: XCTestCase {
         await r.model.stop()
     }
 
+    /// A surface's recording ends on a "Saved" that stays, with nothing to tap, until the app goes to the background; one
+    /// from the app grid goes back to Ready by itself.
+    func testASurfacesRecordingEndsOnSavedUntilTheBackground() async throws {
+        let r = try rig()
+        await r.model.activate()
+        r.model.receive(try provisioning(r, seq: 0))
+        r.model.startFromSurface()
+        try await eventually("recording") { r.model.recorder.isRecording }
+        await r.model.stop()
+        guard case .saved = r.model.screen else { return XCTFail("\(r.model.screen)") }
+        XCTAssertTrue(r.model.savedStays)
+        try await Task.sleep(for: .milliseconds(200))   // four times savedDuration
+        guard case .saved = r.model.screen else { return XCTFail("Saved went by itself: \(r.model.screen)") }
+        await r.model.activate()   // the wrist comes back up: still Saved
+        guard case .saved = r.model.screen else { return XCTFail("\(r.model.screen)") }
+        r.model.enteredBackground()
+        XCTAssertEqual(r.model.screen, .ready)
+        XCTAssertFalse(r.model.savedStays)
+
+        await r.model.record()
+        await r.model.stop()
+        XCTAssertFalse(r.model.savedStays, "the app grid's Record: the usual two-second Saved")
+        r.model.enteredBackground()
+        guard case .saved = r.model.screen else { return XCTFail("\(r.model.screen)") }
+        try await eventually("saved to go") { r.model.screen == .ready }
+    }
+
     func testARecordingACrashCutOffIsSealedAtTheNextLaunch() async throws {
         let r = try rig()
         await r.model.activate()
