@@ -333,6 +333,55 @@
         }
       }
     },
+    "%lld Watch notes waiting for another vault" : {
+      "comment" : "Settings: voice notes recorded on the Apple Watch for a vault this device has not opened yet",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Watch note waiting for another vault"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Watch notes waiting for another vault"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas del Watch esperan a otra bóveda"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota del Watch espera a otra bóveda"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas del Watch esperan a otra bóveda"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld already in the folder, unchanged (skipped)" : {
       "comment" : "Bulk export result: notes skipped",
       "extractionState" : "manual",
@@ -3803,6 +3852,18 @@
         }
       }
     },
+    "Allow the microphone for Sempere in Settings ▸ Privacy & Security ▸ Microphone on your watch." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permite el micrófono para Sempere en Ajustes ▸ Privacidad y seguridad ▸ Micrófono en tu reloj."
+          }
+        }
+      }
+    },
     "Also remove the devices “%@” added" : {
       "comment" : "Removal sheet; the value is a device name",
       "extractionState" : "manual",
@@ -4078,6 +4139,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apariencia"
+          }
+        }
+      }
+    },
+    "Apple Watch" : {
+      "comment" : "Settings section header",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Watch"
           }
         }
       }
@@ -4778,6 +4852,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lista con viñetas"
+          }
+        }
+      }
+    },
+    "Can't record" : {
+      "comment" : "Watch: title of the screen that says why it cannot record",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede grabar"
           }
         }
       }
@@ -10306,6 +10393,18 @@
         }
       }
     },
+    "Interrupted voice note saved" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz interrumpida guardada"
+          }
+        }
+      }
+    },
     "Into notebook (blank: top level)" : {
       "comment" : "Notebook field placeholder when moving a notebook",
       "extractionState" : "manual",
@@ -10980,6 +11079,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Última comprobación: %@"
+          }
+        }
+      }
+    },
+    "Last note from Watch" : {
+      "comment" : "Settings row: when the last voice note recorded on the Apple Watch arrived; the value is a date",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última nota del Watch"
           }
         }
       }
@@ -13809,6 +13921,30 @@
         }
       }
     },
+    "Open Sempere on your Apple Watch to finish setting it up." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Sempere en tu Apple Watch para terminar de configurarlo."
+          }
+        }
+      }
+    },
+    "Open Sempere on your iPhone to send saved notes." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Sempere en tu iPhone para enviar las notas guardadas."
+          }
+        }
+      }
+    },
     "Open Sempere to save it." : {
       "comment" : "Live Activity detail under \"Voice note interrupted\"",
       "extractionState" : "manual",
@@ -14185,6 +14321,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abriendo…"
+          }
+        }
+      }
+    },
+    "Opens Sempere on your watch and records a voice note. It is encrypted on the watch and sent to your iPhone's vault inbox." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Sempere en tu reloj y graba una nota de voz. Se cifra en el reloj y se envía a la bandeja de entrada de la bóveda en tu iPhone."
           }
         }
       }
@@ -16199,6 +16347,30 @@
         }
       }
     },
+    "Record a voice note on your watch. It is encrypted on the watch and sent to your iPhone's vault inbox." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graba una nota de voz en tu reloj. Se cifra en el reloj y se envía a la bandeja de entrada de la bóveda en tu iPhone."
+          }
+        }
+      }
+    },
+    "Record a voice note on your watch; tap again in the app to stop." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graba una nota de voz en tu reloj; vuelve a tocar en la app para detenerla."
+          }
+        }
+      }
+    },
     "Record from the Lock Screen, Control Center, the Action button, a widget or Siri (“Record a Sempere voice note”), without unlocking the vault or using Face ID or Touch ID. Each voice note is encrypted on this device to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this device only. This device keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
       "comment" : "The quoted Siri phrase must match the Spanish Siri phrase in AppShortcuts.xcstrings",
       "extractionState" : "manual",
@@ -17236,6 +17408,19 @@
         }
       }
     },
+    "Reset Quick Voice Notes?" : {
+      "comment" : "Watch: confirmation title",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Restablecer las notas de voz rápidas?"
+          }
+        }
+      }
+    },
     "Reset to Defaults" : {
       "comment" : "Button: reset the paper's parameters",
       "extractionState" : "manual",
@@ -17826,6 +18011,19 @@
         }
       }
     },
+    "Saved" : {
+      "comment" : "Watch: the voice note was saved (feminine: la nota)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardada"
+          }
+        }
+      }
+    },
     "Saved %lld files." : {
       "comment" : "Unlisted screen: after Save Files",
       "extractionState" : "manual",
@@ -17987,6 +18185,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardando nota de voz"
+          }
+        }
+      }
+    },
+    "Saving to %@" : {
+      "comment" : "Watch: the vault's name under the Record button",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardando en %@"
           }
         }
       }
@@ -18210,6 +18421,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sitio web de Sempere"
+          }
+        }
+      }
+    },
+    "Sempere can't open its storage on this watch." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere no puede abrir su almacenamiento en este reloj."
           }
         }
       }
@@ -18455,6 +18678,18 @@
         }
       }
     },
+    "Send now" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar ahora"
+          }
+        }
+      }
+    },
     "Sending the request to the vault's sync target…" : {
       "comment" : "Join screen: no sync run has carried the join request out yet",
       "extractionState" : "manual",
@@ -18464,6 +18699,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enviando la petición al destino de sincronización de la bóveda…"
+          }
+        }
+      }
+    },
+    "Sending to the watch…" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviando al reloj…"
           }
         }
       }
@@ -18530,6 +18777,19 @@
         }
       }
     },
+    "Set Up on iPhone" : {
+      "comment" : "Watch widget title: the watch has no profile yet",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurar en el iPhone"
+          }
+        }
+      }
+    },
     "Set a passcode (or Face ID or Touch ID) on this device to save its key." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -18538,6 +18798,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Configura un código (o Face ID o Touch ID) en este dispositivo para guardar su clave."
+          }
+        }
+      }
+    },
+    "Set up Quick Voice Notes in Sempere on your iPhone" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configura las notas de voz rápidas en Sempere en tu iPhone"
           }
         }
       }
@@ -19754,6 +20026,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detiene la nota de voz que se está grabando y la guarda, cifrada, en la bandeja de entrada."
+          }
+        }
+      }
+    },
+    "Stops the voice note being recorded on your watch and saves it, encrypted, to be sent to your iPhone." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detiene la nota de voz que se está grabando en tu reloj y la guarda, cifrada, para enviarla a tu iPhone."
           }
         }
       }
@@ -22444,6 +22728,32 @@
         }
       }
     },
+    "The watch could not record: %@" : {
+      "comment" : "Watch: the system's text follows",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El reloj no pudo grabar: %@"
+          }
+        }
+      }
+    },
+    "The watch saves voice notes to “%@”." : {
+      "comment" : "Settings: the vault's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El reloj guarda las notas de voz en «%@»."
+          }
+        }
+      }
+    },
     "The “public key” line does not belong to the secret key: this is not one key file." : {
       "comment" : "age-keygen output whose public key comment names another key",
       "extractionState" : "manual",
@@ -23185,6 +23495,18 @@
         }
       }
     },
+    "This device was removed from the vault's device list, so the watch cannot record for it." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo se quitó de la lista de dispositivos de la bóveda, así que el reloj no puede grabar para ella."
+          }
+        }
+      }
+    },
     "This device was removed from the vault's device list: it takes no new voice notes until it is added again." : {
       "comment" : "Shown by the app, Siri and Shortcuts when a voice note is refused on a device removed from the vault",
       "extractionState" : "manual",
@@ -23594,6 +23916,18 @@
         }
       }
     },
+    "This note reached the 60 minute limit." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta nota alcanzó el límite de 60 minutos."
+          }
+        }
+      }
+    },
     "This server is trusted only with the certificate you chose: %@" : {
       "comment" : "The value is a certificate fingerprint",
       "extractionState" : "manual",
@@ -23854,6 +24188,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este vídeo es demasiado grande para añadirlo (%@; como máximo %@). Recórtalo antes."
+          }
+        }
+      }
+    },
+    "This watch forgets the vault. Saved notes are still sent." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este reloj olvida la bóveda. Las notas guardadas se siguen enviando."
+          }
+        }
+      }
+    },
+    "This watch is almost out of storage." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Casi no queda almacenamiento en este reloj."
           }
         }
       }
@@ -24236,6 +24594,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reintentar"
+          }
+        }
+      }
+    },
+    "Turn on Quick Voice Notes first: the watch records with its profile." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa primero las notas de voz rápidas: el reloj graba con su perfil."
           }
         }
       }
@@ -24725,6 +25095,19 @@
         }
       }
     },
+    "Unsent notes: %lld" : {
+      "comment" : "Watch: notes saved on the watch that the iPhone has not received",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notas sin enviar: %lld"
+          }
+        }
+      }
+    },
     "Untitled" : {
       "comment" : "Shown for a note without a title",
       "extractionState" : "manual",
@@ -24954,6 +25337,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usar en todos los dispositivos"
+          }
+        }
+      }
+    },
+    "Use on Apple Watch" : {
+      "comment" : "Settings toggle: give the Apple Watch the capture profile so it can record voice notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar en el Apple Watch"
+          }
+        }
+      }
+    },
+    "Use on Apple Watch in Sempere" : {
+      "comment" : "Watch widget subtitle: the setting on the iPhone that gives the watch its profile",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar en el Apple Watch, en Sempere"
           }
         }
       }
@@ -25326,6 +25735,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las notas de voz van a"
+          }
+        }
+      }
+    },
+    "Voice notes recorded on your watch are encrypted on the watch with the same capture key as this device, and sent here; they become notes the next time the vault is unlocked. Turning this off clears the watch but does not revoke it: someone who has your lost watch can add voice notes to your inbox until you replace this device's key. They cannot read any note." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notas de voz grabadas en tu reloj se cifran en el reloj con la misma clave de captura que este dispositivo y se envían aquí; se convierten en notas la próxima vez que se desbloquea la bóveda. Desactivar esto borra el perfil del reloj, pero no lo revoca: quien tenga tu reloj perdido puede añadir notas de voz a tu bandeja de entrada hasta que sustituyas la clave de este dispositivo. No puede leer ninguna nota."
           }
         }
       }

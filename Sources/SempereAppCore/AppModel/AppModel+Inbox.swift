@@ -60,6 +60,7 @@ extension AppModelCore {
     public func quickCaptureBecameActive() -> Task<Void, Never> {
         quickCapture.publishStatus(forceReload: true)
         quickCapture.refreshTaps()   // the widget extension may have kept a tap meanwhile
+        quickCapture.profileChanged()   // the watch gets what it is missing (cheap when it has it)
         do { try quickCapture.flushStoredQueue() } catch {
             // They stay queued; unlocking the vault moves them too.
             services.perf.log(.error, "capture", "voice notes stay queued: \(String(describing: error))")
@@ -86,6 +87,7 @@ extension AppModelCore {
                                                          transcribe: transcribe))
         // The widgets and the control stop showing "Set Up".
         quickCapture.publishStatus()
+        quickCapture.profileChanged()
     }
 
     /// Turns quick voice notes off on this device (what is in the inbox stays
@@ -93,6 +95,7 @@ extension AppModelCore {
     public func disableQuickCapture() throws {
         try quickCapture.store.delete()
         quickCapture.publishStatus()
+        quickCapture.profileChanged()
     }
 
     /// After an unlock or a key change: the stored profile of this vault gets
@@ -119,6 +122,7 @@ extension AppModelCore {
         stored.profile.recipient = fresh.recipient
         // Only the vault the profile was made for is refreshed (`isProfileFolder`).
         try? quickCapture.store.save(stored)
+        quickCapture.profileChanged()   // a new epoch's key reaches the watch
     }
 
     /// An unlisted device takes no new voice notes for this vault (review of #87, M3 and R1): they could never
@@ -134,6 +138,7 @@ extension AppModelCore {
         do {
             try quickCapture.store.save(stored)
             quickCapture.publishStatus()
+            quickCapture.profileChanged()
         } catch {
             services.perf.log(.error, "capture", "quick capture suspension not saved: \(String(describing: error))")
         }

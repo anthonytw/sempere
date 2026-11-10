@@ -408,27 +408,47 @@ for a vault.
 
 ## Apple Watch
 
-A voice note from the wrist is the same capture, sealed on the watch (docs/design/1.1-watch.md; the watch app itself
-arrives in a later release, and nothing here is visible yet). Three things are in the package and tested on Linux and a Mac:
+A voice note from the wrist is the same capture, sealed on the watch (docs/design/1.1-watch.md). It needs an Apple Watch paired
+with the iPhone, Sempere installed on the watch (it ships inside the iPhone app) and **Settings ▸ Audio & Transcription ▸ Use on
+Apple Watch** turned on, which Settings shows only when a paired watch has the app. The pieces:
 
 - **The profile.** The watch keeps the iPhone's capture profile and nothing else: no identity, no vault key, no device key.
-  The phone sends it over WatchConnectivity **age-encrypted to a provisioning key the watch made for itself**
-  (`WatchProfilePayload`, with a counter: the newest wins, and a clear, which carries nothing secret, deletes the profile
-  and keeps an older payload from bringing it back). Its capture key is the phone's, so a lost watch can add voice notes
-  to the inbox as the iPhone until the phone's key is replaced by a new epoch; it can read nothing. Unpairing a watch clears its
-  profile and revokes nothing cryptographic.
+  It makes a provisioning key of its own on first launch and, with no profile, asks the iPhone with its public key
+  (`transferUserInfo`, which wakes the phone app in the background). The phone, when the toggle is on and a profile is stored
+  and not suspended, sends the profile **age-encrypted to that key** (`updateApplicationContext`; `WatchProvisioner`,
+  `WatchProfilePayload`). Every message carries a counter, **persisted on the phone and only ever increased** (never the time:
+  seconds overflow a 32-bit `Int` in 2038, and a clock set back would make the watch ignore a payload); the newest wins, and a
+  clear, which carries nothing secret, deletes the profile and keeps an older payload from bringing it back. The phone gives
+  the watch a new payload whenever its profile changes (a new epoch, the notebook, the vault, the toggle) and a clear when the
+  toggle goes off, Quick Voice Notes is turned off or the profile is suspended; a profile it cannot read (before the first
+  unlock) is never taken for "off". The watch's request carries the counter it holds, and the phone raises its own to at least that, so a damaged or lost state file on the phone can never make the watch ignore it (a state file that exists but cannot be read stops everything: nothing is sent and nothing is saved over it). The watch's **Reset** forgets the profile, sets its counter back to -1 and makes a new provisioning key, then asks again.
+  Its capture key is the phone's, so a lost watch can add voice notes to the inbox as the iPhone until the phone's key is replaced
+  by a new epoch; it can read nothing. Turning the toggle off clears the watch and revokes nothing cryptographic (docs/security.md).
 - **The recording.** `WatchRecorder` is a start, stop and sweep state machine over the recorder protocols this document's
-  phone recorder uses (`CaptureRecorder`, `CaptureRecording`, in `SempereCapture`): ADTS segments as above, mono AAC-LC at
-  24 kHz and 32 kbit/s, at most 60 minutes. watchOS cannot write MPEG-4 from segments, so a pure-Swift muxer
+  phone recorder uses (`CaptureRecorder`, `CaptureRecording`, in `SempereCapture`); the watch app implements them on
+  `AVAudioRecorder` (`WatchAudio.swift`): ADTS segments as above, a segment per five minutes, mono AAC-LC at 24 kHz and
+  32 kbit/s, at most 60 minutes, the audio session `.record` and not mixable. An interruption ends the segment and pauses;
+  `shouldResume` goes on in a new segment, otherwise the note stops and is sealed with what exists; a quit or a crash is
+  swept at the next launch ("Interrupted voice note saved"). watchOS cannot write MPEG-4 from segments, so a pure-Swift muxer
   (`ADTSToMP4`, bounded, fuzzed, checked against AVFoundation) joins them, and the note is sealed with the profile
   (`Watch voice note <date> <time>`) into the watch's **outbox** before the plaintext is deleted. The outbox deletes a file
   only when the phone acknowledges it, resends one that has had no ack for 24 hours, and its caps (200 files, 500 MB, 1 GB free
   space) only stop a new recording from starting, never a sealed one.
+- **The surfaces.** A complication and a Smart Stack widget (the accessory families, with the nib), a Control, the Action button
+  and Siri ("Record a Sempere voice note", the iPhone's phrases) all open the watch app and record at once
+  (`sempere-watch://record`, or `RecordWatchVoiceNoteIntent`). The Control only starts a recording; Stop is the button in the app, Siri or a shortcut (`StopWatchVoiceNoteIntent`); the app grid's launch shows a large Record button instead.
+  What the watch widgets show is the same `VoiceNoteStatus`, written by the watch app into the watch's own App Group container.
+- **The screen.** One screen with states: Not set up (with Reset), Ready (Record, "Saving to <vault>"), Recording (the time, a
+  red dot, Stop), Saved (two seconds), "Unsent notes: N" with Send now, and Can't record with the reason (microphone denied,
+  outbox full, little storage). Start and stop tick on the wrist.
 - **The hand-off.** The phone checks what arrives against its metadata (name, size, SHA-256: the file crossed a daemon),
   skips an id it has, and delivers by the **vault the metadata names**: the stored profile's vault through the normal
   delivery (ledger first, inbox or queue), another vault it holds into that vault's inbox under its own epoch, and a vault it
-  does not hold into a queue for it. Then it acknowledges. A file sealed under an older epoch keeps it in the ledger, and
-  `catchUp` re-seals it.
+  does not hold into a queue for it (`WatchReceiver`; its first act is to copy the file out of WatchConnectivity's
+  callback-only location). Then it acknowledges. A file sealed under an older epoch keeps it in the ledger, and
+  `catchUp` re-seals it. Whenever a vault is opened writable, its queue is flushed, each file recorded under the epoch in its
+  sidecar, so no profile of that vault is needed (`CaptureDelivery.flushQueue`; one flush serves a voice note of this device and
+  a Watch note, both written by `WatchQueue`). Settings shows "Last note from Watch" and "N Watch notes waiting for another vault".
 
 The muxer copies frames and cannot trim the encoder's delay, so every segment joint carries about 88 ms of priming at
 24 kHz (2112 samples): a note of n segments plays about (n - 1) x 88 ms shorter than the manifest's duration, which counts
@@ -436,7 +456,22 @@ every frame (the system also removes one priming from the start of the file).
 
 `sempere inbox watch keygen|provision|seal|receive` run each step from the command line (docs/cli.md "Watch").
 
+Tests: `SempereCaptureTests`, `WatchReceiverTests`, `WatchProvisionerTests` and `CLIWatchTests` run on Linux and a Mac;
+`scripts/app.sh test-watch` (`SempereWatchTests`: the model on a fake recorder, the Keychain) and `test-watch-ui`
+(`SempereWatchUITests`: every state on a watchOS simulator, the recorder a fake that writes real ADTS frames) need a watchOS
+simulator runtime (`local-ci.sh`'s `watch-test`, in `--testflight` and `--release`); `build-watch` (every gate) needs only the
+SDK. The Control is left out of simulator builds: the watchOS Simulator has no Shortcuts services behind a Control's intent, and
+the widget extension then dies when the system renders the control.
+
 ## Not verified yet
+
+- **On an Apple Watch (docs/design/1.1-watch.md section 5, W1 to W8):** a 5 and a 30 minute recording with the wrist down and the
+  screen off; each surface (complication, Smart Stack, Control, Action button, Siri) starting a recording, locked and unlocked, and
+  the time to first audio; `AVAudioRecorder` writing ADTS for a `.aac` URL on watchOS; interruptions (a call, Siri, an alarm,
+  headphones, Bluetooth routes); a note recorded with the iPhone off or away reaching the vault after it returns (airplane
+  mode, a lost ack, the app killed mid-transfer); `transferFile` and `updateApplicationContext` on the real transport and the
+  phone app launched in the background by `transferUserInfo`; the battery cost of a 30 minute recording; the `audio` background
+  mode in App Review. Also that `widgetURL` reaches `onOpenURL` on a watch without a registered URL scheme.
 
 - On an iPhone: reboot; before the first unlock the Lock Screen widget shows the nib (the ready glyph, from the
   extension's bundle); Control Center shows the nib too (a control draws only symbols). If it does not render there, the fallback is `mic.fill` on the Lock Screen only.

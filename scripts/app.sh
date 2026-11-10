@@ -5,6 +5,11 @@
 #   scripts/app.sh test-phone # the iPhone suites (PhoneLayoutTests) on an iPhone simulator
 #   scripts/app.sh test-phone-ui # the iPhone UI tests (ui_phone below: canvas with a finger, stack, new note, Settings, import, search, unlock) on an iPhone simulator
 #   scripts/app.sh build-ios  # compile only: the app, its unit tests and its UI tests for an iOS simulator (runs nothing)
+#   scripts/app.sh build-watch # compile only: the Apple Watch app, its widgets and its tests for a watchOS simulator (the generic
+#                             # destination: needs the watchOS simulator SDK, no runtime), and the app and widgets for a watch
+#                             # (unsigned); runs nothing
+#   scripts/app.sh test-watch  # the watch app's unit tests (SempereWatchTests) on a watchOS simulator
+#   scripts/app.sh test-watch-ui # the watch UI tests (SempereWatchUITests: every state, on a fake recorder) on a watchOS simulator
 #   scripts/app.sh catalyst   # Mac Catalyst build, unsigned
 #                             # Every UI test class is in exactly one device list below (scripts/check-ui-tests.sh, in
 #                             # local-ci's `help` step, fails on a class that is in none, or a name that is no class).
@@ -25,7 +30,8 @@
 # replaces the subcommand's own suite list: `scripts/app.sh test -only-testing:SempereAppTests/FooTests`
 # runs that one suite, `scripts/app.sh test-mac -only-testing:…` the same on Mac Catalyst.
 #
-# SEMPERE_SIM_ID overrides the simulator choice.
+# SEMPERE_SIM_ID overrides the simulator choice. The watch runs (test-watch, test-watch-ui) pick an Apple Watch on the newest
+# watchOS runtime; under xc-lock they need XC_KIND=sim XC_NO_CLONE=1 (its clones are iPads and iPhones).
 #
 # The Mac UI tests (test-mac-ui, test-mac-smoke) are ad-hoc signed. Off CI they build without the
 # hardened runtime: on a Mac with a developer identity the ad-hoc UI-test runner otherwise refuses
@@ -276,6 +282,35 @@ case "${1:-}" in
         -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     done
     ;;
+  build-watch)
+    # Compile-only check for watchOS (local-ci's `watch` step, the `iOS build` job): the watch app, its widget extension and
+    # its two test bundles (the SempereWatch scheme), for the generic watchOS Simulator destination, so a runtime is not
+    # needed, only the simulator SDK (Xcode's watchOS platform). The iPhone app embeds the watch app, so `build-ios` builds it too.
+    if ! xcodebuild -showsdks 2>/dev/null | grep -q "watchsimulator"; then
+      echo "build-watch: no watchOS simulator SDK in this Xcode (xcodebuild -showsdks; xcodebuild -downloadPlatform watchOS)" >&2
+      exit 1
+    fi
+    xcodebuild build-for-testing -project "$project" -scheme SempereWatch -derivedDataPath "$derived" \
+      -destination 'generic/platform=watchOS Simulator' CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
+    # And for a watch (unsigned, the device SDK): the widget extension's Control is left out of simulator builds
+    # (SempereWatchWidgets.swift), so only this compiles it.
+    xcodebuild build -project "$project" -scheme SempereWatch -derivedDataPath "$derived" \
+      -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
+    ;;
+  test-watch|test-watch-ui)
+    # The watch app on a watchOS simulator. test-watch: SempereWatchTests (the model on a fake recorder, the Keychain store).
+    # test-watch-ui: SempereWatchUITests (Not set up, Ready, Recording, Saved, Unsent, Can't record, Reset), the app started in
+    # a debug state by launch environment variables (WatchDebugLaunch.swift). The simulator has no microphone to speak of:
+    # these test the UI and the outbox, not audio.
+    sim=$(pick_simulator Watch)
+    settle_simulator "$sim"
+    if [[ $1 == test-watch ]]; then suites -only-testing:SempereWatchTests; else suites -only-testing:SempereWatchUITests; fi
+    xcb test "${lang[@]}" -project "$project" -scheme SempereWatch -derivedDataPath "$derived" \
+      -destination "platform=watchOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO \
+      ${only[@]+"${only[@]}"} ${extra[@]+"${extra[@]}"} \
+      || { status=$?; shutdown_simulators "$sim"; exit $status; }
+    shutdown_simulators "$sim"
+    ;;
   pseudo|pseudo-mac)
     # docs/localization.md "Checking layouts": PseudoLanguageUITests once per language, on the
     # screenshots scheme (it owns the UI test target). Screenshots land in the result bundles.
@@ -398,7 +433,7 @@ case "${1:-}" in
       -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     ;;
   *)
-    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|build-ios|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|simulator" >&2
+    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|build-ios|build-watch|test-watch|test-watch-ui|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|simulator" >&2
     exit 2
     ;;
 esac

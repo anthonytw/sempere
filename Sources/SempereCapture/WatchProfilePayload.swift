@@ -159,7 +159,7 @@ public enum WatchProvisioning {
     /// Watch to phone: "here is my recipient, provision me" (`transferUserInfo`).
     /// Phone to watch: the profile, encrypted (`updateApplicationContext`), or a clear (carries nothing secret).
     public enum Message: Equatable, Sendable {
-        case request(recipient: String, version: Int)
+        case request(recipient: String, version: Int, seq: Int = -1)
         case profile(Data)
         case clear(seq: Int)
     }
@@ -174,13 +174,15 @@ public enum WatchProvisioning {
         case notForTheWatch
     }
 
-    static let requestKey = "provisionRequest"
+    /// The key of the watch's request in its property list.
+    public static let requestKey = "provisionRequest"
     static let versionKey = "version"
     static let profileKey = "profile"
     static let clearKey = "clear"
+    static let seqKey = "seq"
 
-    public static func request(recipient: NativeRecipient) -> Message {
-        .request(recipient: recipient.string, version: WatchProfilePayload.currentVersion)
+    public static func request(recipient: NativeRecipient, seq: Int = -1) -> Message {
+        .request(recipient: recipient.string, version: WatchProfilePayload.currentVersion, seq: seq)
     }
 
     /// The message that gives `profile` to the watch whose provisioning key is `recipient`.
@@ -191,7 +193,7 @@ public enum WatchProvisioning {
 
     public static func dictionary(_ message: Message) -> [String: Any] {
         switch message {
-        case .request(let recipient, let version): return [requestKey: recipient, versionKey: version]
+        case .request(let recipient, let version, let seq): return [requestKey: recipient, versionKey: version, seqKey: seq]
         case .profile(let data): return [profileKey: data]
         case .clear(let seq): return [clearKey: seq]
         }
@@ -200,7 +202,7 @@ public enum WatchProvisioning {
     /// The message a dictionary holds; nil for any other (WatchConnectivity carries other messages on the same channel).
     public static func message(_ dictionary: [String: Any]) -> Message? {
         if let recipient = dictionary[requestKey] as? String, recipient.count <= 4096 {
-            return .request(recipient: recipient, version: dictionary[versionKey] as? Int ?? 0)
+            return .request(recipient: recipient, version: dictionary[versionKey] as? Int ?? 0, seq: dictionary[seqKey] as? Int ?? -1)
         }
         if let data = dictionary[profileKey] as? Data { return .profile(data) }
         if let seq = dictionary[clearKey] as? Int { return .clear(seq: seq) }

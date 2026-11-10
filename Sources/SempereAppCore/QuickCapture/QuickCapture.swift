@@ -166,6 +166,9 @@ public final class QuickCapture {
     @ObservationIgnored public var statusStore: VoiceNoteStatusStore?
     /// Reloads the widgets and the control after the status changed.
     @ObservationIgnored public var reloadSurfaces: @MainActor () -> Void = {}
+    /// Called after the stored profile changed (turned on or off, a new epoch's key, the notebook, the vault, a suspension):
+    /// the app gives the Apple Watch its new profile (`WatchProvisioner`).
+    @ObservationIgnored public var profileChanged: @MainActor () -> Void = {}
     /// How long a start that continued in the app waits for the app to be active before trying again.
     @ObservationIgnored var foregroundWait: Duration = .seconds(12)
     /// The last voice-note starts, kept for Settings (`VoiceNoteStartLog`); memory only unless the app gives a file.
@@ -717,6 +720,12 @@ public final class QuickCapture {
     public nonisolated static let deliveredNotification = Notification.Name("io.github.anthonytw.sempere.captureDelivered")
 
     public func queueFolder(_ vault: UUID) -> URL { delivery.queueFolder(vault) }
+
+    /// Captures waiting in the queue of a vault other than the stored profile's: Watch notes of a vault this device
+    /// does not hold or has not opened since (`flushQueue(into:…)` moves them when it is opened writable).
+    public func queuedForOtherVaults() -> Int {
+        delivery.queuedCount(excluding: (try? store.load())?.profile.vaultId)
+    }
 
     /// Moves queued captures of `vaultId` into the vault at `vaultURL` (`CaptureDelivery.flushQueue`), recorded under
     /// the stored profile when it is this vault's; `coordinated`: each write coordinated (`files`, iCloud Drive).

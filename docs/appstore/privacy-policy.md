@@ -1,6 +1,6 @@
 # Sempere Privacy Policy
 
-*Effective: 2026-10-06. Last updated: 2026-10-24.*
+*Effective: 2026-10-06. Last updated: 2026-11-09.*
 
 This page is the Privacy Policy URL's text. The URL is `https://sempere.anthonywertz.com/privacy`: the app's
 About screen links it (`SempereAbout.privacyPolicyURL`) and App Store Connect must name it. The website builds
@@ -62,7 +62,10 @@ your key, nobody can decrypt your notes.**
 - **Photos** you add have their location and camera data removed by default (Settings →
   Photos).
 - **Quick voice notes** from the Lock Screen or Control Center are encrypted on the device
-  before they are saved, without unlocking your vault.
+  before they are saved, without unlocking your vault. On an Apple Watch with Sempere's watch
+  app (if you turn on Use on Apple Watch), a voice note is recorded on the watch, encrypted
+  there before it is saved, and sent to your iPhone over the watch's own connection to it (Apple's
+  WatchConnectivity). The watch app makes no other connection and keeps no key that can read a note.
 
 ## Network connections
 
@@ -87,7 +90,7 @@ policy will be updated before such a version is released.
 Sempere asks for a permission only when you use the feature that needs it:
 
 - the camera, to add photos and video, and to scan the codes of another device or of a recovery kit (iPad and iPhone);
-- the microphone, to record audio;
+- the microphone, to record audio (also on an Apple Watch you have paired, where Sempere's watch app records a voice note);
 - speech recognition, to transcribe recordings on the device;
 - Face ID or Touch ID, to unlock a vault that you set to ask for it, and to confirm it is you before letting a device into a vault or replacing its recovery kit;
 - Live Activities, to show a voice note in progress.

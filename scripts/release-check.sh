@@ -95,6 +95,20 @@ APPLE_REASONS = {
     "NSPrivacyAccessedAPICategoryUserDefaults": {"CA92.1", "1C8F.1", "C56D.1", "AC6B.1"},
 }
 
+# The Apple Watch targets (docs/design/1.1-watch.md): each may link only these package products, none of which has any network
+# code (the watch app records, seals and hands a file to WatchConnectivity; nothing on it connects to anything), and each
+# entitlements file holds the App Group and nothing else. A new product or entitlement here is a deliberate change.
+WATCH_PRODUCTS_ALLOWED = {
+    "SempereWatch": {"Age", "Sempere", "SempereCapture", "SempereCaptureShared", "SempereLocalization"},
+    "SempereWatchWidgets": {"SempereCaptureShared", "SempereLocalization"},
+}
+WATCH_ENTITLEMENT_FILES = {
+    "SempereWatch.entitlements": {"com.apple.security.application-groups"},
+    "SempereWatchWidgets.entitlements": {"com.apple.security.application-groups"},
+}
+# Background modes the watch app may declare (`WKBackgroundModes`): a voice note keeps recording with the wrist down.
+WATCH_BACKGROUND_MODES_ALLOWED = {"audio"}
+
 # Calls that put a source file in a category (Swift and C spellings of the APIs
 # Apple lists). Comment lines are skipped.
 API_PATTERNS = {
@@ -140,6 +154,8 @@ PRODUCT_SOURCES = {
                        "SemperePDF", "SempereRender", "Age", "CZlib"],
     # What the quick voice note widgets share with the app (docs/design/thin-app.md): linked by the app and the widget.
     "SempereCaptureShared": ["SempereCaptureShared"],
+    # The recorder, outbox, intake and ADTS muxer of quick voice notes (docs/design/1.1-watch.md): linked by the watch app.
+    "SempereCapture": ["SempereCapture", "SempereCaptureShared", "Sempere", "Age", "CZlib"],
     # Third-party (app only, never in Sources/): ships its own manifest if it needs one;
     # check the archive's privacy report.
     "SwiftMath": [],
@@ -190,6 +206,11 @@ SHIPPING = {
                    "manifest": "SempereApp/PrivacyInfo.xcprivacy"},
     "SempereWidgets": {"dirs": ["SempereWidgets", "SempereShared"],
                        "manifest": "SempereWidgets/PrivacyInfo.xcprivacy"},
+    # The Apple Watch app and its widgets (docs/design/1.1-watch.md).
+    "SempereWatch": {"dirs": ["SempereWatch", "SempereWatchShared"],
+                     "manifest": "SempereWatch/PrivacyInfo.xcprivacy"},
+    "SempereWatchWidgets": {"dirs": ["SempereWatchWidgets", "SempereWatchShared"],
+                            "manifest": "SempereWatchWidgets/PrivacyInfo.xcprivacy"},
 }
 
 # --- Project file --------------------------------------------------------------
@@ -284,6 +305,42 @@ for i in ids:
     if i != app_id and not i.startswith(app_id + "."):
         errors.append(f"bundle id {i} is not under {app_id} (extensions must be prefixed by the app's id)")
 
+# The Apple Watch app ships inside the iPhone app (one App Store listing): its bundle id is the app's plus `.watchkitapp`, its
+# widgets' the watch app's plus `.widgets`, the same version as every other target, and the app embeds it.
+watch_app_id = app_id + ".watchkitapp"
+watch_widgets_id = watch_app_id + ".widgets"
+for want in (watch_app_id, watch_widgets_id):
+    if want not in ids:
+        errors.append(f"the watch bundle id {want} is gone from project.pbxproj (the watch app and its widgets must keep these ids)")
+
+def config_blocks():
+    return re.findall(r'^\t\t[0-9A-F]{24} /\* (?:Debug|Release) \*/ = \{\s*isa = XCBuildConfiguration;\s*buildSettings = \{(.*?)^\t\t\t\};', pbx, re.S | re.M)
+
+def block_setting(block, name):
+    m = re.search(r'^\s*"?' + re.escape(name) + r'"?\s*=\s*(.*?);\s*$', block, re.M)
+    return m.group(1).strip().strip('"') if m else None
+
+app_versions = set()
+watch_versions = {}
+for block in config_blocks():
+    bid = block_setting(block, "PRODUCT_BUNDLE_IDENTIFIER")
+    if bid is None:
+        continue
+    versions = (block_setting(block, "MARKETING_VERSION"), block_setting(block, "CURRENT_PROJECT_VERSION"))
+    if bid == app_id:
+        app_versions.add(versions)
+    if bid == watch_app_id or bid.startswith(watch_app_id + "."):
+        watch_versions.setdefault(bid, set()).add(versions)
+for bid, versions in sorted(watch_versions.items()):
+    if app_versions and versions != app_versions:
+        errors.append(f"{bid} has version {sorted(versions)} but the app has {sorted(app_versions)}: the watch targets must carry the "
+                      "app's MARKETING_VERSION and CURRENT_PROJECT_VERSION (App Store Connect rejects an embedded app of another version)")
+if not re.search(r"SempereWatch\.app in Embed Watch Content", pbx):
+    errors.append("SempereWatch.app is not in SempereApp's Embed Watch Content phase: the watch app would not ship with the iPhone app")
+watch_app_blocks = [b for b in config_blocks() if block_setting(b, "PRODUCT_BUNDLE_IDENTIFIER") == watch_app_id]
+if watch_app_blocks and not all(block_setting(b, "INFOPLIST_KEY_NSMicrophoneUsageDescription") for b in watch_app_blocks):
+    errors.append("the watch app needs INFOPLIST_KEY_NSMicrophoneUsageDescription in each of its configurations (it records)")
+
 # Package products linked by any target.
 products = set(re.findall(r"isa = XCSwiftPackageProductDependency;[^}]*?productName = (\w+);", pbx, re.S))
 for p in sorted(products - set(PRODUCT_SOURCES)):
@@ -301,7 +358,8 @@ def target_products(target):
 # --- Info.plist ------------------------------------------------------------------
 
 info_path = os.path.join(app_dir, "SempereInfo.plist")
-for path in (info_path, os.path.join(app_dir, "SempereWidgetsInfo.plist")):
+for path in (info_path, os.path.join(app_dir, "SempereWidgetsInfo.plist"), os.path.join(app_dir, "SempereWatchInfo.plist"),
+             os.path.join(app_dir, "SempereWatchWidgetsInfo.plist")):
     try:
         with open(path, "rb") as f:
             info = plistlib.load(f)
@@ -312,6 +370,19 @@ for path in (info_path, os.path.join(app_dir, "SempereWidgetsInfo.plist")):
         v = info.get(key)
         if v is not None and v not in ("$(MARKETING_VERSION)", "$(CURRENT_PROJECT_VERSION)") and v != want:
             errors.append(f"{rel(path)}: {key} = {v!r} disagrees with the build setting ({want!r})")
+    if os.path.basename(path) == "SempereWatchInfo.plist":
+        if info.get("WKCompanionAppBundleIdentifier") != app_id:
+            errors.append(f"{rel(path)}: WKCompanionAppBundleIdentifier must be {app_id} (the iPhone app the watch app ships in)")
+        modes = info.get("WKBackgroundModes", [])
+        for mode in modes:
+            if mode not in WATCH_BACKGROUND_MODES_ALLOWED:
+                errors.append(f"{rel(path)}: background mode {mode!r} is not in the allow-list {sorted(WATCH_BACKGROUND_MODES_ALLOWED)} "
+                              "(scripts/release-check.sh): App Store review needs a reason for each")
+        if info.get("WKRunsIndependentlyOfCompanionApp") is not False:
+            errors.append(f"{rel(path)}: WKRunsIndependentlyOfCompanionApp must be false: the watch app does nothing without the "
+                          "iPhone app's profile (design 1.1-watch.md, non-goals)")
+        if "audio" not in modes:
+            errors.append(f"{rel(path)}: WKBackgroundModes must hold audio: a voice note keeps recording with the wrist down")
     if path == info_path:
         enc = info.get("ITSAppUsesNonExemptEncryption")
         if not isinstance(enc, bool):
@@ -348,8 +419,15 @@ for p in sorted(ent_files):
             errors.append(f"{rel(p)}: {k} must be exactly {want}")
     for k in sorted(set(ents) - ENTITLEMENTS_ALLOWED):
         errors.append(f"{rel(p)}: entitlement {k} is not in the allow-list (scripts/release-check.sh)")
+    only = WATCH_ENTITLEMENT_FILES.get(os.path.basename(p))
+    if only is not None:
+        for k in sorted(set(ents) - only):
+            errors.append(f"{rel(p)}: the watch's entitlements may hold only {sorted(only)}; {k} is not allowed there")
     if os.path.relpath(p, app_dir) in mac_ents and ents.get("com.apple.security.app-sandbox") is not True:
         errors.append(f"{rel(p)}: the Mac build must set com.apple.security.app-sandbox to true")
+for name in sorted(WATCH_ENTITLEMENT_FILES):
+    if name not in {os.path.basename(v) for v in setting_values("CODE_SIGN_ENTITLEMENTS")}:
+        errors.append(f"{name} is not referenced by any CODE_SIGN_ENTITLEMENTS: the watch target would be built without its App Group")
 if not mac_ents:
     errors.append("no CODE_SIGN_ENTITLEMENTS[sdk=macosx*]: the Mac Catalyst build would not be sandboxed")
 
@@ -372,6 +450,15 @@ def scan(dirs):
                         if pat.search(code):
                             uses[c].append(f"{rel(p)}:{i}")
     return uses
+
+for target, allowed in WATCH_PRODUCTS_ALLOWED.items():
+    linked = target_products(target)
+    if linked is None:
+        errors.append(f"target {target} is not in project.pbxproj: its package products cannot be checked against WATCH_PRODUCTS_ALLOWED")
+    else:
+        for extra in sorted(linked - allowed):
+            errors.append(f"{target} links package product {extra}, which is not in WATCH_PRODUCTS_ALLOWED of scripts/release-check.sh: "
+                          "the watch links no network code (WebDAV, sync) and no app-side library (SempereAppCore)")
 
 declared_by_target = {}
 for target, spec in SHIPPING.items():

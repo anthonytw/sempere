@@ -61,12 +61,12 @@ done
 [[ -n $post ]] || { [[ $mode == gate ]] && post=false || post=true; }
 
 # Cheapest first, so a failure shows early (each step stands alone; `iphone` reuses `ipad`'s build).
-gate_steps=(help ios-build mac package linux webdav)
+gate_steps=(help ios-build watch mac package linux webdav)
 steps=("${gate_steps[@]}")
 case "$mode" in
   gate)       context=$gate_context ;;
-  testflight) context=local/testflight-suite; steps+=(mac-perf mac-offline mac-smoke mac-ui) ;;
-  release)    context=local/release-sweep;    steps+=(mac-perf mac-offline mac-smoke ipad iphone pseudo mac-ui ipad-ui iphone-ui) ;;
+  testflight) context=local/testflight-suite; steps+=(mac-perf mac-offline mac-smoke mac-ui watch-test) ;;
+  release)    context=local/release-sweep;    steps+=(mac-perf mac-offline mac-smoke ipad iphone pseudo mac-ui ipad-ui iphone-ui watch-test) ;;
   cli)        context=local/cli-suite; gate_steps=(); steps=(package linux webdav static) ;;
 esac
 
@@ -90,6 +90,8 @@ describe() {   # step: what it runs
     package)    echo "swift build --build-tests && swift test --parallel --skip Benchmarks (through scripts/test-runner.py; benchmarks are scripts/bench.sh); skips targets whose hash already passed (scripts/ci-hash.py)" ;;
     mac)        echo "scripts/app.sh test-mac        (Mac Catalyst unit tests, pseudo-language layouts included)" ;;
     ios-build)  echo "scripts/app.sh build-ios       (iOS simulator compile check, no tests), then scripts/build-watchos-package.sh (the watch's package targets for watchOS)" ;;
+    watch)      echo "scripts/app.sh build-watch      (the Apple Watch app, its widgets and its tests compiled for a watchOS simulator, and the app and widgets for a watch; nothing run)" ;;
+    watch-test) echo "scripts/app.sh test-watch, then test-watch-ui (the watch app's unit tests and its UI tests on a watchOS simulator, on a fake recorder)" ;;
     mac-offline) echo "scripts/app.sh test-mac-offline (Mac Catalyst unit tests with the network refused, OfflineModeTests)" ;;
     mac-ui)     echo "scripts/app.sh test-mac-ui     (Mac UI tests; screen)" ;;
     mac-smoke)  echo "scripts/app.sh test-mac-smoke  (Mac launch smoke tests; screen)" ;;
@@ -144,6 +146,8 @@ run_step() {
     package)    scripts/ci-mac-package.sh ;;
     mac)        scripts/app.sh test-mac ;;
     ios-build)  scripts/app.sh build-ios && scripts/build-watchos-package.sh ;;
+    watch)      scripts/app.sh build-watch ;;
+    watch-test) scripts/app.sh test-watch && scripts/app.sh test-watch-ui ;;
     mac-offline) scripts/app.sh test-mac-offline ;;
     mac-ui)     scripts/app.sh test-mac-ui ;;
     mac-smoke)  scripts/app.sh test-mac-smoke ;;

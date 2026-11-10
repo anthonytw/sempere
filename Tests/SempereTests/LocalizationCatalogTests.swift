@@ -19,7 +19,7 @@ final class LocalizationCatalogTests: XCTestCase {
     /// `AppShortcuts` stay in the app, whose bundle the system reads them from.
     static let packageCatalog = repo.appendingPathComponent("Sources/SempereLocalization/Resources/Localizable.xcstrings")
     /// Source folders whose literals are interface text. Debug, demo and performance code is exempt.
-    static let sourceFolders = ["SempereApp", "SempereShared", "SempereWidgets"]
+    static let sourceFolders = ["SempereApp", "SempereShared", "SempereWidgets", "SempereWatch", "SempereWatchShared", "SempereWatchWidgets"]
     static let exemptFiles: Set<String> = [
         "DebugLaunch.swift", "DebugProbe.swift", "DemoLaunch.swift", "Perf.swift",
     ]

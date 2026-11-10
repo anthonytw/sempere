@@ -15,7 +15,7 @@ pass=0 fail=0
 fresh() {
   rm -rf "$tmp/root" && mkdir -p "$tmp/root/Apps" "$tmp/root/Sources" "$tmp/root/docs/appstore" "$tmp/root/docs/privacy"
   cp -R "$here/Apps/Sempere" "$tmp/root/Apps/"
-  for t in Age Sempere SempereRender SemperePDF SempereSpeech SempereSync SempereWebDAV CZlib; do cp -R "$here/Sources/$t" "$tmp/root/Sources/"; done
+  for t in Age Sempere SempereRender SemperePDF SempereSpeech SempereSync SempereWebDAV CZlib SempereCapture SempereCaptureShared; do cp -R "$here/Sources/$t" "$tmp/root/Sources/"; done
   cp "$here/docs/appstore/privacy-policy.md" "$tmp/root/docs/appstore/"
   cp "$here/docs/privacy/index.html" "$tmp/root/docs/privacy/"
   cp "$here/SECURITY.md" "$tmp/root/"
@@ -78,7 +78,7 @@ fresh; edit "$pbx" 's.replace("MARKETING_VERSION = 1.0.0;", "MARKETING_VERSION =
 expect "marketing version mismatch" fail "MARKETING_VERSION differs"
 
 fresh; edit "$pbx" 's[::-1].replace(";1 = NOISREV_TCEJORP_TNERRUC", ";2 = NOISREV_TCEJORP_TNERRUC", 1)[::-1]'
-expect "build number mismatch (the widget's)" fail "CURRENT_PROJECT_VERSION differs"
+expect "build number mismatch (the last target's)" fail "CURRENT_PROJECT_VERSION differs"
 
 fresh; edit "$pbx" 's.replace("MARKETING_VERSION = 1.0.0;", "MARKETING_VERSION = beta;")'
 expect "non-numeric version" fail "not 1 to 3 dot-separated integers"
@@ -214,11 +214,87 @@ fresh; rm -rf "$tmp/co" && mkdir -p "$tmp/co"
 expect "no SwiftMath checkout" fail "no SwiftMath checkout"
 extra=()
 
+# The Apple Watch app and its widgets (docs/design/1.1-watch.md): ids, versions, embedding, entitlements, background modes,
+# privacy manifests and no network code or network product.
+wapp="Apps/Sempere/SempereWatch"
+fresh; edit "$pbx" 's.replace("MARKETING_VERSION = 1.0.0;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;", "MARKETING_VERSION = 1.0.1;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;")'
+expect "the watch app's version differs from the app's" fail "io.github.anthonytw.sempere.watchkitapp has version .*1.0.1.* but the app has"
+
+fresh; edit "$pbx" 's.replace("CURRENT_PROJECT_VERSION = 1;\n\t\t\t\tGENERATE_INFOPLIST_FILE = YES;\n\t\t\t\tINFOPLIST_FILE = SempereWatchWidgetsInfo.plist;", "CURRENT_PROJECT_VERSION = 2;\n\t\t\t\tGENERATE_INFOPLIST_FILE = YES;\n\t\t\t\tINFOPLIST_FILE = SempereWatchWidgetsInfo.plist;")'
+expect "the watch widgets' build number differs from the app's" fail "io.github.anthonytw.sempere.watchkitapp.widgets has version"
+
+fresh; edit "$pbx" 's.replace("io.github.anthonytw.sempere.watchkitapp.widgets;", "io.github.anthonytw.sempere.watchwidgets;")'
+expect "the watch widgets' bundle id is gone" fail "the watch bundle id io.github.anthonytw.sempere.watchkitapp.widgets is gone"
+
+fresh; edit "$pbx" 's.replace("SempereWatch.app in Embed Watch Content", "SempereWatch.app in Other")'
+expect "the watch app is not embedded in the iPhone app" fail "SempereWatch.app is not in SempereApp's Embed Watch Content phase"
+
+fresh; edit "$pbx" 's.replace("INFOPLIST_KEY_NSMicrophoneUsageDescription = \"Sempere uses the microphone to record audio into your notes. Recordings are encrypted in your vault.\";\n\t\t\t\tLD_RUNPATH_SEARCH_PATHS = (\n\t\t\t\t\t\"$(inherited)\",\n\t\t\t\t\t\"@executable_path/Frameworks\",\n\t\t\t\t);\n\t\t\t\tMARKETING_VERSION = 1.0.0;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;", "LD_RUNPATH_SEARCH_PATHS = (\n\t\t\t\t\t\"$(inherited)\",\n\t\t\t\t\t\"@executable_path/Frameworks\",\n\t\t\t\t);\n\t\t\t\tMARKETING_VERSION = 1.0.0;\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.watchkitapp;", 1)'
+expect "the watch app has no microphone usage string" fail "the watch app needs INFOPLIST_KEY_NSMicrophoneUsageDescription"
+
+fresh; edit "Apps/Sempere/SempereWatch.entitlements" 's.replace("</dict>", "\t<key>com.apple.security.device.audio-input</key>\n\t<true/>\n</dict>")'
+expect "an entitlement the watch may not hold (allowed elsewhere)" fail "SempereWatch.entitlements: the watch's entitlements may hold only"
+
+fresh; edit "Apps/Sempere/SempereWatchWidgets.entitlements" 's.replace("group.io.github.anthonytw.sempere", "group.io.github.other")'
+expect "the watch widgets' App Group is not the app's" fail "SempereWatchWidgets.entitlements: com.apple.security.application-groups must be exactly"
+
+fresh; edit "$pbx" 's.replace("CODE_SIGN_ENTITLEMENTS = SempereWatch.entitlements;", "")'
+expect "the watch app is built without its entitlements" fail "SempereWatch.entitlements is not referenced by any CODE_SIGN_ENTITLEMENTS"
+
+fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<string>audio</string>", "<string>audio</string>\n\t\t<string>location</string>")'
+expect "a background mode outside the allow-list" fail "background mode 'location' is not in the allow-list"
+
+fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<string>audio</string>", "<string>workout-processing</string>")'
+expect "no audio background mode" fail "WKBackgroundModes must hold audio"
+
+fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<string>io.github.anthonytw.sempere</string>", "<string>io.github.other</string>")'
+expect "the watch app's companion is another app" fail "WKCompanionAppBundleIdentifier must be io.github.anthonytw.sempere"
+
+fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<dict>\n", "<dict>\n\t<key>CFBundleShortVersionString</key>\n\t<string>9.9</string>\n", 1)'
+expect "the watch Info.plist hard-codes another version" fail "SempereWatchInfo.plist: CFBundleShortVersionString = '9.9'"
+
+fresh; edit "Apps/Sempere/SempereWatchInfo.plist" 's.replace("<key>WKRunsIndependentlyOfCompanionApp</key>\n\t<false/>", "<key>WKRunsIndependentlyOfCompanionApp</key>\n\t<true/>")'
+expect "the watch app claims to run independently of the iPhone app" fail "WKRunsIndependentlyOfCompanionApp must be false"
+
+fresh; edit "$pbx" 's.replace("/* SempereWatchWidgets */ = {\n\t\t\tisa = PBXNativeTarget;", "/* SempereWatchWidgetsGone */ = {\n\t\t\tisa = PBXNativeTarget;")'
+expect "a watch target missing from the project is an error, not a skip" fail "target SempereWatchWidgets is not in project.pbxproj"
+
+fresh; rm "$tmp/root/$wapp/PrivacyInfo.xcprivacy"
+expect "watch app privacy manifest missing" fail "SempereWatch/PrivacyInfo.xcprivacy is missing"
+
+fresh; rm "$tmp/root/Apps/Sempere/SempereWatchWidgets/PrivacyInfo.xcprivacy"
+expect "watch widgets privacy manifest missing" fail "SempereWatchWidgets/PrivacyInfo.xcprivacy is missing"
+
+fresh; edit "$wapp/PrivacyInfo.xcprivacy" 's.replace("NSPrivacyAccessedAPICategoryDiskSpace", "NSPrivacyAccessedAPICategorySystemBootTime").replace("<string>E174.1</string>", "<string>35F9.1</string>")'
+expect "the watch app uses disk space but does not declare it" fail "SempereWatch uses NSPrivacyAccessedAPICategoryDiskSpace .* does not declare it"
+
+fresh; printf 'import Foundation\nlet up = ProcessInfo.processInfo.systemUptime\n' > "$tmp/root/Apps/Sempere/SempereWatchWidgets/Uptime.swift"
+expect "the watch widgets start using boot time" fail "SempereWatchWidgets uses NSPrivacyAccessedAPICategorySystemBootTime"
+
+fresh; printf 'import Foundation\nfunc ping() { URLSession.shared.dataTask(with: URL(fileURLWithPath: "/")).resume() }\n' > "$tmp/root/$wapp/Ping.swift"
+expect "networking in the watch app" fail "SempereWatch/Ping.swift:2: networking in the shipping app"
+
+fresh; printf 'import Network\n' > "$tmp/root/Apps/Sempere/SempereWatchShared/Reach.swift"
+expect "networking in the code the watch targets share" fail "SempereWatchShared/Reach.swift:1: networking"
+
+fresh; edit "$pbx" 's.replace("A200000000000000000D0105 /* SempereLocalization */,\n\t\t\t);\n\t\t\tproductName = SempereWatch;", "A200000000000000000D0105 /* SempereLocalization */,\n\t\t\t\tA1000000000000000000D008 /* SempereWebDAV */,\n\t\t\t);\n\t\t\tproductName = SempereWatch;")'
+expect "the watch app links a network package product" fail "SempereWatch links package product SempereWebDAV"
+
+fresh; edit "$pbx" 's.replace("A200000000000000000D0105 /* SempereLocalization */,\n\t\t\t);\n\t\t\tproductName = SempereWatch;", "A200000000000000000D0105 /* SempereLocalization */,\n\t\t\t\tA1000000000000000000D0C0 /* SempereAppCore */,\n\t\t\t);\n\t\t\tproductName = SempereWatch;")'
+expect "the watch app links the app-side library" fail "SempereWatch links package product SempereAppCore"
+
+fresh; edit "$pbx" 's.replace("A200000000000000000D0107 /* SempereCaptureShared */,\n\t\t\t);\n\t\t\tproductName = SempereWatchWidgets;", "A200000000000000000D0107 /* SempereCaptureShared */,\n\t\t\t\tA1000000000000000000D0001 /* Sempere */,\n\t\t\t);\n\t\t\tproductName = SempereWatchWidgets;")'
+expect "the watch widgets link more than the catalog and the status" fail "SempereWatchWidgets links package product Sempere"
+
 # --app-sources prints the Sources/ targets the app links (PRODUCT_SOURCES).
 app_sources="$("$check" --app-sources 2>/dev/null || true)"
 case "|$app_sources|" in
   *"|SempereWebDAV|"*) pass=$((pass + 1)); echo "ok   --app-sources lists SempereWebDAV" ;;
   *) fail=$((fail + 1)); echo "FAIL --app-sources lists SempereWebDAV (got: $app_sources)" ;;
+esac
+case "|$app_sources|" in
+  *"|SempereCapture|"*) pass=$((pass + 1)); echo "ok   --app-sources lists SempereCapture (the watch's recorder)" ;;
+  *) fail=$((fail + 1)); echo "FAIL --app-sources lists SempereCapture (got: $app_sources)" ;;
 esac
 echo "release-check tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

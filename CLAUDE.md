@@ -15,6 +15,7 @@ scripts/test-linux.sh       # on a Mac with Docker, or in a cloud VM: run tests 
 scripts/app.sh test         # iPad app: xcodebuild test on the newest iPadOS 27+ simulator
 scripts/app.sh test -only-testing:SempereAppTests/FooTests   # one suite (any test-* subcommand)
 scripts/app.sh catalyst     # iPad app: unsigned Mac Catalyst build
+scripts/app.sh build-watch  # Apple Watch app + widgets: compile for the watchOS Simulator and a watch (test-watch, test-watch-ui run its tests; docs/quick-capture.md "Apple Watch")
 scripts/local-ci.sh         # the PR gate's local twin, optional (GitHub Actions runs the gate); see Workflow
 SEMPERE_FUZZ_LONG=1 swift test --filter Fuzz   # deep fuzz run (quick mode runs in every swift test)
 (cd web && npm ci && npm run lint && npm run typecheck && npm test)   # web viewer
@@ -297,6 +298,9 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   targets it links) but not declared in its `PrivacyInfo.xcprivacy` (app: `SempereApp/`, widget:
   `SempereWidgets/`). A new entitlement, package product or API category means updating the
   script's tables, and the manifest in the same PR.
+  The Apple Watch targets have their own rules in it: the bundle ids `….watchkitapp` and `….watchkitapp.widgets` with the app's
+  versions, the watch app embedded in the iPhone app, entitlements limited to the App Group, `WKBackgroundModes` limited to
+  `audio`, a microphone string, and only the package products in `WATCH_PRODUCTS_ALLOWED` (no network code, no `SempereAppCore`).
   It also fails on networking (`URLSession`, Network.framework, sockets, WebKit, …) in any
   non-test folder of `Apps/Sempere` or a linked `Sources/` target outside `NETWORK_ALLOWED` (the
   WebDAV client: `WebDAVRemote.swift`, `SempereWebDAV`'s transport and client; and the dormant
