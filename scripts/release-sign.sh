@@ -12,7 +12,7 @@
 #      /Users/Shared/sempere-release, then vVERSION) and its SHA256SUMS belong to the build account (SEMPERE_BUILD_USER,
 #      default claude) and are not writable by group or world; your output folder (SEMPERE_SIGN_OUT, default
 #      /Users/Shared/sempere-sign) is yours and not writable by group or world (it is created, mode 755, if missing)
-#   2. copies SHA256SUMS to a private temp folder and refuses a list that is not exactly one line per tarball:
+#   2. copies SHA256SUMS to a private temp folder and refuses a list that is not exactly one newline-terminated line per tarball:
 #      sempere-VERSION-{macos-universal,linux-x86_64,linux-aarch64}.tar.gz, each with a 64-hex hash
 #   3. shows the list, signs the private copy (namespace `file`), and verifies the signature against origin/main's signers
 #   4. only then moves SHA256SUMS and SHA256SUMS.sig into your output folder, vVERSION/, where release-publish reads them
@@ -47,12 +47,16 @@ if [[ ! -e $out/$tag ]]; then mkdir -m 755 "$out/$tag"; fi
 
 mkdir "$tmp/w"; cp "$drop/$tag/SHA256SUMS" "$tmp/w/SHA256SUMS"
 git show "$remote/main:packaging/allowed_signers" > "$tmp/w/allowed_signers"
-n=$(wc -l < "$tmp/w/SHA256SUMS" | tr -d ' ')
+n=$(grep -c '' "$tmp/w/SHA256SUMS")   # counts an unterminated last line too (wc -l does not)
 [[ $n == 3 ]] || die "SHA256SUMS has $n lines, not one per tarball (3)"
+[[ $(tail -c1 "$tmp/w/SHA256SUMS" | od -An -tx1 | tr -d ' ') == 0a ]] || die "SHA256SUMS does not end in a newline"
+if grep -vqE "^[0-9a-f]{64}  sempere-$version-(macos-universal|linux-x86_64|linux-aarch64)\\.tar\\.gz\$" "$tmp/w/SHA256SUMS"; then
+  die "SHA256SUMS has a line that is not a valid tarball line (HASH  sempere-$version-PLATFORM.tar.gz)"
+fi
 for p in macos-universal linux-x86_64 linux-aarch64; do
   [[ $(grep -c -E "^[0-9a-f]{64}  sempere-$version-$p\.tar\.gz\$" "$tmp/w/SHA256SUMS") == 1 ]] || die "SHA256SUMS lacks exactly one valid line for sempere-$version-$p.tar.gz"
 done
-echo "Signing this list:"; sed 's/^/  /' "$tmp/w/SHA256SUMS"
+echo "Signing this list:"; cat -v "$tmp/w/SHA256SUMS" | sed 's/^/  /'
 ssh-keygen -Y sign -f "$key" -n file "$tmp/w/SHA256SUMS" >/dev/null 2>&1 || die "ssh-keygen could not sign with $key (an agent that holds the key must be running)"
 who=$(ssh-keygen -Y find-principals -f "$tmp/w/allowed_signers" -s "$tmp/w/SHA256SUMS.sig" 2>/dev/null | head -1) || true
 [[ -n $who ]] || die "$key is not a key in $remote/main's packaging/allowed_signers: wrong key, nothing written"

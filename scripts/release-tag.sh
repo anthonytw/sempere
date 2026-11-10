@@ -37,7 +37,7 @@ case "${1:-}" in
   --check) mode=check; shift ;;
   --owner-commands) mode=owner; shift; [[ $# -eq 2 && ${2:-} =~ ^[0-9a-f]{40}$ ]] || { echo "usage: $0 --owner-commands VERSION SHA   (SHA: the full 40-digit commit id)" >&2; exit 2; } ;;
   --push) mode=push; shift ;;
-  -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 0 ;;
 esac
 [[ $# -ge 1 && $# -le 2 ]] || { echo "$usage" >&2; exit 2; }
 version=${1#v}
@@ -143,9 +143,9 @@ by name. Read the commit it shows. After a failed \`tag -v\`, delete the local t
 
 ( set -e
   git fetch origin main
-  git merge-base --is-ancestor $sha origin/main
   git log -1 --format='%H %s' $sha
-  git show $sha:Sources/SempereCLI/Version.swift | grep -qx 'let sempereVersion = "$version"'
+  git merge-base --is-ancestor $sha origin/main
+  git show $sha:Sources/SempereCLI/Version.swift | grep -Fqx 'let sempereVersion = "$version"'
   git show origin/main:packaging/allowed_signers > "\${TMPDIR:-/tmp}/sempere-allowed-signers"
   git tag -s $tag $sha -m "Sempere $version"
   git -c gpg.ssh.allowedSignersFile="\${TMPDIR:-/tmp}/sempere-allowed-signers" tag -v $tag

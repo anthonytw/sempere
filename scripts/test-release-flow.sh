@@ -26,7 +26,7 @@ printf '# Changelog\n\n## [1.2.3] - 2026-11-09\n\n### Fixed\n\n- A thing.\n\n## 
 # The maintainer's signing key (a throwaway one) and its line in the signers file.
 mkdir -p packaging; ssh-keygen -q -t ed25519 -N "" -C test -f "$t/key"; ssh-keygen -q -t ed25519 -N "" -C other -f "$t/other"
 echo "maintainer $(cut -d' ' -f1,2 "$t/key.pub")" > packaging/allowed_signers
-export SEMPERE_SIGN_DROP="$t/drop" SEMPERE_SIGN_OUT="$t/sign-out" SEMPERE_BUILD_USER=$(id -un)   # the seat's folder, the maintainer's folder; here both are this user
+export SEMPERE_SIGN_DROP="$t/drop" SEMPERE_SIGN_OUT="$t/sign-out" SEMPERE_BUILD_USER=$(id -un) SEMPERE_MAINTAINER_USER=$(id -un)   # the seat's folder, the maintainer's folder; here both are this user
 # The maintainer signs with release-sign.sh from their own account; stag makes a tag signed with a given key (default: theirs).
 stag() { local k=$t/key; [[ ${1:-} == -k ]] && { k=$2; shift 2; }; git -c gpg.format=ssh -c user.signingkey="$k" tag -s "$@"; }
 git add -A; git commit -q -m "release: 1.2.3"
@@ -105,10 +105,14 @@ signit "key::$(cut -d' ' -f1,2 "$t/key.pub")"; check "the owner script wants a k
 cp "$drop/SHA256SUMS" "$t/sums.good"
 echo "$(printf '0%.0s' $(seq 64))  sempere-1.2.3-extra.tar.gz" >> "$drop/SHA256SUMS"
 signit; check "the owner script refuses a list with an extra line" '[[ $rc != 0 && $out == *"not one per tarball"* && ! -f $signed/SHA256SUMS.sig ]]'
+{ cat "$t/sums.good"; printf '%s  evil.tar.gz\033[1A\033[2K' "$(printf '0%.0s' $(seq 64))"; } > "$drop/SHA256SUMS"
+signit; check "the owner script refuses an unterminated 4th line with escape codes, and shows nothing of it" '[[ $rc != 0 && $out == *"not one per tarball"* && $out != *evil* && ! -f $signed/SHA256SUMS.sig ]]'
+{ cat "$t/sums.good"; } | head -c -1 > "$drop/SHA256SUMS" 2>/dev/null || { printf '%s' "$(cat "$t/sums.good")" > "$drop/SHA256SUMS"; }
+signit; check "the owner script refuses a list that does not end in a newline" '[[ $rc != 0 && $out == *"does not end in a newline"* ]]'
 sed 's/sempere-1.2.3-linux-aarch64/sempere-1.2.2-linux-aarch64/' "$t/sums.good" > "$drop/SHA256SUMS"
-signit; check "the owner script refuses a line for another version" '[[ $rc != 0 && $out == *"lacks exactly one valid line"* ]]'
+signit; check "the owner script refuses a line for another version" '[[ $rc != 0 && $out == *"not a valid tarball line"* ]]'
 sed 's/^[0-9a-f]\{64\}/abc/' "$t/sums.good" > "$drop/SHA256SUMS"
-signit; check "the owner script refuses a malformed hash" '[[ $rc != 0 && $out == *"lacks exactly one valid line"* ]]'
+signit; check "the owner script refuses a malformed hash" '[[ $rc != 0 && $out == *"not a valid tarball line"* ]]'
 cp "$t/sums.good" "$drop/SHA256SUMS"; chmod 777 "$drop"
 signit; check "the owner script refuses a seat folder that is world-writable" '[[ $rc != 0 && $out == *"writable by group or world"* ]]'
 chmod 755 "$drop"; chmod 775 "$drop/SHA256SUMS"
@@ -123,7 +127,9 @@ signit; check "the owner script refuses scripts that differ from origin/main" '[
 git checkout -q -- scripts/release-sign.sh
 signit; check "the owner script signs and verifies with the test key (from the checkout, not the drop)" '[[ $rc == 0 && $out == *"done: "* && $out == *"signed by maintainer"* && -f $signed/SHA256SUMS.sig && -f $signed/SHA256SUMS ]]'
 run scripts/release-publish.sh 1.2.3; check "publish takes the .sig from the maintainer's folder" '[[ $rc == 0 && $out == *"took SHA256SUMS.sig from"* && -f $d/SHA256SUMS.sig ]]'
-rm $d/SHA256SUMS.sig; chmod 777 "$signed"
+rm $d/SHA256SUMS.sig; SEMPERE_MAINTAINER_USER=nobody run scripts/release-publish.sh 1.2.3
+check "publish refuses a maintainer folder that is not the maintainer account's" '[[ $rc != 0 && $out == *"must belong to the maintainer account"* && ! -f $d/SHA256SUMS.sig ]]'
+chmod 777 "$signed"
 run scripts/release-publish.sh 1.2.3; check "publish refuses a maintainer folder that is world-writable" '[[ $rc != 0 && $out == *"writable by group or world"* && ! -f $d/SHA256SUMS.sig ]]'
 chmod 755 "$signed"; echo "# changed after the build" >> "$signed/SHA256SUMS"
 run scripts/release-publish.sh 1.2.3; check "publish refuses a signed SHA256SUMS that differs from the build's" '[[ $rc != 0 && $out == *"is not the"* && ! -f $d/SHA256SUMS.sig ]]'

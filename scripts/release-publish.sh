@@ -10,7 +10,7 @@
 # was built from that commit (its COMMIT file), has SHA256SUMS that verify, are signed by the maintainer (SHA256SUMS.sig,
 # checked against packaging/allowed_signers; it is taken from the maintainer's output folder, SEMPERE_SIGN_OUT
 # (default /Users/Shared/sempere-sign)/vVERSION, when the build lacks it and the SHA256SUMS signed there is
-# byte-identical to the build's; scripts/ and packaging/ must equal origin/main's) and list every tarball, notes.md and a tarball
+# byte-identical to the build's, and owned by the maintainer account (SEMPERE_MAINTAINER_USER, default awertz); scripts/ and packaging/ must equal origin/main's) and list every tarball, notes.md and a tarball
 # per platform, and the release does not exist yet. `gh release create` needs a `gh auth login` that can write to the
 # repository; it never needs admin. The seat (splarg-bot) can create Releases, but only with the owner's explicit OK:
 # the typed version is a human gate, and an agent must never answer it for the owner. A release from 1.1.0 on (not a
@@ -59,7 +59,8 @@ for f in "$dist"/*.tar.gz; do
 done
 signed=${SEMPERE_SIGN_OUT:-/Users/Shared/sempere-sign}/$tag
 if [[ ! -f $dist/SHA256SUMS.sig && -f $signed/SHA256SUMS.sig ]]; then   # the maintainer signed (scripts/release-sign.sh)
-  for f in "$signed" "$signed/SHA256SUMS" "$signed/SHA256SUMS.sig"; do scripts/release-signature.sh owned "$f" any >&2 || die "$f must not be a symlink or writable by group or world"; done
+  maintainer=$(id -u "${SEMPERE_MAINTAINER_USER:-awertz}" 2>/dev/null) || die "no maintainer account ${SEMPERE_MAINTAINER_USER:-awertz} (SEMPERE_MAINTAINER_USER)"
+  for f in "$signed" "$signed/SHA256SUMS" "$signed/SHA256SUMS.sig"; do scripts/release-signature.sh owned "$f" "$maintainer" >&2 || die "$f must belong to the maintainer account, not be a symlink and not be writable by group or world"; done
   cmp -s "$signed/SHA256SUMS" "$dist/SHA256SUMS" || die "$signed/SHA256SUMS is not the $dist/SHA256SUMS that was built: the .sig there signs another list (just release-build $version again)"
   cp "$signed/SHA256SUMS.sig" "$dist/SHA256SUMS.sig"
   echo "ok    took SHA256SUMS.sig from $signed"
