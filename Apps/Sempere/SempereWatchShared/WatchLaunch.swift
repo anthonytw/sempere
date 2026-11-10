@@ -39,7 +39,7 @@ enum WatchActions {
 struct RecordWatchVoiceNoteIntent: AppIntent {
     static let title: LocalizedStringResource = "Record a Voice Note"
     static var description: IntentDescription? {
-        IntentDescription("Opens Sempere on your watch and records a voice note. It is encrypted on the watch and sent to your iPhone's vault inbox.")
+        IntentDescription("Opens Sempere on your watch and records a voice note, encrypted on the watch and sent to your vault's inbox.")
     }
     static let openAppWhenRun = true
     /// Recording needs no unlock and no Face ID: the capture key cannot read anything (docs/quick-capture.md).
@@ -56,7 +56,7 @@ struct RecordWatchVoiceNoteIntent: AppIntent {
 struct StopWatchVoiceNoteIntent: AppIntent {
     static let title: LocalizedStringResource = "Stop the Voice Note"
     static var description: IntentDescription? {
-        IntentDescription("Stops the voice note being recorded on your watch and saves it, encrypted, to be sent to your iPhone.")
+        IntentDescription("Stops the voice note being recorded on your watch and saves it, encrypted, for your vault's inbox.")
     }
     static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
 
