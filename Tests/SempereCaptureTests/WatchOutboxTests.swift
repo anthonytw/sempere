@@ -174,8 +174,10 @@ final class WatchOutboxTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: reopened.fileURL(id)), b.data, "the bytes on disk are B's")
         XCTAssertEqual(meta.sha256, FileDigest.sha256(try Data(contentsOf: reopened.fileURL(id))))
         // And the phone accepts it.
-        let intake = try WatchIntakeTests().rig()
-        let result = try intake.intake.receive(file: reopened.fileURL(id), meta: meta)
+        let delivery = WatchIntakeTests.FakeDelivery()
+        delivery.current = profile.vaultId
+        let intake = WatchIntake(received: WatchReceivedSet(url: nil), delivery: delivery)
+        let result = try intake.receive(file: reopened.fileURL(id), meta: meta)
         XCTAssertEqual(result.outcome, .placed(.vault))
     }
 
