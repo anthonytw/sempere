@@ -1110,6 +1110,7 @@ public final class AppModelCore<Host: AppModelHost> {
         let stale = editor
         opened.prepareBlobWrite = blobWritePreparer(note: noteID)
         configureRecordings(opened)
+        holdRecognitionWhileSuspended(opened)
         opened.onRecognized = { [weak self] id in
             guard let self else { return }
             Task { try? await self.refresh([id]) }   // search sees the new text

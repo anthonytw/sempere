@@ -9,41 +9,8 @@ import Foundation
 import Sempere
 @testable import SempereAppCore
 import TempDirSupport
+import VaultTestSupport
 import Testing
-
-/// Background time faked for `FileLockGuard` (the app's `UIKitLockAssertions`): records each assertion, refuses when
-/// the system "gives no time", and lets a test run the time out.
-final class FakeLockAssertions: FileLockAssertions, @unchecked Sendable {
-    private let lock = NSLock()
-    private var grantTime = true
-    private var next = 1
-    private var running: [Int: @Sendable () -> Void] = [:]
-    private var begunCount = 0
-    private var refusedCount = 0
-
-    /// False: the app is in the background and about to be suspended (`beginBackgroundTask` answers `.invalid`).
-    var grant: Bool {
-        get { lock.withLock { grantTime } }
-        set { lock.withLock { grantTime = newValue } }
-    }
-    var begun: Int { lock.withLock { begunCount } }
-    var refused: Int { lock.withLock { refusedCount } }
-    /// Assertions begun and not ended yet: as many locks are held.
-    var outstanding: Int { lock.withLock { running.count } }
-
-    func begin(name: String, expired: @escaping @Sendable () -> Void) -> Int? {
-        lock.withLock {
-            guard grantTime else { refusedCount += 1; return nil }
-            begunCount += 1
-            let token = next
-            next += 1
-            running[token] = expired
-            return token
-        }
-    }
-
-    func end(_ token: Int) { _ = lock.withLock { running.removeValue(forKey: token) } }
-}
 
 /// Every lock file under `root` that someone holds (an exclusive `flock` on another descriptor is refused).
 func heldLockFiles(under root: URL) -> [String] {
@@ -139,34 +106,42 @@ extension AppModelSuites {
             await launch.close()
         }
 
-        /// Crash 1: the restored editor recognizes in a background launch. Its revision and ledger entry are written
-        /// under background time (each lock its own assertion, all ended after), and no lease is held meanwhile.
-        @Test func aRestoredEditorRecognizingInABackgroundLaunchLocksOnlyUnderBackgroundTime() async throws {
+        /// Crash 1: the restored editor recognized in a background launch. It no longer does: nobody sees that launch,
+        /// so no revision is written and no failure is left for later. The first activation runs the pass, whose
+        /// revision and ledger entry are written under background time (each lock its own assertion, ended after).
+        @Test func aRestoredEditorInABackgroundLaunchRecognizesOnlyOnceTheAppIsActive() async throws {
             let recognizer = FakeRecognizer()
             let launch = try await Self.launch(recognizer: recognizer)
             let model = launch.model
-            let before = launch.fake.begun
             let revisions = try #require(model.vault).revisionNames(of: AppModelTests.lecture).count
             model.selectedNoteID = AppModelTests.lecture
             await model.showSelectedNote()
             let editor = try #require(model.editor)
-            #expect(await TS.waitUntil(timeout: .seconds(30)) { editor.recognitionsWritten > 0 }, "the pass on opening")
+            try await Task.sleep(for: .milliseconds(300))   // well past the recognition delay (20 ms)
+            #expect(recognizer.calls.isEmpty, "held while the locks are let go")
+            #expect(editor.recognitionsWritten == 0 && editor.recognitionFailure == nil)
+            #expect(try #require(model.vault).revisionNames(of: AppModelTests.lecture).count == revisions)
+            #expect(heldLockFiles(under: launch.root).isEmpty)
+
+            let before = launch.fake.begun
+            launch.lifecycle.send(.didBecomeActive)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { editor.recognitionsWritten > 0 }, "the pass on the return")
             #expect(recognizer.calls.count > 0)
             #expect(try #require(model.vault).revisionNames(of: AppModelTests.lecture).count > revisions)
-            #expect(launch.fake.begun > before, "the write ledger's lock was taken under background time")
-            #expect(await TS.waitUntil(timeout: .seconds(30)) { launch.fake.outstanding == 0 }, "and every assertion ended")
-            #expect(heldLockFiles(under: launch.root).isEmpty, "nothing is held once the write returned")
-            #expect(!launch.leaseHeld)
+            #expect(launch.fake.begun > before + 1, "the lease and the write ledger's lock, each under background time")
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { launch.fake.outstanding == 1 }, "only the lease's is left")
+            #expect(heldLockFiles(under: launch.root).allSatisfy { $0.hasSuffix(".open") })
             await launch.close()
         }
 
-        /// Crash 1, the system giving no time (the app about to be suspended): the recognition's write is refused before
-        /// any lock is taken, the failure is reported, nothing is written and nothing is held.
+        /// The system giving no time (the app about to be suspended) for a recognition's write: refused before any
+        /// lock is taken, the failure is reported, nothing is written, and nothing but the lease is held.
         @Test func withoutBackgroundTimeTheRecognitionWriteIsRefusedAndNothingIsHeld() async throws {
             let gate = Gate()
             await gate.close()
             let launch = try await Self.launch(recognizer: FakeRecognizer(gate: gate))
             let model = launch.model
+            launch.lifecycle.send(.didBecomeActive)
             let revisions = try #require(model.vault).revisionNames(of: AppModelTests.lecture).count
             model.selectedNoteID = AppModelTests.lecture
             await model.showSelectedNote()
@@ -178,10 +153,33 @@ extension AppModelSuites {
             if case .save = editor.recognitionFailure {} else { Issue.record("a save failure: \(String(describing: editor.recognitionFailure))") }
             #expect(editor.recognitionsWritten == 0)
             #expect(launch.fake.refused > 0)
-            #expect(launch.fake.outstanding == 0)
-            #expect(heldLockFiles(under: launch.root).isEmpty)
+            #expect(launch.fake.outstanding == 1, "the lease's only")
+            #expect(heldLockFiles(under: launch.root).allSatisfy { $0.hasSuffix(".open") })
             #expect(try #require(model.vault).revisionNames(of: AppModelTests.lecture).count == revisions)
             launch.fake.grant = true
+            await launch.close()
+        }
+
+        /// The app leaves the screen during a pass: the pass stops without writing, and the return reads again.
+        @Test func aPassInFlightWhenTheAppLeavesWritesNothingAndRunsAgainOnTheReturn() async throws {
+            let gate = Gate()
+            await gate.close()
+            let launch = try await Self.launch(recognizer: FakeRecognizer(gate: gate))
+            let model = launch.model
+            launch.lifecycle.send(.didBecomeActive)
+            let revisions = try #require(model.vault).revisionNames(of: AppModelTests.lecture).count
+            model.selectedNoteID = AppModelTests.lecture
+            await model.showSelectedNote()
+            let editor = try #require(model.editor)
+            await gate.waitForArrivals(1)
+            launch.lifecycle.send(.didEnterBackground)
+            #expect(model.locksSuspended)
+            await gate.open()
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(editor.recognitionsWritten == 0 && editor.recognitionFailure == nil, "stopped, nothing written")
+            #expect(try #require(model.vault).revisionNames(of: AppModelTests.lecture).count == revisions)
+            launch.lifecycle.send(.willEnterForeground)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { editor.recognitionsWritten > 0 }, "read again on the return")
             await launch.close()
         }
     }

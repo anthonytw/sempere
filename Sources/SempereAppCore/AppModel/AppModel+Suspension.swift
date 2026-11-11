@@ -113,8 +113,18 @@ extension AppModelCore {
         let wasSuspended = locksSuspended
         locksSuspended = false
         reacquireStoreLease()
-        // Voice notes delivered meanwhile (an intent, the watch) waited for the foreground (`inboxDelivered`).
-        if wasSuspended, phase == .unlocked { startInboxAdoption() }
+        // Voice notes delivered meanwhile (an intent, the watch) waited for the foreground (`inboxDelivered`), and the
+        // open editors' recognition (`holdRecognitionWhileSuspended`).
+        if wasSuspended, phase == .unlocked {
+            startInboxAdoption()
+            for open in [editor].compactMap({ $0 }) + Array(windowEditors.values) { open.scheduleRecognition() }
+        }
+    }
+
+    /// An editor's recognition waits while the locks are let go (`locksSuspended`): a launch nobody sees (a restored
+    /// editor in a launch into the background) writes no revision and leaves no failure banner; the return runs a pass.
+    func holdRecognitionWhileSuspended(_ opened: Editor) {
+        opened.recognitionHeld = { [weak self] in self?.locksSuspended ?? false }
     }
 
     /// Takes the open store vault's lease again, now, on the main actor: one try that never waits, so no

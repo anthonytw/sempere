@@ -55,11 +55,12 @@ extension NoteEditorModel {
         } while recognitionAgain && !isClosed
     }
 
-    /// Whether a pass may go on: the editor is open and recognition still on.
-    var recognitionWanted: Bool { !isClosed && recognizer != nil }
+    /// Whether a pass may go on: the editor is open, recognition still on, and not held (`recognitionHeld`).
+    var recognitionWanted: Bool { !isClosed && recognizer != nil && recognitionHeld?() != true }
 
     func recognizeOnce() async {
-        guard let recognizer, let writer, !isClosed else { return }
+        // Held: nothing is read or written now; `touchedPages` keeps what needs reading for the pass on the return.
+        guard let recognizer, let writer, !isClosed, recognitionHeld?() != true else { return }
         await flush()
         guard saveFailure == nil, recognitionWanted else { return }   // never recognize strokes that are not on disk
         var read: [(pageID: UUID, digest: String, recognition: Recognition?)] = []
