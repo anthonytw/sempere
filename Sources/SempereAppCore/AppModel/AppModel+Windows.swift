@@ -154,7 +154,8 @@ extension AppModelCore {
             break
         }
         sidebarSelection = item
-        if let id = saved.note, notes.contains(where: { $0.id == id }) { selectedNoteID = id }
+        // Only a note the restored item lists: a trashed note is never reopened outside the Trash.
+        if let id = saved.note, notesInSelection.contains(where: { $0.id == id }) { selectedNoteID = id }
         return true
     }
 
@@ -173,7 +174,9 @@ extension AppModelCore {
     /// A note or notebook that is gone falls back to the notebook alone, then All Notes (`restore`).
     @discardableResult
     public func restoreOnLaunch(scene stored: String) -> Bool {
-        guard phase == .unlocked, let id = vault?.vaultId else { return false }
+        // A launch into the background applies nothing (it would open an editor nobody sees): `resumeAfterSuspension`
+        // clears the hold at the first activation, which the library window watches (`launchRestoreHeld`).
+        guard phase == .unlocked, !launchRestoreHeld, let id = vault?.vaultId else { return false }
         if let saved = RestorableSelection(stored: stored), saved.vault == id { return restore(saved) }
         guard let place = LastPlace.load(vault: id, from: deviceMemory) else { return false }
         return restore(place)

@@ -23,6 +23,25 @@ struct SelectionStorageTests {
         #expect(!SelectionStorage.shouldSave(unlocked: true, vault: nil, restored: nil))
     }
 
+    /// The launch restore waits for the list and for the first activation; the phone's notebook list leaves no scene state.
+    @Test func theLaunchRestoreWaitsForTheListAndTheFirstActivation() {
+        #expect(SelectionStorage.isReadyToRestore(unlocked: true, busy: false, listLoaded: true, held: false))
+        #expect(!SelectionStorage.isReadyToRestore(unlocked: true, busy: false, listLoaded: false, held: false), "list not loaded")
+        #expect(!SelectionStorage.isReadyToRestore(unlocked: true, busy: true, listLoaded: true, held: false))
+        #expect(!SelectionStorage.isReadyToRestore(unlocked: true, busy: false, listLoaded: true, held: true), "background launch")
+        #expect(!SelectionStorage.isReadyToRestore(unlocked: false, busy: false, listLoaded: true, held: false))
+    }
+
+    @Test func theNotebookListWritesNoSceneStateSoTheLastPlaceDecides() {
+        let vault = UUID()
+        let all = RestorableSelection(sidebar: nil, note: nil, vault: vault, digest: { $0 })
+        #expect(SelectionStorage.sceneText(for: all, sidebarSelected: false) == "")
+        let favorites = RestorableSelection(sidebar: .favorites, note: nil, vault: vault, digest: { $0 })
+        #expect(RestorableSelection(stored: SelectionStorage.sceneText(for: favorites, sidebarSelected: true))?.sidebarRef
+                == RestorableSelection(stored: favorites.stored)?.sidebarRef)
+        #expect(!SelectionStorage.sceneText(for: favorites, sidebarSelected: true).isEmpty)
+    }
+
     /// The saved selection is cleared once no vault is open.
     @Test func theSelectionStorageIsClearedWithoutAVault() {
         #expect(SelectionStorage.shouldClear(phase: .noVault))

@@ -38,7 +38,10 @@ extension AppModelCore {
     public func observeAppLifecycle(_ lifecycle: (any AppLifecycle)? = nil) {
         guard lifecycleObservation == nil else { return }
         let lifecycle = lifecycle ?? services.lifecycle
-        if releasesLocksInBackground, lifecycle.isInBackground || !lifecycle.isActive { locksSuspended = true }
+        if releasesLocksInBackground, lifecycle.isInBackground || !lifecycle.isActive {
+            locksSuspended = true
+            launchRestoreHeld = true
+        }
         lifecycleObservation = lifecycle.observe { [weak self] event in
             switch event {
             case .didEnterBackground:
@@ -112,6 +115,7 @@ extension AppModelCore {
         guard releasesLocksInBackground else { return }
         let wasSuspended = locksSuspended
         locksSuspended = false
+        launchRestoreHeld = false
         reacquireStoreLease()
         // Voice notes delivered meanwhile (an intent, the watch) waited for the foreground (`inboxDelivered`), and the
         // open editors' recognition (`holdRecognitionWhileSuspended`).

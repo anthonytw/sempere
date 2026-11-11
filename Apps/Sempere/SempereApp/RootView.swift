@@ -70,7 +70,8 @@ struct RootView: View {
                 model.libraryWindowCount -= 1
                 if model.canvasWindow == ui.id { model.canvasWindow = nil }
             }
-            .onChange(of: model.phase == .unlocked && !model.isBusy) { _, ready in
+            .onChange(of: SelectionStorage.isReadyToRestore(unlocked: model.phase == .unlocked, busy: model.isBusy,
+                                                            listLoaded: model.listLoaded, held: model.launchRestoreHeld)) { _, ready in
                 if ready { restoreSelection() }
             }
             .onChange(of: model.selectedNoteID) { saveSelection(); showListWithoutNote() }
@@ -306,7 +307,7 @@ struct RootView: View {
     /// Applies the selection saved with this scene once the vault is unlocked, else the device's last place for
     /// the vault (`AppModel.restoreOnLaunch`; it reads `UserDefaults` only). A scripted debug launch chooses its own.
     private func restoreSelection() {
-        guard SelectionStorage.shouldRestore(vault: model.vault?.vaultId, restored: restoredVault),
+        guard !model.launchRestoreHeld, SelectionStorage.shouldRestore(vault: model.vault?.vaultId, restored: restoredVault),
               let vaultID = model.vault?.vaultId else { return }
         restoredVault = vaultID
         #if DEBUG
@@ -330,7 +331,8 @@ struct RootView: View {
     private func saveSelection() {
         guard SelectionStorage.shouldSave(unlocked: model.phase == .unlocked, vault: model.vault?.vaultId, restored: restoredVault),
               let saved = model.restorableSelection() else { return }
-        storedSelection = saved.stored
+        // The phone's notebook list (no sidebar item) is no place: the scene keeps nothing, so the last place decides.
+        storedSelection = SelectionStorage.sceneText(for: saved, sidebarSelected: model.sidebarSelection != nil)
         model.saveLastPlace()
     }
 

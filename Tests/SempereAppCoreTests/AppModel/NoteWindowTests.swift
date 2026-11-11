@@ -311,6 +311,44 @@ extension AppModelSuites {
             #expect(model.selectedNoteID == nil)
         }
 
+        /// A note that was trashed since is never reopened outside the Trash (review of 1.1-x, C2).
+        @Test func aTrashedNoteIsNotReopenedOutsideTheTrash() async throws {
+            let (model, _) = try await Self.unlockedModel()
+            defer { model.close() }
+            let vault = try #require(model.vault?.vaultId)
+            let digest = try #require(model.selectionDigest())
+            LastPlace.save(RestorableSelection(sidebar: .allNotes, note: ModelFixture.deleted, vault: vault, digest: digest),
+                           vault: vault, in: model.deviceMemory)
+            model.selectedNoteID = nil
+            #expect(model.restoreOnLaunch(scene: ""))
+            #expect(model.sidebarSelection == .allNotes)
+            #expect(model.selectedNoteID == nil, "the trashed note is not in All Notes")
+            LastPlace.save(RestorableSelection(sidebar: .deleted, note: ModelFixture.deleted, vault: vault, digest: digest),
+                           vault: vault, in: model.deviceMemory)
+            #expect(model.restoreOnLaunch(scene: ""))
+            #expect(model.selectedNoteID == ModelFixture.deleted, "in the Trash it opens")
+        }
+
+        @Test func theLaunchRestoreWaitsForTheFirstActivation() async throws {
+            let (model, _) = try await Self.unlockedModel()
+            defer { model.close() }
+            let vault = try #require(model.vault?.vaultId)
+            let digest = try #require(model.selectionDigest())
+            LastPlace.save(RestorableSelection(sidebar: .tag("fixture"), note: Self.lecture, vault: vault, digest: digest),
+                           vault: vault, in: model.deviceMemory)
+            model.sidebarSelection = .allNotes
+            model.selectedNoteID = nil
+            model.releasesLocksInBackground = true
+            model.observeAppLifecycle(ManualAppLifecycle(isInBackground: false, isActive: false))
+            #expect(model.launchRestoreHeld)
+            #expect(!model.restoreOnLaunch(scene: ""), "a launch nobody sees opens nothing")
+            #expect(model.selectedNoteID == nil && model.sidebarSelection == .allNotes)
+            model.resumeAfterSuspension()
+            #expect(!model.launchRestoreHeld)
+            #expect(model.restoreOnLaunch(scene: ""))
+            #expect(model.selectedNoteID == Self.lecture)
+        }
+
         @Test func theLastPlaceIsPerVaultAndNeverAppliedLocked() async throws {
             let (model, _) = try await Self.unlockedModel()
             defer { model.close() }
