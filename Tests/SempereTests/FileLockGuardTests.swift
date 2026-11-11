@@ -5,50 +5,13 @@ import Musl
 #elseif canImport(Darwin)
 import Darwin
 #endif
+import Age
 import Crypto
 import Foundation
 @testable import Sempere
 import TempDirSupport
+import VaultTestSupport
 import XCTest
-
-/// Background time faked for `FileLockGuard`: records each assertion, refuses when the system "gives no time", and lets a
-/// test run the time out.
-final class FakeLockAssertions: FileLockAssertions, @unchecked Sendable {
-    private let lock = NSLock()
-    private var grantTime = true
-    private var next = 1
-    private var running: [Int: @Sendable () -> Void] = [:]
-    private var begunCount = 0
-    private var refusedCount = 0
-
-    /// False: the app is in the background and about to be suspended (`beginBackgroundTask` answers `.invalid`).
-    var grant: Bool {
-        get { lock.withLock { grantTime } }
-        set { lock.withLock { grantTime = newValue } }
-    }
-    var begun: Int { lock.withLock { begunCount } }
-    var refused: Int { lock.withLock { refusedCount } }
-    /// Assertions begun and not ended yet.
-    var outstanding: Int { lock.withLock { running.count } }
-
-    func begin(name: String, expired: @escaping @Sendable () -> Void) -> Int? {
-        lock.withLock {
-            guard grantTime else { refusedCount += 1; return nil }
-            begunCount += 1
-            let token = next
-            next += 1
-            running[token] = expired
-            return token
-        }
-    }
-
-    func end(_ token: Int) { _ = lock.withLock { running.removeValue(forKey: token) } }
-
-    /// The system takes the time back: every running assertion expires.
-    func expireAll() {
-        for handler in lock.withLock({ Array(running.values) }) { handler() }
-    }
-}
 
 /// TestFlight 1.1 (67) was killed (RunningBoard `0xdead10cc`) in launches into the background: a write took the write
 /// ledger's lock in the App Group container with no background time, and the process was suspended holding it. Every
@@ -160,4 +123,132 @@ final class FileLockGuardTests: XCTestCase {
         try VaultFileLock.at(dir.appendingPathComponent("x.write")).withLock {}
         XCTAssertEqual(fake.refused, 0)
     }
+
+    /// The expiry log and the assertion's name carry the lock's kind, as its taker names it, never a path.
+    func testTheExpiryLogNamesTheKind() throws {
+        let seen = Seen()
+        let before = FileLockGuard.onExpiry
+        FileLockGuard.onExpiry = { seen.add($0) }
+        defer { FileLockGuard.onExpiry = before }
+        fake.onBegin = { seen.add("begin " + $0) }
+        let store = VaultStore(root: dir.appendingPathComponent("store"))
+        let lease = try store.lease(UUID())
+        fake.expireAll()
+        lease.release()
+        try store.writeLock(for: UUID()).withLock { fake.expireAll() }
+        XCTAssertEqual(seen.items, ["begin Sempere lock (open)", "open", "begin Sempere lock (write)", "write"])
+    }
+
+    // MARK: - Staging folders
+
+    private var store: VaultStore { VaultStore(root: dir.appendingPathComponent("store")) }
+
+    /// What the store's root holds besides its own hidden folders: no vault-id folder may be left.
+    private func storeFolders(_ store: VaultStore) -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: store.root.path)) ?? []).filter { !$0.hasPrefix(".") }
+    }
+
+    private func stagingLeftovers(_ store: VaultStore) -> [String] {
+        (try? FileManager.default.contentsOfDirectory(atPath: store.root.appendingPathComponent(".staging").path)) ?? []
+    }
+
+    private func identity() throws -> NativeIdentity {
+        try DeviceKeys.parse(String(contentsOf: FixtureTests.bundled("sample.key"), encoding: .utf8)).nativeIdentity
+    }
+
+    private func sampleSource() throws -> URL {
+        let source = dir.appendingPathComponent("outside").appendingPathComponent("Notes.sempere")
+        try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: FixtureTests.bundled("sample.sempere"), to: source)
+        return source
+    }
+
+    private func assertSuspended(_ error: any Error, file: StaticString = #filePath, line: UInt = #line) {
+        guard case .suspended? = error as? VaultFileLock.LockError else {
+            return XCTFail("expected .suspended, got \(error)", file: file, line: line)
+        }
+    }
+
+    /// A staging folder's lock let go at expiry (the app left the screen during a long create): `sweep` may delete
+    /// the folder from then on, so the vault is never moved into the store, and nothing is left there.
+    func testAStagingFolderLetGoAtExpiryIsNeverInstalled() throws {
+        let store = store
+        let identity = try identity()
+        XCTAssertThrowsError(try store.create(name: "Late") { url -> Void in
+            _ = try TestVaults.create(at: url, identities: [identity])
+            let staging = url.deletingLastPathComponent()
+            XCTAssertTrue(Self.held(staging))
+            fake.expireAll()
+            XCTAssertFalse(Self.held(staging), "let go at expiry")
+        }) { assertSuspended($0) }
+        XCTAssertTrue(store.list().isEmpty)
+        XCTAssertEqual(storeFolders(store), [], "no vault-id folder either")
+        XCTAssertEqual(stagingLeftovers(store), [])
+        XCTAssertEqual(fake.outstanding, 0)
+        // With time, the same create goes through.
+        let made = try store.create(name: "Late") { try TestVaults.create(at: $0, identities: [identity]) }
+        XCTAssertEqual(made.entry.name, "Late")
+    }
+
+    /// A copy-in whose staging lock was let go stops at the next file instead of copying on, while a sweep (another
+    /// create, a refresh) removes the folder it no longer holds; nothing is installed.
+    func testACopyInStopsAtTheNextFileOnceItsStagingLockIsLetGo() throws {
+        let store = store
+        let source = try sampleSource()
+        let copied = Seen()
+        let fake = fake!
+        XCTAssertThrowsError(try store.importVault(from: source, options: .init(afterEachFile: { path in
+            copied.add(path)
+            if copied.items.count == 1 {
+                fake.expireAll()
+                store.sweep()
+            }
+        }))) { assertSuspended($0) }
+        XCTAssertEqual(copied.items.count, 1, "no file is copied after the lock was let go")
+        XCTAssertTrue(store.list().isEmpty)
+        XCTAssertEqual(storeFolders(store), [])
+        XCTAssertEqual(stagingLeftovers(store), [])
+    }
+
+    /// `Backup.restore` checks before each file, and stops at the first refusal with nothing placed.
+    func testARestoreStopsAtTheNextFile() throws {
+        let source = try sampleSource()
+        let target = dir.appendingPathComponent("restore").appendingPathComponent("Notes.sempere")
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let calls = Seen()
+        XCTAssertThrowsError(try Backup.restore(from: source, to: target, beforeEachFile: {
+            calls.add("file")
+            if calls.items.count == 2 { throw VaultFileLock.LockError.suspended("staging") }
+        })) { assertSuspended($0) }
+        XCTAssertEqual(calls.items.count, 2, "stopped at the next file")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathComponent(Vault.manifestName).path))
+    }
+
+    /// A replacing restore whose staging lock is let go as it is about to be installed: refused before the old copy
+    /// is moved aside, so the store keeps the copy it had, whole.
+    func testAReplaceWhoseStagingLockIsLetGoKeepsTheOldCopy() throws {
+        let store = store
+        let source = try sampleSource()
+        let first = try store.restore(from: source).entry
+        let notes = first.url.appendingPathComponent(Vault.notesName)
+        let before = try FileManager.default.contentsOfDirectory(atPath: notes.path).sorted()
+        // `install` takes the open lock (no lease may hold the vault) just before the move: the time runs out then.
+        let fake = fake!
+        fake.onBegin = { name in if name == "Sempere lock (open)" { fake.expire(kind: "staging") } }
+        XCTAssertThrowsError(try store.restore(from: source, options: .init(replace: true))) { assertSuspended($0) }
+        fake.onBegin = nil
+        XCTAssertEqual(store.list().map(\.url), [first.url])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: notes.path).sorted(), before)
+        XCTAssertEqual(VaultStore.setAside(in: first.url.deletingLastPathComponent()), [], "nothing set aside")
+        XCTAssertEqual(stagingLeftovers(store), [])
+        XCTAssertEqual(fake.outstanding, 0)
+    }
+}
+
+/// Strings seen, from any thread.
+private final class Seen: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen: [String] = []
+    func add(_ item: String) { lock.withLock { seen.append(item) } }
+    var items: [String] { lock.withLock { seen } }
 }

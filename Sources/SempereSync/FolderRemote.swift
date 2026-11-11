@@ -565,38 +565,22 @@ public struct FolderRemote: SyncRemote {
     /// Runs `body` holding the folder's write lock. Every caller runs inside a coordinated
     /// write of `target` already, which in a provider's folder is the lock (a second, nested
     /// coordination of the same item would wait for the first for ever); a plain folder takes
-    /// an advisory lock on `.sempere-lock` at the base.
-    private func locked<T>(_ target: URL, _ body: () throws -> T) throws -> T {
+    /// an advisory lock on `.sempere-lock` at the base: `VaultFileLock`'s in-process mutex, then its `flock`.
+    /// On iOS the `flock` is held under an assertion of its own and refused without one (`.busy`); when the time
+    /// runs out only the `flock` goes (`FileLockGuard`), and the mutex still keeps this process's other
+    /// operations on the folder out until `body` returns. Internal for tests.
+    func locked<T>(_ target: URL, _ body: () throws -> T) throws -> T {
         if manages { return try body() }
         let lockURL = root.appendingPathComponent(Self.lockName)
-        // Never held across a suspension (`FileLockGuard`): under an assertion of its own, refused without one.
-        let hold: LockHold?
-        do { hold = try LockHold.begin(for: lockURL) } catch { throw FolderRemoteError.busy(root.path) }
-        defer { hold?.end() }
-        let fd = lockURL.withUnsafeFileSystemRepresentation { p -> Int32 in
-            guard let p else { return -1 }
-            return open(p, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
-        }
-        guard fd >= 0 else { throw Self.ioError("open \(lockURL.path)", errno) }
-        defer { _ = close(fd) }
-        let end = Date().addingTimeInterval(limits.lockWait)
-        var pause = 0.005
-        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
-            let code = errno
-            guard code == EWOULDBLOCK || code == EINTR else { throw Self.ioError("lock \(lockURL.path)", code) }
-            try checkInterrupt()
-            if Date() > end { throw FolderRemoteError.busy(root.path) }
-            Thread.sleep(forTimeInterval: pause)
-            pause = min(pause * 2, 0.1)
-        }
-        // The time running out lets the lock go at once; the descriptor stays open until `body` returns.
-        let unlocked = UnlockOnce(fd)
-        guard hold?.attach({ unlocked.unlock() }) ?? true else {
-            unlocked.unlock()
+        let lock = VaultFileLock.at(lockURL, kind: "folder")
+        do {
+            return try lock.withLock(timeout: limits.lockWait, createParent: false,   // a base that is gone is never made here
+                                     whileWaiting: { try checkInterrupt() }, body)
+        } catch VaultFileLock.LockError.timedOut, VaultFileLock.LockError.suspended {
             throw FolderRemoteError.busy(root.path)
+        } catch VaultFileLock.LockError.unavailable(let detail) {
+            throw FolderRemoteError.io("lock \(detail)", transient: false)
         }
-        defer { unlocked.unlock() }
-        return try body()
     }
 
     /// The current token of the file at `path`; nil when there is no regular file.
@@ -923,20 +907,3 @@ typealias CStat = Musl.stat
 private func cLink(_ a: UnsafePointer<CChar>, _ b: UnsafePointer<CChar>) -> Int32 { Musl.link(a, b) }
 private func cRename(_ a: UnsafePointer<CChar>, _ b: UnsafePointer<CChar>) -> Int32 { Musl.rename(a, b) }
 #endif
-
-/// A held `flock` let go once, by whichever comes first: the end of the locked work or the end of its background time.
-private final class UnlockOnce: @unchecked Sendable {
-    private let fd: Int32
-    private let lock = NSLock()
-    private var done = false
-
-    init(_ fd: Int32) { self.fd = fd }
-
-    func unlock() {
-        lock.withLock {
-            guard !done else { return }
-            done = true
-            _ = flock(fd, LOCK_UN)
-        }
-    }
-}

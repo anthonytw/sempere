@@ -344,9 +344,12 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   (`RecentVault`: `storeID` or `webdav`, no bookmark; a 1.0.0 `recents.json` still decodes, extra keys ignored); an open store vault holds a `VaultStore.Lease` (let go in the
   background on iOS: a suspended app holding any `flock` in the App Group container is killed, `0xdead10cc`;
   `AppModel+Suspension`, never hold a lock across a suspension; nor before the app is first active: SwiftUI's
-  `App.init` runs before `UIApplication` exists, so state read there is wrong. Every `flock` goes through `FileLock` or
-  `LockHold`, which on iOS begin a background assertion of their own first and refuse the lock without one,
-  `FileLockGuard`; never call `flock` directly), and every
+  `App.init` runs before `UIApplication` exists, so state read there is wrong. Every `flock` goes through `FileLock`
+  (`VaultFileLock` too), which on iOS begins a background assertion of its own first, refuses the lock without one and
+  lets it go when the time runs out, `FileLockGuard`; never call `flock` directly. Work that needs its lock to the end
+  (staging) checks `FileLock.isHeld`. Install the guard only in a process that is the sole taker of these locks on the
+  device (the iOS app): letting a `flock` go at expiry is safe only because no other process takes it, and an
+  extension that linked `Sempere` and took these locks would silently lose its exclusion), and every
   writer of a vault's files shares its `VaultFileLock` (`VaultStore.writeLock(for:)`). CLI: `sempere store` (list, path, create, import, restore, remove).
 - A WebDAV join opens a partial copy (format.md §1.2) at once (`AppModel+Join`, docs/io.md "WebDAV vaults in
   the app"): notes marked incomplete are pending rows (`pendingNoteIDs`, from published summaries) and never

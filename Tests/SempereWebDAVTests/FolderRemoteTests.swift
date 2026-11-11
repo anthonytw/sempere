@@ -1,5 +1,6 @@
 import Foundation
 import TempDirSupport
+import VaultTestSupport
 import XCTest
 @testable import Sempere
 @testable import SempereSync
@@ -99,6 +100,74 @@ final class FolderRemoteTests: TempDirTestCase {
         }
         XCTAssertEqual(group.wait(timeout: .now() + 60), .success)
         XCTAssertEqual(wins.value, 1)
+    }
+
+    // MARK: The lock without background time (`FileLockGuard`, iOS)
+
+    /// Whether anyone holds a `flock` on `url` (an exclusive one on another descriptor is refused).
+    private func flockHeld(_ url: URL) -> Bool {
+        let fd = open(url.path, O_RDONLY | O_CLOEXEC)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return true }
+        flock(fd, LOCK_UN)
+        return false
+    }
+
+    /// The system gives no time: the folder's lock is refused (`.busy`) and nothing runs under it.
+    func testWithoutBackgroundTimeTheFolderLockIsRefused() throws {
+        let r = try plain()
+        let fake = FakeLockAssertions()
+        let installation = FileLockGuard.install(fake, under: tmp)
+        defer { installation.cancel() }
+        try r.write(["settings.age"], .data(bytes(10, 1)), condition: .create)
+        let e = try XCTUnwrap(try r.stat(["settings.age"])?.etag)
+        fake.grant = false
+        XCTAssertThrowsError(try r.write(["settings.age"], .data(bytes(10, 2)), condition: .replace(etag: e))) {
+            guard case .busy? = $0 as? FolderRemoteError else { return XCTFail("\($0)") }
+        }
+        var ran = false
+        XCTAssertThrowsError(try r.locked(r.root) { ran = true })
+        XCTAssertFalse(ran)
+        XCTAssertEqual(try r.stat(["settings.age"])?.etag, e, "nothing replaced")
+        XCTAssertGreaterThan(fake.refused, 0)
+        XCTAssertEqual(fake.outstanding, 0)
+        // With time again, the replace goes through under an assertion of its own.
+        fake.grant = true
+        XCTAssertTrue(try r.write(["settings.age"], .data(bytes(10, 2)), condition: .replace(etag: e)))
+        XCTAssertEqual(fake.outstanding, 0)
+    }
+
+    /// The time runs out while the lock is held: the `flock` goes at once, the work still finishes and returns its
+    /// result, and the in-process mutex keeps a second operation on the same folder out until it has.
+    func testTheTimeRunningOutLetsTheFolderLockGoButNotTheMutex() throws {
+        let r = try plain()
+        let other = FolderRemote(root: r.root, provider: PlainFolder(), limits: .init(lockWait: 0.3))
+        let fake = FakeLockAssertions()
+        let installation = FileLockGuard.install(fake, under: tmp)
+        defer { installation.cancel() }
+        let lockURL = r.root.appendingPathComponent(FolderRemote.lockName)
+        let result: Int = try r.locked(r.root) {
+            XCTAssertTrue(flockHeld(lockURL))
+            XCTAssertEqual(fake.outstanding, 1)
+            fake.expireAll()
+            XCTAssertFalse(flockHeld(lockURL), "let go at expiry")
+            XCTAssertEqual(fake.outstanding, 0)
+            // Another operation of this process on the same folder still waits (and here gives up).
+            let entered = Locked(false)
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                _ = try? other.locked(other.root) { entered.value = true }
+                done.signal()
+            }
+            XCTAssertEqual(done.wait(timeout: .now() + 30), .success)
+            XCTAssertFalse(entered.value, "the mutex is held until the body returns")
+            return 42
+        }
+        XCTAssertEqual(result, 42)
+        XCTAssertFalse(flockHeld(lockURL))
+        XCTAssertEqual(fake.outstanding, 0)
+        XCTAssertEqual(try other.locked(other.root) { 7 }, 7, "free again afterwards")
     }
 
     // MARK: A hostile folder (format.md §9)

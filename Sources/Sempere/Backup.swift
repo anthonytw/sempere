@@ -889,6 +889,14 @@ public enum Backup {
     public static func restore(from backup: URL, to target: URL, identities: [any AgeIdentity] = [],
                                protecting: [URL] = []) throws -> RestoreReport
     {
+        try restore(from: backup, to: target, identities: identities, protecting: protecting, beforeEachFile: nil)
+    }
+
+    /// `restore(from:to:identities:protecting:)`, calling `beforeEachFile` before each file is copied; what it
+    /// throws stops the restore (`VaultStore.restore`: its staging folder's lock was let go).
+    static func restore(from backup: URL, to target: URL, identities: [any AgeIdentity] = [],
+                        protecting: [URL] = [], beforeEachFile: (() throws -> Void)?) throws -> RestoreReport
+    {
         let vaultId = try checkRestoreTarget(target, from: backup, protecting: protecting)
         let manifestURL = backup.appendingPathComponent(BackupManifest.fileName)
         let manifest = FileIO.exists(manifestURL) ? try BackupManifest.read(manifestURL) : nil
@@ -903,6 +911,7 @@ public enum Backup {
         var report = RestoreReport()
         let files = try formatFiles(in: backup).filter { $0 != Vault.manifestName } + [Vault.manifestName]
         for path in files {
+            try beforeEachFile?()
             let entry = manifest?.files[path]
             func matchesIndex(_ sha256: String, _ size: Int) throws {
                 if manifest != nil, entry == nil { throw Unlisted() }
