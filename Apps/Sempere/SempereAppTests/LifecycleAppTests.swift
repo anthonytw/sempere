@@ -40,6 +40,17 @@ struct LifecycleAppTests {
         #expect(box.seen.count == 4, "nothing after the cancel")
     }
 
+    /// The file locks' background time (`FileLockGuard`, TestFlight 1.1 (67)): UIKit's `beginBackgroundTask`, taken off
+    /// the main thread too, and given while the app is on screen. `UIApplication.made` is the application once
+    /// `UIApplicationMain` made it (nil only in SwiftUI's `App.init`, where `shared` is still nil).
+    @Test func theLockAssertionsAreUIKitsBackgroundTasks() async throws {
+        #expect(UIApplication.made === UIApplication.shared)
+        let assertions = UIKitLockAssertions()
+        let token = try #require(await Task.detached { assertions.begin(name: "test", expired: {}) }.value)
+        #expect(token != UIBackgroundTaskIdentifier.invalid.rawValue)
+        await Task.detached { assertions.end(token) }.value
+    }
+
     /// The model's lifecycle on UIKit's notifications: leaving the screen starts the suspension in the posting turn
     /// (the core's `SuspensionLockTests` and `BackgroundTargetsTests` drive the rest on `ManualAppLifecycle`). The
     /// system's services are fakes, so the test host never begins a real assertion or schedules a real task.

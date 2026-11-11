@@ -343,7 +343,10 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   `sweep` removes leftovers), so never write into a store folder by hand. One copy per vault id. Recents
   (`RecentVault`: `storeID` or `webdav`, no bookmark; a 1.0.0 `recents.json` still decodes, extra keys ignored); an open store vault holds a `VaultStore.Lease` (let go in the
   background on iOS: a suspended app holding any `flock` in the App Group container is killed, `0xdead10cc`;
-  `AppModel+Suspension`, never hold a lock across a suspension), and every
+  `AppModel+Suspension`, never hold a lock across a suspension; nor before the app is first active: SwiftUI's
+  `App.init` runs before `UIApplication` exists, so state read there is wrong. Every `flock` goes through `FileLock` or
+  `LockHold`, which on iOS begin a background assertion of their own first and refuse the lock without one,
+  `FileLockGuard`; never call `flock` directly), and every
   writer of a vault's files shares its `VaultFileLock` (`VaultStore.writeLock(for:)`). CLI: `sempere store` (list, path, create, import, restore, remove).
 - A WebDAV join opens a partial copy (format.md §1.2) at once (`AppModel+Join`, docs/io.md "WebDAV vaults in
   the app"): notes marked incomplete are pending rows (`pendingNoteIDs`, from published summaries) and never
