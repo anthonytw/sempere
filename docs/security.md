@@ -56,7 +56,10 @@ your use (no telemetry).
   kit when you create a vault and keep it somewhere apart from your devices.
 - **Only the vault's home device adds devices.** The device that created the
   vault approves a new device after you type, on it, six words the new device
-  shows; the new device then checks six words the home device shows back. The
+  shows; the new device then checks six words the home device shows back. When
+  the two devices are near each other, the request and the approval also go
+  straight between them over Wi-Fi while the two screens are open, with the
+  same checks on both ends; the sync target is still used too. The
   list of devices in `vault.json` is tagged under the vault's key and signed by
   the home device, so storage cannot add a device or rename one in a way that
   passes ([`format.md`](format.md) §2.1, §15.12).
@@ -112,6 +115,13 @@ Your storage provider, and anyone with a copy of the files, can see:
   requests of devices waiting to join (`joins/`, also in the clear).
 
 They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
+
+While you add a device (Add Device on one, Join This Device on the other), anyone
+near enough to receive the two devices' Wi-Fi can see that Sempere is offering
+or looking for a join, and the new device's request (its name, kind and public
+keys, and the vault's id: what storage holds in `joins/`). The approval sent
+back, with the device list, is encrypted to the new device's key
+([`design/nearby-join.md`](design/nearby-join.md)).
 
 ## What the encryption does not protect
 

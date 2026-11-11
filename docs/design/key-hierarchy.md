@@ -857,6 +857,16 @@ Requests home first saw more than 7 days ago (by home's own clock, kept per targ
 request's `created`, the joiner's clock; the age adds up the time between home's runs and stops growing while its
 clock is behind where it was), and those of keys already listed, are deleted by home.
 
+#### 6.2.1 Nearby (1.1)
+
+Steps 1 and 3 need not wait for the targets: while home shows Add Device and N its join screen, the two devices also
+talk directly, over peer-to-peer Wi-Fi or a shared network ([nearby-join.md](nearby-join.md)). N sends its request's
+bytes; home places it in `joins/` as a sync would and lists it; once the user approves it (step 2, unchanged), home sends
+`vault.json` and the current epoch record, sealed to N's key with N's session nonce, and N takes them as a join run
+takes an approval (`Vault.isJoinApproval`, the record by its hash). Step 4 is unchanged: N still types home's reply
+words. The link is untrusted transport, like a target, and carries nothing a target does not; both routes run side by
+side and the first wins.
+
 ### 6.3 Joining with the recovery kit or the passphrase: a takeover
 
 N scans the kit's two QR codes (key and root), or the user types the key and the root groups with

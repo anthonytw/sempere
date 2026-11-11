@@ -1910,7 +1910,10 @@ The copy is a store vault like any other; while it is partial (`partialCopyRoot`
 made on home (the device list, KH5) or with the CLI reaches every device over a WebDAV target. A device joining a WebDAV or folder
 vault in the app makes its keys and request from the unlock sheet (Join This Device); while it waits, the vault's
 runs are keyless two-way join runs (`SyncOptions.firstPullIdentities`) that carry the request up and take home's
-approval down, then the reply words confirm it (`AppModel+JoinDevice`). A run without the vault's key (a locked vault,
+approval down, then the reply words confirm it (`AppModel+JoinDevice`). Beside the runs, while home shows Add Device and
+the new device its join screen, the request and the approval also go straight between the two devices over peer-to-peer
+Wi-Fi or the local network (`AppModel+NearbyJoin`, [design/nearby-join.md](design/nearby-join.md)); whichever route
+comes first wins. A run without the vault's key (a locked vault,
 a join) never replaces a target's `vault.json` with a later one of the same epoch from another target, and never
 creates `vault.json` on a target whose root already showed `epochs/` (only where the vault is being created): spreading
 a list is left to a run that can check it.

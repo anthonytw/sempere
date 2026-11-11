@@ -240,7 +240,10 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
    base64 of the vault id and the commitment, for `devices approve --qr`).
 2. The request must reach the home device's copy of the folder (a shared
    folder, `vault merge-copy`, or a sync: `sync webdav`, `sync folder` and
-   `store sync` carry `joins/`). There, `devices approve --vault V WORD…`
+   `store sync` carry `joins/`). The app also carries it, and the approval,
+   straight between two devices nearby (`docs/design/nearby-join.md`); the CLI
+   does not: it makes no network connection but WebDAV's, and Linux has no
+   peer-to-peer Wi-Fi. There, `devices approve --vault V WORD…`
    finds the request whose commitment the typed words give (typing, not
    comparing, so a near match is not waved through), appends the device to
    `vault.json` with a wrap of the vault key and home's signature, deletes the
