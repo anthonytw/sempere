@@ -384,7 +384,10 @@ The file is protected until the first unlock after boot. Before it, the
 extension cannot read it (and nothing can record: the capture profile is a
 Keychain item readable only after the first unlock), and the widget shows
 the plain record button. The widget draws the nib (a custom symbol in the
-widget extension's own asset catalog, `SempereWidgets/Assets.xcassets`; bundle
+widget extension's own asset catalog, `SempereWidgets/Assets.xcassets`, and the
+watch widgets' copy; the same SVG in both, a full SF Symbols template with Ultralight,
+Regular and Black sources at the Small size and the Guides group: Control Center's
+renderer draws a hand-made single-weight template as an empty circle; bundle
 files read fine before the first unlock, the App Group may not) when ready and
 system symbols otherwise, and is marked
 `unredacted()`: the placeholder iOS shows before the first unlock is
