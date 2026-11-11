@@ -1000,7 +1000,10 @@ lists availability:
   that its listing is taken as it is: an emptied folder still deletes nothing (an emptied remote
   folder never explains a deletion) and its files are put back. So "arriving" never waits for ever.
   An `att/`-only folder (an import in progress elsewhere: blobs before their revision) is not a note
-  until a revision appears.
+  until a revision appears. A provider's empty folder lists the same way. `joins/` arriving holds back
+  judging, downloading and deleting requests, never this device's own request: it goes up at once with a
+  create, which replaces nothing (TestFlight 1.1.0 (69): an empty `joins/` kept a new device's request
+  on the device).
 - **The remote's `vault.json`** is waited for before anything else; still away after the wait, the
   run stops (`SyncError.notDownloaded`) rather than sync without knowing it is the same vault.
 - **The target folder evicted whole.** Builds before 2026-10-15 exported `.sempere` as a package, and

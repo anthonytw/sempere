@@ -78,6 +78,7 @@ struct StoredVaultsSection: View {
         Task {
             await model.report {
                 try await library.removeStored(entry)
+                LastPlace.forget(vault: entry.vaultId, in: model.deviceMemory)
                 // This device's keys for it go with it (key-hierarchy KH5): it would join again. Kept while another
                 // local copy opens with them (re-check of #88).
                 try? await keys.store.delete(for: entry.vaultId)

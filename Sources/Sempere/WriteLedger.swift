@@ -214,7 +214,7 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
         folder = directory.appendingPathComponent(vaultId.uuidString.lowercased(), isDirectory: true)
         self.vaultId = vaultId
         self.source = source
-        lock = VaultFileLock.at(folder.appendingPathComponent("lock"))
+        lock = VaultFileLock.at(folder.appendingPathComponent("lock"), kind: "ledger")
     }
 
     /// The ledger's key; with `creating`, its folder and (for a device-sealed key) `key.age` are made when

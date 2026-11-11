@@ -271,7 +271,7 @@ public struct VaultStore: Sendable {
         do { id = try Vault.open(at: vaultURL).vaultId } catch {
             throw VaultStoreError.notAVault(path: vaultURL.path, detail: "\(error)")
         }
-        return (try install(vaultURL, id: id), result)
+        return (try install(vaultURL, from: staging, id: id), result)
     }
 
     // MARK: - Copy in
@@ -308,6 +308,7 @@ public struct VaultStore: Sendable {
             try FileIO.createDirectory(staged)
             for dir in scan.directories { try FileIO.createDirectory(Backup.url(staged, dir)) }
             for (i, path) in scan.files.enumerated() {
+                try staging.check()   // its lock let go at expiry: stop at the next file, not run on
                 try Backup.copyVerified(from: src, path, followLinks: false, to: Backup.url(staged, path), replacing: false,
                                         maxBytes: BoundedRead.maxBlobFileBytes)
                 try options.afterEachFile?(path)
@@ -324,7 +325,7 @@ public struct VaultStore: Sendable {
                 throw VaultStoreError.copyMismatch("\(Vault.manifestName): \(error)")
             }
             guard copied.vaultId == id else { throw VaultStoreError.sourceChanged(Vault.manifestName) }
-            return try install(staged, id: id)
+            return try install(staged, from: staging, id: id)
         } catch {
             keep = options.keepStagingOnFailure
             throw error
@@ -373,7 +374,7 @@ public struct VaultStore: Sendable {
         let staging = try makeStaging()
         defer { staging.discard() }
         let staged = staging.dir.appendingPathComponent(folder, isDirectory: true)
-        let report = try Backup.restore(from: src, to: staged)
+        let report = try Backup.restore(from: src, to: staged, beforeEachFile: staging.check)
         guard report.errors.isEmpty, FileIO.exists(staged.appendingPathComponent(Vault.manifestName)) else {
             throw VaultStoreError.restoreIncomplete(max(report.errors.count, 1))
         }
@@ -382,7 +383,7 @@ public struct VaultStore: Sendable {
             throw VaultStoreError.copyMismatch("\(Vault.manifestName): \(error)")
         }
         guard restored == id else { throw VaultStoreError.sourceChanged(Vault.manifestName) }
-        let entry = try install(staged, id: id, replacing: options.replace,
+        let entry = try install(staged, from: staging, id: id, replacing: options.replace,
                                 crashAfterSettingAside: options.crashAfterSettingAside)
         return (entry, report)
     }
@@ -398,7 +399,7 @@ public struct VaultStore: Sendable {
             throw VaultStoreError.notFound(id.uuidString.lowercased())
         }
         try prepare()
-        guard let exclusive = try FileLock.acquire(openLockURL(id), exclusive: true, deadline: .distantPast,
+        guard let exclusive = try FileLock.acquire(openLockURL(id), kind: "open", exclusive: true, deadline: .distantPast,
                                                    createParent: true, throwOnTimeout: false) else {
             throw VaultStoreError.inUse(id)
         }
@@ -449,7 +450,8 @@ public struct VaultStore: Sendable {
     /// - Throws: `.busy` while the vault is being removed.
     public func lease(_ id: UUID, timeout: TimeInterval = 5) throws -> Lease {
         try prepare()
-        guard let held = try FileLock.acquire(openLockURL(id), exclusive: false, deadline: Date().addingTimeInterval(max(timeout, 0)),
+        guard let held = try FileLock.acquire(openLockURL(id), kind: "open", exclusive: false,
+                                              deadline: Date().addingTimeInterval(max(timeout, 0)),
                                               createParent: true, throwOnTimeout: false) else {
             throw VaultStoreError.busy(id)
         }
@@ -466,9 +468,14 @@ public struct VaultStore: Sendable {
         let staging = root.appendingPathComponent(Self.stagingName, isDirectory: true)
         for name in (try? FileIO.entries(staging)) ?? [] {
             let dir = staging.appendingPathComponent(name, isDirectory: true)
-            if let held = try? FileLock.acquire(dir, exclusive: true, deadline: .distantPast, throwOnTimeout: false) {
-                try? fm.removeItem(at: dir)
-                held.release()
+            // Under `stagingMutex`: an operation whose staging hold was lost (`FileLockGuard`) checks it and moves
+            // its folder out under the same mutex, so a folder is never deleted under the move.
+            Self.stagingMutex.withLock {
+                if let held = try? FileLock.acquire(dir, kind: "staging", exclusive: true, deadline: .distantPast,
+                                                    throwOnTimeout: false) {
+                    try? fm.removeItem(at: dir)
+                    held.release()
+                }
             }
         }
         let trash = root.appendingPathComponent(Self.trashName, isDirectory: true)
@@ -548,10 +555,23 @@ public struct VaultStore: Sendable {
         }
     }
 
+    /// Serializes `sweep`'s removal of a staging folder with the check-and-move of a staging folder into the
+    /// store (`Staging.check`, `install`): in this process the two never overlap.
+    private static let stagingMutex = NSLock()
+
     /// A fresh staging folder, locked while this operation uses it.
+    ///
+    /// On iOS its lock is let go when its background time runs out (`FileLockGuard`), and `sweep` may then delete
+    /// the folder: the operation checks the hold (`check`) before each file it copies and, under `stagingMutex`,
+    /// just before its folder is moved into the store, and stops with `.suspended` once it is lost.
     private struct Staging {
         let dir: URL
         let held: FileLock
+
+        /// - Throws: `VaultFileLock.LockError.suspended` when the folder's lock was let go at expiry.
+        func check() throws {
+            guard held.isHeld else { throw VaultFileLock.LockError.suspended(dir.path) }
+        }
 
         /// Removes the folder (the operation finished or failed).
         func discard() {
@@ -569,22 +589,24 @@ public struct VaultStore: Sendable {
         let dir = root.appendingPathComponent(Self.stagingName, isDirectory: true)
             .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
         try FileIO.createStagingDirectory(dir)
-        guard let held = try FileLock.acquire(dir, exclusive: true, deadline: .distantPast, throwOnTimeout: false) else {
+        guard let held = try FileLock.acquire(dir, kind: "staging", exclusive: true, deadline: .distantPast,
+                                              throwOnTimeout: false) else {
             throw VaultStoreError.io("cannot lock \(dir.path)")
         }
         return Staging(dir: dir, held: held)
     }
 
-    /// Moves the finished vault folder `vaultURL` into `<root>/<id>/` under the vault's write lock. With
-    /// `replacing`, a copy already there is first moved aside (`.replaced-<name>`), then deleted once the new
-    /// one is in; refused while that vault is open anywhere.
-    private func install(_ vaultURL: URL, id: UUID, replacing: Bool = false,
+    /// Moves the finished vault folder `vaultURL` (in `staging`) into `<root>/<id>/` under the vault's write lock.
+    /// With `replacing`, a copy already there is first moved aside (`.replaced-<name>`), then deleted once the new
+    /// one is in; refused while that vault is open anywhere. Refused with `.suspended` when `staging`'s lock was
+    /// let go (its folder may be being swept), before anything is moved.
+    private func install(_ vaultURL: URL, from staging: Staging, id: UUID, replacing: Bool = false,
                          crashAfterSettingAside: Bool = false) throws -> Entry {
         let dir = folder(of: id)
         var notOpen: FileLock?
         defer { notOpen?.release() }
         if replacing, Self.vaultFolder(in: dir) != nil {
-            guard let held = try FileLock.acquire(openLockURL(id), exclusive: true, deadline: .distantPast,
+            guard let held = try FileLock.acquire(openLockURL(id), kind: "open", exclusive: true, deadline: .distantPast,
                                                   createParent: true, throwOnTimeout: false) else {
                 throw VaultStoreError.inUse(id)
             }
@@ -593,6 +615,8 @@ public struct VaultStore: Sendable {
         var aside: URL?
         do {
             try writeLock(for: id).withLock(timeout: Self.lockTimeout) {
+                // Checked first: nothing is moved aside for a copy that cannot come in.
+                try staging.check()
                 if FileIO.isDirectory(dir) {
                     if let present = Self.vaultFolder(in: dir) {
                         guard replacing, notOpen != nil else {
@@ -605,18 +629,18 @@ public struct VaultStore: Sendable {
                         aside = old
                         if crashAfterSettingAside { throw VaultStoreError.io("simulated crash after setting the old copy aside") }
                         do {
-                            try Self.rename(vaultURL, to: dir.appendingPathComponent(vaultURL.lastPathComponent, isDirectory: true))
+                            try moveIn(vaultURL, from: staging, to: dir)
                         } catch {
                             try? Self.rename(old, to: present)   // the old copy stays
                             aside = nil
                             throw error
                         }
                     } else {
-                        try Self.rename(vaultURL, to: dir.appendingPathComponent(vaultURL.lastPathComponent, isDirectory: true))
+                        try moveIn(vaultURL, from: staging, to: dir)
                     }
                 } else {
                     try FileIO.createStagingDirectory(dir)
-                    try Self.rename(vaultURL, to: dir.appendingPathComponent(vaultURL.lastPathComponent, isDirectory: true))
+                    try moveIn(vaultURL, from: staging, to: dir)
                 }
                 try FileIO.syncDirectory(dir)
                 try FileIO.syncDirectory(root)
@@ -627,6 +651,15 @@ public struct VaultStore: Sendable {
         }
         guard let entry = loadEntry(id) else { throw VaultStoreError.io("\(dir.path): the vault did not arrive") }
         return entry
+    }
+
+    /// The one move of a staged vault into its id folder `dir`: the staging hold is checked and the folder moved
+    /// under `stagingMutex`, so `sweep` cannot delete it meanwhile.
+    private func moveIn(_ vaultURL: URL, from staging: Staging, to dir: URL) throws {
+        try Self.stagingMutex.withLock {
+            try staging.check()
+            try Self.rename(vaultURL, to: dir.appendingPathComponent(vaultURL.lastPathComponent, isDirectory: true))
+        }
     }
 
     /// `rename(2)`: atomic within one file system; refuses to replace a non-empty folder.

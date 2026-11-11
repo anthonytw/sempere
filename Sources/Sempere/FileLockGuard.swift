@@ -19,8 +19,16 @@ public protocol FileLockAssertions: AnyObject, Sendable {
 /// Once assertions are installed (the iOS app, at launch), each lock is taken only under an assertion of its
 /// own, which ends when the lock is let go. When the system gives no time, the lock is refused
 /// (`VaultFileLock.LockError.suspended`: the write fails closed, as any refused lock does). When the time
-/// runs out while the lock is still held, the `flock` is let go at once (the holder carries on without it,
-/// which a kill at the suspension would not let it do either) and the assertion ends.
+/// runs out while the lock is still held, the `flock` is let go at once and the assertion ends. The hold is then
+/// lost (`FileLock.isHeld` is false): work that needs the lock to its end, such as a staging folder being filled
+/// and moved into the store, checks it and stops (`.suspended`); work under a `VaultFileLock` carries on, still
+/// holding that lock's in-process mutex.
+///
+/// **Install only in a process that is the sole taker of these locks on the device.** Letting a `flock` go at
+/// expiry is safe only because nothing else can take it meanwhile: the in-process mutex keeps this process's
+/// other threads out, and no other process takes these locks (on iOS the widget extensions link only
+/// `SempereCaptureShared`, the intents run in the app, and neither the CLI nor Mac Catalyst installs the guard).
+/// An extension or helper that links `Sempere` and takes the same locks would lose its exclusion silently.
 ///
 /// Nothing is installed on a Mac, on Linux, or in the CLI: there the locks are taken as before. Tests install
 /// fakes for their own folder only (`install(_:under:)`), so suites running side by side do not see each other's.
@@ -84,8 +92,8 @@ public enum FileLockGuard {
         return made
     }
 
-    /// Told (with the lock file's extension, such as `open` or `write`: never a name, which may hold a vault id) when
-    /// a lock was let go because its time ran out.
+    /// Told (with the lock's kind, such as `open`, `write`, `staging` or `folder`, which its taker names: never a
+    /// path, which may hold a vault id) when a lock was let go because its time ran out.
     public static var onExpiry: (@Sendable (String) -> Void)? {
         get { state.onExpiry }
         set { state.onExpiry = newValue }
@@ -100,24 +108,25 @@ public enum FileLockGuard {
 /// when the time runs out, which first lets the lock go (`attach`).
 package final class LockHold: @unchecked Sendable {
     private let assertions: any FileLockAssertions
-    private let name: String
+    private let kind: String
     private let lock = NSLock()
     private var token: Int?
     private var expired = false
     private var release: (@Sendable () -> Void)?
 
-    private init(assertions: any FileLockAssertions, name: String) {
+    private init(assertions: any FileLockAssertions, kind: String) {
         self.assertions = assertions
-        self.name = name
+        self.kind = kind
     }
 
     /// The assertion for a lock on `url`, or nil when no assertions are installed (nothing to hold).
     ///
+    /// - Parameter kind: what the lock is (`write`, `open`, `staging`, `folder`, …), for the expiry log.
     /// - Throws: `VaultFileLock.LockError.suspended` when the system gives no time now.
-    package static func begin(for url: URL) throws -> LockHold? {
+    package static func begin(for url: URL, kind: String) throws -> LockHold? {
         guard let assertions = FileLockGuard.assertions(for: url) else { return nil }
-        let hold = LockHold(assertions: assertions, name: url.pathExtension)
-        guard let token = assertions.begin(name: "Sempere lock", expired: { [weak hold] in hold?.expire() }) else {
+        let hold = LockHold(assertions: assertions, kind: kind)
+        guard let token = assertions.begin(name: "Sempere lock (\(kind))", expired: { [weak hold] in hold?.expire() }) else {
             throw VaultFileLock.LockError.suspended(url.path)
         }
         hold.lock.withLock { if !hold.expired { hold.token = token } }
@@ -126,6 +135,9 @@ package final class LockHold: @unchecked Sendable {
     }
 
     private var isExpired: Bool { lock.withLock { expired } }
+
+    /// The time ran out: the lock was let go (or is being let go now) by the expiry, not by its holder.
+    package var isLost: Bool { isExpired }
 
     /// The lock is taken: `release` lets it go when the time runs out. False when the time ran out already (while
     /// the lock was waited for): the caller lets the lock go and refuses it.
@@ -155,7 +167,7 @@ package final class LockHold: @unchecked Sendable {
             return self.release
         }
         if let release {
-            FileLockGuard.onExpiry?(name)
+            FileLockGuard.onExpiry?(kind)
             release()
         }
         end()

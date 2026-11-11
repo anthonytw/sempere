@@ -29,7 +29,8 @@ struct RootView: View {
     @AppStorage(PageStrip.visibleKey) private var pageStripVisible = false
     @Environment(\.openWindow) private var openWindow
     @State private var ui = WindowUI()
-    /// The library window's selection, restored with the scene (Mac only).
+    /// The library window's selection, restored with the scene. When the scene holds none (the app was swiped
+    /// away, relaunched or updated, or the window is new), the device's last place applies (`LastPlace`).
     @SceneStorage(RestorableSelection.key) private var storedSelection = ""
     /// The vault whose saved selection was applied (or found missing); until
     /// then nothing is saved, so the first selections do not overwrite it.
@@ -69,7 +70,8 @@ struct RootView: View {
                 model.libraryWindowCount -= 1
                 if model.canvasWindow == ui.id { model.canvasWindow = nil }
             }
-            .onChange(of: model.phase == .unlocked && !model.isBusy) { _, ready in
+            .onChange(of: SelectionStorage.isReadyToRestore(unlocked: model.phase == .unlocked, busy: model.isBusy,
+                                                            listLoaded: model.listLoaded, held: model.launchRestoreHeld)) { _, ready in
                 if ready { restoreSelection() }
             }
             .onChange(of: model.selectedNoteID) { saveSelection(); showListWithoutNote() }
@@ -302,13 +304,16 @@ struct RootView: View {
         return nil
     }
 
-    /// Applies the selection saved with this scene once the vault is unlocked
-    /// (Mac only; the iPad keeps starting empty).
+    /// Applies the selection saved with this scene once the vault is unlocked, else the device's last place for
+    /// the vault (`AppModel.restoreOnLaunch`; it reads `UserDefaults` only). A scripted debug launch chooses its own.
     private func restoreSelection() {
-        guard SelectionStorage.shouldRestore(isMac: Platform.isMac, vault: model.vault?.vaultId, restored: restoredVault),
+        guard !model.launchRestoreHeld, SelectionStorage.shouldRestore(vault: model.vault?.vaultId, restored: restoredVault),
               let vaultID = model.vault?.vaultId else { return }
         restoredVault = vaultID
-        if let saved = RestorableSelection(stored: storedSelection) { model.restore(saved) }
+        #if DEBUG
+        if DebugLaunch.isActive { return }
+        #endif
+        model.restoreOnLaunch(scene: storedSelection)
     }
 
     /// A library window restored (or opened for a restored note window) with the note list hidden and no
@@ -324,9 +329,11 @@ struct RootView: View {
     }
 
     private func saveSelection() {
-        guard SelectionStorage.shouldSave(isMac: Platform.isMac, unlocked: model.phase == .unlocked, vault: model.vault?.vaultId, restored: restoredVault),
+        guard SelectionStorage.shouldSave(unlocked: model.phase == .unlocked, vault: model.vault?.vaultId, restored: restoredVault),
               let saved = model.restorableSelection() else { return }
-        storedSelection = saved.stored
+        // The phone's notebook list (no sidebar item) is no place: the scene keeps nothing, so the last place decides.
+        storedSelection = SelectionStorage.sceneText(for: saved, sidebarSelected: model.sidebarSelection != nil)
+        model.saveLastPlace()
     }
 
     // MARK: - Menu commands (Mac)

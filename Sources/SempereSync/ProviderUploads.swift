@@ -41,16 +41,31 @@ public enum ProviderUploads {
         var fresh = url
         fresh.removeAllCachedResourceValues()
         let keys: Set<URLResourceKey> = [.isUbiquitousItemKey, .ubiquitousItemIsUploadedKey, .ubiquitousItemIsUploadingKey,
-                                         .ubiquitousItemUploadingErrorKey]
+                                         .ubiquitousItemUploadingErrorKey, .contentModificationDateKey]
         guard let values = try? fresh.resourceValues(forKeys: keys), values.isUbiquitousItem == true else { return nil }
-        if let error = values.ubiquitousItemUploadingError {
-            return .failed(code: error.code, domain: error.domain, message: error.localizedDescription)
-        }
-        if values.ubiquitousItemIsUploading == true { return .waiting }
-        return values.ubiquitousItemIsUploaded == false ? .waiting : .uploaded
+        return state(isUploaded: values.ubiquitousItemIsUploaded, isUploading: values.ubiquitousItemIsUploading,
+                     error: values.ubiquitousItemUploadingError, modified: values.contentModificationDate)
         #else
         return nil   // no provider uploads here
         #endif
+    }
+
+    /// How long a file with no upload answer is taken as one the provider has not taken in yet.
+    public static let settleTime: TimeInterval = 300
+
+    /// The state of a provider's file from what the provider says of it. A file with no answer is waiting only while
+    /// it is fresh (`modified` within `settleTime` of `now`): one just written, before the provider took it in
+    /// (TestFlight 1.1.0 (69)). An old file with no answer is uploaded, as it always was: a File Provider that never
+    /// gives `ubiquitousItemIsUploaded` (a third-party one that marks its items ubiquitous) must not leave every file
+    /// waiting for good. Time is the more robust bound than a path test: it needs no list of providers, so it holds
+    /// for any provider, and a wrong guess ends in minutes instead of never.
+    public static func state(isUploaded: Bool?, isUploading: Bool?, error: NSError?, modified: Date? = nil,
+                             now: Date = Date()) -> State {
+        if let error { return .failed(code: error.code, domain: error.domain, message: error.localizedDescription) }
+        if isUploading == true { return .waiting }
+        if let isUploaded { return isUploaded ? .uploaded : .waiting }
+        guard let modified else { return .uploaded }
+        return now.timeIntervalSince(modified) < settleTime ? .waiting : .uploaded
     }
 
     /// One target's record.
