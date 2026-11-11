@@ -114,6 +114,29 @@ final class FolderRemoteTests: TempDirTestCase {
         return false
     }
 
+    /// A failed open or `flock` of the lock file keeps its errno: an unreachable share is offline (`.unreachable`, so
+    /// the target is retried quietly), `EIO` and `EBUSY` stay transient, anything else is a lasting error.
+    func testTheFolderLockKeepsItsErrno() throws {
+        func classify(_ code: Int32) -> FolderRemoteError? {
+            FolderRemote.lockFailure(FileLockOSError(operation: "open", path: "/share/.sempere-lock", code: code))
+                as? FolderRemoteError
+        }
+        for code in [ETIMEDOUT, EHOSTDOWN, ENOTCONN, ENETUNREACH] {
+            guard case .unreachable? = classify(code) else { return XCTFail("errno \(code): \(String(describing: classify(code)))") }
+        }
+        for code in [EIO, EBUSY] {
+            guard case .io(_, transient: true)? = classify(code) else { return XCTFail("errno \(code): \(String(describing: classify(code)))") }
+        }
+        // The real path carries it: a base that is gone (the lock never makes it) fails with ENOENT, not a bare message.
+        let r = try plain()
+        try FileManager.default.removeItem(at: r.root)
+        XCTAssertThrowsError(try r.locked(r.root) {}) {
+            guard case .io(let message, transient: false)? = $0 as? FolderRemoteError else { return XCTFail("\($0)") }
+            XCTAssertTrue(message.contains("(errno \(ENOENT))"), message)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: r.root.path), "the base is not made again")
+    }
+
     /// The system gives no time: the folder's lock is refused (`.busy`) and nothing runs under it.
     func testWithoutBackgroundTimeTheFolderLockIsRefused() throws {
         let r = try plain()
@@ -196,6 +219,17 @@ final class FolderRemoteTests: TempDirTestCase {
         XCTAssertThrowsError(try r.write(["notes", "x.age"], .data(Data([1])), condition: .unconditional))
         XCTAssertThrowsError(try r.delete(["notes", "x.age"]))
         XCTAssertThrowsError(try r.makeCollection(["notes", "linked", "att"]))
+        // The folder's lock file as a link (to a folder outside): never opened through it, so nothing is locked there.
+        try fm.createSymbolicLink(at: r.root.appendingPathComponent(FolderRemote.lockName), withDestinationURL: outside)
+        var ran = false
+        XCTAssertThrowsError(try r.locked(r.root) { ran = true }) {
+            guard case .io(let message, transient: false)? = $0 as? FolderRemoteError else { return XCTFail("\($0)") }
+            XCTAssertTrue(message.contains("(errno \(ELOOP))"), message)
+        }
+        XCTAssertFalse(ran)
+        try r.write(["settings.age"], .data(Data([1])), condition: .create)
+        let e = try XCTUnwrap(try r.stat(["settings.age"])?.etag)
+        XCTAssertThrowsError(try r.write(["settings.age"], .data(Data([2])), condition: .replace(etag: e)))
         XCTAssertEqual(try fm.contentsOfDirectory(atPath: outside.path), ["x.age"], "nothing written outside")
         XCTAssertEqual(try Data(contentsOf: outside.appendingPathComponent("x.age")), Data("secret".utf8))
     }

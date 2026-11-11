@@ -575,12 +575,16 @@ public struct FolderRemote: SyncRemote {
         let lock = VaultFileLock.at(lockURL, kind: "folder")
         do {
             return try lock.withLock(timeout: limits.lockWait, createParent: false,   // a base that is gone is never made here
-                                     whileWaiting: { try checkInterrupt() }, body)
+                                     whileWaiting: { try checkInterrupt() }, unavailable: Self.lockFailure, body)
         } catch VaultFileLock.LockError.timedOut, VaultFileLock.LockError.suspended {
             throw FolderRemoteError.busy(root.path)
-        } catch VaultFileLock.LockError.unavailable(let detail) {
-            throw FolderRemoteError.io("lock \(detail)", transient: false)
         }
+    }
+
+    /// A failed `open` or `flock` of `.sempere-lock`, classified by its errno like every other call here: an
+    /// unreachable share is offline (`.unreachable`), `EIO` or `EBUSY` transient (`ioError`).
+    static func lockFailure(_ failed: FileLockOSError) -> any Error {
+        ioError("\(failed.operation) \(failed.path)", failed.code)
     }
 
     /// The current token of the file at `path`; nil when there is no regular file.
