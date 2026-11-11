@@ -102,6 +102,44 @@ extension JoinDelivery {
     }
 }
 
+extension NearbyJoinStatus {
+    /// The join screen's line for the nearby link (docs/design/nearby-join.md); nil when there is nothing to say.
+    var text: String? {
+        switch self {
+        case .off, .unavailable:
+            return nil
+        case .looking:
+            return String(localized: "Looking for the device that manages devices nearby…",
+                          comment: "Join screen: the direct link to the other device")
+        case .found:
+            return String(localized: "Found a device nearby. Connecting…", comment: "Join screen: the direct link")
+        case .connected:
+            return String(localized: "Connected: the device that manages devices has this request. Approve it there.",
+                          comment: "Join screen: the direct link")
+        case .received:
+            return String(localized: "The approval arrived from the device nearby.", comment: "Join screen: the direct link")
+        case .declined:
+            return String(localized: "The device nearby declined this request. Choose Cancel, then Ask to Join again.",
+                          comment: "Join screen: the direct link")
+        }
+    }
+}
+
+extension NearbyApproverStatus {
+    /// Add Device's line for the nearby link; nil when there is nothing to say.
+    var text: String? {
+        switch self {
+        case .off, .unavailable:
+            return nil
+        case .advertising:
+            return String(localized: "A new device nearby can send its request straight to this one while this screen is open.",
+                          comment: "Add Device: the direct link")
+        case .connected:
+            return String(localized: "Connected to a new device nearby.", comment: "Add Device: the direct link")
+        }
+    }
+}
+
 /// `DeviceJoinError` (SempereAppCore) worded.
 extension DeviceJoinError {
     var text: String {

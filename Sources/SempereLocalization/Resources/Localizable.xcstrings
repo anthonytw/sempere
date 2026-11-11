@@ -3120,6 +3120,19 @@
         }
       }
     },
+    "A new device nearby can send its request straight to this one while this screen is open." : {
+      "comment" : "Add Device: the direct link",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un dispositivo nuevo cercano puede enviar su petición directamente a este mientras esta pantalla esté abierta."
+          }
+        }
+      }
+    },
     "A new kit makes the current one useless for every later change: from then on, no device that sees the change accepts a takeover with the old kit." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -6058,6 +6071,19 @@
         }
       }
     },
+    "Connected to a new device nearby." : {
+      "comment" : "Add Device: the direct link",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado a un dispositivo nuevo cercano."
+          }
+        }
+      }
+    },
     "Connected, but there is no vault at this address or in the folders directly below it." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -6066,6 +6092,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conectado, pero no hay ninguna bóveda en esta dirección ni en las carpetas que hay justo debajo."
+          }
+        }
+      }
+    },
+    "Connected: the device that manages devices has this request. Approve it there." : {
+      "comment" : "Join screen: the direct link",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado: el dispositivo que gestiona los dispositivos tiene esta petición. Apruébala allí."
           }
         }
       }
@@ -9197,6 +9236,19 @@
         }
       }
     },
+    "Found a device nearby. Connecting…" : {
+      "comment" : "Join screen: the direct link",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay un dispositivo cerca. Conectando…"
+          }
+        }
+      }
+    },
     "Fountain Pen" : {
       "comment" : "Drawing palette: the fountain pen",
       "extractionState" : "manual",
@@ -11589,6 +11641,19 @@
         }
       }
     },
+    "Looking for the device that manages devices nearby…" : {
+      "comment" : "Join screen: the direct link to the other device",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscando cerca el dispositivo que gestiona los dispositivos…"
+          }
+        }
+      }
+    },
     "Lost or Stolen" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -12123,6 +12188,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Los nombres se guardan sin cifrar en la bóveda, así que el almacenamiento puede leerlos (no cambiarlos)."
+          }
+        }
+      }
+    },
+    "Nearby" : {
+      "comment" : "Add Device: under a join request that came straight from a device nearby, not through the sync target",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerca"
           }
         }
       }
@@ -21646,6 +21724,19 @@
         }
       }
     },
+    "The approval arrived from the device nearby." : {
+      "comment" : "Join screen: the direct link",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La aprobación llegó del dispositivo cercano."
+          }
+        }
+      }
+    },
     "The archive is deleted from the app when you close this sheet." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -21865,6 +21956,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se borran la copia de este dispositivo, la clave de este dispositivo para ella y la contraseña guardada. La bóveda del servidor no cambia."
+          }
+        }
+      }
+    },
+    "The device nearby declined this request. Choose Cancel, then Ask to Join again." : {
+      "comment" : "Join screen: the direct link",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dispositivo cercano rechazó esta petición. Elige Cancelar y luego Pedir unirse de nuevo."
           }
         }
       }

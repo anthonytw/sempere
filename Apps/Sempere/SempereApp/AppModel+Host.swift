@@ -19,7 +19,7 @@ enum AppHost: AppModelHost {
     /// the network and the Keychain for WebDAV, iCloud, on-device speech, quick capture, Vision, the owner check,
     /// file coordination, PDFKit, ImageIO and CoreText for exports and imports, and PDFKit, Core Graphics, ImageIO,
     /// AVFoundation and `UTType` for inserts and opened files, `UIApplication`'s lifecycle and background time,
-    /// `BGTaskScheduler` and `NWPathMonitor`.
+    /// `BGTaskScheduler`, `NWPathMonitor`, and the nearby link of joining (`NWNearbyTransport`).
     static func makeServices() -> AppModelServices {
         AppModelServices(perf: AppPerfSink(), settings: UserDefaults.standard, bookmarks: SecurityScopedBookmarks(),
                          platform: AppPlatform(), webdavRemote: LiveWebDAVRemote(),
@@ -36,6 +36,7 @@ enum AppHost: AppModelHost {
                          pdfTextExtractor: PDFKitTextExtractor(), attachmentPreparation: AppAttachmentPreparation(),
                          lifecycle: UIKitAppLifecycle(), backgroundTasks: UIKitBackgroundTasks(),
                          syncScheduler: BGTaskSyncScheduler(), makeReachability: { WebDAVReachability() },
+                         nearby: NWNearbyTransport(),
                          describeError: AppModel.describe)
     }
 }
