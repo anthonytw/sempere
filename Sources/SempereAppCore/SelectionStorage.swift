@@ -1,11 +1,11 @@
 import Foundation
 
-/// When the library window applies and saves its `@SceneStorage` selection
-/// (`RootView.restoreSelection` / `saveSelection`).
+/// When the library window applies and saves its selection (`RootView.restoreSelection` / `saveSelection`): the
+/// `@SceneStorage` copy, and the device's last place per vault (`AppModel.restoreOnLaunch`, `LastPlace`).
 public enum SelectionStorage {
-    /// Restore once per vault, on a Mac only (the iPad keeps starting empty).
-    public static func shouldRestore(isMac: Bool, vault: UUID?, restored: UUID?) -> Bool {
-        guard isMac, let vault else { return false }
+    /// Restore once per vault, on every device.
+    public static func shouldRestore(vault: UUID?, restored: UUID?) -> Bool {
+        guard let vault else { return false }
         return restored != vault
     }
 
@@ -14,8 +14,8 @@ public enum SelectionStorage {
     public static func shouldClear(phase: AppModelPhase) -> Bool { phase == .noVault }
 
     /// Save only for an unlocked vault whose saved selection was applied first.
-    public static func shouldSave(isMac: Bool, unlocked: Bool, vault: UUID?, restored: UUID?) -> Bool {
-        guard isMac, unlocked, let vault else { return false }
+    public static func shouldSave(unlocked: Bool, vault: UUID?, restored: UUID?) -> Bool {
+        guard unlocked, let vault else { return false }
         return restored == vault
     }
 }
