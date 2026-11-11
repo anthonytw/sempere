@@ -417,6 +417,34 @@ final class EpochSyncScenarioTests: SyncTestCase {
         XCTAssertTrue(try n.sync(t1).uploaded.contains { $0.hasPrefix("notes/") })
     }
 
+    /// TestFlight 1.1.0 (69): a reinstalled iPhone asked to join a vault in iCloud Drive whose `joins/` folder was there
+    /// and empty (an earlier request, long approved). A provider's empty folder lists as arriving (`FolderRemote`: listed
+    /// before its files) for `unlistedTimeout`, and the joining run skipped `joins/` whole, its own request with it: the
+    /// request never left the phone, which said it was sent. A folder still arriving holds back judging and downloading,
+    /// never this device's own request (a create replaces nothing there).
+    func testAJoinRequestGoesIntoAProvidersEmptyJoinsFolderAtOnce() throws {
+        let base = tmp.appendingPathComponent("icloud/Notes.sempere")
+        let provider = EvictingFolderProvider(root: base, cloud: tmp.appendingPathComponent("cloud"))
+        let t1 = EpochTarget("T1")
+        t1.reach = { _ in FolderRemote(root: base, provider: provider) }
+        t1.inspector = FolderRemote(root: base)
+        let w = try EpochSyncWorld(in: tmp, names: ["A"], made: [t1])
+        try FileManager.default.createDirectory(at: base.appendingPathComponent(Vault.joinsName), withIntermediateDirectories: true)
+        let n = EpochSyncDevice("N", root: tmp)
+        try n.syncLocked(t1)
+        let request = try Vault.writeJoinRequest(at: n.folder, device: n.keys, name: "N", kind: "cli")
+        let up = try n.syncLocked(t1) { $0.firstPullIdentities = [n.identity] }
+        XCTAssertTrue(up.arriving.contains { $0.path == "joins/" }, "the empty folder is arriving: \(up)")
+        XCTAssertTrue(up.uploaded.contains("joins/\(request.fileName)"), "\(up)")
+        XCTAssertTrue(t1.paths.contains("joins/\(request.fileName)"))
+        XCTAssertEqual(up.joinsHeld, [request.fileName], "the target holds it, as far as the run knows")
+        // Home finds it with its next run.
+        try w["A"].sync(t1)
+        XCTAssertNotNil(try w["A"].open().joinRequests().first { $0.name == request.fileName })
+        // A later run of the joiner still says the target holds it (listed there now).
+        XCTAssertEqual(try n.syncLocked(t1) { $0.firstPullIdentities = [n.identity] }.joinsHeld, [request.fileName])
+    }
+
     /// S5: storage plants a fake approval (home's real one with the joiner's wrap replaced by a random key's, which
     /// needs only the joiner's public key from its request). The joiner may take it, but its reply words never
     /// confirm it, and the real approval still replaces it while the joiner has not confirmed: it joins.

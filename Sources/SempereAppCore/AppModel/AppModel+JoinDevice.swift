@@ -66,25 +66,30 @@ public enum JoinDelivery: Equatable, Sendable {
         var syncing: Bool
         var failure: String?
         var joinsError: Bool
+        /// The run's report says the target holds the request (`SyncReport.joinsHeld`: put there by it or an earlier
+        /// run, or listed there). A run that ended without an error but did not carry `joins/` (the folder still
+        /// arriving, a run held back or cut short before it) is no evidence (TestFlight 1.1.0 (69)).
+        var holdsRequest: Bool
         var providerPending: Int
         var viaICloud: Bool
 
-        init(lastAttempt: Date?, syncing: Bool, failure: String?, joinsError: Bool, providerPending: Int,
-                    viaICloud: Bool) {
+        init(lastAttempt: Date?, syncing: Bool, failure: String?, joinsError: Bool, holdsRequest: Bool = false,
+             providerPending: Int, viaICloud: Bool) {
             self.lastAttempt = lastAttempt
             self.syncing = syncing
             self.failure = failure
             self.joinsError = joinsError
+            self.holdsRequest = holdsRequest
             self.providerPending = providerPending
             self.viaICloud = viaICloud
         }
     }
 
     /// The request was made at `requestedAt` (nil: unknown, any run counts). A target holds it once a run started
-    /// after it ended without failing and without an error for `joins/`.
+    /// after it ended without failing, without an error for `joins/`, and saying the target holds it.
     static func judge(requestedAt: Date?, targets: [Target]) -> JoinDelivery {
         let carried = targets.filter { t in
-            guard let last = t.lastAttempt, !t.syncing, t.failure == nil, !t.joinsError else { return false }
+            guard let last = t.lastAttempt, !t.syncing, t.failure == nil, !t.joinsError, t.holdsRequest else { return false }
             return requestedAt.map { last >= $0 } ?? true
         }
         if carried.isEmpty {
@@ -196,9 +201,12 @@ extension AppModelCore {
     /// Where this device's join request of the open vault stands on its way to the other devices (the join screen).
     public var joinDelivery: JoinDelivery {
         let requestedAt = vault.flatMap { joinRequestedAt($0.vaultId) }
+        let file = vault.flatMap { joinRequestedFile($0.vaultId) }
         return JoinDelivery.judge(requestedAt: requestedAt, targets: syncSessions.map { s in
-            JoinDelivery.Target(lastAttempt: s.schedule.lastAttempt, syncing: s.isSyncing, failure: s.failure,
+            let held = s.lastReport?.joinsHeld ?? []
+            return JoinDelivery.Target(lastAttempt: s.schedule.lastAttempt, syncing: s.isSyncing, failure: s.failure,
                                 joinsError: s.lastReport?.errors.contains { $0.path.hasPrefix("joins") } == true,
+                                holdsRequest: file.map { held.contains($0) } ?? !held.isEmpty,
                                 providerPending: s.providerPending, viaICloud: s.uploadsViaICloud)
         })
     }

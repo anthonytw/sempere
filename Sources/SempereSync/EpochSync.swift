@@ -939,7 +939,32 @@ extension SyncEngine {
             seen = seen.filter { local.contains($0.key) }
             state.joinsSeen = seen.isEmpty ? nil : seen
         }
-        if let dir = remoteRoot[folder], dir.isCollection, folderArriving([folder], entry: dir) { return }
+        let recorded = Set(state.joins ?? [])
+        /// This device's request `name`, put on the target if nothing is there under its name: true when it was.
+        func upload(_ name: String) throws -> Bool {
+            let path = "\(folder)/\(name)"
+            let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: JoinRequest.maxBytes)
+            if options.dryRun { report.uploaded.append(path); return false }
+            try ensureCollection([folder])
+            guard try transport.write([folder, name], .data(data), condition: .create) else { return false }
+            report.uploaded.append(path)
+            return true
+        }
+        if let dir = remoteRoot[folder], dir.isCollection, folderArriving([folder], entry: dir) {
+            // Listed before its files (a provider's empty `joins/` lists so too: TestFlight 1.1.0 (69)): nothing there is
+            // judged, downloaded or deleted, but the requests the state does not record go up now. A create replaces
+            // nothing, and a joining device sends nothing else.
+            var held = recorded
+            for name in local.subtracting(recorded).sorted() {
+                try checkCancelled()
+                if try upload(name) { held.insert(name) }
+            }
+            if !options.dryRun {
+                state.joins = held.isEmpty ? nil : held.sorted()
+                report.joinsHeld = held.sorted()
+            }
+            return
+        }
         var listed: [String: RemoteEntry] = [:]
         var verified: Set<String> = []
         if remoteRoot[folder]?.isCollection == true, let entries = try transport.list([folder]) {
@@ -950,7 +975,6 @@ extension SyncEngine {
                 }
             }
         }
-        let recorded = Set(state.joins ?? [])
         var both = Set<String>()
         for name in local.union(listed.keys).sorted() {
             try checkCancelled()
@@ -965,14 +989,8 @@ extension SyncEngine {
                     try requireLocalWrite("delete \(path)")
                     if !options.dryRun { try LocalFS.remove(localDir.appendingPathComponent(name)) }
                     report.deleted.append(.init(side: "local", path: path))
-                } else {
-                    let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: JoinRequest.maxBytes)
-                    if options.dryRun { report.uploaded.append(path); continue }
-                    try ensureCollection([folder])
-                    if try transport.write([folder, name], .data(data), condition: .create) {
-                        report.uploaded.append(path)
-                        both.insert(name)
-                    }
+                } else if try upload(name) {
+                    both.insert(name)
                 }
             case (false, .some(let e)):
                 if recorded.contains(name) {
@@ -1013,7 +1031,10 @@ extension SyncEngine {
                 break
             }
         }
-        if !options.dryRun { state.joins = both.isEmpty ? nil : both.sorted() }
+        if !options.dryRun {
+            state.joins = both.isEmpty ? nil : both.sorted()
+            report.joinsHeld = both.sorted()
+        }
     }
 
     /// The local vault's id (lowercase), from its `vault.json`.
