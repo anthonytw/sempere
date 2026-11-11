@@ -201,6 +201,9 @@ public final class NoteEditorModel<Canvas: NoteCanvas> {
     }
     /// Called with the note id after a page's recognition was written.
     @ObservationIgnored var onRecognized: (@MainActor (UUID) -> Void)?
+    /// While it answers true, recognition waits: no pass reads or writes (the app is in the background with its
+    /// locks let go, `AppModelCore.locksSuspended`, as in a launch nobody sees); the model runs a pass on its return.
+    @ObservationIgnored var recognitionHeld: (@MainActor () -> Bool)?
     /// Pages whose strokes this editor changed and whose recognition is not
     /// redone yet: it replaces recognition that cannot be checked (an import).
     @ObservationIgnored var touchedPages: Set<UUID> = []

@@ -89,7 +89,7 @@ struct SempereApp: App {
             await model.recoverWebDAVLeftovers()
             // Launched by iOS for a background task: closed vaults' sessions wait for the task's budget
             // (`runBackgroundTask`) instead of each starting a run of its own.
-            model.syncCoordinator.setInBackground(UIApplication.shared.applicationState == .background)
+            model.syncCoordinator.setInBackground(UIKitAppLifecycle.state(of: UIApplication.made) == .background)
             model.syncCoordinator.start()
             model.startReachability()
         }

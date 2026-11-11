@@ -657,6 +657,9 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored public var releasesLocksInBackground: Bool
     /// The app is in the background with its locks let go (`prepareForSuspension`).
     @ObservationIgnored public var locksSuspended = false
+    /// The app launched without being active: the launch restore (`restoreOnLaunch`) waits for the first activation.
+    /// Observed, so the library window applies it then.
+    public internal(set) var launchRestoreHeld = false
     @ObservationIgnored var suspensionWait: Task<Void, Never>?
     /// The assertion held while the last saves finish before the lease is let go, and its wait.
     @ObservationIgnored var suspensionToken: BackgroundTaskToken?
@@ -1110,6 +1113,7 @@ public final class AppModelCore<Host: AppModelHost> {
         let stale = editor
         opened.prepareBlobWrite = blobWritePreparer(note: noteID)
         configureRecordings(opened)
+        holdRecognitionWhileSuspended(opened)
         opened.onRecognized = { [weak self] id in
             guard let self else { return }
             Task { try? await self.refresh([id]) }   // search sees the new text

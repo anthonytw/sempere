@@ -145,6 +145,10 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// Paths whose unaccepted copy (an old-key copy that is not sealed, or under a dropped epoch's key) was
     /// replaced by the accepted copy, on the remote or here, after it was set aside (design §5.4 step 4).
     public var replaced: [Deletion] = []
+    /// The join requests (file names under `joins/`) the target holds as far as this run knows: listed there, or put
+    /// there by this run or an earlier one (`SyncState.joins`). Nil when the run did not sync `joins/` (a dry run, a run
+    /// that stopped or was held before it); the join screen says "sent" only on this evidence.
+    public var joinsHeld: [String]?
     /// What the run found about device changes (KH4), when anything.
     public var epoch: EpochStatus?
     /// Signs that this device's clock, or another device's, is far off (offline audit P1), when any.

@@ -306,7 +306,7 @@ public struct SyncTargetRegistry: Sendable {
         } catch {
             throw SyncTargetError.io("\(dir.path): \(error)")
         }
-        let lock = VaultFileLock.at(dir.appendingPathComponent("targets.lock"))
+        let lock = VaultFileLock.at(dir.appendingPathComponent("targets.lock"), kind: "targets")
         do {
             try lock.withLock(timeout: 10) {
                 var list = try load(vault)
