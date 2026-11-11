@@ -61,15 +61,30 @@ struct ProviderUploadsTests {
     }
 
     /// The system's answer for a provider's file (TestFlight 1.1.0 (69)): only a provider that says it uploaded the file
-    /// counts it uploaded; no answer is not one.
+    /// counts it uploaded; no answer is waiting only while the file is fresh (`aProviderFileWithoutAnAnswerWaitsOnlyWhileFresh`).
     @Test func aProviderFileWithoutAnUploadAnswerIsWaiting() {
+        let now = Date()
         #expect(ProviderUploads.state(isUploaded: true, isUploading: false, error: nil) == .uploaded)
         #expect(ProviderUploads.state(isUploaded: true, isUploading: nil, error: nil) == .uploaded)
         #expect(ProviderUploads.state(isUploaded: false, isUploading: false, error: nil) == .waiting)
         #expect(ProviderUploads.state(isUploaded: nil, isUploading: true, error: nil) == .waiting)
-        #expect(ProviderUploads.state(isUploaded: nil, isUploading: nil, error: nil) == .waiting)
+        #expect(ProviderUploads.state(isUploaded: nil, isUploading: nil, error: nil, modified: now, now: now) == .waiting)
         let full = NSError(domain: NSCocoaErrorDomain, code: 640, userInfo: [NSLocalizedDescriptionKey: "full"])
         #expect(ProviderUploads.state(isUploaded: nil, isUploading: nil, error: full)
             == .failed(code: 640, domain: NSCocoaErrorDomain, message: "full"))
+    }
+
+    /// A provider that never answers must not strand its files: an old path with no answer counts as uploaded, a
+    /// fresh one as waiting (the review of 1.1-x, B3).
+    @Test func aProviderFileWithoutAnAnswerWaitsOnlyWhileFresh() {
+        let now = Date()
+        let fresh = now.addingTimeInterval(-10)
+        let old = now.addingTimeInterval(-(ProviderUploads.settleTime + 60))
+        #expect(ProviderUploads.state(isUploaded: nil, isUploading: nil, error: nil, modified: fresh, now: now) == .waiting)
+        #expect(ProviderUploads.state(isUploaded: nil, isUploading: nil, error: nil, modified: old, now: now) == .uploaded)
+        #expect(ProviderUploads.state(isUploaded: nil, isUploading: nil, error: nil, modified: nil, now: now) == .uploaded)
+        // An answer always wins over age.
+        #expect(ProviderUploads.state(isUploaded: false, isUploading: nil, error: nil, modified: old, now: now) == .waiting)
+        #expect(ProviderUploads.state(isUploaded: true, isUploading: nil, error: nil, modified: fresh, now: now) == .uploaded)
     }
 }
