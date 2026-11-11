@@ -86,7 +86,6 @@ struct LifecycleAppTests {
         #expect(assertions.shares == (0, false))
     }
 
-    /// Before `UIApplicationMain` there is no system: a lock gets the launching token, which is counted until let go.
     /// The time runs out inside `begin`, before the task is installed: the lock is refused, as with no time, and the
     /// task ends.
     @Test func anExpiryInsideBeginRefusesTheLockAndEndsTheTask() {
@@ -175,6 +174,7 @@ struct LifecycleAppTests {
         #expect(system.ended.count == 1, "ended once, in its expiry")
     }
 
+    /// Before `UIApplicationMain` there is no system: a lock gets the launching token, which is counted until let go.
     @Test func launchLocksAreCounted() throws {
         let assertions = UIKitLockAssertions(system: { nil })
         let begun = assertions.begin(name: "launch", expired: {})
