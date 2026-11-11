@@ -120,9 +120,10 @@ final class WatchModel {
     /// When the timer reads zero (audio-adjusted), and whether it stands still (paused).
     private(set) var timerStart: Date?
     private(set) var paused = false
-    /// The "Saved" that is up stays until the app goes to the background, with no buttons: the recording was started from
-    /// a surface (the complication, the Control, Siri), so the app has done its one job and the wrist goes down (owner,
-    /// build 67). watchOS has no supported way for an app to close itself.
+    /// The "Saved" that is up stays until the app goes to the background (the watch face comes back, or the crown is
+    /// pressed), with no buttons: the recording was started from a surface (the complication, the Control, Siri), so the
+    /// app has done its one job (owner, build 67). watchOS has no supported way for an app to close itself. A recording
+    /// that ends while the app is already in the background gets the usual timed Saved.
     private(set) var savedStays = false
 
     @ObservationIgnored private let env: WatchEnvironment
@@ -139,6 +140,8 @@ final class WatchModel {
     @ObservationIgnored private var requested = false
     /// The recording in progress was started from a surface (`startFromSurface`).
     @ObservationIgnored private var surfaceStart = false
+    /// The app is not in the background (`enteredForeground`/`enteredBackground`, from the scene phase).
+    @ObservationIgnored private var inForeground = true
     /// How long "Saved" stays up.
     @ObservationIgnored var savedDuration: Duration = .seconds(2)
 
@@ -195,9 +198,10 @@ final class WatchModel {
 
     func record(fromSurface: Bool = false) async {
         savedTask?.cancel()
-        surfaceStart = fromSurface
         do {
             try await recorder.start()
+            surfaceStart = fromSurface
+            savedStays = false
             env.haptic(.start)
             beginTicking()
             refreshScreen()
@@ -242,7 +246,7 @@ final class WatchModel {
     }
 
     private func noteSaved(_ note: WatchSavedNote) {
-        show(saved: note, stays: surfaceStart)
+        show(saved: note, stays: surfaceStart && inForeground)
         surfaceStart = false
         flushOutbox()
     }
@@ -268,7 +272,12 @@ final class WatchModel {
     /// The app went to the background: a "Saved" kept up for a surface's recording goes, so opening the app later shows
     /// the Ready screen.
     func enteredBackground() {
+        inForeground = false
         if savedStays { dismissSaved() }
+    }
+
+    func enteredForeground() {
+        inForeground = true
     }
 
     /// Dismisses a "can't record" and goes back to the Ready or Not set up screen.

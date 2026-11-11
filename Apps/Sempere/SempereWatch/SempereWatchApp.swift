@@ -36,7 +36,7 @@ struct SempereWatchApp: App {
                     .onOpenURL { model.open(url: $0) }
                     .task { await model.activate() }
                     .onChange(of: scenePhase) { _, phase in
-                        if phase == .active { Task { await model.activate() } }
+                        if phase == .active { model.enteredForeground(); Task { await model.activate() } }
                         if phase == .background { model.enteredBackground() }
                     }
             } else {

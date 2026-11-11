@@ -344,6 +344,27 @@ final class WatchModelTests: XCTestCase {
         try await eventually("saved to go") { r.model.screen == .ready }
     }
 
+    func testASurfacesRecordingThatEndsInTheBackgroundDoesNotStay() async throws {
+        let r = try rig()
+        await r.model.activate()
+        r.model.receive(try provisioning(r, seq: 0))
+        r.model.startFromSurface()
+        try await eventually("recording") { r.model.recorder.isRecording }
+        r.model.enteredBackground()   // the watch face is back; Siri or the time limit stops it later
+        await r.model.stop()
+        XCTAssertFalse(r.model.savedStays)
+        try await eventually("saved to go") { r.model.screen == .ready }
+        r.model.enteredForeground()
+        await r.model.activate()
+        XCTAssertEqual(r.model.screen, .ready)
+
+        r.model.startFromSurface()
+        try await eventually("recording") { r.model.recorder.isRecording }
+        await r.model.record()   // a second start while recording: refused, the surface flag stands
+        await r.model.stop()
+        XCTAssertTrue(r.model.savedStays, "the running recording came from a surface")
+    }
+
     func testARecordingACrashCutOffIsSealedAtTheNextLaunch() async throws {
         let r = try rig()
         await r.model.activate()

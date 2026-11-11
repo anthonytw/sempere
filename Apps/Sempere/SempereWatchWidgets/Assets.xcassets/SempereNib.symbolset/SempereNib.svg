@@ -9,12 +9,6 @@
   <text id="template-version" transform="matrix(1 0 0 1 263 322)" font-family="SF Pro Display" font-size="13" fill="#000000">Template v.4.0</text>
   <text transform="matrix(1 0 0 1 263 343)" font-family="SF Pro Display" font-size="13" fill="#000000">Requires Xcode 14 or greater</text>
   <text transform="matrix(1 0 0 1 263 364)" font-family="SF Pro Display" font-size="13" fill="#000000">Generated from SempereNib</text>
-  <line id="Baseline-S" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="696" y2="696"/>
-  <line id="Capline-S" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="625.541" y2="625.541"/>
-  <line id="Baseline-M" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1126" y2="1126"/>
-  <line id="Capline-M" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1055.54" y2="1055.54"/>
-  <line id="Baseline-L" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1556" y2="1556"/>
-  <line id="Capline-L" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1485.54" y2="1485.54"/>
  </g>
  <g id="Guides">
   <g id="H-reference" fill="#27AAE1" stroke="none" transform="matrix(1 0 0 1 339 696)">
@@ -22,6 +16,10 @@
   </g>
   <line id="Baseline-S" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="696" y2="696"/>
   <line id="Capline-S" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="625.541" y2="625.541"/>
+  <line id="Baseline-M" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1126" y2="1126"/>
+  <line id="Capline-M" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1055.54" y2="1055.54"/>
+  <line id="Baseline-L" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1556" y2="1556"/>
+  <line id="Capline-L" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1485.54" y2="1485.54"/>
   <line id="left-margin-Ultralight-S" stroke="#00AEEF" stroke-width="0.5" x1="534.0" x2="534.0" y1="600.79" y2="720"/>
   <line id="right-margin-Ultralight-S" stroke="#00AEEF" stroke-width="0.5" x1="584.0" x2="584.0" y1="600.79" y2="720"/>
   <line id="left-margin-Regular-S" stroke="#00AEEF" stroke-width="0.5" x1="1625.0" x2="1625.0" y1="600.79" y2="720"/>

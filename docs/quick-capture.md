@@ -459,7 +459,8 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
   (`sempere-watch://record`, or `RecordWatchVoiceNoteIntent`). The Control only starts a recording; Stop is the button in the app, Siri or a shortcut (`StopWatchVoiceNoteIntent`); the app grid's launch shows a large Record button instead.
   What the watch widgets show is the same `VoiceNoteStatus`, written by the watch app into the watch's own App Group container.
 - **The screen.** One screen with states: Not set up (with Reset), Ready (Record, "Saving to <vault>"), Recording (the time, a
-  red dot, Stop), Saved (two seconds), "Unsent notes: N" with Send now, and Can't record with the reason (microphone denied,
+  red dot, Stop), Saved (two seconds; after a recording started from a surface it stays, alone, until the app goes to the
+  background), "Unsent notes: N" with Send now, and Can't record with the reason (microphone denied,
   outbox full, little storage). Start and stop tick on the wrist.
 - **The hand-off.** The phone checks what arrives against its metadata (name, size, SHA-256: the file crossed a daemon),
   skips an id it has, and delivers by the **vault the metadata names**: the stored profile's vault through the normal
