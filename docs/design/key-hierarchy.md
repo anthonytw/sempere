@@ -860,12 +860,13 @@ clock is behind where it was), and those of keys already listed, are deleted by 
 #### 6.2.1 Nearby (1.1)
 
 Steps 1 and 3 need not wait for the targets: while home shows Add Device and N its join screen, the two devices also
-talk directly, over peer-to-peer Wi-Fi or a shared network ([nearby-join.md](nearby-join.md)). N sends its request's
-bytes; home places it in `joins/` as a sync would and lists it; once the user approves it (step 2, unchanged), home sends
-`vault.json` and the current epoch record, sealed to N's key with N's session nonce, and N takes them as a join run
-takes an approval (`Vault.isJoinApproval`, the record by its hash). Step 4 is unchanged: N still types home's reply
-words. The link is untrusted transport, like a target, and carries nothing a target does not; both routes run side by
-side and the first wins.
+talk directly, over peer-to-peer Wi-Fi or a shared network ([nearby-join.md](nearby-join.md)). Once home proves it knows
+the vault's id (an HMAC of N's nonce under it), N sends its request's bytes; home keeps the request in memory while Add
+Device shows and lists it, and never writes it to the vault (N's own file still arrives by sync). Once the user
+approves it (step 2, unchanged), home sends `vault.json` and the current epoch record, sealed to N's key with N's
+session nonce, and N takes them as a join run takes an approval (`Vault.isJoinApproval`, the record by its hash). Step 4
+is unchanged: N still types home's reply words. The link is untrusted transport, like a target, and carries nothing a
+target does not; both routes run side by side and the first wins.
 
 ### 6.3 Joining with the recovery kit or the passphrase: a takeover
 

@@ -4157,8 +4157,9 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
   publishes), which the reply words never confirm, and the real one must still replace it.
 - Nearby (design §6.2.1, `docs/design/nearby-join.md`) the same files travel over a direct link between the two
   devices: the request's bytes one way, `vault.json` and the current epoch record (sealed to the request's key) the
-  other. They are placed by the rules above (the request create-only under its own name; the approval only when it is
-  one by the rule above, the record first and only with the hash `vault.json` names). The link writes no other file.
+  other. Home writes nothing it receives over the link: the request is held in memory for its approval, and its file
+  reaches `joins/` only by sync. The joining device places the approval only when it is one by the rule above, the
+  record first (create-only) and only with the hash `vault.json` names. The link writes no other file.
 
 ### 15.13 The recovery kit
 

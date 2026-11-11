@@ -118,9 +118,15 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 
 While you add a device (Add Device on one, Join This Device on the other), anyone
 near enough to receive the two devices' Wi-Fi can see that Sempere is offering
-or looking for a join, and the new device's request (its name, kind and public
-keys, and the vault's id: what storage holds in `joins/`). The approval sent
-back, with the device list, is encrypted to the new device's key
+or looking for a join, and the advertising device's network name (Bonjour
+announces it for any service). The new device sends its request (its name, kind
+and public keys, and the vault's id: what storage holds in `joins/`) only to a
+device that shows it knows the vault's id; a device that already knows the id,
+from your storage or from watching an earlier join, can therefore receive it,
+and anyone listening during the join sees it. The vault's id is the same in
+every join, so two joins seen over the air are known to be of one vault, and the
+size of the approval tells roughly how long the device list is. The approval
+sent back, with the device list, is encrypted to the new device's key
 ([`design/nearby-join.md`](design/nearby-join.md)).
 
 ## What the encryption does not protect

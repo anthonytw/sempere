@@ -12,8 +12,7 @@ paragraph starting "This page is the Privacy Policy URL"). Keep this copy and th
 **Short version: Sempere does not collect, transmit or share any data about you. It has no
 servers, no accounts, no analytics and no advertising. The only network connections it makes
 are to a WebDAV server that you set up yourself, if you choose to keep a vault there, and, while
-you add a device to a vault, directly between two of your own devices near each other (see
-"Network connections").**
+you add a device to a vault, directly to Sempere devices near you (see "Network connections").**
 
 ## What Sempere is
 
@@ -79,12 +78,17 @@ another storage provider only through the system's Files and iCloud services, wh
 encrypted files you saved there; the speech model download above is the system's too.
 
 While you add a device to a vault (Add Device on one device, Join This Device on the other), the
-two devices also connect to each other directly, over the local network or peer-to-peer Wi-Fi (as
-AirDrop does), with no server in between. They find each other with Bonjour under a random name
-that names no vault and no device. The new device sends its request to join (its public keys and
-its device name, what it also saves in the vault's folder), and the other device sends back the
-vault's device list and its newest key record, encrypted to the new device's key. You still type
-or scan the six words on both devices. The link is open only while one of those screens shows.
+new device also connects directly to Sempere devices near it that show Add Device, over the local
+network or peer-to-peer Wi-Fi (as AirDrop does), with no server in between. Devices find each
+other with Bonjour: the advertised name is random and names no vault, though Bonjour also announces
+the advertising device's network name, as it does for any shared service. The new device first
+sends only a random number. It sends its request to join (its device name, kind and public keys,
+and the vault's id: what it also saves in the vault's folder) only to a device that shows it knows
+the vault's id. A device near you that already knows that id, for example from your storage or from
+watching an earlier join, can therefore receive the request; nothing else is shared with it. The
+device that approves sends back the vault's device list and its newest key record, encrypted to the
+new device's key. You still type or scan the six words on both devices. The link is open only while
+one of those screens shows, and stops while the app is in the background.
 
 Besides the WebDAV client and that link, the app contains one other piece of networking code: a downloader for an optional handwriting-to-math
 recognition model (Settings → Handwritten Math). It runs only when you tap a model's Download
