@@ -552,6 +552,37 @@ final class SempereFuzzTests: VaultTestCase {
         })
     }
 
+    /// The nearby join link (docs/design/nearby-join.md): both directions' frame readers, fed in pieces, and the reply's
+    /// plaintext. Bounded and typed: never a trap, never more held than one frame.
+    func testFuzzNearbyJoinLink() throws {
+        let reply = NearbyJoinReply(nonce: Data(repeating: 1, count: 32), commitment: Data(repeating: 2, count: 32),
+                                    manifest: Data("{\"format\":\"sempere/1\"}".utf8), recordName: "1-0123456789abcdef.epoch.age",
+                                    record: Data([1, 2, 3]))
+        let toHome = NearbyJoin.magic + NearbyJoinMessage.request(nonce: Data(count: 32), request: Data("{}".utf8)).frame()
+        let toJoiner = NearbyJoin.magic + NearbyJoinMessage.waiting.frame() + NearbyJoinMessage.reply(Data([7, 7])).frame()
+            + NearbyJoinMessage.refused(.busy).frame()
+        assertClean(Fuzz.run("nearby-join", seeds: [toHome, toJoiner, reply.plaintext()], quick: 1500, maxSize: 64 * 1024) { input in
+            for sender in [NearbyFrameReader.Sender.joiner, .approver] {
+                var reader = NearbyFrameReader(reading: sender)
+                var at = input.startIndex
+                read: while at < input.endIndex {
+                    let end = min(input.endIndex, at + 1 + Int(input[at] % 61))
+                    do { try reader.push(Data(input[at..<end])) } catch is NearbyJoinError { break read } catch {
+                        return "untyped \(error)"
+                    }
+                    at = end
+                    while true {
+                        do { guard try reader.next() != nil else { break } } catch is NearbyJoinError { break read } catch {
+                            return "untyped \(error)"
+                        }
+                    }
+                }
+            }
+            do { _ = try NearbyJoinReply.parse(input) } catch is NearbyJoinError {} catch { return "untyped \(error)" }
+            return nil
+        })
+    }
+
     /// File names and the other string encodings (origin, stamps, colors,
     /// page-order keys, notebook paths).
     func testFuzzNamesAndStrings() throws {
