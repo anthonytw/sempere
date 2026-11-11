@@ -156,4 +156,25 @@ extension AppModelCore {
         if let id = saved.note, notes.contains(where: { $0.id == id }) { selectedNoteID = id }
         return true
     }
+
+    // MARK: - Last place
+
+    /// Remembers where the user is (sidebar item and note) on this device, per vault (`LastPlace`), so the next
+    /// launch, which the system's scene state does not survive, opens there. Nothing for a locked vault, and nothing
+    /// while the phone shows its notebook list (no sidebar item): the place before it stays.
+    public func saveLastPlace() {
+        guard sidebarSelection != nil, let id = vault?.vaultId, let place = restorableSelection() else { return }
+        LastPlace.save(place, vault: id, in: deviceMemory)
+    }
+
+    /// Applies what the window state holds for this vault (`scene`, `RestorableSelection.stored`) when it names this
+    /// vault, else the device's last place. Does nothing for a locked vault, so a note never opens before the unlock.
+    /// A note or notebook that is gone falls back to the notebook alone, then All Notes (`restore`).
+    @discardableResult
+    public func restoreOnLaunch(scene stored: String) -> Bool {
+        guard phase == .unlocked, let id = vault?.vaultId else { return false }
+        if let saved = RestorableSelection(stored: stored), saved.vault == id { return restore(saved) }
+        guard let place = LastPlace.load(vault: id, from: deviceMemory) else { return false }
+        return restore(place)
+    }
 }

@@ -270,7 +270,9 @@ note with a recording and calls the callbacks off the main thread.
   Notes or no note). The system keeps scene storage in plaintext (Saved
   Application State), so a notebook or tag is saved as a digest keyed by the
   vault key (`RestorableSelection`, `LocalCacheKey` purpose `selection`),
-  never by name, and the saved selection is cleared when the vault closes. A note window shows its note's title
+  never by name, and the saved selection is cleared when the vault closes. With no scene state (a new
+  window, a relaunch) the device's last place for the vault applies instead (`LastPlace`, `UserDefaults`, per
+  vault, this device only, the same digests; every platform). A note window shows its note's title
   only while the vault is unlocked; the titles of note windows open when the
   app quits can still be in the system's saved window state.
 * Multiple scenes are switched on for Mac Catalyst only

@@ -252,5 +252,86 @@ extension AppModelSuites {
             #expect(model.restore(try #require(RestorableSelection(stored: plain))))
             #expect(model.sidebarSelection == .allNotes)
         }
+
+        // MARK: - Last place (the device's own memory, per vault)
+
+        @Test func theLastPlaceIsSavedAndAppliedWhenTheSceneHoldsNothing() async throws {
+            let (model, _) = try await Self.unlockedModel()
+            defer { model.close() }
+            let vault = try #require(model.vault?.vaultId)
+            model.sidebarSelection = .tag("fixture")
+            model.selectedNoteID = Self.lecture
+            model.saveLastPlace()
+            #expect(LastPlace.load(vault: vault, from: model.deviceMemory) != nil)
+            model.sidebarSelection = .allNotes
+            model.selectedNoteID = nil
+            #expect(model.restoreOnLaunch(scene: ""))
+            #expect(model.sidebarSelection == .tag("fixture"))
+            #expect(model.selectedNoteID == Self.lecture)
+        }
+
+        @Test func theSceneTakesPrecedenceOverTheLastPlace() async throws {
+            let (model, _) = try await Self.unlockedModel()
+            defer { model.close() }
+            let vault = try #require(model.vault?.vaultId)
+            model.sidebarSelection = .tag("fixture")
+            model.selectedNoteID = Self.lecture
+            model.saveLastPlace()
+            let scene = RestorableSelection(sidebar: .deleted, note: ModelFixture.deleted, vault: vault, digest: { $0 })
+            #expect(model.restoreOnLaunch(scene: scene.stored))
+            #expect(model.sidebarSelection == .deleted)
+            #expect(model.selectedNoteID == ModelFixture.deleted)
+            // A scene of another vault is no scene: the last place applies.
+            let other = RestorableSelection(sidebar: .deleted, note: nil, vault: UUID(), digest: { $0 })
+            #expect(model.restoreOnLaunch(scene: other.stored))
+            #expect(model.sidebarSelection == .tag("fixture"))
+        }
+
+        @Test func aLastPlaceWithAMissingNoteOrNotebookFallsBack() async throws {
+            let (model, _) = try await Self.unlockedModel()
+            defer { model.close() }
+            let vault = try #require(model.vault?.vaultId)
+            let digest = try #require(model.selectionDigest())
+            LastPlace.save(RestorableSelection(sidebar: .tag("fixture"), note: UUID(), vault: vault, digest: digest),
+                           vault: vault, in: model.deviceMemory)
+            #expect(model.restoreOnLaunch(scene: ""))
+            #expect(model.sidebarSelection == .tag("fixture"), "the notebook alone")
+            #expect(model.selectedNoteID == nil)
+            LastPlace.save(RestorableSelection(sidebar: .notebook("Gone/Away"), note: Self.lecture, vault: vault, digest: digest),
+                           vault: vault, in: model.deviceMemory)
+            model.selectedNoteID = nil
+            #expect(model.restoreOnLaunch(scene: ""))
+            #expect(model.sidebarSelection == .allNotes, "the default")
+            LastPlace.save(RestorableSelection(sidebar: .notebook("Gone/Away"), note: nil, vault: vault, digest: digest),
+                           vault: vault, in: model.deviceMemory)
+            model.sidebarSelection = .favorites
+            model.selectedNoteID = nil
+            #expect(model.restoreOnLaunch(scene: ""))
+            #expect(model.sidebarSelection == .allNotes)
+            #expect(model.selectedNoteID == nil)
+        }
+
+        @Test func theLastPlaceIsPerVaultAndNeverAppliedLocked() async throws {
+            let (model, _) = try await Self.unlockedModel()
+            defer { model.close() }
+            let vault = try #require(model.vault?.vaultId)
+            let store = MemoryKeyValueStore()
+            let place = RestorableSelection(sidebar: .favorites, note: Self.lecture, vault: vault, digest: { $0 })
+            LastPlace.save(place, vault: vault, in: store)
+            #expect(LastPlace.load(vault: vault, from: store) == place)
+            #expect(LastPlace.load(vault: UUID(), from: store) == nil, "another vault has its own place")
+            // A place filed under another vault's key but naming this one is not applied to it either.
+            let stray = UUID()
+            store.set(place.stored, forKey: LastPlace.key(stray))
+            #expect(LastPlace.load(vault: stray, from: store) == nil)
+            LastPlace.forget(vault: vault, in: store)
+            #expect(LastPlace.load(vault: vault, from: store) == nil)
+            // Nothing is saved or applied for a closed (locked) model.
+            let closed = AppModel(deviceStateURL: TS.deviceStateURL())
+            defer { closed.close() }
+            closed.saveLastPlace()
+            #expect(!closed.restoreOnLaunch(scene: ""))
+            #expect(closed.selectedNoteID == nil)
+        }
     }
 }
