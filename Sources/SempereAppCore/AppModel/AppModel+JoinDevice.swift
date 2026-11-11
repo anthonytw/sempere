@@ -271,6 +271,7 @@ extension AppModelCore {
             var v = try Vault.open(at: url, identities: [keys.nativeIdentity], signing: keys.signing, trust: trust)
             try v.confirmJoin(words: words)
         }
+        stopNearbyJoin()
         joinIdentity = nil
         if let id = vault?.vaultId { clearJoinRequested(id) }
         try await unlock(device: keys, awaitNotes: false)
@@ -288,6 +289,7 @@ extension AppModelCore {
 
     /// Gives a join up: the request and this device's keys for the vault go.
     public func cancelJoin(store: any DeviceKeyStore) async {
+        stopNearbyJoin()
         guard let locked = vault else { return }
         if let url = vaultURL, let keys = try? await store.keys(for: locked.vaultId, reason: .withdrawJoin) {
             let file = url.appendingPathComponent("joins").appendingPathComponent(
@@ -315,17 +317,25 @@ extension AppModelCore {
         try requireWritableVault()
         let lock = vaultWriteLock
         _ = try await offMain { try Self.withWriteLock(lock) { try current.declineJoinRequests([fileName]) } }
+        nearbyDeclined(fileName)
         syncSessions.forEach { $0.demand() }
     }
 
     // MARK: - Approving (home)
 
-    /// The join requests waiting in the open vault's `joins/`, readable and of this vault, at most `limit` (their
-    /// names are storage's to choose: shown, never trusted), read off the main actor.
+    /// The join requests waiting in the open vault's `joins/` and the one of a nearby session (`nearbyRequests`),
+    /// readable, of this vault and of a key the vault does not list yet, at most `limit` (their names are storage's to
+    /// choose: shown, never trusted), read off the main actor.
     public func pendingJoinRequests(limit: Int = 20) async -> [JoinRequest] {
         guard let vault else { return [] }
+        let nearby = nearbyRequests
         return await Task.detached(priority: .userInitiated) {
-            Array(vault.joinRequests().compactMap(\.request).filter { $0.vaultId == vault.vaultId }.prefix(limit))
+            let listed = Set(vault.manifest.keys.map(\.key))
+            var seen = Set<String>()
+            let all = (vault.joinRequests().compactMap(\.request) + nearby).filter {
+                $0.vaultId == vault.vaultId && !listed.contains($0.key) && seen.insert($0.fileName).inserted
+            }
+            return Array(all.prefix(limit))
         }.value
     }
 
@@ -353,7 +363,13 @@ extension AppModelCore {
     /// Device approves them again once their request has arrived.
     public func hasJoinRequest(words: [String]?, qr: String?) async -> Bool {
         guard let vault else { return false }
-        return await Task.detached(priority: .userInitiated) { vault.joinRequest(words: words, qr: qr) != nil }.value
+        let nearby = nearbyRequests
+        return await Task.detached(priority: .userInitiated) { Self.findJoinRequest(vault, nearby, words, qr) != nil }.value
+    }
+
+    /// The request `words` or `qr` names: in the copy's `joins/`, else the nearby session's.
+    nonisolated static func findJoinRequest(_ vault: Vault, _ nearby: [JoinRequest], _ words: [String]?, _ qr: String?) -> JoinRequest? {
+        vault.joinRequest(words: words, qr: qr) ?? Vault.joinRequest(in: nearby, vaultId: vault.vaultId, words: words, qr: qr)
     }
 
     /// Approves the request whose commitment `words` (typed) or `qr` (scanned) gives (design §6.2 step 2), after
@@ -369,7 +385,9 @@ extension AppModelCore {
         guard let first = vault, phase == .unlocked else { throw KeyError.notUnlocked }
         try requireWritableVault()
         var start = first
-        var found = await Task.detached(priority: .userInitiated) { first.joinRequest(words: words, qr: qr) }.value
+        // The copy's requests, and the one a device nearby sent (docs/design/nearby-join.md), which needs no sync.
+        let nearby = nearbyRequests
+        var found = await Task.detached(priority: .userInitiated) { Self.findJoinRequest(first, nearby, words, qr) }.value
         guard proceed() else { throw CancellationError() }
         let synced = found == nil && !syncSessions.isEmpty
         if synced {
@@ -379,7 +397,8 @@ extension AppModelCore {
             // The run may have taken a vault.json that makes this device read-only or not home (review of #117, N1).
             try requireWritableVault()
             start = again
-            found = await Task.detached(priority: .userInitiated) { again.joinRequest(words: words, qr: qr) }.value
+            let nearbyNow = nearbyRequests
+            found = await Task.detached(priority: .userInitiated) { Self.findJoinRequest(again, nearbyNow, words, qr) }.value
             guard proceed() else { throw CancellationError() }
         }
         guard let request = found else {
@@ -401,6 +420,8 @@ extension AppModelCore {
         }
         try ensureCurrent(gen)
         adoptReopened(next)
+        // A device that sent this request nearby gets the approval over the link now; the targets get it with the runs.
+        nearbyApproved(request)
         syncSessions.forEach { $0.demand() }
         return JoinReply(deviceName: DeviceName.display(request.name), words: reply,
                          qr: JoinCodes.replyQR(vaultId: next.vaultId, root: next.root, frontier: next.manifest.epochId))

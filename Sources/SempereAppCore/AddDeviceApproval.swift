@@ -37,10 +37,32 @@ public final class AddDeviceApprovalCore<Host: AppModelHost> {
     /// May an approval or a look go on now.
     public var active: Bool { !closed && reply == nil }
 
-    /// The sheet went (Cancel, Done, a swipe): what is waiting is dropped, and an approval past its waits stops.
+    /// The sheet went (Cancel, Done, a swipe): what is waiting is dropped, an approval past its waits stops, and the
+    /// nearby link stops advertising.
     public func close() {
         closed = true
         pending = nil
+        model?.stopNearbyApproving()
+    }
+
+    /// The sheet showed: devices nearby can send their requests (docs/design/nearby-join.md) while it is open, the reply
+    /// too (a device approved already gets its approval over the link at once).
+    public func startNearby() {
+        guard !closed else { return }
+        model?.startNearbyApproving()
+    }
+
+    /// The list again from the copy, without a sync (a request arrived nearby, `AppModelCore.nearbyArrivals`); then the
+    /// waiting words, if their request is here now.
+    public func refresh() async {
+        guard let model, active else { return }
+        let requests = await model.pendingJoinRequests()
+        guard active else { return }
+        lookout = JoinRequestLookout(requests: requests, arriving: lookout?.arriving ?? false, checked: lookout?.checked ?? Date())
+        guard let p = pending, !working else { return }
+        let here = await model.hasJoinRequest(words: p.words, qr: p.qr)
+        guard here, active, !working, pending == p else { return }
+        await approve(words: p.words, qr: p.qr)
     }
 
     /// Other words typed: the ones waiting for their request are dropped.
