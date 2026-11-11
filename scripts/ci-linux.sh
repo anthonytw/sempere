@@ -41,10 +41,8 @@ age_sha256() {
   esac
 }
 
-apt_install() {
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -q >/dev/null
-  apt-get install -y -q "$@" >/dev/null
+apt_install() {   # retries, then falls back to a mirror (scripts/apt-install.sh)
+  scripts/apt-install.sh "$@"
 }
 
 install_age() {   # age 1.3 (post-quantum interop; Ubuntu's package is 1.1)
