@@ -43,14 +43,19 @@ public enum ProviderUploads {
         let keys: Set<URLResourceKey> = [.isUbiquitousItemKey, .ubiquitousItemIsUploadedKey, .ubiquitousItemIsUploadingKey,
                                          .ubiquitousItemUploadingErrorKey]
         guard let values = try? fresh.resourceValues(forKeys: keys), values.isUbiquitousItem == true else { return nil }
-        if let error = values.ubiquitousItemUploadingError {
-            return .failed(code: error.code, domain: error.domain, message: error.localizedDescription)
-        }
-        if values.ubiquitousItemIsUploading == true { return .waiting }
-        return values.ubiquitousItemIsUploaded == false ? .waiting : .uploaded
+        return state(isUploaded: values.ubiquitousItemIsUploaded, isUploading: values.ubiquitousItemIsUploading,
+                     error: values.ubiquitousItemUploadingError)
         #else
         return nil   // no provider uploads here
         #endif
+    }
+
+    /// The state of a provider's file from what the provider says of it. Uploaded only when it says so: a file with no
+    /// answer yet (one just written, before the provider took it in) is waiting (TestFlight 1.1.0 (69)).
+    public static func state(isUploaded: Bool?, isUploading: Bool?, error: NSError?) -> State {
+        if let error { return .failed(code: error.code, domain: error.domain, message: error.localizedDescription) }
+        if isUploading == true { return .waiting }
+        return isUploaded == true ? .uploaded : .waiting
     }
 
     /// One target's record.

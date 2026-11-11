@@ -110,6 +110,38 @@ extension AppModelSuites {
             #expect(pad.model.phase == .unlocked)
         }
 
+        /// TestFlight 1.1.0 (69): the shared folder's `joins/` is there and empty (an earlier request, long approved), which a
+        /// provider lists as a folder whose files are still arriving. The new device's request goes into it with its first
+        /// run, and the join screen never says "sent" for a run that did not carry it.
+        @Test func aRequestGoesIntoAnEmptyJoinsFolderOfTheProvider() async throws {
+            let (vault, keyURL) = try await ModelFixture.vault()
+            let key = try await ModelFixture.keyText(keyURL)
+            let drive = TestTemp.root.appendingPathComponent("drive-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
+            let shared = drive.appendingPathComponent("Shared.sempere", isDirectory: true)
+            let provider = EvictingFolderProvider(root: shared, cloud: drive.appendingPathComponent(".cloud"))
+            let home = FolderTargetTests.device(provider)
+            defer { home.model.close() }
+            try await home.model.copyIn(picked: vault, library: home.library)
+            _ = try await home.model.unlock(identityText: key)
+            try home.model.addFolderTarget(shared, scope: drive, to: home.vaultID)
+            await home.model.syncAllTargetsNow()
+            let joins = shared.appendingPathComponent("joins")
+            try FileManager.default.createDirectory(at: joins, withIntermediateDirectories: true)
+
+            let pad = Self.joiningDevice(provider)
+            defer { pad.model.close() }
+            pad.model.providerUploadCheck = { _ in .uploaded }
+            try await pad.model.copyIn(picked: shared, library: pad.library, followUp: .keepSyncing)
+            _ = try await pad.model.startJoin(store: MemoryDeviceKeyStore())
+            await pad.model.syncAllTargetsNow()
+            let file = try #require(pad.model.joinRequestedFile(pad.vaultID))
+            let report = pad.model.syncSessions.first?.lastReport
+            #expect(FileManager.default.fileExists(atPath: joins.appendingPathComponent(file).path), "\(String(describing: report))")
+            #expect(report?.joinsHeld == [file])
+            #expect(pad.model.joinDelivery == .sent)
+        }
+
         /// Words typed for a request nobody made, with nothing arriving: the old answer, in words that say requests can
         /// be late.
         @Test func wordsOfNoRequestAreRefusedAfterASync() async throws {
@@ -207,10 +239,15 @@ extension AppModelSuites {
             let asked = Date(timeIntervalSince1970: 1_000)
             typealias T = JoinDelivery.Target
             func t(_ last: TimeInterval?, syncing: Bool = false, failure: String? = nil, joinsError: Bool = false,
-                   pending: Int = 0, iCloud: Bool = true) -> T {
+                   held: Bool = true, pending: Int = 0, iCloud: Bool = true) -> T {
                 T(lastAttempt: last.map { Date(timeIntervalSince1970: $0) }, syncing: syncing, failure: failure,
-                  joinsError: joinsError, providerPending: pending, viaICloud: iCloud)
+                  joinsError: joinsError, holdsRequest: held, providerPending: pending, viaICloud: iCloud)
             }
+            // TestFlight 1.1.0 (69): a run that ended well but did not carry the request (`joins/` arriving, a run held
+            // back before it) is no evidence the target holds it.
+            #expect(JoinDelivery.judge(requestedAt: asked, targets: [t(1_100, held: false)]) == .sending)
+            #expect(JoinDelivery.judge(requestedAt: nil, targets: [t(5, held: false)]) == .sending)
+            #expect(JoinDelivery.judge(requestedAt: asked, targets: [t(1_100, held: false), t(1_200)]) == .sent)
             #expect(JoinDelivery.judge(requestedAt: asked, targets: []) == .sending)
             #expect(JoinDelivery.judge(requestedAt: asked, targets: [t(nil)]) == .sending)
             #expect(JoinDelivery.judge(requestedAt: asked, targets: [t(900)]) == .sending, "a run before the request")

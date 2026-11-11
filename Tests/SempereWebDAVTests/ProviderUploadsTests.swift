@@ -59,4 +59,17 @@ struct ProviderUploadsTests {
         #expect(!ProviderUploads.State.failed(code: 1, domain: "provider", message: "x").isStorageUnavailable)
         #expect(!ProviderUploads.State.waiting.isStorageUnavailable)
     }
+
+    /// The system's answer for a provider's file (TestFlight 1.1.0 (69)): only a provider that says it uploaded the file
+    /// counts it uploaded; no answer is not one.
+    @Test func aProviderFileWithoutAnUploadAnswerIsWaiting() {
+        #expect(ProviderUploads.state(isUploaded: true, isUploading: false, error: nil) == .uploaded)
+        #expect(ProviderUploads.state(isUploaded: true, isUploading: nil, error: nil) == .uploaded)
+        #expect(ProviderUploads.state(isUploaded: false, isUploading: false, error: nil) == .waiting)
+        #expect(ProviderUploads.state(isUploaded: nil, isUploading: true, error: nil) == .waiting)
+        #expect(ProviderUploads.state(isUploaded: nil, isUploading: nil, error: nil) == .waiting)
+        let full = NSError(domain: NSCocoaErrorDomain, code: 640, userInfo: [NSLocalizedDescriptionKey: "full"])
+        #expect(ProviderUploads.state(isUploaded: nil, isUploading: nil, error: full)
+            == .failed(code: 640, domain: NSCocoaErrorDomain, message: "full"))
+    }
 }
