@@ -119,7 +119,7 @@ final class UIKitLockAssertions: FileLockAssertions, @unchecked Sendable {
         FileLockGuard.install(assertions)
         FileLockGuard.onExpiry = { kind in Perf.event(.backgroundSync, "lock let go at expiry: \(kind)") }
         #if DEBUG
-        assertions.checkLaunchLocksAtFirstActivation()
+        assertions.checkLaunchLocksAfterTheLaunch()
         #endif
         #endif
     }
@@ -199,23 +199,31 @@ final class UIKitLockAssertions: FileLockAssertions, @unchecked Sendable {
     var shares: (held: Int, running: Bool) { lock.withLock { (holds.count, shared != nil) } }
 
     #if DEBUG
-    /// At the first activation no lock of the launch may still be held: it holds no assertion and would be held
-    /// across a suspension.
-    @MainActor private func checkLaunchLocksAtFirstActivation() {
+    /// Once the launch is over no lock of it may still be held: it holds no assertion and would be held across a
+    /// suspension. Checked at the end of `didFinishLaunching`, at the first background entry and at the first
+    /// activation, so a launch into the background that nobody opens (the 0xdead10cc one) is checked too.
+    @MainActor private func checkLaunchLocksAfterTheLaunch() {
         let center = NotificationCenter.default
-        let once = ObserverBox()
-        once.token = center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            if let token = once.token { center.removeObserver(token) }
-            once.token = nil
-            let held = self.launchLocksHeld
-            assert(held == 0, "\(held) file lock(s) taken before UIApplicationMain are still held at the first activation")
+        let moments: [(Notification.Name, String)] = [
+            (UIApplication.didFinishLaunchingNotification, "the end of the launch"),
+            (UIApplication.didEnterBackgroundNotification, "the first background entry"),
+            (UIApplication.didBecomeActiveNotification, "the first activation"),
+        ]
+        for (name, moment) in moments {
+            let once = ObserverBox()
+            once.token = center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                if let token = once.token { center.removeObserver(token) }
+                once.token = nil
+                let held = self.launchLocksHeld
+                assert(held == 0, "\(held) file lock(s) taken before UIApplicationMain are still held at \(moment)")
+            }
         }
     }
     #endif
 }
 
 #if DEBUG
-/// The one observer of `checkLaunchLocksAtFirstActivation`, removed by itself.
+/// The one observer of `checkLaunchLocksAfterTheLaunch`, removed by itself.
 private final class ObserverBox: @unchecked Sendable {
     var token: (any NSObjectProtocol)?
 }

@@ -170,7 +170,10 @@ enum SecretPasteboard {
 
     #if targetEnvironment(macCatalyst)
     /// At launch: clears the general pasteboard if its item carries `ownMarker`, a key the last run could not clear
-    /// (killed or crashed). Anything else on it, including another app's concealed item, stays.
+    /// (killed or crashed). Anything else on it, including another app's concealed item, stays. A second Sempere
+    /// process launching meanwhile (a development build or the test host beside the installed app) also clears a key
+    /// the first just copied and still owns, within its lifetime: it is only ever Sempere's own key, so that is
+    /// accepted.
     @MainActor static func clearStaleAtLaunch() {
         guard UIPasteboard.general.contains(pasteboardTypes: [ownMarker]) else { return }
         UIPasteboard.general.items = []
