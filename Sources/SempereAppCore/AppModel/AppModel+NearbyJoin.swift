@@ -242,7 +242,7 @@ extension AppModelCore {
     }
 
     /// One session at a time, with each device found: a device that refused (another vault, not home) rests a minute,
-    /// a busy one or a broken link a moment.
+    /// a busy one, one whose session ran out or a broken link a moment.
     func nearbyJoinLoop(_ transport: any NearbyJoinTransport, generation gen: Int) async {
         var resting: [NearbyPeer: ContinuousClock.Instant] = [:]
         while !Task.isCancelled, gen == generation, phase == .locked {
@@ -292,7 +292,8 @@ extension AppModelCore {
                 nearby.browsing = nil
                 nearby.joinTask = nil
                 return
-            case .refused(.busy):
+            case .refused(.busy), .refused(.closed):
+                // Another device's session, or home's session ran out: home is still the one to ask.
                 resting[peer] = .now + nearbyRetry
             case .refused:
                 resting[peer] = .now + .seconds(60)
