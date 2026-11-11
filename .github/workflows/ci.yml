@@ -127,7 +127,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install python3
-        run: apt-get update -q >/dev/null && apt-get install -y -q python3 >/dev/null
+        run: scripts/apt-install.sh python3
       # scripts/local-ci.sh's `help` step, then the portability guard (also run again by the Linux package job).
       - name: Help checks
         run: |
