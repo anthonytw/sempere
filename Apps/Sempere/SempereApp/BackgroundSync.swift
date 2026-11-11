@@ -52,34 +52,174 @@ final class UIKitBackgroundTasks: BackgroundTaskRunning {
 }
 
 /// Background time for every file lock the package takes (`FileLockGuard`; iPhone and iPad, installed at launch by
-/// `install()`): each `flock` begins a `beginBackgroundTask` of its own first, so none is ever held while the app is
-/// suspended (RunningBoard `0xdead10cc`, TestFlight 1.1 (67)). `beginBackgroundTask` and `endBackgroundTask` may be
-/// called on any thread (`NS_SWIFT_NONISOLATED`). Before `UIApplicationMain` made the application (SwiftUI's
-/// `App.init`) the process is launching and nothing can suspend it, so a lock is taken without an assertion then.
+/// `install()`): no `flock` is held without a `beginBackgroundTask` running, so none is ever held while the app is
+/// suspended (RunningBoard `0xdead10cc`, TestFlight 1.1 (67)).
+///
+/// One UIKit task is shared by every held lock (a reference count): it begins when the first lock is taken and ends
+/// when the last is let go, and when its time runs out every lock still held is let go. A begin and end pair of its
+/// own per lock cost 0.7 to 1.2 ms on the iPad simulator (2,000 and 5,000 pairs; a `flock` and unlock about 0.03 ms),
+/// and a large sync takes thousands of locks (the write ledger appends once per file); a lock joining the running task
+/// costs about 0.6 µs. While a vault is open its lease keeps the task running. `beginBackgroundTask` and
+/// `endBackgroundTask` may be called on any thread (`NS_SWIFT_NONISOLATED`); they are never called under `lock`,
+/// which an expiry on the main thread takes.
+///
+/// Before `UIApplicationMain` made the application (SwiftUI's `App.init`) the process is launching and nothing can
+/// suspend it, so a lock is taken without an assertion then. Such a lock never gets one later, however long it is
+/// held: **only short synchronous locks may be taken before `UIApplicationMain`** (those `App.init` takes itself),
+/// never one on another thread that could outlive the launch (a WatchConnectivity callback racing it). Debug builds
+/// count them and stop at the first activation if one is still held.
 final class UIKitLockAssertions: FileLockAssertions, @unchecked Sendable {
+    /// The system's background tasks (tests give their own): `begin` answers nil when the system gives no time, and
+    /// calls `expired` (on any thread) when the time runs out; `end` must still be called after that.
+    struct SystemTasks: Sendable {
+        var begin: @Sendable (_ name: String, _ expired: @escaping @Sendable () -> Void) -> Int?
+        var end: @Sendable (Int) -> Void
+
+        /// `UIApplication`'s, or nil before `UIApplicationMain` made it.
+        static var uikit: SystemTasks? {
+            guard UIApplication.made != nil else { return nil }
+            return SystemTasks(
+                begin: { name, expired in
+                    guard let app = UIApplication.made else { return nil }
+                    let id = app.beginBackgroundTask(withName: name) { expired() }
+                    return id == .invalid ? nil : id.rawValue
+                },
+                end: { id in UIApplication.made?.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: id)) })
+        }
+    }
+
     /// No assertion was needed (before the application existed): `end` does nothing for it.
     private static let launching = -1
+    /// The shared task's name (one task for all locks, so it names none).
+    static let taskName = "Sempere file locks"
+
+    private let system: @Sendable () -> SystemTasks?
+    private let lock = NSLock()
+    /// The shared task running now, and which begin made it (its expiry names it, so a late one does nothing).
+    private var shared: (id: Int, attempt: Int)?
+    private var attempts = 0
+    /// Begins whose task is not installed yet, and those of them whose time already ran out.
+    private var pending: Set<Int> = []
+    private var expiredEarly: Set<Int> = []
+    /// The held locks' expiry handlers, by token.
+    private var holds: [Int: @Sendable () -> Void] = [:]
+    private var nextToken = 1
+    /// Locks taken with the `launching` token and not let go yet.
+    private var launchingHeld = 0
+
+    init(system: @escaping @Sendable () -> SystemTasks? = { SystemTasks.uikit }) {
+        self.system = system
+    }
 
     /// Installs the assertions for the whole process, and logs a lock let go when its time ran out.
     @MainActor static func install() {
         #if !targetEnvironment(macCatalyst)
         guard !Platform.isMac else { return }
-        FileLockGuard.install(UIKitLockAssertions())
+        let assertions = UIKitLockAssertions()
+        FileLockGuard.install(assertions)
         FileLockGuard.onExpiry = { kind in Perf.event(.backgroundSync, "lock let go at expiry: \(kind)") }
+        #if DEBUG
+        assertions.checkLaunchLocksAtFirstActivation()
+        #endif
         #endif
     }
 
     func begin(name: String, expired: @escaping @Sendable () -> Void) -> Int? {
-        guard let app = UIApplication.made else { return Self.launching }
-        let id = app.beginBackgroundTask(withName: name) { expired() }
-        return id == .invalid ? nil : id.rawValue
+        guard let system = system() else {
+            lock.withLock { launchingHeld += 1 }
+            return Self.launching
+        }
+        // A task running already: the lock joins it.
+        let (joined, attempt): (Int?, Int) = lock.withLock {
+            if shared != nil { return (register(expired), 0) }
+            attempts += 1
+            pending.insert(attempts)
+            return (nil, attempts)
+        }
+        if let joined { return joined }
+        // The first lock: a task begins, outside `lock`.
+        guard let id = system.begin(Self.taskName, { [weak self] in self?.expire(attempt: attempt) }) else {
+            lock.withLock { _ = pending.remove(attempt) }
+            return nil
+        }
+        let (token, spare): (Int?, Int?) = lock.withLock {
+            pending.remove(attempt)
+            // Its time ran out before it was installed: refused, as with no time.
+            if expiredEarly.remove(attempt) != nil { return (nil, id) }
+            if shared == nil {
+                shared = (id, attempt)
+                return (register(expired), nil)
+            }
+            return (register(expired), id)   // another lock began one meanwhile: this one is not needed
+        }
+        if let spare { system.end(spare) }
+        return token
     }
 
     func end(_ token: Int) {
-        guard token != Self.launching, let app = UIApplication.made else { return }
-        app.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: token))
+        guard token != Self.launching else {
+            lock.withLock { launchingHeld -= 1 }
+            return
+        }
+        let last: Int? = lock.withLock {
+            guard holds.removeValue(forKey: token) != nil, holds.isEmpty, let running = shared else { return nil }
+            shared = nil
+            return running.id
+        }
+        if let last { system()?.end(last) }
     }
+
+    /// The shared task's time ran out: every lock still held is let go (each handler lets its `flock` go and ends
+    /// its hold, which is gone from `holds` already), then the task ends.
+    private func expire(attempt: Int) {
+        let (handlers, id): ([@Sendable () -> Void], Int?) = lock.withLock {
+            guard let running = shared, running.attempt == attempt else {
+                if pending.contains(attempt) { expiredEarly.insert(attempt) }   // `begin` refuses it
+                return ([], nil)
+            }
+            shared = nil
+            defer { holds.removeAll() }
+            return (Array(holds.values), running.id)
+        }
+        for handler in handlers { handler() }
+        if let id { system()?.end(id) }
+    }
+
+    /// Under `lock`: a new token for a held lock.
+    private func register(_ expired: @escaping @Sendable () -> Void) -> Int {
+        let token = nextToken
+        nextToken += 1
+        holds[token] = expired
+        return token
+    }
+
+    /// Locks taken before `UIApplicationMain` that are still held.
+    var launchLocksHeld: Int { lock.withLock { launchingHeld } }
+    /// Locks held under the shared task, and whether it runs.
+    var shares: (held: Int, running: Bool) { lock.withLock { (holds.count, shared != nil) } }
+
+    #if DEBUG
+    /// At the first activation no lock of the launch may still be held: it holds no assertion and would be held
+    /// across a suspension.
+    @MainActor private func checkLaunchLocksAtFirstActivation() {
+        let center = NotificationCenter.default
+        let once = ObserverBox()
+        once.token = center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            if let token = once.token { center.removeObserver(token) }
+            once.token = nil
+            let held = self.launchLocksHeld
+            assert(held == 0, "\(held) file lock(s) taken before UIApplicationMain are still held at the first activation")
+        }
+    }
+    #endif
 }
+
+#if DEBUG
+/// The one observer of `checkLaunchLocksAtFirstActivation`, removed by itself.
+private final class ObserverBox: @unchecked Sendable {
+    var token: (any NSObjectProtocol)?
+}
+#endif
 
 @MainActor
 /// `BGTaskScheduler` (`AppModelServices.syncScheduler`); nothing on a Mac.
@@ -126,9 +266,15 @@ final class UIKitAppLifecycle: AppLifecycle {
     private let state: @MainActor () -> UIApplication.State
 
     init(center: NotificationCenter = .default,
-         state: @escaping @MainActor () -> UIApplication.State = { UIApplication.made?.applicationState ?? .background }) {
+         state: @escaping @MainActor () -> UIApplication.State = { UIKitAppLifecycle.state(of: UIApplication.made) }) {
         self.center = center
         self.state = state
+    }
+
+    /// The state of `app`, the application `UIApplicationMain` made (`UIApplication.made`): with none yet (SwiftUI's
+    /// `App.init`), `.background`, never the `.active` a message to the missing `shared` answers.
+    static func state(of app: UIApplication?) -> UIApplication.State {
+        app?.applicationState ?? .background
     }
 
     var isInBackground: Bool { state() == .background }
