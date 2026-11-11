@@ -266,6 +266,15 @@ final class SempereAppDelegate: UIResponder, UIApplicationDelegate {
     /// The menu tree is logged once per launch (DEBUG).
     @MainActor private static var dumped = false
 
+    /// Launch: a vault key a killed or crashed run left on the Mac clipboard is cleared (`SecretPasteboard`).
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        #if targetEnvironment(macCatalyst)
+        MainActor.assumeIsolated { SecretPasteboard.clearStaleAtLaunch() }
+        #endif
+        return true
+    }
+
     /// Quitting (⌘Q on a Mac): decrypted attachments are deleted where the
     /// system does not encrypt them at rest (`BlobCache.purgeAtQuit`), and so
     /// are the plaintext work copies of PDFs picked or opened for import

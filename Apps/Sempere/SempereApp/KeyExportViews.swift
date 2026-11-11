@@ -146,16 +146,21 @@ struct KeyFileActions: View {
 ///
 /// UIKit's `expirationDate` is not enforced by Mac Catalyst (measured: the item was still on the general pasteboard
 /// after it passed), so on a Mac the app clears the pasteboard itself after the same time, and when it quits, unless
-/// something else was copied since (the change count moved). The item also carries the markers that clipboard managers
-/// on the Mac skip (nspasteboard.org's concealed and transient types).
+/// something else was copied since (the change count moved). A kill or a crash runs neither, so the item also carries
+/// a marker only Sempere writes (`ownMarker`), and the next launch on a Mac clears the pasteboard if, and only if, its
+/// item has that marker (`clearStaleAtLaunch`); another app's concealed item is never touched. The item also carries
+/// the markers that clipboard managers on the Mac skip (nspasteboard.org's concealed and transient types).
 enum SecretPasteboard {
     static let lifetime: TimeInterval = 180
+    /// A type only Sempere puts on its secret item (the bundle id's style), so a later launch can tell it from
+    /// another app's concealed item.
+    static let ownMarker = "io.github.anthonytw.sempere.secret"
     /// Marker types of nspasteboard.org: the item is a secret and short-lived, so clipboard history tools leave it out.
     static let markers = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"]
 
     @MainActor static func copy(_ text: String) {
         var item: [String: Any] = [UTType.plainText.identifier: text]
-        for marker in markers { item[marker] = Data([0]) }
+        for marker in markers + [ownMarker] { item[marker] = Data([0]) }
         UIPasteboard.general.setItems([item], options: [.localOnly: true,
                                                         .expirationDate: Date().addingTimeInterval(lifetime)])
         #if targetEnvironment(macCatalyst)
@@ -164,6 +169,13 @@ enum SecretPasteboard {
     }
 
     #if targetEnvironment(macCatalyst)
+    /// At launch: clears the general pasteboard if its item carries `ownMarker`, a key the last run could not clear
+    /// (killed or crashed). Anything else on it, including another app's concealed item, stays.
+    @MainActor static func clearStaleAtLaunch() {
+        guard UIPasteboard.general.contains(pasteboardTypes: [ownMarker]) else { return }
+        UIPasteboard.general.items = []
+    }
+
     @MainActor private static var pending: (changeCount: Int, quit: NSObjectProtocol)?
 
     /// Clears the pasteboard after `lifetime`, and at quit, if nothing else was copied since this item.
