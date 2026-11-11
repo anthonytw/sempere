@@ -629,3 +629,22 @@ struct SyncSessionTests {
         session.stop()
     }
 }
+
+/// The join screen judges on the last run that reached `joins/` (review of 1.1-x, B4).
+@MainActor
+struct SyncSessionJoinsHeldTests {
+    @Test func aLaterRunCutShortBeforeJoinsKeepsWhatTheLastOneHeld() async {
+        let reports = Sync.Counter()
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil, run: { _ in
+            var report = SyncReport()
+            if reports.add(1) == 1 { report.joinsHeld = ["abcd1234.join.json"] }
+            return report
+        }, countUnconfirmed: { 0 })
+        #expect(session.lastJoinsHeld == nil)
+        _ = await session.syncNow()
+        #expect(session.lastJoinsHeld == ["abcd1234.join.json"])
+        _ = await session.syncNow()
+        #expect(session.lastReport?.joinsHeld == nil, "the second run never reached joins/")
+        #expect(session.lastJoinsHeld == ["abcd1234.join.json"], "still sent")
+    }
+}

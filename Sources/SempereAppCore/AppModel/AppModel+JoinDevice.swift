@@ -203,7 +203,7 @@ extension AppModelCore {
         let requestedAt = vault.flatMap { joinRequestedAt($0.vaultId) }
         let file = vault.flatMap { joinRequestedFile($0.vaultId) }
         return JoinDelivery.judge(requestedAt: requestedAt, targets: syncSessions.map { s in
-            let held = s.lastReport?.joinsHeld ?? []
+            let held = s.lastJoinsHeld ?? []
             return JoinDelivery.Target(lastAttempt: s.schedule.lastAttempt, syncing: s.isSyncing, failure: s.failure,
                                 joinsError: s.lastReport?.errors.contains { $0.path.hasPrefix("joins") } == true,
                                 holdsRequest: file.map { held.contains($0) } ?? !held.isEmpty,

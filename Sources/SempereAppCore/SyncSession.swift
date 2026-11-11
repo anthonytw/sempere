@@ -113,6 +113,9 @@ public final class SyncSession {
     private(set) var twoWay = false
     /// What the last run did, for "Show Details" and tests.
     private(set) var lastReport: SyncReport?
+    /// The join requests the target held at the last run that reached `joins/` (`SyncReport.joinsHeld`): a later run
+    /// cut short before it has none to report, and must not turn "sent" back into "sending".
+    private(set) var lastJoinsHeld: [String]?
     /// The last run moved files and was cut short (a run bound, the background time): the next one continues.
     private(set) var continuing = false
     /// Files the last runs left arriving on the target (a provider still delivering them).
@@ -364,6 +367,7 @@ public final class SyncSession {
             do {
                 let report = try await run(request)
                 lastReport = report
+                if let held = report.joinsHeld { lastJoinsHeld = held }
                 // A run a bound or a cancel cut short after it moved files is progress, not a failure (offline audit
                 // P4): no problem shown, no backoff; the next run continues. Only a complete run is a last success.
                 // An upload-only run keeps a device list another device changed (`keepServerChanges`):
