@@ -25,11 +25,15 @@ public final class VaultFileLock: @unchecked Sendable {
         case timedOut(String)
         /// The lock file could not be created or opened.
         case unavailable(String)
+        /// The app is in the background and the system gives no time to hold a lock: one held now could be held
+        /// across the suspension, which iOS punishes with a kill (`FileLockGuard`).
+        case suspended(String)
 
         public var description: String {
             switch self {
             case .timedOut(let path): return "another writer holds \(path)"
             case .unavailable(let detail): return "cannot open the lock file: \(detail)"
+            case .suspended(let path): return "no background time to lock \(path)"
             }
         }
     }
@@ -93,13 +97,16 @@ public final class VaultFileLock: @unchecked Sendable {
 }
 
 /// A held `flock(2)` on a file or folder: released by `release()` (or when the process ends).
-/// Package-wide: `VaultFileLock`, `VaultStore` leases and staging folders use it.
+/// Package-wide: `VaultFileLock`, `VaultStore` leases and staging folders use it. Each is held under an
+/// assertion of its own where `FileLockGuard` has one installed (iOS: never held across a suspension).
 package final class FileLock: @unchecked Sendable {
     private var fd: Int32
     private let lock = NSLock()
+    private let hold: LockHold?
 
-    private init(fd: Int32) {
+    private init(fd: Int32, hold: LockHold?) {
         self.fd = fd
+        self.hold = hold
     }
 
     deinit {
@@ -114,6 +121,18 @@ package final class FileLock: @unchecked Sendable {
         _ = flock(fd, LOCK_UN)
         _ = close(fd)
         fd = -1
+        hold?.end()
+    }
+
+    /// A taken `fd` becomes a held lock, unless its background time ran out while it was waited for.
+    private static func held(_ fd: Int32, _ hold: LockHold?, _ url: URL) throws -> FileLock {
+        let made = FileLock(fd: fd, hold: hold)
+        guard let hold else { return made }
+        guard hold.attach({ [weak made] in made?.release() }) else {
+            made.release()
+            throw VaultFileLock.LockError.suspended(url.path)
+        }
+        return made
     }
 
     /// Takes a `flock` on `url` (a file, created mode 0600 when missing, or an existing folder).
@@ -123,8 +142,27 @@ package final class FileLock: @unchecked Sendable {
     ///   - deadline: polls (every 20 ms) until then; nil blocks; a date in the past tries once.
     ///   - createParent: creates the file's folder first.
     ///   - throwOnTimeout: throw `VaultFileLock.LockError.timedOut` when not taken in time, else return nil.
+    /// - Throws: `.suspended` when `FileLockGuard`'s assertions give no time now (nothing is opened or locked).
     package static func acquire(_ url: URL, exclusive: Bool, deadline: Date?, createParent: Bool = false,
                                 throwOnTimeout: Bool = true) throws -> FileLock? {
+        // The assertion first: a lock is never held, even for a moment, without one.
+        let hold = try LockHold.begin(for: url)
+        do {
+            guard let taken = try take(url, exclusive: exclusive, deadline: deadline, createParent: createParent,
+                                       throwOnTimeout: throwOnTimeout) else {
+                hold?.end()
+                return nil
+            }
+            return try held(taken, hold, url)
+        } catch {
+            hold?.end()
+            throw error
+        }
+    }
+
+    /// Opens `url` and takes the `flock`: the descriptor, or nil when not taken in time (and not `throwOnTimeout`).
+    private static func take(_ url: URL, exclusive: Bool, deadline: Date?, createParent: Bool,
+                             throwOnTimeout: Bool) throws -> Int32? {
         if createParent {
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         }
@@ -148,10 +186,10 @@ package final class FileLock: @unchecked Sendable {
                     throw VaultFileLock.LockError.unavailable("\(url.path): \(String(cString: strerror(code)))")
                 }
             }
-            return FileLock(fd: fd)
+            return fd
         }
         while true {
-            if flock(fd, operation | LOCK_NB) == 0 { return FileLock(fd: fd) }
+            if flock(fd, operation | LOCK_NB) == 0 { return fd }
             let code = errno
             guard code == EWOULDBLOCK || code == EAGAIN || code == EINTR else {
                 _ = close(fd)

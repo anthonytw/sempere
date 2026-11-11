@@ -3,20 +3,38 @@
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
 "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="3300" height="2200">
- <!--glyph: SempereNib, weight: Regular, size: Medium (single weight)-->
+ <!--glyph: SempereNib, weights: Ultralight Regular Black (the same outline in each), size: Small (Medium and Large derived)-->
  <g id="Notes">
   <rect height="2200" opacity="0" width="3300" x="0" y="0"/>
+  <text id="template-version" transform="matrix(1 0 0 1 263 322)" font-family="SF Pro Display" font-size="13" fill="#000000">Template v.4.0</text>
+  <text transform="matrix(1 0 0 1 263 343)" font-family="SF Pro Display" font-size="13" fill="#000000">Requires Xcode 14 or greater</text>
+  <text transform="matrix(1 0 0 1 263 364)" font-family="SF Pro Display" font-size="13" fill="#000000">Generated from SempereNib</text>
+ </g>
+ <g id="Guides">
+  <g id="H-reference" fill="#27AAE1" stroke="none" transform="matrix(1 0 0 1 339 696)">
+   <path d="M0.993654 0L3.36882 0L29.1908 -67.2236L30.2303 -67.2236L30.2303 0L32.6054 0L32.6054 -70.459L29.9971 -70.459L1.99805 0L0 0Z"/>
+  </g>
   <line id="Baseline-S" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="696" y2="696"/>
   <line id="Capline-S" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="625.541" y2="625.541"/>
   <line id="Baseline-M" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1126" y2="1126"/>
   <line id="Capline-M" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1055.54" y2="1055.54"/>
   <line id="Baseline-L" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1556" y2="1556"/>
   <line id="Capline-L" stroke="#27AAE1" stroke-width="0.5" x1="263" x2="3036" y1="1485.54" y2="1485.54"/>
-  <line id="left-margin-Regular-M" stroke="#00AEEF" stroke-width="0.5" x1="1400" x2="1400" y1="1030.79" y2="1150"/>
-  <line id="right-margin-Regular-M" stroke="#00AEEF" stroke-width="0.5" x1="1450" x2="1450" y1="1030.79" y2="1150"/>
+  <line id="left-margin-Ultralight-S" stroke="#00AEEF" stroke-width="0.5" x1="534.0" x2="534.0" y1="600.79" y2="720"/>
+  <line id="right-margin-Ultralight-S" stroke="#00AEEF" stroke-width="0.5" x1="584.0" x2="584.0" y1="600.79" y2="720"/>
+  <line id="left-margin-Regular-S" stroke="#00AEEF" stroke-width="0.5" x1="1625.0" x2="1625.0" y1="600.79" y2="720"/>
+  <line id="right-margin-Regular-S" stroke="#00AEEF" stroke-width="0.5" x1="1675.0" x2="1675.0" y1="600.79" y2="720"/>
+  <line id="left-margin-Black-S" stroke="#00AEEF" stroke-width="0.5" x1="2716.0" x2="2716.0" y1="600.79" y2="720"/>
+  <line id="right-margin-Black-S" stroke="#00AEEF" stroke-width="0.5" x1="2766.0" x2="2766.0" y1="600.79" y2="720"/>
  </g>
  <g id="Symbols">
-  <g id="Regular-M" transform="matrix(1 0 0 1 0 0)">
+  <g id="Ultralight-S" transform="matrix(1 0 0 1 -866.0 -430)">
+   <path d="M1410.89 1056.695C1410.89 1055.588 1411.443 1055.035 1412.55 1055.035L1437.45 1055.035C1438.557 1055.035 1439.11 1055.588 1439.11 1056.695L1439.11 1061.053C1439.11 1061.744 1438.75 1062.09 1438.031 1062.09L1411.969 1062.09C1411.25 1062.09 1410.89 1061.744 1410.89 1061.053ZM1425 1126L1407.155 1092.178C1405.772 1087.197 1405.772 1082.771 1407.155 1078.898L1411.72 1064.58L1438.28 1064.58L1442.845 1078.898C1444.228 1082.771 1444.228 1087.197 1442.845 1092.178ZM1419.605 1089.688L1417.945 1102.138L1423.34 1102.138L1423.34 1117.078L1426.66 1117.078L1426.66 1102.138L1432.055 1102.138L1430.395 1089.688C1432.803 1086.83 1432.565 1082.59 1429.852 1080.02C1427.139 1077.45 1422.893 1077.441 1420.169 1080C1417.446 1082.559 1417.19 1086.797 1419.586 1089.665Z" fill-rule="evenodd"/>
+  </g>
+  <g id="Regular-S" transform="matrix(1 0 0 1 225.0 -430)">
+   <path d="M1410.89 1056.695C1410.89 1055.588 1411.443 1055.035 1412.55 1055.035L1437.45 1055.035C1438.557 1055.035 1439.11 1055.588 1439.11 1056.695L1439.11 1061.053C1439.11 1061.744 1438.75 1062.09 1438.031 1062.09L1411.969 1062.09C1411.25 1062.09 1410.89 1061.744 1410.89 1061.053ZM1425 1126L1407.155 1092.178C1405.772 1087.197 1405.772 1082.771 1407.155 1078.898L1411.72 1064.58L1438.28 1064.58L1442.845 1078.898C1444.228 1082.771 1444.228 1087.197 1442.845 1092.178ZM1419.605 1089.688L1417.945 1102.138L1423.34 1102.138L1423.34 1117.078L1426.66 1117.078L1426.66 1102.138L1432.055 1102.138L1430.395 1089.688C1432.803 1086.83 1432.565 1082.59 1429.852 1080.02C1427.139 1077.45 1422.893 1077.441 1420.169 1080C1417.446 1082.559 1417.19 1086.797 1419.586 1089.665Z" fill-rule="evenodd"/>
+  </g>
+  <g id="Black-S" transform="matrix(1 0 0 1 1316.0 -430)">
    <path d="M1410.89 1056.695C1410.89 1055.588 1411.443 1055.035 1412.55 1055.035L1437.45 1055.035C1438.557 1055.035 1439.11 1055.588 1439.11 1056.695L1439.11 1061.053C1439.11 1061.744 1438.75 1062.09 1438.031 1062.09L1411.969 1062.09C1411.25 1062.09 1410.89 1061.744 1410.89 1061.053ZM1425 1126L1407.155 1092.178C1405.772 1087.197 1405.772 1082.771 1407.155 1078.898L1411.72 1064.58L1438.28 1064.58L1442.845 1078.898C1444.228 1082.771 1444.228 1087.197 1442.845 1092.178ZM1419.605 1089.688L1417.945 1102.138L1423.34 1102.138L1423.34 1117.078L1426.66 1117.078L1426.66 1102.138L1432.055 1102.138L1430.395 1089.688C1432.803 1086.83 1432.565 1082.59 1429.852 1080.02C1427.139 1077.45 1422.893 1077.441 1420.169 1080C1417.446 1082.559 1417.19 1086.797 1419.586 1089.665Z" fill-rule="evenodd"/>
   </g>
  </g>

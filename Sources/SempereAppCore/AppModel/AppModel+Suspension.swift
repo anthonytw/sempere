@@ -15,18 +15,30 @@ import Sempere
 ///
 /// It follows the application, not a scene (`AppLifecycle`): a note window can stay on screen after the library
 /// scene left, and the app is suspended only once every scene has. Sync's background time (`enterBackground`)
-/// follows the same events, so a run writing under the vault's write lock always has an assertion.
+/// follows the same events.
+///
+/// A process that was never on screen holds no lease either: TestFlight 1.1 (67) was killed in launches into the
+/// background (a WatchConnectivity delivery, a background task) that restored the library scene, which reopened the
+/// last vault and leased it. The model starts with its locks let go until the application is first active
+/// (`didBecomeActive`, or `willEnterForeground`), because the state read at launch cannot be trusted: SwiftUI's
+/// `App.init` runs before `UIApplicationMain`, when `UIApplication.shared` is still nil and its state reads `.active`.
+///
+/// Every other lock is held only for one piece of work, and never without an assertion of its own: on iOS each
+/// `flock` the package takes begins background time first and is let go before that time runs out
+/// (`FileLockGuard`, installed by the app). A write the system gives no time for is refused, never left holding a
+/// lock while the process is suspended.
 extension AppModelCore {
     /// The log category of the lease's warnings (`services.perf`).
     static var suspensionLogCategory: String { "suspension" }
 
     /// Starts following the app entering and leaving the background (once, at launch), on `lifecycle`
-    /// (`services.lifecycle` unless given). When the process starts in the background (a background task or an
-    /// intent launched it), no `didEnterBackground` comes, so nothing may be leased until the app comes forward.
+    /// (`services.lifecycle` unless given). Unless the application is active now, nothing may be leased until it
+    /// first is: a process started in the background (a background task, an intent, WatchConnectivity) sees no
+    /// `didEnterBackground`, and one still launching cannot tell (above).
     public func observeAppLifecycle(_ lifecycle: (any AppLifecycle)? = nil) {
         guard lifecycleObservation == nil else { return }
         let lifecycle = lifecycle ?? services.lifecycle
-        if releasesLocksInBackground, lifecycle.isInBackground { locksSuspended = true }
+        if releasesLocksInBackground, lifecycle.isInBackground || !lifecycle.isActive { locksSuspended = true }
         lifecycleObservation = lifecycle.observe { [weak self] event in
             switch event {
             case .didEnterBackground:
@@ -37,7 +49,14 @@ extension AppModelCore {
             case .willEnterForeground:
                 self?.resumeAfterSuspension()
                 self?.enterForeground()
-            case .didBecomeActive, .willResignActive:
+            case .didBecomeActive:
+                // The first activation of a launch (no `willEnterForeground` comes before it): the app is on screen
+                // now. After a return from the background the locks were taken back already (`willEnterForeground`).
+                guard let self, self.locksSuspended else { return }
+                self.resumeAfterSuspension()
+                // The launch read the state too early (it reads `.background` until a scene is active).
+                self.syncCoordinator.setInBackground(false)
+            case .willResignActive:
                 break
             }
         }
@@ -91,8 +110,11 @@ extension AppModelCore {
     /// The app is coming back: the open store vault's lease is taken again.
     func resumeAfterSuspension() {
         guard releasesLocksInBackground else { return }
+        let wasSuspended = locksSuspended
         locksSuspended = false
         reacquireStoreLease()
+        // Voice notes delivered meanwhile (an intent, the watch) waited for the foreground (`inboxDelivered`).
+        if wasSuspended, phase == .unlocked { startInboxAdoption() }
     }
 
     /// Takes the open store vault's lease again, now, on the main actor: one try that never waits, so no

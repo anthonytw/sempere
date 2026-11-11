@@ -384,7 +384,10 @@ The file is protected until the first unlock after boot. Before it, the
 extension cannot read it (and nothing can record: the capture profile is a
 Keychain item readable only after the first unlock), and the widget shows
 the plain record button. The widget draws the nib (a custom symbol in the
-widget extension's own asset catalog, `SempereWidgets/Assets.xcassets`; bundle
+widget extension's own asset catalog, `SempereWidgets/Assets.xcassets`, and the
+watch widgets' copy; the same SVG in both, a full SF Symbols template with Ultralight,
+Regular and Black sources at the Small size and the Guides group: Control Center's
+renderer draws a hand-made single-weight template as an empty circle; bundle
 files read fine before the first unlock, the App Group may not) when ready and
 system symbols otherwise, and is marked
 `unredacted()`: the placeholder iOS shows before the first unlock is
@@ -451,12 +454,13 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
   (`Watch voice note <date> <time>`) into the watch's **outbox** before the plaintext is deleted. The outbox deletes a file
   only when the phone acknowledges it, resends one that has had no ack for 24 hours, and its caps (200 files, 500 MB, 1 GB free
   space) only stop a new recording from starting, never a sealed one.
-- **The surfaces.** A complication and a Smart Stack widget (the accessory families, with the nib), a Control, the Action button
+- **The surfaces.** A complication and a Smart Stack widget (the accessory families, with the nib; the corner complication is the icon alone, scaled to its slot), a Control, the Action button
   and Siri ("Record a Sempere voice note", the iPhone's phrases) all open the watch app and record at once
   (`sempere-watch://record`, or `RecordWatchVoiceNoteIntent`). The Control only starts a recording; Stop is the button in the app, Siri or a shortcut (`StopWatchVoiceNoteIntent`); the app grid's launch shows a large Record button instead.
   What the watch widgets show is the same `VoiceNoteStatus`, written by the watch app into the watch's own App Group container.
 - **The screen.** One screen with states: Not set up (with Reset), Ready (Record, "Saving to <vault>"), Recording (the time, a
-  red dot, Stop), Saved (two seconds), "Unsent notes: N" with Send now, and Can't record with the reason (microphone denied,
+  red dot, Stop), Saved (two seconds; after a recording started from a surface it stays, alone, until the app goes to the
+  background), "Unsent notes: N" with Send now, and Can't record with the reason (microphone denied,
   outbox full, little storage). Start and stop tick on the wrist.
 - **The hand-off.** The phone checks what arrives against its metadata (name, size, SHA-256: the file crossed a daemon),
   skips an id it has, and delivers by the **vault the metadata names**: the stored profile's vault through the normal
@@ -491,7 +495,7 @@ the widget extension then dies when the system renders the control.
   mode in App Review. Also that `widgetURL` reaches `onOpenURL` on a watch without a registered URL scheme.
 
 - On an iPhone: reboot; before the first unlock the Lock Screen widget shows the nib (the ready glyph, from the
-  extension's bundle); Control Center shows the nib too (a control draws only symbols). If it does not render there, the fallback is `mic.fill` on the Lock Screen only.
+  extension's bundle); Control Center shows the nib too (build 67 drew an empty circle there: the symbol is now a full template).
 - On an iPhone (build 7): a Control Center, Action button or Siri start records in the background, with
   Recent Starts showing `session=not mixable` (the order fixed it) or `session=mixable after a refusal`
   (the fallback did), and the recording is audible with music playing in another app in the mixable case.

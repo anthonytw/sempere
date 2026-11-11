@@ -27,6 +27,8 @@ struct SempereApp: App {
         // What an earlier run left behind (`SEMPERE_DEBUG_LEFTOVERS`), before anything below purges it.
         DebugLaunch.takeLeftoverReport()
         #endif
+        // No file lock is ever held without background time (0xdead10cc): installed before anything takes one.
+        UIKitLockAssertions.install()
         let library = VaultLibrary()
         // Remembered keys are offered only where they opened their vault (S16).
         #if DEBUG
@@ -67,7 +69,8 @@ struct SempereApp: App {
         // The Apple Watch (iPhone only): gives it the capture profile on "Use on Apple Watch" and takes the notes it records,
         // delivered through the same vault store and ledger. A launch by WatchConnectivity comes through here too.
         WatchConnectivityService.shared.start(quickCapture: model.quickCapture)
-        // No lock is held across a suspension (0xdead10cc, AppModel+Suspension), and "Keep Screen On"
+        // No lease is held across a suspension (0xdead10cc, AppModel+Suspension), nor before the app is first active,
+        // and "Keep Screen On"
         // follows the whole app, not one scene (`IdleTimerKeeper`); both on `UIApplication`'s lifecycle.
         model.observeAppLifecycle()
         #if DEBUG

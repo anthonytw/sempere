@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import Sempere
 import SempereAppCore
 import UIKit
 
@@ -50,6 +51,36 @@ final class UIKitBackgroundTasks: BackgroundTaskRunning {
     }
 }
 
+/// Background time for every file lock the package takes (`FileLockGuard`; iPhone and iPad, installed at launch by
+/// `install()`): each `flock` begins a `beginBackgroundTask` of its own first, so none is ever held while the app is
+/// suspended (RunningBoard `0xdead10cc`, TestFlight 1.1 (67)). `beginBackgroundTask` and `endBackgroundTask` may be
+/// called on any thread (`NS_SWIFT_NONISOLATED`). Before `UIApplicationMain` made the application (SwiftUI's
+/// `App.init`) the process is launching and nothing can suspend it, so a lock is taken without an assertion then.
+final class UIKitLockAssertions: FileLockAssertions, @unchecked Sendable {
+    /// No assertion was needed (before the application existed): `end` does nothing for it.
+    private static let launching = -1
+
+    /// Installs the assertions for the whole process, and logs a lock let go when its time ran out.
+    @MainActor static func install() {
+        #if !targetEnvironment(macCatalyst)
+        guard !Platform.isMac else { return }
+        FileLockGuard.install(UIKitLockAssertions())
+        FileLockGuard.onExpiry = { kind in Perf.event(.backgroundSync, "lock let go at expiry: \(kind)") }
+        #endif
+    }
+
+    func begin(name: String, expired: @escaping @Sendable () -> Void) -> Int? {
+        guard let app = UIApplication.made else { return Self.launching }
+        let id = app.beginBackgroundTask(withName: name) { expired() }
+        return id == .invalid ? nil : id.rawValue
+    }
+
+    func end(_ token: Int) {
+        guard token != Self.launching, let app = UIApplication.made else { return }
+        app.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: token))
+    }
+}
+
 @MainActor
 /// `BGTaskScheduler` (`AppModelServices.syncScheduler`); nothing on a Mac.
 final class BGTaskSyncScheduler: BackgroundSyncScheduling {
@@ -95,7 +126,7 @@ final class UIKitAppLifecycle: AppLifecycle {
     private let state: @MainActor () -> UIApplication.State
 
     init(center: NotificationCenter = .default,
-         state: @escaping @MainActor () -> UIApplication.State = { UIApplication.shared.applicationState }) {
+         state: @escaping @MainActor () -> UIApplication.State = { UIApplication.made?.applicationState ?? .background }) {
         self.center = center
         self.state = state
     }
@@ -125,6 +156,18 @@ final class UIKitAppLifecycle: AppLifecycle {
         }
         let box = ObserverTokens(tokens)
         return AppLifecycleObservation { box.remove(from: center) }
+    }
+}
+
+extension UIApplication {
+    /// `shared`, or nil before `UIApplicationMain` made it. SwiftUI runs `App.init` (where the model starts following
+    /// the lifecycle) first, and there `UIApplication.shared` is nil: a message to it answers 0, so its
+    /// `applicationState` reads `.active` in every launch, a launch into the background too (TestFlight 1.1 (67),
+    /// 0xdead10cc; checked on the simulator: nil in `App.init`, `.background` in `didFinishLaunching`). Not knowing,
+    /// the model takes the app for not active yet.
+    nonisolated static var made: UIApplication? {
+        (UIApplication.self as AnyObject).perform(NSSelectorFromString("sharedApplication"))?
+            .takeUnretainedValue() as? UIApplication
     }
 }
 

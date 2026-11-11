@@ -569,6 +569,10 @@ public struct FolderRemote: SyncRemote {
     private func locked<T>(_ target: URL, _ body: () throws -> T) throws -> T {
         if manages { return try body() }
         let lockURL = root.appendingPathComponent(Self.lockName)
+        // Never held across a suspension (`FileLockGuard`): under an assertion of its own, refused without one.
+        let hold: LockHold?
+        do { hold = try LockHold.begin(for: lockURL) } catch { throw FolderRemoteError.busy(root.path) }
+        defer { hold?.end() }
         let fd = lockURL.withUnsafeFileSystemRepresentation { p -> Int32 in
             guard let p else { return -1 }
             return open(p, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
@@ -585,7 +589,13 @@ public struct FolderRemote: SyncRemote {
             Thread.sleep(forTimeInterval: pause)
             pause = min(pause * 2, 0.1)
         }
-        defer { _ = flock(fd, LOCK_UN) }
+        // The time running out lets the lock go at once; the descriptor stays open until `body` returns.
+        let unlocked = UnlockOnce(fd)
+        guard hold?.attach({ unlocked.unlock() }) ?? true else {
+            unlocked.unlock()
+            throw FolderRemoteError.busy(root.path)
+        }
+        defer { unlocked.unlock() }
         return try body()
     }
 
@@ -913,3 +923,20 @@ typealias CStat = Musl.stat
 private func cLink(_ a: UnsafePointer<CChar>, _ b: UnsafePointer<CChar>) -> Int32 { Musl.link(a, b) }
 private func cRename(_ a: UnsafePointer<CChar>, _ b: UnsafePointer<CChar>) -> Int32 { Musl.rename(a, b) }
 #endif
+
+/// A held `flock` let go once, by whichever comes first: the end of the locked work or the end of its background time.
+private final class UnlockOnce: @unchecked Sendable {
+    private let fd: Int32
+    private let lock = NSLock()
+    private var done = false
+
+    init(_ fd: Int32) { self.fd = fd }
+
+    func unlock() {
+        lock.withLock {
+            guard !done else { return }
+            done = true
+            _ = flock(fd, LOCK_UN)
+        }
+    }
+}
