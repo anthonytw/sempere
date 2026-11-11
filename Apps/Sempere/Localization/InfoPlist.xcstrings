@@ -42,13 +42,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sempere connects to the WebDAV server you entered, which may be on your local network."
+            "value" : "Sempere connects to the WebDAV server you entered, which may be on your local network, and to your own devices nearby while you add one to a vault."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sempere se conecta al servidor WebDAV que indicaste, que puede estar en tu red local."
+            "value" : "Sempere se conecta al servidor WebDAV que indicaste, que puede estar en tu red local, y a tus propios dispositivos cercanos mientras añades uno a una bóveda."
           }
         }
       }

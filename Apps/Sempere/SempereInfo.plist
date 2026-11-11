@@ -119,6 +119,12 @@
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- Joining nearby (docs/design/nearby-join.md): Add Device advertises this service, and the join screen browses
+	     for it, over peer-to-peer Wi-Fi and the local network (NearbyJoin.serviceType; NWNearbyTransport). -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_sempere-join._tcp</string>
+	</array>
 	<!-- Recording keeps running with the screen locked or the app in the background (docs/attachments.md §13).
 	     fetch and processing: the sync's scheduled tasks for every vault and target (BackgroundSync.swift, docs/io.md
      "Sync targets in the app", "Background sync"). -->

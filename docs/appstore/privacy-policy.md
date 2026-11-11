@@ -1,6 +1,6 @@
 # Sempere Privacy Policy
 
-*Effective: 2026-10-06. Last updated: 2026-11-10.*
+*Effective: 2026-10-06. Last updated: 2026-11-11.*
 
 This page is the Privacy Policy URL's text. The URL is `https://sempere.anthonywertz.com/privacy`: the app's
 About screen links it (`SempereAbout.privacyPolicyURL`) and App Store Connect must name it. The website builds
@@ -11,8 +11,8 @@ paragraph starting "This page is the Privacy Policy URL"). Keep this copy and th
 
 **Short version: Sempere does not collect, transmit or share any data about you. It has no
 servers, no accounts, no analytics and no advertising. The only network connections it makes
-are to a WebDAV server that you set up yourself, if you choose to keep a vault there (see
-"Network connections").**
+are to a WebDAV server that you set up yourself, if you choose to keep a vault there, and, while
+you add a device to a vault, directly to Sempere devices near you (see "Network connections").**
 
 ## What Sempere is
 
@@ -77,7 +77,20 @@ Keychain). Nothing is sent to us or to anyone else. Otherwise your notes reach i
 another storage provider only through the system's Files and iCloud services, which copy the
 encrypted files you saved there; the speech model download above is the system's too.
 
-Besides the WebDAV client, the app contains one other piece of networking code: a downloader for an optional handwriting-to-math
+While you add a device to a vault (Add Device on one device, Join This Device on the other), the
+new device also connects directly to Sempere devices near it that show Add Device, over the local
+network or peer-to-peer Wi-Fi (as AirDrop does), with no server in between. Devices find each
+other with Bonjour: the advertised name is random and names no vault, though Bonjour also announces
+the advertising device's network name, as it does for any shared service. The new device first
+sends only a random number. It sends its request to join (its device name, kind and public keys,
+and the vault's id: what it also saves in the vault's folder) only to a device that shows it knows
+the vault's id. A device near you that already knows that id, for example from your storage or from
+watching an earlier join, can therefore receive the request; nothing else is shared with it. The
+device that approves sends back the vault's device list and its newest key record, encrypted to the
+new device's key. You still type or scan the six words on both devices. The link is open only while
+one of those screens shows, and stops while the app is in the background.
+
+Besides the WebDAV client and that link, the app contains one other piece of networking code: a downloader for an optional handwriting-to-math
 recognition model (Settings → Handwritten Math). It runs only when you tap a model's Download
 button, and this version offers no model, so it never runs and has no address to connect to. If a
 future version offers a
@@ -96,7 +109,7 @@ Sempere asks for a permission when a feature needs it:
 - Face ID or Touch ID, to unlock a vault that you set to ask for it, and to confirm it is you before letting a device into a vault or replacing its recovery kit;
 - Live Activities, to show a voice note in progress;
 - notifications, for backup reminders you switch on and, where you allowed them, to tell you when another device took over a vault with its recovery kit;
-- the local network, when your WebDAV server is on it (iPad and iPhone; the system asks).
+- the local network, when your WebDAV server is on it, and while you add a device nearby (iPad and iPhone; the system asks).
 
 Photos and files are chosen with the system pickers, which give the app only what you pick.
 Face ID and Touch ID data never leaves the system and is never seen by the app.

@@ -64,11 +64,19 @@ extension Vault {
     /// none is there. A code that does not parse, or names another vault, matches nothing; with both given the code
     /// is the one read. The app's Add Device and `sempere devices approve` look a request up this way.
     public func joinRequest(words: [String]?, qr: String?) -> JoinRequest? {
+        Self.joinRequest(in: joinRequests().compactMap(\.request), vaultId: vaultId, words: words, qr: qr)
+    }
+
+    /// The request of `candidates` that `words` (typed) or `qr` (scanned) names, by the rule of `joinRequest(words:qr:)`;
+    /// only requests of `vaultId` count. Add Device looks up a request that came nearby (docs/design/nearby-join.md)
+    /// this way, before it is in `joins/`.
+    public static func joinRequest(in candidates: [JoinRequest], vaultId: UUID, words: [String]?, qr: String?) -> JoinRequest? {
+        let mine = candidates.filter { $0.vaultId == vaultId }
         if let qr, let data = Data(base64Encoded: qr), let parsed = JoinCodes.parseCommitmentQR(data) {
             guard parsed.vaultId == vaultId else { return nil }
-            return joinRequests().compactMap(\.request).first { $0.vaultId == vaultId && $0.commitment == parsed.commitment }
+            return mine.first { $0.commitment == parsed.commitment }
         } else if let words {
-            return joinRequest(matching: words)
+            return mine.first { JoinCodes.matches(words, $0.commitment) }
         }
         return nil
     }

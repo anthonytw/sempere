@@ -98,6 +98,9 @@ public struct AppModelServices {
     public var syncScheduler: any BackgroundSyncScheduling
     /// Watches the network for the WebDAV targets (`startReachability`: the app's `NWPathMonitor`); headless, none.
     public var makeReachability: @MainActor () -> (any NetworkReachability)?
+    /// The nearby link for joining by approval without the sync target (docs/design/nearby-join.md): the app's
+    /// Network.framework transport with peer-to-peer Wi-Fi (`NWNearbyTransport`); headless, none.
+    public var nearby: (any NearbyJoinTransport)?
     /// Words every error the model (and the editors and the quick capture it opens) turns into text itself: a note
     /// that failed to export, a failed read, the notices' reasons, the editors' save, recognition and recording
     /// failures, a quick voice note's banner. The app's `AppModel.describe`; headless, the error's own description.
@@ -122,6 +125,7 @@ public struct AppModelServices {
                 lifecycle: any AppLifecycle = ManualAppLifecycle(), backgroundTasks: any BackgroundTaskRunning = NoBackgroundTasks(),
                 syncScheduler: any BackgroundSyncScheduling = NoBackgroundSyncScheduler(),
                 makeReachability: @escaping @MainActor () -> (any NetworkReachability)? = { nil },
+                nearby: (any NearbyJoinTransport)? = nil,
                 describeError: @escaping ErrorDescriber = plainErrorDescription) {
         self.perf = perf
         self.settings = settings
@@ -150,6 +154,7 @@ public struct AppModelServices {
         self.backgroundTasks = backgroundTasks
         self.syncScheduler = syncScheduler
         self.makeReachability = makeReachability
+        self.nearby = nearby
         self.describeError = describeError
     }
 

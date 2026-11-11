@@ -131,6 +131,11 @@ system's downloads. Network code lives in `Sources/SempereWebDAV` (the CLI's
 handwritten-math model downloader (`Apps/Sempere/SempereApp/MathModels.swift`),
 which is inert: it runs only from a Download button per catalog entry, and
 the catalog (`MathModelCatalog.entries`) is empty, so no model ships.
+The one other link is between two of the user's own devices while one of them shows
+Add Device and the other the join screen (`docs/design/nearby-join.md`,
+`Apps/Sempere/SempereApp/NearbyTransport.swift`): Bonjour over peer-to-peer Wi-Fi
+and the local network, carrying the join request one way and the approval
+(sealed to the new device's key) the other, with no server in between.
 `scripts/release-check.sh` fails on networking anywhere else in the shipping
 app and on a non-empty catalog; shipping a model means updating the privacy
 policy, the App Store privacy answers and the Mac entitlements first. The web

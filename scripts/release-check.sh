@@ -80,6 +80,7 @@ ENTITLEMENTS_ALLOWED = {
     "com.apple.security.device.audio-input",             # recording audio into notes
     "com.apple.security.application-groups",             # quick voice status for the widgets (iOS app + widget)
     "com.apple.security.network.client",                 # WebDAV vaults: connections to the user's own server (Mac)
+    "com.apple.security.network.server",                 # joining nearby: Add Device listens for the new device (Mac)
 }
 
 # The only value an entitlement on the allow-list may take, where it has one.
@@ -194,6 +195,10 @@ NETWORK_ALLOWED = {
     "Apps/Sempere/SempereApp/WebDAVRemote.swift",
     "Sources/SempereWebDAV/Transport.swift",
     "Sources/SempereWebDAV/WebDAVClient.swift",
+    # Joining nearby (docs/design/nearby-join.md): while Add Device or the join screen shows, a direct link between two
+    # of the user's devices (Bonjour over peer-to-peer Wi-Fi and the local network) carries the join request and the
+    # approval, the same files the sync target carries; no other connection, nothing to a server.
+    "Apps/Sempere/SempereApp/NearbyTransport.swift",
     # The Apple Watch link (WatchConnectivity, docs/quick-capture.md "Apple Watch"): the iPhone app and the watch app
     # talk to each other through the system, with no other connection ("The watch app makes no other connection").
     "Apps/Sempere/SempereApp/WatchConnectivityService.swift",

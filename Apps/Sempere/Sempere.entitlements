@@ -20,5 +20,8 @@
 	<!-- WebDAV vaults: connections to the server the user configures (docs/io.md, "WebDAV vaults in the app"). -->
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Joining nearby: Add Device listens for the new device's connection (docs/design/nearby-join.md). -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 </dict>
 </plist>

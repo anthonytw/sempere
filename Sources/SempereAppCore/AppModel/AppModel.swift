@@ -594,6 +594,24 @@ public final class AppModelCore<Host: AppModelHost> {
     /// While this device is joining the open, locked vault (key-hierarchy design §6.2): its key, so the vault's
     /// runs are keyless two-way runs that take home's approval (`SyncOptions.firstPullIdentities`).
     var joinIdentity: NativeIdentity?
+    /// The nearby link for joins (docs/design/nearby-join.md; `services.nearby`, the app's peer-to-peer Wi-Fi); nil:
+    /// joins go through the sync targets only. Tests set their own.
+    @ObservationIgnored public var nearbyTransport: (any NearbyJoinTransport)?
+    /// Add Device's side of the nearby link (`startNearbyApproving`).
+    public internal(set) var nearbyApproving: NearbyApproverStatus = .off
+    /// The join screen's side of the nearby link (`startNearbyJoin`).
+    public internal(set) var nearbyJoining: NearbyJoinStatus = .off
+    /// Requests that came nearby while Add Device shows, in memory only, listed with the synced ones (at most
+    /// `NearbyJoinRuntime.requestLimit`, the oldest dropped first).
+    public internal(set) var nearbyRequests: [JoinRequest] = []
+    /// Bumped when a request or an approval arrives nearby: Add Device reads its list again, the join screen checks.
+    public internal(set) var nearbyArrivals = 0
+    /// The nearby link's tasks and activities (`AppModel+NearbyJoin`).
+    @ObservationIgnored let nearby = NearbyJoinRuntime()
+    /// How long nearby sessions wait (tests shorten it).
+    @ObservationIgnored var nearbyTimeouts = NearbyJoin.Timeouts.standard
+    /// How long the join screen waits before trying a nearby device again (tests shorten it).
+    @ObservationIgnored var nearbyRetry: Duration = .seconds(2)
     /// Each target's run before a device change is bounded by this (design §5.2 step 2); tests shorten it.
     @ObservationIgnored var deviceChangeRunBound: TimeInterval = EpochChangePull.defaultBound
     /// The targets run before a device change (the sheets' "Syncing…" with its Cancel).
@@ -709,6 +727,7 @@ public final class AppModelCore<Host: AppModelHost> {
         webdavPasswords = services.webdavPasswords
         deviceMemory = services.settings
         ownerAuthenticator = services.ownerAuthenticator
+        nearbyTransport = services.nearby
         backgroundTasks = services.backgroundTasks
         syncScheduler = services.syncScheduler
         backupStore = BackupStore(defaults: services.settings)
@@ -1194,6 +1213,8 @@ public final class AppModelCore<Host: AppModelHost> {
         takeoverAlert = nil
         sightingRowsState = []
         resetAttachmentIndex()
+        stopNearbyApproving()
+        stopNearbyJoin()
         stopJoin()
         stopWebDAV()
         cancelRemoteMerges()

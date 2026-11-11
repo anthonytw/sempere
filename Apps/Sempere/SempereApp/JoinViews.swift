@@ -158,6 +158,14 @@ struct JoinDeviceView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("join.delivery")
+                    // The direct link (docs/design/nearby-join.md): the request and the approval also go straight
+                    // between the devices when they are near each other.
+                    if let nearby = model.nearbyJoining.text {
+                        Label(nearby, systemImage: "antenna.radiowaves.left.and.right")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("join.nearby")
+                    }
                     // A declined request looks like one approved and on its way (review of #124, note 2).
                     Text("If the other device declined this request, choose Cancel, then Ask to Join again.")
                         .font(.footnote)
@@ -192,9 +200,17 @@ struct JoinDeviceView: View {
             }
         }
         .disabled(working)
+        .onChange(of: model.nearbyArrivals) {
+            // The approval came over the direct link: on to the reply words now, not at the next check.
+            if model.nearbyJoining == .received { Task { await recheck() } }
+        }
+        .onDisappear { model.stopNearbyJoin() }
         .task(id: keys.joinStage == nil ? 0 : 1) {
             // While waiting: the approval may arrive with any run, and runs are asked for more often than the
             // targets' idle pace (each `joinLookInterval`), so neither the request nor the approval waits for it.
+            // The direct link looks for the device that manages devices nearby meanwhile.
+            if case .waiting? = keys.joinStage { model.startNearbyJoin() }
+            defer { model.stopNearbyJoin() }
             var lastDemand = ContinuousClock.now
             while !Task.isCancelled, case .waiting? = keys.joinStage {
                 try? await Task.sleep(for: .seconds(3))
@@ -327,6 +343,12 @@ struct AddDeviceSheet: View {
                                         Text(AddDeviceText.requestDetail(request))
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
+                                        if model.nearbyRequests.contains(where: { $0.fileName == request.fileName }) {
+                                            Label("Nearby", systemImage: "antenna.radiowaves.left.and.right")
+                                                .font(.footnote)
+                                                .foregroundStyle(.secondary)
+                                                .accessibilityIdentifier("addDevice.nearbyRequest")
+                                        }
                                     }
                                     Spacer()
                                     Button("Decline", role: .destructive) { declining = request }
@@ -351,6 +373,13 @@ struct AddDeviceSheet: View {
                             }
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("addDevice.looking")
+                        }
+                        // The direct link (docs/design/nearby-join.md): a device nearby sends its request here at once.
+                        if let nearby = model.nearbyApproving.text {
+                            Label(nearby, systemImage: "antenna.radiowaves.left.and.right")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("addDevice.nearby")
                         }
                     }
                     Section {
@@ -384,11 +413,15 @@ struct AddDeviceSheet: View {
             }
             .disabled(working)
             .onChange(of: words) { approval.wordsChanged() }
+            // A request came over the direct link (or its session ended): the list again, without a sync.
+            .onChange(of: model.nearbyArrivals) { Task { await approval.refresh() } }
             .task {
                 // Keeps looking while the sheet waits for a request: a sync of every target, then the copy's
                 // `joins/` (build 11: one look when the sheet opened missed a request iCloud delivered later). The
                 // look itself re-checks after every wait that the sheet is still open and nothing is approving.
+                // Devices nearby reach the sheet directly meanwhile (`startNearby`, stopped by `close`).
                 approval.model = model
+                approval.startNearby()
                 while !Task.isCancelled, approval.active {
                     await approval.look()
                     try? await Task.sleep(for: model.joinLookInterval)
