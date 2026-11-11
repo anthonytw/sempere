@@ -27,7 +27,10 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
         let tcp = NWProtocolTCP.Options()
         tcp.connectionTimeout = 10
         tcp.enableKeepalive = true
+        // A vanished peer is noticed within about 30 seconds (15 idle, then 3 probes 5 seconds apart).
         tcp.keepaliveIdle = 15
+        tcp.keepaliveInterval = 5
+        tcp.keepaliveCount = 3
         let p = NWParameters(tls: nil, tcp: tcp)
         p.includePeerToPeer = peerToPeer
         return p
@@ -41,7 +44,8 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
 
     // MARK: - Advertising (home)
 
-    func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void) throws -> any NearbyActivity {
+    func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void,
+                   onFailure: @escaping @Sendable () -> Void) throws -> any NearbyActivity {
         let params = Self.parameters(peerToPeer: mode == .bonjour)
         if mode == .loopback { params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any) }
         let listener = try NWListener(using: params)
@@ -55,13 +59,18 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
             accept(c)
         }
         let id = UUID().uuidString
+        let failed = NWNearbyConnection.Once()
         listener.stateUpdateHandler = { [weak self, weak listener] state in
-            guard let self else { return }
             switch state {
             case .ready:
-                if self.mode == .loopback, let port = listener?.port { self.registerLoopback(id, port: port) }
-            case .failed, .cancelled:
-                self.unregisterLoopback(id)
+                if self?.mode == .loopback, let port = listener?.port { self?.registerLoopback(id, port: port) }
+            case .failed:
+                // The system suspended the app, or the local network is not allowed: the model starts it again.
+                self?.unregisterLoopback(id)
+                listener?.cancel()
+                failed.run { onFailure() }
+            case .cancelled:
+                self?.unregisterLoopback(id)
             default:
                 break
             }
@@ -97,7 +106,8 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
 
     // MARK: - Browsing (the joining device)
 
-    func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void) -> any NearbyActivity {
+    func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void,
+                onFailure: @escaping @Sendable () -> Void) -> any NearbyActivity {
         if mode == .loopback {
             let id = UUID()
             lock.lock()
@@ -123,6 +133,13 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
             self.endpoints = seen
             self.lock.unlock()
             found(seen.keys.sorted().map(NearbyPeer.init(id:)))
+        }
+        let failed = NWNearbyConnection.Once()
+        browser.stateUpdateHandler = { [weak browser] state in
+            if case .failed = state {
+                browser?.cancel()
+                failed.run { onFailure() }
+            }
         }
         browser.start(queue: queue)
         return Activity { browser.cancel() }
@@ -203,6 +220,9 @@ final class NWNearbyConnection: NearbyJoinConnection, @unchecked Sendable {
     }
 
     func cancel() { connection.cancel() }
+
+    /// At once, dropping what is unsent (a session torn down, or a peer that stopped reading).
+    func abort() { connection.forceCancel() }
 
     /// Runs its body once (state handlers may report more than one final state).
     final class Once: @unchecked Sendable {

@@ -558,9 +558,10 @@ final class SempereFuzzTests: VaultTestCase {
         let reply = NearbyJoinReply(nonce: Data(repeating: 1, count: 32), commitment: Data(repeating: 2, count: 32),
                                     manifest: Data("{\"format\":\"sempere/1\"}".utf8), recordName: "1-0123456789abcdef.epoch.age",
                                     record: Data([1, 2, 3]))
-        let toHome = NearbyJoin.magic + NearbyJoinMessage.request(nonce: Data(count: 32), request: Data("{}".utf8)).frame()
-        let toJoiner = NearbyJoin.magic + NearbyJoinMessage.waiting.frame() + NearbyJoinMessage.reply(Data([7, 7])).frame()
-            + NearbyJoinMessage.refused(.busy).frame()
+        let toHome = NearbyJoin.magic + NearbyJoinMessage.hello(nonce: Data(count: 32)).frame()
+            + NearbyJoinMessage.request(Data("{}".utf8)).frame()
+        let toJoiner = NearbyJoin.magic + NearbyJoinMessage.proof(Data(count: 32)).frame() + NearbyJoinMessage.waiting.frame()
+            + NearbyJoinMessage.reply(Data([7, 7])).frame() + NearbyJoinMessage.refused(.busy).frame()
         assertClean(Fuzz.run("nearby-join", seeds: [toHome, toJoiner, reply.plaintext()], quick: 1500, maxSize: 64 * 1024) { input in
             for sender in [NearbyFrameReader.Sender.joiner, .approver] {
                 var reader = NearbyFrameReader(reading: sender)
@@ -571,6 +572,9 @@ final class SempereFuzzTests: VaultTestCase {
                         return "untyped \(error)"
                     }
                     at = end
+                    do { _ = try reader.headerReady() } catch is NearbyJoinError { break read } catch {
+                        return "untyped \(error)"
+                    }
                     while true {
                         do { guard try reader.next() != nil else { break } } catch is NearbyJoinError { break read } catch {
                             return "untyped \(error)"

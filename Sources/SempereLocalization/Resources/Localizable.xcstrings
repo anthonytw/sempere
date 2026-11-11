@@ -2978,6 +2978,32 @@
         }
       }
     },
+    "A device nearby declined this request. If you declined it on your own device, choose Cancel, then Ask to Join again." : {
+      "comment" : "Join screen: the direct link; the device nearby is not proven to be the one that manages devices",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un dispositivo cercano rechazó esta petición. Si la rechazaste en tu propio dispositivo, elige Cancelar y luego Pedir unirse de nuevo."
+          }
+        }
+      }
+    },
+    "A device nearby has this request. If it is the device that manages devices, approve it there." : {
+      "comment" : "Join screen: the direct link; the device nearby is not proven to be the one that manages devices",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un dispositivo cercano tiene esta petición. Si es el dispositivo que gestiona los dispositivos, apruébala allí."
+          }
+        }
+      }
+    },
     "A folder of PNG images per note." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
@@ -6092,19 +6118,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conectado, pero no hay ninguna bóveda en esta dirección ni en las carpetas que hay justo debajo."
-          }
-        }
-      }
-    },
-    "Connected: the device that manages devices has this request. Approve it there." : {
-      "comment" : "Join screen: the direct link",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conectado: el dispositivo que gestiona los dispositivos tiene esta petición. Apruébala allí."
           }
         }
       }
@@ -21956,19 +21969,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se borran la copia de este dispositivo, la clave de este dispositivo para ella y la contraseña guardada. La bóveda del servidor no cambia."
-          }
-        }
-      }
-    },
-    "The device nearby declined this request. Choose Cancel, then Ask to Join again." : {
-      "comment" : "Join screen: the direct link",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El dispositivo cercano rechazó esta petición. Elige Cancelar y luego Pedir unirse de nuevo."
           }
         }
       }

@@ -5,12 +5,16 @@ import XCTest
 import VaultTestSupport
 @testable import Sempere
 
-/// Joining nearby (docs/design/nearby-join.md): the framing, the sealed reply and both ends of a session over an
-/// in-memory pipe, against real vaults, with hostile peers on either end.
+/// Joining nearby (docs/design/nearby-join.md): the framing, the handshake, the sealed reply and both ends of a session
+/// over an in-memory pipe, against real vaults, with hostile peers on either end. Every session runs on short timeouts,
+/// so a regression fails within seconds instead of hanging.
 final class NearbyJoinTests: VaultTestCase {
     let home = pqIdentity(), laptop = pqIdentity()
     let homeTrust = MemoryEpochTrustStore(), laptopTrust = MemoryEpochTrustStore()
+    /// For sessions expected to time out.
     static let quick = NearbyJoin.Timeouts(handshake: .milliseconds(300), session: .milliseconds(800))
+    /// For sessions expected to finish (room for a slow runner, still bounded).
+    static let bounded = NearbyJoin.Timeouts(handshake: .seconds(5), session: .seconds(20))
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -38,20 +42,29 @@ final class NearbyJoinTests: VaultTestCase {
 
     func manifest(_ url: URL) throws -> Data { try Data(contentsOf: url.appendingPathComponent("vault.json")) }
 
+    /// Reads frames from `connection` (sent by `sender`) until one arrives.
+    static func nextFrame(_ connection: NearbyJoinPipe.Connection, _ reader: inout NearbyFrameReader) async throws -> NearbyJoinMessage {
+        while true {
+            if let m = try reader.next() { return m }
+            let bytes = try await connection.receive(maximum: 1 << 20)
+            guard !bytes.isEmpty else { throw NearbyJoinError.closed }
+            try reader.push(bytes)
+        }
+    }
+
     // MARK: - A whole session
 
-    /// The request goes over the link (home places it in its `joins/`), home approves it, the reply for this session's
-    /// nonce comes back and the copy takes it: the laptop then confirms with the reply words exactly as after a sync.
+    /// The request goes over the link after home's proof, home approves it (holding it in memory only: nothing is
+    /// written to its `joins/`), the reply for this session's nonce comes back and the copy takes it: the laptop then
+    /// confirms with the reply words exactly as after a sync.
     func testTheApproverSealsTheReplyForThisSession() async throws {
         let p = try pair()
         let (joinerEnd, homeEnd) = NearbyJoinPipe.make()
-        let homeURL = p.home.url, homeID = home, trust = homeTrust
+        let homeURL = p.home.url, homeID = home, trust = homeTrust, vaultId = p.home.vaultId
         let session = Box<(JoinRequest, Data)>()
         let words = Box<[String]>()
         let homeSide = Task {
-            try await NearbyApprover.run(on: homeEnd, timeouts: .standard, received: { request, raw, nonce in
-                let v = try? TestVaults.open(at: homeURL, identity: homeID, trust: trust)
-                guard (try? v?.placeNearbyJoinRequest(raw)) != nil else { return .refuse(.otherVault) }
+            try await NearbyApprover.run(on: homeEnd, vaultId: vaultId, timeouts: Self.bounded, received: { request, _, nonce in
                 session.set((request, nonce))
                 return .wait
             }, outcome: {
@@ -68,9 +81,9 @@ final class NearbyJoinTests: VaultTestCase {
         let nonce = NearbyJoin.randomBytes(32)
         let waited = Box<Bool>()
         let outcome = try await NearbyJoiner.run(on: joinerEnd, request: p.raw, nonce: nonce, identity: laptop,
-                                                 timeouts: .standard) { waited.set(true) }
-        let ending = try await homeSide.value
-        XCTAssertEqual(ending, .replied)
+                                                 timeouts: Self.bounded) { waited.set(true) }
+        let ended = try await homeSide.value
+        XCTAssertEqual(ended, .replied)
         XCTAssertEqual(waited.get(), true, "home said it was waiting for the approval first")
         guard case .reply(let reply) = outcome else { return XCTFail("\(outcome)") }
         XCTAssertTrue(try Vault.takeNearbyReply(reply, at: p.copy, nonce: nonce, commitment: p.request.commitment,
@@ -83,11 +96,10 @@ final class NearbyJoinTests: VaultTestCase {
         XCTAssertEqual(mine.listStatus.problem?.reason, .rootUnconfirmed, "nothing pinned before the reply words")
         try mine.confirmJoin(words: try XCTUnwrap(words.get()))
         XCTAssertNil(mine.listStatus.problem)
-        // Home's records: the request reached its joins/ (and went with the approval).
-        XCTAssertTrue(try TestVaults.open(at: homeURL, identity: home, trust: homeTrust).joinRequests().isEmpty)
+        // Home wrote nothing of the link's into its vault.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: homeURL.appendingPathComponent("joins").path))
         // Nothing of the vault's list crossed the link in the clear.
-        let names = Data("Home".utf8)
-        XCTAssertNil(homeEnd.sent.range(of: names), "home's sends name no device")
+        XCTAssertNil(homeEnd.sent.range(of: Data("Home".utf8)), "home's sends name no device")
         XCTAssertNil(homeEnd.sent.range(of: Data(p.home.vaultId.uuidString.lowercased().utf8)))
     }
 
@@ -98,13 +110,13 @@ final class NearbyJoinTests: VaultTestCase {
         let (joinerEnd, homeEnd) = NearbyJoinPipe.make()
         let v = p.home
         let homeSide = Task {
-            try await NearbyApprover.run(on: homeEnd, timeouts: Self.quick, received: { request, _, nonce in
+            try await NearbyApprover.run(on: homeEnd, vaultId: v.vaultId, timeouts: Self.bounded, received: { request, _, nonce in
                 guard let sealed = try? v.nearbyReply(for: request, nonce: nonce)?.seal(to: request.key) else { return .wait }
                 return .reply(sealed)
             }, outcome: { .refuse(.closed) })
         }
         let nonce = NearbyJoin.randomBytes(32)
-        let outcome = try await NearbyJoiner.run(on: joinerEnd, request: p.raw, nonce: nonce, identity: laptop, timeouts: Self.quick)
+        let outcome = try await NearbyJoiner.run(on: joinerEnd, request: p.raw, nonce: nonce, identity: laptop, timeouts: Self.bounded)
         let ended = try await homeSide.value
         XCTAssertEqual(ended, .replied)
         guard case .reply(let reply) = outcome else { return XCTFail("\(outcome)") }
@@ -141,7 +153,9 @@ final class NearbyJoinTests: VaultTestCase {
         var bare = reply
         bare.record = nil
         XCTAssertThrowsError(try Vault.takeNearbyReply(bare, at: p.copy, nonce: nonce, commitment: p.request.commitment,
-                                                       identities: [laptop], unconfirmed: true))
+                                                       identities: [laptop], unconfirmed: true)) {
+            XCTAssertEqual($0 as? NearbyJoinError, .recordMismatch)
+        }
 
         try Vault.takeNearbyReply(reply, at: p.copy, nonce: nonce, commitment: p.request.commitment, identities: [laptop],
                                   unconfirmed: true)
@@ -149,6 +163,50 @@ final class NearbyJoinTests: VaultTestCase {
         try mine.confirmJoin(words: words)
         XCTAssertNil(mine.listStatus.problem)
         XCTAssertEqual(mine.manifest.epoch, 2)
+    }
+
+    // MARK: - The handshake (design N13)
+
+    /// An advertiser that does not know the vault's id (another vault's Add Device, a harvester) gets the hello and
+    /// nothing else: no request, no device name, no keys, no vault id.
+    func testAnAdvertiserWithoutTheVaultIdGetsNoRequest() async throws {
+        let p = try pair()
+        for other in [UUID(), nil] as [UUID?] {
+            let (joinerEnd, rogue) = NearbyJoinPipe.make()
+            let answering = Task {
+                var reader = NearbyFrameReader(reading: .joiner)
+                guard case .hello(let nonce) = try await Self.nextFrame(rogue, &reader) else { return }
+                // Another vault's proof, or 32 random bytes.
+                let tag = other.map { NearbyJoin.proof(vaultId: $0, nonce: nonce) } ?? NearbyJoin.randomBytes(32)
+                try await rogue.send(NearbyJoin.magic + NearbyJoinMessage.proof(tag).frame())
+            }
+            do {
+                _ = try await NearbyJoiner.run(on: joinerEnd, request: p.raw, nonce: NearbyJoin.randomBytes(32), identity: laptop,
+                                               timeouts: Self.bounded)
+                XCTFail("the request went to a device without the vault's id")
+            } catch let e as NearbyJoinError {
+                XCTAssertEqual(e, .notThisVault)
+            }
+            try await answering.value
+            let sent = joinerEnd.sent
+            XCTAssertEqual(sent.count, NearbyJoin.magic.count + 4 + 1 + 32, "the magic and the hello, nothing more")
+            XCTAssertNil(sent.range(of: Data("Laptop".utf8)))
+            XCTAssertNil(sent.range(of: Data(p.request.vaultId.uuidString.lowercased().utf8)))
+        }
+    }
+
+    func testTheProofIsKeyedByTheVaultIdAndTheNonce() {
+        let id = UUID(), nonce = NearbyJoin.randomBytes(32)
+        let tag = NearbyJoin.proof(vaultId: id, nonce: nonce)
+        XCTAssertEqual(tag.count, 32)
+        XCTAssertTrue(NearbyJoin.checkProof(tag, vaultId: id, nonce: nonce))
+        XCTAssertFalse(NearbyJoin.checkProof(tag, vaultId: UUID(), nonce: nonce))
+        XCTAssertFalse(NearbyJoin.checkProof(tag, vaultId: id, nonce: NearbyJoin.randomBytes(32)))
+        // HMAC-SHA256 with the id's 16 bytes as the key, over the label and the nonce.
+        var u = id.uuid
+        let key = SymmetricKey(data: withUnsafeBytes(of: &u) { Data($0) })
+        let expected = Data(HMAC<SHA256>.authenticationCode(for: Data("sempere-nearby/1 home".utf8) + nonce, using: key))
+        XCTAssertEqual(tag, expected)
     }
 
     // MARK: - Hostile peers
@@ -160,13 +218,17 @@ final class NearbyJoinTests: VaultTestCase {
         let earlier = NearbyJoin.randomBytes(32)
         let sealed = try XCTUnwrap(try p.home.nearbyReply(for: p.request, nonce: earlier)).seal(to: p.request.key)
         let (joinerEnd, homeEnd) = NearbyJoinPipe.make()
+        let vaultId = p.home.vaultId
         let replayer = Task {
-            _ = try await homeEnd.receive(maximum: 1 << 20)
-            try await homeEnd.send(NearbyJoin.magic + NearbyJoinMessage.reply(sealed).frame())
+            var reader = NearbyFrameReader(reading: .joiner)
+            guard case .hello(let nonce) = try await Self.nextFrame(homeEnd, &reader) else { return }
+            try await homeEnd.send(NearbyJoin.magic + NearbyJoinMessage.proof(NearbyJoin.proof(vaultId: vaultId, nonce: nonce)).frame())
+            _ = try await Self.nextFrame(homeEnd, &reader)
+            try await homeEnd.send(NearbyJoinMessage.reply(sealed).frame())
         }
         do {
             _ = try await NearbyJoiner.run(on: joinerEnd, request: p.raw, nonce: NearbyJoin.randomBytes(32), identity: laptop,
-                                           timeouts: Self.quick)
+                                           timeouts: Self.bounded)
             XCTFail("a replayed reply was taken")
         } catch let e as NearbyJoinError {
             XCTAssertEqual(e, .replayed)
@@ -185,9 +247,10 @@ final class NearbyJoinTests: VaultTestCase {
     }
 
     /// A reply sealed to another key does not open, and a reply whose vault.json is not an approval of this device (a
-    /// device in the middle with a vault of its own) is not taken.
-    func testARepliesOfAnotherVaultOrKeyAreRefused() throws {
+    /// device in the middle with a vault of its own, or home's list before the approval) is not taken.
+    func testRepliesOfAnotherVaultOrKeyAreRefused() throws {
         var p = try pair()
+        let unlisted = try manifest(p.copy)   // home's vault.json before the approval: it does not list the laptop
         try p.home.approveDevice(p.request)
         let nonce = NearbyJoin.randomBytes(32)
         let reply = try XCTUnwrap(try p.home.nearbyReply(for: p.request, nonce: nonce))
@@ -203,35 +266,37 @@ final class NearbyJoinTests: VaultTestCase {
                                                        identities: [laptop], unconfirmed: true)) {
             XCTAssertEqual($0 as? NearbyJoinError, .notAnApproval)
         }
-        // Home's own vault.json before the approval (it does not list the laptop): no approval either.
-        var unlisted = reply
-        unlisted.manifest = try Data(contentsOf: vaultURL("Other").appendingPathComponent("vault.json"))
-        XCTAssertThrowsError(try Vault.takeNearbyReply(unlisted, at: p.copy, nonce: nonce, commitment: p.request.commitment,
-                                                       identities: [laptop], unconfirmed: true))
+        // A list that does not name the laptop, made to differ from the copy's by a byte (a version home never signed
+        // is no approval either way).
+        var notListing = reply
+        notListing.manifest = unlisted + Data("\n".utf8)
+        XCTAssertThrowsError(try Vault.takeNearbyReply(notListing, at: p.copy, nonce: nonce, commitment: p.request.commitment,
+                                                       identities: [laptop], unconfirmed: true)) {
+            XCTAssertEqual($0 as? NearbyJoinError, .notAnApproval)
+        }
     }
 
-    /// Home refuses a request of another vault (another person's Add Device), and places nothing.
+    /// Home refuses a request of another vault, sent after a good proof (a device that knows the id).
     func testARequestOfAnotherVaultIsRefused() async throws {
         let p = try pair()
-        let stranger = try TestVaults.create(at: vaultURL("Stranger"), identities: [pqIdentity()], trust: MemoryEpochTrustStore())
-        XCTAssertThrowsError(try stranger.placeNearbyJoinRequest(p.raw)) { XCTAssertEqual($0 as? NearbyJoinError, .otherVault) }
-        XCTAssertTrue(stranger.joinRequests().isEmpty)
+        let stranger = UUID()
         let (joinerEnd, homeEnd) = NearbyJoinPipe.make()
         let homeSide = Task {
-            try await NearbyApprover.run(on: homeEnd, timeouts: Self.quick, received: { _, raw, _ in
-                (try? stranger.placeNearbyJoinRequest(raw)) == nil ? .refuse(.otherVault) : .wait
+            try await NearbyApprover.run(on: homeEnd, vaultId: p.request.vaultId, timeouts: Self.bounded, received: { request, _, _ in
+                request.vaultId == stranger ? .wait : .refuse(.otherVault)
             }, outcome: { .refuse(.closed) })
         }
         let outcome = try await NearbyJoiner.run(on: joinerEnd, request: p.raw, nonce: NearbyJoin.randomBytes(32),
-                                                 identity: laptop, timeouts: Self.quick)
+                                                 identity: laptop, timeouts: Self.bounded)
         XCTAssertEqual(outcome, .refused(.otherVault))
         let ended = try await homeSide.value
         XCTAssertEqual(ended, .refused(.otherVault))
     }
 
-    /// The approver reads no frame larger than a request: a peer claiming a huge one is refused before its body, and
-    /// garbage (no magic) is refused at once.
+    /// The approver reads no frame larger than a hello or a request: a peer claiming a huge one is refused before its
+    /// body, garbage (no magic) at once, and a request before the hello as out of order.
     func testOversizedFramesAndGarbageAreRefused() async throws {
+        let p = try pair()
         for (input, expected) in [(NearbyJoin.magic + Data([0x7f, 0xff, 0xff, 0xff, 1]), NearbyJoinError.oversized(0x7fffffff)),
                                   (Data("GET / HTTP/1.1\r\n\r\n".utf8), .badMagic),
                                   (NearbyJoin.magic + NearbyJoinMessage.waiting.frame(), .unexpected("message type 2"))] {
@@ -239,7 +304,7 @@ final class NearbyJoinTests: VaultTestCase {
             try await peer.send(input)
             let called = Box<Bool>()
             do {
-                _ = try await NearbyApprover.run(on: homeEnd, timeouts: Self.quick, received: { _, _, _ in
+                _ = try await NearbyApprover.run(on: homeEnd, vaultId: UUID(), timeouts: Self.quick, received: { _, _, _ in
                     called.set(true)
                     return .wait
                 }, outcome: { .refuse(.closed) })
@@ -249,16 +314,26 @@ final class NearbyJoinTests: VaultTestCase {
             }
             XCTAssertNil(called.get(), "nothing reached the model")
         }
-        // A request frame whose file is not a join request.
-        let (peer, homeEnd) = NearbyJoinPipe.make()
-        try await peer.send(NearbyJoin.magic + NearbyJoinMessage.request(nonce: Data(count: 32), request: Data("{}".utf8)).frame())
+        // A request with no hello first.
+        let (early, homeEarly) = NearbyJoinPipe.make()
+        try await early.send(NearbyJoin.magic + NearbyJoinMessage.request(p.raw).frame())
         do {
-            _ = try await NearbyApprover.run(on: homeEnd, timeouts: Self.quick, received: { _, _, _ in .wait },
+            _ = try await NearbyApprover.run(on: homeEarly, vaultId: p.request.vaultId, timeouts: Self.quick,
+                                             received: { _, _, _ in .wait }, outcome: { .refuse(.closed) })
+            XCTFail("a request before the hello was read")
+        } catch {}
+        // A request frame whose file is not a join request, after the hello: refused with `malformed`.
+        let (peer, homeEnd) = NearbyJoinPipe.make()
+        try await peer.send(NearbyJoin.magic + NearbyJoinMessage.hello(nonce: Data(count: 32)).frame()
+            + NearbyJoinMessage.request(Data("{}".utf8)).frame())
+        do {
+            _ = try await NearbyApprover.run(on: homeEnd, vaultId: UUID(), timeouts: Self.quick, received: { _, _, _ in .wait },
                                              outcome: { .refuse(.closed) })
             XCTFail("accepted a request that does not parse")
         } catch {}
         var reader = NearbyFrameReader(reading: .approver)
         try reader.push(peer.inbox.take(1 << 20) ?? Data())
+        guard case .proof? = try reader.next() else { return XCTFail("no proof first") }
         XCTAssertEqual(try reader.next(), .refused(.malformed), "told why")
 
         // The joining device reads no frame larger than a reply.
@@ -267,13 +342,22 @@ final class NearbyJoinTests: VaultTestCase {
         XCTAssertThrowsError(try joiner.next()) { XCTAssertEqual($0 as? NearbyJoinError, .oversized(0x7f00_0000)) }
         var full = NearbyFrameReader(reading: .joiner)
         XCTAssertThrowsError(try full.push(Data(count: full.capacity + 1)))
+        // A header is judged before its body: a reply's length within bounds, a type the approver may send.
+        var header = NearbyFrameReader(reading: .approver)
+        try header.push(NearbyJoin.magic + Data([0, 0, 0, 9, 3]))
+        XCTAssertTrue(try header.headerReady())
+        XCTAssertNil(try header.next())
+        var badType = NearbyFrameReader(reading: .approver)
+        try badType.push(NearbyJoin.magic + Data([0, 0, 0, 9, 1]))
+        XCTAssertThrowsError(try badType.headerReady())
     }
 
-    /// A silent peer, and an approver that never answers after `waiting`, run out of time.
-    func testSilentPeersTimeOut() async throws {
+    /// A silent peer, a peer that trickles one byte every 100 ms, and an approver that never answers after `waiting`,
+    /// all run out of time.
+    func testSilentAndTricklingPeersTimeOut() async throws {
         let (silent, homeEnd) = NearbyJoinPipe.make()
         do {
-            _ = try await NearbyApprover.run(on: homeEnd, timeouts: Self.quick, received: { _, _, _ in .wait },
+            _ = try await NearbyApprover.run(on: homeEnd, vaultId: UUID(), timeouts: Self.quick, received: { _, _, _ in .wait },
                                              outcome: { .refuse(.closed) })
             XCTFail("a silent peer held the session")
         } catch let e as NearbyJoinError {
@@ -281,13 +365,36 @@ final class NearbyJoinTests: VaultTestCase {
         }
         _ = silent
 
-        let p = try pair()
-        let (joinerEnd, stallingHome) = NearbyJoinPipe.make()
-        let staller = Task {
-            _ = try await stallingHome.receive(maximum: 1 << 20)
-            try await stallingHome.send(NearbyJoin.magic + NearbyJoinMessage.waiting.frame())
+        let (trickler, homeTrickled) = NearbyJoinPipe.make()
+        let hello = NearbyJoin.magic + NearbyJoinMessage.hello(nonce: Data(count: 32)).frame()
+        let trickling = Task {
+            for b in hello {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard (try? await trickler.send(Data([b]))) != nil else { return }
+            }
         }
         let start = ContinuousClock.now
+        do {
+            _ = try await NearbyApprover.run(on: homeTrickled, vaultId: UUID(), timeouts: Self.quick,
+                                             received: { _, _, _ in .wait }, outcome: { .refuse(.closed) })
+            XCTFail("a trickle held the session")
+        } catch let e as NearbyJoinError {
+            XCTAssertEqual(e, .timedOut)
+        }
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(2), "within the handshake, not the session")
+        trickling.cancel()
+
+        let p = try pair()
+        let (joinerEnd, stallingHome) = NearbyJoinPipe.make()
+        let vaultId = p.home.vaultId
+        let staller = Task {
+            var reader = NearbyFrameReader(reading: .joiner)
+            guard case .hello(let nonce) = try await Self.nextFrame(stallingHome, &reader) else { return }
+            try await stallingHome.send(NearbyJoin.magic + NearbyJoinMessage.proof(NearbyJoin.proof(vaultId: vaultId, nonce: nonce)).frame())
+            _ = try await Self.nextFrame(stallingHome, &reader)
+            try await stallingHome.send(NearbyJoinMessage.waiting.frame())
+        }
+        let started = ContinuousClock.now
         do {
             _ = try await NearbyJoiner.run(on: joinerEnd, request: p.raw, nonce: NearbyJoin.randomBytes(32), identity: laptop,
                                            timeouts: Self.quick)
@@ -295,8 +402,29 @@ final class NearbyJoinTests: VaultTestCase {
         } catch let e as NearbyJoinError {
             XCTAssertTrue(e == .timedOut || e == .closed, "\(e)")
         }
-        XCTAssertLessThan(ContinuousClock.now - start, .seconds(5))
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(5))
         try await staller.value
+    }
+
+    /// A joining device that never reads (a zero window): home's send of a 4 MiB reply is cut off within the session's
+    /// time, and the session ends.
+    func testAPeerThatNeverReadsEndsHomesSession() async throws {
+        let p = try pair()
+        let (joinerEnd, homeEnd) = NearbyJoinPipe.make(capacity: 64 * 1024)
+        let big = Data(count: 4 << 20)
+        let start = ContinuousClock.now
+        let homeSide = Task {
+            try await NearbyApprover.run(on: homeEnd, vaultId: p.request.vaultId, timeouts: Self.quick,
+                                         received: { _, _, _ in .reply(big) }, outcome: { .refuse(.closed) })
+        }
+        try await joinerEnd.send(NearbyJoin.magic + NearbyJoinMessage.hello(nonce: Data(count: 32)).frame())
+        var reader = NearbyFrameReader(reading: .approver)
+        guard case .proof = try await Self.nextFrame(joinerEnd, &reader) else { return XCTFail("no proof") }
+        try await joinerEnd.send(NearbyJoinMessage.request(p.raw).frame())
+        // ... and reads nothing more.
+        let ended = try await homeSide.value
+        XCTAssertEqual(ended, .timedOut)
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(5))
     }
 
     /// The approver's wait ends when the joining device goes away (its outcome is canceled), and when the session's
@@ -306,16 +434,20 @@ final class NearbyJoinTests: VaultTestCase {
         let (joinerEnd, homeEnd) = NearbyJoinPipe.make()
         let canceled = Box<Bool>()
         let homeSide = Task {
-            try await NearbyApprover.run(on: homeEnd, timeouts: .standard, received: { _, _, _ in .wait }, outcome: {
+            try await NearbyApprover.run(on: homeEnd, vaultId: p.request.vaultId, timeouts: Self.bounded,
+                                         received: { _, _, _ in .wait }, outcome: {
                 // Waits for an approval that never comes, until canceled.
                 while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
                 canceled.set(true)
                 return .refuse(.closed)
             })
         }
-        try await joinerEnd.send(NearbyJoin.magic + NearbyJoinMessage.request(nonce: Data(count: 32), request: p.raw).frame())
+        try await joinerEnd.send(NearbyJoin.magic + NearbyJoinMessage.hello(nonce: Data(count: 32)).frame())
         var reader = NearbyFrameReader(reading: .approver)
-        while try reader.next() == nil { try reader.push(try await joinerEnd.receive(maximum: 1024)) }
+        guard case .proof = try await Self.nextFrame(joinerEnd, &reader) else { return XCTFail("no proof") }
+        try await joinerEnd.send(NearbyJoinMessage.request(p.raw).frame())
+        let answer = try await Self.nextFrame(joinerEnd, &reader)
+        XCTAssertEqual(answer, .waiting)
         joinerEnd.cancel()
         let ended = try await homeSide.value
         XCTAssertEqual(ended, .peerLeft)
@@ -323,32 +455,34 @@ final class NearbyJoinTests: VaultTestCase {
 
         let (joiner2, home2) = NearbyJoinPipe.make()
         let timed = Task {
-            try await NearbyApprover.run(on: home2, timeouts: Self.quick, received: { _, _, _ in .wait }, outcome: {
+            try await NearbyApprover.run(on: home2, vaultId: p.request.vaultId, timeouts: Self.quick,
+                                         received: { _, _, _ in .wait }, outcome: {
                 while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
                 return .refuse(.closed)
             })
         }
         let outcome = try await NearbyJoiner.run(on: joiner2, request: p.raw, nonce: NearbyJoin.randomBytes(32), identity: laptop,
-                                                 timeouts: .standard)
+                                                 timeouts: Self.bounded)
         XCTAssertEqual(outcome, .refused(.closed))
         let timedEnding = try await timed.value
         XCTAssertEqual(timedEnding, .timedOut)
     }
 
-    /// A second device while a session is going is told `busy`.
+    /// A second device while a session is going is told `busy`, before any hello.
     func testASecondSessionIsToldBusy() async throws {
         let p = try pair()
         let (joinerEnd, homeEnd) = NearbyJoinPipe.make()
         Task { await NearbyApprover.refuseBusy(homeEnd) }
         let outcome = try await NearbyJoiner.run(on: joinerEnd, request: p.raw, nonce: NearbyJoin.randomBytes(32),
-                                                 identity: laptop, timeouts: Self.quick)
+                                                 identity: laptop, timeouts: Self.bounded)
         XCTAssertEqual(outcome, .refused(.busy))
     }
 
     // MARK: - Pieces
 
     func testFramesRoundTripInPieces() throws {
-        let messages: [NearbyJoinMessage] = [.waiting, .reply(Data([1, 2, 3])), .refused(.declined)]
+        let messages: [NearbyJoinMessage] = [.proof(Data(repeating: 4, count: 32)), .waiting, .reply(Data([1, 2, 3])),
+                                             .refused(.declined)]
         let stream = NearbyJoin.magic + messages.map { $0.frame() }.reduce(Data(), +)
         var reader = NearbyFrameReader(reading: .approver)
         var out: [NearbyJoinMessage] = []
@@ -357,15 +491,21 @@ final class NearbyJoinTests: VaultTestCase {
             while let m = try reader.next() { out.append(m) }
         }
         XCTAssertEqual(out, messages)
-        let request = NearbyJoinMessage.request(nonce: Data(repeating: 7, count: 32), request: Data("{}".utf8))
+        let hello = NearbyJoinMessage.hello(nonce: Data(repeating: 7, count: 32))
+        let request = NearbyJoinMessage.request(Data("{}".utf8))
         var home = NearbyFrameReader(reading: .joiner)
-        try home.push(NearbyJoin.magic + request.frame())
+        try home.push(NearbyJoin.magic + hello.frame() + request.frame())
+        XCTAssertEqual(try home.next(), hello)
         XCTAssertEqual(try home.next(), request)
         var partial = NearbyFrameReader(reading: .joiner)
         try partial.push(Data("semp".utf8))
         XCTAssertNil(try partial.next())
         try partial.push(Data("ERE".utf8))
         XCTAssertThrowsError(try partial.next()) { XCTAssertEqual($0 as? NearbyJoinError, .badMagic) }
+        // A hello or a proof of the wrong size.
+        var short = NearbyFrameReader(reading: .joiner)
+        try short.push(NearbyJoin.magic + NearbyJoinMessage.hello(nonce: Data(count: 31)).frame())
+        XCTAssertThrowsError(try short.next())
     }
 
     func testReplyPlaintextRoundTripsAndRejectsTrailingBytes() throws {

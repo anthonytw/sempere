@@ -3,21 +3,26 @@ import Foundation
 /// Two connected in-memory `NearbyJoinConnection`s (tests, and front ends that have no link): what one sends, the other
 /// receives, in order. Canceling either end ends the stream both ways.
 public enum NearbyJoinPipe {
-    /// A connected pair.
-    public static func make() -> (a: Connection, b: Connection) {
-        let ab = Queue(), ba = Queue()
+    /// A connected pair. With a `capacity`, a send returns only once at most that many bytes wait unread, as a socket's
+    /// buffer does: a peer that never reads makes the sender wait (tests of a peer that stops reading).
+    public static func make(capacity: Int = .max) -> (a: Connection, b: Connection) {
+        let ab = Queue(capacity: capacity), ba = Queue(capacity: capacity)
         let a = Connection(inbox: ba, outbox: ab)
         let b = Connection(inbox: ab, outbox: ba)
         return (a, b)
     }
 
-    /// Bytes one way, with the waiting receiver (at most one).
+    /// Bytes one way, with the waiting receiver and the waiting sender (at most one each).
     final class Queue: @unchecked Sendable {
+        let capacity: Int
         // Guarded by `lock`.
         private let lock = NSLock()
         private var bytes = Data()
         private var ended = false
         private var waiter: CheckedContinuation<Void, Never>?
+        private var sender: CheckedContinuation<Void, Never>?
+
+        init(capacity: Int) { self.capacity = capacity }
 
         func put(_ data: Data) -> Bool {
             lock.lock()
@@ -33,22 +38,29 @@ public enum NearbyJoinPipe {
         func end() {
             lock.lock()
             ended = true
-            let w = waiter
+            let w = waiter, s = sender
             waiter = nil
+            sender = nil
             lock.unlock()
             w?.resume()
+            s?.resume()
         }
 
         /// Up to `maximum` bytes, or nil at the end.
         func take(_ maximum: Int) -> Data? {
             lock.lock()
-            defer { lock.unlock() }
             if !bytes.isEmpty {
                 let out = Data(bytes.prefix(maximum))
                 bytes = Data(bytes.dropFirst(out.count))
+                let s = bytes.count <= capacity ? sender : nil
+                if s != nil { sender = nil }
+                lock.unlock()
+                s?.resume()
                 return out
             }
-            return ended ? Data() : nil
+            let atEnd = ended
+            lock.unlock()
+            return atEnd ? Data() : nil
         }
 
         func wait() async {
@@ -62,6 +74,27 @@ public enum NearbyJoinPipe {
                     lock.unlock()
                 }
             }
+        }
+
+        /// Returns once at most `capacity` bytes wait unread, or the stream ended (then false).
+        func waitForRoom() async -> Bool {
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                lock.lock()
+                if bytes.count <= capacity || ended {
+                    lock.unlock()
+                    c.resume()
+                } else {
+                    sender = c
+                    lock.unlock()
+                }
+            }
+            return !isEnded()
+        }
+
+        private func isEnded() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return ended
         }
     }
 
@@ -86,6 +119,7 @@ public enum NearbyJoinPipe {
         public func send(_ data: Data) async throws {
             guard outbox.put(data) else { throw NearbyJoinError.closed }
             record(data)
+            guard await outbox.waitForRoom() else { throw NearbyJoinError.closed }
         }
 
         private func record(_ data: Data) {

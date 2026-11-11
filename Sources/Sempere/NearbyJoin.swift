@@ -24,8 +24,9 @@ public enum NearbyJoinError: Error, Equatable, Sendable {
     case closed
     /// A reply whose nonce or commitment is not this session's request (replayed, or meant for another device).
     case replayed
-    /// The request names another vault than the open one.
-    case otherVault
+    /// The approver's `proof` is not of the vault the request names: another vault's Add Device, or a device that does
+    /// not know the vault's id. The request was not sent (design N13).
+    case notThisVault
     /// The reply's `vault.json` is not an approval of this device (`Vault.isJoinApproval`).
     case notAnApproval
     /// The reply's epoch record is missing, or not the one its `vault.json` names.
@@ -90,6 +91,25 @@ public enum NearbyJoin {
         "Sempere-" + Hex.encode(randomBytes(6))
     }
 
+    /// The approver's answer to `hello` (design N13): `HMAC-SHA256(key: the vault id's 16 bytes (RFC 4122 order),
+    /// "sempere-nearby/1 home" ‖ nonce)`. It proves only that the approver knows the vault's id, which is not secret
+    /// (storage holds it): it keeps the joining device's request from devices of other vaults and from advertisers that
+    /// do not know the id, and authenticates nothing.
+    public static func proof(vaultId: UUID, nonce: Data) -> Data {
+        Data(HMAC<SHA256>.authenticationCode(for: Data("sempere-nearby/1 home".utf8) + nonce, using: proofKey(vaultId)))
+    }
+
+    /// Whether `tag` is `proof(vaultId:nonce:)`, compared in constant time.
+    public static func checkProof(_ tag: Data, vaultId: UUID, nonce: Data) -> Bool {
+        HMAC<SHA256>.isValidAuthenticationCode(tag, authenticating: Data("sempere-nearby/1 home".utf8) + nonce,
+                                               using: proofKey(vaultId))
+    }
+
+    static func proofKey(_ vaultId: UUID) -> SymmetricKey {
+        var u = vaultId.uuid
+        return SymmetricKey(data: withUnsafeBytes(of: &u) { Data($0) })
+    }
+
     /// `count` bytes from the system's secure generator.
     public static func randomBytes(_ count: Int) -> Data {
         var out = Data()
@@ -101,15 +121,23 @@ public enum NearbyJoin {
 }
 
 /// One message on the link. A frame is a 4-byte big-endian body length, then the body: one type byte and the payload.
+///
+/// The joining device speaks first with `hello` (its session nonce, nothing that names it or the vault); the approver
+/// answers with `proof` (`NearbyJoin.proof`: it knows the vault's id); only then does the joining device send its
+/// `request` (design N13).
 public enum NearbyJoinMessage: Equatable, Sendable {
-    /// The joining device's request (type 1): its session nonce, then the bytes of its `joins/<id>.join.json`.
-    case request(nonce: Data, request: Data)
-    /// The approver read the request and lists it; the approval waits for the user (type 2, no payload).
+    /// The joining device's request (type 1): the bytes of its `joins/<id>.join.json`, sent only after a good `proof`.
+    case request(Data)
+    /// The approver has the request; the approval waits for the user (type 2, no payload).
     case waiting
     /// The approval (type 3): a `NearbyJoinReply` sealed to the request's key.
     case reply(Data)
     /// No reply in this session (type 4, one byte).
     case refused(NearbyJoinRefusal)
+    /// The joining device's first message (type 5): its 32-byte session nonce.
+    case hello(nonce: Data)
+    /// The approver's answer to `hello` (type 6): `NearbyJoin.proof` of its open vault's id, 32 bytes.
+    case proof(Data)
 
     var type: UInt8 {
         switch self {
@@ -117,6 +145,8 @@ public enum NearbyJoinMessage: Equatable, Sendable {
         case .waiting: return 2
         case .reply: return 3
         case .refused: return 4
+        case .hello: return 5
+        case .proof: return 6
         }
     }
 
@@ -124,10 +154,12 @@ public enum NearbyJoinMessage: Equatable, Sendable {
     public func frame() -> Data {
         var body = Data([type])
         switch self {
-        case .request(let nonce, let request): body.append(nonce); body.append(request)
+        case .request(let request): body.append(request)
         case .waiting: break
         case .reply(let sealed): body.append(sealed)
         case .refused(let why): body.append(why.rawValue)
+        case .hello(let nonce): body.append(nonce)
+        case .proof(let tag): body.append(tag)
         }
         let n = UInt32(body.count)
         return Data([UInt8(n >> 24), UInt8(n >> 16 & 0xff), UInt8(n >> 8 & 0xff), UInt8(n & 0xff)]) + body
@@ -191,13 +223,41 @@ public struct NearbyFrameReader: Sendable {
         return try Self.decode(body, from: sender)
     }
 
+    /// Whether the next frame's header (the magic before the first, its length and type byte) has arrived, checked:
+    /// the session times the header and the body apart (a reply of megabytes gets the session's time, not the
+    /// handshake's).
+    ///
+    /// - Throws: what `next()` throws for a bad magic, a bad length or a type `sender` may not send.
+    public mutating func headerReady() throws -> Bool {
+        let m = NearbyJoin.magic
+        let start = sawMagic ? 0 : m.count
+        if !sawMagic {
+            guard m.starts(with: buffer.prefix(m.count)) else { throw NearbyJoinError.badMagic }
+            guard buffer.count >= m.count else { return false }
+        }
+        guard buffer.count >= start + 5 else { return false }
+        let b = [UInt8](buffer.dropFirst(start).prefix(5))
+        let length = Int(b[0]) << 24 | Int(b[1]) << 16 | Int(b[2]) << 8 | Int(b[3])
+        guard length >= 1 else { throw NearbyJoinError.malformed("an empty frame") }
+        guard length <= maxBody else { throw NearbyJoinError.oversized(length) }
+        let known: Set<UInt8> = sender == .joiner ? [1, 5] : [2, 3, 4, 6]
+        guard known.contains(b[4]) else { throw NearbyJoinError.unexpected("message type \(b[4])") }
+        return true
+    }
+
     static func decode(_ body: Data, from sender: Sender) throws -> NearbyJoinMessage {
         guard let type = body.first else { throw NearbyJoinError.malformed("an empty frame") }
         let payload = Data(body.dropFirst())
         switch (sender, type) {
         case (.joiner, 1):
-            guard payload.count > NearbyJoin.nonceBytes else { throw NearbyJoinError.malformed("a request without its file") }
-            return .request(nonce: Data(payload.prefix(NearbyJoin.nonceBytes)), request: Data(payload.dropFirst(NearbyJoin.nonceBytes)))
+            guard !payload.isEmpty else { throw NearbyJoinError.malformed("a request without its file") }
+            return .request(payload)
+        case (.joiner, 5):
+            guard payload.count == NearbyJoin.nonceBytes else { throw NearbyJoinError.malformed("a nonce of the wrong size") }
+            return .hello(nonce: payload)
+        case (.approver, 6):
+            guard payload.count == 32 else { throw NearbyJoinError.malformed("a proof of the wrong size") }
+            return .proof(payload)
         case (.approver, 2):
             guard payload.isEmpty else { throw NearbyJoinError.malformed("waiting carries no payload") }
             return .waiting
@@ -302,22 +362,8 @@ public struct NearbyJoinReply: Equatable, Sendable {
 extension Vault {
     // MARK: - The approver (home)
 
-    /// A join request received nearby, placed in `joins/` as a sync places one from a target (design §6.2.1): it must
-    /// parse and name this vault, and its file is named after its own key. Create-only: a file already under that name
-    /// stays (the same request by both routes is one file). The returned request is what Add Device lists and approves.
-    ///
-    /// - Returns: the request, and whether its file was written now.
-    /// - Throws: what `JoinRequest.parse` throws, `NearbyJoinError.otherVault`.
-    @discardableResult
-    public func placeNearbyJoinRequest(_ data: Data) throws -> (request: JoinRequest, placed: Bool) {
-        let request = try JoinRequest.parse(data)
-        guard request.vaultId == vaultId else { throw NearbyJoinError.otherVault }
-        let file = joinsURL.appendingPathComponent(request.fileName)
-        guard !FileIO.exists(file) else { return (request, false) }
-        try FileIO.createDirectory(joinsURL)
-        do { try FileIO.writeAtomically(data, to: file, replacing: false) } catch VaultError.alreadyExists { return (request, false) }
-        return (request, true)
-    }
+    // A request that came nearby is never written to `joins/` (design N5): Add Device keeps it in memory while it
+    // shows, and approves it by value (`approveDevice(_:)`); the joining device's own file still arrives by sync.
 
     /// The reply for `request` once `vault.json` on disk lists its key (approved by either route): that file's bytes and
     /// the current epoch's record (left out above `NearbyJoin.maxRecordBytes`). Nil while the key is not listed.

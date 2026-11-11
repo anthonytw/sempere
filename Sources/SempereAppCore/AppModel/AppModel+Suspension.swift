@@ -46,9 +46,12 @@ extension AppModelCore {
                 // back) scheduled tasks continue it (`BackgroundSync`).
                 self?.enterBackground()
                 self?.prepareForSuspension()
+                // The nearby link of joining stops (the system would fail it anyway); its screens keep their wish.
+                self?.nearbyEnteredBackground()
             case .willEnterForeground:
                 self?.resumeAfterSuspension()
                 self?.enterForeground()
+                self?.nearbyEnteredForeground()
             case .didBecomeActive:
                 // The first activation of a launch (no `willEnterForeground` comes before it): the app is on screen
                 // now. After a return from the background the locks were taken back already (`willEnterForeground`).

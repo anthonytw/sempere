@@ -8,8 +8,9 @@ import Testing
 extension AppModelSuites {
     /// Joining nearby through the model (docs/design/nearby-join.md): home's Add Device and an iPad's join screen over
     /// `MemoryNearbyTransport`, while the folder target's provider holds the iPad's request back (iCloud Drive taking
-    /// minutes, build 11 and the 2026-11-11 report). The sync path keeps working beside it.
+    /// minutes, build 11 and the 2026-11-11 report). The sync path keeps working beside it. Every wait is bounded.
     @MainActor
+    @Suite(.timeLimit(.minutes(1)))
     struct NearbyJoinModelTests {
         typealias Device = AddDeviceApprovalTests.Device
 
@@ -50,9 +51,16 @@ extension AppModelSuites {
             for m in [home.model, pad.model] {
                 m.nearbyTransport = link
                 m.nearbyRetry = .milliseconds(50)
-                m.nearbyTimeouts = NearbyJoin.Timeouts(handshake: .seconds(5), session: .seconds(30))
+                m.nearbyTimeouts = NearbyJoin.Timeouts(handshake: .seconds(3), session: .seconds(20))
             }
             return Asked(home: home, pad: pad, provider: provider, words: words, padKeys: padKeys, link: link)
+        }
+
+        /// What home's own copy holds in `joins/` (nothing comes from the link: design N5).
+        static func homeJoinFiles(_ w: Asked) -> [String] {
+            guard let url = w.home.model.vaultURL else { return [] }
+            return ((try? FileManager.default.contentsOfDirectory(atPath: url.appendingPathComponent("joins").path)) ?? [])
+                .filter { $0.hasSuffix(".join.json") }
         }
 
         /// The request reaches home over the link while the provider holds it back; home approves it by the six words
@@ -70,7 +78,7 @@ extension AppModelSuites {
             #expect(w.home.model.nearbyApproving == .connected)
             await approval.refresh()
             #expect(approval.lookout?.requests.count == 1, "listed with the synced ones")
-            #expect(await w.home.model.pendingJoinRequests().count == 1, "and in home's joins/, for the vault's records")
+            #expect(Self.homeJoinFiles(w).isEmpty, "held in memory only, never written to home's vault")
 
             #expect(await approval.approve(words: w.words, qr: nil))
             let reply = try #require(approval.reply)
@@ -86,6 +94,7 @@ extension AppModelSuites {
             // The slow route arrives afterwards: nothing is approved twice, and the request is not listed again.
             approval.close()
             #expect(w.home.model.nearbyApproving == .off)
+            #expect(w.home.model.nearbyRequests.isEmpty, "forgotten when Add Device closes")
             w.provider.arrivalDelay = 0
             await w.home.model.syncAllTargetsNow()
             await w.home.model.syncAllTargetsNow()
@@ -108,13 +117,14 @@ extension AppModelSuites {
             let second = try await w.link.open(peer)
             let outcome = try await NearbyJoiner.run(on: second, request: raw, nonce: NearbyJoin.randomBytes(32),
                                                      identity: stranger.nativeIdentity,
-                                                     timeouts: .init(handshake: .seconds(5), session: .seconds(5)))
+                                                     timeouts: .init(handshake: .seconds(3), session: .seconds(5)))
             #expect(outcome == .refused(.busy))
             #expect(w.home.model.nearbyRequests.map(\.key) == [w.pad.model.joinIdentity?.recipient.string])
             #expect(w.pad.model.nearbyJoining == .connected)
         }
 
-        /// Declined on home: the iPad is told, over the link.
+        /// Declined on home: the iPad is told over the link, and (since any device that knows the vault's id could say
+        /// it) keeps looking.
         @Test func aDeclineReachesTheDeviceNearby() async throws {
             let w = try await Self.asked()
             defer { w.home.model.close(); w.pad.model.close() }
@@ -125,12 +135,14 @@ extension AppModelSuites {
             let request = try #require(w.home.model.nearbyRequests.first)
             #expect(await approval.decline(request))
             #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .declined })
+            #expect(w.pad.model.nearby.joinTask != nil, "still looking")
             #expect(w.home.model.vault?.devices.count == 1)
+            #expect(w.home.model.nearbyRequests.isEmpty)
         }
 
-        /// Add Device closed while a device waits nearby: the session ends (`closed`), nothing is approved, and the
-        /// iPad goes back to looking.
-        @Test func closingAddDeviceEndsTheSession() async throws {
+        /// Add Device closed while a device waits nearby: the session is torn down (its connection too), nothing is
+        /// approved, and a new Add Device takes a new session at once (no `busy` left over).
+        @Test func closingAddDeviceEndsTheSessionAndANewOneStarts() async throws {
             let w = try await Self.asked()
             defer { w.home.model.close(); w.pad.model.close() }
             let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
@@ -138,10 +150,68 @@ extension AppModelSuites {
             w.pad.model.startNearbyJoin()
             #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
             approval.close()
+            #expect(w.home.model.nearby.sessionToken == nil, "torn down at once")
             #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .looking })
             #expect(w.home.model.nearbyApproving == .off)
             #expect(w.home.model.vault?.devices.count == 1)
             #expect(await approval.approve(words: w.words, qr: nil) == false)
+
+            let again = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            again.startNearby()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.home.model.nearbyApproving == .connected })
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
+            #expect(await again.approve(words: w.words, qr: nil))
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .received })
+        }
+
+        /// The system fails the listener and the browser (an app suspended, the local network refused): both sides say
+        /// so and start again while their screens show.
+        @Test func aFailedLinkStartsAgain() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.home.model.startNearbyApproving()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
+            w.link.fail()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) {
+                w.home.model.nearbyApproving == .advertising || w.home.model.nearbyApproving == .connected
+            })
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
+            #expect(w.home.model.nearbyRequests.count == 1)
+        }
+
+        /// In the background nothing advertises or browses; back in the foreground both start again, while their
+        /// screens still show (and not once they are gone).
+        @Test func theBackgroundStopsTheLinkAndTheForegroundRestartsIt() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.home.model.startNearbyApproving()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
+            for m in [w.home.model, w.pad.model] { m.nearbyEnteredBackground() }
+            #expect(w.home.model.nearbyApproving == .off)
+            #expect(w.home.model.nearby.advertisement == nil && w.home.model.nearby.sessionToken == nil)
+            #expect(w.pad.model.nearbyJoining == .off)
+            #expect(w.pad.model.nearby.browsing == nil)
+            for m in [w.home.model, w.pad.model] { m.nearbyEnteredForeground() }
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
+
+            w.pad.model.stopNearbyJoin()
+            w.pad.model.nearbyEnteredBackground()
+            w.pad.model.nearbyEnteredForeground()
+            #expect(w.pad.model.nearbyJoining == .off, "the join screen went: nothing starts")
+        }
+
+        /// Home keeps at most four requests that came nearby, one per commitment, the oldest dropped first.
+        @Test func homeKeepsAFewNearbyRequests() throws {
+            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            let store = MemoryDeviceKeyStore()
+            let id = UUID()
+            let requests = try (0..<6).map { _ in try store.generate().joinRequest(vaultId: id, name: "x", kind: "ipad") }
+            for r in requests { model.keepNearbyRequest(r) }
+            model.keepNearbyRequest(requests[3])
+            #expect(model.nearbyRequests.map(\.commitment)
+                    == [requests[2], requests[4], requests[5], requests[3]].map(\.commitment))
         }
 
         /// Approved through the target before the iPad found home nearby: home answers at once with the approval it

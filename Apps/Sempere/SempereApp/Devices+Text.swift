@@ -114,12 +114,12 @@ extension NearbyJoinStatus {
         case .found:
             return String(localized: "Found a device nearby. Connecting…", comment: "Join screen: the direct link")
         case .connected:
-            return String(localized: "Connected: the device that manages devices has this request. Approve it there.",
+            return String(localized: "A device nearby has this request. If it is the device that manages devices, approve it there.",
                           comment: "Join screen: the direct link")
         case .received:
             return String(localized: "The approval arrived from the device nearby.", comment: "Join screen: the direct link")
         case .declined:
-            return String(localized: "The device nearby declined this request. Choose Cancel, then Ask to Join again.",
+            return String(localized: "A device nearby declined this request. If you declined it on your own device, choose Cancel, then Ask to Join again.",
                           comment: "Join screen: the direct link")
         }
     }

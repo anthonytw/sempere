@@ -323,17 +323,18 @@ extension AppModelCore {
 
     // MARK: - Approving (home)
 
-    /// The join requests waiting in the open vault's `joins/` and the one of a nearby session (`nearbyRequests`),
-    /// readable, of this vault and of a key the vault does not list yet, at most `limit` (their names are storage's to
-    /// choose: shown, never trusted), read off the main actor.
+    /// The requests that came nearby while Add Device shows (`nearbyRequests`, first) and those waiting in the open
+    /// vault's `joins/`, readable, of this vault and of a key the vault does not list yet, one per commitment (a file
+    /// under a nearby request's name but of other keys is listed beside it, never in its place), at most `limit`
+    /// (their names are storage's to choose: shown, never trusted), read off the main actor.
     public func pendingJoinRequests(limit: Int = 20) async -> [JoinRequest] {
         guard let vault else { return [] }
         let nearby = nearbyRequests
         return await Task.detached(priority: .userInitiated) {
             let listed = Set(vault.manifest.keys.map(\.key))
-            var seen = Set<String>()
-            let all = (vault.joinRequests().compactMap(\.request) + nearby).filter {
-                $0.vaultId == vault.vaultId && !listed.contains($0.key) && seen.insert($0.fileName).inserted
+            var seen = Set<Data>()
+            let all = (nearby + vault.joinRequests().compactMap(\.request)).filter {
+                $0.vaultId == vault.vaultId && !listed.contains($0.key) && seen.insert($0.commitment).inserted
             }
             return Array(all.prefix(limit))
         }.value
@@ -367,9 +368,9 @@ extension AppModelCore {
         return await Task.detached(priority: .userInitiated) { Self.findJoinRequest(vault, nearby, words, qr) != nil }.value
     }
 
-    /// The request `words` or `qr` names: in the copy's `joins/`, else the nearby session's.
+    /// The request `words` or `qr` names (by its commitment): one that came nearby, else one in the copy's `joins/`.
     nonisolated static func findJoinRequest(_ vault: Vault, _ nearby: [JoinRequest], _ words: [String]?, _ qr: String?) -> JoinRequest? {
-        vault.joinRequest(words: words, qr: qr) ?? Vault.joinRequest(in: nearby, vaultId: vault.vaultId, words: words, qr: qr)
+        Vault.joinRequest(in: nearby, vaultId: vault.vaultId, words: words, qr: qr) ?? vault.joinRequest(words: words, qr: qr)
     }
 
     /// Approves the request whose commitment `words` (typed) or `qr` (scanned) gives (design §6.2 step 2), after

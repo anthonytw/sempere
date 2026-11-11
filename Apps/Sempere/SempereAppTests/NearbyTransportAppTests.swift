@@ -27,9 +27,9 @@ struct NearbyTransportAppTests {
         -> (home: any NearbyJoinConnection, joiner: any NearbyJoinConnection, stop: @Sendable () -> Void) {
         let transport = NWNearbyTransport(mode: .loopback)
         let incoming = AsyncStream<any NearbyJoinConnection>.makeStream()
-        let ad = try transport.advertise { incoming.continuation.yield($0) }
+        let ad = try transport.advertise(accept: { incoming.continuation.yield($0) }, onFailure: { incoming.continuation.finish() })
         let peers = AsyncStream<[NearbyPeer]>.makeStream()
-        let browsing = transport.browse { peers.continuation.yield($0) }
+        let browsing = transport.browse(found: { peers.continuation.yield($0) }, onFailure: { peers.continuation.finish() })
         let stop: @Sendable () -> Void = {
             browsing.stop()
             ad.stop()
@@ -54,22 +54,34 @@ struct NearbyTransportAppTests {
         return (home, joiner, stop)
     }
 
-    static func request() throws -> (keys: DeviceKeys, raw: Data) {
+    static func request() throws -> (keys: DeviceKeys, raw: Data, vaultId: UUID) {
         let keys = try MemoryDeviceKeyStore().generate()
-        let raw = try JSONEncoder().encode(keys.joinRequest(vaultId: UUID(), name: "iPad", kind: "ipad"))
-        return (keys, raw)
+        let vaultId = UUID()
+        let raw = try JSONEncoder().encode(keys.joinRequest(vaultId: vaultId, name: "iPad", kind: "ipad"))
+        return (keys, raw, vaultId)
     }
 
-    /// A whole session over TCP: the request, then a sealed reply of a few megabytes (many receives), which the joining
+    /// The joining device's side of the handshake by hand: hello, home's proof, the request.
+    static func handshake(_ joiner: any NearbyJoinConnection, raw: Data, reader: inout NearbyFrameReader) async throws {
+        try await joiner.send(NearbyJoin.magic + NearbyJoinMessage.hello(nonce: Data(count: 32)).frame())
+        while try reader.next().map({ if case .proof = $0 { return true } else { return false } }) != true {
+            let bytes = try await joiner.receive(maximum: 1024)
+            guard !bytes.isEmpty else { throw NotConnected() }
+            try reader.push(bytes)
+        }
+        try await joiner.send(NearbyJoinMessage.request(raw).frame())
+    }
+
+    /// A whole session over TCP: the hello and the proof, the request, then a sealed reply of a few megabytes (many receives), which the joining
     /// device opens and checks against its nonce and commitment.
     @Test func aSessionRunsOverRealConnections() async throws {
         let (home, joiner, stop) = try await Self.connected()
         defer { stop() }
-        let (keys, raw) = try Self.request()
+        let (keys, raw, vaultId) = try Self.request()
         let record = Data((0..<(3 << 20)).map { UInt8(truncatingIfNeeded: $0 &* 31) })
         let nonce = NearbyJoin.randomBytes(32)
         let approver = Task.detached { () -> NearbyApprover.Ending in
-            try await NearbyApprover.run(on: home, timeouts: Self.quick, received: { request, _, sessionNonce in
+            try await NearbyApprover.run(on: home, vaultId: vaultId, timeouts: Self.quick, received: { request, _, sessionNonce in
                 let reply = NearbyJoinReply(nonce: sessionNonce, commitment: request.commitment, manifest: Data("{}".utf8),
                                             recordName: "2-0123456789abcdef.epoch.age", record: record)
                 return (try? reply.seal(to: request.key)).map { .reply($0) } ?? .refuse(.malformed)
@@ -89,9 +101,30 @@ struct NearbyTransportAppTests {
         defer { stop() }
         try await joiner.send(NearbyJoin.magic + Data([0x7f, 0xff, 0xff, 0xff, 1]))
         await #expect(throws: NearbyJoinError.oversized(0x7fff_ffff)) {
-            _ = try await NearbyApprover.run(on: home, timeouts: Self.quick, received: { _, _, _ in .wait },
+            _ = try await NearbyApprover.run(on: home, vaultId: UUID(), timeouts: Self.quick, received: { _, _, _ in .wait },
                                              outcome: { .refuse(.closed) })
         }
+        joiner.cancel()
+    }
+
+    /// A joining device that never reads: home's send of an 8 MiB reply is cut off (or, if the system buffers it all,
+    /// done) within the session's time, never held.
+    @Test func aPeerThatNeverReadsCannotHoldHome() async throws {
+        let (home, joiner, stop) = try await Self.connected()
+        defer { stop() }
+        let (_, raw, vaultId) = try Self.request()
+        let big = Data(count: 8 << 20)
+        let start = ContinuousClock.now
+        let homeSide = Task.detached {
+            try await NearbyApprover.run(on: home, vaultId: vaultId, timeouts: Self.quick, received: { _, _, _ in .reply(big) },
+                                         outcome: { .refuse(.closed) })
+        }
+        var reader = NearbyFrameReader(reading: .approver)
+        try await Self.handshake(joiner, raw: raw, reader: &reader)
+        // ... and reads nothing more.
+        let ended = try await homeSide.value
+        #expect(ended == .timedOut || ended == .replied)
+        #expect(ContinuousClock.now - start < .seconds(10))
         joiner.cancel()
     }
 
@@ -99,15 +132,15 @@ struct NearbyTransportAppTests {
     @Test func aPeerHangingUpEndsTheWait() async throws {
         let (home, joiner, stop) = try await Self.connected()
         defer { stop() }
-        let (_, raw) = try Self.request()
+        let (_, raw, vaultId) = try Self.request()
         let waiting = Task.detached {
-            try await NearbyApprover.run(on: home, timeouts: Self.quick, received: { _, _, _ in .wait }, outcome: {
+            try await NearbyApprover.run(on: home, vaultId: vaultId, timeouts: Self.quick, received: { _, _, _ in .wait }, outcome: {
                 while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(20)) }
                 return .refuse(.closed)
             })
         }
-        try await joiner.send(NearbyJoin.magic + NearbyJoinMessage.request(nonce: Data(count: 32), request: raw).frame())
         var reader = NearbyFrameReader(reading: .approver)
+        try await Self.handshake(joiner, raw: raw, reader: &reader)
         while try reader.next() == nil {
             let bytes = try await joiner.receive(maximum: 1024)
             guard !bytes.isEmpty else { break }
@@ -121,7 +154,7 @@ struct NearbyTransportAppTests {
     /// The join screen's and Add Device's words for the link.
     @Test func theLinkIsWorded() {
         #expect(NearbyJoinStatus.off.text == nil)
-        #expect(NearbyJoinStatus.connected.text?.contains("Approve it there") == true)
+        #expect(NearbyJoinStatus.connected.text?.contains("approve it there") == true)
         #expect(NearbyJoinStatus.declined.text?.contains("Ask to Join") == true)
         #expect(NearbyApproverStatus.advertising.text?.contains("nearby") == true)
         #expect(NearbyApproverStatus.unavailable.text == nil)
