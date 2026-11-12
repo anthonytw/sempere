@@ -56,8 +56,11 @@ public enum NearbyJoin {
     public static let serviceType = "_sempere-join._tcp"
     /// Every stream starts with these 16 bytes, in both directions.
     public static let magic = Data("sempere-nearby/1".utf8)
-    /// The joining device's per-session nonce, which the sealed reply carries back.
+    /// The joining device's per-session nonce, which the sealed reply carries back; the approver's nonce in its
+    /// `proof` has the same size.
     public static let nonceBytes = 32
+    /// The `proof` frame's payload: the approver's nonce, then the 32-byte tag.
+    public static let proofBytes = nonceBytes + 32
     /// The largest current epoch record a reply carries; a larger one (a chain of tens of thousands of epochs) is
     /// left to the sync target.
     public static let maxRecordBytes = 8 << 20
@@ -71,18 +74,24 @@ public enum NearbyJoin {
 
     /// How long each side waits.
     public struct Timeouts: Sendable, Equatable {
-        /// From the connection to the first message each side expects (the request; the approver's first answer).
+        /// The joining device: each frame header from the approver; both sides: the short sends (`proof`, `waiting`,
+        /// refusals).
         public var handshake: Duration
+        /// The approver: from the connection to a whole request, the `hello` and the `request` together (one limit).
+        /// Until then a connection holds no session, only one of a few handshake places.
+        public var request: Duration
         /// The whole session, approval included: the user types six words on the approver meanwhile.
         public var session: Duration
 
-        public init(handshake: Duration, session: Duration) {
+        /// - Parameter request: nil: `handshake`.
+        public init(handshake: Duration, session: Duration, request: Duration? = nil) {
             self.handshake = handshake
             self.session = session
+            self.request = request ?? handshake
         }
 
-        /// 10 seconds to start, 10 minutes in all.
-        public static let standard = Timeouts(handshake: .seconds(10), session: .seconds(600))
+        /// 10 seconds to each header, 3 seconds to a whole request, 10 minutes in all.
+        public static let standard = Timeouts(handshake: .seconds(10), session: .seconds(600), request: .seconds(3))
     }
 
     /// A random Bonjour instance name: `Sempere-` and 12 hex digits, new for every advertisement, naming no vault and
@@ -92,17 +101,23 @@ public enum NearbyJoin {
     }
 
     /// The approver's answer to `hello` (design N13): `HMAC-SHA256(key: the vault id's 16 bytes (RFC 4122 order),
-    /// "sempere-nearby/1 home" ‖ nonce)`. It proves only that the approver knows the vault's id, which is not secret
-    /// (storage holds it): it keeps the joining device's request from devices of other vaults and from advertisers that
-    /// do not know the id, and authenticates nothing.
-    public static func proof(vaultId: UUID, nonce: Data) -> Data {
-        Data(HMAC<SHA256>.authenticationCode(for: Data("sempere-nearby/1 home".utf8) + nonce, using: proofKey(vaultId)))
+    /// "sempere-nearby/1 home" ‖ nonce ‖ homeNonce)`, where `homeNonce` is the approver's own fresh 32 bytes, sent
+    /// beside the tag: a tag never repeats, even for a repeated `nonce`, so a recorded one cannot be replayed or linked
+    /// to another session. It proves only that the approver knows the vault's id, which is not secret (storage holds
+    /// it): it keeps the joining device's request from devices of other vaults and from advertisers that do not know
+    /// the id, and authenticates nothing.
+    public static func proof(vaultId: UUID, nonce: Data, homeNonce: Data) -> Data {
+        Data(HMAC<SHA256>.authenticationCode(for: proofMessage(nonce, homeNonce), using: proofKey(vaultId)))
     }
 
-    /// Whether `tag` is `proof(vaultId:nonce:)`, compared in constant time.
-    public static func checkProof(_ tag: Data, vaultId: UUID, nonce: Data) -> Bool {
-        HMAC<SHA256>.isValidAuthenticationCode(tag, authenticating: Data("sempere-nearby/1 home".utf8) + nonce,
-                                               using: proofKey(vaultId))
+    /// Whether `tag` is `proof(vaultId:nonce:homeNonce:)`, compared in constant time.
+    public static func checkProof(_ tag: Data, vaultId: UUID, nonce: Data, homeNonce: Data) -> Bool {
+        guard homeNonce.count == nonceBytes else { return false }
+        return HMAC<SHA256>.isValidAuthenticationCode(tag, authenticating: proofMessage(nonce, homeNonce), using: proofKey(vaultId))
+    }
+
+    static func proofMessage(_ nonce: Data, _ homeNonce: Data) -> Data {
+        Data("sempere-nearby/1 home".utf8) + nonce + homeNonce
     }
 
     static func proofKey(_ vaultId: UUID) -> SymmetricKey {
@@ -136,8 +151,9 @@ public enum NearbyJoinMessage: Equatable, Sendable {
     case refused(NearbyJoinRefusal)
     /// The joining device's first message (type 5): its 32-byte session nonce.
     case hello(nonce: Data)
-    /// The approver's answer to `hello` (type 6): `NearbyJoin.proof` of its open vault's id, 32 bytes.
-    case proof(Data)
+    /// The approver's answer to `hello` (type 6): its own 32-byte nonce, then `NearbyJoin.proof` of its open vault's
+    /// id over both nonces (32 bytes).
+    case proof(homeNonce: Data, tag: Data)
 
     var type: UInt8 {
         switch self {
@@ -159,39 +175,101 @@ public enum NearbyJoinMessage: Equatable, Sendable {
         case .reply(let sealed): body.append(sealed)
         case .refused(let why): body.append(why.rawValue)
         case .hello(let nonce): body.append(nonce)
-        case .proof(let tag): body.append(tag)
+        case .proof(let homeNonce, let tag): body.append(homeNonce); body.append(tag)
         }
         let n = UInt32(body.count)
         return Data([UInt8(n >> 24), UInt8(n >> 16 & 0xff), UInt8(n >> 8 & 0xff), UInt8(n & 0xff)]) + body
     }
 }
 
-/// Reads one side's stream: the magic, then frames, each bounded by what the other side may send. Untrusted input
-/// (format.md §9): every failure is a typed `NearbyJoinError`, and nothing is held beyond one frame.
+/// Reads one side's stream: the magic, then frames, each bounded by what the other side may send at that point of the
+/// session (`Stage`). Untrusted input (format.md §9): every failure is a typed `NearbyJoinError`, a frame of a type
+/// the stage does not allow, or longer than the stage allows that type, ends the read from its header, before its body
+/// is held, and nothing is held beyond one frame of the stage.
 public struct NearbyFrameReader: Sendable {
     /// Whose frames are read.
     public enum Sender: Sendable {
-        /// The joining device's (read by the approver): requests only.
+        /// The joining device's (read by the approver): hello, request.
         case joiner
-        /// The approver's (read by the joining device): waiting, reply, refused.
+        /// The approver's (read by the joining device): proof, waiting, reply, refused.
         case approver
     }
 
+    /// What may come next, and how long each type's body may be (the type byte included).
+    public enum Stage: Sendable, CaseIterable {
+        /// The approver's first read: the `hello` only.
+        case hello
+        /// The approver's second read: the `request` only.
+        case request
+        /// The joining device's first read: the `proof`, or a refusal (busy, ...).
+        case proof
+        /// The joining device's read after its request: `waiting`, the reply, or a refusal.
+        case answer
+        /// The joining device's read after `waiting`: the reply or a refusal.
+        case final
+
+        /// Whose frames the stage reads.
+        public var sender: Sender {
+            switch self {
+            case .hello, .request: return .joiner
+            case .proof, .answer, .final: return .approver
+            }
+        }
+
+        /// Each type the stage allows, with the longest body it may have (the type byte included).
+        public var limits: [UInt8: Int] {
+            switch self {
+            case .hello: return [5: 1 + NearbyJoin.nonceBytes]
+            case .request: return [1: NearbyJoin.maxRequestBody]
+            case .proof: return [6: 1 + NearbyJoin.proofBytes, 4: 2]
+            case .answer: return [2: 1, 3: NearbyJoin.maxReplyBody, 4: 2]
+            case .final: return [3: NearbyJoin.maxReplyBody, 4: 2]
+            }
+        }
+    }
+
     public let sender: Sender
+    /// The stage, or nil: any type `sender` may ever send, at the largest size.
+    public private(set) var stage: Stage?
     private var buffer = Data()
     private var sawMagic = false
 
     public init(reading sender: Sender) { self.sender = sender }
 
-    /// The largest body `sender` may send.
-    public var maxBody: Int { sender == .joiner ? NearbyJoin.maxRequestBody : NearbyJoin.maxReplyBody }
+    /// A reader of `stage.sender` at `stage`.
+    public init(at stage: Stage) {
+        sender = stage.sender
+        self.stage = stage
+    }
 
-    /// Bytes held at most: the magic and one whole frame.
+    /// Moves on to `stage` (of the same sender): what is read from now on is judged by it.
+    public mutating func expect(_ stage: Stage) {
+        precondition(stage.sender == sender, "a stage of the other sender")
+        self.stage = stage
+    }
+
+    /// What the current stage allows: each type with its longest body.
+    var limits: [UInt8: Int] {
+        if let stage { return stage.limits }
+        return sender == .joiner ? [1: NearbyJoin.maxRequestBody, 5: 1 + NearbyJoin.nonceBytes]
+            : [2: 1, 3: NearbyJoin.maxReplyBody, 4: 2, 6: 1 + NearbyJoin.proofBytes]
+    }
+
+    /// The largest body the current stage allows.
+    public var maxBody: Int { limits.values.max() ?? 1 }
+
+    /// Bytes held at most: the magic and one whole frame of the current stage.
     var capacity: Int { NearbyJoin.magic.count + 4 + maxBody }
+
+    /// Bytes held now (tests, the fuzz target).
+    var held: Int { buffer.count }
+
+    /// How many more bytes may be pushed now.
+    var room: Int { max(0, capacity - buffer.count) }
 
     /// Takes bytes received.
     ///
-    /// - Throws: `oversized` when more bytes are held than one frame may have.
+    /// - Throws: `oversized` when more bytes are held than one frame of the stage may have.
     public mutating func push(_ bytes: Data) throws {
         guard buffer.count + bytes.count <= capacity else { throw NearbyJoinError.oversized(buffer.count + bytes.count) }
         buffer.append(bytes)
@@ -199,35 +277,28 @@ public struct NearbyFrameReader: Sendable {
 
     /// The next whole message, or nil until more bytes arrive.
     ///
-    /// - Throws: `badMagic`, `oversized` (a claimed length beyond `maxBody`, before its body arrives), `malformed`,
-    ///   `unexpected` (a type `sender` may not send).
+    /// - Throws: `badMagic`, `oversized` (a claimed length beyond what the stage allows its type, before its body
+    ///   arrives), `malformed`, `unexpected` (a type the stage does not allow, from its header).
     public mutating func next() throws -> NearbyJoinMessage? {
+        guard try headerReady() else { return nil }
         if !sawMagic {
-            let m = NearbyJoin.magic
-            guard buffer.count >= m.count else {
-                if !m.starts(with: buffer) { throw NearbyJoinError.badMagic }
-                return nil
-            }
-            guard buffer.prefix(m.count) == m else { throw NearbyJoinError.badMagic }
-            buffer = Data(buffer.dropFirst(m.count))
+            buffer = Data(buffer.dropFirst(NearbyJoin.magic.count))
             sawMagic = true
         }
-        guard buffer.count >= 4 else { return nil }
         let b = [UInt8](buffer.prefix(4))
         let length = Int(b[0]) << 24 | Int(b[1]) << 16 | Int(b[2]) << 8 | Int(b[3])
-        guard length >= 1 else { throw NearbyJoinError.malformed("an empty frame") }
-        guard length <= maxBody else { throw NearbyJoinError.oversized(length) }
         guard buffer.count >= 4 + length else { return nil }
         let body = Data(buffer.dropFirst(4).prefix(length))
         buffer = Data(buffer.dropFirst(4 + length))
         return try Self.decode(body, from: sender)
     }
 
-    /// Whether the next frame's header (the magic before the first, its length and type byte) has arrived, checked:
-    /// the session times the header and the body apart (a reply of megabytes gets the session's time, not the
-    /// handshake's).
+    /// Whether the next frame's header (the magic before the first, its length and type byte) has arrived, checked
+    /// against the stage: the session times the header and the body apart (a reply of megabytes gets the session's
+    /// time, not the handshake's), and judges the type and length before any body is held.
     ///
-    /// - Throws: what `next()` throws for a bad magic, a bad length or a type `sender` may not send.
+    /// - Throws: `badMagic`, `malformed` (an empty frame), `oversized` (a length beyond the stage's largest, as soon
+    ///   as the length is here, or beyond its type's), `unexpected` (a type the stage does not allow).
     public mutating func headerReady() throws -> Bool {
         let m = NearbyJoin.magic
         let start = sawMagic ? 0 : m.count
@@ -235,13 +306,15 @@ public struct NearbyFrameReader: Sendable {
             guard m.starts(with: buffer.prefix(m.count)) else { throw NearbyJoinError.badMagic }
             guard buffer.count >= m.count else { return false }
         }
-        guard buffer.count >= start + 5 else { return false }
+        guard buffer.count >= start + 4 else { return false }
         let b = [UInt8](buffer.dropFirst(start).prefix(5))
         let length = Int(b[0]) << 24 | Int(b[1]) << 16 | Int(b[2]) << 8 | Int(b[3])
         guard length >= 1 else { throw NearbyJoinError.malformed("an empty frame") }
-        guard length <= maxBody else { throw NearbyJoinError.oversized(length) }
-        let known: Set<UInt8> = sender == .joiner ? [1, 5] : [2, 3, 4, 6]
-        guard known.contains(b[4]) else { throw NearbyJoinError.unexpected("message type \(b[4])") }
+        let limits = self.limits
+        guard length <= (limits.values.max() ?? 1) else { throw NearbyJoinError.oversized(length) }
+        guard b.count >= 5 else { return false }
+        guard let limit = limits[b[4]] else { throw NearbyJoinError.unexpected("message type \(b[4])") }
+        guard length <= limit else { throw NearbyJoinError.oversized(length) }
         return true
     }
 
@@ -256,8 +329,8 @@ public struct NearbyFrameReader: Sendable {
             guard payload.count == NearbyJoin.nonceBytes else { throw NearbyJoinError.malformed("a nonce of the wrong size") }
             return .hello(nonce: payload)
         case (.approver, 6):
-            guard payload.count == 32 else { throw NearbyJoinError.malformed("a proof of the wrong size") }
-            return .proof(payload)
+            guard payload.count == NearbyJoin.proofBytes else { throw NearbyJoinError.malformed("a proof of the wrong size") }
+            return .proof(homeNonce: Data(payload.prefix(NearbyJoin.nonceBytes)), tag: Data(payload.dropFirst(NearbyJoin.nonceBytes)))
         case (.approver, 2):
             guard payload.isEmpty else { throw NearbyJoinError.malformed("waiting carries no payload") }
             return .waiting
@@ -386,8 +459,8 @@ extension Vault {
     /// Takes an approval received nearby into the locked copy at `url` (design §6.2.1), as a join run takes one from a
     /// target: the reply must answer this session (`nonce`) and this device's request (`commitment`), its `vault.json`
     /// must be an approval of a key in `identities` (`isJoinApproval`, the sync engine's own test), and the epoch record
-    /// it names must be in the copy or in the reply with the hash `vault.json` gives it (the record first, create-only;
-    /// then `vault.json`). Taking it pins nothing: the device still confirms with the reply words. The caller holds the
+    /// it names must be in the copy or in the reply, either way with the hash `vault.json` gives it (the record first,
+    /// create-only; then `vault.json`). Taking it pins nothing: the device still confirms with the reply words. The caller holds the
     /// copy's write lock.
     ///
     /// - Parameter unconfirmed: this device keeps no trust record of the vault yet (`isJoinApproval`).
@@ -405,7 +478,13 @@ extension Vault {
         let name = String(m.epochRecord.dropFirst(epochsName.count + 1))
         let epochs = url.appendingPathComponent(epochsName)
         let recordURL = epochs.appendingPathComponent(name)
-        if !FileIO.exists(recordURL) {
+        if FileIO.exists(recordURL) {
+            // The copy's record must be the one this `vault.json` names, as `Vault.open` checks at confirm: a reply
+            // naming other bytes under that name is refused now, not taken and then refused.
+            guard let held = try? FileDigest.sha256(of: recordURL), held.hex == Hex.encode(m.epochRecordHash) else {
+                throw NearbyJoinError.recordMismatch
+            }
+        } else {
             guard let record = reply.record, reply.recordName == name, Data(SHA256.hash(data: record)) == m.epochRecordHash,
                   (try? checkIncomingEpochRecord(record, name: name)) != nil else { throw NearbyJoinError.recordMismatch }
             try FileIO.createDirectory(epochs)

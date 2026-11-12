@@ -281,7 +281,9 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
   only): it deletes them from `joins/`, and the next sync deletes them on the
   targets. `ID` is a request's id (the file name before `.join.json`, as
   `devices list` shows it) or 4 or more leading hex digits of it; a request
-  that does not parse can be declined only by id. No device is added and
+  that does not parse can be declined only by id. By the words, only the file
+  that is that request (its commitment) is deleted, never another of the same
+  id. No device is added and
   nothing is re-encrypted. A waiting request, readable or not, never keeps
   another from being approved. `--all` names the files in `joins/` it skipped because their names are not a request's. `--json`: `declined` (the ids), `skipped` (those file names).
 - `devices rename ID NAME` renames a device (on home only); `ID` is the
@@ -2224,7 +2226,9 @@ adopts the captures as notes. `--json`: `keygen` gives `{identity, recipient}`; 
 is `placed`, `held`, `duplicate` or `refused`; `placement` is `vault`, `queued`, `otherVault` or `otherVaultQueued`; `reason` of a held file is
 `linkOff`, `oldEpoch`, `newerEpoch`, `unknownEpoch` or `unknownVault`).
 
-`held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, bytes, receivedAt}]`). `held add` is the
+`held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, needsCheck, bytes, receivedAt}]`;
+`needsCheck` marks a note that arrived after Use on Apple Watch went off (`linkOff`) or under an earlier key (`oldEpoch`),
+what a lost watch sends: `held add --all` skips those, and they are added one at a time by id after a check). `held add` is the
 decision to take a held note: it records it in this machine's ledger and places it in its vault's inbox as `receive` would
 (`--vault`, `--store`, `--queue` as there), and the next catch-up re-seals an older epoch's note under the current key
 (`--json`: `[{capture, outcome, placement, problem}]`, `outcome` `added`, `notHeld` (already taken by an earlier add: a no-op, not a failure) or `failed`; exit 1 if any failed). A note whose epoch

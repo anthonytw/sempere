@@ -7,13 +7,11 @@ trap 'rm -rf "$tmp"' EXIT
 fail() { echo "FAIL $1"; exit 1; }
 url=https://github.com/anthonytw/sempere
 
-# A minimal tree with the four files the script edits.
+# A minimal tree with the three files the script edits (no CLI test: the --version test needs no edit).
 setup() {
-  rm -rf "$tmp/r"; mkdir -p "$tmp/r/changelog.d" "$tmp/r/Sources/SempereCLI" "$tmp/r/Tests/CLITests" \
+  rm -rf "$tmp/r"; mkdir -p "$tmp/r/changelog.d" "$tmp/r/Sources/SempereCLI" \
     "$tmp/r/Apps/Sempere/Sempere.xcodeproj"
   printf '%s\n' 'let sempereVersion = "1.0.0"' > "$tmp/r/Sources/SempereCLI/Version.swift"
-  printf '%s\n' '        XCTAssertEqual(try cli(["--version"]).out.split(separator: "\n").first.map(String.init), "sempere 1.0.0")' \
-    > "$tmp/r/Tests/CLITests/CLICommandTests.swift"
   printf '%s\n' '				MARKETING_VERSION = 1.0.0;' '				CURRENT_PROJECT_VERSION = 1;' '				MARKETING_VERSION = 1.0.0;' \
     > "$tmp/r/Apps/Sempere/Sempere.xcodeproj/project.pbxproj"
   printf '# readme\n' > "$tmp/r/changelog.d/README.md"
@@ -32,7 +30,7 @@ want="$(printf '%s\n' "# Changelog" "" "## [Unreleased]" "" "## [1.1.0] - TODO(u
 [ "$(cat "$tmp/r/CHANGELOG.md")" = "$want" ] || { cat "$tmp/r/CHANGELOG.md"; fail "new version section"; }
 [ ! -e "$tmp/r/changelog.d/one.md" ] || fail "fragment folded and deleted"
 grep -q 'let sempereVersion = "1.1.0"' "$tmp/r/Sources/SempereCLI/Version.swift" || fail "Version.swift bumped"
-grep -q '"sempere 1.1.0")' "$tmp/r/Tests/CLITests/CLICommandTests.swift" || fail "--version assertion bumped"
+[ ! -e "$tmp/r/Tests" ] || fail "no test file created"
 [ "$(grep -c 'MARKETING_VERSION = 1.1.0;' "$tmp/r/Apps/Sempere/Sempere.xcodeproj/project.pbxproj")" = 2 ] || fail "MARKETING_VERSION bumped"
 # The release scripts' guard must still refuse the section until the maintainer dates it.
 if "$here/scripts/changelog-section.sh" --file "$tmp/r/CHANGELOG.md" 1.1.0 >/dev/null 2>&1; then fail "TODO(user) date accepted"; fi

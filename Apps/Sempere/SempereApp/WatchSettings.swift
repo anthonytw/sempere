@@ -10,6 +10,10 @@ struct WatchSettingsSection: View {
     private let service = WatchConnectivityService.shared
     @State private var problem: String?
     @State private var confirmingDelete = false
+    /// The held note whose Add waits for the user's confirmation.
+    @State private var confirmingAdd: HeldCapture?
+    /// At most this many held notes are listed one by one.
+    private static let listed = 20
 
     var body: some View {
         let link = service.status
@@ -46,33 +50,57 @@ struct WatchSettingsSection: View {
                         Text("The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some")
                             .font(.footnote).foregroundStyle(.orange)
                     }
-                    ForEach(held.prefix(5), id: \.id) { note in
-                        LabeledContent(note.receivedAt.formatted(date: .abbreviated, time: .shortened),
-                                       value: ByteCountFormatter.string(fromByteCount: Int64(note.bytes), countStyle: .file))
-                            .font(.footnote)
-                    }
                     if addable < held.count {
                         Text("\(held.count - addable) of them can only be deleted: they were sealed with a key this device never held")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    HStack {
-                        Button("Add to inbox") {
-                            Task {
-                                let failed = await service.addHeldNotes()
-                                problem = failed > 0 ? String(localized: "Some notes could not be added now; try again when the vault can be written.") : nil
+                    // One by one, each with why it is held and when it came: a lost watch's notes are among them after its
+                    // steps, so nothing is added in bulk, and those that came after the toggle went off or under an earlier
+                    // key are offered for Delete first.
+                    ForEach(held.prefix(Self.listed), id: \.id) { note in
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(note.receivedAt.formatted(date: .abbreviated, time: .shortened))
+                                Text(Self.reasonText(note.reason)).foregroundStyle(note.needsCheck ? .orange : .secondary)
+                                Text(ByteCountFormatter.string(fromByteCount: Int64(note.bytes), countStyle: .file))
+                                    .foregroundStyle(.secondary)
                             }
+                            Spacer()
+                            if link.addableIds.contains(note.id) {
+                                Button(note.needsCheck ? "Add Anyway…" : "Add…") { confirmingAdd = note }
+                                    .disabled(link.busy)
+                                    .help("Add this note to the vault's inbox, as yours")
+                            }
+                            Button("Delete", role: .destructive) { service.deleteHeldNote(note) }
+                                .disabled(link.busy)
+                                .help("Delete this held note from this device")
                         }
-                        .disabled(addable == 0 || link.busy)
-                        Spacer()
-                        Button("Delete", role: .destructive) { confirmingDelete = true }
-                            .disabled(link.busy)
+                        .font(.footnote)
+                        .buttonStyle(.borderless)
                     }
-                    .buttonStyle(.borderless)
-                    .confirmationDialog("Delete the held Watch notes?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                        Button("Delete", role: .destructive) { service.deleteHeldNotes() }
-                    } message: {
-                        Text("They are removed from this device and cannot be recovered.")
+                    if held.count > Self.listed {
+                        Text("and \(held.count - Self.listed) more").font(.footnote).foregroundStyle(.secondary)
                     }
+                    Button("Delete All", role: .destructive) { confirmingDelete = true }
+                        .disabled(link.busy)
+                        .buttonStyle(.borderless)
+                        .confirmationDialog("Delete the held Watch notes?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                            Button("Delete", role: .destructive) { service.deleteHeldNotes() }
+                        } message: {
+                            Text("They are removed from this device and cannot be recovered.")
+                        }
+                        .confirmationDialog("Add this Watch note to the inbox?", isPresented: Binding(
+                            get: { confirmingAdd != nil }, set: { if !$0 { confirmingAdd = nil } }), titleVisibility: .visible,
+                            presenting: confirmingAdd) { note in
+                            Button(note.needsCheck ? "Add Anyway" : "Add") {
+                                Task {
+                                    let added = await service.addHeldNote(note)
+                                    problem = added ? nil : String(localized: "The note could not be added now; try again when the vault can be written.")
+                                }
+                            }
+                        } message: { note in
+                            Text(Self.addWarning(note))
+                        }
                 }
                 if let problem { Text(problem).font(.footnote).foregroundStyle(.orange) }
             } header: {
@@ -82,6 +110,26 @@ struct WatchSettingsSection: View {
             }
             .onAppear { service.provisionIfNeeded() }
         }
+    }
+
+    /// Why a held note is held, in the user's words.
+    static func reasonText(_ reason: WatchHeldReason) -> String {
+        switch reason {
+        case .linkOff: return String(localized: "Sent while Use on Apple Watch was off")
+        case .oldEpoch: return String(localized: "Sealed under an earlier key")
+        case .newerEpoch: return String(localized: "The vault has a newer key than this device")
+        case .suspended: return String(localized: "This device was removed from the vault's device list")
+        case .unknownEpoch: return String(localized: "Sealed with a key this device never held")
+        case .unknownVault: return String(localized: "For a vault this device does not hold")
+        }
+    }
+
+    /// What the confirmation of an Add says.
+    static func addWarning(_ note: HeldCapture) -> String {
+        if note.needsCheck {
+            return String(localized: "This note came after Use on Apple Watch was turned off, or under an earlier key. If you lost a watch, it may be one the lost watch recorded: add it only if you recorded it yourself. It becomes a note in your vault.")
+        }
+        return String(localized: "It becomes a note in your vault, as one you recorded.")
     }
 
     private func statusText(_ status: WatchProvisioner.Status) -> String? {

@@ -111,6 +111,23 @@ extension Vault {
         return removed
     }
 
+    /// Declines one join request by its commitment (design §6.2): deletes `joins/<request.fileName>` only when that
+    /// file is a request with the same commitment. The name is 8 hex digits of the key's fingerprint, which another
+    /// key may share; matching by name alone would delete that other device's request.
+    ///
+    /// - Returns: true when the file was deleted.
+    /// - Throws: `notHome`, what `requireWritable` throws, `io`.
+    @discardableResult
+    public func declineJoinRequest(_ request: JoinRequest) throws -> Bool {
+        try requireWritable()
+        guard isHome else { throw VaultError.notHome("only the home device declines join requests (it manages devices)") }
+        let name = request.fileName
+        guard Self.isJoinRequestName(name),
+              let held = joinRequests().first(where: { $0.name == name })?.request,
+              held.commitment == request.commitment else { return false }
+        return try declineJoinRequests([name]) == [name]
+    }
+
     // MARK: - Home's list changes (design §5.1)
 
     /// Approves a join request (design §5.1, §6.2 step 3): appends the device's entry with a wrap of the

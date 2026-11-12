@@ -52,12 +52,17 @@ public enum ImageImport {
         case unsupportedFormat(Format)
         /// The bytes claim a stored format but do not parse.
         case invalid(Format, String)
+        /// With metadata to be removed, the host's converter could not turn the image into one without it (a HEIC
+        /// whose conversion failed): not stored, so its location and camera data never reach the vault.
+        case notConverted(Format, String)
 
         public var description: String {
             switch self {
             case .unsupportedFormat(let f):
                 return f == .unknown ? "not an image format the vault stores" : "\(f.rawValue.uppercased()) image (only JPEG, PNG, HEIC, GIF and TIFF are read)"
             case .invalid(let f, let why): return "invalid \(f.rawValue.uppercased()) image: \(why)"
+            case .notConverted(let f, let why):
+                return "\(f.rawValue.uppercased()) image not converted (\(why)); skipped so its location and camera data are not stored"
             }
         }
     }
@@ -86,14 +91,20 @@ public enum ImageImport {
     /// A HEIC image is stored as it is (its metadata cannot be stripped here: `strippedMetadata` is false), unless
     /// `convertHEIC` is given and `keepMetadata` is off: the host's converter (the app's ImageIO, as for a picked
     /// photo with Photo Privacy on) then turns it into JPEG or PNG bytes without location or camera data, with the
-    /// size and orientation it reports, and those are what is stored. A converter that fails leaves the image as it is.
+    /// size and orientation it reports, and those are what is stored. A converter that fails, or hands back
+    /// something else than such an image, makes the image fail (`notConverted`): the caller skips it and says so, rather
+    /// than storing it with its location and camera data. Without a converter (the CLI) a HEIC is stored as it is.
     ///
     /// - Throws: `Failure`.
     public static func prepare(_ data: Data, keepMetadata: Bool = false,
                                convertHEIC: (@Sendable (Data) throws -> PreparedImage)? = nil) throws -> Prepared {
-        if !keepMetadata, let convertHEIC, format(of: data) == .heic, let c = try? convertHEIC(data),
-           [.jpeg, .png].contains(format(of: c.data)), var converted = try? prepare(c.data, keepMetadata: false),
-           c.pixelSize.w >= 1, c.pixelSize.h >= 1 {
+        if !keepMetadata, let convertHEIC, format(of: data) == .heic {
+            let c: PreparedImage
+            do { c = try convertHEIC(data) } catch { throw Failure.notConverted(.heic, "\(error)") }
+            guard [.jpeg, .png].contains(format(of: c.data)), var converted = try? prepare(c.data, keepMetadata: false),
+                  c.pixelSize.w >= 1, c.pixelSize.h >= 1 else {
+                throw Failure.notConverted(.heic, "the converter returned no JPEG or PNG image")
+            }
             // The converter's own size (after its orientation) and orientation: `prepare` read the stored pixels of
             // bytes that no longer carry an orientation.
             converted.width = Int(c.pixelSize.w); converted.height = Int(c.pixelSize.h)

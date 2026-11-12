@@ -507,8 +507,8 @@ final class NotabilityAttachmentTests: NotabilityTestCase {
     }
 
     /// A HEIC image with the metadata setting off goes through the host's converter (the app's ImageIO, as a picked
-    /// photo does): what is stored is the converted JPEG, not the HEIC with its location data. No converter, a
-    /// converter that fails, or the setting on: the image is stored as it is.
+    /// photo does): what is stored is the converted JPEG, not the HEIC with its location data. No converter, or the
+    /// setting on: the image is stored as it is. A converter that fails: the image is not stored.
     func testHEICIsConvertedWhenTheHostHasAConverterAndMetadataIsOff() throws {
         func box(_ type: String, _ body: [UInt8]) -> [UInt8] {
             let n = body.count + 8
@@ -534,11 +534,15 @@ final class NotabilityAttachmentTests: NotabilityTestCase {
         XCTAssertEqual(asIs.type, "image/heic"); XCTAssertFalse(asIs.strippedMetadata)
         XCTAssertEqual(try ImageImport.prepare(heic, keepMetadata: true, convertHEIC: convert).type, "image/heic",
                        "the setting on keeps the image as it is")
+        // With photo privacy on, a converter that fails, or hands back bytes that are not a JPEG, makes the image fail:
+        // it is skipped (and said), never stored with its location data.
         struct Broken: Error {}
-        XCTAssertEqual(try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: { _ in throw Broken() }).type, "image/heic",
-                       "a converter that fails leaves it as it is")
-        XCTAssertEqual(try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: { _ in PreparedImage(data: Data([1, 2, 3]), mediaType: "image/jpeg", pixelSize: Size(w: 1, h: 1), orientation: nil) }).type, "image/heic",
-                       "bytes that are not a JPEG are not stored")
+        XCTAssertThrowsError(try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: { _ in throw Broken() })) {
+            guard case .notConverted(.heic, _)? = $0 as? ImageImport.Failure else { return XCTFail("\($0)") }
+        }
+        XCTAssertThrowsError(try ImageImport.prepare(heic, keepMetadata: false, convertHEIC: { _ in PreparedImage(data: Data([1, 2, 3]), mediaType: "image/jpeg", pixelSize: Size(w: 1, h: 1), orientation: nil) })) {
+            guard case .notConverted(.heic, _)? = $0 as? ImageImport.Failure else { return XCTFail("\($0)") }
+        }
     }
 }
 

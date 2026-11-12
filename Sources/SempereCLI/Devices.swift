@@ -402,17 +402,23 @@ struct DevicesDecline: ParsableCommand {
             throw CLIError.failure("only the home device declines join requests: \(home) manages this vault's devices")
         }
         let files = vault.joinRequests()
+        if !words.isEmpty {
+            // By the request's commitment (the words name it), never by its file name alone.
+            guard let request = vault.joinRequest(matching: words) else {
+                throw CLIError.failure("no join request in \(Vault.joinsName)/ matches those words")
+            }
+            let declined = try vault.declineJoinRequest(request) ? [String(request.fileName.dropLast(".join.json".count))] : []
+            if output.json { return try output.emitJSON(Out(declined: declined, skipped: [])) }
+            output.info(declined.isEmpty ? "No join request to decline."
+                : "Declined \(declined[0]). The next sync removes it from the targets.")
+            return
+        }
         var names: [String] = []
         // Files in joins/ named like no request (only tampering makes them): said, never declined silently.
         var skipped: [String] = []
         if all {
             names = files.map(\.name).filter(Vault.isJoinRequestName)
             skipped = files.map(\.name).filter { !Vault.isJoinRequestName($0) }
-        } else if !words.isEmpty {
-            guard let request = vault.joinRequest(matching: words) else {
-                throw CLIError.failure("no join request in \(Vault.joinsName)/ matches those words")
-            }
-            names = [request.fileName]
         } else {
             for id in ids {
                 let prefix = id.lowercased()

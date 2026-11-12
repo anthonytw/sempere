@@ -20,16 +20,31 @@ public struct NearbyPeer: Hashable, Sendable {
 /// The nearby link (`AppModelServices.nearby`).
 public protocol NearbyJoinTransport: AnyObject, Sendable {
     /// Advertises the service (`NearbyJoin.serviceType`) under a random instance name, handing every connection that
-    /// arrives to `accept`, until the activity is stopped. `onFailure` runs once if the listener fails (the system
-    /// suspended the app, the local network is not allowed); the activity is then dead.
-    func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void,
+    /// arrives to `accept`, until the activity is stopped. `onReady` runs when the listener is up (the model then counts
+    /// its failures from zero again); `onFailure` runs once if the listener fails (the system suspended the app, the
+    /// local network is not allowed); the activity is then dead.
+    func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void, onReady: @escaping @Sendable () -> Void,
                    onFailure: @escaping @Sendable () -> Void) throws -> any NearbyActivity
     /// Browses for the service, calling `found` with every peer seen whenever the set changes, until stopped.
-    /// `onFailure` runs once if the browser fails; the activity is then dead.
-    func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void,
+    /// `onReady` runs when the browser is up; `onFailure` runs once if the browser fails; the activity is then dead.
+    func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void, onReady: @escaping @Sendable () -> Void,
                 onFailure: @escaping @Sendable () -> Void) -> any NearbyActivity
     /// A connection to `peer`, once it is ready (bounded by the transport's connection timeout).
     func open(_ peer: NearbyPeer) async throws -> any NearbyJoinConnection
+}
+
+extension NearbyJoinTransport {
+    /// `advertise(accept:onReady:onFailure:)` without a ready hook.
+    public func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void,
+                          onFailure: @escaping @Sendable () -> Void) throws -> any NearbyActivity {
+        try advertise(accept: accept, onReady: {}, onFailure: onFailure)
+    }
+
+    /// `browse(found:onReady:onFailure:)` without a ready hook.
+    public func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void,
+                       onFailure: @escaping @Sendable () -> Void) -> any NearbyActivity {
+        browse(found: found, onReady: {}, onFailure: onFailure)
+    }
 }
 
 /// What `MemoryNearbyTransport.open` fails with.
@@ -74,17 +89,35 @@ public final class MemoryNearbyTransport: NearbyJoinTransport, @unchecked Sendab
     /// Fails every advertisement and browser running now (each `onFailure` runs once; they advertise and browse no
     /// more), as the system does when it suspends the app.
     public func fail() {
+        failAdvertisers()
+        failBrowsers()
+    }
+
+    /// Fails every advertisement running now, and nothing else (a listener the system failed).
+    public func failAdvertisers() {
         lock.lock()
-        let all = Array(failures.values)
-        failures = [:]
+        let keys = failures.keys.filter { $0.hasPrefix("ad-") }
+        let all = keys.compactMap { failures[$0] }
+        for k in keys { failures[k] = nil }
         advertisers = [:]
-        browsers = [:]
         lock.unlock()
         changed()
         for f in all { f() }
     }
 
-    public func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void,
+    /// Fails every browser running now, and nothing else (a browser the system failed, or one refused the local
+    /// network).
+    public func failBrowsers() {
+        lock.lock()
+        let keys = failures.keys.filter { $0.hasPrefix("browse-") }
+        let all = keys.compactMap { failures[$0] }
+        for k in keys { failures[k] = nil }
+        browsers = [:]
+        lock.unlock()
+        for f in all { f() }
+    }
+
+    public func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void, onReady: @escaping @Sendable () -> Void,
                           onFailure: @escaping @Sendable () -> Void) throws -> any NearbyActivity {
         let name = NearbyJoin.instanceName()
         lock.lock()
@@ -92,6 +125,7 @@ public final class MemoryNearbyTransport: NearbyJoinTransport, @unchecked Sendab
         failures["ad-" + name] = onFailure
         lock.unlock()
         changed()
+        onReady()
         return Activity { [weak self] in
             guard let self else { return }
             self.lock.lock()
@@ -102,7 +136,7 @@ public final class MemoryNearbyTransport: NearbyJoinTransport, @unchecked Sendab
         }
     }
 
-    public func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void,
+    public func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void, onReady: @escaping @Sendable () -> Void,
                        onFailure: @escaping @Sendable () -> Void) -> any NearbyActivity {
         let id = UUID()
         lock.lock()
@@ -110,6 +144,7 @@ public final class MemoryNearbyTransport: NearbyJoinTransport, @unchecked Sendab
         failures["browse-" + id.uuidString] = onFailure
         let list = peers()
         lock.unlock()
+        onReady()
         found(list)
         return Activity { [weak self] in
             guard let self else { return }

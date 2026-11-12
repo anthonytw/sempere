@@ -146,6 +146,22 @@ extension AppModelSuites {
             #expect(library.vaultStore.list().isEmpty)
         }
 
+        /// Removing a store vault from the device forgets its last place in the device's preferences too.
+        @Test func removingAVaultForgetsItsLastPlace() async throws {
+            let library = try BrowserTests.library()
+            let model = try Self.model()
+            defer { model.close() }
+            model.vaultStore = library.vaultStore
+            let other = try await library.create(NewVaultRequest(name: "Other", keySource: .generate, passphrase: nil))
+            let entry = try #require(library.storedVaults.first { $0.url == other.url })
+            LastPlace.save(RestorableSelection(sidebar: .allNotes, note: UUID(), vault: entry.vaultId, digest: { $0 }),
+                           vault: entry.vaultId, in: model.deviceMemory)
+            #expect(model.deviceMemory.string(forKey: LastPlace.key(entry.vaultId)) != nil)
+            try await model.removeStoredVault(entry, library: library)
+            #expect(model.deviceMemory.string(forKey: LastPlace.key(entry.vaultId)) == nil)
+            #expect(library.storedVaults.isEmpty)
+        }
+
         @Test func storeVaultsOpenFromTheListAndSortByUse() async throws {
             let library = try BrowserTests.library()
             _ = try await library.create(NewVaultRequest(name: "Beta", keySource: .generate, passphrase: nil))

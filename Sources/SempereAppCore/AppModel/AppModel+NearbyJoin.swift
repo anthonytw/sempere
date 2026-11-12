@@ -9,8 +9,9 @@ import Sempere
 // device still confirms with home's reply words. Both routes run side by side: whichever brings the request or the
 // approval first wins, and the other finds nothing left to do.
 //
-// Both sides stop in the background and start again in the foreground while their screen still shows, and restart
-// after the system fails their listener or browser.
+// Both sides stop in the background and start again in the foreground while their screen still shows, and each
+// restarts on its own after the system fails its listener or browser, waiting longer after each failure until it comes
+// up again.
 
 /// Add Device's side of the nearby link.
 public enum NearbyApproverStatus: Equatable, Sendable {
@@ -53,13 +54,23 @@ enum NearbyDecision: Sendable {
 final class NearbyJoinRuntime {
     /// The app is in the background: nothing advertises or browses until it is back.
     var suspended = false
-    var restart: Task<Void, Never>?
+    /// Each side's restart after a failure, and its failures since it last started (the wait doubles with each,
+    /// `restartDelay`; a side that comes up, `onReady`, starts again from zero).
+    var listenerRestart: Task<Void, Never>?
+    var browserRestart: Task<Void, Never>?
+    var listenerFailures = 0
+    var browserFailures = 0
 
     // Home
     /// Add Device shows (it asked for the link, and has not let it go).
     var wantsApproving = false
     var advertisement: (any NearbyActivity)?
-    /// The session going (one at a time): its token, task and connection.
+    /// Connections that have not sent a whole request yet, by their token: at most `handshakeLimit`, each within one
+    /// short limit (`NearbyJoin.Timeouts.request`). None of them holds the session.
+    var handshakes: [UUID: (task: Task<Void, Never>, connection: any NearbyJoinConnection)] = [:]
+    /// Their tokens, oldest first.
+    var handshakeOrder: [UUID] = []
+    /// The session going (one at a time, taken by a parsed request of this vault): its token, task and connection.
     var sessionToken: UUID?
     var session: Task<Void, Never>?
     var sessionConnection: (any NearbyJoinConnection)?
@@ -67,8 +78,6 @@ final class NearbyJoinRuntime {
     var pending: (request: JoinRequest, nonce: Data)?
     var decision: NearbyDecision?
     var waiter: CheckedContinuation<NearbyDecision, Never>?
-    /// `busy` answers in flight (connections beyond these are closed without one).
-    var busyAnswers = 0
 
     // The joining device
     /// The join screen waits (it asked for the link, and has not let it go).
@@ -79,20 +88,23 @@ final class NearbyJoinRuntime {
 
     /// At most this many requests that came nearby are kept for Add Device (the oldest goes first).
     static let requestLimit = 4
-    /// At most this many `busy` answers at once.
-    static let busyLimit = 4
+    /// At most this many connections in their handshake at once (a new one ends the oldest).
+    nonisolated static let handshakeLimit = 4
+    /// At most this many devices never tried before are tried per minute by the join screen (design L5).
+    nonisolated static let newPeersPerMinute = 6
 
-    /// Ends the wait of the session going, once.
-    func decide(_ d: NearbyDecision) {
-        guard decision == nil else { return }
+    /// Ends the wait of the session `token`, once; nothing for another session's token (one torn down since).
+    func decide(_ d: NearbyDecision, token: UUID?) {
+        guard token == sessionToken, decision == nil else { return }
         decision = d
         let w = waiter
         waiter = nil
         w?.resume(returning: d)
     }
 
-    /// The user's decision; `closed` when the waiting task is canceled (the joining device left, time ran out).
-    func waitForDecision() async -> NearbyDecision {
+    /// The user's decision on the session `token`; `closed` when the waiting task is canceled (the joining device left,
+    /// time ran out).
+    func waitForDecision(token: UUID) async -> NearbyDecision {
         if let decision { return decision }
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (c: CheckedContinuation<NearbyDecision, Never>) in
@@ -103,14 +115,14 @@ final class NearbyJoinRuntime {
                 }
             }
         } onCancel: {
-            Task { @MainActor [weak self] in self?.decide(.closed) }
+            Task { @MainActor [weak self] in self?.decide(.closed, token: token) }
         }
     }
 
     /// Tears the session down: its wait ends, its task is canceled and its connection aborted; a new session may start
     /// at once (its token differs from this one's).
     func endSession() {
-        decide(.closed)
+        decide(.closed, token: sessionToken)
         session?.cancel()
         sessionConnection?.abort()
         session = nil
@@ -118,6 +130,31 @@ final class NearbyJoinRuntime {
         sessionToken = nil
         pending = nil
         decision = nil
+    }
+
+    /// Ends every connection still in its handshake.
+    func endHandshakes() {
+        for h in handshakes.values {
+            h.task.cancel()
+            h.connection.abort()
+        }
+        handshakes = [:]
+        handshakeOrder = []
+    }
+
+    /// Ends the handshake `token` (its place is freed at once).
+    func endHandshake(_ token: UUID) {
+        handshakeOrder.removeAll { $0 == token }
+        guard let h = handshakes.removeValue(forKey: token) else { return }
+        h.task.cancel()
+        h.connection.abort()
+    }
+
+    /// The wait before a side starts again after its `failures`-th failure since it last came up: `base`, doubled with
+    /// each failure after the first, at most a minute (or `base`, if longer).
+    static func restartDelay(base: Duration, failures: Int) -> Duration {
+        let doubled = base * (1 << min(max(failures - 1, 0), 10))
+        return min(doubled, max(base, .seconds(60)))
     }
 }
 
@@ -128,6 +165,7 @@ extension AppModelCore {
     /// only with a link. A connection that comes while a session goes is told `busy`.
     public func startNearbyApproving() {
         nearby.wantsApproving = true
+        nearby.listenerFailures = 0
         startAdvertising()
     }
 
@@ -135,6 +173,8 @@ extension AppModelCore {
     /// came nearby are forgotten.
     public func stopNearbyApproving() {
         nearby.wantsApproving = false
+        nearby.listenerRestart?.cancel()
+        nearby.listenerRestart = nil
         stopAdvertising()
         nearbyRequests = []
         nearbyApproving = .off
@@ -150,61 +190,70 @@ extension AppModelCore {
                     guard let self else { connection.cancel(); return }
                     self.acceptNearby(connection)
                 }
+            }, onReady: { [weak self] in
+                // Up: the failures counted toward the wait start from zero again.
+                Task { @MainActor in self?.nearby.listenerFailures = 0 }
             }, onFailure: { [weak self] in
-                Task { @MainActor in self?.nearbyLinkFailed() }
+                Task { @MainActor in self?.nearbyListenerFailed() }
             })
             nearbyApproving = .advertising
         } catch {
             nearbyApproving = .unavailable
-            scheduleNearbyRestart()
+            nearby.listenerFailures += 1
+            scheduleListenerRestart()
         }
     }
 
     func stopAdvertising() {
         nearby.advertisement?.stop()
         nearby.advertisement = nil
+        nearby.endHandshakes()
         nearby.endSession()
     }
 
+    /// A connection arrived: it gets one of a few handshake places (when all are taken, the oldest is ended: a real
+    /// device's hello and request take a round trip, a silent one holds its place only until newer ones come), and holds
+    /// the one session only once it sent a parsed request of this vault (`nearbyReceived`); a device that connects and
+    /// stays silent, or sends anything else, is dropped within `NearbyJoin.Timeouts.request` and keeps nobody out.
     func acceptNearby(_ connection: any NearbyJoinConnection) {
         guard nearby.advertisement != nil, let current = vault, phase == .unlocked else { connection.abort(); return }
-        guard nearby.sessionToken == nil else {
-            // Another device's session goes on: `busy`, a bounded number at once (a flood is closed unanswered).
-            guard nearby.busyAnswers < NearbyJoinRuntime.busyLimit else { connection.abort(); return }
-            nearby.busyAnswers += 1
-            let limit = nearbyTimeouts.handshake
-            Task { [weak self] in
-                await NearbyApprover.refuseBusy(connection, within: limit)
-                self?.nearby.busyAnswers -= 1
-            }
-            return
+        while nearby.handshakes.count >= NearbyJoinRuntime.handshakeLimit, let oldest = nearby.handshakeOrder.first {
+            nearby.endHandshake(oldest)
         }
         let token = UUID(), vaultId = current.vaultId, timeouts = nearbyTimeouts
-        nearby.sessionToken = token
-        nearby.sessionConnection = connection
-        nearby.decision = nil
-        nearbyApproving = .connected
-        nearby.session = Task { [weak self] in
+        let task = Task { [weak self] in
             _ = try? await NearbyApprover.run(on: connection, vaultId: vaultId, timeouts: timeouts,
                                               received: { [weak self] request, _, nonce in
-                await self?.nearbyReceived(request, nonce: nonce, token: token) ?? .refuse(.closed)
+                await self?.nearbyReceived(request, nonce: nonce, token: token, connection: connection) ?? .refuse(.closed)
             }, outcome: { [weak self] in
                 await self?.nearbyOutcome(token: token) ?? .refuse(.closed)
             })
-            self?.nearbySessionEnded(token)
+            self?.nearbyConnectionEnded(token)
         }
+        nearby.handshakes[token] = (task, connection)
+        nearby.handshakeOrder.append(token)
     }
 
-    /// Home's first answer to a request that came nearby: refused when it cannot be approved here, the reply at once
-    /// when the device is listed already, else kept in memory (never written to the vault: design N5) and listed.
-    func nearbyReceived(_ request: JoinRequest, nonce: Data, token: UUID) async -> NearbyApprover.Answer {
-        guard nearby.sessionToken == token, let current = vault, phase == .unlocked, current.isHome,
-              !isVaultReadOnly else { return .refuse(.cannotApprove) }
+    /// Home's first answer to a request that came nearby: refused when it cannot be approved here, `busy` while
+    /// another device's session goes, the reply at once when the device is listed already, else this connection takes
+    /// the session, and the request is kept in memory (never written to the vault: design N5) and listed.
+    func nearbyReceived(_ request: JoinRequest, nonce: Data, token: UUID,
+                        connection: any NearbyJoinConnection) async -> NearbyApprover.Answer {
+        guard nearby.handshakes[token] != nil || nearby.sessionToken == token, let current = vault, phase == .unlocked,
+              current.isHome, !isVaultReadOnly else { return .refuse(.cannotApprove) }
         guard request.vaultId == current.vaultId else { return .refuse(.otherVault) }
         // Approved already (through a target, or in an earlier session): the reply at once.
         if let sealed = await nearbySealedReply(current, request, nonce) { return .reply(sealed) }
-        guard nearby.sessionToken == token else { return .refuse(.closed) }
+        guard let handshake = nearby.handshakes[token] else { return .refuse(.closed) }
+        guard nearby.sessionToken == nil else { return .refuse(.busy) }
+        nearby.handshakes[token] = nil
+        nearby.handshakeOrder.removeAll { $0 == token }
+        nearby.sessionToken = token
+        nearby.session = handshake.task
+        nearby.sessionConnection = connection
+        nearby.decision = nil
         nearby.pending = (request, nonce)
+        nearbyApproving = .connected
         keepNearbyRequest(request)
         nearbyArrivals += 1
         return .wait
@@ -220,7 +269,7 @@ extension AppModelCore {
     /// Waits for the user's decision on the session's request, then the reply (built from `vault.json` on disk).
     func nearbyOutcome(token: UUID) async -> NearbyApprover.Final {
         guard nearby.sessionToken == token, let pending = nearby.pending else { return .refuse(.closed) }
-        switch await nearby.waitForDecision() {
+        switch await nearby.waitForDecision(token: token) {
         case .declined: return .refuse(.declined)
         case .closed: return .refuse(.closed)
         case .approved:
@@ -238,7 +287,12 @@ extension AppModelCore {
         return sealed ?? nil
     }
 
-    func nearbySessionEnded(_ token: UUID) {
+    /// A connection's run ended: in its handshake, its place is freed; the session's, the session ends.
+    func nearbyConnectionEnded(_ token: UUID) {
+        if nearby.handshakes.removeValue(forKey: token) != nil {
+            nearby.handshakeOrder.removeAll { $0 == token }
+            return
+        }
         guard nearby.sessionToken == token else { return }   // torn down already; another may be going
         nearby.endSession()
         nearbyApproving = nearby.advertisement != nil ? .advertising : .off
@@ -249,40 +303,58 @@ extension AppModelCore {
     /// `approveDevice` approved `request`: the session waiting for it sends the reply.
     func nearbyApproved(_ request: JoinRequest) {
         guard nearby.pending?.request.commitment == request.commitment else { return }
-        nearby.decide(.approved)
+        nearby.decide(.approved, token: nearby.sessionToken)
     }
 
-    /// `declineJoinRequest` declined `fileName`: forgotten here, and the session waiting for it says so.
-    func nearbyDeclined(_ fileName: String) {
-        nearbyRequests.removeAll { $0.fileName == fileName }
-        guard nearby.pending?.request.fileName == fileName else { return }
-        nearby.decide(.declined)
+    /// `declineJoinRequest` declined `request`: forgotten here, and the session waiting for it says so. By its
+    /// commitment, never its file name (8 hex digits another key may share).
+    func nearbyDeclined(_ request: JoinRequest) {
+        nearbyRequests.removeAll { $0.commitment == request.commitment }
+        guard nearby.pending?.request.commitment == request.commitment else { return }
+        nearby.decide(.declined, token: nearby.sessionToken)
     }
 
     // MARK: - Failures and the background
 
-    /// The listener or the browser failed (the system suspended the app, the local network is not allowed): what
-    /// failed is dropped, and started again after `nearbyRetry` while its screen still shows.
-    func nearbyLinkFailed() {
-        if nearby.advertisement != nil {
-            stopAdvertising()
-            if nearby.wantsApproving { nearbyApproving = .unavailable }
-        }
-        if nearby.browsing != nil || nearby.joinTask != nil {
-            stopJoinLoop()
-            if nearby.wantsJoining { nearbyJoining = .unavailable }
-        }
-        scheduleNearbyRestart()
+    /// The listener failed (the system suspended the app, the local network is not allowed): it is dropped, Add Device
+    /// says the link is unavailable, and it starts again after a wait that grows with each failure since it last came up
+    /// (`restartDelay`) while Add Device shows. The browser, if any, is not touched.
+    func nearbyListenerFailed() {
+        guard nearby.advertisement != nil else { return }
+        stopAdvertising()
+        if nearby.wantsApproving { nearbyApproving = .unavailable }
+        nearby.listenerFailures += 1
+        scheduleListenerRestart()
     }
 
-    func scheduleNearbyRestart() {
-        nearby.restart?.cancel()
-        let delay = nearbyRetry
-        nearby.restart = Task { [weak self] in
+    /// The browser failed, or waits for a permission the user refused (the app's transport reports both): as
+    /// `nearbyListenerFailed`, for the join screen.
+    func nearbyBrowserFailed() {
+        guard nearby.browsing != nil || nearby.joinTask != nil else { return }
+        stopJoinLoop()
+        if nearby.wantsJoining { nearbyJoining = .unavailable }
+        nearby.browserFailures += 1
+        scheduleBrowserRestart()
+    }
+
+    func scheduleListenerRestart() {
+        nearby.listenerRestart?.cancel()
+        let delay = NearbyJoinRuntime.restartDelay(base: nearbyRetry, failures: nearby.listenerFailures)
+        nearby.listenerRestart = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled, let self else { return }
-            self.nearby.restart = nil
+            self.nearby.listenerRestart = nil
             self.startAdvertising()
+        }
+    }
+
+    func scheduleBrowserRestart() {
+        nearby.browserRestart?.cancel()
+        let delay = NearbyJoinRuntime.restartDelay(base: nearbyRetry, failures: nearby.browserFailures)
+        nearby.browserRestart = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.nearby.browserRestart = nil
             self.startJoinLoop()
         }
     }
@@ -290,8 +362,10 @@ extension AppModelCore {
     /// The app went to the background (`observeAppLifecycle`): both sides stop, and their screens' wishes are kept.
     public func nearbyEnteredBackground() {
         nearby.suspended = true
-        nearby.restart?.cancel()
-        nearby.restart = nil
+        nearby.listenerRestart?.cancel()
+        nearby.listenerRestart = nil
+        nearby.browserRestart?.cancel()
+        nearby.browserRestart = nil
         if nearby.wantsApproving {
             stopAdvertising()
             nearbyApproving = .off
@@ -306,6 +380,8 @@ extension AppModelCore {
     public func nearbyEnteredForeground() {
         guard nearby.suspended else { return }
         nearby.suspended = false
+        nearby.listenerFailures = 0
+        nearby.browserFailures = 0
         startAdvertising()
         startJoinLoop()
     }
@@ -316,6 +392,7 @@ extension AppModelCore {
     /// tries each device found in turn (`nearbyJoinLoop`) until one approves.
     public func startNearbyJoin() {
         nearby.wantsJoining = true
+        nearby.browserFailures = 0
         startJoinLoop()
     }
 
@@ -323,7 +400,8 @@ extension AppModelCore {
     public func stopNearbyJoin() {
         nearby.wantsJoining = false
         stopJoinLoop()
-        if nearby.advertisement == nil, !nearby.wantsApproving { nearby.restart?.cancel() }
+        nearby.browserRestart?.cancel()
+        nearby.browserRestart = nil
         nearbyJoining = .off
     }
 
@@ -338,8 +416,10 @@ extension AppModelCore {
         nearby.peers = []
         nearby.browsing = transport.browse(found: { [weak self] peers in
             Task { @MainActor in self?.nearbyPeersChanged(peers) }
+        }, onReady: { [weak self] in
+            Task { @MainActor in self?.nearby.browserFailures = 0 }
         }, onFailure: { [weak self] in
-            Task { @MainActor in self?.nearbyLinkFailed() }
+            Task { @MainActor in self?.nearbyBrowserFailed() }
         })
         let gen = generation
         nearby.joinTask = Task { [weak self] in await self?.nearbyJoinLoop(transport, generation: gen) }
@@ -368,21 +448,25 @@ extension AppModelCore {
     nonisolated static var nearbyRefusedRest: Duration { .seconds(60) }
     nonisolated static var nearbyStalledRest: Duration { .seconds(300) }
 
-    /// One session at a time, with each device found, those never tried first: a device that refused rests a minute,
-    /// one that said `waiting` and then let the session run out five, a busy one, one whose session closed or a broken
+    /// One session at a time, with a device found chosen at random among those not resting, those never tried first
+    /// but at most `newPeersPerMinute` of them a minute (names are the advertisers' to choose: none sorts its way
+    /// ahead, and many fresh ones do not keep the screen from the others): a device that refused rests a minute, one
+    /// that said `waiting` and then let the session run out five, a busy one, one whose session closed or a broken
     /// link a moment (`nearbyRetry`).
     func nearbyJoinLoop(_ transport: any NearbyJoinTransport, generation gen: Int) async {
         var resting: [NearbyPeer: ContinuousClock.Instant] = [:]
         var tried: Set<NearbyPeer> = []
+        var firstTries: [ContinuousClock.Instant] = []
         while !Task.isCancelled, gen == generation, phase == .locked {
             let now = ContinuousClock.now
             let ready = nearby.peers.filter { (resting[$0] ?? now) <= now }
-            guard let peer = ready.first(where: { !tried.contains($0) }) ?? ready.first, let identity = joinIdentity,
+            firstTries.removeAll { now - $0 >= .seconds(60) }
+            guard let peer = Self.nearbyPick(ready: ready, tried: tried, newThisMinute: firstTries.count), let identity = joinIdentity,
                   let v = vault, let url = vaultURL, let file = joinRequestedFile(v.vaultId) else {
                 try? await Task.sleep(for: nearbyRetry)
                 continue
             }
-            tried.insert(peer)
+            if tried.insert(peer).inserted { firstTries.append(now) }
             let requestURL = url.appendingPathComponent("joins").appendingPathComponent(file)
             // The request as written: its bytes are what the targets hold.
             guard let raw = try? await offMain({ try BoundedRead.contents(of: requestURL, maxBytes: JoinRequest.maxBytes) }),
@@ -437,6 +521,14 @@ extension AppModelCore {
             }
             nearbyJoining = nearby.peers.isEmpty ? .looking : .found
         }
+    }
+
+    /// The next device to try: one never tried, at random, while fewer than `newPeersPerMinute` were tried for the
+    /// first time this minute; else one tried before, at random; nil when none is ready.
+    nonisolated static func nearbyPick(ready: [NearbyPeer], tried: Set<NearbyPeer>, newThisMinute: Int) -> NearbyPeer? {
+        let untried = ready.filter { !tried.contains($0) }
+        if !untried.isEmpty, newThisMinute < NearbyJoinRuntime.newPeersPerMinute { return untried.randomElement() }
+        return ready.filter { tried.contains($0) }.randomElement()
     }
 
     func nearbyConnected(generation gen: Int) {

@@ -5,8 +5,8 @@
   2. move [Unreleased] into the version's section, headed `## [X.Y.Z] - TODO(user): release date
      (YYYY-MM-DD)` (an undated section that already exists, like 1.0.0's, takes the entries instead),
      and point the compare links at the new tag;
-  3. set `sempereVersion` in Sources/SempereCLI/Version.swift and the `--version` assertion in
-     Tests/CLITests/CLICommandTests.swift;
+  3. set `sempereVersion` in Sources/SempereCLI/Version.swift (the `--version` test, CLIAboutTests, compares
+     the output with the version `about --json` reports, so it needs no edit);
   4. set MARKETING_VERSION of every app target (X.Y.Z without a prerelease suffix) unless --no-app;
      it never lowers it (the App Store refuses a version below one it has).
 
@@ -156,7 +156,6 @@ def main():
     root = Path(a.root)
     changelog = root / "CHANGELOG.md"
     version_swift = root / "Sources/SempereCLI/Version.swift"
-    cli_test = root / "Tests/CLITests/CLICommandTests.swift"
     pbxproj = root / "Apps/Sempere/Sempere.xcodeproj/project.pbxproj"
     collector = Path(__file__).resolve().parent / "changelog-collect.py"
 
@@ -191,13 +190,10 @@ def main():
         warnings = []
         changes = {changelog: prepare_changelog(text, version, warnings)}
 
-        # 3. The CLI version and its test.
+        # 3. The CLI version (its test reads it back through `about --json`: nothing to edit there).
         changes[version_swift] = replace_once(
             version_swift, version_swift.read_text(encoding="utf-8"),
             r'^(let sempereVersion = ")[^"]*(")', rf"\g<1>{version}\g<2>", "`let sempereVersion = \"…\"`")
-        changes[cli_test] = replace_once(
-            cli_test, cli_test.read_text(encoding="utf-8"),
-            r'(\["--version"\].*"sempere )[^"]+(")', rf"\g<1>{version}\g<2>", "the --version assertion")
 
         # 4. The app's marketing version (every target and configuration; release-check.sh wants them equal).
         if not a.no_app:

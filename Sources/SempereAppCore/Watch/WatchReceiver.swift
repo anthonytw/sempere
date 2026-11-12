@@ -12,8 +12,20 @@ struct CaptureWatchDelivery: WatchDelivery {
     var store: any CaptureProfileStore
     /// "Use on Apple Watch" (`WatchProvisioner.enabled`).
     var enabled: @Sendable () -> Bool
+    /// One reading of the stored profile (`snapshot`): nil reads the store each time. `.failure`: it could not be read.
+    var pinned: Result<StoredCaptureProfile?, QuickCaptureError>?
 
-    private var stored: StoredCaptureProfile? { try? store.load() }
+    private var stored: StoredCaptureProfile? {
+        if let pinned { return (try? pinned.get()) ?? nil }
+        return try? store.load()
+    }
+
+    /// The stored profile read once, for one receive (`WatchDelivery.snapshot`).
+    func snapshot() throws -> any WatchDelivery {
+        var copy = self
+        do { copy.pinned = .success(try store.load()) } catch { copy.pinned = .failure(.profileUnreadable) }
+        return copy
+    }
 
     var currentVault: UUID? { stored?.profile.vaultId }
 
@@ -28,6 +40,14 @@ struct CaptureWatchDelivery: WatchDelivery {
 
     func deliverToCurrent(_ sealed: SealedCapture) throws -> WatchPlacement {
         guard let stored else { throw QuickCaptureError.profileUnreadable }
+        if pinned != nil {
+            // The profile changed since this receive judged the file (another vault, or a new epoch): nothing is recorded or
+            // placed, nothing acknowledged; the watch sends it again and the next receive judges it against the new profile.
+            let now: StoredCaptureProfile?
+            do { now = try store.load() } catch { throw QuickCaptureError.profileUnreadable }
+            guard let now, now.profile.vaultId == stored.profile.vaultId, now.profile.epoch == stored.profile.epoch,
+                  now.profile.epochId == stored.profile.epochId else { throw WatchProfileChanged() }
+        }
         switch try delivery.deliver(sealed, stored) {
         case .vault: return .vault
         case .queued: return .queued
@@ -63,6 +83,7 @@ struct CaptureWatchDelivery: WatchDelivery {
     }
 
     private func loadProfile() throws -> StoredCaptureProfile? {
+        if let pinned { return try pinned.get() }
         do { return try store.load() } catch { throw QuickCaptureError.profileUnreadable }
     }
 
@@ -96,6 +117,9 @@ struct CaptureWatchDelivery: WatchDelivery {
         try WatchQueue.store(sealed, in: delivery.queueFolder(vault))
     }
 }
+
+/// The stored capture profile changed between a receive's verdict and its delivery: nothing was delivered or acknowledged.
+struct WatchProfileChanged: Error, Equatable {}
 
 /// What one transferred file came to, for the app to acknowledge and to show.
 public struct WatchReceipt: Equatable, Sendable {

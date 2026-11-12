@@ -319,13 +319,14 @@ extension AppModelCore {
     // MARK: - Declining (home)
 
     /// Declines a waiting request (Add Device's Decline, `sempere devices decline`): deleted from the copy under the
-    /// vault's write lock; the next runs delete it on the targets.
-    public func declineJoinRequest(_ fileName: String) async throws {
+    /// vault's write lock when the file under its name is this request (by commitment, `Vault.declineJoinRequest`); the
+    /// next runs delete it on the targets. One that came nearby is forgotten, and its session told.
+    public func declineJoinRequest(_ request: JoinRequest) async throws {
         guard let current = vault, phase == .unlocked else { throw KeyError.notUnlocked }
         try requireWritableVault()
         let lock = vaultWriteLock
-        _ = try await offMain { try Self.withWriteLock(lock) { try current.declineJoinRequests([fileName]) } }
-        nearbyDeclined(fileName)
+        _ = try await offMain { try Self.withWriteLock(lock) { try current.declineJoinRequest(request) } }
+        nearbyDeclined(request)
         syncSessions.forEach { $0.demand() }
     }
 

@@ -25,7 +25,7 @@ printf 'let sempereVersion = "1.2.3"\n' > Sources/SempereCLI/Version.swift
 printf '# Changelog\n\n## [1.2.3] - 2026-11-09\n\n### Fixed\n\n- A thing.\n\n## [1.2.2] - 2026-10-01\n\n- Older.\n' > CHANGELOG.md
 # The maintainer's signing key (a throwaway one) and its line in the signers file.
 mkdir -p packaging; ssh-keygen -q -t ed25519 -N "" -C test -f "$t/key"; ssh-keygen -q -t ed25519 -N "" -C other -f "$t/other"
-echo "maintainer $(cut -d' ' -f1,2 "$t/key.pub")" > packaging/allowed_signers
+echo "maintainer namespaces=\"git,file\" $(cut -d' ' -f1,2 "$t/key.pub")" > packaging/allowed_signers
 export SEMPERE_SIGN_DROP="$t/drop" SEMPERE_SIGN_OUT="$t/sign-out" SEMPERE_BUILD_USER=$(id -un) SEMPERE_MAINTAINER_USER=$(id -un)   # the seat's folder, the maintainer's folder; here both are this user
 # The maintainer signs with release-sign.sh from their own account; stag makes a tag signed with a given key (default: theirs).
 stag() { local k=$t/key; [[ ${1:-} == -k ]] && { k=$2; shift 2; }; git -c gpg.format=ssh -c user.signingkey="$k" tag -s "$@"; }

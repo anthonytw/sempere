@@ -21,6 +21,12 @@ public enum WatchHeldReason: String, Codable, Equatable, Sendable, CaseIterable 
 
     /// Whether Add to inbox is offered: the file can be recorded and caught up.
     public var canAdd: Bool { self != .unknownEpoch && self != .unknownVault }
+
+    /// Whether the note needs the user's check before it is added: it arrived after "Use on Apple Watch" went off, or
+    /// under an earlier key. After a lost watch's steps (the toggle off, then a new key) that is exactly what the lost watch
+    /// sends, so such a note is offered for Delete first and added only one at a time, after a warning; `held add --all`
+    /// skips it.
+    public var needsCheck: Bool { self == .linkOff || self == .oldEpoch }
 }
 
 /// One held file.
@@ -35,6 +41,8 @@ public struct HeldCapture: Codable, Equatable, Sendable {
     public var bytes: Int
 
     public var canAdd: Bool { reason.canAdd }
+    /// `WatchHeldReason.needsCheck`.
+    public var needsCheck: Bool { reason.needsCheck }
 }
 
 public enum WatchHeldError: Error, Equatable, Sendable, CustomStringConvertible {

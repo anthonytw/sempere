@@ -44,7 +44,17 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
 
     // MARK: - Advertising (home)
 
-    func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void,
+    /// How long a listener or browser may stay `.waiting` before it counts as failed: the first local network prompt
+    /// makes it wait (with a policy-denied error) until the user answers, and a short wait must not read as a refusal.
+    static let waitingGrace: DispatchTimeInterval = .seconds(5)
+
+    /// The latest state's kind, for the waiting grace (set on the transport's queue only).
+    final class Waiting: @unchecked Sendable {
+        var since: Int = 0
+        var waiting = false
+    }
+
+    func advertise(accept: @escaping @Sendable (any NearbyJoinConnection) -> Void, onReady: @escaping @Sendable () -> Void,
                    onFailure: @escaping @Sendable () -> Void) throws -> any NearbyActivity {
         let params = Self.parameters(peerToPeer: mode == .bonjour)
         if mode == .loopback { params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any) }
@@ -60,12 +70,27 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
         }
         let id = UUID().uuidString
         let failed = NWNearbyConnection.Once()
+        let waiting = Waiting()
         listener.stateUpdateHandler = { [weak self, weak listener] state in
+            waiting.waiting = false
             switch state {
             case .ready:
                 if self?.mode == .loopback, let port = listener?.port { self?.registerLoopback(id, port: port) }
+                onReady()
+            case .waiting:
+                // The local network prompt may still be up: a failure only if it keeps waiting.
+                waiting.waiting = true
+                waiting.since += 1
+                let mark = waiting.since
+                queue.asyncAfter(deadline: .now() + Self.waitingGrace) { [weak self, weak listener] in
+                    guard waiting.waiting, waiting.since == mark else { return }
+                    self?.unregisterLoopback(id)
+                    listener?.cancel()
+                    failed.run { onFailure() }
+                }
             case .failed:
-                // The system suspended the app, or the local network is not allowed: the model starts it again.
+                // The system suspended the app, or the local network is not allowed: the model says the link is
+                // unavailable and starts it again later.
                 self?.unregisterLoopback(id)
                 listener?.cancel()
                 failed.run { onFailure() }
@@ -106,7 +131,7 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
 
     // MARK: - Browsing (the joining device)
 
-    func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void,
+    func browse(found: @escaping @Sendable ([NearbyPeer]) -> Void, onReady: @escaping @Sendable () -> Void,
                 onFailure: @escaping @Sendable () -> Void) -> any NearbyActivity {
         if mode == .loopback {
             let id = UUID()
@@ -114,6 +139,7 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
             loopbackBrowsers[id] = found
             let peers = endpoints.keys.sorted().map(NearbyPeer.init(id:))
             lock.unlock()
+            onReady()
             found(peers)
             return Activity { [weak self] in
                 self?.lock.lock()
@@ -135,10 +161,30 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
             found(seen.keys.sorted().map(NearbyPeer.init(id:)))
         }
         let failed = NWNearbyConnection.Once()
+        let waiting = Waiting()
+        let queue = self.queue
         browser.stateUpdateHandler = { [weak browser] state in
-            if case .failed = state {
+            waiting.waiting = false
+            switch state {
+            case .ready:
+                onReady()
+            case .waiting:
+                // Waiting for the local network permission: the first prompt may still be up, so only a wait that
+                // lasts past the grace is reported (not left to look for ever); the model then says the link is
+                // unavailable and starts it again later.
+                waiting.waiting = true
+                waiting.since += 1
+                let mark = waiting.since
+                queue.asyncAfter(deadline: .now() + Self.waitingGrace) { [weak browser] in
+                    guard waiting.waiting, waiting.since == mark else { return }
+                    browser?.cancel()
+                    failed.run { onFailure() }
+                }
+            case .failed:
                 browser?.cancel()
                 failed.run { onFailure() }
+            default:
+                break
             }
         }
         browser.start(queue: queue)

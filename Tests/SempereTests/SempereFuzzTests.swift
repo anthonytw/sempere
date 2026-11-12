@@ -560,11 +560,24 @@ final class SempereFuzzTests: VaultTestCase {
                                     record: Data([1, 2, 3]))
         let toHome = NearbyJoin.magic + NearbyJoinMessage.hello(nonce: Data(count: 32)).frame()
             + NearbyJoinMessage.request(Data("{}".utf8)).frame()
-        let toJoiner = NearbyJoin.magic + NearbyJoinMessage.proof(Data(count: 32)).frame() + NearbyJoinMessage.waiting.frame()
-            + NearbyJoinMessage.reply(Data([7, 7])).frame() + NearbyJoinMessage.refused(.busy).frame()
+        let toJoiner = NearbyJoin.magic + NearbyJoinMessage.proof(homeNonce: Data(count: 32), tag: Data(count: 32)).frame()
+            + NearbyJoinMessage.waiting.frame() + NearbyJoinMessage.reply(Data([7, 7])).frame() + NearbyJoinMessage.refused(.busy).frame()
+        // Each reader as a session drives it: through its stages (`NearbyFrameReader.Stage`, moved on by each message as
+        // the session does), and with no stage (every type the sender may send).
+        @Sendable func staged(_ m: NearbyJoinMessage, _ stage: NearbyFrameReader.Stage?) -> NearbyFrameReader.Stage? {
+            switch (stage, m) {
+            case (.hello?, .hello): return .request
+            case (.proof?, .proof): return .answer
+            case (.answer?, .waiting): return .final
+            default: return stage
+            }
+        }
+        let starts: [(NearbyFrameReader.Sender, NearbyFrameReader.Stage?)] = [(.joiner, nil), (.approver, nil), (.joiner, .hello),
+                                                                               (.approver, .proof), (.approver, .answer)]
         assertClean(Fuzz.run("nearby-join", seeds: [toHome, toJoiner, reply.plaintext()], quick: 1500, maxSize: 64 * 1024) { input in
-            for sender in [NearbyFrameReader.Sender.joiner, .approver] {
-                var reader = NearbyFrameReader(reading: sender)
+            for (sender, start) in starts {
+                var reader = start.map { NearbyFrameReader(at: $0) } ?? NearbyFrameReader(reading: sender)
+                var stage = start
                 var at = input.startIndex
                 read: while at < input.endIndex {
                     let end = min(input.endIndex, at + 1 + Int(input[at] % 61))
@@ -572,11 +585,17 @@ final class SempereFuzzTests: VaultTestCase {
                         return "untyped \(error)"
                     }
                     at = end
+                    // Never more than one frame of the stage held.
+                    if reader.held > reader.capacity { return "held \(reader.held) bytes over the stage's \(reader.capacity)" }
                     do { _ = try reader.headerReady() } catch is NearbyJoinError { break read } catch {
                         return "untyped \(error)"
                     }
                     while true {
-                        do { guard try reader.next() != nil else { break } } catch is NearbyJoinError { break read } catch {
+                        do {
+                            guard let m = try reader.next() else { break }
+                            if let s = stage, s.limits[m.type] == nil { return "a message the stage does not allow: \(m)" }
+                            if let next = staged(m, stage), next != stage { stage = next; reader.expect(next) }
+                        } catch is NearbyJoinError { break read } catch {
                             return "untyped \(error)"
                         }
                     }

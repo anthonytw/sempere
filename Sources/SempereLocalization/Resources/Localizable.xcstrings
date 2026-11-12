@@ -3483,6 +3483,32 @@
         }
       }
     },
+    "Add Anyway" : {
+      "comment" : "Settings ▸ Apple Watch: confirms adding a held note that needs a check",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir de todos modos"
+          }
+        }
+      }
+    },
+    "Add Anyway…" : {
+      "comment" : "Settings ▸ Apple Watch: add a held note that needs a check",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir de todos modos…"
+          }
+        }
+      }
+    },
     "Add Device" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -3773,6 +3799,18 @@
         }
       }
     },
+    "Add this Watch note to the inbox?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Añadir esta nota del Watch a la bandeja de entrada?"
+          }
+        }
+      }
+    },
     "Add this note to Favorites" : {
       "comment" : "Tooltip of the favorite button",
       "extractionState" : "manual",
@@ -3782,6 +3820,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Añadir esta nota a Favoritas"
+          }
+        }
+      }
+    },
+    "Add this note to the vault's inbox, as yours" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir esta nota a la bandeja de entrada de la bóveda, como tuya"
           }
         }
       }
@@ -3808,19 +3858,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Añadir a Favoritas"
-          }
-        }
-      }
-    },
-    "Add to inbox" : {
-      "comment" : "Button: add the held Watch voice notes to the vault's inbox",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir a la bandeja"
           }
         }
       }
@@ -3873,6 +3910,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Añadido el %1$@ por un dispositivo quitado (%2$@)"
+          }
+        }
+      }
+    },
+    "Add…" : {
+      "comment" : "Settings ▸ Apple Watch: add one held note",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir…"
           }
         }
       }
@@ -7041,6 +7091,19 @@
         }
       }
     },
+    "Delete All" : {
+      "comment" : "Settings ▸ Apple Watch: delete every held note",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar todo"
+          }
+        }
+      }
+    },
     "Delete All Eligible (%@)" : {
       "comment" : "Button; %@ is a number of items and their size",
       "extractionState" : "manual",
@@ -7138,6 +7201,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "¿Borrar este archivo de este dispositivo?"
+          }
+        }
+      }
+    },
+    "Delete this held note from this device" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar esta nota retenida de este dispositivo"
           }
         }
       }
@@ -9050,6 +9125,18 @@
         }
       }
     },
+    "For a vault this device does not hold" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para una bóveda que este dispositivo no tiene"
+          }
+        }
+      }
+    },
     "For the notes that choose you." : {
       "comment" : "App icon caption (Cemetery Door)",
       "extractionState" : "manual",
@@ -10629,6 +10716,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cuadrícula isométrica"
+          }
+        }
+      }
+    },
+    "It becomes a note in your vault, as one you recorded." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se convierte en una nota de tu bóveda, como una que grabaste tú."
           }
         }
       }
@@ -18466,6 +18565,30 @@
         }
       }
     },
+    "Sealed under an earlier key" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sellada con una clave anterior"
+          }
+        }
+      }
+    },
+    "Sealed with a key this device never held" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sellada con una clave que este dispositivo nunca tuvo"
+          }
+        }
+      }
+    },
     "Search" : {
       "comment" : "Settings ▸ Audio & Transcription: section of the transcript search switch",
       "extractionState" : "manual",
@@ -18926,6 +19049,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enviando al reloj…"
+          }
+        }
+      }
+    },
+    "Sent while Use on Apple Watch was off" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviada mientras Usar en el Apple Watch estaba desactivado"
           }
         }
       }
@@ -19705,18 +19840,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Algunas notas aún se están cargando o descargando de iCloud Drive. Vuelve a intentarlo cuando la lista haya terminado de cargarse."
-          }
-        }
-      }
-    },
-    "Some notes could not be added now; try again when the vault can be written." : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudieron añadir algunas notas ahora; inténtalo de nuevo cuando se pueda escribir en la bóveda."
           }
         }
       }
@@ -22299,6 +22422,18 @@
         }
       }
     },
+    "The note could not be added now; try again when the vault can be written." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo añadir la nota ahora; inténtalo de nuevo cuando se pueda escribir en la bóveda."
+          }
+        }
+      }
+    },
     "The note had no pages at this point." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -22791,6 +22926,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La bóveda recibe una clave nueva. Las notas de antes siguen siendo legibles para el dispositivo quitado; nada de lo escrito después le llega."
+          }
+        }
+      }
+    },
+    "The vault has a newer key than this device" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bóveda tiene una clave más reciente que este dispositivo"
           }
         }
       }
@@ -23760,6 +23907,18 @@
         }
       }
     },
+    "This device was removed from the vault's device list" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo se quitó de la lista de dispositivos de la bóveda"
+          }
+        }
+      }
+    },
     "This device was removed from the vault's device list, so the watch cannot record for it." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -24056,6 +24215,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este es el único dispositivo de la bóveda."
+          }
+        }
+      }
+    },
+    "This note came after Use on Apple Watch was turned off, or under an earlier key. If you lost a watch, it may be one the lost watch recorded: add it only if you recorded it yourself. It becomes a note in your vault." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta nota llegó después de desactivar Usar en el Apple Watch, o con una clave anterior. Si perdiste un reloj, puede que la grabara el reloj perdido: añádela solo si la grabaste tú. Se convierte en una nota de tu bóveda."
           }
         }
       }
@@ -26581,6 +26752,55 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "un dispositivo quitado (%@)"
+          }
+        }
+      }
+    },
+    "and %lld more" : {
+      "comment" : "Settings ▸ Apple Watch: below the list of held notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "and %lld more"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "and %lld more"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "y %lld más"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "y %lld más"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "y %lld más"
+                }
+              }
+            }
           }
         }
       }

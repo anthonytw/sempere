@@ -296,14 +296,14 @@ CLI-only release) leaves the app alone. A prerelease such as `1.1.0-rc.1` sets t
    (B.6), as `## [1.0.0] - 2026-11-03`; allow a few days for App Review. The release scripts refuse a section that
    still has a `TODO(user)` anywhere. If launch day later moves, see "If the date slips" in B.6.
 3. `just release-check` (expected: `release-check: ok (version 1.0.0, build 1)`) and
-   `just test --filter CLICommandTests` (the `--version` assertion).
+   `just test --filter CLIAboutTests` (the `--version` output against `Version.swift`).
 4. Commit, push, open the PR:
    ```bash
    git add -A && git commit -s -m "release: 1.0.0"
    git push -u origin release/1.0.0
    gh pr create --base main --title "release: 1.0.0" --body-file …
    ```
-   In the PR's `## Tests run`: `just release-check`: passed; `swift test --filter CLICommandTests`: passed.
+   In the PR's `## Tests run`: `just release-check`: passed; `swift test --filter CLIAboutTests`: passed.
 5. GitHub's checks green (the PR gate; `just ci` is its local twin), then squash-merge on GitHub.
 
 ### B.2 The release sweep, and the release SHA
@@ -498,7 +498,8 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    `SHA256SUMS` verifies, then prints the command (it publishes nothing):
    ```bash
    gh release create v1.0.0 --repo anthonytw/sempere --verify-tag --title "Sempere CLI v1.0.0" \
-      --notes-file build/release/v1.0.0/notes.md build/release/v1.0.0/*.tar.gz build/release/v1.0.0/SHA256SUMS
+      --notes-file build/release/v1.0.0/notes.md build/release/v1.0.0/*.tar.gz build/release/v1.0.0/SHA256SUMS \
+      build/release/v1.0.0/SHA256SUMS.sig
    ```
    **[you]** run it, or let the recipe run it after you type the version: `just release-publish 1.0.0 --publish`.
    Either needs a `gh auth login` with write access (the Release is created by whoever holds it; admin is not

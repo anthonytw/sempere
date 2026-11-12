@@ -240,8 +240,9 @@ final class CLIWatchTests: CLITestCase {
             .filter { $0.hasSuffix(".capture.age") }, ["\(capture).capture.age"])
     }
 
-    /// `held add` takes an addable held note into the inbox (ledger first), `--all` takes every addable one, and an id that is
-    /// not held fails. The held entries are written as the phone's `receive` would for an epoch the machine kept the key of.
+    /// `held add` takes an addable held note into the inbox (ledger first), and an id that is not held fails. The held entry is
+    /// written as the phone's `receive` would for an epoch the machine kept the key of (`oldEpoch`): a note that needs a check
+    /// (`needsCheck`), which `--all` skips (saying so) and an add by id takes.
     func testHeldAddPlacesTheNoteInTheInbox() throws {
         let vault = try makeVault()
         let outbox = path("outbox")
@@ -260,11 +261,17 @@ final class CLIWatchTests: CLITestCase {
 
         let listed = try XCTUnwrap(try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [[String: Any]])
         XCTAssertEqual(listed.first?["canAdd"] as? Bool, true)
+        XCTAssertEqual(listed.first?["needsCheck"] as? Bool, true)
         let missing = try cli(["inbox", "watch", "held", "add", "ffffffff", "--held", held, "--queue", path("q"), "--store", path("store"),
                                "--vault", vault.vault.url.path])
         XCTAssertNotEqual(missing.status, 0)
         XCTAssertNotEqual(try cli(["inbox", "watch", "held", "add", "--held", held]).status, 0, "ids or --all")
-        let added = try XCTUnwrap(try cli(["inbox", "watch", "held", "add", "--all", "--held", held, "--queue", path("q"),
+        let all = try cli(["inbox", "watch", "held", "add", "--all", "--held", held, "--queue", path("q"),
+                           "--store", path("store"), "--json", "--vault", vault.vault.url.path])
+        XCTAssertEqual(all.status, 0)
+        XCTAssertEqual((try XCTUnwrap(all.json as? [[String: Any]])).count, 0, "--all skips a note that needs a check")
+        XCTAssertTrue(all.err.contains("add them by id"), all.err)
+        let added = try XCTUnwrap(try cli(["inbox", "watch", "held", "add", capture, "--held", held, "--queue", path("q"),
                                            "--store", path("store"), "--json", "--vault", vault.vault.url.path]).json as? [[String: Any]])
         XCTAssertEqual(added.first?["outcome"] as? String, "added")
         XCTAssertEqual(added.first?["placement"] as? String, "vault")

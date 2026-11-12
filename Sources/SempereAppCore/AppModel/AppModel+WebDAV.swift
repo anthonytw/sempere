@@ -498,7 +498,10 @@ extension AppModelCore {
         try webdavLocations.remove(id)
         library.forgetWebDAV(id)
         // A copy the first download never completed goes with its only target.
-        if let vault, syncStore.entry(id: vault) == nil { library.forgetStored(vault) }
+        if let vault, syncStore.entry(id: vault) == nil {
+            library.forgetStored(vault)
+            LastPlace.forget(vault: vault, in: deviceMemory)
+        }
         syncTargetsChanged()
     }
 

@@ -275,6 +275,8 @@ public final class SyncEngine {
     /// The remote `vault.json` as `checkSameVault` fetched it this run, for
     /// the mutable-file sync to compare instead of fetching it again.
     var fetchedManifest: (data: Data, etag: String?)?
+    /// The server's `vault.json` does not parse and this run may replace it (`canRepairRemoteManifest`).
+    var remoteManifestUnreadable = false
     /// The server's mutable files read before the write lock was taken, consumed by the judging under it (lock scope).
     var mutablePrefetch: [String: (data: Data, etag: String?)] = [:]
     /// What the server held of each mutable file when this round read it (hash of the bytes, version token): the
@@ -882,11 +884,32 @@ public final class SyncEngine {
         fetchedManifest = fetched
         let remote = fetched.data
         guard let remoteId = Self.manifestFields(remote)?.vaultId else {
-            // A mirror is repaired from the local manifest; a two-way sync has nothing to compare.
+            // A mirror is repaired from the local manifest. So is a two-way run's target when this device holds the
+            // vault's key and a local manifest home sealed (`canRepairRemoteManifest`): an upload cut on a server
+            // that writes bodies in place leaves such a copy (design F11). Otherwise there is nothing to compare.
             if options.pushOnly { return }
+            if canRepairRemoteManifest(local, remoteRoot: remoteRoot) { remoteManifestUnreadable = true; return }
             throw SyncError.malformedResponse("remote vault.json is not a vault manifest")
         }
         if localId != remoteId { throw SyncError.vaultMismatch(local: localId, remote: remoteId) }
+    }
+
+    /// True when the server's `vault.json`, which does not parse, may be replaced by the local one in a two-way
+    /// run: the vault is unlocked with a verified list, the local file is that list (home's seal, any label), and the
+    /// target is this vault's: this device synced `vault.json` there before (its state records it), or the target's
+    /// `epochs/` holds the record the local list names. A target with neither may be another vault's or another
+    /// app's folder, and is refused as before. A keyless run never uploads `vault.json` (`keylessManifestHeld`), so it
+    /// never repairs one either.
+    func canRepairRemoteManifest(_ local: Data, remoteRoot: [String: RemoteEntry]) -> Bool {
+        guard let vault, vault.canRead, !keylessManifestHeld, case .verified = vault.listStatus,
+              var parsed = try? EpochManifest.parse(local) else { return false }
+        parsed.label = vault.manifest.label
+        guard parsed == vault.manifest else { return false }
+        if state.mutable[Vault.manifestName] != nil { return true }
+        let record = String(parsed.epochRecord.dropFirst(Vault.epochsName.count + 1))
+        guard remoteRoot[Vault.epochsName]?.isCollection == true,
+              let entries = try? transport.list([Vault.epochsName]) else { return false }
+        return entries.contains { !$0.isCollection && $0.name == record }
     }
 
     // MARK: - Mutable files
@@ -942,6 +965,13 @@ public final class SyncEngine {
         try budget.downloaded(remoteData.count)
         let remoteHash = FileDigest.sha256(remoteData)
         let stamp = remote.etag ?? getETag ?? remote.lastModified
+        if name == Vault.manifestName, remoteManifestUnreadable, Self.manifestFields(remoteData) == nil {
+            // Not a manifest (`checkSameVault`): replaced by the local one, over the copy this round read (`push`
+            // makes it conditional on that copy: its strong ETag, else the same bytes read again just before).
+            try push(name, local, condition: .unconditional)
+            afterUpload(name) { [self] in report.replaced.append(.init(side: "remote", path: name)) }
+            return try recordMutable(name, hash: localHash)
+        }
         if name == Vault.manifestName {
             remoteManifestData = remoteData
             targetEpochId = Self.epochOf(remoteData)?.epochId
@@ -1694,18 +1724,37 @@ public final class SyncEngine {
         }
     }
 
-    /// Writes a revision to the server the way a blob goes (`uploadBlobOnce`): to a temporary name beside it
-    /// (recorded in the transfers state, so an interrupted run's is cleaned up), then `MOVE`d to its own name
-    /// without overwriting, so a cut connection never leaves a partial file under the revision's name even on a
-    /// server that writes a body in place (design F11). A name the server already holds counts as success only
-    /// when that file is the same bytes (listed size, then a re-read hash); otherwise it is an error.
-    /// With `damaged`, the server's copy under that name is removed first (only that version, when its ETag is
-    /// strong), after the new bytes are safely on the server: the repair of a file an earlier client left cut.
-    /// Returns false when `damaged` changed on the server meanwhile (nothing is replaced).
+    /// What `placeWriteOnce` did.
+    enum WriteOncePlacement: Equatable {
+        /// The file is now on the server under its own name, written by this call.
+        case placed
+        /// The server already held the same file under that name (`TakenRule`): nothing was written.
+        case held
+        /// The `damaged` copy changed on the server meanwhile: nothing was replaced.
+        case changed
+    }
+
+    /// When a name the server already holds counts as this file (`placeWriteOnce`).
+    enum TakenRule {
+        /// Its listed size, then a re-read of at most `data.count` bytes, match `data`.
+        case sameBytes(Data)
+        /// Any file: the name is keyed by the content's hash (attachment blobs), so a file another device placed under
+        /// it first is the same content, and is never read back whole.
+        case keyedByContent
+    }
+
+    /// Uploads a write-once file (a revision, a blob, a notebook record, a join request, a passphrase copy) to a
+    /// temporary name beside it (recorded in the transfers state, so an interrupted run's is cleaned up), then
+    /// `MOVE`s it to its own name without overwriting, so a cut connection never leaves a partial file under the
+    /// final name even on a server that writes a body in place (design F11). A name the server already holds counts
+    /// only by `taken`; otherwise it is an error. With `damaged`, the server's copy under that name is removed
+    /// first (only that version, when its ETag is strong), once the new bytes are safely on the server: the repair
+    /// of a file an earlier client left cut. `written` hears how the temporary upload ended.
     @discardableResult
-    func placeRevisionFile(_ id: String, _ n: RevisionName, data: Data, damaged: RemoteEntry? = nil) throws -> Bool {
-        let final = [Vault.notesName, id, n.filename]
-        let temp = [Vault.notesName, id, FileIO.tempPrefix + UUID().uuidString.lowercased()]
+    func placeWriteOnce(_ final: [String], _ body: RemoteBody, taken: TakenRule, damaged: RemoteEntry? = nil,
+                        written: ((Error?) -> Void)? = nil) throws -> WriteOncePlacement {
+        let label = final.joined(separator: "/")
+        let temp = Array(final.dropLast()) + [FileIO.tempPrefix + UUID().uuidString.lowercased()]
         let tempRel = temp.joined(separator: "/")
         locked { state.remoteTemps.append(tempRel) }
         checkpoint()
@@ -1714,16 +1763,51 @@ public final class SyncEngine {
             // Gone after a MOVE; otherwise removed now, or by the next run if that fails.
             if moved || (try? transport.delete(temp)) != nil { locked { state.remoteTemps.removeAll { $0 == tempRel } } }
         }
-        guard try transport.write(temp, .data(data), condition: .create) else {
-            throw SyncError.io("notes/\(key(id, n)): the temporary upload name already exists on the server")
+        let created: Bool
+        do { created = try transport.write(temp, body, condition: .create) } catch {
+            written?(error)
+            throw error
         }
+        guard created else { throw SyncError.io("\(label): the temporary upload name already exists on the server") }
+        written?(nil)
         if let damaged {
             let etag = damaged.etag.flatMap { Self.isStrong($0) ? $0 : nil }
-            guard try transport.delete(final, ifETag: etag) else { return false }
+            guard try transport.delete(final, ifETag: etag) else { return .changed }
         }
         moved = try transport.moveNoOverwrite(temp, to: final)
-        if !moved, !serverHolds(final, data) {
-            throw SyncError.io("notes/\(key(id, n)): the server already holds a different file under this name; not replaced")
+        if moved { return .placed }
+        let same: Bool
+        switch taken {
+        case .sameBytes(let data): same = serverHolds(final, data)
+        case .keyedByContent: same = true
+        }
+        guard same else {
+            throw SyncError.io("\(label): the server already holds a different file under this name; not replaced")
+        }
+        return .held
+    }
+
+    /// Writes a revision to the server (`placeWriteOnce`). Returns false when `damaged` changed on the server
+    /// meanwhile (nothing is replaced).
+    @discardableResult
+    func placeRevisionFile(_ id: String, _ n: RevisionName, data: Data, damaged: RemoteEntry? = nil) throws -> Bool {
+        try placeWriteOnce([Vault.notesName, id, n.filename], .data(data), taken: .sameBytes(data), damaged: damaged) != .changed
+    }
+
+    /// For a write-once file both sides list, with a listed size below the local one: a cut upload an earlier
+    /// client left under the final name (the server's copy is a strict prefix of the local file) is replaced by a
+    /// complete copy through a temporary name (`placeWriteOnce`). Anything else is left alone. Returns true when
+    /// the server's copy was repaired (reported as uploaded and replaced).
+    func repairCutFile(_ remotePath: [String], local: Data, entry: RemoteEntry?) throws -> Bool {
+        guard !options.dryRun, !options.pullOnly, let entry, let listed = entry.size, listed < local.count,
+              let got = try? transport.read(remotePath, maxBytes: local.count) else { return false }
+        try locked { try budget.downloaded(got.data.count) }
+        guard got.data.count < local.count, local.starts(with: got.data),
+              try placeWriteOnce(remotePath, .data(local), taken: .sameBytes(local), damaged: entry) == .placed else { return false }
+        let path = remotePath.joined(separator: "/")
+        locked {
+            report.uploaded.append(path)
+            report.replaced.append(.init(side: "remote", path: path))
         }
         return true
     }
@@ -1746,17 +1830,9 @@ public final class SyncEngine {
         guard !options.dryRun, !options.pullOnly, unacceptedHere[path] == nil, let entry, let listed = entry.size,
               let have = LocalFS.regularFileSize(localDir.appendingPathComponent(n.filename)), listed < have,
               have <= options.maxFileBytes else { return false }
-        let file = localDir.appendingPathComponent(n.filename)
-        guard let local = try? BoundedRead.contents(of: file, maxBytes: options.maxFileBytes),
-              let got = try? transport.read([Vault.notesName, id, n.filename], maxBytes: have) else { return false }
-        try locked { try budget.downloaded(got.data.count) }
-        guard got.data.count < local.count, local.starts(with: got.data) else { return false }
-        guard try placeRevisionFile(id, n, data: local, damaged: entry) else { return false }
-        locked {
-            report.uploaded.append(path)
-            report.replaced.append(.init(side: "remote", path: path))
-            placedShas[key(id, n)] = FileDigest.sha256(local)
-        }
+        guard let local = try? BoundedRead.contents(of: localDir.appendingPathComponent(n.filename), maxBytes: options.maxFileBytes),
+              try repairCutFile([Vault.notesName, id, n.filename], local: local, entry: entry) else { return false }
+        locked { placedShas[key(id, n)] = FileDigest.sha256(local) }
         return true
     }
 

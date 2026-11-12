@@ -77,10 +77,17 @@ public enum NearbyJoinPipe {
         }
 
         /// Returns once at most `capacity` bytes wait unread, or the stream ended (then false).
+        /// True once what was put fits the capacity (it is sent, as a socket's buffered bytes are, even if the reader
+        /// then ends the stream); false when the stream ended while it waited for room.
         func waitForRoom() async -> Bool {
+            var fits = false
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                 lock.lock()
-                if bytes.count <= capacity || ended {
+                if bytes.count <= capacity {
+                    fits = true
+                    lock.unlock()
+                    c.resume()
+                } else if ended {
                     lock.unlock()
                     c.resume()
                 } else {
@@ -88,7 +95,7 @@ public enum NearbyJoinPipe {
                     lock.unlock()
                 }
             }
-            return !isEnded()
+            return fits || !isEnded()
         }
 
         private func isEnded() -> Bool {

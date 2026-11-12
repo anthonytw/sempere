@@ -1,13 +1,13 @@
 # Sempere Privacy Policy
 
-*Effective: 2026-10-06. Last updated: 2026-11-11.*
+*Effective: 2026-10-06. Last updated: 2026-11-12.*
 
 This page is the Privacy Policy URL's text. The URL is `https://sempere.anthonywertz.com/privacy`: the app's
 About screen links it (`SempereAbout.privacyPolicyURL`) and App Store Connect must name it. The website builds
 that page from [`docs/privacy/index.html`](../privacy/index.html) (sempere-site, `just sync-docs`;
 docs/releasing.md). The app shows this file without this note (`AboutInfo.privacyPolicyParagraphs` drops the
 paragraph starting "This page is the Privacy Policy URL"). Keep this copy and that file identical:
-`scripts/release-check.sh` compares their "Last updated" dates.
+`scripts/release-check.sh` compares their "Last updated" dates and their "Network connections" sections.
 
 **Short version: Sempere does not collect, transmit or share any data about you. It has no
 servers, no accounts, no analytics and no advertising. The only network connections it makes
@@ -70,10 +70,12 @@ your key, nobody can decrypt your notes.**
 
 ## Network connections
 
-Sempere connects only to a WebDAV server you set up yourself, and only if you open a vault there
-(Open from WebDAV): it then downloads the vault from that server's address, and uploads your
-already encrypted vault files to it, over HTTPS, with the user name and password you entered (the password stays in your device's
-Keychain). Nothing is sent to us or to anyone else. Otherwise your notes reach iCloud Drive or
+Sempere connects only to a WebDAV server you set up, and, while you add a device, your own devices
+nearby. It connects to a WebDAV server only if you open a vault there (Open from WebDAV): it then
+downloads the vault from that server's address, and uploads your already encrypted vault files (and
+the vault's device list, one file that is not encrypted) to it, over HTTPS, with the user name and
+password you entered (the password stays in your device's Keychain). Nothing is sent to us or to
+anyone else. Otherwise your notes reach iCloud Drive or
 another storage provider only through the system's Files and iCloud services, which copy the
 encrypted files you saved there; the speech model download above is the system's too.
 
@@ -109,7 +111,7 @@ Sempere asks for a permission when a feature needs it:
 - Face ID or Touch ID, to unlock a vault that you set to ask for it, and to confirm it is you before letting a device into a vault or replacing its recovery kit;
 - Live Activities, to show a voice note in progress;
 - notifications, for backup reminders you switch on and, where you allowed them, to tell you when another device took over a vault with its recovery kit;
-- the local network, when your WebDAV server is on it, and while you add a device nearby (iPad and iPhone; the system asks).
+- the local network, when your WebDAV server is on it, and while you add a device nearby (iPad, iPhone and Mac; the system asks).
 
 Photos and files are chosen with the system pickers, which give the app only what you pick.
 Face ID and Touch ID data never leaves the system and is never seen by the app.

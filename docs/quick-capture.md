@@ -433,8 +433,10 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
   the phone holds for its vault (the plaintext `vault.json` epoch of the folder must not be ahead either). Anything else is
   **held**: kept on the phone only (`Application Support/Sempere/WatchHeld/`), never in a vault folder, never synced, never in
   the ledger, and acknowledged so the watch drops its copy, at most 200 files and 500 MB (past that the file is refused and the
-  watch keeps it). Settings shows "N Watch notes held" with **Add to inbox**, which runs the normal path (catch-up then re-seals
-  an older epoch's note under the current key), and **Delete**. A note sealed under an epoch the phone never held, or for a vault
+  watch keeps it). Settings lists the held notes one by one, each with why it is held and when it came, with **Add…** (after a
+  confirmation; it runs the normal path: catch-up then re-seals an older epoch's note under the current key), **Delete**, and
+  **Delete All**. A note that came while Use on Apple Watch was off, or under an earlier key (after a lost watch's steps, what the
+  lost watch sends), is offered for Delete first: adding it is **Add Anyway…**, with a warning, and `held add --all` skips it. A note sealed under an epoch the phone never held, or for a vault
   it does not hold, can only be deleted. A watch that was offline across an epoch change has its notes held until you add them.
   The CLI has `sempere inbox watch held list|add|delete`. WatchConnectivity can reach the phone through Apple's cloud relay, not
   only within Bluetooth range, so a lost watch needs the steps above, not distance.

@@ -323,9 +323,9 @@ extension SyncEngine {
     }
 
     /// Uploads one blob: streamed to a temporary name, then `MOVE`d to its
-    /// own name without overwriting. A blob the server already has under
-    /// that name is the same content (the name is keyed by its hash), so
-    /// losing that race is success. Safe on the pool's threads
+    /// own name without overwriting (`placeWriteOnce`). A blob the server
+    /// already has under that name is the same content (the name is keyed by
+    /// its hash), so losing that race is success. Safe on the pool's threads
     /// (`preuploadNewFiles`): what it shares with the run is under `mutex`.
     func uploadBlob(_ id: String, _ name: String) throws {
         do { try uploadBlobOnce(id, name) } catch {
@@ -342,27 +342,10 @@ extension SyncEngine {
         if size > options.maxBlobBytes { throw SyncError.io("\(path) is \(size) bytes, over the blob limit; not uploaded") }
         guard !options.dryRun else { locked { report.uploaded.append(path) }; return }
         try ensureCollection([Vault.notesName, id, Vault.attachmentsName])
-        let tempName = FileIO.tempPrefix + UUID().uuidString.lowercased()
-        let temp = [Vault.notesName, id, Vault.attachmentsName, tempName]
-        let tempRel = temp.joined(separator: "/")
-        locked { state.remoteTemps.append(tempRel) }
-        checkpoint()
-        var moved = false
-        defer {
-            // Gone after a MOVE; otherwise removed now, or by the next run if that fails.
-            if moved || (try? transport.delete(temp)) != nil { locked { state.remoteTemps.removeAll { $0 == tempRel } } }
-        }
-        let written: Bool
-        do { written = try transport.write(temp, .file(file), condition: .create) } catch {
+        try placeWriteOnce([Vault.notesName, id, Vault.attachmentsName, name], .file(file), taken: .keyedByContent) { [self] error in
             // A window too short for it (offline audit P3): later runs leave blobs this large for a longer one.
-            noteUploadCut(size: size, error: error)
-            throw error
+            if let error { noteUploadCut(size: size, error: error) } else { noteUploadDone(size: size) }
         }
-        guard written else {
-            throw SyncError.io("\(path): the temporary upload name already exists on the server")
-        }
-        noteUploadDone(size: size)
-        moved = try transport.moveNoOverwrite(temp, to: [Vault.notesName, id, Vault.attachmentsName, name])
         locked { report.uploaded.append(path) }
         updateProgress { $0.uploaded = report.uploaded.count }
     }

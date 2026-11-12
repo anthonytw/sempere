@@ -157,6 +157,8 @@ expect "YES without a compliance code warns" warn "without ITSEncryptionExportCo
 
 fresh; edit "docs/privacy/index.html" 're.sub(r"\d{4}-\d{2}-\d{2}</span>", "2099-01-01</span>", s) if (re:=__import__("re")) else s'
 expect "privacy policy copies out of date" fail "privacy policy copies differ in date"
+fresh; edit "docs/appstore/privacy-policy.md" 's.replace("(iPad, iPhone and Mac; the system asks)", "(iPad; the system asks)").replace("your own devices\nnearby", "your own devices\nwherever they are")'
+expect "privacy policy Network sections differ" fail "differ in their \"Network connections\" section"
 
 # Networking: only the allow-listed model downloader, and only while its catalog is empty.
 fresh; printf 'import Foundation\nfunc ping() { URLSession.shared.dataTask(with: URL(fileURLWithPath: "/")).resume() }\n' > "$tmp/root/Apps/Sempere/SempereApp/Ping.swift"

@@ -4,7 +4,8 @@ import Sempere
 // MARK: - Notebook records (format.md §14)
 //
 // Records are write-once files with unique names, so both sides end with the
-// union: what the server lacks is uploaded (create only, never replacing), what
+// union: what the server lacks is uploaded (to a temporary name, then moved to
+// its own without replacing: a cut upload never leaves a partial record), what
 // this side lacks is downloaded (push-only runs never write locally). Nothing is
 // ever deleted. With the vault unlocked a downloaded record must open (decrypt,
 // verify, decode) before it is placed; one that does not is skipped and reported.
@@ -27,6 +28,13 @@ extension SyncEngine {
         for name in local.intersection(remote).sorted() where !options.dryRun {
             let path = "\(folder)/\(name)"
             do {
+                // A cut upload an earlier client left under the final name: replaced by the whole record.
+                if let entry = listed[name], let size = entry.size,
+                   let have = LocalFS.regularFileSize(localDir.appendingPathComponent(name)), size < have, have <= NotebookRecords.maxFileBytes,
+                   try repairCutFile([folder, name], local: try BoundedRead.contents(of: localDir.appendingPathComponent(name),
+                                                                                    maxBytes: NotebookRecords.maxFileBytes), entry: entry) {
+                    continue
+                }
                 // A copy under a key from before a re-encryption is compared every run until rewritten (KH6): notebook
                 // records keep no version tag in the sync state.
                 let stale = epochJudge.flatMap { v -> Bool? in
@@ -55,9 +63,14 @@ extension SyncEngine {
             let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: NotebookRecords.maxFileBytes)
             if options.dryRun { report.uploaded.append(path); continue }
             try ensureCollection([folder])
-            if try transport.write([folder, name], .data(data), condition: .create) {
-                report.uploaded.append(path)
+            do {
+                if try placeWriteOnce([folder, name], .data(data), taken: .sameBytes(data)) == .placed {
+                    report.uploaded.append(path)
+                }
                 uploadedNames.insert(name)
+            } catch {
+                try rethrowRunLimit(error)
+                report.errors.append(.init(path: path, message: Self.describe(error)))
             }
         }
         defer {
