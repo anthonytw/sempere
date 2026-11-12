@@ -1170,6 +1170,17 @@ revisions still sync, and readers draw a placeholder for it meanwhile
   one, and whose server copy is a prefix of the local file (a cut upload an older client left under the final
   name), is replaced: the complete copy goes to a temporary name, the cut one is deleted under its ETag, and the
   `MOVE` places the new one (reported as uploaded and replaced).
+  Every other write-once file goes the same way, through one helper (`SyncEngine.placeWriteOnce`): notebook
+  records (`notebooks/`), join requests (`joins/`) and passphrase copies (`keys/`), each to a temporary name in its
+  own folder, then `MOVE` with `Overwrite: F`. A name already taken counts only when its listed size and a re-read
+  hash match the local file (a blob, keyed by its hash, only by its listed size). A notebook record, join request
+  or passphrase copy both sides list whose server copy is a cut prefix of the local file is repaired as a revision
+  is. A join request counts as delivered (`SyncReport.joinsHeld`) only when the target lists it at the local size.
+  The inbox does the same on a remote without atomic creates. `epochs/` records repair themselves under a strong
+  ETag. The mutable files are replaced, not created: `vault.json` and `settings.age` go up under `If-Match` (or a
+  re-read), and a cut copy of either is repaired by the next two-way run that holds the vault's key (a
+  `vault.json` that does not parse is replaced by the local one when the local one is the verified list home
+  sealed; a `settings.age` that does not open is replaced by the local copy that does).
 - *Resumable.* A download goes to `att/.sempere-tmp-part-<name>` and is linked
   into place (`link(2)`). If the run is cut off, the partial file stays and
   the remote ETag is recorded in the state (saved at once); the next run asks

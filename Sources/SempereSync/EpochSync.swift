@@ -946,9 +946,22 @@ extension SyncEngine {
             let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: JoinRequest.maxBytes)
             if options.dryRun { report.uploaded.append(path); return false }
             try ensureCollection([folder])
-            guard try transport.write([folder, name], .data(data), condition: .create) else { return false }
-            report.uploaded.append(path)
-            return true
+            // A temporary name, then moved to its own (`placeWriteOnce`): a cut upload never leaves a partial request
+            // under the name home lists. The same request already there counts as delivered.
+            switch try placeWriteOnce([folder, name], .data(data), taken: .sameBytes(data)) {
+            case .placed: report.uploaded.append(path); return true
+            case .held: return true
+            case .changed: return false
+            }
+        }
+        /// True when the target's copy of this device's request `name` is the local file: its listed size, when
+        /// listed, is the local size. A cut copy (smaller, a prefix) is replaced by the whole request (`repairCutFile`).
+        func holds(_ name: String, _ entry: RemoteEntry) throws -> Bool {
+            let file = localDir.appendingPathComponent(name)
+            guard let size = entry.size, let have = LocalFS.regularFileSize(file), size != have else { return true }
+            guard have <= JoinRequest.maxBytes else { return false }
+            let data = try BoundedRead.contents(of: file, maxBytes: JoinRequest.maxBytes)
+            return try repairCutFile([folder, name], local: data, entry: entry)
         }
         if let dir = remoteRoot[folder], dir.isCollection, folderArriving([folder], entry: dir) {
             // Listed before its files (a provider's empty `joins/` lists so too: TestFlight 1.1.0 (69)): nothing there is
@@ -980,8 +993,14 @@ extension SyncEngine {
             try checkCancelled()
             let path = "\(folder)/\(name)"
             switch (local.contains(name), listed[name]) {
-            case (true, .some):
-                both.insert(name)
+            case (true, .some(let e)):
+                // Held only when the target's copy is whole (its listed size is the local one).
+                do {
+                    if try holds(name, e) { both.insert(name) }
+                } catch {
+                    try rethrowRunLimit(error)
+                    report.errors.append(.init(path: path, message: Self.describe(error)))
+                }
             case (true, nil):
                 if recorded.contains(name) {
                     // Deleted on the target since (approved or expired by home): deleted here too.
@@ -1083,7 +1102,14 @@ extension SyncEngine {
             try checkCancelled()
             let path = "\(folder)/\(name)"
             switch (local.contains(name), listed[name]) {
-            case (true, .some):
+            case (true, .some(let e)):
+                if !superseded(name), !options.dryRun, let size = e.size,
+                   let have = LocalFS.regularFileSize(localDir.appendingPathComponent(name)), size < have,
+                   have <= RecoveryPassphraseCopy.maxBytes {
+                    // A cut upload an earlier client left under the final name: replaced by the whole copy.
+                    let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: RecoveryPassphraseCopy.maxBytes)
+                    _ = try repairCutFile([folder, name], local: data, entry: e)
+                }
                 if superseded(name), mayDelete, !options.pushOnly {
                     // Kept by nobody: deleted on both sides, never brought back (under the version listed).
                     if !options.dryRun {
@@ -1107,7 +1133,8 @@ extension SyncEngine {
                 let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: RecoveryPassphraseCopy.maxBytes)
                 if options.dryRun { report.uploaded.append(path); continue }
                 try ensureCollection([folder])
-                if try transport.write([folder, name], .data(data), condition: .create) { report.uploaded.append(path) }
+                // A temporary name, then moved to its own (`placeWriteOnce`): never a partial copy under its name.
+                if try placeWriteOnce([folder, name], .data(data), taken: .sameBytes(data)) == .placed { report.uploaded.append(path) }
             case (false, .some(let e)):
                 if superseded(name) {
                     // Deleted once: a copy uploaded again (by a device that never learns of the replacement) is left.
