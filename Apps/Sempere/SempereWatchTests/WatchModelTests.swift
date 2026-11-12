@@ -376,7 +376,11 @@ final class WatchModelTests: XCTestCase {
         var audio = Data()
         for i in 0..<40 { audio.append(FakeWatchRecording.frame(seed: UInt8(i))) }
         try audio.write(to: folder.appendingPathComponent("segment-001.aac"))
-        let manifest = RecordingManifest(note: id, recording: id, started: Date(), codec: "aac", segments: ["segment-001.aac"], finished: 0)
+        // The recording started under the provisioned profile, so its manifest names that vault (a leftover naming none
+        // is kept, not sealed: WatchRecorderTests.aLeftoverWithNoVaultIsKeptNotSealed).
+        let profile = WatchDebugLaunch.profile
+        let manifest = RecordingManifest(note: id, recording: id, started: Date(), codec: "aac", segments: ["segment-001.aac"], finished: 0,
+                                         vault: profile.vaultId, epochId: profile.epochId)
         try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
         await r.model.activate()
         guard case .saved(let note) = r.model.screen else { return XCTFail("\(r.model.screen)") }
