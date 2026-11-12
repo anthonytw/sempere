@@ -172,8 +172,10 @@ sent back, with the device list, is encrypted to the new device's key
   in its persisted context (encrypted to the old key) can no longer be opened by the
   watch. Files the iPhone does not admit (the setting was off, or the key changed
   since, or an epoch it never held) are kept on the iPhone only, never in the vault
-  or the ledger, and need your **Add to inbox** (a note under an epoch or vault the
-  iPhone never held can only be deleted); **Delete** removes them. At most 200
+  or the ledger, and need your **Add** (one note at a time, after a confirmation that
+  warns about notes that came after the setting was turned off or under an earlier key,
+  which may be a lost watch's; a note under an epoch or vault the iPhone never held can
+  only be deleted); **Delete** removes them. At most 200
   files / 500 MB are held; past that the watch keeps them. Removing
   the iPhone from the vault ends the watch's captures too (they verify only under
   the iPhone's listed key). A key of its own for each watch, listed in the vault so

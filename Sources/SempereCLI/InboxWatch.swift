@@ -440,6 +440,8 @@ struct HeldRow: Encodable {
     var epoch: Int
     var reason: String
     var canAdd: Bool
+    /// Arrived after the toggle went off or under an earlier key (`WatchHeldReason.needsCheck`): check before adding.
+    var needsCheck: Bool
     var bytes: Int
     var receivedAt: String
 
@@ -449,6 +451,7 @@ struct HeldRow: Encodable {
         epoch = h.epoch
         reason = h.reason.rawValue
         canAdd = h.canAdd
+        needsCheck = h.needsCheck
         bytes = h.bytes
         receivedAt = RFC3339.string(from: h.receivedAt) ?? ""
     }
@@ -468,7 +471,8 @@ struct InboxWatchHeldList: ParsableCommand {
             output.info("No Watch notes are held.")
         } else {
             for r in rows {
-                print("\(r.capture)  \(r.reason)\(r.canAdd ? "" : " (delete only)")  vault \(r.vault.prefix(8))  \(r.bytes) bytes  \(r.receivedAt)")
+                let note = !r.canAdd ? " (delete only)" : r.needsCheck ? " (check before adding: add by id)" : ""
+                print("\(r.capture)  \(r.reason)\(note)  vault \(r.vault.prefix(8))  \(r.bytes) bytes  \(r.receivedAt)")
             }
         }
     }
@@ -478,7 +482,8 @@ struct InboxWatchHeldAdd: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "add",
         abstract: "Add held Watch notes to the inbox (ledger first, as `receive` does).",
-        discussion: "Names are ids or unique id prefixes (4 or more characters). `--all` takes every held note that can be added."
+        discussion: "Names are ids or unique id prefixes (4 or more characters). `--all` takes every held note that can be added, "
+            + "except those that arrived after Use on Apple Watch went off or under an earlier key: check those and add them by id."
     )
 
     @Argument(help: ArgumentHelp("Held capture ids or prefixes.", valueName: "id"))
@@ -517,9 +522,14 @@ struct InboxWatchHeldAdd: ParsableCommand {
         do {
             if all {
                 let everything = held.list()
-                targets = everything.filter(intake.canAddNow)
-                if targets.count < everything.count {
-                    printStderr("\(everything.count - targets.count) held note(s) cannot be added now (see `held list`); skipped")
+                let addable = everything.filter(intake.canAddNow)
+                targets = addable.filter { !$0.needsCheck }
+                if addable.count < everything.count {
+                    printStderr("\(everything.count - addable.count) held note(s) cannot be added now (see `held list`); skipped")
+                }
+                if targets.count < addable.count {
+                    printStderr("\(addable.count - targets.count) held note(s) arrived after Use on Apple Watch went off or under an "
+                        + "earlier key; skipped: check them (`held list`) and add them by id")
                 }
             } else {
                 targets = try ids.map { try held.find($0) }

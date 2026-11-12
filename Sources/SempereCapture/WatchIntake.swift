@@ -116,11 +116,16 @@ public protocol WatchDelivery: Sendable {
     /// Puts `sealed` in `vault`'s queue with its epoch beside it, unrecorded (it is recorded when it is placed: a ledger
     /// entry whose file is not at its path is dropped after an hour, so recording at queue time would lose the catch-up).
     func queue(_ sealed: SealedCapture, for vault: UUID) throws
+    /// This delivery with what may change under a receive (the stored capture profile) read once: one receive judges and
+    /// delivers against that one reading, and its `deliverToCurrent` refuses (throws, nothing acknowledged) when the
+    /// profile no longer matches it. Default: itself (nothing to read).
+    func snapshot() throws -> any WatchDelivery
 }
 
 extension WatchDelivery {
     public func hasLedger(for vault: UUID) -> Bool { true }
     public func isSuspended(vault: UUID) -> Bool { false }
+    public func snapshot() throws -> any WatchDelivery { self }
 }
 
 /// The ids already received (`Application Support/Sempere/WatchReceived.json`): 180 days, bounded in number. Losing it only
@@ -237,13 +242,15 @@ public struct WatchIntake: Sendable {
         do { sealed = try Self.check(file: file, meta: meta) } catch let problem as WatchIntakeProblem {
             return WatchIntakeResult(id: meta.id, outcome: .refused(problem))
         }
+        // One reading of the profile for the whole receive: the verdict and the delivery see the same vault and epoch.
+        let delivery = try self.delivery.snapshot()
         // Step 2.
         if received.contains(meta.id) || delivery.inboxHolds(id: meta.id, vault: meta.vault) {
             try? received.insert(meta.id)
             return WatchIntakeResult(id: meta.id, outcome: .duplicate)
         }
         // Step 3: admitted, or held.
-        if let reason = try holdReason(sealed, vault: meta.vault) {
+        if let reason = try holdReason(sealed, vault: meta.vault, using: delivery) {
             guard let held else { return WatchIntakeResult(id: meta.id, outcome: .refused(.heldFull)) }
             do { try held.hold(sealed, vault: meta.vault, reason: reason) } catch WatchHeldError.full {
                 return WatchIntakeResult(id: meta.id, outcome: .refused(.heldFull))
@@ -252,7 +259,7 @@ public struct WatchIntake: Sendable {
             return WatchIntakeResult(id: meta.id, outcome: .held(reason))
         }
         // Step 4: by the capture's own vault.
-        let placement = try place(sealed, vault: meta.vault)
+        let placement = try place(sealed, vault: meta.vault, using: delivery)
         // Step 5: the id is remembered even if the set cannot be written (the file is placed; a repeat is a duplicate).
         try? received.insert(meta.id)
         return WatchIntakeResult(id: meta.id, outcome: .placed(placement))
@@ -261,15 +268,17 @@ public struct WatchIntake: Sendable {
     /// Why `sealed` is not admitted (nil: it is). Admitted means all three hold: "Use on Apple Watch" is on; the file's epoch is
     /// the one this device holds for its vault; and the vault folder's plaintext epoch number is not higher than that (it is
     /// unverified, so it can only make a file held, never admitted).
-    func holdReason(_ sealed: SealedCapture, vault: UUID) throws -> WatchHeldReason? {
+    func holdReason(_ sealed: SealedCapture, vault: UUID, using delivery: (any WatchDelivery)? = nil) throws -> WatchHeldReason? {
+        let delivery = delivery ?? self.delivery
         // The vault and epoch verdict comes first, so a note that is also unusable is never recorded as merely "toggle off"
         // (and so offered an Add that would recreate a catch-up that never finishes).
-        if let verdict = try epochVerdict(sealed, vault: vault) { return verdict }
+        if let verdict = try epochVerdict(sealed, vault: vault, using: delivery) { return verdict }
         return delivery.linkEnabled ? nil : .linkOff
     }
 
     /// The part of admission that does not depend on the toggle: nil when the file's vault and epoch are the phone's.
-    func epochVerdict(_ sealed: SealedCapture, vault: UUID) throws -> WatchHeldReason? {
+    func epochVerdict(_ sealed: SealedCapture, vault: UUID, using delivery: (any WatchDelivery)? = nil) throws -> WatchHeldReason? {
+        let delivery = delivery ?? self.delivery
         guard delivery.currentVault == vault || delivery.holds(vault: vault) else { return .unknownVault }
         guard delivery.hasLedger(for: vault) else { return nil }
         guard let epoch = sealed.epoch, let epochId = sealed.epochId else { return .unknownEpoch }
@@ -283,7 +292,8 @@ public struct WatchIntake: Sendable {
     }
 
     /// Step 4 alone: by the capture's own vault, ledger first.
-    func place(_ sealed: SealedCapture, vault: UUID) throws -> WatchPlacement {
+    func place(_ sealed: SealedCapture, vault: UUID, using delivery: (any WatchDelivery)? = nil) throws -> WatchPlacement {
+        let delivery = delivery ?? self.delivery
         if delivery.currentVault == vault {
             return try delivery.deliverToCurrent(sealed)
         } else if delivery.holds(vault: vault), try delivery.recordAndPlace(sealed, in: vault) {
@@ -311,12 +321,14 @@ public struct WatchIntake: Sendable {
         guard let held else { throw WatchHeldError.notFound(item.id.uuidString) }
         guard item.canAdd else { throw WatchHeldError.unreadable("this note was sealed under a key this device never held: delete it") }
         return try held.take(item) { sealed in
-            // The state may have changed since it was held: checked again, with the toggle treated as on. An epoch or vault this
-            // device never held cannot be added, whatever the stored reason says.
-            if let now = try epochVerdict(sealed, vault: item.vault), !now.canAdd {
+            // The state may have changed since it was held: checked again, with the toggle treated as on, against one reading
+            // of the profile (as `receive`). An epoch or vault this device never held cannot be added, whatever the stored
+            // reason says.
+            let delivery = try self.delivery.snapshot()
+            if let now = try epochVerdict(sealed, vault: item.vault, using: delivery), !now.canAdd {
                 throw WatchHeldError.unreadable("this note was sealed under a key this device never held: delete it")
             }
-            return try place(sealed, vault: item.vault)
+            return try place(sealed, vault: item.vault, using: delivery)
         }
     }
 

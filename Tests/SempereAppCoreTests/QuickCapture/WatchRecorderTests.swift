@@ -160,7 +160,8 @@ struct WatchRecorderTests {
         try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
         try Self.adts(frames: 12, seed: 9).dropLast(5).write(to: folder.appendingPathComponent("segment-002.aac"))
         let manifest = RecordingManifest(note: UUID(), recording: id, started: rig.clock.now, codec: "aac",
-                                         segments: ["segment-001.aac", "segment-002.aac"], finished: 1)
+                                         segments: ["segment-001.aac", "segment-002.aac"], finished: 1,
+                                         vault: try #require(rig.payload).profile.vaultId, epochId: String(repeating: "ab", count: 32))
         try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
         // Another folder whose complete segment does not decode: kept.
         let bad = rig.root.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
@@ -232,6 +233,29 @@ struct WatchRecorderTests {
         #expect(rig.folders == [folder.lastPathComponent], "kept, not sealed into another vault")
         try write(try #require(rig.payload).profile.vaultId)
         #expect(await rig.recorder.sweep().map(\.id) == [id])
+        #expect(rig.folders.isEmpty)
+    }
+
+    /// A leftover whose manifest names no vault (its manifest saves failed) is kept, never sealed under the current profile,
+    /// which may be another vault's; one with nothing recorded goes.
+    @Test func aLeftoverWithNoVaultIsKeptNotSealed() async throws {
+        let rig = try Rig()
+        let id = UUID()
+        let folder = rig.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
+        let m = RecordingManifest(note: UUID(), recording: id, started: rig.clock.now, codec: "aac", segments: ["segment-001.aac"],
+                                  finished: 1)
+        try JSONEncoder().encode(m).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
+        let empty = rig.root.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        try Data().write(to: empty.appendingPathComponent("segment-001.aac"))
+        #expect(await rig.recorder.sweep().isEmpty)
+        #expect(rig.folders == [folder.lastPathComponent], "kept, not sealed; the empty one went")
+        #expect(rig.outbox.all.isEmpty)
+        // A clear (no profile) deletes it with the rest.
+        rig.payload = nil
+        #expect(await rig.recorder.sweep().isEmpty)
         #expect(rig.folders.isEmpty)
     }
 

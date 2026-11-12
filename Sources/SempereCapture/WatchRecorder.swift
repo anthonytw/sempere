@@ -260,7 +260,7 @@ public final class WatchRecorder {
     /// Seals what recordings a crash, a quit or a restart left in `root` (at launch and when the app becomes active):
     /// `CaptureSegments.Leftover`'s rules, a folder that cannot be sealed stays. A leftover is sealed with the profile it
     /// started with when the watch kept it, else with the current profile of the SAME vault (one that started under another
-    /// vault stays). With no profile at all (a clear, Reset) the leftovers are deleted, as the phone's sweep does. Returns the
+    /// vault, or whose manifest names no vault, stays). With no profile at all (a clear, Reset) the leftovers are deleted, as the phone's sweep does. Returns the
     /// notes sealed.
     @discardableResult
     public func sweep() async -> [WatchSavedNote] {
@@ -279,7 +279,17 @@ public final class WatchRecorder {
             if let kept {
                 p = kept
             } else if let current {
-                if let vault = leftover.vault, vault != current.profile.vaultId { continue }
+                // Only a leftover whose manifest names the current profile's vault: one that names another, or none (its
+                // manifest saves failed), is kept as it is, never sealed into a vault it may not belong to. A clear or
+                // Reset deletes it with the rest.
+                guard let vault = leftover.vault, vault == current.profile.vaultId else {
+                    // Nothing recorded at all (no segment with a byte in it): nothing to keep.
+                    if leftover.vault == nil, leftover.segments.allSatisfy({ ((try? fm.attributesOfItem(atPath: $0.path))?[.size] as? Int ?? 0) == 0 }) {
+                        try? fm.removeItem(at: folder)
+                        if let lid = leftover.id { keeper?.discard(lid) }
+                    }
+                    continue
+                }
                 p = current
             } else {
                 try? fm.removeItem(at: folder)

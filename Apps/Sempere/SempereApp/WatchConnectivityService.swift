@@ -113,24 +113,32 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         }
     }
 
-    /// "Add to inbox": every held note that can be added, off the main actor. Returns how many could not be (a vault that
-    /// cannot be written now).
-    func addHeldNotes() async -> Int {
-        guard let receiver = lock.withLock({ receiver }) else { return 0 }
-        guard await MainActor.run(body: { status.begin() }) else { return 0 }
-        let failed = await Task.detached { () -> Int in
-            var failed = 0
-            for note in receiver.heldNotes() where receiver.canAddNow(note) {
-                do { try receiver.addHeld(note) } catch { failed += 1 }
-            }
-            return failed
+    /// "Add to inbox" for one held note, after the user confirmed it, off the main actor. False when it could not be added
+    /// now (a vault that cannot be written, a key this device never held).
+    func addHeldNote(_ note: HeldCapture) async -> Bool {
+        guard let receiver = lock.withLock({ receiver }) else { return false }
+        guard await MainActor.run(body: { status.begin() }) else { return false }
+        let added = await Task.detached { () -> Bool in
+            guard receiver.canAddNow(note) else { return false }
+            return (try? receiver.addHeld(note)) != nil
         }.value
         await MainActor.run { status.end() }
         refreshHeld()
-        return failed
+        return added
     }
 
-    /// "Delete": every held note.
+    /// "Delete" for one held note.
+    func deleteHeldNote(_ note: HeldCapture) {
+        guard let receiver = lock.withLock({ receiver }) else { return }
+        Task.detached { [weak self] in
+            guard await MainActor.run(body: { self?.status.begin() ?? false }) else { return }
+            receiver.deleteHeld(note)
+            await MainActor.run { self?.status.end() }
+            self?.refreshHeld()
+        }
+    }
+
+    /// "Delete All": every held note.
     func deleteHeldNotes() {
         guard let receiver = lock.withLock({ receiver }) else { return }
         Task.detached { [weak self] in
