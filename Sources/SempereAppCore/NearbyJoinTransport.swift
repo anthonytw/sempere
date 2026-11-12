@@ -74,13 +74,31 @@ public final class MemoryNearbyTransport: NearbyJoinTransport, @unchecked Sendab
     /// Fails every advertisement and browser running now (each `onFailure` runs once; they advertise and browse no
     /// more), as the system does when it suspends the app.
     public func fail() {
+        failAdvertisers()
+        failBrowsers()
+    }
+
+    /// Fails every advertisement running now, and nothing else (a listener the system failed).
+    public func failAdvertisers() {
         lock.lock()
-        let all = Array(failures.values)
-        failures = [:]
+        let keys = failures.keys.filter { $0.hasPrefix("ad-") }
+        let all = keys.compactMap { failures[$0] }
+        for k in keys { failures[k] = nil }
         advertisers = [:]
-        browsers = [:]
         lock.unlock()
         changed()
+        for f in all { f() }
+    }
+
+    /// Fails every browser running now, and nothing else (a browser the system failed, or one refused the local
+    /// network).
+    public func failBrowsers() {
+        lock.lock()
+        let keys = failures.keys.filter { $0.hasPrefix("browse-") }
+        let all = keys.compactMap { failures[$0] }
+        for k in keys { failures[k] = nil }
+        browsers = [:]
+        lock.unlock()
         for f in all { f() }
     }
 

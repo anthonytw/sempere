@@ -244,5 +244,144 @@ extension AppModelSuites {
             #expect(w.home.model.nearbyApproving == .off)
             #expect(w.pad.model.nearbyJoining == .off)
         }
+
+        /// A device that knows nothing connects, sends nothing, and reconnects as soon as home drops it: it holds only a
+        /// handshake place (never the session) for at most the request limit, and the iPad's request gets through.
+        @Test func aSilentDeviceKeepsNobodyOut() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.home.model.startNearbyApproving()
+            let peers = NearbyPeerBox()
+            let watch = w.link.browse(found: { peers.set($0) }, onFailure: {})
+            defer { watch.stop() }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { !peers.get().isEmpty })
+            let peer = try #require(peers.get().first)
+            let link = w.link
+            let squat = Task.detached {
+                while !Task.isCancelled {
+                    guard let c = try? await link.open(peer) else {
+                        try? await Task.sleep(for: .milliseconds(10))
+                        continue
+                    }
+                    // Home ends it within the request limit (3 s here); the suite's time limit bounds the rest.
+                    while let d = try? await c.receive(maximum: 1 << 16), !d.isEmpty {}
+                }
+            }
+            defer { squat.cancel() }
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(w.home.model.nearby.sessionToken == nil, "a silent connection holds no session")
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(15)) { w.home.model.nearbyRequests.count == 1 })
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
+        }
+
+        /// More connections than handshake places: the oldest is ended to make room, never the newest refused.
+        @Test func aNewConnectionEndsTheOldestHandshake() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.home.model.startNearbyApproving()
+            let peers = NearbyPeerBox()
+            let watch = w.link.browse(found: { peers.set($0) }, onFailure: {})
+            defer { watch.stop() }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { !peers.get().isEmpty })
+            let peer = try #require(peers.get().first)
+            var opened: [any NearbyJoinConnection] = []
+            for _ in 0..<(NearbyJoinRuntime.handshakeLimit + 1) { opened.append(try await w.link.open(peer)) }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) {
+                w.home.model.nearby.handshakes.count == NearbyJoinRuntime.handshakeLimit
+            })
+            // The first one was ended: its stream ends without a byte.
+            let first = opened[0]
+            let ended: Data? = await withTaskGroup(of: Data?.self) { group in
+                group.addTask { try? await first.receive(maximum: 64) }
+                group.addTask { try? await Task.sleep(for: .seconds(5)); return nil }
+                let got = await group.next() ?? nil
+                first.abort()
+                group.cancelAll()
+                return got
+            }
+            #expect(ended == Data(), "ended, not timed out")
+            for c in opened { c.abort() }
+        }
+
+        /// The listener fails alone: Add Device starts it again, and the join screen's browser is not touched.
+        @Test func aFailedListenerLeavesTheBrowserAlone() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.home.model.startNearbyApproving()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .connected })
+            let browsing = try #require(w.pad.model.nearby.browsing)
+            w.link.failAdvertisers()
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { w.home.model.nearby.listenerFailures == 1 })
+            #expect(w.pad.model.nearby.browserFailures == 0)
+            #expect(w.pad.model.nearby.browsing === browsing, "the browser runs on")
+            #expect(await TS.waitUntil(timeout: .seconds(10)) {
+                w.home.model.nearbyApproving == .advertising || w.home.model.nearbyApproving == .connected
+            })
+            // And the browser alone: home keeps advertising.
+            w.link.failBrowsers()
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { w.pad.model.nearby.browserFailures == 1 })
+            #expect(w.home.model.nearby.advertisement != nil)
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearby.browsing != nil })
+        }
+
+        /// Each failure in a row waits longer before the side starts again, at most a minute.
+        @Test func restartsBackOff() {
+            let base = Duration.milliseconds(500)
+            #expect(NearbyJoinRuntime.restartDelay(base: base, failures: 1) == base)
+            #expect(NearbyJoinRuntime.restartDelay(base: base, failures: 2) == base * 2)
+            #expect(NearbyJoinRuntime.restartDelay(base: base, failures: 4) == base * 8)
+            #expect(NearbyJoinRuntime.restartDelay(base: base, failures: 40) == .seconds(60))
+            #expect(NearbyJoinRuntime.restartDelay(base: .seconds(90), failures: 3) == .seconds(90))
+        }
+
+        /// A decision for a session torn down since (another token) changes nothing of the session going now.
+        @Test func aDecisionNeedsTheSessionsToken() {
+            let runtime = NearbyJoinRuntime()
+            let now = UUID()
+            runtime.sessionToken = now
+            runtime.decide(.closed, token: UUID())
+            #expect(runtime.decision == nil)
+            runtime.decide(.approved, token: now)
+            #expect(runtime.decision == .approved)
+        }
+
+        /// Declining matches by commitment: a request of the same 8-hex name but another commitment stays listed.
+        @Test func aNearbyDeclineMatchesByCommitment() throws {
+            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            let keys = try MemoryDeviceKeyStore().generate()
+            let id = UUID()
+            let a = try keys.joinRequest(vaultId: id, name: "x", kind: "ipad")
+            let b = try keys.joinRequest(vaultId: id, name: "x", kind: "iphone")
+            #expect(a.fileName == b.fileName && a.commitment != b.commitment)
+            model.keepNearbyRequest(a)
+            model.keepNearbyRequest(b)
+            model.nearbyDeclined(a)
+            #expect(model.nearbyRequests.map(\.commitment) == [b.commitment])
+        }
+
+        /// The join screen picks devices at random, those never tried first, and at most a few new ones a minute.
+        @Test func theJoinScreenPicksAtRandomWithACap() {
+            let peers = (0..<4).map { NearbyPeer(id: "Sempere-\($0)") }
+            var seen = Set<NearbyPeer>()
+            for _ in 0..<400 {
+                if let p = AppModel.nearbyPick(ready: peers, tried: [], newThisMinute: 0) { seen.insert(p) }
+            }
+            #expect(seen == Set(peers), "no device sorts its way ahead")
+            let tried: Set<NearbyPeer> = [peers[0]]
+            #expect(AppModel.nearbyPick(ready: peers, tried: tried, newThisMinute: 0).map { !tried.contains($0) } == true)
+            #expect(AppModel.nearbyPick(ready: peers, tried: tried, newThisMinute: NearbyJoinRuntime.newPeersPerMinute) == peers[0])
+            #expect(AppModel.nearbyPick(ready: Array(peers.dropFirst()), tried: tried,
+                                        newThisMinute: NearbyJoinRuntime.newPeersPerMinute) == nil)
+        }
     }
+}
+
+/// The peers a test's browser saw.
+final class NearbyPeerBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var peers: [NearbyPeer] = []
+    func set(_ p: [NearbyPeer]) { lock.lock(); peers = p; lock.unlock() }
+    func get() -> [NearbyPeer] { lock.lock(); defer { lock.unlock() }; return peers }
 }

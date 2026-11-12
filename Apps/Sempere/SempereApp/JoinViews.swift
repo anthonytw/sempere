@@ -336,14 +336,15 @@ struct AddDeviceSheet: View {
                                 .foregroundStyle(.secondary)
                             // Each with Decline (build 12: "no way to decline a request"): one nobody will confirm
                             // goes, and never keeps another from being approved.
-                            ForEach(lookout.requests, id: \.fileName) { request in
+                            ForEach(lookout.requests, id: \.commitment) { request in
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(verbatim: DeviceName.display(request.name))
                                         Text(AddDeviceText.requestDetail(request))
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
-                                        if model.nearbyRequests.contains(where: { $0.fileName == request.fileName }) {
+                                        // By commitment: a synced file of the same 8-hex name but other keys is not it.
+                                        if model.nearbyRequests.contains(where: { $0.commitment == request.commitment }) {
                                             Label("Nearby", systemImage: "antenna.radiowaves.left.and.right")
                                                 .font(.footnote)
                                                 .foregroundStyle(.secondary)

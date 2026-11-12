@@ -64,8 +64,9 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
             switch state {
             case .ready:
                 if self?.mode == .loopback, let port = listener?.port { self?.registerLoopback(id, port: port) }
-            case .failed:
-                // The system suspended the app, or the local network is not allowed: the model starts it again.
+            case .failed, .waiting:
+                // The system suspended the app, or the local network is not allowed (a listener then waits for a
+                // permission the user refused): the model says the link is unavailable and starts it again later.
                 self?.unregisterLoopback(id)
                 listener?.cancel()
                 failed.run { onFailure() }
@@ -136,9 +137,14 @@ final class NWNearbyTransport: NearbyJoinTransport, @unchecked Sendable {
         }
         let failed = NWNearbyConnection.Once()
         browser.stateUpdateHandler = { [weak browser] state in
-            if case .failed = state {
+            switch state {
+            case .failed, .waiting:
+                // Failed, or waiting for a permission the user refused (the local network): reported, not left to
+                // look for ever; the model says the link is unavailable and starts it again later.
                 browser?.cancel()
                 failed.run { onFailure() }
+            default:
+                break
             }
         }
         browser.start(queue: queue)

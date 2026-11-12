@@ -102,8 +102,8 @@ public final class AddDeviceApprovalCore<Host: AppModelHost> {
         failedWith = nil
         defer { working = false }
         do {
-            try await model.declineJoinRequest(request.fileName)
-            lookout?.requests.removeAll { $0.fileName == request.fileName }
+            try await model.declineJoinRequest(request)
+            lookout?.requests.removeAll { $0.commitment == request.commitment }
             if let p = pending, let words = p.words, JoinCodes.matches(words, request.commitment) { pending = nil }
             return true
         } catch {

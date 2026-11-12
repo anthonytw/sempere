@@ -281,7 +281,9 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
   only): it deletes them from `joins/`, and the next sync deletes them on the
   targets. `ID` is a request's id (the file name before `.join.json`, as
   `devices list` shows it) or 4 or more leading hex digits of it; a request
-  that does not parse can be declined only by id. No device is added and
+  that does not parse can be declined only by id. By the words, only the file
+  that is that request (its commitment) is deleted, never another of the same
+  id. No device is added and
   nothing is re-encrypted. A waiting request, readable or not, never keeps
   another from being approved. `--all` names the files in `joins/` it skipped because their names are not a request's. `--json`: `declined` (the ids), `skipped` (those file names).
 - `devices rename ID NAME` renames a device (on home only); `ID` is the
