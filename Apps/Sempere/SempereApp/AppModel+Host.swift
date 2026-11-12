@@ -36,7 +36,17 @@ enum AppHost: AppModelHost {
                          pdfTextExtractor: PDFKitTextExtractor(), attachmentPreparation: AppAttachmentPreparation(),
                          lifecycle: UIKitAppLifecycle(), backgroundTasks: UIKitBackgroundTasks(),
                          syncScheduler: BGTaskSyncScheduler(), makeReachability: { WebDAVReachability() },
-                         nearby: NWNearbyTransport(),
+                         nearby: debugNearbyTransport ?? NWNearbyTransport(),
                          describeError: AppModel.describe)
+    }
+
+    /// Debug builds: a scripted launch (UI tests, screenshots) keeps the nearby link on loopback, which needs no local
+    /// network permission, so the system's prompt never covers the window under test (`DebugLaunch.nearbyLoopback`).
+    private static var debugNearbyTransport: NWNearbyTransport? {
+        #if DEBUG
+        DebugLaunch.nearbyLoopback ? NWNearbyTransport(mode: .loopback) : nil
+        #else
+        nil
+        #endif
     }
 }
