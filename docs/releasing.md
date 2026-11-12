@@ -296,14 +296,14 @@ CLI-only release) leaves the app alone. A prerelease such as `1.1.0-rc.1` sets t
    (B.6), as `## [1.0.0] - 2026-11-03`; allow a few days for App Review. The release scripts refuse a section that
    still has a `TODO(user)` anywhere. If launch day later moves, see "If the date slips" in B.6.
 3. `just release-check` (expected: `release-check: ok (version 1.0.0, build 1)`) and
-   `just test --filter CLICommandTests` (the `--version` assertion).
+   `just test --filter CLIAboutTests` (the `--version` output against `Version.swift`).
 4. Commit, push, open the PR:
    ```bash
    git add -A && git commit -s -m "release: 1.0.0"
    git push -u origin release/1.0.0
    gh pr create --base main --title "release: 1.0.0" --body-file …
    ```
-   In the PR's `## Tests run`: `just release-check`: passed; `swift test --filter CLICommandTests`: passed.
+   In the PR's `## Tests run`: `just release-check`: passed; `swift test --filter CLIAboutTests`: passed.
 5. GitHub's checks green (the PR gate; `just ci` is its local twin), then squash-merge on GitHub.
 
 ### B.2 The release sweep, and the release SHA
