@@ -1173,7 +1173,7 @@ revisions still sync, and readers draw a placeholder for it meanwhile
   Every other write-once file goes the same way, through one helper (`SyncEngine.placeWriteOnce`): notebook
   records (`notebooks/`), join requests (`joins/`) and passphrase copies (`keys/`), each to a temporary name in its
   own folder, then `MOVE` with `Overwrite: F`. A name already taken counts only when its listed size and a re-read
-  hash match the local file (a blob, keyed by its hash, only by its listed size). A notebook record, join request
+  hash match the local file (a blob is keyed by its hash: any file under its name counts). A notebook record, join request
   or passphrase copy both sides list whose server copy is a cut prefix of the local file is repaired as a revision
   is. A join request counts as delivered (`SyncReport.joinsHeld`) only when the target lists it at the local size.
   The inbox does the same on a remote without atomic creates. `epochs/` records repair themselves under a strong

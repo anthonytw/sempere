@@ -325,7 +325,7 @@ extension SyncEngine {
     /// Uploads one blob: streamed to a temporary name, then `MOVE`d to its
     /// own name without overwriting (`placeWriteOnce`). A blob the server
     /// already has under that name is the same content (the name is keyed by
-    /// its hash), so losing that race is success when its listed size matches. Safe on the pool's threads
+    /// its hash), so losing that race is success. Safe on the pool's threads
     /// (`preuploadNewFiles`): what it shares with the run is under `mutex`.
     func uploadBlob(_ id: String, _ name: String) throws {
         do { try uploadBlobOnce(id, name) } catch {
@@ -342,7 +342,7 @@ extension SyncEngine {
         if size > options.maxBlobBytes { throw SyncError.io("\(path) is \(size) bytes, over the blob limit; not uploaded") }
         guard !options.dryRun else { locked { report.uploaded.append(path) }; return }
         try ensureCollection([Vault.notesName, id, Vault.attachmentsName])
-        try placeWriteOnce([Vault.notesName, id, Vault.attachmentsName, name], .file(file), taken: .sameSize(size)) { [self] error in
+        try placeWriteOnce([Vault.notesName, id, Vault.attachmentsName, name], .file(file), taken: .keyedByContent) { [self] error in
             // A window too short for it (offline audit P3): later runs leave blobs this large for a longer one.
             if let error { noteUploadCut(size: size, error: error) } else { noteUploadDone(size: size) }
         }

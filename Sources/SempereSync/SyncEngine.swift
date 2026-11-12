@@ -1730,9 +1730,9 @@ public final class SyncEngine {
     enum TakenRule {
         /// Its listed size, then a re-read of at most `data.count` bytes, match `data`.
         case sameBytes(Data)
-        /// Its listed size, when listed, is this one: for a name keyed by the content's hash (attachment blobs),
-        /// which is never read back whole.
-        case sameSize(Int)
+        /// Any file: the name is keyed by the content's hash (attachment blobs), so a file another device placed under
+        /// it first is the same content, and is never read back whole.
+        case keyedByContent
     }
 
     /// Uploads a write-once file (a revision, a blob, a notebook record, a join request, a passphrase copy) to a
@@ -1771,7 +1771,7 @@ public final class SyncEngine {
         let same: Bool
         switch taken {
         case .sameBytes(let data): same = serverHolds(final, data)
-        case .sameSize(let size): same = (try? transport.stat(final))??.size.map { $0 == size } ?? true
+        case .keyedByContent: same = true
         }
         guard same else {
             throw SyncError.io("\(label): the server already holds a different file under this name; not replaced")

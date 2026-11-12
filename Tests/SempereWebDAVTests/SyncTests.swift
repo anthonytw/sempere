@@ -166,14 +166,19 @@ final class SyncTests: SyncTestCase {
         }
     }
 
+    /// A server `vault.json` whose id is not a UUID is not another vault: it is not a manifest at all. A run without the
+    /// key refuses it; a two-way run with the key and the verified list replaces it with the local one.
     func testServerManifestWithANonUUIDIdIsNotAnotherVault() throws {
         let server = MockDAV()
         _ = try makeVault("A")
         try sync("A", server)
         server.putDirect("vault.json", Data(#"{"vaultId":"0123abcd"}"#.utf8))
-        XCTAssertThrowsError(try sync("A", server)) {
+        XCTAssertThrowsError(try sync("A", server, vault: .some(nil))) {
             guard case SyncError.malformedResponse = $0 else { return XCTFail("\($0)") }
         }
+        let repaired = try sync("A", server)
+        XCTAssertTrue(repaired.errors.isEmpty, "\(repaired)")
+        XCTAssertEqual(server.file("vault.json"), try Data(contentsOf: dir("A").appendingPathComponent("vault.json")))
     }
 
     func testRefusesDifferentVault() throws {
