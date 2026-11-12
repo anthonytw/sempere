@@ -257,7 +257,7 @@ extension AppModelSuites {
             #expect(await TS.waitUntil(timeout: .seconds(5)) { !peers.get().isEmpty })
             let peer = try #require(peers.get().first)
             let link = w.link
-            let squat = Task.detached {
+            let silent = Task.detached {
                 while !Task.isCancelled {
                     guard let c = try? await link.open(peer) else {
                         try? await Task.sleep(for: .milliseconds(10))
@@ -267,7 +267,7 @@ extension AppModelSuites {
                     while let d = try? await c.receive(maximum: 1 << 16), !d.isEmpty {}
                 }
             }
-            defer { squat.cancel() }
+            defer { silent.cancel() }
             try await Task.sleep(for: .milliseconds(200))
             #expect(w.home.model.nearby.sessionToken == nil, "a silent connection holds no session")
             w.pad.model.startNearbyJoin()
