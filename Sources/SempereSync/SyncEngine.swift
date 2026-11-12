@@ -888,20 +888,28 @@ public final class SyncEngine {
             // vault's key and a local manifest home sealed (`canRepairRemoteManifest`): an upload cut on a server
             // that writes bodies in place leaves such a copy (design F11). Otherwise there is nothing to compare.
             if options.pushOnly { return }
-            if canRepairRemoteManifest(local) { remoteManifestUnreadable = true; return }
+            if canRepairRemoteManifest(local, remoteRoot: remoteRoot) { remoteManifestUnreadable = true; return }
             throw SyncError.malformedResponse("remote vault.json is not a vault manifest")
         }
         if localId != remoteId { throw SyncError.vaultMismatch(local: localId, remote: remoteId) }
     }
 
     /// True when the server's `vault.json`, which does not parse, may be replaced by the local one in a two-way
-    /// run: the vault is unlocked with a verified list, and the local file is that list (home's seal, any label).
-    /// A keyless run never uploads `vault.json` (`keylessManifestHeld`), so it never repairs one either.
-    func canRepairRemoteManifest(_ local: Data) -> Bool {
+    /// run: the vault is unlocked with a verified list, the local file is that list (home's seal, any label), and the
+    /// target is this vault's: this device synced `vault.json` there before (its state records it), or the target's
+    /// `epochs/` holds the record the local list names. A target with neither may be another vault's or another
+    /// app's folder, and is refused as before. A keyless run never uploads `vault.json` (`keylessManifestHeld`), so it
+    /// never repairs one either.
+    func canRepairRemoteManifest(_ local: Data, remoteRoot: [String: RemoteEntry]) -> Bool {
         guard let vault, vault.canRead, !keylessManifestHeld, case .verified = vault.listStatus,
               var parsed = try? EpochManifest.parse(local) else { return false }
         parsed.label = vault.manifest.label
-        return parsed == vault.manifest
+        guard parsed == vault.manifest else { return false }
+        if state.mutable[Vault.manifestName] != nil { return true }
+        let record = String(parsed.epochRecord.dropFirst(Vault.epochsName.count + 1))
+        guard remoteRoot[Vault.epochsName]?.isCollection == true,
+              let entries = try? transport.list([Vault.epochsName]) else { return false }
+        return entries.contains { !$0.isCollection && $0.name == record }
     }
 
     // MARK: - Mutable files
@@ -1822,17 +1830,9 @@ public final class SyncEngine {
         guard !options.dryRun, !options.pullOnly, unacceptedHere[path] == nil, let entry, let listed = entry.size,
               let have = LocalFS.regularFileSize(localDir.appendingPathComponent(n.filename)), listed < have,
               have <= options.maxFileBytes else { return false }
-        let file = localDir.appendingPathComponent(n.filename)
-        guard let local = try? BoundedRead.contents(of: file, maxBytes: options.maxFileBytes),
-              let got = try? transport.read([Vault.notesName, id, n.filename], maxBytes: have) else { return false }
-        try locked { try budget.downloaded(got.data.count) }
-        guard got.data.count < local.count, local.starts(with: got.data) else { return false }
-        guard try placeRevisionFile(id, n, data: local, damaged: entry) else { return false }
-        locked {
-            report.uploaded.append(path)
-            report.replaced.append(.init(side: "remote", path: path))
-            placedShas[key(id, n)] = FileDigest.sha256(local)
-        }
+        guard let local = try? BoundedRead.contents(of: localDir.appendingPathComponent(n.filename), maxBytes: options.maxFileBytes),
+              try repairCutFile([Vault.notesName, id, n.filename], local: local, entry: entry) else { return false }
+        locked { placedShas[key(id, n)] = FileDigest.sha256(local) }
         return true
     }
 

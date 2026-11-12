@@ -10,7 +10,8 @@ import Sempere
 // approval first wins, and the other finds nothing left to do.
 //
 // Both sides stop in the background and start again in the foreground while their screen still shows, and each
-// restarts on its own after the system fails its listener or browser, waiting longer after each failure in a row.
+// restarts on its own after the system fails its listener or browser, waiting longer after each failure until it comes
+// up again.
 
 /// Add Device's side of the nearby link.
 public enum NearbyApproverStatus: Equatable, Sendable {
@@ -53,7 +54,8 @@ enum NearbyDecision: Sendable {
 final class NearbyJoinRuntime {
     /// The app is in the background: nothing advertises or browses until it is back.
     var suspended = false
-    /// Each side's restart after a failure, and its failures in a row (the wait doubles with each, `restartDelay`).
+    /// Each side's restart after a failure, and its failures since it last started (the wait doubles with each,
+    /// `restartDelay`; a side that comes up, `onReady`, starts again from zero).
     var listenerRestart: Task<Void, Never>?
     var browserRestart: Task<Void, Never>?
     var listenerFailures = 0
@@ -148,8 +150,8 @@ final class NearbyJoinRuntime {
         h.connection.abort()
     }
 
-    /// The wait before a side starts again after its `failures`-th failure in a row: `base`, doubled with each failure
-    /// after the first, at most a minute (or `base`, if longer).
+    /// The wait before a side starts again after its `failures`-th failure since it last came up: `base`, doubled with
+    /// each failure after the first, at most a minute (or `base`, if longer).
     static func restartDelay(base: Duration, failures: Int) -> Duration {
         let doubled = base * (1 << min(max(failures - 1, 0), 10))
         return min(doubled, max(base, .seconds(60)))
@@ -188,6 +190,9 @@ extension AppModelCore {
                     guard let self else { connection.cancel(); return }
                     self.acceptNearby(connection)
                 }
+            }, onReady: { [weak self] in
+                // Up: the failures counted toward the wait start from zero again.
+                Task { @MainActor in self?.nearby.listenerFailures = 0 }
             }, onFailure: { [weak self] in
                 Task { @MainActor in self?.nearbyListenerFailed() }
             })
@@ -312,7 +317,7 @@ extension AppModelCore {
     // MARK: - Failures and the background
 
     /// The listener failed (the system suspended the app, the local network is not allowed): it is dropped, Add Device
-    /// says the link is unavailable, and it starts again after a wait that grows with each failure in a row
+    /// says the link is unavailable, and it starts again after a wait that grows with each failure since it last came up
     /// (`restartDelay`) while Add Device shows. The browser, if any, is not touched.
     func nearbyListenerFailed() {
         guard nearby.advertisement != nil else { return }
@@ -411,6 +416,8 @@ extension AppModelCore {
         nearby.peers = []
         nearby.browsing = transport.browse(found: { [weak self] peers in
             Task { @MainActor in self?.nearbyPeersChanged(peers) }
+        }, onReady: { [weak self] in
+            Task { @MainActor in self?.nearby.browserFailures = 0 }
         }, onFailure: { [weak self] in
             Task { @MainActor in self?.nearbyBrowserFailed() }
         })

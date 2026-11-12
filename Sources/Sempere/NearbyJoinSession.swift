@@ -305,10 +305,4 @@ public enum NearbyApprover {
             return .refused(why)
         }
     }
-
-    /// Ends a connection that came while another session is going: the magic and `busy` (within `limit`), then closed.
-    public static func refuseBusy(_ connection: any NearbyJoinConnection, within limit: Duration = .seconds(5)) async {
-        try? await NearbyWriter(connection).send(.refused(.busy), within: limit)
-        connection.cancel()
-    }
 }

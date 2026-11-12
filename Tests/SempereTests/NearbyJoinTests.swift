@@ -498,14 +498,24 @@ final class NearbyJoinTests: VaultTestCase {
         XCTAssertEqual(timedEnding, .timedOut)
     }
 
-    /// A second device while a session is going is told `busy`, before any hello.
-    func testASecondSessionIsToldBusy() async throws {
+    /// A device whose request arrives while another session is going is told `busy`: after its hello, home's proof and
+    /// its parsed request (a connection holds no session before that), and it keeps its outcome as a refusal.
+    func testARequestWhileAnotherSessionGoesIsToldBusy() async throws {
         let p = try pair()
         let (joinerEnd, homeEnd) = NearbyJoinPipe.make()
-        Task { await NearbyApprover.refuseBusy(homeEnd) }
+        let asked = Box<Bool>()
+        let homeSide = Task {
+            try await NearbyApprover.run(on: homeEnd, vaultId: p.request.vaultId, timeouts: Self.bounded, received: { _, _, _ in
+                asked.set(true)
+                return .refuse(.busy)
+            }, outcome: { .refuse(.closed) })
+        }
         let outcome = try await NearbyJoiner.run(on: joinerEnd, request: p.raw, nonce: NearbyJoin.randomBytes(32),
                                                  identity: laptop, timeouts: Self.bounded)
         XCTAssertEqual(outcome, .refused(.busy))
+        XCTAssertEqual(asked.get(), true, "busy is decided once the request is parsed")
+        let ended = try await homeSide.value
+        XCTAssertEqual(ended, .refused(.busy))
     }
 
     // MARK: - Pieces

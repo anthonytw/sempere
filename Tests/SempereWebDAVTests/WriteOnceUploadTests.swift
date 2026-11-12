@@ -137,6 +137,27 @@ final class WriteOnceUploadTests: SyncTestCase {
         XCTAssertTrue(try w["A"].sync(t1).errors.isEmpty)
     }
 
+    /// A target that is not known to be this vault's (this device never synced its `vault.json` there, and its `epochs/`
+    /// lacks the local record) keeps a `vault.json` that does not parse: a two-way run with the key refuses it.
+    func testACutManifestOnATargetNotKnownToBeThisVaultsIsNotReplaced() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A"])
+        let t1 = w.target("T1")
+        let full = try XCTUnwrap(t1.file(Vault.manifestName))
+        let record = try XCTUnwrap(t1.paths.first { $0.hasPrefix("\(Vault.epochsName)/") })
+        t1.put(Vault.manifestName, full.prefix(full.count / 2))
+        t1.remove(record)
+        // No record of this target in the device's state either: a fresh state file.
+        try? FileManager.default.removeItem(at: w["A"].stateURL(t1))
+        XCTAssertThrowsError(try w["A"].sync(t1)) {
+            guard case SyncError.malformedResponse = $0 else { return XCTFail("\($0)") }
+        }
+        XCTAssertNotEqual(t1.file(Vault.manifestName), full)
+        // With the record there (or a state that names the target), it is repaired.
+        t1.put(record, try Data(contentsOf: w["A"].folder.appendingPathComponent(record)))
+        XCTAssertTrue(try w["A"].sync(t1).errors.isEmpty)
+        XCTAssertEqual(t1.file(Vault.manifestName), full)
+    }
+
     /// A keyless run (a joiner's) still refuses a target whose `vault.json` is not a manifest.
     func testAKeylessTwoWayRunDoesNotRepairACutManifest() throws {
         let w = try EpochSyncWorld(in: tmp, names: ["A"])
