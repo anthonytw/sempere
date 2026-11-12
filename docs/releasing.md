@@ -498,7 +498,8 @@ Approval with manual release leaves the version "Pending Developer Release". On 
    `SHA256SUMS` verifies, then prints the command (it publishes nothing):
    ```bash
    gh release create v1.0.0 --repo anthonytw/sempere --verify-tag --title "Sempere CLI v1.0.0" \
-      --notes-file build/release/v1.0.0/notes.md build/release/v1.0.0/*.tar.gz build/release/v1.0.0/SHA256SUMS
+      --notes-file build/release/v1.0.0/notes.md build/release/v1.0.0/*.tar.gz build/release/v1.0.0/SHA256SUMS \
+      build/release/v1.0.0/SHA256SUMS.sig
    ```
    **[you]** run it, or let the recipe run it after you type the version: `just release-publish 1.0.0 --publish`.
    Either needs a `gh auth login` with write access (the Release is created by whoever holds it; admin is not

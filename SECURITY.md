@@ -92,7 +92,7 @@ maintainer, the person, with their own SSH key on their own account after the bu
 download, take the public key from this repository (`packaging/allowed_signers`, never from the release itself):
 
 ```
-maintainer ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKpJBs4KAzf5EO5EadPEzOliAJDlItvTr7OtnnAeUCI3
+maintainer namespaces="git,file" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKpJBs4KAzf5EO5EadPEzOliAJDlItvTr7OtnnAeUCI3
 fingerprint SHA256:u94X5C2t2zAT9krLN4+LLwC3UI/z8d0v0tmuq6y90fM (awertz@pm.me)
 ```
 

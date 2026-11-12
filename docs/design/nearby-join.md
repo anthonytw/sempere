@@ -121,14 +121,18 @@ sequenceDiagram
   only the hello; a replayed reply, one sealed to another key, another vault's approval, home's list before the
   approval, a request of another vault; oversized frames, garbage, the wrong message, a request before the hello, a
   request that does not parse; a silent peer, a one-byte-per-100-ms trickle and a stalling approver; a peer that never
-  reads a 4 MiB reply; a peer leaving while home waits; `busy`. `SempereFuzzTests.testFuzzNearbyJoinLink` (both
-  readers, headers, the reply plaintext).
+  reads a 4 MiB reply; a peer leaving while home waits; `busy`; the per-stage limits (a large first frame refused from
+  its header), the one limit for the hello and the request, home's proof never repeating, a reply whose record differs
+  from the copy's, declining by commitment. `SempereFuzzTests.testFuzzNearbyJoinLink` (both readers, stage by stage,
+  headers, the reply plaintext).
 - `NearbyJoinModelTests` (SempereAppCoreTests, two models over `MemoryNearbyTransport`, a folder target whose provider
   holds the request back; a one-minute limit, short timeouts): the join through the link while the target delivers
   nothing, then the target catching up with nothing approved twice; a second device told `busy`; a decline reaching the
   device, which keeps looking; Add Device closed tearing the session down and a new one starting at once; a failed
   listener and browser starting again; the background stopping both and the foreground restarting them; the cap on kept
-  requests; a device approved through the target getting its reply nearby; no link.
+  requests; a device approved through the target getting its reply nearby; no link; a silent device reconnecting in a
+  loop keeping nobody out, the oldest handshake ended for a new one, a failed listener or browser restarting alone with
+  a growing wait, a decision needing the session's token, the join screen's random pick and its cap.
 - `NearbyTransportAppTests` (the app's test host, bounded): the sessions over real `NWListener` and `NWConnection` on
   127.0.0.1, a 3 MiB reply in many receives, a 2 GiB length refused, a peer hanging up.
 - **Not tested here**: Bonjour discovery and AWDL between two physical devices (different Wi-Fi networks, client
