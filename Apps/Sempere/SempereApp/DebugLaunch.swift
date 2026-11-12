@@ -43,6 +43,9 @@ import UIKit
 ///   has no keychain entitlement, so creating a vault, which saves its home's keys before it writes anything
 ///   (review of #88, S4), fails there without it (`NewVaultSheetUITests`, `VaultStoreUITests`,
 ///   `FolderPickerUITests`). A relaunch starts with no keys: the vault opens locked, as on a device that lost them.
+/// - `SEMPERE_DEBUG_NEARBY`: `bonjour` keeps the real nearby link in a scripted launch. Any launch that sets a
+///   `SEMPERE_DEBUG_*` or `SEMPERE_DEMO*` variable otherwise runs it on loopback (`nearbyLoopback`): the local network
+///   prompt of a fresh ad-hoc build would cover the window a UI test drives, and no UI test joins over the network.
 ///
 /// Release builds compile none of this.
 enum DebugLaunch {
@@ -152,6 +155,12 @@ enum DebugLaunch {
     @MainActor private static var pickedDemo: URL?
 
     static var scrollY: Double? { environment["SEMPERE_DEBUG_SCROLL_Y"].flatMap(Double.init) }
+
+    /// True when a scripted launch should run the nearby link on loopback (see `SEMPERE_DEBUG_NEARBY` above).
+    static var nearbyLoopback: Bool {
+        if let mode = environment["SEMPERE_DEBUG_NEARBY"] { return mode != "bonjour" }
+        return environment.keys.contains { $0.hasPrefix("SEMPERE_DEBUG_") || $0.hasPrefix("SEMPERE_DEMO") }
+    }
 
     /// `SEMPERE_DEBUG_MEMORY_KEYS`: the store for this device's keys, when the launch asks for one in memory.
     static var deviceKeyStore: (any DeviceKeyStore)? {
