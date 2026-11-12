@@ -147,9 +147,14 @@ ui_pseudo=(PseudoLanguageUITests)
 ui_tooling=(ScreenshotTests DocsScreenshotTests)
 # ui-lists:end
 # `ui_suites NAME…`: -only-testing for those UI test entries (unless the caller narrowed the run).
+# Quarantine (owner rule 2026-11-12): a known flaky test leaves the main suites and runs only on its own
+# (`scripts/app.sh test-quarantine`, iPhone simulator), until it is deleted or made reliable. Entries are `Class/testName`.
+ui_quarantine=(NoteToolbarUITests/testANoteOpensInReadingAndTheOverflowMenuListsItsRecordings)
+
 ui_suites() {
   local entries=() entry
   for entry in "$@"; do entries+=("-only-testing:SempereAppUITests/$entry"); done
+  for entry in "${ui_quarantine[@]}"; do entries+=("-skip-testing:SempereAppUITests/$entry"); done
   suites "${entries[@]}"
 }
 
@@ -256,6 +261,17 @@ case "${1:-}" in
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO \
       ${only[@]+"${only[@]}"} ${extra[@]+"${extra[@]}"} \
+      || { status=$?; shutdown_simulators "$sim"; exit $status; }
+    shutdown_simulators "$sim"
+    ;;
+  test-quarantine)
+    # The quarantined UI tests (ui_quarantine), on the iPhone simulator, outside every gate and sweep.
+    sim=$(pick_simulator iPhone)
+    settle_simulator "$sim"
+    only=(); for entry in "${ui_quarantine[@]}"; do only+=("-only-testing:SempereAppUITests/$entry"); done
+    xcb test "${lang[@]}" -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
+      -destination "platform=iOS Simulator,id=$sim" "${only[@]}" \
+      -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"} \
       || { status=$?; shutdown_simulators "$sim"; exit $status; }
     shutdown_simulators "$sim"
     ;;

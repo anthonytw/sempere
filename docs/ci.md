@@ -134,6 +134,9 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
 - **Fail fast, then rerun** ([Fail fast](#fail-fast)): steps run cheapest first and the run stops at the first
   failed step; inside a step the tests stop at the first failed test, which then runs twice on its own and is
   reported as `FAILING` or `FLAKY`. A flaky test fails the step too: nothing retries silently.
+- **Quarantine**: a test known to be flaky leaves the main suites (`ui_quarantine` in `scripts/app.sh`, skipped by every
+  UI step) and runs only on its own (`scripts/app.sh test-quarantine`), outside every gate and sweep. Then it is either
+  deleted or made reliable; a sweep is never rerun because of a known flaky test.
 - Off CI, `scripts/app.sh` stops an `xcodebuild` that sits idle after the end of its whole run
   (`SEMPERE_STALL_SECS`, default 180 s): `Test Suite 'All tests'` or `'Selected tests'` passed or failed, or
   `Test run with N tests`, never a class's `Executed N tests`; a `◇ Test run started` after it (Swift Testing
