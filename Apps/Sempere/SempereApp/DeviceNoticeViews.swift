@@ -209,8 +209,7 @@ struct UnlistedDeviceView: View {
         Task {
             model.close()
             do {
-                try await library.removeStored(entry)
-                LastPlace.forget(vault: entry.vaultId, in: model.deviceMemory)
+                try await model.removeStoredVault(entry, library: library)
                 try? await keys.store.delete(for: entry.vaultId)
                 dismiss()
             } catch {

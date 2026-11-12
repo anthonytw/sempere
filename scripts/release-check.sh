@@ -13,7 +13,8 @@
 #     entitlements file is missing, or the Mac build is not sandboxed;
 #   - the Mac build would get its own bundle id (no universal purchase);
 #   - ITSAppUsesNonExemptEncryption is missing from the app's Info.plist;
-#   - the two copies of the privacy policy (docs/privacy, docs/appstore) differ in date;
+#   - the two copies of the privacy policy (docs/privacy, docs/appstore) differ in date or in their
+#     "Network connections" section;
 #   - an App Intent's IntentDescription names a device ("iPhone", "iPad"): App Store Connect refuses the build
 #     (ITMS-90626, "Invalid Siri Support"), so it says "your watch", "this device" or "your vault's inbox" instead;
 #   - networking (URLSession, Network.framework, sockets, web views, CloudKit, …)
@@ -679,6 +680,33 @@ for p in ("docs/privacy/index.html", "docs/appstore/privacy-policy.md"):
     policy_dates[p] = m.group(1)
 if len(set(policy_dates.values())) > 1:
     errors.append(f"the two privacy policy copies differ in date ({policy_dates}): edit both")
+
+# Their "Network connections" sections say the same, word for word (markup, typographic quotes and line breaks aside):
+# the connections the app makes are the part of the policy that must never differ between the copies.
+def policy_network_section(p):
+    import html as htmlmod
+    text = read(os.path.join(root, p))
+    if p.endswith(".html"):
+        m = re.search(r"<h2>Network connections</h2>(.*?)<h2>", text, re.S)
+        body = htmlmod.unescape(re.sub(r"<[^>]+>", " ", m.group(1))) if m else None
+    else:
+        m = re.search(r"^## Network connections\n(.*?)^## ", text, re.S | re.M)
+        body = re.sub(r"\*\*|`", "", m.group(1)) if m else None
+    if body is None:
+        return None
+    body = body.replace("\u2019", "'").replace("\u2018", "'").replace("\u201c", '"').replace("\u201d", '"')
+    return " ".join(body.split())
+
+if len(policy_dates) == 2:
+    sections = {p: policy_network_section(p) for p in policy_dates}
+    for p, body in sections.items():
+        if body is None:
+            errors.append(f"{p}: no \"Network connections\" section")
+    if None not in sections.values() and len(set(sections.values())) > 1:
+        a, b = sections.values()
+        at = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
+        errors.append("the two privacy policy copies differ in their \"Network connections\" section (first at: "
+                      f"\"{a[max(0, at - 30):at + 30]}\" vs \"{b[max(0, at - 30):at + 30]}\"): edit both")
 
 # --- Audit cadence: the last full audit in SECURITY.md is under 7 months old (warns, never fails) ------------------
 # SECURITY.md "Audits" table rows: | Full | YYYY-MM | version | report |  ("Full" or "Full + release"; docs/audits/README.md).

@@ -142,8 +142,12 @@ sent back, with the device list, is encrypted to the new device's key
   opened for display, a recording until it is saved into the note, a voice note
   until it is sealed, and files staged for an export or a drag; on a Mac, the
   titles of note windows open when the app quits, which the system keeps to
-  restore its windows; and the system's picture of the last screen, which it keeps
-  for the app switcher while the app is in the background. They rely on the
+  restore its windows; on every device, each vault's last place in the app's
+  preferences (`Sempere.lastPlace.<vault id>`: the vault's id, the open note's id,
+  and the sidebar item, a fixed list or a notebook or tag as a digest keyed from
+  the vault's key, never a name), which is in the device's backups and is forgotten
+  when the vault is removed from the device; and the system's picture of the last
+  screen, which it keeps for the app switcher while the app is in the background. They rely on the
   system's data protection where the platform has it (on a Mac, which has none,
   the attachment cache is deleted when the app quits, and after a crash at the
   next launch, before any vault opens). The caches of note

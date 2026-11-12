@@ -477,6 +477,14 @@ extension AppModelCore {
         syncCoordinator.sessions[id]?.demand()
     }
 
+    /// Removes the store vault `entry` from this device (`VaultLibrary.removeStored`) and forgets what the device kept
+    /// about it in its preferences (its last place). Every path that removes a vault from the device goes through here
+    /// or forgets the place itself.
+    public func removeStoredVault(_ entry: VaultStore.Entry, library: VaultLibrary) async throws {
+        try await library.removeStored(entry)
+        LastPlace.forget(vault: entry.vaultId, in: deviceMemory)
+    }
+
     /// Removes a target of the store vault `vaultID`: never anything at the target itself. A WebDAV
     /// target's Keychain password goes too.
     public func removeSyncTarget(_ id: UUID, of vaultID: UUID) async throws {
@@ -487,6 +495,8 @@ extension AppModelCore {
             let passwords = webdavPasswords
             try await offMain { try passwords.delete(for: id) }
             try webdavLocations.remove(id)
+            // A copy the first download never completed goes with its only target: its last place too.
+            if syncStore.entry(id: vaultID) == nil { LastPlace.forget(vault: vaultID, in: deviceMemory) }
         } else {
             try syncStore.targets.remove(id, of: vaultID)
         }
