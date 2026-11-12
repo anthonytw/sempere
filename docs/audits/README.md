@@ -152,5 +152,4 @@ A path in two rows runs both lanes. A path in none (documentation, tests) runs n
 
 | Report | Kind | Code audited |
 | --- | --- | --- |
-
-None yet. The first is a full audit of 1.1, run once 1.1 is feature-complete and before it is submitted; it also serves as 1.1's release audit.
+| [2026-11-1.1](2026-11-1.1.md) | Full + release | 6a7afb0, and the delta 6a7afb0..54b9ed6 |

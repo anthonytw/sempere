@@ -8,6 +8,39 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [1.1.0] - 2026-11-17
 
+### Security
+
+This release fixes four issues found by the project's first security audit
+([report](https://github.com/anthonytw/sempere/blob/main/docs/audits/2026-11-1.1.md)). Update to 1.1.0 on every device and every machine that runs the CLI.
+
+- **Web viewer hosting** ([GHSA-vr26-635c-vq25](https://github.com/anthonytw/sempere/security/advisories/GHSA-vr26-635c-vq25), High).
+  The hosting layout that `docs/web-viewer.md` recommended in 1.0.0 and 1.0.1 served the WebDAV share from the viewer's
+  own host name. Someone who can write to the share, such as a removed device that kept its login, could make the viewer
+  run their code if you opened a link to it, and read a key as you typed it. Affected: a web viewer set up that way where
+  someone other than you can write to the share. Not affected: a viewer on its own host name, a share only you can write
+  to, the apps and the CLI. What to do: change the server configuration as in the updated hosting section, or put the
+  share on a separate host name; change the share's password if a device that could write to it was removed or lost. If
+  you may have typed or passkey-unlocked a key in the viewer after following an unexpected link into the share, treat
+  that key as exposed: for a device key, remove that device from the vault; for the recovery key, replace the recovery
+  kit. This fix is in the documentation, so you can apply it without updating.
+- **Notability import** ([GHSA-qh9v-jp8v-858m](https://github.com/anthonytw/sempere/security/advisories/GHSA-qh9v-jp8v-858m), Medium).
+  A crafted Notability file could keep an import busy at full CPU for a long time. No data is exposed or changed.
+  Affected: 1.0.0 and 1.0.1, the app and `sempere import notability`, when importing a file from someone else. What to
+  do: update; until then import only Notability files you made yourself.
+- **CLI tree export** ([GHSA-jg6x-72x7-6vr2](https://github.com/anthonytw/sempere/security/advisories/GHSA-jg6x-72x7-6vr2), Medium).
+  Someone who can write to an export folder could make `sempere export --all --format markdown|html --clean` delete a
+  file outside the folder or write note files elsewhere, through a symbolic link. Re-exporting over an existing file
+  also kept that file's permissions instead of making it readable by you only. Affected: the CLI 1.0.0 and 1.0.1 when
+  exporting into a folder other people or programs can write to (the permissions part also affects the app's PDF, share
+  and bulk export over an existing file). What to do: update; until then export only into a folder only you can write
+  to, and do not use `--clean` on a shared folder. After an earlier export, `chmod -R go-rwx` the folder.
+- **Sync with a hostile WebDAV server** ([GHSA-xmqw-cv8m-rh5r](https://github.com/anthonytw/sempere/security/advisories/GHSA-xmqw-cv8m-rh5r), Medium).
+  A server could make a sync download several very large files into memory at once, and fill the device's storage
+  with refused downloads kept in quarantine, run after run. No note content or key is exposed. Affected: 1.0.0 and 1.0.1,
+  the app and the CLI, syncing with a server you do not fully trust. What to do: update. To free space, delete
+  quarantined files: in the app, Sync Targets ▸ Details and Repair ▸ Quarantined Files; in the CLI,
+  `sempere store quarantine list` and `delete`.
+
 ### Apple Watch
 
 - Record a voice note from your wrist: from a complication, a Smart Stack widget, a Control, the Action button or Siri.
