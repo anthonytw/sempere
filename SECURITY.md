@@ -80,8 +80,9 @@ stated guarantee in released versions. Low, Info, hardening and findings only in
 
 | Audit | Date | Version | Report |
 | --- | --- | --- | --- |
+| Full + release | 2026-11 | 1.1 | [2026-11-1.1](docs/audits/2026-11-1.1.md) |
 
-No audit is published yet. The first, a full audit of 1.1, is planned before 1.1 is submitted to the App Store; its row goes here when its fixes have shipped.
+The first audit, a full audit of 1.1, was also 1.1's release audit; its fixes shipped in 1.1.0.
 
 ## Verifying releases
 
