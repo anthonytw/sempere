@@ -6,7 +6,7 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [Unreleased]
 
-## [1.1.0] - 2026-11-17
+## [1.1.0] - 2026-11-13
 
 ### Security
 
