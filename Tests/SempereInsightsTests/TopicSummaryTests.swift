@@ -151,6 +151,38 @@ extension InsightsUpdaterTests {
         XCTAssertLessThanOrEqual(r.topics.count, 1)
     }
 
+    /// Review of #54, M1 and L6: the topics file is written only while Note Insights is on (checked under the lock), and
+    /// an own file that is there but cannot be read is never replaced (that would drop its scopes); a missing one is
+    /// made.
+    func testTopicWritesNeedInsightsOnAndAReadableOwnFile() async throws {
+        try physicsAndKitchen()
+        _ = try await run()
+        let me = try XCTUnwrap(vault.writerDevice)
+        let store = InsightsStore(vault: vault)
+        let file = vault.insightsURL.appendingPathComponent(InsightsFileName(.topics, device: me).fileName)
+        let topic = try XCTUnwrap(store.snapshot().topics[me]?.topics.first)
+        // Missing: made.
+        try FileManager.default.removeItem(at: file)
+        XCTAssertTrue(try store.updateOwnTopics(now: now) { $0.append(topic); return true })
+        XCTAssertEqual(store.snapshot().topics[me]?.topics.count, 1)
+        // There but unreadable: refused, left as it is.
+        let garbage = Data("not an age file".utf8)
+        try garbage.write(to: file)
+        XCTAssertThrowsError(try store.updateOwnTopics(now: now) { $0.append(topic); return true })
+        XCTAssertEqual(try Data(contentsOf: file), garbage)
+        let regenerate = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: nil, deviceState: state, app: "test/1")
+        do { _ = try await regenerate.regenerateTopic(.init(notebook: "Kitchen"), inputs: try inputs()); XCTFail("replaced an unreadable file") }
+        catch {}
+        XCTAssertEqual(try Data(contentsOf: file), garbage)
+        // Off: refused.
+        try FileManager.default.removeItem(at: file)
+        try vault.updateSharedSettings { s in
+            try s.write(SharedSettingsCatalog.spec(named: "insights.enabled")!, .bool(false), block: nil, type: nil, now: now)
+        }
+        XCTAssertThrowsError(try store.updateOwnTopics(now: now) { $0.append(topic); return true })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
     func testAMemoWithoutTopicsStillDecodes() throws {
         let url = try TestTemp.directory("old-memo").appendingPathComponent("failures.json")
         try Data(#"{"notes":{"x":{"hash":"h","identity":"m 1 2","refused":false,"at":1,"count":1}}}"#.utf8).write(to: url)

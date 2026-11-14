@@ -27,7 +27,7 @@ extension AppModelSuites {
 
         final class Power: @unchecked Sendable { var on = true }
 
-        func model(power: Power = Power(), model provider: FakeModelProvider = FakeModelProvider()) async throws -> AppModel {
+        func model(power: Power = Power(), model provider: any ModelProvider = FakeModelProvider()) async throws -> AppModel {
             let (url, key) = try await ModelFixture.vault()
             var services = AppModelServices.headless()
             services.insights = InsightsServices(model: { provider }, embedder: { FakeEmbeddingProvider() },
@@ -284,6 +284,130 @@ extension AppModelSuites {
             await model.setInsightsEnabled(false)
             #expect(model.insightsTopic(notebook: "Kitchen") == nil)
             #expect(model.insightsMap.isEmpty)
+        }
+
+        /// A model whose topic summaries wait for `release` (notes are made as by the fake); `honorsCancellation` false
+        /// keeps waiting through a cancellation, as a model call that does not stop at once.
+        final class GatedTopics: ModelProvider, @unchecked Sendable {
+            let inner = FakeModelProvider()
+            let lock = NSLock()
+            var gated = false
+            var entered = false
+            var released = false
+            let honorsCancellation: Bool
+            init(honorsCancellation: Bool) { self.honorsCancellation = honorsCancellation }
+            func set(_ body: (GatedTopics) -> Void) { lock.lock(); body(self); lock.unlock() }
+            func get<T>(_ body: (GatedTopics) -> T) -> T { lock.lock(); defer { lock.unlock() }; return body(self) }
+            var identity: GenerationIdentity { inner.identity }
+            var availability: ModelAvailability { .available }
+            var contextTokens: Int { 8192 }
+            func supports(language: String?) -> Bool { true }
+            func extract(_ text: String, language: String?) async throws -> ModelExtraction { try await inner.extract(text, language: language) }
+            func merge(_ parts: [ModelExtraction], language: String?) async throws -> ModelExtraction { try await inner.merge(parts, language: language) }
+            func title(transcript: String, language: String?) async throws -> String { try await inner.title(transcript: transcript, language: language) }
+            func summarize(topic: String, summaries: [String], language: String?) async throws -> String {
+                if get({ $0.gated }) {
+                    set { $0.entered = true }
+                    while !get({ $0.released }) {
+                        if honorsCancellation { try await Task.sleep(for: .milliseconds(5)) } else { try? await Task.sleep(for: .milliseconds(5)) }
+                    }
+                }
+                return try await inner.summarize(topic: topic, summaries: summaries, language: language)
+            }
+        }
+
+        func ownTopicsFile(_ model: AppModel) -> URL? {
+            guard let vault = model.vault, let me = vault.writerDevice else { return nil }
+            return vault.insightsURL.appendingPathComponent(InsightsFileName(.topics, device: me).fileName)
+        }
+
+        /// Review of #54, M1: "Regenerate" runs in the insights slot, so turning Note Insights off (or closing the vault)
+        /// cancels it and waits for it, and nothing is written after the purge, also when the model call does not stop
+        /// at the cancellation.
+        @Test(arguments: [true, false])
+        func regenerateIsCancelledByTurningOffAndWritesNothingAfter(_ honorsCancellation: Bool) async throws {
+            let power = Power()
+            power.on = false
+            let gated = GatedTopics(honorsCancellation: honorsCancellation)
+            let model = try await model(power: power, model: gated)
+            for (i, t) in Self.bread.enumerated() { try await note(model, "Bread \(i)", t, notebook: "Kitchen") }
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            await model.runInsightsPass(batch: 10, ignorePower: true)
+            let scope = try #require(model.insightsTopic(notebook: "Kitchen")?.scope)
+            let file = try #require(ownTopicsFile(model))
+            try FileManager.default.removeItem(at: file)   // so any later write would show
+            gated.set { $0.gated = true }
+            let regen = Task { await model.regenerateInsightsTopic(scope) }
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { gated.get { $0.entered } })
+            #expect(model.insightsRuntime.pass != nil && model.insightsRuntime.slotIsRegeneration, "it holds the insights slot")
+            let off = Task { await model.setInsightsEnabled(false) }
+            if !honorsCancellation {
+                // The turn-off waits for the model call to come back.
+                try await Task.sleep(for: .milliseconds(50))
+                #expect(model.insights.mode == .on, "not purged while the regeneration still runs")
+                gated.set { $0.released = true }
+            }
+            await off.value
+            await regen.value
+            gated.set { $0.released = true }
+            try await Task.sleep(for: .milliseconds(50))
+            #expect(model.insights.mode == .off)
+            #expect(!FileManager.default.fileExists(atPath: file.path), "nothing written after the purge")
+            #expect(insightsFiles(model).isEmpty)
+            #expect(model.insightsRuntime.pass == nil)
+        }
+
+        /// Closing the vault cancels a running regeneration (the slot's task), which then writes nothing.
+        @Test func closingCancelsARegeneration() async throws {
+            let power = Power()
+            power.on = false
+            let gated = GatedTopics(honorsCancellation: true)
+            let model = try await model(power: power, model: gated)
+            for (i, t) in Self.bread.enumerated() { try await note(model, "Bread \(i)", t, notebook: "Kitchen") }
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            await model.runInsightsPass(batch: 10, ignorePower: true)
+            let scope = try #require(model.insightsTopic(notebook: "Kitchen")?.scope)
+            let file = try #require(ownTopicsFile(model))
+            try FileManager.default.removeItem(at: file)
+            gated.set { $0.gated = true }
+            let regen = Task { await model.regenerateInsightsTopic(scope) }
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { gated.get { $0.entered } })
+            let slot = try #require(model.insightsRuntime.pass)
+            model.stopInsights()
+            _ = await slot.value
+            await regen.value
+            gated.set { $0.released = true }
+            #expect(!FileManager.default.fileExists(atPath: file.path), "a cancelled regeneration writes nothing")
+        }
+
+        /// A second Regenerate waits for the first instead of stopping it; a pass in the slot is stopped first.
+        @Test func regenerationsQueueInTheSlot() async throws {
+            let power = Power()
+            power.on = false
+            let gated = GatedTopics(honorsCancellation: true)
+            let model = try await model(power: power, model: gated)
+            for (i, t) in Self.bread.enumerated() { try await note(model, "Bread \(i)", t, notebook: "Kitchen") }
+            for (i, t) in Self.physics.enumerated() { try await note(model, "Physics \(i)", t, notebook: "Lab") }
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            await model.runInsightsPass(batch: 10, ignorePower: true)
+            let kitchen = try #require(model.insightsTopic(notebook: "Kitchen")?.scope)
+            let lab = try #require(model.insightsTopic(notebook: "Lab")?.scope)
+            let before = try #require(model.insightsTopic(notebook: "Kitchen")?.at)
+            try await Task.sleep(for: .milliseconds(5))
+            gated.set { $0.gated = true }
+            let first = Task { await model.regenerateInsightsTopic(kitchen) }
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { gated.get { $0.entered } })
+            let second = Task { await model.regenerateInsightsTopic(lab) }
+            try await Task.sleep(for: .milliseconds(30))
+            #expect(model.insights.regeneratingTopics == [TopicScopes.name(kitchen), TopicScopes.name(lab)])
+            gated.set { $0.released = true }
+            await first.value
+            await second.value
+            #expect(model.insights.topicProblems.isEmpty, "the first was not cancelled by the second")
+            #expect(try #require(model.insightsTopic(notebook: "Kitchen")?.at) > before)
         }
 
         @Test func theToolbarOffersInsightsOnlyWhenOn() {

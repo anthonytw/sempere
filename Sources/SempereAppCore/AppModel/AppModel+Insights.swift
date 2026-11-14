@@ -163,8 +163,10 @@ final class InsightsRuntime {
     var refreshRequested = 0
     var refreshDone = 0
     var lastRefreshEnded: ContinuousClock.Instant?
-    /// The pass running now, foreground or background (at most one), and its number.
+    /// The pass running now, foreground or background, or a topic's regeneration (at most one), and its number.
     var pass: Task<Bool, Never>?
+    /// The slot holds a regeneration (`regenerateInsightsTopic` waits for it instead of stopping it).
+    var slotIsRegeneration = false
     var passID = 0
     var loop: Task<Void, Never>?
     /// Bumped by every change to the vault's insights files seen here (a pass, a sync arrival).
@@ -230,7 +232,7 @@ extension AppModelCore {
         runtime.start?.cancel(); runtime.start = nil
         runtime.refresh?.cancel(); runtime.refresh = nil
         // The pass in either slot, foreground or the background task's (`runInsightsInBackground` waits on it).
-        runtime.pass?.cancel(); runtime.pass = nil
+        runtime.pass?.cancel(); runtime.pass = nil; runtime.slotIsRegeneration = false
         runtime.loop?.cancel(); runtime.loop = nil
         insightsIndex = InsightsIndex()
         insights = InsightsModelState()
@@ -425,25 +427,52 @@ extension AppModelCore {
 
     /// "Regenerate" is offered: this device can make summaries and the vault is writable here.
     public var canRegenerateInsightsTopics: Bool {
-        insights.mode == .on && insights.capability.generates && !isVaultReadOnly && phase == .unlocked
+        // Not while the vault's keys change (a re-encryption would seal it under the old key).
+        insights.mode == .on && insights.capability.generates && !isVaultReadOnly && phase == .unlocked && !isChangingKeys
     }
 
     /// "Regenerate": makes the scope's topic summary now on this device (one model call; design §6 item 4), whatever the
-    /// once-a-day rule says, then reads the index again. Several scopes may run at once; one scope runs once.
+    /// once-a-day rule says, then reads the index again. It runs in the model's one insights slot, like a pass (review of
+    /// #54, M1): a running pass is stopped first (it saves what it made; the next look for work continues it) and a running
+    /// regeneration is waited for, so turning Note Insights off, closing or locking the vault cancel it and wait for it
+    /// like any pass, and no two writers make or record the same topic at once. A scope already waiting or running is not
+    /// asked again.
     public func regenerateInsightsTopic(_ scope: InsightsTopicsFile.Scope) async {
         let name = TopicScopes.name(scope)
-        guard canRegenerateInsightsTopics, let vault, !insights.regeneratingTopics.contains(name) else { return }
+        guard canRegenerateInsightsTopics, !insights.regeneratingTopics.contains(name) else { return }
         let gen = generation
         insights.regeneratingTopics.insert(name)
         insights.topicProblems[name] = nil
         defer { if generation == gen { insights.regeneratingTopics.remove(name) } }
+        let runtime = insightsRuntime
+        // Take the slot: wait out another regeneration, stop a pass. Re-checked after every wait (the loop may start one).
+        while let running = runtime.pass {
+            if !runtime.slotIsRegeneration { running.cancel() }
+            _ = await running.value
+            guard generation == gen else { return }
+        }
+        guard canRegenerateInsightsTopics else { return }
+        let task = occupyInsightsSlot(regeneration: true) { [weak self] in
+            await self?.runTopicRegeneration(scope, generation: gen)
+            return false
+        }
+        _ = await task.value
+        guard generation == gen else { return }
+        // Continue the pass this one may have stopped (in the power window only, as every look for work).
+        if !services.lifecycle.isInBackground { requestInsightsPass(force: false) }
+    }
+
+    /// The regeneration itself, inside the slot's task (so its cancellation reaches the model call and the write).
+    func runTopicRegeneration(_ scope: InsightsTopicsFile.Scope, generation gen: Int) async {
+        let name = TopicScopes.name(scope)
+        guard let vault, generation == gen, !Task.isCancelled, canRegenerateInsightsTopics else { return }
         let summaries = insightsSummaries
         let updater = InsightsUpdater(vault: vault, model: insightsRuntime.model, embedder: nil, deviceState: deviceStateURL,
                                       app: services.appName)
         let memo = insightsFailureMemoURL
         do {
             let inputs = await Self.insightsOffMain { InsightsNotes.inputs(vault, summaries: summaries) }
-            guard generation == gen else { return }
+            guard generation == gen, !Task.isCancelled else { return }
             _ = try await updater.regenerateTopic(scope, inputs: inputs, failureMemo: memo)
         } catch let e as InsightsUpdater.TopicError {
             guard generation == gen else { return }
@@ -453,10 +482,11 @@ extension AppModelCore {
             case .unavailable: insights.topicProblems[name] = .unavailable
             }
         } catch {
-            guard generation == gen else { return }
+            // Cancelled (turned off, closed, locked): nothing to say.
+            guard generation == gen, !(error is CancellationError), !Task.isCancelled else { return }
             insights.topicProblems[name] = .failed(services.describeError(error))
         }
-        guard generation == gen else { return }
+        guard generation == gen, !Task.isCancelled else { return }
         insightsRuntime.filesRevision += 1
         await refreshInsights()
     }
@@ -585,15 +615,24 @@ extension AppModelCore {
     /// Puts a pass in the one slot; it clears the slot when it ends, only while the slot is still its own.
     @discardableResult
     func startInsightsPass(batch: Int, ignorePower: Bool) -> Task<Bool, Never> {
+        occupyInsightsSlot(regeneration: false) { [weak self] in
+            await self?.runInsightsPass(batch: batch, ignorePower: ignorePower).remains ?? false
+        }
+    }
+
+    /// Puts `work` (a pass or a topic's regeneration) in the one insights slot; it clears the slot when it ends, only
+    /// while the slot is still its own.
+    func occupyInsightsSlot(regeneration: Bool, _ work: @escaping @MainActor () async -> Bool) -> Task<Bool, Never> {
         let runtime = insightsRuntime
         runtime.passID += 1
         let id = runtime.passID
-        let task = Task { @MainActor [weak self] () -> Bool in
-            let remains = await self?.runInsightsPass(batch: batch, ignorePower: ignorePower).remains ?? false
-            if runtime.passID == id { runtime.pass = nil }
+        let task = Task { @MainActor () -> Bool in
+            let remains = await work()
+            if runtime.passID == id { runtime.pass = nil; runtime.slotIsRegeneration = false }
             return remains
         }
         runtime.pass = task
+        runtime.slotIsRegeneration = regeneration
         return task
     }
 

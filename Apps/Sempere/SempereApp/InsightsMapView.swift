@@ -106,10 +106,11 @@ struct InsightsMapCanvas: View {
             let fit = Self.fitScale(size)
             let s = scale ?? fit
             let o = scale == nil ? Self.fitOrigin(size) : origin
-            let titles = titleIndex
+            // The notes by id, looked up only for the titles a frame draws (at most `MapDetail.titleLimit`).
+            let notes = model.notesByID
             let selected = model.selectedNoteID.flatMap { map.index[$0] }
             Canvas(rendersAsynchronously: false) { context, canvasSize in
-                draw(in: &context, size: canvasSize, scale: s, origin: o, fit: fit, titles: titles, selected: selected)
+                draw(in: &context, size: canvasSize, scale: s, origin: o, fit: fit, notes: notes, selected: selected)
             }
             .contentShape(Rectangle())
             .gesture(dragGesture(scale: s, origin: o))
@@ -136,12 +137,6 @@ struct InsightsMapCanvas: View {
         }
     }
 
-    /// The note titles by node index (vault data, never translated).
-    private var titleIndex: [String] {
-        let byID = model.notesByID
-        return map.nodes.map { byID[$0.id].map { NoteTitle.display($0.title) } ?? "" }
-    }
-
     // MARK: Geometry
 
     static func fitScale(_ size: CGSize) -> CGFloat { max(1, min(size.width, size.height)) }
@@ -157,15 +152,19 @@ struct InsightsMapCanvas: View {
 
     // MARK: Drawing
 
-    private func draw(in context: inout GraphicsContext, size: CGSize, scale s: CGFloat, origin o: CGPoint, fit: CGFloat,
-                      titles: [String], selected: Int?) {
-        // What is on screen, in map units (a margin so dots and labels at the edge are drawn).
+    /// The notes on screen (with a margin so dots and labels at the edge are drawn) and the level of detail they get.
+    private func onScreen(size: CGSize, scale s: CGFloat, origin o: CGPoint, fit: CGFloat) -> (visible: [Int], detail: MapDetail) {
         let pad = 24 / s
         let x0 = Double((0 - o.x) / s - pad), x1 = Double((size.width - o.x) / s + pad)
         let y0 = Double((0 - o.y) / s - pad), y1 = Double((size.height - o.y) / s + pad)
         let visible = map.nodes(inX: x0, x1, y: y0, y1)
         let hasGroups = map.regions.contains { $0.level == 1 }
-        let detail = MapDetail.at(pointsPerUnit: Double(s), visibleNotes: visible.count, hasGroups: hasGroups, fitSide: Double(fit))
+        return (visible, MapDetail.at(pointsPerUnit: Double(s), visibleNotes: visible.count, hasGroups: hasGroups, fitSide: Double(fit)))
+    }
+
+    private func draw(in context: inout GraphicsContext, size: CGSize, scale s: CGFloat, origin o: CGPoint, fit: CGFloat,
+                      notes: [UUID: NoteSummary], selected: Int?) {
+        let (visible, detail) = onScreen(size: size, scale: s, origin: o, fit: fit)
         // Regions of the level this zoom shows.
         let regions = map.regions.filter { $0.level == detail.regionLevel && !$0.isOther }
         for r in regions {
@@ -176,11 +175,10 @@ struct InsightsMapCanvas: View {
             context.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.08)))
             context.stroke(Path(ellipseIn: rect), with: .color(color.opacity(0.35)), lineWidth: 1)
         }
-        // Edges: one path, only those with an end on screen.
+        // Edges: one path, those with an end on screen, from the neighbors of what is on screen (never every edge).
         if detail.edges, !map.edges.isEmpty {
-            let onScreen = Set(visible)
             var path = Path()
-            for e in map.edges where onScreen.contains(Int(e.a)) || onScreen.contains(Int(e.b)) {
+            for e in map.edges(touching: visible) {
                 let a = map.nodes[Int(e.a)], b = map.nodes[Int(e.b)]
                 path.move(to: screen(a.x, a.y, s, o))
                 path.addLine(to: screen(b.x, b.y, s, o))
@@ -188,11 +186,11 @@ struct InsightsMapCanvas: View {
             context.stroke(path, with: .color(.secondary.opacity(0.25)), lineWidth: 0.6)
         }
         // The selected note's edges stand out.
-        if let selected {
+        if let selected, map.neighbors.indices.contains(selected) {
             var path = Path()
             let n = map.nodes[selected]
-            for e in map.edges where Int(e.a) == selected || Int(e.b) == selected {
-                let other = map.nodes[Int(e.a) == selected ? Int(e.b) : Int(e.a)]
+            for j in map.neighbors[selected] {
+                let other = map.nodes[Int(j)]
                 path.move(to: screen(n.x, n.y, s, o))
                 path.addLine(to: screen(other.x, other.y, s, o))
             }
@@ -200,7 +198,7 @@ struct InsightsMapCanvas: View {
         }
         // Notes: one fill per color, placed notes dashed.
         let r = CGFloat(detail.dot)
-        var fills: [Int: Path] = [:]
+        var fills: [Int?: Path] = [:]
         var placed = Path()
         for i in visible {
             let n = map.nodes[i]
@@ -209,10 +207,10 @@ struct InsightsMapCanvas: View {
             if n.placed {
                 placed.addEllipse(in: rect)
             } else {
-                fills[colorKey(n, level: detail.regionLevel), default: Path()].addEllipse(in: rect)
+                fills[map.colorKey(i, level: detail.regionLevel), default: Path()].addEllipse(in: rect)
             }
         }
-        for (key, path) in fills { context.fill(path, with: .color(Self.color(key == Int.min ? nil : key))) }
+        for (key, path) in fills { context.fill(path, with: .color(Self.color(key))) }
         if !placed.isEmpty {
             context.fill(placed, with: .color(.secondary.opacity(0.25)))
             context.stroke(placed, with: .color(.primary.opacity(0.8)), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
@@ -223,13 +221,20 @@ struct InsightsMapCanvas: View {
             context.stroke(Path(ellipseIn: CGRect(x: p.x - r - 3, y: p.y - r - 3, width: 2 * r + 6, height: 2 * r + 6)),
                            with: .color(.accentColor), lineWidth: 2)
         }
-        // Note titles (zoomed far in, few notes on screen).
+        // Note titles (zoomed far in, few notes on screen; vault data, never translated), skipping one that would overlap
+        // another title.
         if detail.titles {
-            for i in visible.prefix(MapDetail.titleLimit) where !titles[i].isEmpty {
+            var placedTitles: [CGRect] = []
+            for i in visible.prefix(MapDetail.titleLimit) {
+                guard let title = notes[map.nodes[i].id].map({ NoteTitle.display($0.title) }), !title.isEmpty else { continue }
                 let n = map.nodes[i]
                 let p = screen(n.x, n.y, s, o)
-                let text = context.resolve(Text(verbatim: titles[i]).font(.caption2).foregroundStyle(.primary))
-                context.draw(text, at: CGPoint(x: p.x + r + 3, y: p.y), anchor: .leading)
+                let text = context.resolve(Text(verbatim: title).font(.caption2).foregroundStyle(.primary))
+                let size = text.measure(in: CGSize(width: 200, height: 40))
+                let box = CGRect(x: p.x + r + 3, y: p.y - size.height / 2, width: size.width, height: size.height)
+                guard !placedTitles.contains(where: { $0.intersects(box) }) else { continue }
+                placedTitles.append(box)
+                context.draw(text, in: box)
             }
         }
         // Region labels, largest first, never overlapping one another.
@@ -251,16 +256,13 @@ struct InsightsMapCanvas: View {
         }
     }
 
-    /// A note's color: its cluster's zoomed in, its group's zoomed out (so a group reads as one color).
-    private func colorKey(_ n: InsightsMapLayout.Node, level: Int) -> Int {
-        (level == 1 ? n.group ?? n.cluster : n.cluster) ?? Int.min
-    }
-
     // MARK: Gestures
 
     private func dragGesture(scale s: CGFloat, origin o: CGPoint) -> some Gesture {
         DragGesture(minimumDistance: 4)
             .onChanged { v in
+                // A pinch moves the map itself; the drag picks up again (from where the pinch left it) once it ends.
+                guard pinch == nil else { return }
                 let start = dragStart ?? o
                 if dragStart == nil { dragStart = o; if scale == nil { scale = s } }
                 origin = CGPoint(x: start.x + v.translation.width, y: start.y + v.translation.height)
@@ -279,22 +281,19 @@ struct InsightsMapCanvas: View {
                 origin = CGPoint(x: p.anchor.x - (p.anchor.x - p.origin.x) * k, y: p.anchor.y - (p.anchor.y - p.origin.y) * k)
                 scale = new
             }
-            .onEnded { _ in pinch = nil }
+            .onEnded { _ in pinch = nil; dragStart = nil }
     }
 
+    /// A tap: at the groups' level it zooms into the group; closer in it opens the note whose dot it hits, else zooms
+    /// into the cluster around it (`InsightsMapLayout.tapTarget`).
     private func tap(_ point: CGPoint, scale s: CGFloat, origin o: CGPoint, size: CGSize) {
-        let ux = Double((point.x - o.x) / s), uy = Double((point.y - o.y) / s)
-        if let i = map.node(near: ux, uy, reach: Double(14 / s)) {
-            onOpen(map.nodes[i].id)
-            return
-        }
-        // A tap inside a region zooms into it: groups at the overview, clusters closer in.
         let fit = Self.fitScale(size)
-        let level = map.regions.contains { $0.level == 1 } && s / fit < 2 ? 1 : 0
-        if let r = map.regions.filter({ $0.level == level && !$0.isOther })
-            .filter({ hypot($0.x - ux, $0.y - uy) <= $0.radius })
-            .min(by: { $0.radius < $1.radius }) {
-            withAnimation(.easeInOut(duration: 0.3)) { zoom(to: r, size: size, fit: fit) }
+        let detail = onScreen(size: size, scale: s, origin: o, fit: fit).detail
+        let target = map.tapTarget(x: Double((point.x - o.x) / s), y: Double((point.y - o.y) / s), pointsPerUnit: Double(s), detail: detail)
+        switch target {
+        case .note(let i): onOpen(map.nodes[i].id)
+        case .region(let r): withAnimation(.easeInOut(duration: 0.3)) { zoom(to: r, size: size, fit: fit) }
+        case .nothing: break
         }
     }
 

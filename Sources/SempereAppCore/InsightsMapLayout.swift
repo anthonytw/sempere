@@ -44,6 +44,9 @@ public struct InsightsMapLayout: Sendable, Equatable {
     public var regions: [Region]
     /// The related graph's edges between nodes (indices into `nodes`, `a < b`, each pair once).
     public var edges: [Edge]
+    /// Each node's neighbors by the edges (indices into `nodes`), so a frame draws the edges of what is on screen and
+    /// the selected note's without walking every edge.
+    public var neighbors: [[Int32]]
     /// `shared` (the work device's map, maybe with notes placed here) or `local` (this device's own map: the banner).
     public var basis: String
     /// Notes of each node index by id.
@@ -66,6 +69,27 @@ public struct InsightsMapLayout: Sendable, Equatable {
 
     public init(nodes: [Node], regions: [Region], edges: [Edge], basis: String, index: [UUID: Int], grid: [[Int32]]) {
         self.nodes = nodes; self.regions = regions; self.edges = edges; self.basis = basis; self.index = index; self.grid = grid
+        neighbors = Self.neighbors(of: edges, count: nodes.count)
+    }
+
+    static func neighbors(of edges: [Edge], count: Int) -> [[Int32]] {
+        var out = Array(repeating: [Int32](), count: count)
+        for e in edges where Int(e.a) < count && Int(e.b) < count { out[Int(e.a)].append(e.b); out[Int(e.b)].append(e.a) }
+        return out
+    }
+
+    /// The edges with an end among `shown` (node indices), each once.
+    public func edges(touching shown: [Int]) -> [Edge] {
+        let set = Set(shown)
+        var out: [Edge] = []
+        for i in shown where neighbors.indices.contains(i) {
+            for j in neighbors[i] {
+                // An edge between two shown notes is taken from its lower end only.
+                if set.contains(Int(j)), Int(j) < i { continue }
+                out.append(Edge(a: Int32(min(i, Int(j))), b: Int32(max(i, Int(j)))))
+            }
+        }
+        return out
     }
 
     /// The layout of `view` (`InsightsReader.mapView`) with the related graph's `edges`. Positions are scaled into the
@@ -131,6 +155,7 @@ public struct InsightsMapLayout: Sendable, Equatable {
         }
         edges.sort { ($0.a, $0.b) < ($1.a, $1.b) }
         self.edges = edges
+        neighbors = Self.neighbors(of: edges, count: raw.count)
         var grid = Array(repeating: [Int32](), count: Self.gridSize * Self.gridSize)
         for (i, n) in raw.enumerated() { grid[Self.cell(n.x, n.y)].append(Int32(i)) }
         self.grid = grid
@@ -169,6 +194,37 @@ public struct InsightsMapLayout: Sendable, Equatable {
             }
         }
         return out
+    }
+
+    /// What a tap at (`x`, `y`) in the unit square does (review of #54, L3).
+    public enum TapTarget: Equatable, Sendable {
+        /// Opens the note at this node index.
+        case note(Int)
+        /// Zooms to fit this region.
+        case region(Region)
+        case nothing
+    }
+
+    /// At the groups' level a tap inside a group zooms there (a big map's overview is too dense to aim at one note);
+    /// closer in, a tap opens the note whose dot it hits (the dot's radius and a few points), else zooms into the
+    /// cluster around it.
+    public func tapTarget(x: Double, y: Double, pointsPerUnit: Double, detail: MapDetail) -> TapTarget {
+        func region(level: Int) -> Region? {
+            regions.filter { $0.level == level && !$0.isOther && hypot($0.x - x, $0.y - y) <= $0.radius }.min { $0.radius < $1.radius }
+        }
+        if detail.regionLevel == 1, let r = region(level: 1) { return .region(r) }
+        if let i = node(near: x, y, reach: (detail.dot + 4) / max(pointsPerUnit, 1e-9)) { return .note(i) }
+        if let r = region(level: detail.regionLevel) { return .region(r) }
+        return .nothing
+    }
+
+    /// A node's color key: its cluster's zoomed in, its group's zoomed out (a group reads as one color); nil (gray) for
+    /// a note in no cluster or in "Other".
+    public func colorKey(_ i: Int, level: Int) -> Int? {
+        let n = nodes[i]
+        if level == 1, let g = n.group { return g }
+        guard let c = n.cluster, c != MapBuilder.otherId else { return nil }
+        return c
     }
 
     /// The region of `level` the note at `i` is in.

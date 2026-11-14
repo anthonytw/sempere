@@ -8,11 +8,14 @@ import SwiftUI
 // of the current members; stale when the members changed. Generating devices make them in the background (the model's
 // passes) and "Regenerate" makes one now. Devices without the model read the others' files. No cluster summaries (D8).
 
-/// The words of a topic's scope: the notebook's path or the tag (vault data, never translated).
+/// The words of topic summaries.
 enum TopicText {
-    static func name(_ scope: InsightsTopicsFile.Scope) -> String {
+    /// A topic's scope: the notebook's path, or the tag as the vault's notes spell it (`tags`, the sidebar's list; the
+    /// scope holds only the case-folded key). Vault data, never translated.
+    static func name(_ scope: InsightsTopicsFile.Scope, tags: [String]) -> String {
         if let nb = scope.notebook { return nb }
-        return scope.tag ?? ""
+        let key = scope.tag ?? ""
+        return tags.first { NoteOps.tagKey($0) == key } ?? key
     }
 
     static func systemImage(_ scope: InsightsTopicsFile.Scope) -> String { scope.notebook != nil ? "book.closed" : "tag" }
@@ -43,7 +46,7 @@ struct TopicSummaryContent: View {
                 Text("A summary needs at least 3 summarized notes.").foregroundStyle(.secondary)
             }
         }
-        .navigationTitle(TopicText.name(scope))
+        .navigationTitle(TopicText.name(scope, tags: model.tags))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("topicSummary")
     }
@@ -156,7 +159,7 @@ struct InsightsTopicsList: View {
                     TopicSummaryContent(scope: t.scope) { model.selectedNoteID = $0 }
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label(TopicText.name(t.scope), systemImage: TopicText.systemImage(t.scope))
+                        Label(TopicText.name(t.scope, tags: model.tags), systemImage: TopicText.systemImage(t.scope))
                         Group {
                             if t.summary == nil {
                                 Text("No summary yet")

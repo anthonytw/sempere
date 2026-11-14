@@ -67,6 +67,40 @@ struct InsightsMapLayoutTests {
         #expect(map.edges[0].a < map.edges[0].b)
     }
 
+    /// Review of #54, L3: at the groups' level a tap zooms into the group (never opens a note by accident); closer in it
+    /// opens a note only within its dot and a few points, else zooms into the cluster.
+    @Test func tapsZoomAtTheOverviewAndOpenOnlyHitNotes() throws {
+        let map = InsightsMapLayout(view: Self.view(), edges: nil)
+        let fit = 400.0
+        let n = map.nodes[try #require(map.index[UUID(uuidString: Self.id(0))!])]
+        let overview = MapDetail.at(pointsPerUnit: fit, visibleNotes: 13, hasGroups: true, fitSide: fit)
+        guard case .region(let g) = map.tapTarget(x: n.x, y: n.y, pointsPerUnit: fit, detail: overview) else {
+            Issue.record("a tap at the overview zooms into the group"); return
+        }
+        #expect(g.level == 1)
+        let close = MapDetail.at(pointsPerUnit: fit * 4, visibleNotes: 13, hasGroups: true, fitSide: fit)
+        #expect(map.tapTarget(x: n.x, y: n.y, pointsPerUnit: fit * 4, detail: close) == .note(map.index[n.id]!))
+        // 30 points from the dot: not the note.
+        let off = 30 / (fit * 4)
+        if case .note = map.tapTarget(x: n.x + off, y: n.y + off, pointsPerUnit: fit * 4, detail: close) {
+            Issue.record("a tap 30 points away opened a note")
+        }
+        #expect(map.tapTarget(x: 5, y: 5, pointsPerUnit: fit * 4, detail: close) == .nothing)
+    }
+
+    @Test func otherIsGrayAndNeighborsMatchTheEdges() {
+        var v = Self.view()
+        v.nodes[0].cluster = MapBuilder.otherId
+        let a = UUID(uuidString: Self.id(1))!, b = UUID(uuidString: Self.id(2))!
+        let map = InsightsMapLayout(view: v, edges: [a: [RelatedEdge(note: b, score: 1, csls: nil, keywordOverlap: 0, shared: [])]])
+        #expect(map.colorKey(map.index[UUID(uuidString: Self.id(0))!]!, level: 0) == nil, "Other is drawn gray")
+        let ia = map.index[a]!, ib = map.index[b]!
+        #expect(map.neighbors[ia] == [Int32(ib)] && map.neighbors[ib] == [Int32(ia)])
+        #expect(map.edges(touching: [ia, ib]).count == 1, "an edge between two shown notes once")
+        #expect(map.edges(touching: [ia]).count == 1)
+        #expect(map.edges(touching: []).isEmpty)
+    }
+
     @Test func hitTestingAndCullingUseTheGrid() throws {
         let map = InsightsMapLayout(view: Self.view(), edges: nil)
         let placed = try #require(map.index[UUID(uuidString: Self.id(99))!])

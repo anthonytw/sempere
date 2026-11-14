@@ -266,13 +266,23 @@ public struct InsightsStore: Sendable {
     /// Changes this device's topics file (format.md §16.5) under the write lock: `change` gets the topics the file holds
     /// now (none when there is no file) and edits them; the file is written when `change` returns true. Two writers in
     /// one process (a background pass and "Regenerate") each change only their own scopes, so neither drops the other's.
+    /// Refused (nothing written) when Note Insights is not on, checked under the lock (the switch's write takes it too,
+    /// so a summary made before a turn-off is never written after its purge), and when this device's own file is there
+    /// but cannot be read (replacing it would drop the scopes it holds).
     @discardableResult
     public func updateOwnTopics(now: Date = Date(), _ change: (inout [InsightsTopicsFile.Topic]) throws -> Bool) throws -> Bool {
         try vault.requireWritable()
         let me = try writer()
         return try vault.epochWriteLock.withLock(timeout: 30) {
+            guard vault.insightsMode() == .on else { throw InsightsFileError.cannotWrite("Note Insights is not on for this vault") }
             var topics: [InsightsTopicsFile.Topic] = []
-            if case .topics(let f)? = try? read(InsightsFileName(.topics, device: me)) { topics = f.topics }
+            let name = InsightsFileName(.topics, device: me)
+            if FileIO.exists(folder.appendingPathComponent(name.fileName)) {
+                guard case .topics(let f)? = try? read(name) else {
+                    throw InsightsFileError.cannotWrite("this device's topics file cannot be read, so it is not replaced")
+                }
+                topics = f.topics
+            }
             guard try change(&topics) else { return false }
             _ = try writeLocked(.topics(InsightsTopicsFile(device: me, written: 0, topics: topics)), me: me, now: now)
             return true
