@@ -258,6 +258,17 @@ public enum InsightsStoplist {
         "particularly", "generally", "typically", "simple", "simply", "different", "similar", "important", "specific",
         "certain", "possible", "useful", "common", "basic", "general", "overall", "whole", "entire", "small", "large",
         "high", "higher", "lower", "better", "faster", "slower", "first", "second", "third", "next", "last", "later",
+        "affects", "affect", "affected", "close", "closely", "clear", "clearly", "steps", "process", "processes", "final",
+        "focusing", "focused", "measure", "measures", "measured", "mentioned", "mentions", "details", "detailing",
+        "instructions", "instruction", "preparation", "prepare", "method", "methods", "approach", "aspects", "aspect",
+        "concept", "concepts", "idea", "ideas", "factors", "factor", "effects", "effect", "role", "roles", "impact",
+        "influence", "influences", "various", "multiple", "number", "amount", "level", "levels", "type", "types", "kind",
+        "kinds", "form", "forms", "sequence", "sequential", "order", "stage", "stages", "phase", "phases", "result",
+        "outcome", "outcomes", "purpose", "goal", "goals", "information", "content", "context", "notes", "listed",
+        "lists", "shows", "showing", "explaining", "describing", "covering", "including", "involving", "regarding",
+        "concerning", "particular", "certain", "relevant", "additional", "further", "following", "previous", "related",
+        "associated", "involved", "according", "include", "included", "provides", "provided", "highlighted", "noting",
+        "finally", "brings", "bring", "entire", "execution", "actions", "action", "defined", "contains", "needed", "needing",
     ]
 }
 
@@ -377,7 +388,7 @@ public struct FactCheck: Sendable {
         var terms = Set<String>()
         for w in InsightsWords.words(source) {
             let m = merger?.merge(w) ?? w
-            terms.insert(m); terms.insert(TermNormalizer.singular(m)); terms.insert(Self.stem(m))
+            terms.formUnion(Self.variants(m))
         }
         sourceTerms = terms
         self.merger = merger
@@ -445,7 +456,7 @@ public struct FactCheck: Sendable {
             }
             guard checkable else { continue }
             let m = merger?.merge(lower) ?? lower
-            if sourceTerms.contains(m) || sourceTerms.contains(TermNormalizer.singular(m)) || sourceTerms.contains(Self.stem(m)) {
+            if !sourceTerms.isDisjoint(with: Self.variants(m)) {
                 continue
             }
             return false
@@ -453,10 +464,20 @@ public struct FactCheck: Sendable {
         return true
     }
 
+    /// The forms a word is matched by: itself, its singular, its stem, and the stem with a final `e` or without a
+    /// doubled last consonant (`baking` and `bake`, `stopping` and `stop`).
+    public static func variants(_ w: String) -> Set<String> {
+        let s = stem(w)
+        var out: Set<String> = [w, TermNormalizer.singular(w), s, s + "e"]
+        if let last = s.last, s.count >= 4, s.dropLast().last == last, !"aeiou".contains(last) { out.insert(String(s.dropLast())) }
+        if w.hasSuffix("e"), w.count >= 5 { out.insert(String(w.dropLast())) }
+        return out
+    }
+
     /// A light suffix stem, so `oscillating` and `oscillation` agree.
     public static func stem(_ w: String) -> String {
         for suffix in ["ations", "ation", "ions", "ion", "ings", "ing", "ities", "ity", "ally", "ness", "ment", "ers", "er",
-                       "ed", "es", "ly", "al", "s"] where w.count > suffix.count + 3 && w.hasSuffix(suffix) {
+                       "ed", "es", "ly", "al", "s"] where w.count > suffix.count + 2 && w.hasSuffix(suffix) {
             return String(w.dropLast(suffix.count))
         }
         return w

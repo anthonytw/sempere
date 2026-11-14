@@ -1,4 +1,3 @@
-import Crypto
 import Foundation
 import Sempere
 
@@ -14,9 +13,8 @@ import Sempere
 public enum HashUnit {
     /// A value in [0, 1) from `id` and `salt`.
     public static func value(_ id: UUID, _ salt: String) -> Double {
-        let d = Array(SHA256.hash(data: Data((id.uuidString.lowercased() + "|" + salt).utf8)))
-        var x: UInt64 = 0
-        for i in 0..<8 { x = x << 8 | UInt64(d[i]) }
+        let hex = FileDigest.sha256(Data((id.uuidString.lowercased() + "|" + salt).utf8))
+        let x = UInt64(hex.prefix(16), radix: 16) ?? 0
         return Double(x >> 11) / Double(1 << 53)
     }
 }
