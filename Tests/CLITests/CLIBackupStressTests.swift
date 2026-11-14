@@ -50,12 +50,25 @@ final class CLIBackupStressTests: CLITestCase {
         XCTAssertEqual(a.out, b.out, "the restored vault lists the same notes", file: file, line: line)
     }
 
+    /// Whether `path` is the root of a mounted volume (its device differs from its parent folder's).
+    private func isMountPoint(_ path: String) -> Bool {
+        let fm = FileManager.default
+        func device(_ p: String) -> NSNumber? { (try? fm.attributesOfItem(atPath: p))?[.systemNumber] as? NSNumber }
+        guard let a = device(path), let b = device((path as NSString).deletingLastPathComponent) else { return false }
+        return a != b
+    }
+
     func testBackupToAFATDriveRoundTrips() throws {
         _ = try bigVault(notes: 6, kb: 200)
         let drive = try mountFATVolume(megabytes: 32)
         let dir = drive + "/Sempere Backup"
         let first = try cli(["backup", vaultPath, "--to", dir, "--json"])
         XCTAssertEqual(first.status, 0, first.err)
+        // `copied` lists only files the backup folder did not hold (a file already there is compared by size and
+        // hash, never by modification time: BackupTests). A second run that copies everything saw an empty folder,
+        // which is what a volume that dropped off its mount point looks like, so say that rather than blame the
+        // backup.
+        try XCTSkipUnless(isMountPoint(drive), "the FAT volume was detached under the test (the run would have filled the disk below it)")
         let again = try cli(["backup", vaultPath, "--to", dir, "--json"])
         XCTAssertEqual(again.status, 0, again.err)
         XCTAssertEqual((again.json as? [String: Any])?["copied"] as? [String], [], "nothing copied twice on FAT")
