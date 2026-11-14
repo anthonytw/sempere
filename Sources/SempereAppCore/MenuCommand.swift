@@ -13,6 +13,8 @@ import SempereImporters
 public enum MenuCommand: String, CaseIterable, Sendable {
     // File
     case newNote, newNotebook, openNoteInWindow, newVault, openVault, reopenVault, closeVault, reloadVault
+    /// A new vault of the person's own with this vault's notes (`MakeCopyRequest`, docs/design/1.2-make-a-copy.md).
+    case makeCopy
     /// The open vault's sync targets (`SyncTargetsSheet`, docs/design/device-first-sync.md §8.1).
     case syncTargets
     case importPDF, importFromApp, lastImportReport, insertPDFPages, insertPhoto, exportNotes
@@ -147,6 +149,7 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         case .closeVault: return Shortcut("w", shift)
         case .reloadVault: return Shortcut("r", cmd)
         case .syncTargets: return nil
+        case .makeCopy: return nil
         // ⌘I is UIKit's Italic (Format menu); ⌘E its "Use Selection for Find".
         case .importPDF: return Shortcut("i", shift)
         case .importFromApp: return nil
@@ -227,6 +230,8 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         public var notePageless = false
         /// The vault opened read-only (a newer format version, format.md §7.3).
         public var vaultReadOnly = false
+        /// Every note of the unlocked vault is on this device (`AppModel.canMakeCopy`): File > Make a Copy… applies.
+        public var canMakeCopy = false
         /// An import ran in this vault since it was opened (`AppModel.lastImportReport`).
         public var hasImportReport = false
         /// The notes File > Export acts on (`CommandRouter.exportIDs`) are not empty.
@@ -266,7 +271,7 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         public init(window: Window = .library, vault: Vault = .none, hasNote: Bool = false,
                     noteDeleted: Bool = false, canEditNote: Bool = false, notePageless: Bool = false,
                     vaultReadOnly: Bool = false, hasImportReport: Bool = false, hasExportTargets: Bool = false,
-                    canDeletePage: Bool = false, hasDeletedPages: Bool = false, paletteCompact: Bool = false,
+                    canMakeCopy: Bool = false, canDeletePage: Bool = false, hasDeletedPages: Bool = false, paletteCompact: Bool = false,
                     noteMode: NoteMode = NoteMode.initial, pageStripVisible: Bool = false,
                     noteListHidden: Bool = false, voiceNote: VoiceNote = VoiceNote.idle, hasPage: Bool = false,
                     hasItemSelection: Bool = false, isRecording: Bool = false, pageIndex: Int = 0,
@@ -281,6 +286,7 @@ public enum MenuCommand: String, CaseIterable, Sendable {
             self.vaultReadOnly = vaultReadOnly
             self.hasImportReport = hasImportReport
             self.hasExportTargets = hasExportTargets
+            self.canMakeCopy = canMakeCopy
             self.canDeletePage = canDeletePage
             self.hasDeletedPages = hasDeletedPages
             self.paletteCompact = paletteCompact
@@ -312,6 +318,8 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         case .closeVault: return context.vault != .none
         case .reloadVault: return unlocked && context.hasNoteList
         case .syncTargets: return context.vault != .none && context.hasNoteList
+        // Any unlocked vault whose notes are all on this device, a writable one too (forking a vault is useful).
+        case .makeCopy: return unlocked && context.hasNoteList && context.canMakeCopy
         // The ticked notes, the sidebar's notebook or the vault of the library window.
         case .bulkExport: return unlocked && context.hasNoteList
         case .newNote: return unlocked && context.hasNoteList
@@ -374,7 +382,7 @@ public enum MenuCommand: String, CaseIterable, Sendable {
 public enum MenuLayout {
     public static let file: [[MenuCommand]] = [
         [.newNote, .newNotebook, .openNoteInWindow],
-        [.newVault, .openVault, .reopenVault, .closeVault],
+        [.newVault, .openVault, .reopenVault, .makeCopy, .closeVault],
         // Import from another app only when the build has an importer (`BuiltInImporters`).
         [.importPDF] + (BuiltInImporters.primary == nil ? [] : [.importFromApp, .lastImportReport]),
         [.insertPDFPages, .insertPhoto],

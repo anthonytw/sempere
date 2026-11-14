@@ -230,6 +230,7 @@ enum WindowCommands {
         context.vaultReadOnly = model.isVaultReadOnly
         context.hasImportReport = model.lastImportReport != nil
         context.hasExportTargets = !exportIDs.isEmpty
+        context.canMakeCopy = model.canMakeCopy
         context.voiceNote = VoiceNoteMenu.phase(model.quickCapture.state)
     }
 }

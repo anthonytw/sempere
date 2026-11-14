@@ -144,6 +144,8 @@ struct WindowSheets: ViewModifier {
             // The export sheet opens in the window that asked for it (a Mac may have several).
             .sheet(item: shown(\.exportRequest)) { ExportSheet(request: $0) }
             .sheet(item: shown(\.bulkExportRequest)) { BulkExportSheet(request: $0) }
+            // File > Make a Copy… and the read-only banner's button (docs/design/1.2-make-a-copy.md).
+            .sheet(item: shown(\.makeCopyRequest)) { MakeCopySheet(request: $0) }
     }
 }
 
