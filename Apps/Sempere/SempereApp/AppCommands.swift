@@ -43,7 +43,7 @@ struct AppCommands: Commands {
                 }
             }
             .disabled((router?.recents ?? []).isEmpty)
-            section([.reopenVault, .closeVault])
+            section([.reopenVault, .makeCopy, .closeVault])
             Divider()
             // Import, insert, export, reload.
             sections(Array(MenuLayout.file.dropFirst(2)))
