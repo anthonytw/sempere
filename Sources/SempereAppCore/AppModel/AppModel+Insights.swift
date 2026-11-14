@@ -288,6 +288,14 @@ extension AppModelCore {
         await task.value
     }
 
+    /// Background insights work off the main actor (reads at unlock, after arrivals and edits; a pass's inputs). Not
+    /// the model's `offMain`: that one's `afterIO` seam orders the model's own vault I/O for tests, and these reads run
+    /// on their own schedule, so passing through it let an unlock's read take the place of an edit's write in a test
+    /// that counts arrivals (#52, `closeDuringBrowserEditRefreshDropsTheResult` on CI).
+    nonisolated static func insightsOffMain<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await Task.detached(priority: .utility) { work() }.value
+    }
+
     /// One read (`refreshInsights`); its result is dropped when the vault changed meanwhile.
     func readInsights() async {
         guard let vault, phase == .unlocked else { return }
@@ -300,7 +308,7 @@ extension AppModelCore {
         let me = vault.writerDevice
         let maxNotes = insightsServices.maxGraphNotes
         let unchanged = insightsIndex.signature == signature && insights.status != nil
-        let result = try? await offMain(priority: .utility) { () -> (InsightsSettings, Vault.InsightsMode, InsightsReader.Status?, InsightsIndex?) in
+        let result = await Self.insightsOffMain { () -> (InsightsSettings, Vault.InsightsMode, InsightsReader.Status?, InsightsIndex?) in
             let settings = InsightsSettings.read(vault, type: type)
             let mode = vault.insightsMode()
             guard mode == .on else { return (settings, mode, nil, InsightsIndex()) }
@@ -311,7 +319,7 @@ extension AppModelCore {
             return (settings, mode, status, Self.buildInsightsIndex(reader: reader, inputs: inputs, me: me, embedder: embedder,
                                                                    maxNotes: maxNotes, signature: signature))
         }
-        guard let result, generation == gen else { return }
+        guard generation == gen else { return }
         let turnedOn = insights.mode != .on && result.1 == .on
         insights.settings = result.0
         insights.mode = result.1
@@ -578,7 +586,7 @@ extension AppModelCore {
             let options = o
             let report: InsightsUpdateReport
             do {
-                let inputs = try await offMain(priority: .utility) { InsightsNotes.inputs(vault, summaries: summaries) }
+                let inputs = await Self.insightsOffMain { InsightsNotes.inputs(vault, summaries: summaries) }
                 guard generation == gen else { break }
                 guard !Task.isCancelled else { remains = true; break }
                 report = try await updater.run(options, notes: inputs)

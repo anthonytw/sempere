@@ -212,6 +212,30 @@ extension AppModelSuites {
             #expect(model.insightsRuntime.filesRevision == before + 1)
         }
 
+        /// Insights' own reads (at unlock, after arrivals) never pass through the model's `afterIO` seam, which orders the
+        /// model's vault I/O: an unlock's read counted as an edit's write on CI (#52, BrowserEditorTests).
+        @Test func insightsReadsDoNotPassTheModelsIOSeam() async throws {
+            let counter = IOCounter()
+            let (url, key) = try await ModelFixture.vault()
+            var services = AppModelServices.headless()
+            services.insights = InsightsServices(model: { FakeModelProvider() }, embedder: { FakeEmbeddingProvider() },
+                                                 powerWindow: { false })
+            let model = AppModel(deviceStateURL: TS.deviceStateURL(), services: services, afterIO: { await counter.add() })
+            try await model.openVault(at: url)
+            try await model.unlock(identityText: try await ModelFixture.keyText(key))
+            await model.insightsRuntime.start?.value
+            let settled = await counter.count
+            await model.refreshInsights()
+            model.insightsFilesChanged()
+            await model.refreshInsights()
+            #expect(await counter.count == settled)
+        }
+
+        actor IOCounter {
+            private(set) var count = 0
+            func add() { count += 1 }
+        }
+
         @Test func theToolbarOffersInsightsOnlyWhenOn() {
             var state = NoteToolbar.State(device: .pad)
             #expect(!NoteToolbar.items(.overflow, in: state).contains(.insights))
