@@ -62,4 +62,30 @@ final class TransportResetTests: TempDirTestCase {
         }
         XCTAssertLessThan(Date().timeIntervalSince(start), 10)
     }
+
+    /// A body is framed once: by `Content-Length` or chunked, never both. On Linux a PUT body is a stream, which corelibs
+    /// sends chunked whatever the headers say; a `Content-Length` of ours rode along with `Transfer-Encoding: chunked`.
+    /// Every other request with a body (PROPFIND) is sent with its length, because wsgidav does not consume a chunked
+    /// PROPFIND body and answers its framing with a stray 400 on the connection (`testPartialCopyLifecycle`).
+    func testABodyIsFramedOnce() throws {
+        let server = try SlowHTTPServer()
+        defer { server.stop() }
+        let t = URLSessionTransport(timeout: 20)
+        let url = URL(string: "http://127.0.0.1:\(server.port)/f")!
+        let file = tmp.appendingPathComponent("framing")
+        try Data(repeating: 9, count: 5_000).write(to: file)
+        _ = try t.send(WebDAVRequest(method: "PROPFIND", url: url, headers: ["Depth": "1"], body: Data(repeating: 1, count: 165)))
+        _ = try t.send(WebDAVRequest(method: "PUT", url: url, body: Data(repeating: 2, count: 3_000)))
+        _ = try t.send(WebDAVRequest(method: "PUT", url: url, headers: ["Content-Length": "5000"], bodyFile: file))
+        let heads = server.heads.map { $0.lowercased() }
+        XCTAssertEqual(heads.count, 3)
+        for head in heads {
+            let length = head.contains("\r\ncontent-length:"), chunked = head.contains("\r\ntransfer-encoding: chunked")
+            XCTAssertTrue(length != chunked, "framed once: \(head)")
+        }
+        XCTAssertTrue(heads[0].contains("\r\ncontent-length: 165"), "PROPFIND keeps its length")
+        #if !canImport(FoundationNetworking)
+        XCTAssertTrue(heads.allSatisfy { $0.contains("\r\ncontent-length:") })
+        #endif
+    }
 }

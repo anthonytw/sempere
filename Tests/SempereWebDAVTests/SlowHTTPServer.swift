@@ -82,8 +82,10 @@ final class SlowHTTPServer: @unchecked Sendable {
         let text = String(decoding: head, as: UTF8.self).lowercased()
         let length = text.split(separator: "\r\n").first { $0.hasPrefix("content-length:") }
             .flatMap { Int($0.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)) } ?? 0
+        // A chunked body (a streamed PUT on Linux) has no length up front: it is read to its terminating chunk.
+        let chunked = text.contains("\r\ntransfer-encoding: chunked")
         if let resetAfter {
-            var left = min(resetAfter, length)
+            var left = chunked ? resetAfter : min(resetAfter, length)
             while left > 0 {
                 let n = read(c, &buf, min(left, buf.count))
                 guard n > 0 else { break }
@@ -97,8 +99,33 @@ final class SlowHTTPServer: @unchecked Sendable {
             while !isStopped { usleep(50_000) }
             return
         }
-        var left = length
         let chunk = max(bytesPerSecond / 20, 1)
+        if chunked {
+            func line() -> String? {
+                var bytes = [UInt8]()
+                var one: UInt8 = 0
+                while read(c, &one, 1) == 1 {
+                    if one == 10 { return String(decoding: bytes, as: UTF8.self) }
+                    if one != 13 { bytes.append(one) }
+                }
+                return nil
+            }
+            while let sizeLine = line() {
+                guard let size = Int(sizeLine.split(separator: ";").first.map(String.init) ?? "", radix: 16) else { return }
+                var left = size
+                while left > 0 {
+                    let n = read(c, &buf, min(chunk, left, buf.count))
+                    guard n > 0 else { return }
+                    left -= n
+                    usleep(useconds_t(1_000_000 * n / bytesPerSecond))
+                }
+                _ = line()   // the CRLF after the chunk, or the empty line after the last one
+                if size == 0 { break }
+            }
+            _ = response.withCString { write(c, $0, strlen($0)) }
+            return
+        }
+        var left = length
         while left > 0 {
             let n = read(c, &buf, min(chunk, left, buf.count))
             guard n > 0 else { return }

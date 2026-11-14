@@ -176,17 +176,10 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
     /// How long `send` waits for a task's completion after canceling it, so a completion that never comes cannot hang the caller.
     static let cancelGrace: DispatchTimeInterval = .seconds(30)
 
-    /// The bytes of the request's body: the in-memory one, or the file's size.
-    private static func bodySize(_ request: WebDAVRequest) -> Int {
-        if let file = request.bodyFile {
-            return ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.intValue ?? 0
-        }
-        return request.body?.count ?? 0
-    }
-
-    /// A fresh stream of the request's body, for the platforms that send bodies as streams (see `send`).
+    /// A fresh stream of the request's body, for the one request kind that is sent as a stream (see `send`).
     private static func bodyStream(_ request: WebDAVRequest) -> (@Sendable () -> InputStream?)? {
         #if canImport(FoundationNetworking)
+        guard request.method == "PUT" else { return nil }
         if let file = request.bodyFile { return { InputStream(url: file) } }
         if let body = request.body, !body.isEmpty { return { InputStream(data: body) } }
         #endif
@@ -197,22 +190,27 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         var r = URLRequest(url: request.url)
         r.httpMethod = request.method
         let bodyStream = Self.bodyStream(request)
+        var requestHeaders = request.headers
         #if canImport(FoundationNetworking)
-        // On Linux the body goes out as a stream with an explicit Content-Length, and the delegate hands out a new stream
-        // on demand (`needNewBodyStream`). A request libcurl retries on a new connection, after the server closed a
-        // kept-alive one or reset it, rewinds its body that way: swift-corelibs-foundation can rewind only a stream, and a
-        // `httpBody` or `fromFile` body it "rewinds" stays drained, so the retry sent a Content-Length and no bytes and the
-        // server waited until the idle timeout (docs/design/1.2-linux-upload-stall.md).
-        if bodyStream != nil {
-            r.httpBodyStream = bodyStream?()
-            if request.headers.keys.allSatisfy({ $0.lowercased() != "content-length" }) {
-                r.setValue(String(Self.bodySize(request)), forHTTPHeaderField: "Content-Length")
-            }
+        // On Linux a PUT body goes out as a stream, and the delegate hands out a new stream on demand (`needNewBodyStream`). A
+        // request libcurl retries on a new connection, after the server closed a kept-alive one or reset it, rewinds its body
+        // that way: swift-corelibs-foundation can rewind only a stream, and a `httpBody` or `fromFile` body it "rewinds" stays
+        // drained, so the retry sent a Content-Length and no bytes and the server waited until the idle timeout
+        // (docs/design/1.2-linux-upload-stall.md). corelibs sends a stream body chunked whatever the headers say (it has no
+        // length for a stream), so a Content-Length of ours would ride along with `Transfer-Encoding: chunked`: it is dropped.
+        // Only PUT is streamed: wsgidav does not consume a chunked PROPFIND body, and reads its chunk framing as the next
+        // request on the connection (a stray 400 that fails the next request on it). Other requests with a body (PROPFIND,
+        // LOCK, ...) keep a fixed-length body, and a retry of one of those on a dead connection is still not rewound.
+        if let stream = bodyStream {
+            r.httpBodyStream = stream()
+            requestHeaders = requestHeaders.filter { $0.key.lowercased() != "content-length" }
+        } else {
+            r.httpBody = request.body
         }
         #else
         if request.bodyFile == nil { r.httpBody = request.body }
         #endif
-        for (k, v) in request.headers { r.setValue(v, forHTTPHeaderField: k) }
+        for (k, v) in requestHeaders { r.setValue(v, forHTTPHeaderField: k) }
         let streamed = request.bodyFile != nil || request.responseFile != nil
         let (session, delegate) = streamed ? (streamSession, streamDelegate) : (self.session, self.delegate)
         #if canImport(FoundationNetworking)
