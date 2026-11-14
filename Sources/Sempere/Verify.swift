@@ -78,6 +78,23 @@ public struct VerifyReport: Hashable, Sendable {
     public var list: ListStatus = .notChecked
     /// Every entry examined, in walk order.
     public var files: [FileResult] = []
+    /// The note insights files (`insights/`, format.md §16), as hints: never a problem, never unhealthy.
+    public var insights: [InsightsHint] = []
+
+    /// One insights file as `verify` saw it.
+    public struct InsightsHint: Hashable, Sendable {
+        public enum State: String, Hashable, Sendable, CaseIterable {
+            /// Opens and validates under the current key.
+            case open
+            /// Opens only under an earlier key: its device re-seals it, or it goes below a re-encryption.
+            case stale
+            /// Does not open (damaged, another vault's, forged), or the vault is locked.
+            case unreadable
+        }
+        public var path: String
+        public var state: State
+        public var detail: String?
+    }
 
     /// True when `vault.json` passed every check.
     public var manifestOK: Bool { manifestProblems.isEmpty }
@@ -138,6 +155,29 @@ extension Vault {
         var notebooksFolder = false
         for entry in list(url, as: ".") where ![Self.manifestName, Self.keysName, Self.notesName,
                                                 Self.epochsName, Self.joinsName].contains(entry) {
+            if entry == Self.insightsName, FileIO.isDirectory(insightsURL) {
+                // Hints (format.md §16): listed apart, never unhealthy.
+                for name in list(insightsURL, as: Self.insightsName) {
+                    let path = "\(Self.insightsName)/\(name)"
+                    guard let n = InsightsFileName(name) else {
+                        report.files.append(.init(path: path, status: .unknownFile, detail: nil))
+                        continue
+                    }
+                    guard canRead, let data = try? readFile(insightsURL.appendingPathComponent(name), maxBytes: n.kind.maxBytes + 4096) else {
+                        report.insights.append(.init(path: path, state: .unreadable, detail: canRead ? "too large or unreadable" : "vault locked"))
+                        continue
+                    }
+                    do {
+                        _ = try openInsights(data, name: n)
+                        report.insights.append(.init(path: path, state: .open, detail: nil))
+                    } catch {
+                        let earlier = openInsightsUnderEarlierKey(data, name: n) != nil
+                        report.insights.append(.init(path: path, state: earlier ? .stale : .unreadable,
+                                                     detail: earlier ? "under an earlier key" : "\(error)"))
+                    }
+                }
+                continue
+            }
             if entry == CaptureFile.folderName, FileIO.isDirectory(inboxURL) {
                 inboxFolder = true
                 continue

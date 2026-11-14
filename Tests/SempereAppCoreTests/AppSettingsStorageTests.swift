@@ -17,6 +17,9 @@ struct AppSettingsStorageTests {
         case .notebook: return .string("Work/Meetings")
         case .paper: return (try? JSONValue(encoding: Paper(kind: .grid, spacing: 20))) ?? .null
         case .localeOrNull: return .string("es_ES")
+        case .deviceIdOrNull: return .string("a1b2c3d4")
+        case .revisionPins: return .object(["en": .number(1)])
+        case .voiceTitleFormat: return .string("{slug} {date}")
         }
     }
 

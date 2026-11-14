@@ -451,6 +451,13 @@ struct VaultVerify: ParsableCommand {
             if vault.isReadOnly {
                 print("READ-ONLY  " + vault.readOnlyReasons.descriptions.joined(separator: "; "))
             }
+            if !report.insights.isEmpty {
+                let byState = VerifyReport.InsightsHint.State.allCases.compactMap { s -> String? in
+                    let n = report.insights.filter { $0.state == s }.count
+                    return n > 0 ? "\(s.rawValue): \(n)" : nil
+                }
+                print("INSIGHTS   \(report.insights.count) hint file(s) (\(byState.joined(separator: ", "))); never unhealthy")
+            }
             print("\(report.files.count) file(s)" + (counts.isEmpty ? "" : " (" + counts.joined(separator: ", ") + ")")
                 + (report.isHealthy ? ": healthy" : ": UNHEALTHY"))
         }
@@ -460,7 +467,9 @@ struct VaultVerify: ParsableCommand {
 
     private struct Out: Encodable {
         struct File: Encodable { var path: String; var status: String; var detail: String? }
+        struct Hint: Encodable { var path: String; var state: String; var detail: String? }
         var healthy: Bool
+        var insights: [Hint]
         var manifestProblems: [String]
         var counts: [String: Int]
         var files: [File]
@@ -476,6 +485,7 @@ struct VaultVerify: ParsableCommand {
             manifestProblems = r.manifestProblems
             counts = Dictionary(uniqueKeysWithValues: r.counts.map { ($0.key.rawValue, $0.value) })
             files = r.files.map { File(path: $0.path, status: $0.status.rawValue, detail: $0.detail) }
+            insights = r.insights.map { Hint(path: $0.path, state: $0.state.rawValue, detail: $0.detail) }
         }
     }
 }

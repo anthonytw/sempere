@@ -40,6 +40,8 @@ let package = Package(
         .library(name: "SempereAppCore", targets: ["SempereAppCore"]),
         .library(name: "SempereCaptureShared", targets: ["SempereCaptureShared"]),
         .library(name: "SempereCapture", targets: ["SempereCapture"]),
+        .library(name: "SempereInsights", targets: ["SempereInsights"]),
+        .library(name: "SempereInsightsApple", targets: ["SempereInsightsApple"]),
         .executable(name: "sempere", targets: ["SempereCLI"]),
     ] + appleOnlyProducts,
     dependencies: [
@@ -121,13 +123,24 @@ let package = Package(
         // muxer and the watch's recorder state machine. Foundation and `Sempere` only (no UI, no Apple frameworks, no `os`),
         // so the watch links it without `SempereAppCore`; `SempereAppCore` re-exports it.
         .target(name: "SempereCapture", dependencies: ["Sempere", "Age", "SempereCaptureShared"]),
+        // Note insights (docs/design/1.2-note-insights.md §4): the pipeline (chunking, normalization, IDF, typo merge,
+        // fact check, the related-notes graph, clustering, layout, placement, canaries, the pin, topic summaries, the
+        // scheduling policy), the `ModelProvider` / `EmbeddingProvider` protocols, their fakes and the updater the app and
+        // the CLI share. Foundation and `Sempere` only (Linux); the codec and `InsightsStore` are in `Sempere`.
+        .target(name: "SempereInsights", dependencies: ["Sempere"]),
+        // The real providers (design §4, D18): Apple's on-device `SystemLanguageModel.default` (FoundationModels) and
+        // `NLEmbedding` at a pinned revision (NaturalLanguage). Every file is behind `#if canImport(...)` and
+        // `@available(macOS 26, iOS 26, *)`, so this target is empty on Linux; the only target that imports either
+        // framework (`NoCloudTests`).
+        .target(name: "SempereInsightsApple", dependencies: ["SempereInsights", "Sempere"]),
         // Noto fonts for text in CLI exports (OFL 1.1); the app does not link them.
         .target(name: "SempereFonts", resources: [.copy("Fonts")]),
         .executableTarget(
             name: "SempereCLI",
             dependencies: [
                 "Age", "Sempere", "SemperePDF", "SempereRender", "SempereImport", "SempereImporters", "SempereSync", "SempereWebDAV", "SempereFonts",
-                "SempereSpeech", "SempereCapture", .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                "SempereSpeech", "SempereCapture", "SempereInsights", "SempereInsightsApple",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
         // Seeded mutation fuzzer shared by the test targets (Foundation only).
@@ -177,6 +190,8 @@ let package = Package(
                                                                 "TempDirSupport", "VaultTestSupport",
                                                                 .product(name: "Crypto", package: "swift-crypto")]),
         .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport", "VaultTestSupport"]),
+        .testTarget(name: "SempereInsightsTests", dependencies: ["SempereInsights", "SempereInsightsApple", "Sempere", "Age", "FuzzSupport",
+                                                                 "TempDirSupport", "VaultTestSupport"]),
     ] + appleOnlyTargets + (hasNotability ? [
         // The Notability importer (docs/import-notability.md "Structure"). Optional: delete this directory
         // (and Tests/SempereNotabilityTests) and everything else still builds.
