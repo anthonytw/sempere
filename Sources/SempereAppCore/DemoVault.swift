@@ -79,6 +79,9 @@ public enum DemoVault {
     /// `searchNotes` (UI tests, `SEMPERE_DEMO_SEARCH`): also two notes with recognized handwriting
     /// for the search highlights (`searchNoteOps`).
     ///
+    /// `insightsText` (`SEMPERE_DEMO_INSIGHTS`): every note's first page also gets recognized text
+    /// (`insightsOps`), so Note Insights has words to work on.
+    ///
     /// `trust`: the trust records of the model that opens it (`AppModel.trust`): the vault's is saved
     /// there, as for any vault this device creates, so its list checks when it is unlocked.
     ///
@@ -90,6 +93,7 @@ public enum DemoVault {
     /// the writer's timings go.
     public static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil,
                              itemsImage: Data? = nil, denseStrokes: Int? = nil, searchNotes: Bool = false,
+                             insightsText: Bool = false,
                              trust: (any EpochTrustStore)? = nil, device given: DeviceKeys? = nil,
                              app: String, perf: any PerfSink = NoPerfSink()) async throws -> Built {
         let fm = FileManager.default
@@ -111,6 +115,13 @@ public enum DemoVault {
             ids[spec.key] = id
             try await NoteWriter.append(ops(for: spec, id: id), to: id, vault: vault, clock: clock,
                                         wall: anchor.addingTimeInterval(-spec.daysAgo * 86_400))
+            if insightsText {
+                let text = insightsOps(for: spec)
+                if !text.isEmpty {
+                    try await NoteWriter.append(text, to: id, vault: vault, clock: clock,
+                                                wall: anchor.addingTimeInterval(-spec.daysAgo * 86_400 + 30))
+                }
+            }
             if let png = itemsImage, spec.key == itemsNote {
                 let ops = try itemOps(vault: vault, note: id, png: png)
                 try await NoteWriter.append(ops, to: id, vault: vault, clock: clock,

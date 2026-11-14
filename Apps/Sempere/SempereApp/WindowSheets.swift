@@ -143,7 +143,9 @@ struct WindowSheets: ViewModifier {
             }
             // Note Insights: the note toolbar's overflow menu and the note list's context menu.
             .sheet(isPresented: Binding(get: { ui.insightsNoteID != nil }, set: { if !$0 { ui.insightsNoteID = nil } })) {
-                if let id = ui.insightsNoteID { NoteInsightsSheet(noteID: id) }
+                // The sheet reads the window's `WindowUI`, which `windowSheets` is applied outside of (RootView injects it
+                // below this modifier): without this a sheet's content never sees it and the app traps on opening.
+                if let id = ui.insightsNoteID { NoteInsightsSheet(noteID: id).environment(ui) }
             }
             // Note Insights' topic summary of a notebook or tag (the sidebar's menus) and the map (All Notes' menu).
             .sheet(isPresented: Binding(get: { ui.insightsTopic != nil }, set: { if !$0 { ui.insightsTopic = nil } })) {
@@ -152,6 +154,19 @@ struct WindowSheets: ViewModifier {
             .sheet(isPresented: Binding(get: { ui.insightsMapShown }, set: { ui.insightsMapShown = $0 })) {
                 InsightsMapSheet()
             }
+            #if DEBUG
+            // `SEMPERE_DEMO_INSIGHTS` (the Note Insights screenshots): once the demo's insights are made, opens the
+            // selected note's sheet (`note`) or the map (`map`) in the window that shows the canvas.
+            .task {
+                guard let mode = DemoLaunch.insightsMode(DebugLaunch.environment["SEMPERE_DEMO_INSIGHTS"]) else { return }
+                for _ in 0..<300 {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard !model.insightsMap.isEmpty, !model.insights.isWorking, model.selectedNoteID != nil else { continue }
+                    if mode == "map" { ui.insightsMapShown = true } else { ui.insightsNoteID = model.selectedNoteID }
+                    return
+                }
+            }
+            #endif
             // The export sheet opens in the window that asked for it (a Mac may have several).
             .sheet(item: shown(\.exportRequest)) { ExportSheet(request: $0) }
             .sheet(item: shown(\.bulkExportRequest)) { BulkExportSheet(request: $0) }

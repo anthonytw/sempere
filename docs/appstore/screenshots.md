@@ -9,6 +9,8 @@ scripts/screenshots.sh ipad    # iPad Pro 13-inch simulator -> build/screenshots
 scripts/screenshots.sh iphone  # newest iPhone Pro Max simulator -> build/screenshots/iphone/*.png
 scripts/screenshots.sh mac     # Mac Catalyst (best effort)   -> build/screenshots/mac/*.png
 scripts/screenshots.sh         # all three
+scripts/screenshots.sh docs-ipad|docs-iphone|docs-watch   # the website's guide shots (below)
+SEMPERE_SHOTS_APPEARANCE=dark scripts/screenshots.sh docs-ipad   # their dark twins -> build/screenshots/docs-ipad-dark/
 ```
 
 It needs Xcode with an iOS 27+ runtime and an "iPad Pro 13-inch" simulator (`SEMPERE_SIM_ID` picks
@@ -27,38 +29,55 @@ set to light mode and `simctl status_bar override` gives 9:41, full battery and 
 The status bar's date is the day of the run (`simctl` refused an ISO date with an offset): check it
 before uploading.
 The app runs with `TZ=UTC` and an `en_US` locale, so the note dates in the list are the same
-on every machine. The demo forces light mode on its windows (`DemoLaunch.forceLight`), so the Mac
-shots are light whatever the runner's appearance; the canvas is always light anyway.
+on every machine. The simulator is set to English before a run (the status bar's date follows the simulator's language,
+not the app's: a Spanish simulator showed "Sáb nov 14"; the script writes the language and reboots it once). The demo forces
+its windows to light (`DemoLaunch.forceAppearance`, `SEMPERE_DEMO_APPEARANCE`, default `light`), so the Mac shots are light
+whatever the runner's appearance; the canvas is always light anyway. The store sets are light only; the website's dark
+twins (`SEMPERE_SHOTS_APPEARANCE=dark`, guide targets only) set the simulator and the demo to dark and keep the paper
+light inside dark chrome, what a user sees by default (docs/design/1.2-screenshots.md §3.3).
 
 **Mac is best effort.** A Mac UI test needs automation (Accessibility) permission for the test runner
 and a window server, so the CI step runs with `continue-on-error`. The Mac test runner is sandboxed and
 cannot write into the checkout, so the script reads the shots from the result bundle's attachments
 (`xcresulttool export attachments`). On a GitHub `macos-26` runner this produced all six shots; they have not
-been checked on a physical Mac, so look at the Mac PNGs before uploading them. The Catalyst window
+been checked on a physical Mac, so look at the Mac PNGs before uploading them: a macOS notification banner of the machine that ran it can overlap the window's
+top-right corner (turn on Do Not Disturb first). Off CI the script builds the Mac runner without the hardened runtime, as
+`scripts/app.sh` does, or a Mac with a developer identity refuses its test bundle. The Catalyst window
 has a title bar and the Mac layout differs from the iPad's (three columns side by side).
 
 ## The shots
 
 | File | Shows |
 | --- | --- |
-| `01-write` | A lecture note on ruled paper with a margin: headings, a diagram, a highlight; the system tool palette. Full width. |
-| `02-sketch` | A design sketch on cream dot paper. Full width. |
-| `03-notes` | The note list (all twelve notes: dates, pages, notebook, tag chips) next to the open note. |
-| `04-tags` | Sidebar (notebooks, tags) with the `lecture` tag selected, its notes, the open note. |
-| `05-paper` | The paper picker over the dot-paper note. |
-| `06-unlock` | The key / unlock screen of a locked vault (passphrase or pasted key). |
+| `01-write` | A lecture note on ruled paper with a margin: headings, a diagram, a highlight; the system tool palette. Full width. Undo and Redo in the bar are both enabled: two finger strokes were drawn under the last line and Undo tapped once, so one underline is left. |
+| `02-sketch` | A design sketch on cream dot paper. Full width. Same Undo and Redo state, one underline under the last bullet. |
+| `03-insights` | Note Insights (1.2): the lecture note's Note Insights sheet, a summary, keywords, related notes and its group. |
+| `04-notes` | The note list (all twelve notes: dates, pages, notebook, tag chips) next to the open note. |
+| `05-tags` | Sidebar (notebooks, tags) with the `lecture` tag selected, its notes, the open note. |
+| `06-paper` | The paper picker over the dot-paper note. |
+| `07-unlock` | The key / unlock screen of a locked vault (passphrase or pasted key). |
 
-On the Mac the full-width shots show all three columns instead. Captions are not drawn into the images;
+On the Mac the full-width shots show all three columns instead, and `01-write` and `02-sketch` draw no strokes (Undo and
+Redo are in its Edit menu, which a window shot does not show). Captions are not drawn into the images;
 add them in App Store Connect or a design tool. Each shot is a fresh launch whose state comes from launch
-variables (below), so the test taps nothing and a layout change cannot break a shot's navigation.
+variables (below), so a layout change cannot break a shot's navigation. The exceptions are `01-write` and `02-sketch`
+(two finger strokes and Undo; the iPad launch sets `SEMPERE_DEBUG_FINGERS_DRAW`, the simulator has no Pencil), which log
+`SHOTDEBUG` when Undo or Redo never enabled.
+
+**Note Insights shot.** The simulator has no Apple model, so the demo never calls one: `SEMPERE_DEMO_INSIGHTS=note` (below)
+gives the demo's notes made-up recognized text (`DemoVault.insightsTexts`, `DemoInsightsText.swift`), turns Note Insights on
+with the package's fake providers and runs the passes with them, so the sheet shows real stored insights (summary,
+keywords, related notes, group) in the real format. The fake summary is the text's first sentences. `SEMPERE_DEMO_INSIGHTS=map`
+opens the Map of Related Notes the same way; it is not a store shot because twelve notes make one group, which says little
+(a bigger demo would). Set `TEST_RUNNER_SEMPERE_SHOTS_ONLY=03-insights,01-write` to take only some shots.
 
 ### iPhone shots
 
 The iPhone is a stack, so each shot is one screen (`ScreenshotTests.phoneShots`): `01-write` and
-`02-sketch` the note view (reading mode, the "Annotate" pencil in the bar), `03-notes` the note list,
-`04-tags` the list for the `lecture` tag, `05-library` the vault's notebooks and tags, `06-unlock` the
-unlock sheet. There is no paper-picker shot on the phone. Look at the PNGs before uploading: they have
-not been seen on a real run yet.
+`02-sketch` the note view (reading mode, the "Annotate" pencil in the bar; the phone draws the two strokes and taps Undo
+in the compact palette, which has its own Undo and Redo), `03-insights` the Note Insights sheet, `04-notes` the note list,
+`05-tags` the list for the `lecture` tag, `06-library` the vault's notebooks and tags, `07-unlock` the
+unlock sheet. There is no paper-picker shot on the phone.
 
 ### Website user-guide shots
 
@@ -72,6 +91,11 @@ simulators; the website's `scripts/media.mjs` turns them into its images.
 | `docs-palette`, `docs-palette-choices` | A note being annotated, then the selected pen's choices (colors, width, opacity). |
 | `docs-settings`, `docs-settings-general`, `docs-settings-sync`, `docs-settings-backups` | Settings' groups, then three of its pages. |
 | `docs-search`, `docs-search-highlight` | The results for a handwritten word (the demo's search notes, stored recognition), then a hit with its words highlighted. |
+| `docs-nearby-join` | Add Device on the home device with one request that came nearby ("Demo iPhone", throwaway keys): its six words, Nearby, They Match and Decline (`SEMPERE_DEMO_NEARBY_JOIN`, through Settings ▸ Sync & Devices ▸ Devices ▸ Add Device). |
+| `docs-join-waiting`, `docs-join-waiting-nearby` | The new device's Join This Device screen waiting for its approval: six words, QR code, the delivery line and "A device nearby has this request" (`SEMPERE_DEMO_NEARBY_JOIN` on the locked demo with `SEMPERE_DEBUG_MEMORY_KEYS`, since an unsigned build has no Keychain). |
+| `docs-pages-dark` | A note with Settings ▸ General ▸ Appearance ▸ Note Pages ▸ Dark (`-Sempere.notePages dark`): dark paper, ink lightness inverted. The one dark-pages shot of docs/design/1.2-screenshots.md question 1. |
+
+`docs-watch` runs `WatchScreenshotTests` (`SempereWatchUITests`, the debug state of `WatchDebugLaunch`: a fake recorder, the debug vault's made-up name) on the newest watchOS simulator, at that watch's native size (the script takes it from the first PNG and requires it of the rest), into `build/screenshots/docs-watch/`: `01-ready`, `02-recording`, `03-saved`, `04-unsent`. Run it under the build lock with `XC_KIND=sim XC_NO_CLONE=1` (its clones are iPads). The watch shows the real time (`simctl status_bar` does not reach a watch); the language is set to English like the others. Where the watch test runner cannot write into the checkout, the script takes the shots from the result bundle's attachments.
 
 Unlike the store shots, these tap their way to a screen, so a UI change can break one: the test keeps going,
 writes whatever was on screen, and logs `SHOTDEBUG` for the shot that missed. Look at every PNG. The status bar
@@ -106,6 +130,9 @@ All of it is `#if DEBUG` (the package's files and the app's `DemoLaunch` alike);
 | `SEMPERE_DEMO_NOTE` | Open the note with this key: `atlas`, `respiration`, `sprint`, `weekly`, `optics`, `quantum`, `photosynthesis`, `lisbon`, `vocabulario`, `books`, `groceries`, `thoughts`. |
 | `SEMPERE_DEMO_SIDEBAR` | `all`, `notebook:School/Physics` or `tag:lecture`. |
 | `SEMPERE_DEMO_PAPER_PICKER` | Open the paper picker over the note. |
+| `SEMPERE_DEMO_APPEARANCE` | `light` (default) or `dark`: what the demo's windows are forced to (`DemoLaunch.forceAppearance`; an unknown value is light). |
+| `SEMPERE_DEMO_INSIGHTS` | `note` or `map`: Note Insights on with fake providers, recognized demo text, passes run, then the note's sheet or the map opens (DEBUG, never an Apple model). |
+| `SEMPERE_DEMO_NEARBY_JOIN` | List one synthetic join request as nearby for Add Device; on the locked demo the join screen shows the nearby link connected. |
 | `SEMPERE_DEMO_MAC_WINDOW` | `WIDTHxHEIGHT` in points (Mac Catalyst). |
 | `SEMPERE_DEBUG_COLUMNS` | `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the stored layout (see `DebugLaunch.swift`). |
 
