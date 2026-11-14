@@ -181,6 +181,12 @@ public struct InsightsUpdater: Sendable {
                                            pinKey: pinKey, now: o.now, force: o.force, deviceRecordChanged: changedRecord)
             }
         }
+        // A device that no longer holds the role says so with a tombstone map (no key): readers take the map and
+        // vectors only from the work device anyway, and a tombstone keeps a bridging device from bringing it back.
+        if settings.workDevice != me, let old = snapshot.maps[me], !old.isTombstone, !o.dryRun {
+            try store.write(.map(InsightsMapFile(device: me, written: 0, key: nil, dim: nil, canaries: nil, mean: nil, clusters: [],
+                                                 layout: [:], built: nil)), now: o.now)
+        }
         let byId = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0) })
         let merger = InsightsNotes.merger(inputs)
         var generations = 0
