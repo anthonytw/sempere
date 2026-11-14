@@ -143,6 +143,55 @@
             0
           ]
         },
+        "insights.compute" : {
+          "default" : "never",
+          "description" : "Note Insights work on a device that is not the work device (auto: it computes too).",
+          "enum" : [
+            "auto",
+            "never"
+          ]
+        },
+        "insights.embeddingRevision" : {
+          "additionalProperties" : {
+            "maximum" : 1000000,
+            "minimum" : 1,
+            "type" : "integer"
+          },
+          "default" : {
+
+          },
+          "description" : "The pinned sentence-embedding revision per language (empty: set by the first map build).",
+          "maxProperties" : 64,
+          "propertyNames" : {
+            "pattern" : "^[a-z]{1,8}$"
+          },
+          "type" : "object"
+        },
+        "insights.enabled" : {
+          "default" : false,
+          "description" : "Note Insights: summaries, keywords, related notes and a map, made on the vault's devices (vault-wide).",
+          "type" : "boolean"
+        },
+        "insights.voiceNoteTitle" : {
+          "default" : "{date} {time} {slug}",
+          "description" : "Title of a voice note once its transcript is summarized.",
+          "maxLength" : 200,
+          "minLength" : 1,
+          "type" : "string"
+        },
+        "insights.workDevice" : {
+          "default" : null,
+          "description" : "The device that makes summaries, embeds every note and builds the map (null: none yet).",
+          "oneOf" : [
+            {
+              "type" : "null"
+            },
+            {
+              "pattern" : "^[0-9a-f]{8}$",
+              "type" : "string"
+            }
+          ]
+        },
         "math.recognize" : {
           "default" : false,
           "description" : "Convert handwriting to math.",

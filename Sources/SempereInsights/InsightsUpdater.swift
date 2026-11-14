@@ -386,7 +386,8 @@ public struct InsightsUpdater: Sendable {
                                built: .init(notes: rel.count, hashes: MapBuilder.digest(pairs)))
     }
 
-    static func mainLanguage(_ inputs: [InsightsNoteInput]) -> String {
+    /// The language most live notes are in (the embedding's language), the fallback for none.
+    public static func mainLanguage(_ inputs: [InsightsNoteInput]) -> String {
         var f: [String: Int] = [:]
         for n in inputs where !n.deleted { f[n.language, default: 0] += 1 }
         return f.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.first?.key ?? InsightsLanguage.fallback

@@ -247,6 +247,17 @@ public enum InsightsStoplist {
         "examine", "uses", "using", "used", "between", "through", "into", "from", "over", "under", "after", "before",
         "both", "each", "other", "such", "some", "many", "more", "most", "first", "second", "they", "them", "what",
         "how", "being", "been", "have", "has", "will", "would", "should", "could", "must", "noted", "points", "point",
+        "follows", "follow", "depends", "depend", "decides", "decide", "returns", "return", "happens", "happen", "increases",
+        "increase", "decreases", "decrease", "changes", "change", "becomes", "become", "remains", "remain", "allows",
+        "allow", "causes", "cause", "leads", "lead", "means", "refers", "results", "requires", "require", "explores",
+        "compares", "compare", "defines", "define", "involves", "involve", "applies", "apply", "works", "makes", "takes",
+        "needs", "gets", "keeps", "comes", "goes", "starts", "ends", "begins", "continues", "suggests", "states", "shown",
+        "given", "called", "known", "based", "related", "using", "while", "within", "without", "across", "along",
+        "around", "during", "until", "against", "among", "instead", "rather", "whether", "either", "neither", "however",
+        "therefore", "because", "although", "though", "since", "often", "usually", "mainly", "mostly", "especially",
+        "particularly", "generally", "typically", "simple", "simply", "different", "similar", "important", "specific",
+        "certain", "possible", "useful", "common", "basic", "general", "overall", "whole", "entire", "small", "large",
+        "high", "higher", "lower", "better", "faster", "slower", "first", "second", "third", "next", "last", "later",
     ]
 }
 
@@ -424,10 +435,12 @@ public struct FactCheck: Sendable {
                 checkable = true
             } else if t.capitalized && t.index > 0 && lower.count >= 2 {
                 checkable = !InsightsStoplist.summaryLanguage.contains(lower)
-            } else if isFormula && lower.count <= 3 {
+            } else if isFormula && lower.count <= 3 && !InsightsStoplist.generic.contains(lower) {
                 checkable = true
             } else {
-                checkable = lower.count >= 4 && !InsightsStoplist.generic.contains(lower)
+                // Content words (no part-of-speech tagger on Linux): five letters or more and not the words a summary
+                // talks about a note with; the D16 quality run tunes this.
+                checkable = lower.count >= 5 && !InsightsStoplist.generic.contains(lower)
                     && !InsightsStoplist.summaryLanguage.contains(lower)
             }
             guard checkable else { continue }

@@ -26,7 +26,7 @@ struct SempereCLI: ParsableCommand {
             NotebooksCommand.self, TagsCommand.self,
             PagesCommand.self, AttachCommand.self, ItemsCommand.self, RecordingsCommand.self, ExportCommand.self,
             RecoverCommand.self, BlobsCommand.self, CompactCommand.self, SnapshotCommand.self, ImportCommand.self, SearchCommand.self, RecognizeCommand.self, RecognizeMathCommand.self, TranscribeCommand.self, InboxCommand.self,
-            BackupCommand.self, RestoreCommand.self, SettingsCommand.self,
+            BackupCommand.self, RestoreCommand.self, SettingsCommand.self, InsightsCommand.self,
             SyncCommand.self, WebDAVCommand.self, RasterizePDFCommand.self, AboutCommand.self,
         ]
     )
