@@ -132,6 +132,8 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
     /// with its own delegate since task identifiers are per session.
     private let streamSession: URLSession
     private let streamDelegate: Delegate
+    /// See `UploadStall`; infinity turns the watchdog off.
+    private let bodyStallTimeout: TimeInterval
 
     /// - Parameters:
     ///   - timeout: the idle timeout: a request fails when no data moved for this long.
@@ -142,9 +144,14 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
     ///     idle timeout, not by its total time.
     ///   - serverTrust: decides TLS server trust in place of the
     ///     system (nil: the system decides, as for any HTTPS request).
+    ///   - bodyStallTimeout: the upload watchdog (`UploadStall`): a request with a body fails with
+    ///     `WebDAVError.offline` when no body byte moved, or no response byte came for a body of 1 MiB or less,
+    ///     for this long. Nil: `SEMPERE_WEBDAV_BODY_STALL` (seconds) if set, else 15 s where URLSession is
+    ///     swift-corelibs-foundation (Linux) and off on Apple platforms, whose stack reports a reset itself.
     public init(timeout: TimeInterval = 60, resourceTimeout: TimeInterval = 600,
                 streamResourceTimeout: TimeInterval = 7 * 24 * 3600,
-                serverTrust: (any WebDAVServerTrust)? = nil) {
+                serverTrust: (any WebDAVServerTrust)? = nil, bodyStallTimeout: TimeInterval? = nil) {
+        self.bodyStallTimeout = bodyStallTimeout ?? UploadStall.defaultTimeout()
         func make(_ resource: TimeInterval, _ delegate: Delegate) -> URLSession {
             let config = URLSessionConfiguration.ephemeral
             config.timeoutIntervalForRequest = timeout
@@ -185,14 +192,26 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         let pending = Pending(limit: request.maxResponseBytes, file: request.responseFile)
         delegate.register(task.taskIdentifier, pending)
         defer { delegate.unregister(task.taskIdentifier) }
+        let bodyBytes = Self.bodySize(request)
+        var watch = bodyBytes > 0 && bodyStallTimeout.isFinite
+            ? UploadStall.Watch(expected: bodyBytes, timeout: bodyStallTimeout) : nil
         task.resume()
-        if let interrupt = request.interrupt {
+        if request.interrupt != nil || watch != nil {
             while pending.done.wait(timeout: .now() + Self.interruptPoll) == .timedOut {
-                guard let stop = interrupt() else { continue }
-                task.cancel()
-                pending.done.wait()
-                if let failure = pending.fileFailure { throw failure }
-                throw stop
+                if let stop = request.interrupt?() {
+                    task.cancel()
+                    pending.done.wait()
+                    if let failure = pending.fileFailure { throw failure }
+                    throw stop
+                }
+                // `didSendBodyData` is not reliably delivered on Linux: the task's own counter is read too.
+                let sent = max(pending.bytesSent, task.countOfBytesSent)
+                if let why = watch?.poll(sent: sent, responseStarted: pending.responseStarted) {
+                    task.cancel()
+                    pending.done.wait()
+                    if let failure = pending.fileFailure { throw failure }
+                    throw WebDAVError.offline(why)
+                }
             }
         } else {
             pending.done.wait()
@@ -211,6 +230,14 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         var headers: [String: String] = [:]
         for (k, v) in http.allHeaderFields { headers["\(k)".lowercased()] = "\(v)" }
         return WebDAVResponse(status: http.statusCode, headers: headers, body: data)
+    }
+
+    /// The bytes of the request's body: the in-memory one, or the file's size (0: unknown or none).
+    private static func bodySize(_ request: WebDAVRequest) -> Int {
+        if let file = request.bodyFile {
+            return ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.intValue ?? 0
+        }
+        return request.body?.count ?? 0
     }
 
     private static func describe(_ error: Error) -> String {
@@ -343,6 +370,13 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
 
         func set(response r: URLResponse) { lock.lock(); response = r; lock.unlock() }
         func set(challenged r: HTTPURLResponse) { lock.lock(); challenged = r; lock.unlock() }
+
+        private var sentBytes: Int64 = 0
+        /// Body bytes the delegate reported sent.
+        var bytesSent: Int64 { lock.lock(); defer { lock.unlock() }; return sentBytes }
+        func noteSent(_ total: Int64) { lock.lock(); sentBytes = max(sentBytes, total); lock.unlock() }
+        /// True once any part of the response (a challenge included) has arrived.
+        var responseStarted: Bool { lock.lock(); defer { lock.unlock() }; return response != nil || challenged != nil || received > 0 }
         func finish(_ e: Error?) {
             lock.lock()
             error = e
@@ -413,12 +447,66 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
             completionHandler(p.accept(expected: response.expectedContentLength) ? .allow : .cancel)
         }
 
+        func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
+                        totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+            lookup(task.taskIdentifier)?.noteSent(totalBytesSent)
+        }
+
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
             guard let p = lookup(dataTask.taskIdentifier), p.append(data) else { return dataTask.cancel() }
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
             lookup(task.taskIdentifier)?.finish(error)
+        }
+    }
+}
+
+/// The upload watchdog (docs/design/1.2-linux-upload-stall.md). On Linux, swift-corelibs-foundation does not report a
+/// connection reset that hits a request sent on a kept-alive connection (libcurl retries it on a new connection and
+/// the retried body never goes out), so the request sits until the idle timeout, 60 s. The watchdog ends such a request:
+///
+/// - while the body is not fully sent, when no body byte moved for `timeout`;
+/// - once it is sent, for a body of `smallBody` bytes or less (it sat in the socket buffer, so it counts as sent whatever
+///   the server received, and a small PUT is answered fast), when no response byte came for `timeout`.
+///
+/// A big body's slow answer (the server hashes, syncs, moves) is the idle timeout's, and any progress resets the clock.
+enum UploadStall {
+    /// Bodies up to this size get the first-response-byte limit.
+    static let smallBody = 1 << 20
+
+    /// 15 s where URLSession is corelibs', infinity on Apple platforms; `SEMPERE_WEBDAV_BODY_STALL` (seconds) overrides.
+    static func defaultTimeout(environment: [String: String] = ProcessInfo.processInfo.environment) -> TimeInterval {
+        if let text = environment["SEMPERE_WEBDAV_BODY_STALL"], let seconds = TimeInterval(text), seconds > 0 { return seconds }
+        #if canImport(FoundationNetworking)
+        return 15
+        #else
+        return .infinity
+        #endif
+    }
+
+    /// Why a request is stalled, or nil: a pure function of the times and byte counts.
+    static func reason(idle: TimeInterval, sent: Int64, expected: Int, responseStarted: Bool, timeout: TimeInterval) -> String? {
+        guard expected > 0, !responseStarted, idle >= timeout else { return nil }
+        let seconds = Int(timeout.rounded())
+        if sent < Int64(expected) { return "upload stalled: no bytes sent for \(seconds) s" }
+        if expected <= smallBody { return "upload stalled: no response for \(seconds) s after the body was sent" }
+        return nil
+    }
+
+    /// One request's clock: progress (more bytes sent) resets it.
+    struct Watch {
+        let expected: Int
+        let timeout: TimeInterval
+        private var sent: Int64 = 0
+        private var last = DispatchTime.now()
+
+        init(expected: Int, timeout: TimeInterval) { self.expected = expected; self.timeout = timeout }
+
+        mutating func poll(sent now: Int64, responseStarted: Bool, at time: DispatchTime = .now()) -> String? {
+            if now > sent { sent = now; last = time }
+            let idle = TimeInterval(time.uptimeNanoseconds &- last.uptimeNanoseconds) / 1e9
+            return UploadStall.reason(idle: idle, sent: sent, expected: expected, responseStarted: responseStarted, timeout: timeout)
         }
     }
 }

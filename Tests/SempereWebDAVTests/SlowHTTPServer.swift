@@ -15,15 +15,19 @@ final class SlowHTTPServer: @unchecked Sendable {
     private let listener: Int32
     private let bytesPerSecond: Int
     private let response: String
+    private let resetAfter: Int?
     private let lock = NSLock()
     private var stopped = false
     private var _heads: [String] = []
     /// Each request's head (request line and headers), in order.
     var heads: [String] { lock.lock(); defer { lock.unlock() }; return _heads }
 
-    init(bytesPerSecond: Int = 1 << 30,
+    /// - Parameter resetAfter: when set, the server reads this many body bytes (all of it when the body is shorter) and
+    ///   then drops the connection with a TCP RST (`SO_LINGER` 0): a cut upload.
+    init(bytesPerSecond: Int = 1 << 30, resetAfter: Int? = nil,
          response: String = "HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n") throws {
         self.bytesPerSecond = bytesPerSecond
+        self.resetAfter = resetAfter
         self.response = response
         #if canImport(Glibc)
         let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
@@ -78,6 +82,17 @@ final class SlowHTTPServer: @unchecked Sendable {
         let text = String(decoding: head, as: UTF8.self).lowercased()
         let length = text.split(separator: "\r\n").first { $0.hasPrefix("content-length:") }
             .flatMap { Int($0.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)) } ?? 0
+        if let resetAfter {
+            var left = min(resetAfter, length)
+            while left > 0 {
+                let n = read(c, &buf, min(left, buf.count))
+                guard n > 0 else { break }
+                left -= n
+            }
+            var hardClose = linger(l_onoff: 1, l_linger: 0)
+            setsockopt(c, SOL_SOCKET, SO_LINGER, &hardClose, socklen_t(MemoryLayout<linger>.size))
+            return   // the deferred close sends the RST
+        }
         if bytesPerSecond == 0 {
             while !isStopped { usleep(50_000) }
             return
