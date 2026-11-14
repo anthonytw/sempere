@@ -55,8 +55,18 @@ your use (no telemetry).
   There is no reset, no recovery service and no back door. Print the recovery
   kit when you create a vault and keep it somewhere apart from your devices.
 - **Only the vault's home device adds devices.** The device that created the
-  vault approves a new device after you type, on it, six words the new device
-  shows; the new device then checks six words the home device shows back. When
+  vault approves a new device after you compare, on it, six words the new device
+  shows with the six on its own screen and tap They Match (or type the words, or
+  scan the device's code); the new device then compares six words the home device
+  shows back the same way. **Tapping They Match is as safe as typing the words
+  only if you compare them. Compare all six.** A tap does not force you to read
+  every word, as typing does: an attacker who can reach the home device (nearby,
+  or through the sync target) can search for a key whose first one to three words
+  look right in minutes, but not one whose six all match (about 2^66 tries). Add
+  Device warns when two or more requests wait at once, since an attacker's
+  requests can crowd out the real one, and the six words are never shortened to
+  a code. The owner check (Face ID or the password) still comes before an
+  approval, and nothing approves from a notification, widget or shortcut. When
   the two devices are near each other, the request and the approval also go
   straight between them over Wi-Fi while the two screens are open, with the
   same checks on both ends; the sync target is still used too. The

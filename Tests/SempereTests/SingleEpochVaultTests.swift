@@ -146,6 +146,8 @@ final class SingleEpochVaultTests: VaultTestCase {
         XCTAssertThrowsError(try mine.confirmJoin(words: Array(words.reversed()))) {
             XCTAssertEqual($0 as? VaultError, .replyMismatch)
         }
+        XCTAssertEqual(try mine.joinReplyWords(), words, "the words the new device computes are the ones confirmJoin accepts")
+        XCTAssertEqual(try mine.joinReplyWords().count, 6)
         try mine.confirmJoin(words: words)
         XCTAssertNil(mine.listStatus.problem)
         XCTAssertNoThrow(try newNote(mine, "From the laptop"))

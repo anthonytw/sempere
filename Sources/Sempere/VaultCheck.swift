@@ -356,6 +356,24 @@ extension Vault {
         trustMemo.last = record
     }
 
+    /// The reply digest over this device's commitment and the root and epoch of the `vault.json` at hand.
+    private func joinReplyDigest() throws -> Data {
+        guard secret != nil else { throw VaultError.locked }
+        guard let entry = deviceEntry, let claim = entry.claim else { throw VaultError.recoveryKeyReadOnly }
+        let commitment = JoinRequest.commitment(vaultId: vaultId, key: claim.key, sign: claim.sign, kind: claim.kind)
+        return JoinCodes.reply(vaultId: vaultId, commitment: commitment, root: manifest.root, frontier: manifest.epochId)
+    }
+
+    /// The six reply words this device computes from the `vault.json` at hand (design §6.2 step 4; docs/design/
+    /// 1.2-join-confirm.md §3.2): exactly the words `confirmJoin(words:)` accepts. A new device shows them beside
+    /// home's so the user can compare all six and tap "They Match". Showing them proves nothing by itself: the
+    /// comparison with home's screen is the check, as typing was.
+    ///
+    /// - Throws: `locked`, `recoveryKeyReadOnly` (this device is not listed).
+    public func joinReplyWords() throws -> [String] {
+        JoinCodes.words(try joinReplyDigest())
+    }
+
     /// Confirms this device's join (design §6.2 step 4): `words` are the reply home showed. They must be
     /// the six words of `JoinCodes.reply` over this device's commitment, the root and epoch of the
     /// `vault.json` at hand: a vault storage built around this device's (public) key has another root.
@@ -365,9 +383,7 @@ extension Vault {
     ///   still does not check.
     public mutating func confirmJoin(words: [String]) throws {
         guard let secret else { throw VaultError.locked }
-        guard let entry = deviceEntry, let claim = entry.claim else { throw VaultError.recoveryKeyReadOnly }
-        let commitment = JoinRequest.commitment(vaultId: vaultId, key: claim.key, sign: claim.sign, kind: claim.kind)
-        let reply = JoinCodes.reply(vaultId: vaultId, commitment: commitment, root: manifest.root, frontier: manifest.epochId)
+        let reply = try joinReplyDigest()
         guard JoinCodes.matches(words, reply) else { throw VaultError.replyMismatch }
         recheck(root: manifest.root, key: secret)
         try requireTrustedList()
@@ -463,14 +479,9 @@ extension Vault {
             + "both are kept, nothing is merged"
     }
 
-    /// The six words this device expects as home's reply, for tests and scripted joins (the CLI never
-    /// shows them: the point is that the user types the ones home shows).
-    func expectedReplyWords() -> [String]? {
-        guard let entry = deviceEntry, let claim = entry.claim else { return nil }
-        let commitment = JoinRequest.commitment(vaultId: vaultId, key: claim.key, sign: claim.sign, kind: claim.kind)
-        return JoinCodes.words(JoinCodes.reply(vaultId: vaultId, commitment: commitment, root: manifest.root,
-                                               frontier: manifest.epochId))
-    }
+    /// `joinReplyWords()` or nil, for tests and scripted joins. The CLI never shows the words: its user types the ones
+    /// home shows (docs/design/1.2-join-confirm.md §3.4).
+    func expectedReplyWords() -> [String]? { try? joinReplyWords() }
 }
 
 extension EpochTrustRecord.Entry {

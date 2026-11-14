@@ -4,7 +4,7 @@ import Sempere
 // Joining nearby (docs/design/nearby-join.md, key-hierarchy design §6.2.1): while Add Device shows on home, home
 // advertises the link's service; while the join screen waits on the new device, it browses, connects, and once home
 // proves it knows the vault's id, sends its request. Home keeps the request in memory and lists it with the synced ones
-// (it never writes it to the vault); once the user approves it (by the six words or the QR code, as always), home sends
+// (it never writes it to the vault); once the user approves it (by comparing the six words and tapping They Match, or by the typed words or the QR code, as always), home sends
 // the approval back over the same connection, and the new device takes it into its copy as a join run would. The new
 // device still confirms with home's reply words. Both routes run side by side: whichever brings the request or the
 // approval first wins, and the other finds nothing left to do.

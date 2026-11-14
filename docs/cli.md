@@ -226,7 +226,10 @@ sempere set-aside list | export [SHA...] --to DIR | keep (SHA... | --own-dropped
 
 A vault has one **home** device, the one that changes its device list: the
 machine that created it (`docs/design/key-hierarchy.md` §5.6). Joining another
-device takes words typed both ways (`format.md` §15.12, design §6.2):
+device takes words typed both ways (`format.md` §15.12, design §6.2). The app's
+screens compare the words and tap "They Match" instead (`docs/design/1.2-join-confirm.md`); the CLI has no such
+shortcut, so a CLI join is typed: there is no `devices approve --id` and no `device confirm --show`, which would
+skip the comparison (an id is a 32-bit prefix that can be ground, and the words are the check):
 
 1. On the new machine, `device init --vault V` generates its device key and
    signing keys into `$XDG_STATE_HOME/sempere/devices/<vault id>/device.key`
@@ -244,8 +247,8 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
    straight between two devices nearby (`docs/design/nearby-join.md`); the CLI
    does not: it makes no network connection but WebDAV's, and Linux has no
    peer-to-peer Wi-Fi. There, `devices approve --vault V WORD…`
-   finds the request whose commitment the typed words give (typing, not
-   comparing, so a near match is not waved through), appends the device to
+   finds the request whose commitment the typed words give (all six, so a
+   near match is not waved through), appends the device to
    `vault.json` with a wrap of the vault key and home's signature, deletes the
    request, and prints six words back. No file is re-encrypted. Only home
    approves (exit 1 elsewhere, naming the home device). It refuses a request

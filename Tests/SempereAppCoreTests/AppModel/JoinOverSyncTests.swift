@@ -61,7 +61,7 @@ extension AppModelSuites {
             _ = await model.webdav?.syncNow()
             await model.refreshLockedManifest()
             #expect(await keys.unlockWithDeviceKey(model).outcome == .joining)
-            #expect(keys.joinStage == .confirming, "\(String(describing: model.webdav?.lastReport))")
+            #expect(keys.joinStage?.isConfirming == true, "\(String(describing: model.webdav?.lastReport))")
             let device = try await keys.store.keys(for: try #require(model.vault?.vaultId), reason: .unlock(vaultName: nil))
             try await model.confirmJoin(words: reply, keys: device)
             #expect(model.phase == .unlocked)

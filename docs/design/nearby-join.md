@@ -48,7 +48,7 @@ sequenceDiagram
     E->>E: parse (16 KiB), this vault? listed already?
     E->>E: keep it in memory and list it (never written to the vault)
     E->>N: waiting
-    E->>E: the user types N's six words (or scans its code)
+    E->>E: the user compares N's six words and taps They Match (or types them, or scans its code)
     E->>E: approveDevice (unchanged)
     E->>N: reply: age(vault.json, current record, nonce, c) to N's key
     N->>N: open, check nonce and c, isJoinApproval, record hash

@@ -101,7 +101,7 @@ extension AppModelSuites {
             // The phone sees the approval and confirms with the reply.
             await phone.refreshLockedManifest()
             #expect(await phoneKeys.unlockWithDeviceKey(phone).outcome == .joining)
-            #expect(phoneKeys.joinStage == .confirming)
+            #expect(phoneKeys.joinStage?.isConfirming == true)
             let device = try await phoneKeys.store.keys(for: try #require(phone.vault?.vaultId), reason: .unlock(vaultName: nil))
             await #expect(throws: VaultError.self, "other words never confirm") {
                 try await phone.confirmJoin(words: Array(reply.words.reversed()), keys: device)

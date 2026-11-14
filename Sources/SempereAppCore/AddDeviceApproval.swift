@@ -56,13 +56,21 @@ public final class AddDeviceApprovalCore<Host: AppModelHost> {
     /// waiting words, if their request is here now.
     public func refresh() async {
         guard let model, active else { return }
-        let requests = await model.pendingJoinRequests()
+        let requests = stableOrder(await model.pendingJoinRequests())
         guard active else { return }
         lookout = JoinRequestLookout(requests: requests, arriving: lookout?.arriving ?? false, checked: lookout?.checked ?? Date())
         guard let p = pending, !working else { return }
         let here = await model.hasJoinRequest(words: p.words, qr: p.qr)
         guard here, active, !working, pending == p else { return }
         await approve(words: p.words, qr: p.qr)
+    }
+
+    /// `requests` in the order the list already shows them, new ones last (docs/design/1.2-join-confirm.md §3.5): a request
+    /// that arrives while the user compares never moves a row that has been on screen under their finger.
+    func stableOrder(_ requests: [JoinRequest]) -> [JoinRequest] {
+        let shown = lookout?.requests.map(\.commitment) ?? []
+        let known = shown.compactMap { c in requests.first { $0.commitment == c } }
+        return known + requests.filter { r in !shown.contains(r.commitment) }
     }
 
     /// Other words typed: the ones waiting for their request are dropped.
@@ -93,6 +101,27 @@ public final class AddDeviceApprovalCore<Host: AppModelHost> {
         return false
     }
 
+    /// Approves a request the sheet lists (a row's "They Match", docs/design/1.2-join-confirm.md §3.1), by its commitment;
+    /// false when another approval is going, the sheet is closed or a reply is in. A failure is in `failedWith`.
+    @discardableResult
+    public func approve(request: JoinRequest) async -> Bool {
+        guard let model, active, !working else { return false }
+        working = true   // before any wait: a second tap meanwhile does nothing
+        failedWith = nil
+        defer { working = false }
+        do {
+            let r = try await model.approveDevice(request: request) { [weak self] in self?.closed == false }
+            reply = r
+            pending = nil
+            approvals += 1
+            return true
+        } catch is CancellationError {
+        } catch {
+            failedWith = error
+        }
+        return false
+    }
+
     /// Declines `request` (its Decline button): gone from the list at once, from the targets with the next run. Words
     /// waiting for it are dropped.
     @discardableResult
@@ -115,8 +144,9 @@ public final class AddDeviceApprovalCore<Host: AppModelHost> {
     /// One look: a sync of every target and the copy's requests; then the waiting words, if their request is here.
     public func look() async {
         guard let model, active, !working else { return }
-        let found = await model.lookForJoinRequests()
+        var found = await model.lookForJoinRequests()
         guard active else { return }
+        found.requests = stableOrder(found.requests)
         lookout = found
         guard let p = pending, !working else { return }
         let here = await model.hasJoinRequest(words: p.words, qr: p.qr)

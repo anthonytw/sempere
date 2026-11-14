@@ -50,6 +50,25 @@ struct SixWordsView: View {
     }
 }
 
+/// "They Match" (docs/design/1.2-join-confirm.md §3.3): enabled only once its words have been on screen for
+/// `MatchConfirmGate.defaultDelay`, so a double tap on arrival cannot confirm, and never while something is running.
+struct MatchButton: View {
+    let busy: Bool
+    let identifier: String
+    let action: () -> Void
+    @State private var gate = MatchConfirmGate()
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.25)) { context in
+            Button("They Match", systemImage: "checkmark.circle", action: action)
+                .disabled(!gate.isEnabled(at: context.date, busy: busy))
+                .help("The six words are the same on both screens: compare all six first")
+                .accessibilityIdentifier(identifier)
+        }
+        .onAppear { gate.shown(at: .now) }
+    }
+}
+
 /// Scans one QR code with the camera (VisionKit), on an iPhone or iPad; nothing on a Mac (VisionKit's scanner is
 /// not in Mac Catalyst) or where the camera cannot scan: the six words are typed there.
 struct QRScanButton: View {
@@ -127,13 +146,15 @@ struct JoinDeviceView: View {
     @State private var reply = ""
     @State private var working = false
     @State private var failure: String?
+    /// The six words on screen were replaced by others while confirming.
+    @State private var wordsChanged = false
 
     var body: some View {
         Form {
             switch keys.joinStage {
             case nil:
                 Section {
-                    Text("This device makes its own key and asks to join “\(model.vaultName ?? "")”. On the device that manages devices, open Settings ▸ Sync & Devices ▸ Devices ▸ Add Device and type the six words shown next.",
+                    Text("This device makes its own key and asks to join “\(model.vaultName ?? "")”. On the device that manages devices, open Settings ▸ Sync & Devices ▸ Devices ▸ Add Device and compare the six words shown next with the words of this request.",
                          comment: "Join screen; the value is the vault name")
                     Button("Ask to Join", systemImage: "person.badge.plus") { start() }
                         .accessibilityIdentifier("join.start")
@@ -143,7 +164,7 @@ struct JoinDeviceView: View {
                     SixWordsView(words: words)
                     QRCodeView(text: qr).frame(maxWidth: .infinity)
                 } header: {
-                    Text("Type these on the device that manages devices")
+                    Text("Compare these on the device that manages devices")
                 } footer: {
                     Text("Or scan the code there. Keep this screen open: the approval arrives with the next sync.")
                 }
@@ -172,20 +193,37 @@ struct JoinDeviceView: View {
                         .foregroundStyle(.secondary)
                     Button("Check Now", systemImage: "arrow.clockwise") { Task { await checkNow() } }
                 }
-            case .confirming?:
+            case .confirming(let words)?:
                 Section {
-                    TextField("Six words", text: $reply, axis: .vertical)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .accessibilityIdentifier("join.reply")
-                    QRScanButton { text in confirm(qr: text) }
-                    Button("Confirm", systemImage: "checkmark.seal") { confirm(qr: nil) }
-                        .disabled(TypedWords.split(reply).count != 6)
-                        .accessibilityIdentifier("join.confirm")
+                    SixWordsView(words: words)
+                    if wordsChanged {
+                        Label("The words changed. Compare all six again.", systemImage: "exclamationmark.triangle")
+                            .font(.footnote.bold())
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("join.wordsChanged")
+                    }
+                    // Keyed by the words: new words restart the 1.5 s wait, never keep an open gate.
+                    MatchButton(busy: working, identifier: "join.match") { confirm(qr: nil, tapped: words) }
+                        .id(words)
                 } header: {
-                    Text("Approved: type the six words the other device shows")
+                    Text("Do these six words match the ones on the device that approved you?")
                 } footer: {
-                    Text("They prove this is the vault that device approved, not a copy someone else made.")
+                    Text("Compare all six words. Tapping They Match is as safe as typing the words only if you compare them. They prove this is the vault that device approved, not a copy someone else made.")
+                }
+                Section {
+                    DisclosureGroup("Type the words instead") {
+                        TextField("Six words", text: $reply, axis: .vertical)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .accessibilityIdentifier("join.reply")
+                        QRScanButton { text in confirm(qr: text) }
+                        Button("Confirm", systemImage: "checkmark.seal") { confirm(qr: nil) }
+                            .disabled(TypedWords.split(reply).count != 6)
+                            .accessibilityIdentifier("join.confirm")
+                    }
+                    .accessibilityIdentifier("join.typeInstead")
+                } footer: {
+                    Text("Type the six words the other device shows, or scan its code there.")
                 }
             }
             if let failure {
@@ -205,6 +243,10 @@ struct JoinDeviceView: View {
             if model.nearbyJoining == .received { Task { await recheck() } }
         }
         .onDisappear { model.stopNearbyJoin() }
+        .onChange(of: keys.joinStage) { old, new in
+            if case .confirming(let was)? = old, case .confirming(let now)? = new, was != now { wordsChanged = true }
+            if new?.isConfirming != true { wordsChanged = false }
+        }
         .task(id: keys.joinStage == nil ? 0 : 1) {
             // While waiting: the approval may arrive with any run, and runs are asked for more often than the
             // targets' idle pace (each `joinLookInterval`), so neither the request nor the approval waits for it.
@@ -252,7 +294,7 @@ struct JoinDeviceView: View {
 
     static let expiredText = String(localized: "The request to join expired: the device that manages devices deletes requests after 7 days. Ask to join again.")
 
-    private func confirm(qr: String?) {
+    private func confirm(qr: String?, tapped: [String]? = nil) {
         working = true
         failure = nil
         Task {
@@ -260,7 +302,7 @@ struct JoinDeviceView: View {
             do {
                 guard let id = model.vault?.vaultId else { return }
                 let device = try await keys.store.keys(for: id, reason: .join(vaultName: model.vaultName ?? ""))
-                var words = TypedWords.split(reply)
+                var words = tapped ?? TypedWords.split(reply)
                 if let qr {
                     guard let w = model.replyWords(fromQR: qr, keys: device) else {
                         failure = String(localized: "That code is not this vault's approval.")
@@ -286,8 +328,9 @@ struct JoinDeviceView: View {
     }
 }
 
-/// Add Device (on home, design §6.2 steps 2 and 3): the six words typed from the new device (typing, not
-/// comparing, so a near match is not waved through), or its code scanned; then the reply for it.
+/// Add Device (on home, design §6.2 steps 2 and 3): each waiting request shows its six words, and the user
+/// compares all six with the new device's screen and taps They Match (docs/design/1.2-join-confirm.md); the words typed,
+/// or the code scanned, stay as the fallback; then the reply for it.
 struct AddDeviceSheet: View {
     @AppModelEnvironment private var model
     @Environment(\.dismiss) private var dismiss
@@ -320,7 +363,7 @@ struct AddDeviceSheet: View {
                         SixWordsView(words: reply.words)
                         QRCodeView(text: reply.qr).frame(maxWidth: .infinity)
                     } header: {
-                        Text("Type these on “\(reply.deviceName)”", comment: "Add Device: the value is the new device's name")
+                        Text("Compare these with “\(reply.deviceName)”", comment: "Add Device: the value is the new device's name")
                     } footer: {
                         Text("Or scan this code there. They prove to the new device that this is the vault it asked to join.")
                     }
@@ -330,33 +373,27 @@ struct AddDeviceSheet: View {
                             Text(steps)
                                 .accessibilityIdentifier("addDevice.where")
                         }
-                        Text("The new device then shows six words: type them here.")
+                        Text("The new device shows six words. Compare them with the words of its request below.")
                         if let lookout, !lookout.requests.isEmpty {
                             Text("Asked to join:", comment: "Add Device: above the list of waiting requests")
                                 .foregroundStyle(.secondary)
-                            // Each with Decline (build 12: "no way to decline a request"): one nobody will confirm
-                            // goes, and never keeps another from being approved.
+                            if lookout.warnsOfSeveral {
+                                // An attacker's requests could have pushed the real one out of a short list (§3.5).
+                                Label("\(lookout.requests.count) devices are asking to join. Approve only the one whose words match.",
+                                      systemImage: "exclamationmark.triangle")
+                                    .font(.footnote.bold())
+                                    .foregroundStyle(.orange)
+                                    .accessibilityIdentifier("addDevice.several")
+                            }
+                            // Each with its words, They Match and Decline (build 12: "no way to decline a request"): one
+                            // nobody will confirm goes, and never keeps another from being approved.
                             ForEach(lookout.requests, id: \.commitment) { request in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(verbatim: DeviceName.display(request.name))
-                                        Text(AddDeviceText.requestDetail(request))
-                                            .font(.footnote)
-                                            .foregroundStyle(.secondary)
-                                        // By commitment: a synced file of the same 8-hex name but other keys is not it.
-                                        if model.nearbyRequests.contains(where: { $0.commitment == request.commitment }) {
-                                            Label("Nearby", systemImage: "antenna.radiowaves.left.and.right")
-                                                .font(.footnote)
-                                                .foregroundStyle(.secondary)
-                                                .accessibilityIdentifier("addDevice.nearbyRequest")
-                                        }
-                                    }
-                                    Spacer()
-                                    Button("Decline", role: .destructive) { declining = request }
-                                        .buttonStyle(.borderless)
-                                        .help("Delete this request: that device is not added")
-                                        .accessibilityIdentifier("addDevice.decline")
-                                }
+                                JoinRequestRow(
+                                    request: request, busy: working,
+                                    listKey: lookout.requests.map(\.commitment),
+                                    nearby: model.nearbyRequests.contains(where: { $0.commitment == request.commitment }),
+                                    match: { Task { await approval.approve(request: request) } },
+                                    decline: { declining = request })
                             }
                         } else if !model.openVaultTargets.isEmpty || !model.openVaultIsStored {
                             // Requests come through a sync target, and a provider (iCloud Drive) may take minutes: the
@@ -384,16 +421,19 @@ struct AddDeviceSheet: View {
                         }
                     }
                     Section {
-                        TextField("Six words", text: $words, axis: .vertical)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .accessibilityIdentifier("addDevice.words")
-                        QRScanButton { text in approve(qr: text) }
-                        Button("Approve", systemImage: "checkmark.shield") { approve(qr: nil) }
-                            .disabled(TypedWords.split(words).count != 6)
-                            .accessibilityIdentifier("addDevice.approve")
+                        DisclosureGroup("Type the words instead") {
+                            TextField("Six words", text: $words, axis: .vertical)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .accessibilityIdentifier("addDevice.words")
+                            QRScanButton { text in approve(qr: text) }
+                            Button("Approve", systemImage: "checkmark.shield") { approve(qr: nil) }
+                                .disabled(TypedWords.split(words).count != 6)
+                                .accessibilityIdentifier("addDevice.approve")
+                        }
+                        .accessibilityIdentifier("addDevice.typeInstead")
                     } footer: {
-                        Text("Approving gives the new device the vault's key. Approve only a device you hold.")
+                        Text("Do these six words match the ones on the new device? Approve only a device you hold. Tapping They Match is as safe as typing the words only if you compare them: compare all six. Typing is the way to approve a request that has not arrived here yet.")
                     }
                 }
                 if let failure {
@@ -448,6 +488,51 @@ struct AddDeviceSheet: View {
         approval.model = model
         let typed = qr == nil ? TypedWords.split(words) : nil
         Task { await approval.approve(words: typed, qr: qr) }
+    }
+}
+
+/// One waiting join request in Add Device: its six words, large and numbered as on the new device, then They Match
+/// and Decline. The name is the sender's to choose and proves nothing, so it is secondary
+/// (docs/design/1.2-join-confirm.md §3.1).
+struct JoinRequestRow: View {
+    let request: JoinRequest
+    let busy: Bool
+    /// The list the row is in: when it changes (a request came or went) every row's wait starts again, so a row never
+    /// slides under the finger with an open gate.
+    let listKey: [Data]
+    let nearby: Bool
+    let match: () -> Void
+    let decline: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SixWordsView(words: JoinCodes.words(request.commitment))
+            Text(verbatim: DeviceName.display(request.name))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text(AddDeviceText.requestDetail(request))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            // By commitment: a synced file of the same 8-hex name but other keys is not it.
+            if nearby {
+                Label("Nearby", systemImage: "antenna.radiowaves.left.and.right")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("addDevice.nearbyRequest")
+            }
+            HStack {
+                MatchButton(busy: busy, identifier: "addDevice.match", action: match)
+                    .id(listKey)
+                    .buttonStyle(.borderedProminent)
+                Spacer()
+                Button("Decline", role: .destructive, action: decline)
+                    .buttonStyle(.borderless)
+                    .help("Delete this request: that device is not added")
+                    .accessibilityIdentifier("addDevice.decline")
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
     }
 }
 

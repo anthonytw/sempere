@@ -582,8 +582,12 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   `errSecMissingEntitlement`, so tests use `MemoryDeviceKeyStore`, never the real Keychain. Face ID needs
   `INFOPLIST_KEY_NSFaceIDUsageDescription` (pbxproj). A device without keys joins (`AppModel+JoinDevice`,
   `JoinDeviceView`: request, six words and a QR code; the open locked vault's runs are keyless join runs with
-  `firstPullIdentities`; home's reply words or code confirm) or takes over with the kit (`TakeoverView`). Home
-  approves with Add Device (owner check first). Keys that cannot be used (unreadable after a Face ID change, or a
+  `firstPullIdentities`; once listed it shows the six reply words it computes itself (`Vault.joinReplyWords`, in
+  `JoinStage.confirming(words:)`) and the user compares all six with home's and taps They Match, or types home's words or
+  scans its code; docs/design/1.2-join-confirm.md) or takes over with the kit (`TakeoverView`). Home
+  approves with Add Device (owner check first): each waiting request shows its six words and They Match
+  (`approveDevice(request:)`, by commitment, never a file name; enabled 1.5 s after the words show), typing or the scan
+  under "Type the words instead"; the CLI stays typed, with no `--id` or `--show` shortcut that skips the comparison. Keys that cannot be used (unreadable after a Face ID change, or a
   stray of a join that cannot go on) are forgotten from the unlock sheet. A run without the vault's key (a
   joiner's) never uploads `vault.json` (`keylessManifestHeld`). Items of the pre-KH5 `vault-key` service are
   neither read nor deleted (a one-time cleanup is the owner's call: `KeychainDeviceKeyStore`).
