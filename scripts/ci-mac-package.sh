@@ -25,5 +25,5 @@ if [[ $(/usr/bin/python3 -I scripts/ci-hash.py runs "$plan" | wc -l) -eq 0 ]]; t
   echo "package: every test target skipped (each passed with its current hash, or is left to Linux)"
   exit 0
 fi
-/usr/bin/python3 -I scripts/test-runner.py --kind swiftpm -- swift test --parallel --skip 'Benchmarks\.' "${swiftpm_skips[@]}" ${skips[@]+"${skips[@]}"}
+/usr/bin/python3 -I scripts/test-runner.py --kind swiftpm -- swift test --parallel --skip 'Benchmarks\.' ${swiftpm_skips[@]+"${swiftpm_skips[@]}"} ${skips[@]+"${skips[@]}"}
 /usr/bin/python3 -I scripts/ci-hash.py record --plan "$plan"

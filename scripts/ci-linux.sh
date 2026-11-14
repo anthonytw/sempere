@@ -93,7 +93,7 @@ job_test() {
     echo "ci-linux: every test target skipped: each passed with its current hash (lines above name the commits)"
   else
     SEMPERE_REQUIRE_AGE_PQ=1 SEMPERE_REQUIRE_POPPLER=1 SEMPERE_REQUIRE_TOOLS=zbar,zip,pdftotext,bidi CI=1 \
-      scripts/test-offline.sh --skip-build --parallel --skip 'Benchmarks\.' "${swiftpm_skips[@]}" ${skips[@]+"${skips[@]}"} ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
+      scripts/test-offline.sh --skip-build --parallel --skip 'Benchmarks\.' ${swiftpm_skips[@]+"${swiftpm_skips[@]}"} ${skips[@]+"${skips[@]}"} ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
     python3 scripts/ci-hash.py record --plan "$plan"   # only after the whole run passed (set -e)
   fi
   # The web viewer's golden files are what the CLI writes now (web/scripts/golden.sh). Runs every time, after any skip: a skipped

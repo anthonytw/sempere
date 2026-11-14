@@ -183,7 +183,8 @@ tooling. The differences from the app:
 ## Checking layouts
 
 - **`PseudoLanguageLayoutTests`** (a hosted unit test in `SempereAppTests`) is the check that runs on
-  every pull request: it is part of `scripts/app.sh test-mac`, so the PR gate (`scripts/local-ci.sh`)
+  every pull request, **except that its `screenFits` test is quarantined** (docs/ci.md "Quarantine": a sheet is still
+  animating when it measures) and gates nothing until it is made deterministic; `scripts/app.sh test-quarantine` runs it: it is part of `scripts/app.sh test-mac`, so the PR gate (`scripts/local-ci.sh`)
   runs it on Mac Catalyst. It needs no screen focus and no UI automation and takes under a minute
   (about 50 s for the 36 screens). It puts
   the main screens of the demo vault (library, locked, note, tags, paper picker, Settings, built from
