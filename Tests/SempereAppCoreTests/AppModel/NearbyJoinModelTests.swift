@@ -85,7 +85,7 @@ extension AppModelSuites {
             #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .received })
             let keys = RememberedKeys(store: w.padKeys)
             #expect(await keys.unlockWithDeviceKey(w.pad.model).outcome == .joining)
-            #expect(keys.joinStage == .confirming)
+            #expect(keys.joinStage?.isConfirming == true)
             let device = try await w.padKeys.keys(for: w.pad.vaultID, reason: .unlock(vaultName: nil))
             try await w.pad.model.confirmJoin(words: reply.words, keys: device)
             #expect(w.pad.model.phase == .unlocked)
@@ -102,6 +102,49 @@ extension AppModelSuites {
             #expect(await w.home.model.pendingJoinRequests().isEmpty)
             await w.pad.model.syncAllTargetsNow()
             #expect(w.pad.model.phase == .unlocked)
+        }
+
+        /// The tap route end to end: home approves the nearby request with "They Match" (no typed words), and the new
+        /// device's screen shows the reply words it computed itself, the same six home shows; confirming with them unlocks.
+        @Test func bothSidesConfirmByTapping() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            approval.startNearby()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.home.model.nearbyRequests.count == 1 })
+            await approval.refresh()
+            let request = try #require(approval.lookout?.requests.first)
+            #expect(JoinCodes.words(request.commitment) == w.words)
+            #expect(await approval.approve(request: request))
+            let reply = try #require(approval.reply)
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .received })
+            let keys = RememberedKeys(store: w.padKeys)
+            #expect(await keys.unlockWithDeviceKey(w.pad.model).outcome == .joining)
+            guard case .confirming(let shown)? = keys.joinStage else { Issue.record("not confirming"); return }
+            #expect(shown == reply.words, "both screens show the same six words")
+            let device = try await w.padKeys.keys(for: w.pad.vaultID, reason: .unlock(vaultName: nil))
+            try await w.pad.model.confirmJoin(words: shown, keys: device)   // what the tap calls
+            #expect(w.pad.model.phase == .unlocked)
+        }
+
+        /// Four requests fill the nearby list; a fifth displaces the oldest, and the warning shows throughout.
+        @Test func displacementKeepsTheWarningOn() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            approval.startNearby()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.home.model.nearbyRequests.count == 1 })
+            await approval.refresh()
+            #expect(approval.lookout?.warnsOfSeveral == false, "one request: no warning")
+            for i in 0..<5 {
+                let stranger = try MemoryDeviceKeyStore().generate().joinRequest(vaultId: w.home.vaultID, name: "S\(i)", kind: "cli")
+                w.home.model.keepNearbyRequest(stranger)
+            }
+            await approval.refresh()
+            #expect(w.home.model.nearbyRequests.count == 4, "the limit")
+            #expect(approval.lookout?.warnsOfSeveral == true)
         }
 
         /// A second device while a session waits is told `busy`, and the first session is not disturbed.

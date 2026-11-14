@@ -93,6 +93,27 @@ public final class AddDeviceApprovalCore<Host: AppModelHost> {
         return false
     }
 
+    /// Approves a request the sheet lists (a row's "They Match", docs/design/1.2-join-confirm.md §3.1), by its commitment;
+    /// false when another approval is going, the sheet is closed or a reply is in. A failure is in `failedWith`.
+    @discardableResult
+    public func approve(request: JoinRequest) async -> Bool {
+        guard let model, active, !working else { return false }
+        working = true   // before any wait: a second tap meanwhile does nothing
+        failedWith = nil
+        defer { working = false }
+        do {
+            let r = try await model.approveDevice(request: request) { [weak self] in self?.closed == false }
+            reply = r
+            pending = nil
+            approvals += 1
+            return true
+        } catch is CancellationError {
+        } catch {
+            failedWith = error
+        }
+        return false
+    }
+
     /// Declines `request` (its Decline button): gone from the list at once, from the targets with the next run. Words
     /// waiting for it are dropped.
     @discardableResult

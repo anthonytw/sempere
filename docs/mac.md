@@ -540,10 +540,10 @@ set aside before a device change, and device lists a sync did not take); and the
 the vault's home changes the list: there, a device's context menu has Rename…, Make Home… and Remove… (the removal
 sheet: stale-sync and storage-password warnings, "Lost or Stolen" with the devices it approved, `RemoveDeviceSheet`),
 and the window has Replace Recovery Kit… (Touch ID or the password first, then every device kept or removed, the new
-kit printed and one of its lines typed back, `ReplaceKitSheet`). Home also has Add Device… (the new device's six
-words typed, after Touch ID or the password; the reply words and code shown, `AddDeviceSheet`), and a device that
-does not manage devices has Take Over with Recovery Kit… (`TakeoverView`). A Mac cannot scan codes: it types the
-six words both ways.
+kit printed and one of its lines typed back, `ReplaceKitSheet`). Home also has Add Device… (each waiting request shows its six words: compare all six with the new device and tap
+They Match, after Touch ID or the password, or type them under "Type the words instead"; the reply words and code
+shown, `AddDeviceSheet`), and a device that does not manage devices has Take Over with Recovery Kit…
+(`TakeoverView`). A Mac cannot scan codes: it compares or types the six words both ways.
 
 ## Mouse and trackpad
 

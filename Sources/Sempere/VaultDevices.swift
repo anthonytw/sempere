@@ -55,7 +55,8 @@ extension Vault {
     }
 
     /// The request whose six words (design §6.2 step 2) are `words`, typed on home; nil when none is.
-    /// Typing, not comparing, so a near match is not waved through.
+    /// The typed route (the CLI's only one, and the app's fallback): all six words must be typed, so a near match is
+    /// not waved through. The app's "They Match" approves a request it listed instead (docs/design/1.2-join-confirm.md).
     public func joinRequest(matching words: [String]) -> JoinRequest? {
         joinRequests().compactMap(\.request).first { $0.vaultId == vaultId && JoinCodes.matches(words, $0.commitment) }
     }

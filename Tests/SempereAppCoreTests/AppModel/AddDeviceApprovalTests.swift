@@ -164,5 +164,108 @@ extension AppModelSuites {
             #expect(await approval.approve(words: phoneWords, qr: nil))
             #expect(w.home.model.vault?.devices.count == 2)
         }
+
+        // MARK: - They Match (docs/design/1.2-join-confirm.md): approving a listed request by tapping
+
+        /// The tap approves a request in `joins/` as the typed route does: owner check, one device added, the reply.
+        @Test func theTapApprovesARequestInJoins() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.provider.arrivalDelay = 0
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            await approval.look()
+            let request = try #require(approval.lookout?.requests.first)
+            #expect(JoinCodes.words(request.commitment) == w.words, "the row shows the words the new device shows")
+            #expect(await approval.approve(request: request))
+            #expect(approval.reply != nil)
+            #expect(approval.approvals == 1)
+            #expect(w.home.model.vault?.devices.count == 2)
+            #expect(await approval.approve(request: request) == false, "a reply is in: nothing more")
+        }
+
+        /// A request the model never listed (not nearby, not in `joins/`) is refused, and nothing is written.
+        @Test func theTapRefusesARequestTheModelDoesNotHold() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            let stranger = try MemoryDeviceKeyStore().generate().joinRequest(vaultId: w.home.vaultID, name: "Other", kind: "cli")
+            await #expect(throws: DeviceJoinError.noMatchingRequest) {
+                _ = try await w.home.model.approveDevice(request: stranger)
+            }
+            #expect(w.home.model.vault?.devices.count == 1)
+        }
+
+        /// A file that took a listed request's name after it was listed, with other keys, is not approved: the tap names
+        /// the request by its commitment, never by a file name.
+        @Test func theTapNamesTheCommitmentNeverTheFileName() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.provider.arrivalDelay = 0
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            await approval.look()
+            let listed = try #require(approval.lookout?.requests.first)
+            // The copy's file of that name is replaced by another device's request.
+            let other = try MemoryDeviceKeyStore().generate().joinRequest(vaultId: w.home.vaultID, name: "Impostor", kind: "ipad")
+            let url = try #require(w.home.model.vaultURL).appendingPathComponent("joins").appendingPathComponent(listed.fileName)
+            try JSONEncoder().encode(other).write(to: url)
+            await #expect(throws: DeviceJoinError.noMatchingRequest) {
+                _ = try await w.home.model.approveDevice(request: listed)
+            }
+            #expect(w.home.model.vault?.devices.count == 1)
+            // The impostor's own request is approvable as itself, and adds only its own key.
+            #expect(await approval.approve(request: other))
+            #expect(w.home.model.vault?.devices.contains { $0.key == other.key } == true)
+            #expect(w.home.model.vault?.devices.contains { $0.key == listed.key } == false)
+        }
+
+        /// The owner check refused, or the sheet closed (`proceed` false): nothing is written.
+        @Test func theTapStopsAtTheOwnerCheckAndAtAClosedSheet() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.provider.arrivalDelay = 0
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            await approval.look()
+            let request = try #require(approval.lookout?.requests.first)
+            w.home.model.ownerAuthenticator = ScriptedOwnerCheck(.refuse(VaultError.locked))
+            #expect(await approval.approve(request: request) == false)
+            #expect(approval.failedWith != nil)
+            #expect(w.home.model.vault?.devices.count == 1)
+            w.home.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
+            await #expect(throws: CancellationError.self) {
+                _ = try await w.home.model.approveDevice(request: request, proceed: { false })
+            }
+            #expect(w.home.model.vault?.devices.count == 1)
+            approval.close()
+            #expect(await approval.approve(request: request) == false, "a closed sheet approves nothing")
+            #expect(w.home.model.vault?.devices.count == 1)
+        }
+
+        // MARK: - The warning for several requests (§3.5)
+
+        @Test func twoRequestsWarnAndOneDoesNot() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.provider.arrivalDelay = 0
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            await approval.look()
+            #expect(approval.lookout?.warnsOfSeveral == false)
+            let phone = Self.device(w.provider, joining: true)
+            defer { phone.model.close() }
+            try await phone.model.copyIn(picked: w.provider.root, library: phone.library, followUp: .keepSyncing)
+            _ = try await phone.model.startJoin(store: MemoryDeviceKeyStore())
+            await phone.model.syncAllTargetsNow()
+            await approval.look()
+            #expect(approval.lookout?.warnsOfSeveral == true)
+        }
+
+        @Test func theConfirmGateWaitsOutItsDelay() {
+            let t0 = Date(timeIntervalSince1970: 1_000)
+            var gate = MatchConfirmGate()
+            #expect(!gate.isEnabled(at: t0), "not shown yet")
+            gate.shown(at: t0)
+            gate.shown(at: t0.addingTimeInterval(1))   // a later show does not restart it
+            #expect(!gate.isEnabled(at: t0.addingTimeInterval(1.4)))
+            #expect(gate.isEnabled(at: t0.addingTimeInterval(1.5)))
+            #expect(!gate.isEnabled(at: t0.addingTimeInterval(5), busy: true), "disabled while the owner check runs")
+        }
     }
 }

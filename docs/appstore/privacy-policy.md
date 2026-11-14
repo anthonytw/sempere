@@ -89,7 +89,7 @@ and the vault's id: what it also saves in the vault's folder) only to a device t
 the vault's id. A device near you that already knows that id, for example from your storage or from
 watching an earlier join, can therefore receive the request; nothing else is shared with it. The
 device that approves sends back the vault's device list and its newest key record, encrypted to the
-new device's key. You still type or scan the six words on both devices. The link is open only while
+new device's key. You still compare, type or scan the six words on both devices. The link is open only while
 one of those screens shows, and stops while the app is in the background.
 
 Besides the WebDAV client and that link, the app contains one other piece of networking code: a downloader for an optional handwriting-to-math

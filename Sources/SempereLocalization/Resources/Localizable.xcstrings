@@ -970,6 +970,55 @@
         }
       }
     },
+    "%lld devices are asking to join. Approve only the one whose words match." : {
+      "comment" : "Add Device: shown when two or more requests wait; the value is the count",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld device is asking to join. Approve only the one whose words match."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld devices are asking to join. Approve only the one whose words match."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de dispositivos piden unirse. Aprueba solo aquel cuyas palabras coincidan."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dispositivo pide unirse. Aprueba solo aquel cuyas palabras coincidan."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dispositivos piden unirse. Aprueba solo aquel cuyas palabras coincidan."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld dpi" : {
       "comment" : "Export resolution in dots per inch",
       "extractionState" : "manual",
@@ -6071,6 +6120,18 @@
         }
       }
     },
+    "Compare all six words. Tapping They Match is as safe as typing the words only if you compare them. They prove this is the vault that device approved, not a copy someone else made." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compara las seis palabras. Tocar Coinciden es tan seguro como escribir las palabras solo si las comparas. Demuestran que esta es la bóveda que aprobó ese dispositivo, no una copia hecha por otra persona."
+          }
+        }
+      }
+    },
     "Confirm" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -7542,6 +7603,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ecuación en bloque"
+          }
+        }
+      }
+    },
+    "Do these six words match the ones on the device that approved you?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Coinciden estas seis palabras con las del dispositivo que te aprobó?"
+          }
+        }
+      }
+    },
+    "Do these six words match the ones on the new device? Approve only a device you hold. Tapping They Match is as safe as typing the words only if you compare them: compare all six. Typing is the way to approve a request that has not arrived here yet." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Coinciden estas seis palabras con las del dispositivo nuevo? Aprueba solo un dispositivo que tengas contigo. Tocar Coinciden es tan seguro como escribir las palabras solo si las comparas: compara las seis. Escribir es la forma de aprobar una solicitud que aún no ha llegado aquí."
           }
         }
       }
@@ -22397,6 +22482,18 @@
         }
       }
     },
+    "The new device shows six words. Compare them with the words of its request below." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dispositivo nuevo muestra seis palabras. Compáralas con las de su solicitud, abajo."
+          }
+        }
+      }
+    },
     "The new device then shows six words: type them here." : {
       "comment" : "Add Device",
       "extractionState" : "manual",
@@ -23223,6 +23320,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estos archivos se reintentan en el próximo Continuar."
+          }
+        }
+      }
+    },
+    "They Match" : {
+      "comment" : "Button on both join screens: the user compared all six words and they are the same",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coinciden"
           }
         }
       }
@@ -25161,6 +25271,31 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Type the six words the other device shows, or scan its code there." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribe las seis palabras que muestra el otro dispositivo, o escanea su código allí."
+          }
+        }
+      }
+    },
+    "Type the words instead" : {
+      "comment" : "Disclosure on the join screens: the typed fallback",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribir las palabras en su lugar"
           }
         }
       }

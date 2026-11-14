@@ -6,17 +6,27 @@ import SempereRender
 // Joining and taking over (key-hierarchy design §6.2, §6.3; phase KH5). Joining by approval: this
 // device makes its keys (the signing pair in the Secure Enclave), writes a join request into its copy, and shows
 // six words and a QR code of its commitment; its runs carry the request to the targets and take home's approval
-// (`joinIdentity`); the user then types home's six reply words, which check the vault against the root the reply
-// names (`Vault.confirmJoin`). On home, Add Device approves a request found by the six words typed (or the QR code
-// scanned) and shows the reply. The takeover (a lost or stolen home, or a kit join) is signed with the recovery
+// (`joinIdentity`); the screen then shows the six reply words this device computes, and the user compares all six with
+// home's and taps They Match (or types home's words, or scans its code); they check the vault against the root the reply
+// names (`Vault.confirmJoin`). On home, Add Device lists each request with its six words and approves the one the user
+// taps (`approveDevice(request:)`), or one found by the six words typed (or the QR code scanned), and shows the reply
+// (docs/design/1.2-join-confirm.md). The takeover (a lost or stolen home, or a kit join) is signed with the recovery
 // key, from the kit or the passphrase copy, with the devices the user keeps (`Vault.takeoverPlan`, `takeover`).
 
 /// Where a join of the open (locked) vault stands on this device.
 public enum JoinStage: Equatable, Sendable {
     /// The request is out: home types these words (or scans the code). The approval arrives with a sync.
     case waiting(words: [String], qr: String)
-    /// Home approved: the user types home's reply words.
-    case confirming
+    /// Home approved: the screen shows the six reply words this device computes from the listed `vault.json`
+    /// (docs/design/1.2-join-confirm.md §3.2), and the user compares all six with home's and taps "They Match", or
+    /// types home's words or scans its code instead.
+    case confirming(words: [String])
+
+    /// Whether home approved and this device is to confirm.
+    public var isConfirming: Bool {
+        if case .confirming = self { return true }
+        return false
+    }
 }
 
 /// Home's reply after approving a device (design §6.2 step 3): six words, and a QR code of the vault, root and
@@ -31,6 +41,37 @@ public struct JoinReply: Equatable, Sendable {
         self.words = words
         self.qr = qr
     }
+}
+
+/// "They Match" is not enabled until its words have been on screen for `delay` (docs/design/1.2-join-confirm.md §3.3), so
+/// a double tap on arrival cannot confirm. The time is passed in, so tests run it on their own clock.
+public struct MatchConfirmGate: Equatable, Sendable {
+    /// What the screens wait before enabling the button.
+    public static let delay: Duration = .milliseconds(1500)
+
+    /// When the words first showed (nil: not yet).
+    public var shownAt: Date?
+    public var delay: TimeInterval
+
+    public init(shownAt: Date? = nil, delay: TimeInterval = 1.5) {
+        self.shownAt = shownAt
+        self.delay = delay
+    }
+
+    /// The words showed (the first call counts; later ones do not move it).
+    public mutating func shown(at now: Date) { if shownAt == nil { shownAt = now } }
+
+    /// Whether the button may be pressed at `now`, with `busy` true while the owner check or an approval runs.
+    public func isEnabled(at now: Date, busy: Bool = false) -> Bool {
+        guard !busy, let shownAt else { return false }
+        return now.timeIntervalSince(shownAt) >= delay
+    }
+}
+
+extension JoinRequestLookout {
+    /// Two or more requests are waiting (docs/design/1.2-join-confirm.md §3.5): Add Device says to approve only the one
+    /// whose words match, as an attacker's requests may have pushed the real one out of a short list.
+    public var warnsOfSeveral: Bool { requests.count >= 2 }
 }
 
 /// What Add Device found when it last looked (`lookForJoinRequests`): the requests in the copy after a sync of every
@@ -240,12 +281,13 @@ extension AppModelCore {
         let trust = self.trust
         let listed = locked.manifest.devices.contains { $0.key == keys.key }
         if listed {
-            let unconfirmed = await Task.detached(priority: .userInitiated) { () -> Bool in
-                guard let v = try? Vault.open(at: url, identities: [keys.nativeIdentity], signing: keys.signing, trust: trust)
-                else { return false }
-                return v.listStatus.problem?.reason == .rootUnconfirmed
+            // The words are computed only here, from the vault.json read and found to list this device.
+            let words = await Task.detached(priority: .userInitiated) { () -> [String]? in
+                guard let v = try? Vault.open(at: url, identities: [keys.nativeIdentity], signing: keys.signing, trust: trust),
+                      v.listStatus.problem?.reason == .rootUnconfirmed else { return nil }
+                return try? v.joinReplyWords()
             }.value
-            return unconfirmed ? .stage(.confirming) : .member
+            return words.map { .stage(.confirming(words: $0)) } ?? .member
         }
         let request = url.appendingPathComponent("joins").appendingPathComponent(
             keys.joinRequest(vaultId: locked.vaultId, name: "", kind: "").fileName)
@@ -416,6 +458,29 @@ extension AppModelCore {
             // With no target nothing can arrive: no word of syncs or iCloud Drive then.
             throw synced ? DeviceJoinError.requestNotArrived : DeviceJoinError.noMatchingRequest
         }
+        return try await approveFound(request, start: start, proceed: proceed)
+    }
+
+    /// Approves a request the model listed (Add Device's "They Match", docs/design/1.2-join-confirm.md §3.1): the tap
+    /// names the request by its commitment, never by a file name. The request must still be one the model holds (one
+    /// that came nearby, or one in the copy's `joins/`, the commitment's own); else `noMatchingRequest`. From there it
+    /// is `approveDevice(words:qr:)` after the lookup: owner check, write lock, same refusals.
+    public func approveDevice(request: JoinRequest, proceed: () -> Bool = { true }) async throws -> JoinReply {
+        guard let first = vault, phase == .unlocked else { throw KeyError.notUnlocked }
+        try requireWritableVault()
+        let nearby = nearbyRequests
+        let commitment = request.commitment
+        let held = await Task.detached(priority: .userInitiated) { () -> JoinRequest? in
+            (nearby + first.joinRequests().compactMap(\.request))
+                .first { $0.vaultId == first.vaultId && $0.commitment == commitment }
+        }.value
+        guard proceed() else { throw CancellationError() }
+        guard let listed = held else { throw DeviceJoinError.noMatchingRequest }
+        return try await approveFound(listed, start: first, proceed: proceed)
+    }
+
+    /// The part both approvals share: the owner check, then the approval under the write lock.
+    private func approveFound(_ request: JoinRequest, start: Vault, proceed: () -> Bool) async throws -> JoinReply {
         try await ownerAuthenticator.authenticate(reason: .approveDevice)
         guard proceed() else { throw CancellationError() }
         guard vault?.vaultId == start.vaultId, phase == .unlocked else { throw KeyError.notUnlocked }
