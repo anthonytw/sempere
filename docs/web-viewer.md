@@ -484,6 +484,12 @@ the key: the viewer is exactly as trustworthy as the host that serves it.
 Serve it over HTTPS from a host you control, and prefer a build you made
 yourself (`npm ci && npm run build`).
 
+**One origin:** every path on the viewer's origin must be the viewer's own files
+or be served sandboxed ("Hosting"). Anything else on that origin, such as a file
+that a share writer uploaded, can run as the viewer and read the key, so a
+credential that can write a share on the viewer's origin is as sensitive as the
+viewer host. A share on its own host name has no such reach.
+
 **Untrusted:** everything in the vault and everything the storage server
 returns: file contents, listings (`sempere-index.json`, PROPFIND bodies),
 the summaries file, sizes and names; and the browser cache, which holds what
@@ -664,16 +670,31 @@ The viewer is static files: `web/dist/` after `npm run build` (relative
 paths, so any sub-path works). The vault is any folder of its files; on unlock
 the viewer fetches `vault.json`, the epoch record it names
 (`epochs/<e>-<16 hex>.epoch.age`) and, when it is there, the passphrase copy
-in `keys/` (offered on the vault card), so a mirror must hold those too. Put both
-on **one origin** (for example `https://notes.example.org/` for the viewer and
-`https://notes.example.org/vault/` for the vault): then `connect-src 'self'`
-covers it and no CORS is needed. To read a vault on another origin, build with
-it allowed, `SEMPERE_CONNECT_SRC="https://dav.example.org" npm run build`
-(space-separated origins), and have that server send CORS headers for the
-viewer's origin (`Access-Control-Allow-Origin`, and for WebDAV
-`Access-Control-Allow-Methods: GET, PROPFIND`, `Access-Control-Allow-Headers:
-Depth, Content-Type`, plus `Access-Control-Allow-Credentials: true` if it
-needs a login).
+in `keys/` (offered on the vault card), so a mirror must hold those too.
+
+**Give the vault its own host name.** The recommended layout serves the viewer
+from one host name (`https://notes.example.org/`) and the vault from another
+(`https://dav.example.org/`). Everything on the viewer's origin runs with the
+viewer's privileges, and the vault's files are written by whoever holds a login
+to the share. Build the viewer with the vault's origin allowed,
+`SEMPERE_CONNECT_SRC="https://dav.example.org" npm run build` (space-separated
+origins), and have the share send CORS headers for the viewer's origin
+(`Access-Control-Allow-Origin`, and for WebDAV `Access-Control-Allow-Methods:
+GET, PROPFIND`, `Access-Control-Allow-Headers: Depth, Content-Type`). The viewer
+never sends cookies or logins to another origin (its requests carry no
+credentials there), so a share on another origin has to be readable without
+one: it holds only ciphertext, and its writers keep their logins for writing.
+
+**One origin** (for example `https://notes.example.org/` for the viewer and
+`https://notes.example.org/vault/` for the vault) is simpler, and `connect-src
+'self'` covers it with no CORS. Then everything under the vault's path must be
+served so that a browser never runs it: the example below sends, from the vault's
+block, `Content-Security-Policy: sandbox; default-src 'none'`, `Content-Disposition:
+attachment`, `Content-Type: application/octet-stream` and `X-Content-Type-Options:
+nosniff`, which replace the site's headers there. A page or script that someone
+with write access put in the share is then a download, not code on the viewer's
+origin. Check it after every change to the server's configuration (`curl -I`
+on a file of the share).
 
 `index.html?vault=https://notes.example.org/vault/` pre-fills the URL (never
 put a key in a URL) when the viewer has no configuration.
@@ -750,6 +771,13 @@ notes.example.org {
 		Strict-Transport-Security "max-age=31536000"
 	}
 	handle_path /vault/* {
+		# The share is data, never a page: these replace the site's headers for everything in it.
+		header {
+			>Content-Security-Policy "sandbox; default-src 'none'"
+			>Content-Disposition attachment
+			>Content-Type application/octet-stream
+			>X-Content-Type-Options nosniff
+		}
 		root * /srv/sempere/Notes.sempere
 		webdav
 	}
@@ -759,6 +787,10 @@ notes.example.org {
 	}
 }
 ```
+
+Change the share login of a device you no longer trust (a removed device keeps
+its login until you do): on one origin a write credential is as sensitive as the
+viewer host itself.
 
 Send the CSP as a header as well as the built-in meta tag: only the header can
 carry `frame-ancestors` (no framing of the viewer), and only a header applies

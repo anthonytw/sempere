@@ -66,7 +66,7 @@ public enum ExportVideos {
            try digest(url) == digest(tmp) {
             return false
         }
-        if fm.fileExists(atPath: url.path) { _ = try fm.replaceItemAt(url, withItemAt: tmp) } else { try fm.moveItem(at: tmp, to: url) }
+        do { try FileIO.place(tmp, at: url) } catch { throw RenderError.cannotWrite(url.path) }
         placed = true
         return true
     }

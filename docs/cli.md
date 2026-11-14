@@ -2608,7 +2608,11 @@ limited in bytes, not characters); a notebook folder named like a Windows device
 (`CON`, `NUL`, `COM1`, ...) or like an index file the export writes (`README.md`,
 `index.html`) gets a `_` appended. The `.sempere-export-<format>.json` manifest is
 not trusted: entries that would leave `--out` are ignored, so a doctored one in a
-shared folder cannot make an export write or `--clean` delete elsewhere.
+shared folder cannot make an export write or `--clean` delete elsewhere. Every file is placed
+relative to `--out` (a symbolic link below it is never followed; such a path is skipped and
+reported), with `rename(2)`, mode 0600. `--clean` deletes a file only if its size and SHA-256 are
+the ones the export recorded; a file that changed, or one from an older export without a digest, is
+left and reported.
 
 `--format markdown` writes, per note:
 

@@ -23,6 +23,8 @@ extension NotabilityNote {
         public var transcript: TranscriptRead?
         /// Name of a field that looks like a transcript but could not be read.
         public var unreadTranscriptField: String?
+        /// True when the transcript was left unread because the note's work budget ran out.
+        public var transcriptSkipped = false
 
         public init(key: String, fieldNames: [String] = [], strings: [String] = [], title: String? = nil,
                     started: Date? = nil, duration: Double? = nil, transcript: TranscriptRead? = nil) {
@@ -44,6 +46,7 @@ extension NotabilityNote {
         default: return []
         }
         var total = MediaObject.maxValuesPerNote
+        var transcriptBudget = MediaObject.maxValuesPerNote
         return raw.prefix(maxRecordingEntries).map { key, value in
             var leaves: [(path: [String], value: PlistValue)] = []
             let start = min(MediaObject.maxValues, max(total, 0))
@@ -66,8 +69,14 @@ extension NotabilityNote {
             e.duration = first({ $0.contains("duration") || $0 == "length" || $0 == "seconds" }) { v in
                 v.double.flatMap { $0.isFinite && $0 >= 0 && $0 < 1e7 ? $0 : nil }
             }
-            if case .dict(let d) = value, let (field, t) = TranscriptRead.find(in: d, duration: e.duration) {
-                if let t { e.transcript = t } else { e.unreadTranscriptField = field }
+            if case .dict(let d) = value {
+                let hadBudget = transcriptBudget >= 0
+                let found = TranscriptRead.find(in: d, duration: e.duration, budget: &transcriptBudget)
+                if let (field, t) = found {
+                    if let t { e.transcript = t } else { e.unreadTranscriptField = field }
+                }
+                // Only the entry that has a transcript field and was cut short by the budget; later ones stay quiet.
+                e.transcriptSkipped = hadBudget && transcriptBudget < 0 && found != nil
             }
             return e
         }
@@ -238,28 +247,51 @@ public struct TranscriptRead: Hashable, Sendable {
 
     /// The first transcript-named field of `entry`: its name and the transcript
     /// (nil when the field holds nothing readable).
+    /// What visiting a dictionary costs: one per entry, plus one per 64 bytes of its keys (each visit reads them).
+    static func cost(_ d: [String: PlistValue]) -> Int {
+        d.keys.reduce(1) { $0 + 1 + $1.utf8.count >> 6 }
+    }
+
     static func find(in entry: [String: PlistValue], duration: Double?) -> (String, TranscriptRead?)? {
-        func named(_ d: [String: PlistValue]) -> [(String, PlistValue)] {
-            d.sorted { $0.key < $1.key }.filter { $0.key.lowercased().contains("transcript") }.map { ($0.key, $0.value) }
+        var budget = NotabilityNote.MediaObject.maxValuesPerNote
+        return find(in: entry, duration: duration, budget: &budget)
+    }
+
+    /// `find`, charging `budget` (shared by every entry of a note) for each node and dictionary entry it
+    /// visits. The budget is spent once it goes below zero: the transcript is then not read.
+    static func find(in entry: [String: PlistValue], duration: Double?,
+                     budget: inout Int) -> (String, TranscriptRead?)? {
+        func named(_ d: [String: PlistValue], _ budget: inout Int) -> [(String, PlistValue)] {
+            budget -= TranscriptRead.cost(d)
+            guard budget >= 0 else { return [] }
+            return d.sorted { $0.key < $1.key }.filter { $0.key.lowercased().contains("transcript") }.map { ($0.key, $0.value) }
         }
-        var candidates = named(entry)
-        if candidates.isEmpty {
+        var candidates = named(entry, &budget)
+        if candidates.isEmpty, budget >= 0 {
             for (_, v) in entry.sorted(by: { $0.key < $1.key }).prefix(64) {
-                if case .dict(let inner) = v { candidates += named(inner) }
+                if case .dict(let inner) = v { candidates += named(inner, &budget) }
             }
         }
+        guard budget >= 0 else { return nil }
         guard let (field, value) = candidates.first else { return nil }
         var language: String?
         for (k, v) in entry.sorted(by: { $0.key < $1.key }) where ["locale", "language", "languagecode"].contains(k.lowercased()) {
             if case .string(let l) = v, !l.isEmpty, l.count <= 35 { language = l.replacingOccurrences(of: "_", with: "-") }
         }
-        guard var read = parse(value, duration: duration, field: field) else { return (field, nil) }
+        guard var read = parse(value, duration: duration, field: field, budget: &budget) else { return (field, nil) }
         read.language = language
         return (field, read)
     }
 
     static func parse(_ value: PlistValue, duration: Double?, field: String) -> TranscriptRead? {
+        var budget = NotabilityNote.MediaObject.maxValuesPerNote
+        return parse(value, duration: duration, field: field, budget: &budget)
+    }
+
+    static func parse(_ value: PlistValue, duration: Double?, field: String, budget: inout Int) -> TranscriptRead? {
         var items: [(text: String, start: Double?, end: Double?)] = []
+        var spent = budget
+        defer { budget = spent }
         func number(_ v: PlistValue?) -> Double? {
             switch v {
             case .int(let i)?: return Double(i)
@@ -267,42 +299,51 @@ public struct TranscriptRead: Hashable, Sendable {
             default: return nil
             }
         }
-        func firstString(_ d: [String: PlistValue]) -> String? {
-            let lower = Dictionary(d.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { a, _ in a })
+        /// The dictionary's keys lowercased, once per visit; a dictionary costs its size.
+        func lowered(_ d: [String: PlistValue]) -> [String: PlistValue]? {
+            spent -= TranscriptRead.cost(d)
+            guard spent >= 0 else { return nil }
+            return Dictionary(d.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { a, _ in a })
+        }
+        func firstString(_ lower: [String: PlistValue]) -> String? {
             for k in ["text", "string", "substring", "content", "value", "transcript"] {
                 if case .string(let s)? = lower[k] { return s }
             }
             return nil
         }
-        func item(_ d: [String: PlistValue]) {
-            guard let text = firstString(d) else { return }
-            let lower = Dictionary(d.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { a, _ in a })
+        func item(_ lower: [String: PlistValue], text: String) {
             let start = ["start", "starttime", "timestamp", "time", "offset", "begin"].lazy.compactMap { number(lower[$0]) }.first
             var end = ["end", "endtime"].lazy.compactMap { number(lower[$0]) }.first
             if end == nil, let s = start, let len = ["duration", "length"].lazy.compactMap({ number(lower[$0]) }).first { end = s + len }
             items.append((text, start, end))
         }
         func walk(_ v: PlistValue, depth: Int) {
-            guard depth < 4, items.count < maxSegments else { return }
+            spent -= 1
+            guard spent >= 0, depth < 4, items.count < maxSegments else { return }
             switch v {
             case .string(let s): items.append((s, nil, nil))
             case .array(let a):
+                spent -= min(a.count, maxSegments)
                 for x in a.prefix(maxSegments) {
+                    guard spent >= 0 else { return }
                     switch x {
-                    case .dict(let d): if firstString(d) != nil { item(d) } else { walk(x, depth: depth + 1) }
+                    case .dict(let d):
+                        guard let lower = lowered(d) else { return }
+                        if let text = firstString(lower) { item(lower, text: text) } else { walk(x, depth: depth + 1) }
                     case .string(let s): items.append((s, nil, nil))
                     default: break
                     }
                 }
             case .dict(let d):
-                let lower = Dictionary(d.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { a, _ in a })
+                guard let lower = lowered(d) else { return }
                 if let list = ["segments", "results", "items", "entries"].lazy.compactMap({ lower[$0] }).first {
                     walk(list, depth: depth + 1)
-                } else { item(d) }
+                } else if let text = firstString(lower) { item(lower, text: text) }
             default: break
             }
         }
         walk(value, depth: 0)
+        guard spent >= 0 else { return nil }
         let finite = items.filter { $0.start.map { $0.isFinite && $0 >= 0 && $0 < 1e7 } ?? true && $0.end.map { $0.isFinite && $0 < 1e7 } ?? true }
         // Milliseconds when the seconds reading would run well past the recording.
         let times = finite.flatMap { [$0.start, $0.end].compactMap { $0 } }
@@ -398,6 +439,9 @@ extension NotabilityAttachments {
             if started == nil {
                 started = note.metadata.created
                 warnings.append("\(label): no start date in the library; the note's creation date is used")
+            }
+            if pair.entry?.transcriptSkipped == true {
+                warnings.append("\(label): transcript not read: it is too large or too deeply nested")
             }
             let ref = BlobRef(content: data, type: info.type)
             if blobs[ref.sha256] == nil {   // the same bytes are held once

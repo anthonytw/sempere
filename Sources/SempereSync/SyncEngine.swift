@@ -306,6 +306,8 @@ public final class SyncEngine {
     /// same run (the inbox's two passes) takes the record as it is. Under `mutex`. Like `inboxRecordedThisRun` it
     /// belongs to one run (an engine performs one `run()`); `runLocked` clears both.
     var refusedThisRun: Set<String> = []
+    /// Files and bytes the quarantine holds, measured when the run first keeps one (under `mutex`).
+    var quarantineTotals: (files: Int, bytes: Int64)?
     /// Device changes (KH4, `EpochSync.swift`): why this run uploads nothing new and syncs only `epochs/` and
     /// `vault.json` (a later epoch this device cannot verify yet, J5b; or it is unlisted, design §5.5).
     var epochHold: String? {
@@ -481,6 +483,7 @@ public final class SyncEngine {
         do {
             // What a killed run left in flight (its state file is that of the run before).
             if let t = try SyncState.loadTransfers(stateURL) { state.merge(t) }
+            state.merge(refusals: SyncState.loadRefusals(stateURL))
         } catch {
             let path = SyncState.transfersURL(stateURL).path
             report.skipped.append(.init(path: path, message: "unreadable (\(error.localizedDescription)); ignored"))
@@ -1848,7 +1851,7 @@ public final class SyncEngine {
     /// Returns false when it was not placed: it appeared locally in the
     /// meantime, or it failed a check and was quarantined (reported in
     /// `quarantined`), or an earlier run quarantined it (in `skipped`).
-    func download(_ id: String, _ n: RevisionName, entry: RemoteEntry?) throws -> Bool {
+    func download(_ id: String, _ n: RevisionName, entry: RemoteEntry?, maxBytes: Int? = nil) throws -> Bool {
         try requireLocalWrite("download notes/\(key(id, n))")
         let path = "notes/\(key(id, n))"
         let size = entry?.size
@@ -1866,7 +1869,7 @@ public final class SyncEngine {
         }
         let data: Data
         do {
-            data = try transport.read(remotePath, maxBytes: options.maxFileBytes).data
+            data = try transport.read(remotePath, maxBytes: min(maxBytes ?? options.maxFileBytes, options.maxFileBytes)).data
         } catch {
             locked { budget.release(reserved) }
             if Self.isUnavailable(error) {

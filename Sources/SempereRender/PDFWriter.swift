@@ -124,11 +124,7 @@ public enum PDFWriter {
                    into: out)
         try out.flush()
         do { try handle.synchronize() } catch { throw RenderError.cannotWrite(url.path) }
-        if fm.fileExists(atPath: url.path) {
-            _ = try fm.replaceItemAt(url, withItemAt: tmp)
-        } else {
-            try fm.moveItem(at: tmp, to: url)
-        }
+        do { try FileIO.place(tmp, at: url) } catch { throw RenderError.cannotWrite(url.path) }
         ok = true
     }
 
