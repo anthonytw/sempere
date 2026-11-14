@@ -97,6 +97,13 @@ maintainer namespaces="git,file" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKpJBs4KAzf
 fingerprint SHA256:u94X5C2t2zAT9krLN4+LLwC3UI/z8d0v0tmuq6y90fM (awertz@pm.me)
 ```
 
+Compare that fingerprint in three places, not one: this file, the footer of every GitHub release's notes, and the
+project website's security page. A change of key changes all three, and the notes of the release that rotates it say
+so; a fingerprint that differs between them is a reason to stop and write to the address above. A release's notes can be edited by anyone with write access to the repository, so if the places disagree, trust the
+website's page. In this repository the key is under code-owner review (`.github/CODEOWNERS`, once the maintainer enables
+it in the ruleset), so a change to `packaging/allowed_signers` needs the maintainer's approval, and `scripts/check-security.sh`
+fails a change that adds a key this file does not publish.
+
 Then:
 
 ```
