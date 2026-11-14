@@ -158,7 +158,7 @@ struct WindowSheets: ViewModifier {
             // `SEMPERE_DEMO_INSIGHTS` (the Note Insights screenshots): once the demo's insights are made, opens the
             // selected note's sheet (`note`) or the map (`map`) in the window that shows the canvas.
             .task {
-                guard let mode = DemoLaunch.insightsMode(DebugLaunch.environment["SEMPERE_DEMO_INSIGHTS"]) else { return }
+                guard let mode = DemoLaunch.insightsMode(DebugLaunch.environment["SEMPERE_DEMO_INSIGHTS"]), mode != "on" else { return }
                 for _ in 0..<300 {
                     try? await Task.sleep(for: .milliseconds(500))
                     guard !model.insightsMap.isEmpty, !model.insights.isWorking, model.selectedNoteID != nil else { continue }

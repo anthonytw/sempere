@@ -264,6 +264,13 @@ public enum InsightsStoplist {
         "before", "during", "through", "without", "within", "while", "because", "since", "until", "again", "via",
         "summary", "overview", "introduction", "topic", "topics", "general", "basic", "important", "key", "main",
         "voice", "recording", "transcript", "untitled", "etc", "ie", "eg", "vs", "per",
+        // Prepositions, conjunctions and light verbs that are never a topic ("energy, glucose, inside" was a related
+        // note's reason in the 1.2 screenshots).
+        "inside", "outside", "become", "becomes", "became", "becoming", "among", "amongst", "across", "along", "toward",
+        "towards", "beyond", "behind", "beside", "besides", "against", "whether", "either", "neither", "several",
+        "various", "certain", "whose", "whereas", "therefore", "however", "although", "though", "whenever", "wherever",
+        "throughout", "regarding", "around", "above", "below", "else", "each", "next", "gives", "gave", "given", "takes",
+        "turns", "makes", "lets", "keeps", "called", "calls",
     ]
     /// Filler of handwritten notes, which carries no topic (D16: the map's labels): never a token of keyword overlap or
     /// a map label. `latexit` is the name LaTeXiT leaves in the text of PDFs with its figures.

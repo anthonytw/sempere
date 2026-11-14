@@ -41,7 +41,7 @@ and a window server, so the CI step runs with `continue-on-error`. The Mac test 
 cannot write into the checkout, so the script reads the shots from the result bundle's attachments
 (`xcresulttool export attachments`). On a GitHub `macos-26` runner this produced all six shots; they have not
 been checked on a physical Mac, so look at the Mac PNGs before uploading them: a macOS notification banner of the machine that ran it can overlap the window's
-top-right corner (turn on Do Not Disturb first). Off CI the script builds the Mac runner without the hardened runtime, as
+top-right corner. `ScreenshotTests` therefore closes it before each Mac shot (it finds Notification Center's banner window by its place near the corner and sends it away with a hover-and-click and a swipe, as a person would; the log says `SHOTDEBUG banners`). Off CI the script builds the Mac runner without the hardened runtime, as
 `scripts/app.sh` does, or a Mac with a developer identity refuses its test bundle. The Catalyst window
 has a title bar and the Mac layout differs from the iPad's (three columns side by side).
 
@@ -51,32 +51,36 @@ has a title bar and the Mac layout differs from the iPad's (three columns side b
 | --- | --- |
 | `01-write` | A lecture note on ruled paper with a margin: headings, a diagram, a highlight; the system tool palette. Full width. Undo and Redo in the bar are both enabled: two finger strokes were drawn under the last line and Undo tapped once, so one underline is left. |
 | `02-sketch` | A design sketch on cream dot paper. Full width. Same Undo and Redo state, one underline under the last bullet. |
-| `03-insights` | Note Insights (1.2): the lecture note's Note Insights sheet, a summary, keywords, related notes and its group. |
-| `04-notes` | The note list (all twelve notes: dates, pages, notebook, tag chips) next to the open note. |
-| `05-tags` | Sidebar (notebooks, tags) with the `lecture` tag selected, its notes, the open note. |
-| `06-paper` | The paper picker over the dot-paper note. |
-| `07-unlock` | The key / unlock screen of a locked vault (passphrase or pasted key). |
+| `03-insights` | Note Insights (1.2): the lecture note's Note Insights sheet over the note: a summary, keywords, three related notes with their shared terms, and the note's group. |
+| `04-map` | The Map of Related Notes: three colored groups (biology and physics, a team's app project, a trip), each labeled. |
+| `05-notes` | The note list (all twelve notes: dates, pages, notebook, tag chips) next to the open note. |
+| `06-tags` | Sidebar (notebooks, tags) with the `lecture` tag selected, its notes, the open note. |
+| `07-paper` | The paper picker over the dot-paper note. |
+| `08-unlock` | The key / unlock screen of a locked vault (passphrase or pasted key). |
 
 On the Mac the full-width shots show all three columns instead, and `01-write` and `02-sketch` draw no strokes (Undo and
 Redo are in its Edit menu, which a window shot does not show). Captions are not drawn into the images;
 add them in App Store Connect or a design tool. Each shot is a fresh launch whose state comes from launch
 variables (below), so a layout change cannot break a shot's navigation. The exceptions are `01-write` and `02-sketch`
 (two finger strokes and Undo; the iPad launch sets `SEMPERE_DEBUG_FINGERS_DRAW`, the simulator has no Pencil), which log
-`SHOTDEBUG` when Undo or Redo never enabled.
+`SHOTDEBUG` when Undo or Redo never enabled. After Undo PencilKit redraws its tiles on the simulator, and now and then a
+screenshot shows a tile of the page missing (a vertical slice of the diagram gone, though the canvas's stroke count is right
+and the next screenshot is whole), so the shot is the one with the most ink of fourteen taken over 20 s; `SEMPERE_SHOTS_DIAG=1`
+(`TEST_RUNNER_…`) reports the stroke count at each step and keeps a PNG of each.
 
-**Note Insights shot.** The simulator has no Apple model, so the demo never calls one: `SEMPERE_DEMO_INSIGHTS=note` (below)
-gives the demo's notes made-up recognized text (`DemoVault.insightsTexts`, `DemoInsightsText.swift`), turns Note Insights on
-with the package's fake providers and runs the passes with them, so the sheet shows real stored insights (summary,
-keywords, related notes, group) in the real format. The fake summary is the text's first sentences. `SEMPERE_DEMO_INSIGHTS=map`
-opens the Map of Related Notes the same way; it is not a store shot because twelve notes make one group, which says little
-(a bigger demo would). Set `TEST_RUNNER_SEMPERE_SHOTS_ONLY=03-insights,01-write` to take only some shots.
+**Note Insights shots.** The simulator has no Apple model, so the demo never calls one: `SEMPERE_DEMO_INSIGHTS=note|map` (below)
+gives the demo's notes made-up recognized text (`DemoVault.insightsTexts`, `DemoInsightsText.swift`: three groups with words
+of their own, the science notes tied by energy, electrons and light), turns Note Insights on with the package's fake
+providers (a 512-dimension hashed embedder, fewer collisions than the default's 64) and runs the passes with them, so the
+sheet and the map show real stored insights in the real format. The fake summary is the text's first sentences.
+Set `TEST_RUNNER_SEMPERE_SHOTS_ONLY=03-insights,01-write` to take only some shots.
 
 ### iPhone shots
 
 The iPhone is a stack, so each shot is one screen (`ScreenshotTests.phoneShots`): `01-write` and
 `02-sketch` the note view (reading mode, the "Annotate" pencil in the bar; the phone draws the two strokes and taps Undo
-in the compact palette, which has its own Undo and Redo), `03-insights` the Note Insights sheet, `04-notes` the note list,
-`05-tags` the list for the `lecture` tag, `06-library` the vault's notebooks and tags, `07-unlock` the
+in the compact palette, which has its own Undo and Redo), `03-insights` the Note Insights sheet, `04-map` the map, `05-notes` the note list,
+`06-tags` the list for the `lecture` tag, `07-library` the vault's notebooks and tags, `08-unlock` the
 unlock sheet. There is no paper-picker shot on the phone.
 
 ### Website user-guide shots
@@ -91,7 +95,7 @@ simulators; the website's `scripts/media.mjs` turns them into its images.
 | `docs-palette`, `docs-palette-choices` | A note being annotated, then the selected pen's choices (colors, width, opacity). |
 | `docs-settings`, `docs-settings-general`, `docs-settings-sync`, `docs-settings-backups` | Settings' groups, then three of its pages. |
 | `docs-search`, `docs-search-highlight` | The results for a handwritten word (the demo's search notes, stored recognition), then a hit with its words highlighted. |
-| `docs-nearby-join` | Add Device on the home device with one request that came nearby ("Demo iPhone", throwaway keys): its six words, Nearby, They Match and Decline (`SEMPERE_DEMO_NEARBY_JOIN`, through Settings ▸ Sync & Devices ▸ Devices ▸ Add Device). |
+| `docs-nearby-join` | Add Device on the home device with one request that came nearby ("Demo iPhone", throwaway keys, asked at a fixed 5 Oct 2026, 09:41): its six words, Nearby, They Match and Decline (`SEMPERE_DEMO_NEARBY_JOIN`, through Settings ▸ Sync & Devices ▸ Devices ▸ Add Device). |
 | `docs-join-waiting`, `docs-join-waiting-nearby` | The new device's Join This Device screen waiting for its approval: six words, QR code, the delivery line and "A device nearby has this request" (`SEMPERE_DEMO_NEARBY_JOIN` on the locked demo with `SEMPERE_DEBUG_MEMORY_KEYS`, since an unsigned build has no Keychain). |
 | `docs-pages-dark` | A note with Settings ▸ General ▸ Appearance ▸ Note Pages ▸ Dark (`-Sempere.notePages dark`): dark paper, ink lightness inverted. The one dark-pages shot of docs/design/1.2-screenshots.md question 1. |
 
@@ -131,7 +135,7 @@ All of it is `#if DEBUG` (the package's files and the app's `DemoLaunch` alike);
 | `SEMPERE_DEMO_SIDEBAR` | `all`, `notebook:School/Physics` or `tag:lecture`. |
 | `SEMPERE_DEMO_PAPER_PICKER` | Open the paper picker over the note. |
 | `SEMPERE_DEMO_APPEARANCE` | `light` (default) or `dark`: what the demo's windows are forced to (`DemoLaunch.forceAppearance`; an unknown value is light). |
-| `SEMPERE_DEMO_INSIGHTS` | `note` or `map`: Note Insights on with fake providers, recognized demo text, passes run, then the note's sheet or the map opens (DEBUG, never an Apple model). |
+| `SEMPERE_DEMO_INSIGHTS` | `note` or `map`: Note Insights on with fake providers, recognized demo text, passes run, then the note's sheet or the map opens (DEBUG, never an Apple model). `on`: only the fake providers and the text, Note Insights stays off until Settings turns it on (`LaunchSmokeUITests.testNoteInsightsSheetOpensFromTheNoteListMenu`). |
 | `SEMPERE_DEMO_NEARBY_JOIN` | List one synthetic join request as nearby for Add Device; on the locked demo the join screen shows the nearby link connected. |
 | `SEMPERE_DEMO_MAC_WINDOW` | `WIDTHxHEIGHT` in points (Mac Catalyst). |
 | `SEMPERE_DEBUG_COLUMNS` | `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the stored layout (see `DebugLaunch.swift`). |

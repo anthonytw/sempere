@@ -138,7 +138,8 @@ mac() {
   # developer identity ("different Team IDs") unless the hardened runtime is off. SEMPERE_MAC_UI_SIGNING=ci keeps CI's.
   if [[ "${CI:-}" != true && "${SEMPERE_MAC_UI_SIGNING:-}" != ci ]]; then hardened=(ENABLE_HARDENED_RUNTIME=NO); fi
   # xcodebuild refuses an existing result bundle (as in simulator_shots): a second run failed at once.
-  rm -rf "$dir" "$raw" "$out/mac.xcresult"; mkdir -p "$dir" "$raw"
+  rm -rf "$dir" "$raw" "$out/mac.xcresult"
+  mkdir -p "$dir" "$raw"
   TEST_RUNNER_SEMPERE_SHOTS_DIR="$raw" xcodebuild test -project "$project" -scheme "$scheme" \
     -derivedDataPath "$derived" -destination 'platform=macOS,variant=Mac Catalyst' \
     -only-testing:SempereAppUITests/ScreenshotTests -resultBundlePath "$out/mac.xcresult" \

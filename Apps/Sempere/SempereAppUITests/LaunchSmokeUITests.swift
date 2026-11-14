@@ -72,6 +72,48 @@ final class LaunchSmokeUITests: XCTestCase {
         requireRunning(app, "detail only")
     }
 
+    // MARK: - Note Insights (Mac)
+
+    /// The real route to a note's Note Insights sheet: turn Note Insights on in Settings, then the note list's context menu
+    /// ▸ Note Insights…. The sheet read the window's `WindowUI` from an environment `windowSheets` is applied outside
+    /// of, and the app trapped when it opened ("No Observable object of type WindowUICore"). `SEMPERE_DEMO_INSIGHTS=on`
+    /// gives the demo the fake providers and made-up text, and nothing else (no Apple model in a test).
+    @MainActor
+    func testNoteInsightsSheetOpensFromTheNoteListMenu() throws {
+        #if !targetEnvironment(macCatalyst)
+        throw XCTSkip("Mac Catalyst only (the context menu is a right click)")
+        #else
+        let app = launchUnlocked(columns: "all", extra: ["SEMPERE_DEMO_INSIGHTS": "on"])
+        defer { app.terminate() }
+        requireSidebar(app)
+        requireNoteList(app)
+        app.typeKey(",", modifierFlags: .command)
+        let settings = app.descendants(matching: .any)["settingsForm"].firstMatch
+        require(settings, "Settings window", in: app)
+        openSettingsGroup("insights", in: app)
+        let toggle = app.descendants(matching: .any)["vaultSetting.insights.enabled"].firstMatch
+        require(toggle, "the Note Insights switch", in: app)
+        toggle.click()
+        require(app.descendants(matching: .any)["insights.mapLink"].firstMatch, "Note Insights turned on (its status)", in: app)
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(settings.waitForNonExistence(timeout: 10), "the Settings window closed")
+        // The note list's row (the open note's title is also in the canvas toolbar); a right click at its middle, again if
+        // the list was still settling (as `MacWindowUITests.testTheContextMenuOpensANoteWindow`).
+        let row = app.cells.containing(NSPredicate(format: "label == %@", "Cellular Respiration")).firstMatch
+        require(row, "the Cellular Respiration row", in: app)
+        let item = app.menuItems["Note Insights…"].firstMatch
+        for _ in 0..<3 where !item.exists {
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).rightClick()
+            if item.waitForExistence(timeout: 5) { break }
+            app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        }
+        require(item, "Note Insights… in the note's menu", in: app, timeout: 5)
+        item.click()
+        require(app.descendants(matching: .any)["noteInsights"].firstMatch, "the Note Insights sheet", in: app)
+        requireRunning(app, "note insights sheet")
+        #endif
+    }
+
     // MARK: - Windows and sheets (Mac)
 
     /// In the `all` layout, every other window and the export and backup

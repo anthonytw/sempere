@@ -36,7 +36,8 @@ import UIKit
 ///   Details and Repair; `LaunchSmokeUITests`). The demo data is the same.
 /// - `SEMPERE_DEMO_APPEARANCE`: `light` (the default) or `dark`: what the demo's windows are forced to
 ///   (`forceAppearance`), for the website's dark twins; the canvas's paper stays light (CLAUDE.md, `PKCanvasView`).
-/// - `SEMPERE_DEMO_INSIGHTS`: `note` or `map` (unset: no insights providers at all, so no offer card): turns Note Insights on with the package's fake providers (the
+/// - `SEMPERE_DEMO_INSIGHTS`: `note`, `map` or `on` (unset: no insights providers at all, so no offer card; `on`: only the
+///   fake providers and the text, Note Insights stays off until Settings turns it on: `LaunchSmokeUITests`): turns Note Insights on with the package's fake providers (the
 ///   simulator has no Apple model: it is never called), gives the demo's notes recognized text
 ///   (`DemoVault.insightsTexts`), runs the passes and opens the note's Note Insights sheet (`note`, over the
 ///   `SEMPERE_DEMO_NOTE` note) or the Map of Related Notes (`map`): `WindowSheets`.
@@ -70,7 +71,7 @@ enum DemoLaunch {
         let insights = insightsMode(env["SEMPERE_DEMO_INSIGHTS"])
         if insights != nil {
             // The fake providers, and a power window always open.
-            model.insightsServices = InsightsServices(model: { FakeModelProvider() }, embedder: { FakeEmbeddingProvider() },
+            model.insightsServices = InsightsServices(model: { FakeModelProvider() }, embedder: { FakeEmbeddingProvider(dimension: 512) },
                                                       powerWindow: { true })
         } else {
             // No providers: the demo never calls Apple's model, and the note list shows no Note Insights offer.
@@ -98,14 +99,14 @@ enum DemoLaunch {
             select(model, built: built, env: env)
             if env["SEMPERE_DEMO_NEARBY_JOIN"] != nil { try model.debugSeedNearbyRequest(name: "Demo iPhone", kind: "iphone") }
         }
-        if insights != nil, env["SEMPERE_DEMO_LOCKED"] == nil { await prepareInsights(model) }
+        if insights == "note" || insights == "map", env["SEMPERE_DEMO_LOCKED"] == nil, passphrase == nil { await prepareInsights(model) }
         if env["SEMPERE_DEMO_NEARBY_JOIN"] != nil, env["SEMPERE_DEMO_LOCKED"] != nil { holdNearbyConnected(model) }
         if env["SEMPERE_DEMO_PDF"] != nil, env["SEMPERE_DEMO_LOCKED"] == nil { await importDemoPDF(model) }
     }
 
     /// The value of `SEMPERE_DEMO_INSIGHTS` (`note` or `map`), nil when unset or unknown.
     static func insightsMode(_ value: String?) -> String? {
-        guard let value, ["note", "map"].contains(value) else { return nil }
+        guard let value, ["note", "map", "on"].contains(value) else { return nil }
         return value
     }
 

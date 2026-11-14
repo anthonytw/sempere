@@ -30,9 +30,10 @@ struct DemoLaunchTests {
         #expect(DemoLaunch.appearance("dark") == .dark)
     }
 
-    @Test func insightsModeTakesNoteAndMapOnly() {
+    @Test func insightsModeTakesNoteMapAndOnOnly() {
         #expect(DemoLaunch.insightsMode("note") == "note")
         #expect(DemoLaunch.insightsMode("map") == "map")
+        #expect(DemoLaunch.insightsMode("on") == "on")
         #expect(DemoLaunch.insightsMode("1") == nil)
         #expect(DemoLaunch.insightsMode(nil) == nil)
     }

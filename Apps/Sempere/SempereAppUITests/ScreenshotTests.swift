@@ -74,10 +74,12 @@ final class ScreenshotTests: XCTestCase {
             // (`SEMPERE_DEMO_INSIGHTS=map`) is not shot for the store: the demo's twelve notes make one group, which says little.
             Shot(name: "03-insights", environment: env(["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_INSIGHTS": "note"]),
                  waitFor: "noteInsights", timeout: 150, settle: 3),
-            Shot(name: "04-notes", environment: env(["SEMPERE_DEMO_SIDEBAR": "all"]), waitFor: "New Note"),
-            Shot(name: "05-tags", environment: env(["SEMPERE_DEMO_SIDEBAR": "tag:lecture"]), waitFor: "#lecture"),
-            Shot(name: "06-library", environment: env([:]), waitFor: "sidebar-notebook-School"),
-            Shot(name: "07-unlock", environment: env(["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
+            Shot(name: "04-map", environment: env(["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_INSIGHTS": "map"]),
+                 waitFor: "insightsMap.canvas", timeout: 150, settle: 3, taps: ["Zoom Out"]),
+            Shot(name: "05-notes", environment: env(["SEMPERE_DEMO_SIDEBAR": "all"]), waitFor: "New Note"),
+            Shot(name: "06-tags", environment: env(["SEMPERE_DEMO_SIDEBAR": "tag:lecture"]), waitFor: "#lecture"),
+            Shot(name: "07-library", environment: env([:]), waitFor: "sidebar-notebook-School"),
+            Shot(name: "08-unlock", environment: env(["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
         ]
     }
 
@@ -104,12 +106,14 @@ final class ScreenshotTests: XCTestCase {
                                               undone: (CGVector(dx: 0.14, dy: 0.85), CGVector(dx: 0.40, dy: 0.85)))),
             Shot(name: "03-insights", environment: env(all, ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_INSIGHTS": "note"]),
                  waitFor: "noteInsights", timeout: 150, settle: 3),
-            Shot(name: "04-notes", environment: env("doubleColumn", ["SEMPERE_DEMO_NOTE": "respiration"]), waitFor: respiration),
-            Shot(name: "05-tags", environment: env("all", ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_SIDEBAR": "tag:lecture"]),
+            Shot(name: "04-map", environment: env(all, ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_INSIGHTS": "map"]),
+                 waitFor: "insightsMap.canvas", timeout: 150, settle: 3, taps: ["Zoom Out"]),
+            Shot(name: "05-notes", environment: env("doubleColumn", ["SEMPERE_DEMO_NOTE": "respiration"]), waitFor: respiration),
+            Shot(name: "06-tags", environment: env("all", ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_SIDEBAR": "tag:lecture"]),
                  waitFor: "#lecture"),
-            Shot(name: "06-paper", environment: env(all, ["SEMPERE_DEMO_NOTE": "atlas", "SEMPERE_DEMO_PAPER_PICKER": "1"]),
+            Shot(name: "07-paper", environment: env(all, ["SEMPERE_DEMO_NOTE": "atlas", "SEMPERE_DEMO_PAPER_PICKER": "1"]),
                  waitFor: "Apply to This Page"),
-            Shot(name: "07-unlock", environment: env("all", ["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
+            Shot(name: "08-unlock", environment: env("all", ["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
         ]
     }
 
@@ -135,7 +139,7 @@ final class ScreenshotTests: XCTestCase {
     /// first stroke stays like an underline, Undo and Redo are both enabled when the shot is taken. A miss is logged
     /// and the shot still taken.
     @MainActor
-    private func drawAndUndo(_ strokes: Shot.Underlines, shot: Shot, in app: XCUIApplication) {
+    private func drawAndUndo(_ strokes: Shot.Underlines, shot: Shot, in app: XCUIApplication) -> XCUIScreenshot? {
         let window = app.windows.firstMatch
         func stroke(_ line: (CGVector, CGVector)) {
             let from = window.coordinate(withNormalizedOffset: line.0)
@@ -145,18 +149,65 @@ final class ScreenshotTests: XCTestCase {
         }
         let undo = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'undoButton' OR label BEGINSWITH 'Undo'")).firstMatch
         let redo = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'redoButton' OR label BEGINSWITH 'Redo'")).firstMatch
+        let diag = ProcessInfo.processInfo.environment["SEMPERE_SHOTS_DIAG"] != nil
+        func phase(_ name: String) {
+            guard diag else { return }
+            let value = app.descendants(matching: .any).matching(identifier: "pageCanvas").firstMatch.value as? String ?? "-"
+            print("SHOTDEBUG diag \(shot.name) \(name) \(value.split(separator: ";").first { $0.hasPrefix("strokes=") } ?? "no strokes=")")
+            if let directory = ProcessInfo.processInfo.environment["SEMPERE_SHOTS_DIR"].map({ URL(fileURLWithPath: $0, isDirectory: true) }) {
+                try? XCUIScreen.main.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("diag-\(shot.name)-\(name).png"))
+            }
+        }
+        phase("0-before")
         stroke(strokes.kept)
+        phase("1-stroke1")
         stroke(strokes.undone)
+        phase("2-stroke2")
         let ready = undo.waitForExistence(timeout: 10) && waitUntil(10) { undo.isEnabled }
         XCTAssertTrue(ready, "\(shot.name): Undo never became enabled after the strokes")
         if ready { undo.tap() }
+        Thread.sleep(forTimeInterval: 2)
+        phase("3-undo2s")
         let redoReady = waitUntil(10) { redo.exists && redo.isEnabled }
         XCTAssertTrue(redoReady, "\(shot.name): Redo never became enabled after Undo")
         if !ready || !redoReady {
             print("SHOTDEBUG \(shot.name): undo=\(undo.exists) redo=\(redo.exists)")
         }
-        // The page redraws its tiles after the undo (a shot taken too soon showed half of the page), and the buttons settle.
-        Thread.sleep(forTimeInterval: 10)
+        // After Undo PencilKit redraws its tiles on the simulator, and a screenshot taken meanwhile can show a tile of the
+        // page missing (a vertical slice of the drawing gone, now the left part, a moment later the right: the stroke count
+        // is right all the time, `SEMPERE_SHOTS_DIAG`). The whole page has the most ink of them, so the shot is the one
+        // with the most ink of a dozen taken over the next 20 s.
+        var frames: [(XCUIScreenshot, Int)] = []
+        for _ in 0..<14 {
+            let now = XCUIScreen.main.screenshot()
+            frames.append((now, Self.ink(now)))
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        let most = frames.max { $0.1 < $1.1 }
+        let least = frames.map(\.1).min() ?? 0
+        print("SHOTDEBUG \(shot.name): ink of \(frames.count) frames after Undo: most \(most?.1 ?? 0), least \(least), \(frames.filter { $0.1 >= (most?.1 ?? 0) * 995 / 1000 }.count) of them whole")
+        phase("4-final")
+        return most?.0
+    }
+
+    /// The dark pixels (on a 200 x 266 gray copy, the rows between the toolbar and the strokes): the ink on the page.
+    static func ink(_ shot: XCUIScreenshot) -> Int {
+        let w = 200, h = 266
+        guard let cg = shot.image.cgImage else { return 0 }
+        var buf = [UInt8](repeating: 0, count: w * h)
+        let ok = buf.withUnsafeMutableBytes { raw -> Bool in
+            guard let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+            ctx.interpolationQuality = .medium
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard ok else { return 0 }
+        var dark = 0
+        for row in Int(Double(h) * 0.13)..<Int(Double(h) * 0.79) {
+            for col in 0..<w where buf[row * w + col] < 170 { dark += 1 }
+        }
+        return dark
     }
 
     private func waitUntil(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
@@ -168,8 +219,40 @@ final class ScreenshotTests: XCTestCase {
         return condition()
     }
 
+    /// A notification banner of the machine, drawn over the top-right corner of the window by another process, is in a screen
+    /// capture of it: closes what Notification Center shows (the banner's own Close button, as a person would), Mac only.
+    @MainActor
+    private func dismissBanners() {
+        #if targetEnvironment(macCatalyst)
+        let center = XCUIApplication(bundleIdentifier: "com.apple.notificationcenterui")
+        let close = NSPredicate(format: "label IN {'Close','Clear','Clear All','Cerrar','Borrar','Borrar todo'} OR identifier CONTAINS 'close'")
+        // The banner is a window of Notification Center near the top-right corner of the screen (its labels are not readable
+        // from a test): swiping it to the right is how a person sends it away.
+        let screenWidth = XCUIApplication(bundleIdentifier: "com.apple.finder").frame.width
+        for _ in 0..<4 {
+            let candidates = center.descendants(matching: .any).allElementsBoundByIndex.filter {
+                $0.frame.width > 150 && $0.frame.height > 40 && $0.frame.height < 300 && $0.frame.minY < 120
+                    && $0.frame.maxX > screenWidth - 60 && $0.frame.minX > screenWidth / 2
+            }
+            print("SHOTDEBUG banners: \(candidates.count) near the corner: \(candidates.prefix(4).map { "\($0.elementType.rawValue) \($0.frame)" })")
+            guard let banner = candidates.first else { break }
+            // Hover shows its close button at the top left; else a swipe to the screen's edge.
+            banner.hover()
+            Thread.sleep(forTimeInterval: 0.7)
+            let corner = banner.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.12))
+            corner.click()
+            Thread.sleep(forTimeInterval: 1)
+            banner.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
+                .press(forDuration: 0.1, thenDragTo: banner.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5)),
+                       withVelocity: .fast, thenHoldForDuration: 0.1)
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        #endif
+    }
+
     @MainActor
     private func capture(_ shot: Shot, to directory: URL?) {
+        if Self.isMac { dismissBanners() }
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         // UTC: the note list shows dates, and the demo dates are fractions of a day before noon UTC.
@@ -177,6 +260,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchEnvironment["SEMPERE_DEMO_APPEARANCE"] = Self.appearance
         // An iPad's finger draws only when the palette's Draw with Finger says so; the simulator has no Pencil.
         if shot.strokes != nil { app.launchEnvironment["SEMPERE_DEBUG_FINGERS_DRAW"] = "1" }
+        // SEMPERE_SHOTS_DIAG: the canvas reports its stroke count and PNGs are kept after each step of the strokes.
+        if ProcessInfo.processInfo.environment["SEMPERE_SHOTS_DIAG"] != nil { app.launchEnvironment["SEMPERE_DEMO_ITEMS"] = "1" }
         app.launch()
         let label = NSPredicate(format: "label CONTAINS %@ OR identifier == %@", shot.waitFor, shot.waitFor)
         let found = app.descendants(matching: .any).matching(label).firstMatch.waitForExistence(timeout: shot.timeout)
@@ -193,8 +278,9 @@ final class ScreenshotTests: XCTestCase {
             if button.waitForExistence(timeout: 5) { button.tap() } else { print("SHOTDEBUG \(shot.name): no button \(label)") }
             Thread.sleep(forTimeInterval: 1)
         }
-        if let strokes = shot.strokes, found { drawAndUndo(strokes, shot: shot, in: app) }
-        let screenshot = Self.isMac ? app.windows.firstMatch.screenshot() : XCUIScreen.main.screenshot()
+        var whole: XCUIScreenshot?
+        if let strokes = shot.strokes, found { whole = drawAndUndo(strokes, shot: shot, in: app) }
+        let screenshot = whole ?? (Self.isMac ? app.windows.firstMatch.screenshot() : XCUIScreen.main.screenshot())
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = shot.name
         attachment.lifetime = .keepAlways

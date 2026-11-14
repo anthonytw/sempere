@@ -587,7 +587,10 @@ extension AppModelCore {
     public func debugSeedNearbyRequest(name: String, kind: String) throws {
         guard let vault else { return }
         let keys = try DeviceKeys.generate()
-        keepNearbyRequest(keys.joinRequest(vaultId: vault.vaultId, name: name, kind: kind))
+        var request = keys.joinRequest(vaultId: vault.vaultId, name: name, kind: kind)
+        // A fixed demo time (9:41 UTC on the demo's newest day, as the status bar), never the day of the run.
+        request.created = "2026-10-05T09:41:00Z"
+        keepNearbyRequest(request)
         nearbyArrivals += 1
     }
 
