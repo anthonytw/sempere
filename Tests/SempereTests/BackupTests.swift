@@ -183,6 +183,25 @@ final class BackupTests: VaultTestCase {
         XCTAssertTrue(Backup.verify(at: dest, identities: [id]).isHealthy)
     }
 
+    /// Whether a file is unchanged is decided by size and content, never by modification time: a FAT drive stores
+    /// mtimes in 2-second steps in local time, and a copy tool or a clock change moves them anyway. Every file of
+    /// the backup gets a time that is off by one second, a day, and the far past or future; the next run copies
+    /// and replaces nothing.
+    func testUnchangedFilesAreRecognizedWhateverTheirModificationTimes() throws {
+        _ = try Backup.run(source: vault, to: dest)
+        let times: [TimeInterval] = [1, 86_400, -86_400, 0, 4_000_000_000]
+        for (i, path) in try contents(dest).keys.sorted().enumerated() where path != BackupManifest.fileName {
+            let t = Date().addingTimeInterval(times[i % times.count])
+            try FileManager.default.setAttributes([.modificationDate: t], ofItemAtPath: dest.appendingPathComponent(path).path)
+        }
+        for checksum in [false, true] {
+            let again = try Backup.run(source: vault, to: dest, options: BackupOptions(checksum: checksum))
+            XCTAssertEqual(again.copied, [], "checksum \(checksum)")
+            XCTAssertEqual(again.replaced, [], "checksum \(checksum)")
+            XCTAssertEqual(again.unchanged, 8, "checksum \(checksum)")
+        }
+    }
+
     /// Notebook records (format.md §14) are vault files: a backup keeps them, and a restore brings an
     /// empty notebook back.
     func testNotebookRecordsAreBackedUpAndRestored() throws {
