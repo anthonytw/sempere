@@ -64,8 +64,11 @@ public enum InsightsGenerator {
                 }
             } catch InsightsProviderError.unavailable(let a) {
                 throw InsightsProviderError.unavailable(a)
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
-                lastError = error
+                // A refusal is the answer to keep (the failure memo backs a refused note off longer).
+                if case InsightsProviderError.refused? = lastError {} else { lastError = error }
             }
         }
         if parts.isEmpty, let lastError { throw lastError }
@@ -74,7 +77,7 @@ public enum InsightsGenerator {
 
     /// The slug of a voice note's title (D14) from the model's `raw` answer: cleaned, 1 to 6 words, fact-checked
     /// against the transcript with every content word required (a title shows each word). A longer answer that lists things is cut after its last comma, semicolon or dash within
-    /// the first six words (D16: "Dry cleaning, oat milk, eggs, coffee filters, inhaler refill" was refused whole);
+    /// the first six words (D16: a list of eight errands in a voice note was refused whole);
     /// nil when nothing usable is left.
     public static func slug(_ raw: String, transcript: String, merger: TypoMerger?) -> String? {
         var cleaned = VoiceNoteTitleFormat.cleaned(raw)

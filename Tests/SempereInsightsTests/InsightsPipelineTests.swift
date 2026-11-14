@@ -185,6 +185,27 @@ final class InsightsPipelineTests: XCTestCase {
         XCTAssertTrue(FactCheck(source: "1000 ovens").supported("It lists 1000 ovens."), "numbers are never junk")
     }
 
+    func testPricesListsAndEmoticonsAreNotMarkup() {
+        let fc = FactCheck(source: "The trip budget is 500 dollars: first mix the dough, then bake it. Pay 12 at the gate.")
+        XCTAssertTrue(fc.supported("The trip budget is $500."), "a price is not LaTeX")
+        XCTAssertTrue(fc.supported("Pay $ 12 at the gate, or $500 for the trip budget."))
+        XCTAssertFalse(FactCheck.hasLaTeX("Costs $500 and $12."))
+        XCTAssertTrue(FactCheck.hasLaTeX("The budget is $x$ dollars."))
+        XCTAssertTrue(FactCheck.hasLaTeX("It uses $\\alpha$."))
+        XCTAssertFalse(FactCheck.isGarbled("1) mix the dough and 2) bake it."), "list markers")
+        XCTAssertFalse(FactCheck.isGarbled("a) mix the dough, b) bake it :)"), "letter markers and an emoticon")
+        XCTAssertFalse(FactCheck.isGarbled("then bake it (at the end."), "a sentence split inside a parenthesis")
+        XCTAssertTrue(FactCheck.isGarbled("mix [the dough"), "a square bracket left open still counts")
+    }
+
+    func testRomanNumeralsUnitsAndShortRunsAreNotJunk() {
+        for term in ["henry viii", "part iii", "www", "1000kg", "xxx", "bookkeeper", "aaa battery"] {
+            XCTAssertFalse(TermNormalizer.isJunk(term), term)
+        }
+        XCTAssertTrue(TermNormalizer.isJunk("qrmuffffid"))
+        XCTAssertTrue(TermNormalizer.isJunk("zzzz top"), "four of a letter")
+    }
+
     func testAnEmptySummaryLeavesKeywordsOnly() {
         let r = FactCheck(source: Self.breadSource).check("")
         XCTAssertNil(r.summary)
@@ -199,7 +220,7 @@ final class InsightsPipelineTests: XCTestCase {
         XCTAssertEqual(m.merge("consent"), "consent", "seen 3 times: a word of the vault")
         XCTAssertEqual(m.merge("parental"), "parental", "a different first letter")
         XCTAssertEqual(m.merge("blending"), "blending", "a different first letter")
-        XCTAssertEqual(m.merge("funding"), "funding", "the model's spelling, nowhere in the notes")
+        XCTAssertEqual(m.merge("fasting"), "fasting", "the model's spelling, nowhere in the notes")
         XCTAssertEqual(m.merge("fkom"), "fkom", "never into a stop word")
         XCTAssertEqual(m.merge("kinernatics"), "kinematics", "an OCR typo still merges")
         XCTAssertEqual(m.merge("momentun"), "momentum")
@@ -222,7 +243,7 @@ final class InsightsPipelineTests: XCTestCase {
         }
         XCTAssertEqual(TermNormalizer.normalize("Equation of motion"), "equation of motion", "a subject that names one")
         XCTAssertTrue(TermNormalizer.isJunk("qrmuffffid"), "a letter three times in a row")
-        XCTAssertFalse(TermNormalizer.isJunk("responsibilities"), "long and rare is still a word")
+        XCTAssertFalse(TermNormalizer.isJunk("thermodynamics"), "long and rare is still a word")
         XCTAssertFalse(TermNormalizer.isJunk("1000 ovens"), "numbers are never junk")
         let k = TermNormalizer.keywords(["Thermodynamics", "qrmuffffid", "random characters", "entropy"])
         XCTAssertEqual(k.map(\.t), ["thermodynamics", "entropy"])
@@ -239,6 +260,48 @@ final class InsightsPipelineTests: XCTestCase {
         XCTAssertEqual(InsightsGenerator.slug("Boat permit call", transcript: transcript, merger: nil), "Boat permit call")
         XCTAssertNil(InsightsGenerator.slug("Shopping: oil, rope, bombs", transcript: transcript, merger: nil),
                      "one inferred word is enough to refuse a title")
+    }
+
+    func testSubjectWordsStayTokensAndRealSubjectsStayKeywords() {
+        // The fact check skips "equation" or "diagram" in a summary, but in a note's text they name its subject.
+        XCTAssertTrue(InsightsStoplist.summaryLanguage.contains("equation"))
+        XCTAssertEqual(InsightsNotes.tokens(text: "heat equation formula variables diagram maybe", gen: nil),
+                       ["heat", "equation", "formula", "variable", "diagram"])
+        for subject in ["code", "data", "test", "Code review", "test data"] {
+            XCTAssertNotNil(TermNormalizer.normalize(subject), subject)
+        }
+    }
+
+    func testCancellationStopsAndARefusalIsTheErrorKept() async throws {
+        final class Scripted: ModelProvider, @unchecked Sendable {
+            let errors: [Error]
+            var i = 0
+            init(_ errors: [Error]) { self.errors = errors }
+            var identity: GenerationIdentity { .init(model: "m", os: "1", prompt: 2) }
+            var availability: ModelAvailability { .available }
+            var contextTokens: Int { 8192 }
+            func supports(language: String?) -> Bool { true }
+            func extract(_ text: String, language: String?) async throws -> ModelExtraction {
+                defer { i += 1 }
+                throw errors[min(i, errors.count - 1)]
+            }
+            func merge(_ parts: [ModelExtraction], language: String?) async throws -> ModelExtraction { parts[0] }
+            func summarize(topic: String, summaries: [String], language: String?) async throws -> String { "" }
+            func title(transcript: String, language: String?) async throws -> String { "" }
+        }
+        let text = Self.words(3 * InsightsChunker.chunkWords)
+        let hash = InsightsText.hash(text)
+        let refusedFirst = Scripted([InsightsProviderError.refused("a guardrail"), InsightsProviderError.failed("x")])
+        do {
+            _ = try await InsightsGenerator.generate(text: text, hash: hash, language: "en", model: refusedFirst, merger: nil)
+            XCTFail("no part left")
+        } catch InsightsProviderError.refused {}
+        let cancelled = Scripted([CancellationError()])
+        do {
+            _ = try await InsightsGenerator.generate(text: text, hash: hash, language: "en", model: cancelled, merger: nil)
+            XCTFail("cancelled")
+        } catch is CancellationError {}
+        XCTAssertEqual(cancelled.i, 1, "a cancellation stops at once, the other chunks are not asked")
     }
 
     func testFillerAndJunkWordsAreNoTokensOfOverlapOrLabels() {
@@ -541,6 +604,17 @@ final class InsightsPipelineTests: XCTestCase {
                                      listed: [w], language: "en", now: now)
         XCTAssertNil(fresh.lastSeen)
         XCTAssertFalse(fresh.notSeen)
+        // Designated but never running: missing 14 days after the designation, so the claim hint shows.
+        let setAt = Int64(now.timeIntervalSince1970 * 1000)
+        let designated = InsightsSettings(enabled: true, workDevice: w, workDeviceSetAt: setAt)
+        XCTAssertFalse(WorkDeviceStatus(settings: designated, snapshot: InsightsSnapshot(), listed: [w], language: "en",
+                                        now: now.addingTimeInterval(13 * 86_400)).notSeen)
+        let later = WorkDeviceStatus(settings: designated, snapshot: InsightsSnapshot(), listed: [w], language: "en",
+                                     now: now.addingTimeInterval(15 * 86_400))
+        XCTAssertTrue(later.notSeen)
+        XCTAssertNil(later.lastSeen, "still nothing written")
+        // A designation newer than its files restarts the clock.
+        XCTAssertFalse(WorkDeviceStatus(settings: designated, snapshot: snap, listed: [w], language: "en", now: now).notSeen)
         let plan = InsightsPolicy.plan(notes: notesFor(now), snapshot: snap, me: DeviceID("11111111")!,
                                        settings: InsightsSettings(enabled: true, workDevice: w),
                                        capabilities: .init(model: .init(model: "m", os: "1", prompt: 1), embedRevision: 1, powerWindow: true),

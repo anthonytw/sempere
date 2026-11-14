@@ -70,8 +70,8 @@ public enum InsightsNotes {
     /// A text word that says something about a note's subject (D16: map labels read "maybe, hopefully, going" and
     /// "eeeee"): not a stop word, not one of the words summaries talk about notes with, not filler, not junk.
     static func isContentWord(_ w: String) -> Bool {
-        !InsightsStoplist.generic.contains(w) && !InsightsStoplist.summaryLanguage.contains(w) && !InsightsStoplist.filler.contains(w)
-            && !TermNormalizer.isJunk(w)
+        !InsightsStoplist.generic.contains(w) && !InsightsStoplist.filler.contains(w) && !TermNormalizer.isJunk(w)
+            && (!InsightsStoplist.summaryLanguage.contains(w) || InsightsStoplist.subjectWords.contains(w))
     }
 }
 
@@ -183,6 +183,8 @@ public struct InsightsUpdater: Sendable {
         }
         var memo = o.failureMemo.map(InsightsFailureMemo.load(from:)) ?? InsightsFailureMemo()
         let backoff = usable.map { m in memo.backoff(notes: selected.map { ($0.id, $0.hash) }, identity: m.identity) } ?? [:]
+        let backedOff = o.force ? 0 : backoff.values.filter { $0 > o.now }.count
+        if backedOff > 0 { report.notes.append("\(backedOff) notes backed off (failed earlier; --force to retry)") }
         var plan = InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps,
                                        pinKey: pinKey, now: o.now, force: o.force, backoff: backoff, deviceRecordChanged: changedRecord)
         if o.rebuildMap, pinKey != nil, !plan.contains(.rebuildMap) { plan.append(.rebuildMap) }

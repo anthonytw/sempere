@@ -175,28 +175,30 @@ public enum TermNormalizer {
 
     /// Terms for the form of a note, not its subject, which the on-device model gives as keywords and concepts of
     /// notes it cannot read (D16: "symbol", "random character", "mathematical expression", "data fragment").
+    /// Only the terms the run showed (a real subject such as "code", "data" or "test" stays).
     public static let metaTerms: Set<String> = [
-        "symbol", "character", "random character", "random", "string", "random string", "fragment", "data fragment",
-        "test fragment", "random test", "test", "list", "number", "data", "abbreviation", "expression",
-        "mathematical expression", "mathematical equation", "math expression", "equation", "notation", "technical notation",
-        "mathematical notation", "reference", "item", "name", "phrase", "word", "text", "document", "variable", "value",
-        "code", "identifier", "technical note", "technical term", "formula", "sign", "letter", "emoji", "information",
-        "content", "handwriting", "handwritten note", "drawing", "sketch", "diagram", "label", "entry",
+        "symbol", "random character", "random string", "data fragment", "test fragment", "random test", "abbreviation",
+        "mathematical expression", "mathematical equation", "technical notation", "equation", "technical note",
     ]
 
-    /// True for a term the model copied from unreadable handwriting (D16): a letter three times in a row
-    /// (`ncmuoffff…`). (A rule for long words rare in the vault was tried and dropped: on real notes it took as many real
-    /// words, `responsibilities`, `marginalization`, as misread ones.)
+    /// True for a term the model copied from unreadable handwriting (D16): a word with the same letter four times in a
+    /// row (`ncmuoffff…`). Digits never count, nor do Roman numerals (`VIII`, `XXX`). (A rule for long words rare in the
+    /// vault was tried and dropped: on real notes it took as many long real words (`thermodynamics`) as misread
+    /// ones.)
     public static func isJunk(_ term: String) -> Bool {
-        for w in term.split(separator: " ") where !w.allSatisfy(\.isNumber) {
+        for w in term.split(separator: " ") where !isRomanNumeral(w) {
             var run = 1
             var previous: Character?
             for c in w {
-                if c == previous { run += 1; if run >= 3 { return true } } else { run = 1 }
+                if c.isLetter, c == previous { run += 1; if run >= 4 { return true } } else { run = 1 }
                 previous = c
             }
         }
         return false
+    }
+
+    static func isRomanNumeral<S: StringProtocol>(_ w: S) -> Bool {
+        !w.isEmpty && w.lowercased().allSatisfy { "ivxlcdm".contains($0) }
     }
 
     /// The singular of one lowercase word.
@@ -274,6 +276,13 @@ public enum InsightsStoplist {
         "find", "found", "show", "shown", "give", "gave", "put", "goes", "seen", "left", "next", "last", "less", "least",
         "better", "best", "worse", "worst", "else", "otherwise", "anyway", "already", "though", "almost", "around",
         "likely", "unlikely", "definitely", "certainly", "simply", "just", "here", "there", "where", "latexit",
+    ]
+
+    /// Words in `summaryLanguage` (the fact check skips them in a summary) that still name a subject, so they count as
+    /// content words of a note's text for keyword overlap and map labels.
+    public static let subjectWords: Set<String> = [
+        "equation", "equations", "formula", "formulas", "variable", "variables", "calculation", "calculations", "diagram",
+        "diagrams",
     ]
 
     /// Words a summary uses to talk about a note, never checked against its text (step 5).
@@ -391,9 +400,9 @@ public struct TypoMerger: Sendable {
     public static let protectedFrequency = 3
 
     /// `word` (lowercase), or the frequent word it is a typo of. Only a word the vault's text holds (a model's term
-    /// that is nowhere in the notes is spelled by the model, not misread: D16, `funding` into `finding`), fewer than
+    /// that is nowhere in the notes is spelled by the model, not misread: D16, `fasting` into `casting`), fewer than
     /// `protectedFrequency` times, and only into a candidate with the same first letter (misreadings change letters
-    /// inside a word; D16: `blending` into `lending`, `heading` into `reading`) of four letters or more (`milk` into
+    /// inside a word; D16: `bread` into `read`) of four letters or more (`milk` into
     /// `mil`) that is not a stop word (`from`).
     public func merge(_ word: String) -> String {
         let n = word.count
@@ -538,7 +547,7 @@ public struct FactCheck: Sendable {
     public func unsupportedToken(_ sentence: String) -> String? {
         // LaTeX the model wrote (`$P_{\tau}$`) arrives with its backslash sequences read as escapes (a tab, a form
         // feed): unreadable in a summary, so such a sentence goes.
-        if sentence.contains("$") || sentence.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) {
+        if Self.hasLaTeX(sentence) || sentence.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) {
             return Self.markup
         }
         if Self.isGarbled(sentence) { return Self.garbled }
@@ -595,6 +604,15 @@ public struct FactCheck: Sendable {
         return firstUnsupportedContent
     }
 
+    /// True for LaTeX math in a sentence: a `$` directly followed by a backslash, a letter or one of `{ ^ _ (` (`$x$`,
+    /// `$\alpha`). A price (`$500`, `$ 12`, two of them) is not.
+    public static func hasLaTeX(_ sentence: String) -> Bool {
+        let chars = Array(sentence)
+        return chars.indices.contains { i in
+            chars[i] == "$" && i + 1 < chars.count && (chars[i + 1] == "\\" || chars[i + 1].isLetter || "{^_(".contains(chars[i + 1]))
+        }
+    }
+
     /// `unsupportedToken`'s answer for a sentence with LaTeX or control characters.
     public static let markup = "<markup>"
     /// `unsupportedToken`'s answer for a sentence copied from handwriting the recognizer could not read.
@@ -602,7 +620,7 @@ public struct FactCheck: Sendable {
 
     /// True for a sentence copied from unreadable handwriting rather than written about it (D16: the model copies the
     /// recognizer's output of formulas and doodles when it cannot describe them, and every token of such a copy is "in
-    /// the note"): an emoji, pictograph or arrow (a degree sign is fine), a `#`, two `=` or more, unbalanced brackets,
+    /// the note"): an emoji, pictograph or arrow (a degree sign is fine), a `#`, two `=` or more, unbalanced square or curly brackets,
     /// or at least 40% of its tokens (of five or more) single characters other than the one-letter words `a`, `i`, `y`,
     /// `o`, `e`.
     public static func isGarbled(_ sentence: String) -> Bool {
@@ -611,8 +629,10 @@ public struct FactCheck: Sendable {
                 || u.properties.isEmojiPresentation { return true }
         }
         if sentence.filter({ $0 == "=" }).count >= 2 { return true }
-        // Unbalanced brackets: a piece cut out of a copied formula ("(EI Mir) feliz]").
-        for (open, close) in [("(", ")"), ("[", "]"), ("{", "}")] as [(Character, Character)]
+        // Unbalanced brackets: a piece cut out of a copied formula ("(Qz Lm) vbn]"). Only `[` `]` `{` `}` count:
+        // parentheses are unbalanced in ordinary prose too (list markers "1)", "a)", emoticons, a sentence split
+        // inside a parenthesis), and the other signals catch copied formulas.
+        for (open, close) in [("[", "]"), ("{", "}")] as [(Character, Character)]
         where sentence.filter({ $0 == open }).count != sentence.filter({ $0 == close }).count {
             return true
         }

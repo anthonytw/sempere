@@ -179,6 +179,7 @@ final class InsightsUpdaterTests: TempDirTestCase {
         let second = try await runRefusing(at: now.addingTimeInterval(3600))
         XCTAssertEqual(second.failures.count, 0, "not asked again the next hour")
         XCTAssertEqual(refusing.calls, 1)
+        XCTAssertTrue(second.notes.contains("1 notes backed off (failed earlier; --force to retry)"), "\(second.notes)")
         _ = try await runRefusing(at: now.addingTimeInterval(InsightsFailureMemo.refusedFor + 60))
         XCTAssertEqual(refusing.calls, 2, "asked again after the back-off")
         _ = try await runRefusing(at: now.addingTimeInterval(InsightsFailureMemo.refusedFor + 120), force: true)
