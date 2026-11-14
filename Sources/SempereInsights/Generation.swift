@@ -142,6 +142,41 @@ public enum TopicSummaries {
         return now.timeIntervalSince1970 - Double(stored.gen.at) / 1000 >= minInterval
     }
 
+    /// A scope's topic summary as every device shows it (design §6 item 4; `sempere insights topic`, the app's Summary).
+    public struct Shown: Hashable, Sendable {
+        public var scope: InsightsTopicsFile.Scope
+        /// The scope's summarized members now (the "Check sources" list), by note id.
+        public var members: [UUID]
+        /// The latest stored paragraph from any device, nil when none was made yet.
+        public var summary: String?
+        public var device: DeviceID?
+        public var at: Date?
+        /// The members changed since the paragraph was made (their digest differs).
+        public var stale: Bool
+        /// Enough summarized members for a topic summary (`minMembers`).
+        public var eligible: Bool { members.count >= TopicSummaries.minMembers }
+    }
+
+    /// The latest stored topic of `scope` from any device's topics file (by `gen.at`, then device id), or nil.
+    public static func latest(_ scope: InsightsTopicsFile.Scope, snapshot: InsightsSnapshot) -> (device: DeviceID, topic: InsightsTopicsFile.Topic)? {
+        snapshot.topics.compactMap { d, f in f.topics.first { $0.scope == scope }.map { (device: d, topic: $0) } }
+            .max { ($0.topic.gen.at, $0.device.rawValue) < ($1.topic.gen.at, $1.device.rawValue) }
+    }
+
+    /// `scope` as shown, from its current members (`TopicScopes.members`) and the stored files.
+    public static func shown(_ scope: InsightsTopicsFile.Scope, members: [Member], snapshot: InsightsSnapshot) -> Shown {
+        let stored = latest(scope, snapshot: snapshot)
+        return Shown(scope: scope, members: members.map(\.note), summary: stored?.topic.gen.summary, device: stored?.device,
+                     at: stored.map { Date(timeIntervalSince1970: Double($0.topic.gen.at) / 1000) },
+                     stale: stored.map { $0.topic.membersHash != membersHash(members) } ?? false)
+    }
+
+    /// Every scope with enough summarized members, as shown.
+    public static func shownAll(inputs: [InsightsNoteInput], snapshot: InsightsSnapshot) -> [Shown] {
+        TopicScopes.members(inputs: inputs, snapshot: snapshot).filter { $0.1.count >= minMembers }
+            .map { shown($0.0, members: $0.1, snapshot: snapshot) }
+    }
+
     /// The topic's paragraph from `members` with `model`, fact-checked; nil when nothing survives.
     public static func generate(name: String, members: [Member], language: String?, model: any ModelProvider,
                                 merger: TypoMerger?) async throws -> String? {

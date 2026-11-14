@@ -236,6 +236,56 @@ extension AppModelSuites {
             func add() { count += 1 }
         }
 
+        /// A note in a notebook, written two hours ago.
+        @discardableResult
+        func note(_ model: AppModel, _ title: String, _ text: String, notebook: String) async throws -> UUID {
+            let id = UUID(), page = UUID()
+            var ops = NoteOps.newNote(title: title, paper: .ruled, notebook: notebook, pageId: page)
+            ops.append(.setPageRecognition(pageId: page, recognition: Recognition(engine: "test", text: text)))
+            let built = ops
+            try await model.commit(ids: [id], creating: [id]) { vault, clock, verifier in
+                _ = try await NoteWriter.append(built, to: id, vault: vault, clock: clock, wall: Date().addingTimeInterval(-7200),
+                                                verify: verifier(id))
+            }
+            return id
+        }
+
+        /// Insights PR 3: passes make topic summaries (design §6 item 4), the index shows them by notebook (only with 3
+        /// summarized notes), "Regenerate" runs one now, and the map's layout is in the index.
+        @Test func topicSummariesAndTheMapInTheIndex() async throws {
+            let power = Power()
+            power.on = false   // only our own passes
+            let model = try await model(power: power)
+            for (i, t) in Self.bread.enumerated() { try await note(model, "Bread \(i)", t, notebook: "Kitchen") }
+            try await note(model, "Physics", Self.physics[0], notebook: "Lab")
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            let pass = await model.runInsightsPass(batch: 10, ignorePower: true)
+            #expect(pass.reports.contains { $0.topics.contains("notebook:Kitchen") }, "passes make topic summaries now")
+            let kitchen = try #require(model.insightsTopic(notebook: "Kitchen"))
+            #expect(kitchen.members.count == 3)
+            #expect(kitchen.summary?.isEmpty == false)
+            #expect(!kitchen.stale)
+            #expect(model.insightsTopic(notebook: " Kitchen ") != nil, "notebook paths are compared canonically")
+            #expect(model.insightsTopic(notebook: "Lab") == nil, "one summarized note: no Summary offered")
+            #expect(model.insightsTopics.map(\.scope) == [kitchen.scope])
+            #expect(model.canRegenerateInsightsTopics)
+            let before = kitchen.at
+            try await Task.sleep(for: .milliseconds(5))
+            await model.regenerateInsightsTopic(kitchen.scope)
+            #expect(model.insights.regeneratingTopics.isEmpty)
+            #expect(model.insights.topicProblems.isEmpty)
+            let again = try #require(model.insightsTopic(notebook: "Kitchen"))
+            #expect(again.at.map { a in before.map { a > $0 } ?? true } == true, "made again now")
+            // The map: every note with a vector, in the unit square.
+            let map = model.insightsMap
+            #expect(map.nodes.count == 4)
+            #expect(map.nodes.allSatisfy { (0...1).contains($0.x) && (0...1).contains($0.y) })
+            await model.setInsightsEnabled(false)
+            #expect(model.insightsTopic(notebook: "Kitchen") == nil)
+            #expect(model.insightsMap.isEmpty)
+        }
+
         @Test func theToolbarOffersInsightsOnlyWhenOn() {
             var state = NoteToolbar.State(device: .pad)
             #expect(!NoteToolbar.items(.overflow, in: state).contains(.insights))

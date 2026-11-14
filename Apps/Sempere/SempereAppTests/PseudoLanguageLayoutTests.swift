@@ -20,10 +20,13 @@ import UIKit
 @Suite(.serialized)
 struct PseudoLanguageLayoutTests {
     enum Screen: String, CaseIterable, Sendable {
-        case library, locked, note, tags, paper, settings, devices, insights
+        case library, locked, note, tags, paper, settings, devices, insights, insightsMap, topicSummary
 
         /// Whether the screen is a sheet (only the sheet's own elements are measured).
-        var isSheet: Bool { [.locked, .paper, .settings, .devices, .insights].contains(self) }
+        var isSheet: Bool { [.locked, .paper, .settings, .devices, .insights, .insightsMap, .topicSummary].contains(self) }
+
+        /// Note Insights is on (with the package's fake providers) for the screen.
+        var usesInsights: Bool { [.insights, .insightsMap, .topicSummary].contains(self) }
 
         /// What shows only once the screen's data is in (`LayoutHost.settle`): the demo vault's note titles are vault data,
         /// the same in every language; the identifiers are the views' own.
@@ -37,6 +40,9 @@ struct PseudoLanguageLayoutTests {
             case .settings: [.identifier("appTheme.system")]   // General's Appearance section
             case .devices: [.identifier("devices.replaceKit")]   // in the snapshot's sections, after the load
             case .insights: [.identifier("vaultSetting.insights.enabled")]   // the switch, the page's first row
+            // The zoom buttons come with the drawn map (a segmented picker's identifier does not reach the tree on a Mac).
+            case .insightsMap: [.identifier("insightsMap.zoomIn")]
+            case .topicSummary: [.identifier("topicSummary.generated")]   // the badge in the first section's header
             }
         }
     }
@@ -54,6 +60,37 @@ struct PseudoLanguageLayoutTests {
         let built = try await DemoVault.build(in: dir, app: NoteWriter.appName)
         demo = built
         return built
+    }
+
+    /// A copy of the demo vault whose notes have recognized text, written two hours ago (insights wait for a note to
+    /// settle): biology, physics, planning and travel words, so the fake providers make groups and the tags' summaries.
+    static func demoWithText(_ built: DemoVault.Built) throws -> URL {
+        let copy = TestTemp.root.appendingPathComponent("SemperePseudoInsights-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(built.url.lastPathComponent)
+        try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: built.url, to: copy)
+        let vault = try Vault.open(at: copy, identities: [try IdentityFile.parse(built.identityText)])
+        let texts = [
+            "respiration": "Cellular respiration turns glucose into energy in the mitochondria. The cell releases carbon dioxide.",
+            "photosynthesis": "Photosynthesis in the chloroplast turns light energy and carbon dioxide into glucose for the cell.",
+            "quantum": "Quantum states of the electron: energy levels, the wave function and the probability of each state.",
+            "optics": "Wave optics: interference and diffraction of light waves, the wave length and the energy of a photon.",
+            "sprint": "Sprint planning for the team: tasks, estimates, the release date and the review meeting.",
+            "weekly": "Weekly sync meeting of the team: tasks done, the release date, blockers and the next review.",
+            "groceries": "Grocery list for the week: bread, milk, tasks for the market, and the review of the pantry.",
+            "lisbon": "Lisbon itinerary: the travel plan, trams, the castle, the river and a day trip to Sintra.",
+            "vocabulario": "Travel vocabulary for the trip: the train station, the hotel, the river and the castle.",
+            "atlas": "Ideas for the sync design: the release plan, tasks for the team and the review of the design.",
+            "thoughts": "Quick ideas for the trip and the team: a river walk, the castle, and the release review.",
+            "books": "Reading list: novels about travel, a river journey and a castle, for the trip.",
+        ]
+        let state = TS.deviceStateURL()
+        for (key, text) in texts {
+            guard let id = built.notes[key], let page = try vault.reconstruct(noteId: id).pages.first?.id else { continue }
+            _ = try vault.apply([.setPageRecognition(pageId: page, recognition: Recognition(engine: "test", text: text))], to: id,
+                                deviceState: state, app: "pseudo-layout/1", wall: Date().addingTimeInterval(-7200))
+        }
+        return copy
     }
 
     /// Mac Catalyst only. On the iPad simulator the in-process accessibility tree came back
@@ -74,15 +111,28 @@ struct PseudoLanguageLayoutTests {
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
         defer { model.close() }
         // Settings ▸ Note Insights with the package's fake providers and no power window, so no pass runs.
-        if screen == .insights {
+        if screen.usesInsights {
             model.insightsServices = InsightsServices(model: { FakeModelProvider() }, embedder: { FakeEmbeddingProvider() },
                                                       powerWindow: { false })
         }
-        try await model.openVault(at: built.url)
+        // The map and a topic summary need note text, which the demo's handwriting has none of until it is recognized:
+        // a copy of the demo with recognized text (the demo itself stays as the other screens expect it).
+        let vaultURL = screen == .insightsMap || screen == .topicSummary ? try Self.demoWithText(built) : built.url
+        try await model.openVault(at: vaultURL)
         if screen != .locked { _ = try await model.unlock(identityText: built.identityText) }
-        if screen == .insights {
+        if screen.usesInsights {
             await model.setInsightsEnabled(true)
             try #require(model.insights.mode == .on, "Note Insights is on in the demo vault")
+        }
+        if screen == .insightsMap || screen == .topicSummary {
+            // Passes with the fake providers ("Process Now": no power window here) make the summaries, the map and the
+            // topic summaries of the demo's tags. A request while the switch's own pass still holds the slot is dropped,
+            // so ask again until the map and a summary are in.
+            let ready = await TS.waitUntil(timeout: .seconds(90)) {
+                if !model.insights.isWorking { model.requestInsightsPass(force: true) }
+                return !model.insightsMap.isEmpty && model.insightsTopics.contains { $0.summary != nil }
+            }
+            try #require(ready, "the map and a topic summary were made")
         }
         switch screen {
         case .tags: model.sidebarSelection = .tag("lecture")
@@ -119,6 +169,17 @@ struct PseudoLanguageLayoutTests {
         case .insights:
             view = AnyView(root.sheet(isPresented: .constant(true)) {
                 SettingsView(group: .insights).appEnvironment(model: model, library: library, keys: keys).defaultAppStorage(storage)
+            })
+        case .insightsMap:
+            // The map of related notes (Insights PR 3): the picker, the banner and the drawn map with its zoom buttons.
+            view = AnyView(root.sheet(isPresented: .constant(true)) {
+                InsightsMapSheet().appEnvironment(model: model, library: library, keys: keys)
+            })
+        case .topicSummary:
+            // A tag's topic summary: the paragraph, its badge, Regenerate and the sources.
+            let scope = try #require(model.insightsTopics.first { $0.summary != nil }?.scope, "a topic summary was made")
+            view = AnyView(root.sheet(isPresented: .constant(true)) {
+                TopicSummarySheet(scope: scope).appEnvironment(model: model, library: library, keys: keys)
             })
         case .devices:
             // The device list (key-hierarchy KH5): rows, the recovery kit and the history.

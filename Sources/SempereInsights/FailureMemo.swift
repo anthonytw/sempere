@@ -28,8 +28,20 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
     static let maxFileBytes = 4 << 20
 
     public var notes: [String: Entry] = [:]
+    /// Topic summaries that failed (the model threw, or nothing survived the fact check), by scope name
+    /// (`TopicScopes.name`), keyed by the members' digest (`membersHash`) instead of a note's hash.
+    public var topics: [String: Entry] = [:]
 
     public init() {}
+
+    enum CodingKeys: String, CodingKey { case notes, topics }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        notes = try c.decodeIfPresent([String: Entry].self, forKey: .notes) ?? [:]
+        // A memo written before topic entries existed has none.
+        topics = try c.decodeIfPresent([String: Entry].self, forKey: .topics) ?? [:]
+    }
 
     public static func key(_ identity: GenerationIdentity) -> String { "\(identity.model) \(identity.os) \(identity.prompt)" }
 
@@ -69,6 +81,29 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
 
     /// Forgets `note` (it was generated).
     public mutating func clear(note: UUID) { notes[note.uuidString.lowercased()] = nil }
+
+    /// Remembers that the topic summary of `scope` (its `TopicScopes.name`) over members digest `membersHash` failed.
+    /// A summary the fact check left empty counts as a failure of its own kind (`refused` false: asked again after a day).
+    public mutating func recordTopic(_ scope: String, membersHash: String, identity: GenerationIdentity, error: Error?, now: Date) {
+        let key = Self.key(identity)
+        var refused = false
+        if let error, case InsightsProviderError.refused = error { refused = true }
+        let previous = topics[scope].flatMap { $0.hash == membersHash && $0.identity == key ? $0 : nil }
+        topics[scope] = Entry(hash: membersHash, identity: key, refused: refused, at: now.timeIntervalSince1970,
+                              count: (previous?.count ?? 0) + 1)
+        if topics.count > Self.maxEntries, let oldest = topics.min(by: { ($0.value.at, $0.key) < ($1.value.at, $1.key) })?.key {
+            topics[oldest] = nil
+        }
+    }
+
+    /// Forgets the topic `scope` (it was made).
+    public mutating func clearTopic(_ scope: String) { topics[scope] = nil }
+
+    /// Until when the topic `scope` waits, for a failure over these same members with this same model; nil: not backed off.
+    public func topicBackoff(_ scope: String, membersHash: String, identity: GenerationIdentity) -> Date? {
+        guard let e = topics[scope], e.hash == membersHash, e.identity == Self.key(identity) else { return nil }
+        return Date(timeIntervalSince1970: e.at + (e.refused ? Self.refusedFor : Self.failedFor))
+    }
 
     /// The policy's back-off (`InsightsPolicy.plan(backoff:)`): until when each of `notes` (id and current hash) waits,
     /// for the failures of this same text with this same model.

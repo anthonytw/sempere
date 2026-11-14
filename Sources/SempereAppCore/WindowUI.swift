@@ -53,6 +53,10 @@ public final class WindowUICore<Host: AppModelHost> {
     public var historyNoteID: UUID?
     /// The note whose Note Insights sheet is open (`WindowSheets`): summary, keywords, related notes.
     public var insightsNoteID: UUID?
+    /// The notebook or tag whose topic summary sheet is open (`WindowSheets`; design §6 item 4).
+    public var insightsTopic: InsightsTopicsFile.Scope?
+    /// The map of related notes is open as a sheet (`WindowSheets`; design §6 item 5).
+    public var insightsMapShown = false
 
     public init() {}
 }

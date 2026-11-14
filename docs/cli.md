@@ -2333,7 +2333,7 @@ sempere insights show    NOTE
 sempere insights related NOTE [--limit N]
 sempere insights search  QUERY
 sempere insights status
-sempere insights topic   --notebook P | --tag T [--generate]
+sempere insights topic   --notebook P | --tag T [--generate] | --list
 sempere insights map     [--format json|svg] [--rebuild] [--pin REV [--yes]]
 sempere insights title   NOTE [--format F] [--dry-run]
 sempere insights work-device [ID | --claim]
@@ -2352,7 +2352,8 @@ claims it when none is set, and the role never moves by itself. Every command ta
   embed each eligible note (text unchanged for 10 minutes, `--force`: now and again), tombstone deleted notes, title
   voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when more than
   10% changed or weekly (the first build pins the embedding revision, the lowest every recently seen device supports),
-  write this device's record and the notebook and tag summaries that are due. A device that is not the work device
+  write this device's record and the notebook and tag summaries that are due (each at most once a day; one whose
+  model call failed or left nothing after the fact check waits a day, 30 days when refused, in the same memo). A device that is not the work device
   generates only with `insights.compute` `auto`, and never embeds into the vault. A note whose generation failed is
   not asked again for a day, or for 30 days when the model refused it, unless its text or the model changes or with
   `--force` (this machine's memo, `$XDG_STATE_HOME/sempere/insights/<vault id>-failures.json`). `--limit` caps model calls;
@@ -2369,7 +2370,11 @@ claims it when none is set, and the role never moves by itself. Every command ta
 - `status`: processed, stale and missing notes; the work device and when it was last seen ("not seen for 14 days"
   offers `work-device --claim`; one that has written nothing yet shows "nothing written yet"); the pinned revision and an upgrade offer with the devices it would leave out; the map;
   per device its files, model availability, embedding revisions and compatibility.
-- `topic` shows a notebook's or tag's generated summary and its members; `--generate` makes it now (needs the model).
+- `topic` shows a notebook's or tag's generated summary (the latest any device made), whether it is stale (its
+  summarized members changed since) and its members, the sources to check it against; `--generate` makes it now
+  (needs the model; exit 1 with fewer than 3 summarized members or when nothing survives the fact check). `--list`
+  lists every notebook and tag with at least 3 summarized notes and the state of its summary (what the app's Topic
+  Summaries list shows).
 - `map` prints the map as JSON (nodes with positions and clusters, clusters with labels) or SVG. `--rebuild` (needs
   the embedder) rebuilds it on the work device, or shows one built here elsewhere. `--pin REV` moves the pinned
   revision: it lists the devices left out (they become vector readers) and needs `--yes`; if the work device lacks
@@ -2388,8 +2393,8 @@ macOS 26"); `map --pin` works there (it only writes the setting). Writes are ref
 restoredTitles, resealed, removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
 `{note, title, state, summary, keywords: [{t, w}], concepts, device, deviceName, written, model, os, prompt, dropped,
 slug, embedded, embeddingKey}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
-keywordOverlap, why, shared, placed}]}`; `search` gives `[{note, title, field, matched, stale}]`; `status`,
-`topic`, `map`, `title`, `work-device` and `purge` give their fields as named in the text output.
+keywordOverlap, why, shared, placed}]}`; `search` gives `[{note, title, field, matched, stale}]`; `topic` gives `{scope, members, summary, generated, stale, device,
+at}` (`--list`: an array of those); `status`, `map`, `title`, `work-device` and `purge` give their fields as named in the text output.
 
 ### Export
 

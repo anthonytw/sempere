@@ -65,6 +65,18 @@ public enum InsightsProblem: Equatable, Sendable {
     case failed(String)
 }
 
+/// Why "Regenerate" made no topic summary (worded by the app).
+public enum InsightsTopicProblem: Equatable, Sendable {
+    /// Nothing survived the fact check; the stored paragraph (if any) stays.
+    case factCheck
+    /// Fewer summarized notes than a topic summary needs.
+    case tooFewMembers
+    /// The model is not available on this device.
+    case unavailable
+    /// The model or the write failed (the error's words).
+    case failed(String)
+}
+
 /// What Settings and the note views read (observed: `AppModel.insights`).
 public struct InsightsModelState: Equatable, Sendable {
     /// The vault's insights settings as this device reads them (its type block for `compute`).
@@ -83,6 +95,10 @@ public struct InsightsModelState: Equatable, Sendable {
     public var problem: InsightsProblem?
     /// The offer card was answered (or dismissed) for this vault on this device.
     public var offerAnswered = false
+    /// Topic summaries being made now on this device by "Regenerate" (`TopicScopes.name` of each scope).
+    public var regeneratingTopics: Set<String> = []
+    /// Why the last "Regenerate" made nothing (worded by the app), by scope name.
+    public var topicProblems: [String: InsightsTopicProblem] = [:]
     /// Bumped whenever the index changes: views showing insights read again.
     public var revision = 0
 
@@ -107,7 +123,7 @@ public struct NoteInsightsPanel: Equatable, Sendable {
     public var missing: Bool { shown == nil || shown?.state == "missing" }
 }
 
-/// A cluster of the map, as a grouped list (the map view itself is PR 3).
+/// A cluster of the map, as a grouped list (the accessible and compact form of the map view).
 public struct InsightsCluster: Identifiable, Hashable, Sendable {
     public var id: Int
     public var label: [String]
@@ -126,6 +142,10 @@ public struct InsightsIndex: Sendable {
     public var clusterOf: [UUID: Int] = [:]
     /// Notes left out of the graph by this device's bound (`InsightsServices.maxGraphNotes`).
     public var outsideGraph: Set<UUID> = []
+    /// The map as the map view draws it (positions, regions, edges; Insights PR 3).
+    public var map = InsightsMapLayout.empty
+    /// Notebook and tag scopes with enough summarized notes for a topic summary, as shown (design §6 item 4).
+    public var topics: [InsightsTopicsFile.Scope: TopicSummaries.Shown] = [:]
     /// What the index was made from (notes and files), so a refresh with nothing new is skipped.
     var signature = 0
     public init() {}
@@ -343,6 +363,8 @@ extension AppModelCore {
         index.graph = reader.relatedGraph(inputs: inputs, me: me, embedder: embedder, maxNotes: maxNotes, set: set)
         index.outsideGraph = Set(bounded.leftOut)
         let map = reader.mapView(inputs: inputs, me: me, embedder: embedder, set: set)
+        index.map = InsightsMapLayout(view: map, edges: index.graph?.edges)
+        for t in TopicSummaries.shownAll(inputs: inputs, snapshot: reader.snapshot) { index.topics[t.scope] = t }
         var members: [Int: [UUID]] = [:], placed: [Int: Set<UUID>] = [:]
         for node in map.nodes {
             guard let c = node.cluster, let id = UUID(uuidString: node.note) else { continue }
@@ -375,6 +397,69 @@ extension AppModelCore {
 
     /// The clusters of the map as a grouped list.
     public var insightsClusters: [InsightsCluster] { insights.mode == .on ? insightsIndex.clusters : [] }
+
+    /// The map as the map view draws it (empty while Note Insights is off or there is no map).
+    public var insightsMap: InsightsMapLayout { insights.mode == .on ? insightsIndex.map : .empty }
+
+    // MARK: Topic summaries (design §6 item 4, D8)
+
+    /// The topic summary of a notebook, as shown; nil when Note Insights is off or the notebook has fewer than 3
+    /// summarized notes (its "Summary" is then not offered).
+    public func insightsTopic(notebook path: String) -> TopicSummaries.Shown? {
+        NotebookPath.canonical(path).flatMap { insightsTopic(.init(notebook: $0)) }
+    }
+
+    /// The topic summary of a tag (matched case-insensitively, `NoteOps.tagKey`), as `insightsTopic(notebook:)`.
+    public func insightsTopic(tag: String) -> TopicSummaries.Shown? { insightsTopic(.init(tag: NoteOps.tagKey(tag))) }
+
+    public func insightsTopic(_ scope: InsightsTopicsFile.Scope) -> TopicSummaries.Shown? {
+        guard insights.mode == .on, let t = insightsIndex.topics[scope], t.eligible else { return nil }
+        return t
+    }
+
+    /// Every notebook and tag that can have a summary, notebooks first, by name.
+    public var insightsTopics: [TopicSummaries.Shown] {
+        guard insights.mode == .on else { return [] }
+        return insightsIndex.topics.values.filter(\.eligible).sorted { TopicScopes.name($0.scope) < TopicScopes.name($1.scope) }
+    }
+
+    /// "Regenerate" is offered: this device can make summaries and the vault is writable here.
+    public var canRegenerateInsightsTopics: Bool {
+        insights.mode == .on && insights.capability.generates && !isVaultReadOnly && phase == .unlocked
+    }
+
+    /// "Regenerate": makes the scope's topic summary now on this device (one model call; design §6 item 4), whatever the
+    /// once-a-day rule says, then reads the index again. Several scopes may run at once; one scope runs once.
+    public func regenerateInsightsTopic(_ scope: InsightsTopicsFile.Scope) async {
+        let name = TopicScopes.name(scope)
+        guard canRegenerateInsightsTopics, let vault, !insights.regeneratingTopics.contains(name) else { return }
+        let gen = generation
+        insights.regeneratingTopics.insert(name)
+        insights.topicProblems[name] = nil
+        defer { if generation == gen { insights.regeneratingTopics.remove(name) } }
+        let summaries = insightsSummaries
+        let updater = InsightsUpdater(vault: vault, model: insightsRuntime.model, embedder: nil, deviceState: deviceStateURL,
+                                      app: services.appName)
+        let memo = insightsFailureMemoURL
+        do {
+            let inputs = await Self.insightsOffMain { InsightsNotes.inputs(vault, summaries: summaries) }
+            guard generation == gen else { return }
+            _ = try await updater.regenerateTopic(scope, inputs: inputs, failureMemo: memo)
+        } catch let e as InsightsUpdater.TopicError {
+            guard generation == gen else { return }
+            switch e {
+            case .factCheck: insights.topicProblems[name] = .factCheck
+            case .tooFewMembers: insights.topicProblems[name] = .tooFewMembers
+            case .unavailable: insights.topicProblems[name] = .unavailable
+            }
+        } catch {
+            guard generation == gen else { return }
+            insights.topicProblems[name] = .failed(services.describeError(error))
+        }
+        guard generation == gen else { return }
+        insightsRuntime.filesRevision += 1
+        await refreshInsights()
+    }
 
     /// The search field's insights hits (design §6 item 2): notes in the search's scope whose keywords, concepts or
     /// summary hold every word of the query, best field first ("matched in summary"), without the notes the page-text
@@ -580,8 +665,9 @@ extension AppModelCore {
             o.platform = insightsServices.platform
             o.powerWindow = true
             o.deviceType = settingsDeviceType   // `insights.compute` of this kind of device (D13)
-            // Topic summaries are behind the cut line (D19): no screen shows them yet, so a battery device does not make them.
-            o.topics = false
+            // Topic summaries (design §6 item 4, D8; Insights PR 3): due scopes at most once a day each, in the same power
+            // window and batch as the notes, backed off in the failure memo when they fail.
+            o.topics = true
             let summaries = insightsSummaries
             let options = o
             let report: InsightsUpdateReport
@@ -605,8 +691,9 @@ extension AppModelCore {
             insightsRuntime.filesRevision += 1
             scheduleInsightsRefresh(after: .seconds(10))
             if report.cancelled { remains = true; break }
-            // Done when this run generated nothing new (everything current, backed off or not allowed here).
-            if report.generated.isEmpty { break }
+            // Done when this run made nothing new (everything current, backed off or not allowed here). A topic that
+            // failed is in the memo, so it is not asked again in the next run.
+            if report.generated.isEmpty && report.topics.isEmpty { break }
         }
         if generation == gen { await refreshInsights() }
         return (reports, remains)

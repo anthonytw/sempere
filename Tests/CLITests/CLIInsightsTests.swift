@@ -90,6 +90,16 @@ final class CLIInsightsTests: CLITestCase {
         XCTAssertEqual(topic["generated"] as? Bool, true)
         XCTAssertEqual((topic["members"] as? [String])?.count, 3)
         XCTAssertEqual(try cli(["insights", "topic", "--notebook", "Kitchen", "--tag", "x"] + args, env: fake).status, 2)
+        XCTAssertEqual(topic["stale"] as? Bool, false)
+        // topic --list: the scopes that can have a summary (Insights PR 3, the app's Topic Summaries list).
+        let listed = try cli(["insights", "topic", "--list", "--json"] + args, env: fake)
+        XCTAssertEqual(listed.status, 0, listed.err)
+        let scopes = (try JSONSerialization.jsonObject(with: Data(listed.out.utf8)) as? [[String: Any]]) ?? []
+        XCTAssertTrue(scopes.contains { $0["scope"] as? String == "notebook:Kitchen" && $0["generated"] as? Bool == true }, listed.out)
+        XCTAssertEqual(try cli(["insights", "topic", "--list", "--tag", "x"] + args, env: fake).status, 2)
+        // topic --generate (fake model): made again now.
+        let regenerated = json(try cli(["insights", "topic", "--notebook", "Kitchen", "--generate", "--json"] + args, env: fake))
+        XCTAssertEqual(regenerated["generated"] as? Bool, true)
         // title: only for voice notes.
         let title = json(try cli(["insights", "title", "Springs 1", "--json"] + args, env: fake))
         XCTAssertEqual(title["action"] as? String, "notVoiceNote")

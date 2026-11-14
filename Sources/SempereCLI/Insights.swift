@@ -277,11 +277,15 @@ struct InsightsTopic: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "topic",
         abstract: "A notebook's or tag's generated summary, with the notes it was made from.",
-        discussion: "--generate makes it now on this device (needs Apple Intelligence, exit 3 elsewhere).")
+        discussion: """
+            --generate makes it now on this device (needs Apple Intelligence, exit 3 elsewhere). --list lists every \
+            notebook and tag with enough summarized notes for a summary (at least 3), with its state.
+            """)
 
     @Option(name: .long, help: ArgumentHelp("A notebook path.", valueName: "path")) var notebook: String?
     @Option(name: .long, help: ArgumentHelp("A tag.", valueName: "tag")) var tag: String?
     @Flag(name: .long, help: "Generate it now.") var generate = false
+    @Flag(name: .long, help: "List the notebooks and tags that can have a summary.") var list = false
     @OptionGroup var access: AccessOptions
     @OptionGroup var cache: CacheOptions
     @OptionGroup var output: OutputOptions
@@ -294,9 +298,32 @@ struct InsightsTopic: ParsableCommand {
         var stale: Bool
         var device: String?
         var at: Date?
+
+        init(_ shown: TopicSummaries.Shown) {
+            scope = TopicScopes.name(shown.scope)
+            members = shown.members.map { $0.uuidString.lowercased() }
+            summary = shown.summary
+            generated = shown.summary != nil
+            stale = shown.stale
+            device = shown.device?.rawValue
+            at = shown.at
+        }
     }
 
     func run() throws {
+        if list {
+            guard notebook == nil, tag == nil, !generate else { throw CLIError.usage("--list takes no --notebook, --tag or --generate") }
+            let vault = try access.openVault(.required)
+            let inputs = try InsightsCLI.inputs(vault, cache: cache)
+            let all = TopicSummaries.shownAll(inputs: inputs, snapshot: InsightsStore(vault: vault).snapshot()).map(Out.init)
+            if output.json { return try output.emitJSON(all) }
+            if all.isEmpty { print("no notebook or tag has \(TopicSummaries.minMembers) summarized notes yet") }
+            for t in all {
+                let state = t.summary == nil ? "no summary yet" : t.stale ? "stale" : "current"
+                print("\(t.scope)  (\(t.members.count) summarized notes)  \(state)")
+            }
+            return
+        }
         guard (notebook == nil) != (tag == nil) else { throw CLIError.usage("give one of --notebook or --tag") }
         let scope: InsightsTopicsFile.Scope
         if let notebook {
@@ -309,37 +336,25 @@ struct InsightsTopic: ParsableCommand {
         }
         let vault = try access.openVault(.required)
         let inputs = try InsightsCLI.inputs(vault, cache: cache)
-        var snapshot = InsightsStore(vault: vault).snapshot()
-        let members = TopicScopes.members(inputs: inputs, snapshot: snapshot).first { $0.0 == scope }?.1 ?? []
-        if generate, let model = p.model {
+        let shown: TopicSummaries.Shown
+        if generate {
             try vault.requireWritable()
-            guard members.count >= TopicSummaries.minMembers else {
-                throw CLIError.failure("\(TopicScopes.name(scope)) has \(members.count) summarized note(s); a topic needs at least \(TopicSummaries.minMembers)")
+            let updater = InsightsUpdater(vault: vault, model: p.model, embedder: nil, deviceState: DeviceState.defaultURL(), app: appName)
+            let memo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
+            do {
+                shown = try blockingThrowing { try await updater.regenerateTopic(scope, inputs: inputs, failureMemo: memo) }
+            } catch let e as InsightsUpdater.TopicError {
+                if case .unavailable(let why) = e { throw InsightsCLI.unavailable(why) }
+                throw CLIError.failure("\(TopicScopes.name(scope)) " + (e == .factCheck ? "summary did not survive the fact check; nothing written" : "has \(e)"))
             }
-            let merger = InsightsNotes.merger(inputs)
-            let name = TopicScopes.name(scope)
-            let text = try blockingThrowing {
-                try await TopicSummaries.generate(name: name, members: members, language: nil, model: model, merger: merger)
-            }
-            guard let text else { throw CLIError.failure("the summary did not survive the fact check; nothing written") }
-            let store = InsightsStore(vault: vault)
-            let me = try store.writer()
-            var topics = snapshot.topics[me]?.topics ?? []
-            topics.removeAll { $0.scope == scope }
-            topics.append(.init(scope: scope, members: members.count, membersHash: TopicSummaries.membersHash(members),
-                                gen: .init(identity: model.identity, at: InsightsCodec.nextWritten(after: nil, now: Date()), summary: text)))
-            topics.sort { TopicScopes.name($0.scope) < TopicScopes.name($1.scope) }
-            try store.write(.topics(InsightsTopicsFile(device: me, written: 0, topics: topics)))
-            snapshot = store.snapshot()
+        } else {
+            let snapshot = InsightsStore(vault: vault).snapshot()
+            let members = TopicScopes.members(inputs: inputs, snapshot: snapshot).first { $0.0 == scope }?.1 ?? []
+            shown = TopicSummaries.shown(scope, members: members, snapshot: snapshot)
         }
-        // The latest stored summary of the scope, from any device.
-        let stored = snapshot.topics.compactMap { d, f in f.topics.first { $0.scope == scope }.map { (d, $0) } }
-            .sorted { ($0.1.gen.at, $0.0.rawValue) > ($1.1.gen.at, $1.0.rawValue) }.first
-        let out = Out(scope: TopicScopes.name(scope), members: members.map { $0.note.uuidString.lowercased() }, summary: stored?.1.gen.summary,
-                      generated: stored != nil, stale: stored.map { $0.1.membersHash != TopicSummaries.membersHash(members) } ?? false,
-                      device: stored?.0.rawValue, at: stored.map { Date(timeIntervalSince1970: Double($0.1.gen.at) / 1000) })
+        let out = Out(shown)
         if output.json { return try output.emitJSON(out) }
-        print("\(out.scope)  (\(members.count) summarized notes)")
+        print("\(out.scope)  (\(out.members.count) summarized notes)")
         if let s = out.summary { print("Generated\(out.stale ? ", stale" : ""): \(s)") } else { print("no summary yet") }
         let titles = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id.uuidString.lowercased(), $0.title) })
         for m in out.members { print("  \(InsightsCLI.shortId(m))  \(titles[m] ?? "")") }

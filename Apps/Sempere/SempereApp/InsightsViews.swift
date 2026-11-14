@@ -4,8 +4,9 @@ import SempereInsights
 import SwiftUI
 
 // Note Insights in the app (docs/design/1.2-note-insights.md §6, D4, D12-D15; Insights PR 2): Settings ▸ Note
-// Insights, the one-time offer card, the note's Note Insights sheet and the clusters as a grouped list (the map view is
-// PR 3). The model's half is `AppModel+Insights` (SempereAppCore); these views only word and lay it out.
+// Insights, the one-time offer card and the note's Note Insights sheet; the map and its list form are
+// `InsightsMapView.swift`, topic summaries `InsightsTopicViews.swift` (PR 3). The model's half is `AppModel+Insights`
+// (SempereAppCore); these views only word and lay it out.
 
 extension View {
     /// A setting of the vault itself (Note Insights' `insights.*`): kept in `settings.age` for every device and never
@@ -161,11 +162,18 @@ struct InsightsSettingsSection: View {
                     .help("Make this device's summaries, keywords and related notes now, without waiting for it to charge")
             }
             NavigationLink {
-                InsightsClustersView()
+                InsightsMapScreen { model.selectedNoteID = $0 }
             } label: {
-                Label("Groups of Related Notes", systemImage: "square.grid.3x3.square")
+                Label("Map of Related Notes", systemImage: "point.3.connected.trianglepath.dotted")
             }
-            .disabled(model.insightsClusters.isEmpty)
+            .disabled(model.insightsMap.isEmpty)
+            .accessibilityIdentifier("insights.mapLink")
+            NavigationLink {
+                InsightsTopicsList()
+            } label: {
+                Label("Topic Summaries", systemImage: "text.quote")
+            }
+            .accessibilityIdentifier("insights.topicsLink")
         }
     }
 
@@ -449,45 +457,5 @@ struct NoteInsightsSheet: View {
                 Text("In the group “\(cluster.joined(separator: ", "))”.", comment: "%@ is a group's label words")
             }
         }
-    }
-}
-
-// MARK: - Clusters (a grouped list; the map view is PR 3)
-
-/// The map's groups of related notes as a list (design §6 item 5, D9's fallback): each group's label and its notes; a
-/// tap opens one. Notes placed on this device (not in the work device's map yet) are marked.
-struct InsightsClustersView: View {
-    @AppModelEnvironment private var model
-
-    var body: some View {
-        List {
-            let clusters = model.insightsClusters
-            if clusters.isEmpty {
-                Text("No groups yet: they appear once the work device has built the map.").foregroundStyle(.secondary)
-            }
-            ForEach(clusters) { c in
-                Section {
-                    ForEach(c.members, id: \.self) { id in
-                        Button {
-                            model.selectedNoteID = id
-                        } label: {
-                            HStack {
-                                Text(verbatim: NoteTitle.display(model.notesByID[id]?.title ?? "")).foregroundStyle(.primary)
-                                Spacer()
-                                if c.placed.contains(id) {
-                                    Image(systemName: "circle.dashed").foregroundStyle(.secondary)
-                                        .accessibilityLabel("Placed on this device")
-                                }
-                            }
-                        }
-                        .help("Open this note")
-                    }
-                } header: {
-                    Text(verbatim: c.label.joined(separator: ", "))
-                }
-            }
-        }
-        .navigationTitle("Groups of Related Notes")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

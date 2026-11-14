@@ -263,6 +263,22 @@ public struct InsightsStore: Sendable {
         return name
     }
 
+    /// Changes this device's topics file (format.md §16.5) under the write lock: `change` gets the topics the file holds
+    /// now (none when there is no file) and edits them; the file is written when `change` returns true. Two writers in
+    /// one process (a background pass and "Regenerate") each change only their own scopes, so neither drops the other's.
+    @discardableResult
+    public func updateOwnTopics(now: Date = Date(), _ change: (inout [InsightsTopicsFile.Topic]) throws -> Bool) throws -> Bool {
+        try vault.requireWritable()
+        let me = try writer()
+        return try vault.epochWriteLock.withLock(timeout: 30) {
+            var topics: [InsightsTopicsFile.Topic] = []
+            if case .topics(let f)? = try? read(InsightsFileName(.topics, device: me)) { topics = f.topics }
+            guard try change(&topics) else { return false }
+            _ = try writeLocked(.topics(InsightsTopicsFile(device: me, written: 0, topics: topics)), me: me, now: now)
+            return true
+        }
+    }
+
     /// Replaces this device's sidecar of `note` with a tombstone (no `gen`, no `emb`; format.md §16.6), so a device
     /// bridging two targets cannot bring the old one back. Nothing when this device has no file for it.
     @discardableResult
