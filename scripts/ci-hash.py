@@ -57,15 +57,15 @@ FORMAT = "ci-hash/1"
 # The files each job runs its tests with: a change to any of them changes every hash of the job.
 COMMON = ["Package.swift", "Package.resolved", "scripts/ci-hash.py", "scripts/ci-targets.json"]
 JOB_FILES = {
-    "linux-test": COMMON + ["scripts/ci-linux.sh", "scripts/test-offline.sh"],
+    "linux-test": COMMON + ["scripts/ci-linux.sh", "scripts/test-offline.sh", "scripts/swiftpm-quarantine.sh"],
     "linux-webdav": COMMON + ["scripts/ci-linux.sh", "scripts/test-webdav.sh", "scripts/dav-fault-proxy.py",
                               "scripts/webdav-server-requirements.txt"],
-    "mac-package": COMMON + ["scripts/ci-mac-package.sh", "scripts/test-runner.py"],
+    "mac-package": COMMON + ["scripts/ci-mac-package.sh", "scripts/test-runner.py", "scripts/swiftpm-quarantine.sh"],
     # check-removable-importers.sh: build every target without the Notability module, run CLITests. Planned for the one target
     # CLITests (its closure and the built CLI); check-importer-isolation.sh, which the first script runs, is the other input.
     # ci-linux.sh always runs the isolation check itself, even when this job is skipped (it greps every .swift file), and it
     # holds the skip logic, so it is in the hash.
-    "linux-removable": COMMON + ["scripts/ci-linux.sh", "scripts/check-removable-importers.sh", "scripts/check-importer-isolation.sh"],
+    "linux-removable": COMMON + ["scripts/ci-linux.sh", "scripts/swiftpm-quarantine.sh", "scripts/check-removable-importers.sh", "scripts/check-importer-isolation.sh"],
 }
 IGNORED_NAMES = {".DS_Store"}
 

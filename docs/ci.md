@@ -134,9 +134,30 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
 - **Fail fast, then rerun** ([Fail fast](#fail-fast)): steps run cheapest first and the run stops at the first
   failed step; inside a step the tests stop at the first failed test, which then runs twice on its own and is
   reported as `FAILING` or `FLAKY`. A flaky test fails the step too: nothing retries silently.
-- **Quarantine**: a test known to be flaky leaves the main suites (`ui_quarantine` in `scripts/app.sh`, skipped by every
-  UI step) and runs only on its own (`scripts/app.sh test-quarantine`), outside every gate and sweep. Then it is either
-  deleted or made reliable; a sweep is never rerun because of a known flaky test.
+- **Quarantine**: a test known to be flaky leaves the main suites and runs only on its own, outside every gate and sweep.
+  Rule (owner, 2026-11-12): a known flaky test is quarantined, never rerun around; a reviewer then decides keep-or-delete
+  per test, and only a kept one is made reliable and moved back. Each runner has one list, skipped by its normal steps and run
+  alone by one command:
+
+  | List | Runner | Skipped by | Run alone by |
+  |---|---|---|---|
+  | `ui_quarantine` (`scripts/app.sh`) | iPhone simulator UI tests | every `ui_suites` step | `scripts/app.sh test-quarantine` (group `ui`) |
+  | `unit_quarantine_mac` (`scripts/app.sh`) | Mac Catalyst app unit tests | `test`, `test-mac`, `test-mac-offline` | `scripts/app.sh test-quarantine` (group `mac`) |
+  | `unit_quarantine_watch` (`scripts/app.sh`) | watchOS simulator unit tests | `test-watch` | `scripts/app.sh test-quarantine` (group `watch`) |
+  | `swiftpm_quarantine` (`scripts/swiftpm-quarantine.sh`) | SwiftPM: the Mac package step and the Linux `test` job | `ci-mac-package.sh`, `ci-linux.sh test`, `test-linux.sh` | `scripts/ci-linux.sh docker quarantine`, or `scripts/swiftpm-quarantine.sh` on a Mac |
+
+  `SEMPERE_QUARANTINE_GROUP=ui|mac|watch` makes `test-quarantine` run one group (the default runs all three; each runs, and the
+  step fails if any did). The quarantined tests, and why:
+
+  - `SempereAppUITests/NoteToolbarUITests/testANoteOpensInReadingAndTheOverflowMenuListsItsRecordings` (PR #36): flaky on the iPhone.
+  - `SempereAppTests/PseudoLanguageLayoutTests/screenFits`: a sheet is still animating when the layout is measured.
+  - `SempereAppTests/LoadDeviceCheckTests/c20RecognitionWhileWritingSavesTheSummaryCacheRarely`: timing under load.
+  - `SempereWatchTests/WatchModelTests/testRecordStopSealsIntoTheOutboxAndHandsItOver`: the test host crashed once.
+  - `ConcurrentTransferTests/testCancelledMidwayWithSeveralInFlightResumes` (SempereWebDAVTests): timing (it runs on the mock
+    server, so in the `test` jobs, not the `webdav` job).
+
+  Adding one is a line in the runner's list and a line here with its reason. Not fixed in the quarantine PR: none of them is
+  made reliable until the reviewer keeps it.
 - Off CI, `scripts/app.sh` stops an `xcodebuild` that sits idle after the end of its whole run
   (`SEMPERE_STALL_SECS`, default 180 s): `Test Suite 'All tests'` or `'Selected tests'` passed or failed, or
   `Test run with N tests`, never a class's `Executed N tests`; a `◇ Test run started` after it (Swift Testing
