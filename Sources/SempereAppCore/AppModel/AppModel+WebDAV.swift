@@ -328,6 +328,8 @@ extension AppModelCore {
         if changes.inbox { startInboxAdoption() }
         if changes.notebooks { Task { await refreshNotebookRecords() } }
         if changes.summaries, !pendingNoteIDs.isEmpty { Task { await refreshPublishedRows() } }
+        // Insights files placed or deleted, or the settings (the switch, the work device) changed: read them again.
+        if changes.insights || changes.settings { insightsFilesChanged() }
     }
 
     /// A run replaced the open vault's `vault.json`. Under the key hierarchy (KH2) that is a later version

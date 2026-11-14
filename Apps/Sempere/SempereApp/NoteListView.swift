@@ -1,5 +1,6 @@
 import Sempere
 import SempereImporters
+import SempereInsights
 import SwiftUI
 import UniformTypeIdentifiers
 import SempereImport
@@ -232,6 +233,8 @@ struct NoteListView: View {
                     .padding(.vertical, 6)
                     .background(.bar)
                 }
+                // Note Insights' one-time offer on a device that can make summaries (design §6 item 6, D4).
+                if model.showsInsightsOffer { InsightsOfferCard() }
                 if model.sidebarSelection == .recentlyRecognized {
                     RecognitionResultsHeader(results: model.recognitionResults, running: model.recognitionProgress != nil)
                 }
@@ -324,6 +327,9 @@ struct NoteListView: View {
                 }
             }
             Button("Move to Notebook…", systemImage: "book.closed") { movingNote = MovingNote(note: note) }
+            if model.insights.mode == .on {
+                Button("Note Insights…", systemImage: "sparkles") { ui.insightsNoteID = note.id }
+            }
             ExportMenu(ids: exportIDs(for: note))
             Button("Move to Recently Deleted", systemImage: "trash", role: .destructive) {
                 run { try await model.deleteNote(note.id) }
@@ -647,6 +653,21 @@ private struct SearchResultsList: View {
                         .buttonStyle(.plain)
                         .listRowBackground(model.selectedNoteID == row.note.id ? SwiftUI.Color.accentColor.opacity(0.15) : nil)
                 }
+                // Note Insights: keywords, concepts and summaries, after the page text (design §6 item 2).
+                let insightsHits = model.insightsSearchHits.filter { UUID(uuidString: $0.note).map { byID[$0] != nil } ?? false }
+                if !insightsHits.isEmpty {
+                    Section("In Summaries and Keywords") {
+                        ForEach(insightsHits, id: \.note) { hit in
+                            Button {
+                                model.recordSearch()
+                                if let id = UUID(uuidString: hit.note) { model.selectedNoteID = id }
+                            } label: {
+                                InsightsHitRow(hit: hit)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
                 if !transcriptRows.isEmpty {
                     Section("In Recordings") {
                         ForEach(transcriptRows, id: \.hit.id) { row in
@@ -660,12 +681,38 @@ private struct SearchResultsList: View {
             }
             .overlay {
                 let empty = model.searchResults.isEmpty && (!model.searchTranscripts || model.transcriptHits.isEmpty)
+                    && model.insightsSearchHits.isEmpty
                 if model.isSearching && empty {
                     ProgressView()
                 } else if !model.isSearching && empty {
                     ContentUnavailableView.search(text: model.searchText)
                 }
             }
+        }
+    }
+}
+
+/// A note whose insights matched: its title and where (keyword, concept or summary) with what matched.
+private struct InsightsHitRow: View {
+    let hit: InsightsReader.SearchHit
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: NoteTitle.display(hit.title)).font(.headline)
+            HStack(spacing: 4) {
+                Image(systemName: "sparkles").foregroundStyle(.secondary).accessibilityHidden(true)
+                Text(where_).foregroundStyle(.secondary)
+                Text(verbatim: hit.matched).lineLimit(2)
+            }
+            .font(.callout)
+        }
+    }
+
+    private var where_: String {
+        switch hit.field {
+        case "keyword": return String(localized: "Matched in keywords:", comment: "Search result from Note Insights")
+        case "concept": return String(localized: "Matched in concepts:", comment: "Search result from Note Insights")
+        default: return String(localized: "Matched in summary:", comment: "Search result from Note Insights")
         }
     }
 }

@@ -151,6 +151,8 @@ struct SempereApp: App {
             // submits. The Mac schedules nothing.
             .backgroundTask(.appRefresh(BackgroundSync.refreshIdentifier)) { await BackgroundSync.run(.refresh) }
             .backgroundTask(.processingTask(BackgroundSync.processingIdentifier)) { await BackgroundSync.run(.processing(needsNetwork: false)) }   // the flag only matters when asking
+            // Note Insights while charging (docs/design/1.2-note-insights.md §3.7): the open, unlocked vault's passes.
+            .backgroundTask(.processingTask(BackgroundSync.insightsIdentifier)) { await BackgroundSync.run(.insights) }
         #endif
     }
 

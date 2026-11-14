@@ -260,7 +260,8 @@ final class SharedSettingsTests: VaultTestCase {
     }
 
     /// The catalog's device types match where the app shows each setting: every key the settings
-    /// screens bind with `.syncedSetting("…")` is in the catalog, every catalog key is bound somewhere,
+    /// screens bind with `.syncedSetting("…")` (or `.vaultSetting("…")`, a setting of the vault itself that is never
+    /// kept per device: Note Insights) is in the catalog, every catalog key is bound somewhere,
     /// and a setting that is not used on every device sits behind a platform check in its view.
     func testCatalogMatchesWhereTheAppShowsEachSetting() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -271,7 +272,8 @@ final class SharedSettingsTests: VaultTestCase {
             let text = try String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8)
             let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
             for (i, line) in lines.enumerated() {
-                guard let r = line.range(of: ".syncedSetting(\""), !line.contains("func ") else { continue }
+                guard let r = line.range(of: ".syncedSetting(\"") ?? line.range(of: ".vaultSetting(\""),
+                      !line.contains("func ") else { continue }
                 let key = line[r.upperBound...].prefix { $0 != "\"" }
                 shown[String(key), default: []].append((file, lines, i))
             }
@@ -279,11 +281,7 @@ final class SharedSettingsTests: VaultTestCase {
         let catalog = SharedSettingsCatalog.allKeyNames
         // Settings with no row of their own in these views: the eraser and palette are bound in the editor.
         XCTAssertEqual(Set(shown.keys).subtracting(catalog), [], "bound in the app but not in the catalog")
-        // Note Insights' keys have no screen yet: Settings ▸ Note Insights comes with the app's PR (Insights PR 2,
-        // docs/design/1.2-note-insights.md §10); until then the CLI sets them. Remove this once it binds them.
-        let notYetShown: Set<String> = ["insights.enabled", "insights.compute", "insights.workDevice", "insights.embeddingRevision",
-                                        "insights.voiceNoteTitle"]
-        XCTAssertEqual(catalog.subtracting(shown.keys).subtracting(notYetShown), [], "in the catalog but shown nowhere")
+        XCTAssertEqual(catalog.subtracting(shown.keys), [], "in the catalog but shown nowhere")
         for spec in SharedSettingsCatalog.specs {
             guard let types = spec.types else { continue }
             // Within the 8 lines before the row there is a platform check naming the same side.

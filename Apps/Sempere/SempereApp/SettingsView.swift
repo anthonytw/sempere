@@ -164,6 +164,8 @@ struct SettingsGroupPage: View {
             QuickCaptureSettingsSection()
             if !Platform.isMac { WatchSettingsSection() }
             TranscriptSearchSettingsSection()
+        case .insights:
+            InsightsSettingsSection()
         case .sync:
             SettingsSyncSection()
             DeviceKeySettingsSection().id(model.settingsAppliedRevision)

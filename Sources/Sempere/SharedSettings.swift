@@ -534,6 +534,19 @@ extension Vault {
         return settings
     }
 
+    /// `updateSharedSettings` under the vault's write lock (`epochWriteLock`: the store's for a store vault, else the
+    /// hidden lock file), so a sync run merging `settings.age` on this machine never interleaves (CLAUDE.md: never write
+    /// a store vault's `settings.age` without its write lock). `VaultFileLock` is not reentrant: the caller must not
+    /// hold that lock already.
+    @discardableResult
+    public func updateSharedSettingsUnderWriteLock(replacingUnreadable: Bool = false,
+                                                   _ change: (inout SharedSettings) throws -> Void) throws -> SharedSettings {
+        try requireWritable()
+        return try epochWriteLock.withLock(timeout: 30) {
+            try updateSharedSettings(replacingUnreadable: replacingUnreadable, change)
+        }
+    }
+
     private func readSharedSettingsForUpdate(replacingUnreadable: Bool) throws -> SharedSettings? {
         do { return try readSharedSettings() } catch let e as SharedSettingsError {
             if case .needsNewerReader = e { throw e }   // never replaced (docs/settings-sync.md §6.2 rule 4)

@@ -138,6 +138,7 @@
 	<array>
 		<string>io.github.anthonytw.sempere.sync.refresh</string>
 		<string>io.github.anthonytw.sempere.sync.processing</string>
+		<string>io.github.anthonytw.sempere.insights</string>
 	</array>
 </dict>
 </plist>

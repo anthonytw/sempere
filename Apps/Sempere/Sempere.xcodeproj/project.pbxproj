@@ -20,6 +20,8 @@
 		A1000000000000000000B0A3 /* SempereLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0A3 /* SempereLocalization */; };
 		A1000000000000000000B0C0 /* SempereAppCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0C0 /* SempereAppCore */; };
 		A1000000000000000000B0D1 /* SempereCaptureShared in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0D1 /* SempereCaptureShared */; };
+		A1000000000000000000B0F1 /* SempereInsights in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0F1 /* SempereInsights */; };
+		A1000000000000000000B0F2 /* SempereInsightsApple in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0F2 /* SempereInsightsApple */; };
 		A1000000000000000000B0D2 /* SempereCaptureShared in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D0D2 /* SempereCaptureShared */; };
 		A1000000000000000000B003 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F003 /* Fixtures */; };
 		A1000000000000000000B00B /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F007 /* LICENSE */; };
@@ -250,6 +252,8 @@
 				A1000000000000000000B0A2 /* SempereLocalization in Frameworks */,
 				A1000000000000000000B0C0 /* SempereAppCore in Frameworks */,
 				A1000000000000000000B0D1 /* SempereCaptureShared in Frameworks */,
+				A1000000000000000000B0F1 /* SempereInsights in Frameworks */,
+				A1000000000000000000B0F2 /* SempereInsightsApple in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -427,6 +431,8 @@
 				A1000000000000000000D0A2 /* SempereLocalization */,
 				A1000000000000000000D0C0 /* SempereAppCore */,
 				A1000000000000000000D0D1 /* SempereCaptureShared */,
+				A1000000000000000000D0F1 /* SempereInsights */,
+				A1000000000000000000D0F2 /* SempereInsightsApple */,
 			);
 			productName = SempereApp;
 			productReference = A1000000000000000000F001 /* Sempere.app */;
@@ -1486,6 +1492,14 @@
 		A1000000000000000000D004 /* SempereSpeech */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SempereSpeech;
+		};
+		A1000000000000000000D0F1 /* SempereInsights */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereInsights;
+		};
+		A1000000000000000000D0F2 /* SempereInsightsApple */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereInsightsApple;
 		};
 		A1000000000000000000D005 /* SwiftMath */ = {
 			isa = XCSwiftPackageProductDependency;

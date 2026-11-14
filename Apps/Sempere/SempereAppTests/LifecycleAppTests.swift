@@ -246,6 +246,16 @@ struct LifecycleAppTests {
         }
         #expect(BGTaskSyncScheduler.makeRequest(.refresh) is BGAppRefreshTaskRequest)
     }
+
+    /// Note Insights' task (design §3.7): external power, no network, its own permitted identifier.
+    @Test func theInsightsRequestAsksForPowerAndNoNetwork() throws {
+        let request = try #require(BGTaskSyncScheduler.makeRequest(.insights) as? BGProcessingTaskRequest)
+        #expect(request.identifier == BackgroundSync.insightsIdentifier)
+        #expect(request.requiresExternalPower)
+        #expect(!request.requiresNetworkConnectivity)
+        let permitted = Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] ?? []
+        #expect(permitted.contains(BackgroundSync.insightsIdentifier))
+    }
 }
 
 /// What a test's closures read and record.

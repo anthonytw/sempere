@@ -394,13 +394,8 @@ struct InsightsMap: ParsableCommand {
         let snapshot = InsightsStore(vault: vault).snapshot()
         let settings = InsightsSettings.read(vault)
         let language = InsightsLanguage.of(inputs.first { !$0.deleted }?.language)
-        let listed = Set(vault.manifest.devices.compactMap { $0.id.flatMap(DeviceID.init) })
-        let recent = EmbeddingPin.recent(snapshot.devices, listed: listed, now: Date())
-        let leftOut = EmbeddingPin.leftOut(recent, language: language, revision: rev)
-        var newWork = settings.workDevice
-        if let w = settings.workDevice, let r = snapshot.devices[w], !(r.supported[language] ?? []).contains(rev) {
-            newWork = recent.filter { ($0.value.supported[language] ?? []).contains(rev) }.map(\.key).sorted().first
-        }
+        let move = InsightsSettingsWrite.planPinMove(to: rev, language: language, vault: vault, snapshot: snapshot, settings: settings)
+        let leftOut = move.leftOut, newWork = move.workDevice
         if !yes {
             let names = leftOut.map(\.rawValue).joined(separator: ", ")
             throw CLIError.usage("moving the \(language) embedding revision to \(rev) "
@@ -408,16 +403,7 @@ struct InsightsMap: ParsableCommand {
                 + (newWork != settings.workDevice ? "; the work device moves to \(newWork?.rawValue ?? "none")" : "")
                 + "; run again with --yes")
         }
-        try vault.updateSharedSettings { s in
-            guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.pin) else { return }
-            var o: [String: JSONValue] = [:]
-            if case .object(let cur) = s.resolve(spec, for: nil).value { o = cur }
-            o[language] = .number(Double(rev))
-            try s.write(spec, .object(o), block: nil, type: nil, now: Date())
-            if newWork != settings.workDevice, let w = SharedSettingsCatalog.spec(named: InsightsSettings.keys.workDevice) {
-                try s.write(w, newWork.map { .string($0.rawValue) } ?? .null, block: nil, type: nil, now: Date())
-            }
-        }
+        try InsightsSettingsWrite.apply(move, vault: vault)
         struct Out: Encodable { var language: String; var revision: Int; var leftOut: [String]; var workDevice: String? }
         let out = Out(language: language, revision: rev, leftOut: leftOut.map(\.rawValue), workDevice: newWork?.rawValue)
         if output.json { return try output.emitJSON(out) }
@@ -536,10 +522,7 @@ struct InsightsWorkDevice: ParsableCommand {
                 }
                 target = d
             }
-            try vault.updateSharedSettings { s in
-                guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.workDevice) else { return }
-                try s.write(spec, .string(target.rawValue), block: nil, type: nil, now: Date())
-            }
+            try InsightsSettingsWrite.setWorkDevice(target, vault: vault)
             changed = true
         }
         let inputs = try InsightsCLI.inputs(vault, cache: cache)
@@ -571,11 +554,7 @@ struct InsightsPurge: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         try vault.requireWritable()
-        try vault.updateSharedSettings { s in
-            guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.enabled) else { return }
-            try s.write(spec, .bool(false), block: nil, type: nil, now: Date())
-        }
-        let deleted = try InsightsStore(vault: vault).purge()
+        let deleted = try InsightsSettingsWrite.setEnabled(false, vault: vault)
         struct Out: Encodable { var deleted: [String] }
         if output.json { return try output.emitJSON(Out(deleted: deleted)) }
         output.info("Note Insights is off; deleted \(deleted.count) file(s)")

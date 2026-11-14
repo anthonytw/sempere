@@ -22,7 +22,7 @@ struct AppearanceSettingsTests {
     // MARK: - Groups
 
     @Test func theGroupsAreTheApprovedOnesInOrder() {
-        #expect(SettingsGroup.allCases == [.general, .writing, .audio, .sync, .backups, .about])
+        #expect(SettingsGroup.allCases == [.general, .writing, .audio, .insights, .sync, .backups, .about])
         for group in SettingsGroup.allCases {
             #expect(!group.title.isEmpty)
             #expect(UIImage(systemName: group.systemImage) != nil, "\(group.systemImage) is a symbol")

@@ -14,6 +14,7 @@ extension AppModelCore {
         syncCoordinator.setInBackground(true)   // closed vaults' periodic runs pause meanwhile
         finishTargetRunsInBackground()
         saveSummaryCacheIfDue(force: true)   // the app may not come back
+        insightsEnteredBackground()
         scheduleBackgroundRefresh()
     }
 
@@ -76,6 +77,12 @@ extension AppModelCore {
     /// its time out (`SyncCoordinator.runBackgroundRefresh`), a processing task runs full passes. The system ending
     /// the task cancels this, which stops the runs between files. The next task is asked for at the end.
     public func runBackgroundTask(_ kind: BackgroundSyncRequest) async {
+        if kind == .insights {
+            // Note Insights' passes on the open, unlocked vault (nothing to do otherwise: the vault's key is needed).
+            await runInsightsInBackground()
+            if insightsHasRole, !Task.isCancelled { syncScheduler.schedule(.insights) }
+            return
+        }
         let coordinator = syncCoordinator
         if await coordinator.waitUntilStarted() {
             let cancel = SyncRunCancel(), all = coordinator.runCancel
@@ -83,6 +90,7 @@ extension AppModelCore {
                 switch kind {
                 case .refresh: await coordinator.runBackgroundRefresh(cancel: cancel)
                 case .processing: await coordinator.runBackgroundProcessing(cancel: cancel)
+                case .insights: break   // below, without the targets
                 }
             } onCancel: {
                 // Every run going stops, foreground ones included (review of #74, B2).

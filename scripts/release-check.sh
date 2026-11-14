@@ -156,7 +156,11 @@ PRODUCT_SOURCES = {
     "SempereLocalization": ["SempereLocalization"],
     # The apps' session state (docs/design/thin-app.md "Rules"): menus, modes, settings, onboarding; the app only.
     "SempereAppCore": ["SempereAppCore", "SempereCapture", "SempereCaptureShared", "SempereImporters", "SempereNotability", "SempereImport", "Sempere",
-                       "SemperePDF", "SempereRender", "Age", "CZlib"],
+                       "SemperePDF", "SempereRender", "SempereInsights", "Age", "CZlib"],
+    # Note Insights (docs/design/1.2-note-insights.md §4): the pipeline the app and the CLI share, and Apple's on-device
+    # model and sentence embedder (FoundationModels, NaturalLanguage); no network code in either (NoCloudTests).
+    "SempereInsights": ["SempereInsights", "Sempere", "Age", "CZlib"],
+    "SempereInsightsApple": ["SempereInsightsApple", "SempereInsights", "Sempere", "Age", "CZlib"],
     # What the quick voice note widgets share with the app (docs/design/thin-app.md): linked by the app and the widget.
     "SempereCaptureShared": ["SempereCaptureShared"],
     # The recorder, outbox, intake and ADTS muxer of quick voice notes (docs/design/1.1-watch.md): linked by the watch app.

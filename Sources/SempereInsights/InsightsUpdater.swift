@@ -90,6 +90,8 @@ public struct InsightsUpdateOptions: Sendable {
     /// This device's memo of failed generations (`InsightsFailureMemo`): read for the policy's back-off and updated
     /// after the run; nil keeps none (tests, a dry run reads it only).
     public var failureMemo: URL?
+    /// Notes open in an editor on this device: not eligible while open (design §3.7, `PolicyNote.open`).
+    public var openNotes: Set<UUID> = []
     public init() {}
 }
 
@@ -128,6 +130,11 @@ public enum InsightsUpdateError: Error, Hashable, Sendable, CustomStringConverti
     }
 }
 
+/// Writes one delta of `ops` (a voice note's rename, D14) to `note` and returns the revision written. The app's: through
+/// its model's `DeviceClock` (CLAUDE.md: never open a second clock on a state file a `DeviceClock` holds); without one
+/// the updater writes with `Vault.apply` and the machine's `DeviceState` (the CLI).
+public typealias InsightsTitleWriter = @Sendable (_ note: UUID, _ ops: [Op], _ now: Date) async throws -> RevisionName
+
 public struct InsightsUpdater: Sendable {
     public var vault: Vault
     public var model: (any ModelProvider)?
@@ -135,6 +142,11 @@ public struct InsightsUpdater: Sendable {
     /// The device state file voice-note titles are written with (`Vault.apply`).
     public var deviceState: URL
     public var app: String
+    /// Where voice-note titles are written (nil: `Vault.apply` with `deviceState`).
+    public var titleWriter: InsightsTitleWriter?
+    /// The device id this device's revisions carry, when the caller knows it (the app's clock); nil: read from
+    /// `deviceState`.
+    public var writerDevice: DeviceID?
 
     public init(vault: Vault, model: (any ModelProvider)?, embedder: (any EmbeddingProvider)?, deviceState: URL, app: String) {
         self.vault = vault; self.model = model; self.embedder = embedder; self.deviceState = deviceState; self.app = app
@@ -143,6 +155,7 @@ public struct InsightsUpdater: Sendable {
     /// The device id this device's revisions carry (its state file's), which a `titleOp` of its own names; nil before
     /// the state file exists (then no `titleOp` is this device's).
     var revisionWriter: DeviceID? {
+        if let writerDevice { return writerDevice }
         guard FileManager.default.fileExists(atPath: deviceState.path) else { return nil }
         return (try? DeviceState.loadOrCreate(at: deviceState))?.device
     }
@@ -179,7 +192,8 @@ public struct InsightsUpdater: Sendable {
         let caps = PolicyCapabilities(model: o.embeddingsOnly ? nil : usable?.identity, embedRevision: canEmbed, powerWindow: o.powerWindow)
         let selected = o.note.map { id in inputs.filter { $0.id == id } } ?? inputs
         let policyNotes = selected.map {
-            PolicyNote(id: $0.id, hash: $0.hash, modified: $0.modified, deleted: $0.deleted, hasText: !$0.text.isEmpty)
+            PolicyNote(id: $0.id, hash: $0.hash, modified: $0.modified, deleted: $0.deleted, open: o.openNotes.contains($0.id),
+                       hasText: !$0.text.isEmpty)
         }
         var memo = o.failureMemo.map(InsightsFailureMemo.load(from:)) ?? InsightsFailureMemo()
         let backoff = usable.map { m in memo.backoff(notes: selected.map { ($0.id, $0.hash) }, identity: m.identity) } ?? [:]
@@ -192,7 +206,7 @@ public struct InsightsUpdater: Sendable {
         if plan.contains(.claimWorkDevice) {
             report.claimedWorkDevice = true
             if !o.dryRun {
-                try vault.updateSharedSettings { s in
+                try vault.updateSharedSettingsUnderWriteLock { s in
                     guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.workDevice) else { return }
                     if case .string = s.resolve(spec, for: nil).value { return }   // claimed meanwhile
                     try s.write(spec, .string(me.rawValue), block: nil, type: nil, now: o.now)
@@ -273,7 +287,7 @@ public struct InsightsUpdater: Sendable {
         // Only the work device sets titles (format.md §16.8, D14; review of #50, M1); `insights title` stays manual anywhere.
         if o.titles, !o.embeddingsOnly, settings.workDevice == me {
             for note in selected where !note.deleted && !note.transcript.isEmpty {
-                guard let outcome = try applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle,
+                guard let outcome = try await applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle,
                                                    dryRun: o.dryRun, now: o.now) else { continue }
                 switch outcome {
                 case .apply: report.titled.append(note.id.uuidString.lowercased())
@@ -287,7 +301,7 @@ public struct InsightsUpdater: Sendable {
         if plan.contains(.rebuildMap), let r = canEmbed, settings.pins[main] == nil {
             report.pinSet[main] = r
             if !o.dryRun {
-                try vault.updateSharedSettings { s in
+                try vault.updateSharedSettingsUnderWriteLock { s in
                     guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.pin) else { return }
                     var o2: [String: JSONValue] = [:]
                     if case .object(let cur) = s.resolve(spec, for: nil).value { o2 = cur }
@@ -331,7 +345,7 @@ public struct InsightsUpdater: Sendable {
 
     /// Applies (or restores) a voice note's title; nil when there is nothing to do.
     func applyTitle(_ note: InsightsNoteInput, snapshot: InsightsSnapshot, me: DeviceID, format: String, dryRun: Bool,
-                    now: Date) throws -> TitleOutcome? {
+                    now: Date) async throws -> TitleOutcome? {
         let loaded = try vault.loadNote(note.id)
         let state = try vault.reconstruct(loaded)
         let titles = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
@@ -346,16 +360,27 @@ public struct InsightsUpdater: Sendable {
         case .keep: return nil
         case .apply(let title):
             guard !dryRun else { return .apply }
-            let rev = try vault.apply(NoteOps.rename(to: title, state: state), to: note.id, deviceState: deviceState, app: app, wall: now)
+            let stamp = try await rename(note.id, to: title, state: state, now: now)
             var f = ownFile ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
-            f.titleOp = .init(stamp: Stamp(hlc: rev.hlc, device: rev.device).description, title: title)
+            f.titleOp = .init(stamp: stamp.description, title: title)
             try InsightsStore(vault: vault).write(.note(f), now: now)
             return .apply
         case .restore(let title):
             guard !dryRun else { return .restore }
-            _ = try vault.apply(NoteOps.rename(to: title, state: state), to: note.id, deviceState: deviceState, app: app, wall: now)
+            _ = try await rename(note.id, to: title, state: state, now: now)
             return .restore
         }
+    }
+
+    /// One rename delta through `titleWriter`, else `Vault.apply` with `deviceState`; the stamp of the revision written.
+    func rename(_ id: UUID, to title: String, state: NoteState, now: Date) async throws -> Stamp {
+        let ops = NoteOps.rename(to: title, state: state)
+        if let titleWriter {
+            let r = try await titleWriter(id, ops, now)
+            return Stamp(hlc: r.hlc, device: r.device)
+        }
+        let rev = try vault.apply(ops, to: id, deviceState: deviceState, app: app, wall: now)
+        return Stamp(hlc: rev.hlc, device: rev.device)
     }
 
     /// The title `insights title` would give `note` (no write), nil when it keeps its title.

@@ -2,6 +2,7 @@
 import Foundation
 import Sempere
 import SempereAppCore
+import SempereInsights
 import SwiftUI
 import Testing
 import UIKit
@@ -19,10 +20,10 @@ import UIKit
 @Suite(.serialized)
 struct PseudoLanguageLayoutTests {
     enum Screen: String, CaseIterable, Sendable {
-        case library, locked, note, tags, paper, settings, devices
+        case library, locked, note, tags, paper, settings, devices, insights
 
         /// Whether the screen is a sheet (only the sheet's own elements are measured).
-        var isSheet: Bool { [.locked, .paper, .settings, .devices].contains(self) }
+        var isSheet: Bool { [.locked, .paper, .settings, .devices, .insights].contains(self) }
 
         /// What shows only once the screen's data is in (`LayoutHost.settle`): the demo vault's note titles are vault data,
         /// the same in every language; the identifiers are the views' own.
@@ -35,6 +36,7 @@ struct PseudoLanguageLayoutTests {
             case .paper: [.identifier("Decrement")]   // the spacing stepper: the picker's own controls
             case .settings: [.identifier("appTheme.system")]   // General's Appearance section
             case .devices: [.identifier("devices.replaceKit")]   // in the snapshot's sections, after the load
+            case .insights: [.identifier("vaultSetting.insights.enabled")]   // the switch, the page's first row
             }
         }
     }
@@ -71,8 +73,17 @@ struct PseudoLanguageLayoutTests {
         let built = try await Self.demoVault()
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
         defer { model.close() }
+        // Settings ▸ Note Insights with the package's fake providers and no power window, so no pass runs.
+        if screen == .insights {
+            model.insightsServices = InsightsServices(model: { FakeModelProvider() }, embedder: { FakeEmbeddingProvider() },
+                                                      powerWindow: { false })
+        }
         try await model.openVault(at: built.url)
         if screen != .locked { _ = try await model.unlock(identityText: built.identityText) }
+        if screen == .insights {
+            await model.setInsightsEnabled(true)
+            try #require(model.insights.mode == .on, "Note Insights is on in the demo vault")
+        }
         switch screen {
         case .tags: model.sidebarSelection = .tag("lecture")
         case .note: model.selectedNoteID = built.notes["respiration"]
@@ -104,6 +115,10 @@ struct PseudoLanguageLayoutTests {
                                 purpose: .page(number: editor.pageIndex + 1, count: editor.pages.count),
                                 onPreview: { _ in }, onChoose: { _, _ in })
                     .appEnvironment(model: model, library: library, keys: keys)
+            })
+        case .insights:
+            view = AnyView(root.sheet(isPresented: .constant(true)) {
+                SettingsView(group: .insights).appEnvironment(model: model, library: library, keys: keys).defaultAppStorage(storage)
             })
         case .devices:
             // The device list (key-hierarchy KH5): rows, the recovery kit and the history.
