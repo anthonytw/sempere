@@ -95,16 +95,13 @@ final class ScreenshotTests: XCTestCase {
             return e
         }
         return [
-            // On the Mac the toolbar has Undo and Redo too, so its strokes are drawn as well (short ones in a free place right of the text; the edited note then heads the note list under the day of the run).
+            // No strokes on the Mac: its Undo button often showed greyed in the capture after Undo (a repaint question kept in
+            // the private TODO), and an edited note would head the list under the day of the run instead of the demo dates.
             Shot(name: "01-write", environment: env(all, ["SEMPERE_DEMO_NOTE": "respiration"]), waitFor: respiration,
-                 strokes: isMac ? .init(kept: (CGVector(dx: 0.60, dy: 0.895), CGVector(dx: 0.90, dy: 0.895)),
-                                        undone: (CGVector(dx: 0.60, dy: 0.912), CGVector(dx: 0.82, dy: 0.912)))
-                     : .init(kept: (CGVector(dx: 0.14, dy: 0.82), CGVector(dx: 0.52, dy: 0.82)),
+                 strokes: isMac ? nil : .init(kept: (CGVector(dx: 0.14, dy: 0.82), CGVector(dx: 0.52, dy: 0.82)),
                              undone: (CGVector(dx: 0.14, dy: 0.85), CGVector(dx: 0.40, dy: 0.85)))),
             Shot(name: "02-sketch", environment: env(all, ["SEMPERE_DEMO_NOTE": "atlas"]), waitFor: atlas,
-                 strokes: isMac ? .init(kept: (CGVector(dx: 0.60, dy: 0.895), CGVector(dx: 0.90, dy: 0.895)),
-                                        undone: (CGVector(dx: 0.60, dy: 0.912), CGVector(dx: 0.82, dy: 0.912)))
-                     : .init(kept: (CGVector(dx: 0.14, dy: 0.82), CGVector(dx: 0.52, dy: 0.82)),
+                 strokes: isMac ? nil : .init(kept: (CGVector(dx: 0.14, dy: 0.82), CGVector(dx: 0.52, dy: 0.82)),
                              undone: (CGVector(dx: 0.14, dy: 0.85), CGVector(dx: 0.40, dy: 0.85)))),
             Shot(name: "03-insights", environment: env(all, ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_INSIGHTS": "note"]),
                  waitFor: "noteInsights", timeout: 150, settle: 3),
@@ -139,7 +136,7 @@ final class ScreenshotTests: XCTestCase {
     /// first stroke stays like an underline, Undo and Redo are both enabled when the shot is taken. A miss is logged
     /// and the shot still taken.
     @MainActor
-    private func drawAndUndo(_ strokes: Shot.Underlines, shot: Shot, in app: XCUIApplication) -> XCUIScreenshot? {
+    private func drawAndUndo(_ strokes: Shot.Underlines, shot: Shot, in app: XCUIApplication) -> (shot: XCUIScreenshot?, whole: Bool) {
         let window = app.windows.firstMatch
         func stroke(_ line: (CGVector, CGVector)) {
             let from = window.coordinate(withNormalizedOffset: line.0)
@@ -163,6 +160,8 @@ final class ScreenshotTests: XCTestCase {
             }
         }
         phase("0-before")
+        let canvas = app.descendants(matching: .any).matching(identifier: "pageCanvas").firstMatch
+        let rest = Self.inkRatios(canvas)
         stroke(strokes.kept)
         phase("1-stroke1")
         stroke(strokes.undone)
@@ -198,19 +197,32 @@ final class ScreenshotTests: XCTestCase {
             window.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.99)).hover()
             Thread.sleep(forTimeInterval: 3)
             phase("4-final")
-            return nil
+            return (nil, true)
         }
-        var frames: [(XCUIScreenshot, Int)] = []
-        for _ in 0..<14 {
-            let now = XCUIScreen.main.screenshot()
-            frames.append((now, Self.ink(now)))
-            Thread.sleep(forTimeInterval: 1.5)
+        // After Undo PencilKit's own layers sometimes show only a part of the page for good (a vertical slice of the drawing
+        // blank, about every other run on the simulator; the drawing itself is whole, `InkAfterUndoUITests`): the shot is
+        // taken when the canvas's report says its layers show what its drawing holds, in each half of the page, as they did
+        // before the strokes. If not (a minute of looking), the caller starts the shot again.
+        Thread.sleep(forTimeInterval: 8)
+        var whole = false
+        for _ in 0..<10 {
+            if let rest, let now = Self.inkRatios(canvas), now.0 >= 0.8 * rest.0, now.1 >= 0.8 * rest.1 { whole = true; break }
+            if rest == nil { whole = true; break }   // no report: nothing to check against
+            Thread.sleep(forTimeInterval: 3)
         }
-        let most = frames.max { $0.1 < $1.1 }
-        let least = frames.map(\.1).min() ?? 0
-        print("SHOTDEBUG \(shot.name): ink of \(frames.count) frames after Undo: most \(most?.1 ?? 0), least \(least), \(frames.filter { $0.1 >= (most?.1 ?? 0) * 995 / 1000 }.count) of them whole")
+        print("SHOTDEBUG \(shot.name): page whole after Undo: \(whole) (before \(String(describing: rest)), now \(String(describing: Self.inkRatios(canvas))))")
         phase("4-final")
-        return most?.0
+        return (XCUIScreen.main.screenshot(), whole)
+    }
+
+    /// The canvas report's `inkcheck=` as the share of what the drawing holds that its layers show, left half and right half
+    /// (`ItemSelectionController.inkCheck`); nil when the canvas does not report.
+    @MainActor
+    static func inkRatios(_ canvas: XCUIElement) -> (Double, Double)? {
+        guard let value = canvas.value as? String, let entry = value.split(separator: ";").first(where: { $0.hasPrefix("inkcheck=") }) else { return nil }
+        let n = entry.dropFirst("inkcheck=".count).split(separator: ",").compactMap { Double($0) }
+        guard n.count == 4, n[2] > 0, n[3] > 0 else { return nil }
+        return (n[0] / n[2], n[1] / n[3])
     }
 
     /// The dark pixels (on a 200 x 266 gray copy, the rows between the toolbar and the strokes): the ink on the page.
@@ -276,6 +288,16 @@ final class ScreenshotTests: XCTestCase {
     @MainActor
     private func capture(_ shot: Shot, to directory: URL?) {
         if Self.isMac { dismissBanners() }
+        // A shot with strokes starts again (up to six times) when the page after Undo is not whole on screen.
+        let attempts = shot.strokes != nil && !Self.isMac ? 6 : 1
+        for attempt in 1...attempts {
+            if capture(shot, to: directory, last: attempt == attempts) { return }
+        }
+    }
+
+    /// One launch and shot; false: the page after Undo was not whole and `last` is false: nothing was saved.
+    @MainActor
+    private func capture(_ shot: Shot, to directory: URL?, last: Bool) -> Bool {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         // UTC: the note list shows dates, and the demo dates are fractions of a day before noon UTC.
@@ -283,6 +305,11 @@ final class ScreenshotTests: XCTestCase {
         app.launchEnvironment["SEMPERE_DEMO_APPEARANCE"] = Self.appearance
         // An iPad's finger draws only when the palette's Draw with Finger says so; the simulator has no Pencil.
         if shot.strokes != nil { app.launchEnvironment["SEMPERE_DEBUG_FINGERS_DRAW"] = "1" }
+        // The canvas reports what its layers show against what its drawing holds (`inkRatios`).
+        if shot.strokes != nil && !Self.isMac {
+            app.launchEnvironment["SEMPERE_DEBUG_INKCHECK"] = "1"
+            app.launchEnvironment["SEMPERE_DEMO_ITEMS"] = "1"
+        }
         // SEMPERE_SHOTS_DIAG: the canvas reports its stroke count and PNGs are kept after each step of the strokes.
         if ProcessInfo.processInfo.environment["SEMPERE_SHOTS_DIAG"] != nil { app.launchEnvironment["SEMPERE_DEMO_ITEMS"] = "1" }
         app.launch()
@@ -302,19 +329,14 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
         var whole: XCUIScreenshot?
-        if let strokes = shot.strokes, found { whole = drawAndUndo(strokes, shot: shot, in: app) }
-        let screenshot = whole ?? (Self.isMac ? app.windows.firstMatch.screenshot() : XCUIScreen.main.screenshot())
-        var png = screenshot.pngRepresentation
-        // The Mac's window screenshot of a page that was just drawn on showed the toolbar and the canvas as they were before
-        // the strokes (Undo greyed, no stroke) though the buttons were enabled: the window's part of a screen capture is true.
-        if Self.isMac, shot.strokes != nil, found {
-            let window = app.windows.firstMatch.frame
-            let screen = XCUIScreen.main.screenshot().image
-            let scale = screen.scale
-            if let cg = screen.cgImage,
-               let part = cg.cropping(to: CGRect(x: window.minX * scale, y: window.minY * scale, width: window.width * scale, height: window.height * scale)),
-               let data = UIImage(cgImage: part).pngData() { png = data }
+        if let strokes = shot.strokes, found {
+            let result = drawAndUndo(strokes, shot: shot, in: app)
+            if !result.whole && !last { app.terminate(); return false }
+            if !result.whole { XCTFail("\(shot.name): the page was never whole after Undo in six launches") }
+            whole = result.shot
         }
+        let screenshot = whole ?? (Self.isMac ? app.windows.firstMatch.screenshot() : XCUIScreen.main.screenshot())
+        let png = screenshot.pngRepresentation
         let attachment = XCTAttachment(uniformTypeIdentifier: "public.png", name: shot.name, payload: png)
         attachment.name = shot.name
         attachment.lifetime = .keepAlways
@@ -328,5 +350,6 @@ final class ScreenshotTests: XCTestCase {
             }
         }
         app.terminate()
+        return true
     }
 }

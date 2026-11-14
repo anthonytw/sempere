@@ -71,6 +71,9 @@ enum DemoLaunch {
         let insights = insightsMode(env["SEMPERE_DEMO_INSIGHTS"])
         if insights != nil {
             // The fake providers, and a power window always open.
+            // "Generated on" shows a demo day (5 Oct 2026, after the demo's newest note settled), never the day of the run.
+            let generated = Calendar(identifier: .gregorian).date(from: DateComponents(timeZone: TimeZone(identifier: "UTC"), year: 2026, month: 10, day: 5, hour: 18)) ?? Date()
+            model.insightsNow = { generated }
             model.insightsServices = InsightsServices(model: { FakeModelProvider() }, embedder: { FakeEmbeddingProvider(dimension: 512) },
                                                       powerWindow: { true })
         } else {

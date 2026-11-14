@@ -246,6 +246,9 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored public var activityRoot: URL
     /// The clock "Recently Recognized" is measured with (tests move it).
     @ObservationIgnored public var activityNow: () -> Date = { Date() }
+    /// The clock Note Insights' passes stamp what they write with (tests and the demo move it: `SEMPERE_DEMO_INSIGHTS`
+    /// pins "Generated on" to a demo day).
+    @ObservationIgnored public var insightsNow: () -> Date = { Date() }
     /// Bumped when "Recently Recognized" changes by the clock alone (a run
     /// leaves the 7-day window, `recentlyRecognizedNextChange`), so what
     /// reads it is drawn again.
