@@ -156,6 +156,23 @@ extension AppModelSuites {
             model.close()
         }
 
+        /// A leftover recording belongs to the vault it started in: Make a Copy keeps note ids, so the same note id in
+        /// another vault must never take it.
+        @Test func aLeftoverRecordingIsOnlyRecoveredIntoItsOwnVault() async throws {
+            let root = TestTemp.root.appendingPathComponent("rec-vault-\(UUID().uuidString)", isDirectory: true)
+            let id = UUID()
+            let folder = root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+            try await Self.leaveRecording(id, in: folder)
+            let mine = UUID(), other = UUID()
+            var manifest = try JSONDecoder().decode(RecordingManifest.self,
+                from: Data(contentsOf: folder.appendingPathComponent(RecordingRecovery.manifestName)))
+            manifest.vault = mine
+            try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingRecovery.manifestName))
+            #expect(RecordingRecovery.pending(for: Self.lecture, vault: mine, root: root, inUse: []).count == 1)
+            #expect(RecordingRecovery.pending(for: Self.lecture, vault: other, root: root, inUse: []).isEmpty)
+            #expect(RecordingRecovery.pending(for: Self.lecture, root: root, inUse: []).count == 1, "no vault asked: as before")
+        }
+
         /// Two recoveries of the same note at once (a library editor and a note window's) store the folder once:
         /// the second does nothing while the first runs.
         @Test func oneRecoveryPerNoteAtATime() async throws {

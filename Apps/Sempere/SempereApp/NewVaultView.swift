@@ -402,13 +402,21 @@ struct NewVaultView: View {
 /// Shows the freshly generated recovery key once, with its kit; there is no
 /// other copy unless a passphrase wrapped one into `keys/`. Its way out, I Saved the Key, is the sheet's
 /// confirmation button (`NewVaultView`'s toolbar).
-private struct KeyReceipt: View {
+struct KeyReceipt<Extra: View>: View {
     let created: CreatedVault
+    /// Sections shown above the key (Make a Copy's report).
+    private let extra: Extra
     @State private var copied = false
     @State private var sharing = false
 
+    init(created: CreatedVault, @ViewBuilder extra: () -> Extra) {
+        self.created = created
+        self.extra = extra()
+    }
+
     var body: some View {
         Form {
+            extra
             Section {
                 Text("“\(created.url.deletingPathExtension().lastPathComponent)” is ready. Save its recovery key now, or print its kit: anyone with it can read the vault, and without it the vault cannot be opened if this device is lost.")
                 // Not selectable, as in the key window: ⌘C would put the secret on the clipboard with no
@@ -434,4 +442,8 @@ private struct KeyReceipt: View {
             ShareSheet(items: [created.secretKey ?? ""], secret: true) { sharing = false }
         }
     }
+}
+
+extension KeyReceipt where Extra == EmptyView {
+    init(created: CreatedVault) { self.init(created: created) { EmptyView() } }
 }

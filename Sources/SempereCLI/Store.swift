@@ -8,7 +8,7 @@ import SempereSync
 struct StoreCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "store",
-        abstract: "List, create, copy in, restore and remove the vaults of a vault store.",
+        abstract: "List, create, copy, copy in, restore and remove the vaults of a vault store.",
         discussion: """
             A store is a folder of complete vaults, one per vault id: <store>/<vault id>/<name>.sempere. The app \
             keeps every vault in its own store, inside its container; on a Mac that is ~/Library/Containers/\
@@ -16,7 +16,7 @@ struct StoreCommand: ParsableCommand {
             store only complete: it is built or copied in a staging folder, checked, and moved into place at \
             once. Any other command works on a store vault through --vault "$(sempere store path NAME)".
             """,
-        subcommands: [StoreList.self, StorePath.self, StoreCreate.self, StoreImport.self, StoreRestore.self, StoreRemove.self,
+        subcommands: [StoreList.self, StorePath.self, StoreCreate.self, StoreCopy.self, StoreImport.self, StoreRestore.self, StoreRemove.self,
                       StoreTargetCommand.self, StoreSync.self, StoreInfo.self, StoreQuarantineCommand.self]
     )
 }

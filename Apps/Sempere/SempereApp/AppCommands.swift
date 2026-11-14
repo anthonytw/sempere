@@ -43,7 +43,7 @@ struct AppCommands: Commands {
                 }
             }
             .disabled((router?.recents ?? []).isEmpty)
-            section([.reopenVault, .closeVault])
+            section([.reopenVault, .makeCopy, .closeVault])
             Divider()
             // Import, insert, export, reload.
             sections(Array(MenuLayout.file.dropFirst(2)))
@@ -230,6 +230,7 @@ enum WindowCommands {
         context.vaultReadOnly = model.isVaultReadOnly
         context.hasImportReport = model.lastImportReport != nil
         context.hasExportTargets = !exportIDs.isEmpty
+        context.canMakeCopy = model.canMakeCopy
         context.voiceNote = VoiceNoteMenu.phase(model.quickCapture.state)
     }
 }

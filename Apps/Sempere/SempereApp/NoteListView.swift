@@ -218,6 +218,14 @@ struct NoteListView: View {
                                 .help("Confirm this vault with the root fingerprint from its recovery kit")
                                 .accessibilityIdentifier("readOnly.confirmVault")
                         }
+                        // A read-only vault can still be read: a copy of its notes is a vault of the person's own
+                        // that can be changed (issue #12).
+                        if model.canMakeCopy {
+                            Button("Make a Copy…", systemImage: "doc.on.doc") { model.requestMakeCopy(window: ui.id) }
+                                .font(.callout)
+                                .help("Copy this vault's notes into a new vault of your own that you can change")
+                                .accessibilityIdentifier("readOnly.makeCopy")
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)

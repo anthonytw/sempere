@@ -305,6 +305,16 @@ public final class AppModelCore<Host: AppModelHost> {
     public var exportRequest: ExportRequest?
     /// The "Export to Folder or Zip…" sheet's request (`AppModel+BulkExport`).
     public var bulkExportRequest: BulkExportRequest?
+    /// The "Make a Copy…" sheet's request (`AppModel+MakeCopy`).
+    public var makeCopyRequest: MakeCopyRequest?
+    /// A copy of the open vault is being made (`makeCopy`).
+    public var isMakingCopy = false
+    /// How far the running copy is (nil when none runs).
+    public var makeCopyProgress: CopyProgress?
+    /// Stops the running copy between notes (`cancelMakeCopy`).
+    var makeCopyCancellation: CopyCancellation?
+    /// Told every note of a running copy on the copying thread, before the model hears of it (tests pause or stop a copy).
+    @ObservationIgnored var makeCopyStepHook: (@Sendable (CopyProgress) -> Void)?
     /// Where this model's drag-out exports (a note dragged to the Finder) are written; emptied when the vault closes.
     public let exportFolder: URL = NotePDFExport.folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
     /// Bumped when the vault closes: a drag-out export prepared before it writes nothing.
@@ -1234,6 +1244,8 @@ public final class AppModelCore<Host: AppModelHost> {
         NotePDFExport.purge(in: exportFolder, olderThan: 0)   // plaintext files dragged out of this vault
         exportRequest = nil
         bulkExportRequest = nil
+        makeCopyRequest = nil
+        makeCopyCancellation?.cancel()   // the copy reads the vault, which closes here
         publishedRows = [:]
         publishedRowsSignature = []
         isBusy = false

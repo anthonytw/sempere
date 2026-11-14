@@ -233,18 +233,18 @@ public enum ImportFileKind: Equatable, Sendable {
     case fileExtension(String)
 }
 
-/// Carries an importer's progress reports (made on the importing thread) to the model on the main actor: only
+/// Carries progress reports made on a working thread (an importer's, a copy's) to the model on the main actor: only
 /// the latest one is shown, at most one hop is queued at a time, and nothing arrives after `finish`.
-final class ImportProgressRelay: @unchecked Sendable {
+final class ProgressRelay<Progress: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
-    private var latest: ImporterProgress?
+    private var latest: Progress?
     private var queued = false
     private var finished = false
-    private let deliverTo: @MainActor (ImporterProgress) -> Void
+    private let deliverTo: @MainActor (Progress) -> Void
 
-    @MainActor init(deliver: @escaping @MainActor (ImporterProgress) -> Void) { deliverTo = deliver }
+    @MainActor init(deliver: @escaping @MainActor (Progress) -> Void) { deliverTo = deliver }
 
-    func post(_ progress: ImporterProgress) {
+    func post(_ progress: Progress) {
         lock.lock()
         latest = progress
         let hop = !queued && !finished
@@ -262,8 +262,11 @@ final class ImportProgressRelay: @unchecked Sendable {
         if let progress { deliverTo(progress) }
     }
 
-    /// No report reaches the model after this (the import ended).
+    /// No report reaches the model after this (the work ended).
     func finish() {
         lock.lock(); finished = true; lock.unlock()
     }
 }
+
+/// An import's progress reports (`AppModelCore.importFromApp`).
+typealias ImportProgressRelay = ProgressRelay<ImporterProgress>

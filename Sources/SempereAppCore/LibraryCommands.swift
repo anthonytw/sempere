@@ -50,6 +50,7 @@ public enum LibraryCommands {
         case .reloadVault: Task { await model.report { try await model.reload() } }
         case .syncTargets: ui.showingSyncTargets = true
         case .bulkExport: model.requestBulkExport(model.bulkExportScope, window: ui.id)
+        case .makeCopy: model.requestMakeCopy(window: ui.id)
         case .renameNote: ui.renameNoteID = selected
         case .editTags: ui.tagsNoteID = selected
         case .saveVersion: ui.saveVersionNoteID = selected

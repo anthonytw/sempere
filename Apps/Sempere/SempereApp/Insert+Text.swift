@@ -99,6 +99,7 @@ extension AppModel {
         case let e as SyncTargetProblem: return e.text
         case let e as WebDAVVaultError: return e.text
         case let e as WebDAVPasswordError: return e.text
+        case let e as CopyError: return e.text
         default: return "\(error)"
         }
     }

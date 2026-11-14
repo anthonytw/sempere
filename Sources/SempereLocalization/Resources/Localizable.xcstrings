@@ -26,6 +26,19 @@
         }
       }
     },
+    "%@ Copy" : {
+      "comment" : "Default name of a copy of a vault; the value is the vault's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia de %@"
+          }
+        }
+      }
+    },
     "%@ Import" : {
       "comment" : "Alert title after an import from another app (the app's name)",
       "extractionState" : "manual",
@@ -1535,6 +1548,104 @@
         }
       }
     },
+    "%lld notes copied" : {
+      "comment" : "Make a Copy result: a number of notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note copied"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes copied"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas copiadas"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota copiada"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas copiadas"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld notes could not be copied and are not in the copy" : {
+      "comment" : "Make a Copy result: a number of notes that failed",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note could not be copied and is not in the copy"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes could not be copied and are not in the copy"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas no se pudieron copiar y no están en la copia"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota no se pudo copiar y no está en la copia"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas no se pudieron copiar y no están en la copia"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld notes exported" : {
       "comment" : "Export result",
       "extractionState" : "manual",
@@ -1724,6 +1835,104 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld notas importadas."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld notes in Recently Deleted left out" : {
+      "comment" : "Make a Copy result: a number of deleted notes not copied",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note in Recently Deleted left out"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes in Recently Deleted left out"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas de Eliminadas recientemente quedaron fuera"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota de Eliminadas recientemente quedó fuera"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas de Eliminadas recientemente quedaron fuera"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld notes might be missing something a newer version wrote" : {
+      "comment" : "Make a Copy result: a number of notes that held content of a newer version",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note might be missing something a newer version wrote"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes might be missing something a newer version wrote"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "A %lld de notas podría faltarles algo que escribió una versión más reciente"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "A %lld nota podría faltarle algo que escribió una versión más reciente"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "A %lld notas podría faltarles algo que escribió una versión más reciente"
                 }
               }
             }
@@ -3229,6 +3438,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Una nota nueva cuyo título dejes vacío se llama %@."
+          }
+        }
+      }
+    },
+    "A new vault of your own with these notes as they are now: its own recovery key, and none of this vault's history, devices or sync targets. “%@” is not changed." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una bóveda nueva y tuya con estas notas tal como están ahora: con su propia clave de recuperación y sin el historial, los dispositivos ni los destinos de sincronización de esta bóveda. «%@» no cambia."
+          }
+        }
+      }
+    },
+    "A note that cannot be read is left out and listed afterwards. With Stop on the first problem, no copy is made at all." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una nota que no se puede leer se deja fuera y se enumera después. Con «Parar en el primer problema» no se hace ninguna copia."
           }
         }
       }
@@ -5131,6 +5364,18 @@
         }
       }
     },
+    "Cancel Copy" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelar la copia"
+          }
+        }
+      }
+    },
     "Cancel Download" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -5978,6 +6223,18 @@
         }
       }
     },
+    "Close this vault and open the copy" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar esta bóveda y abrir la copia"
+          }
+        }
+      }
+    },
     "Close this vault; the PDFs wait until you open and unlock another one" : {
       "comment" : "Help tag of Choose Another Vault…",
       "extractionState" : "manual",
@@ -6361,6 +6618,19 @@
         }
       }
     },
+    "Copy Made" : {
+      "comment" : "Title of the Make a Copy sheet once the copy exists",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia hecha"
+          }
+        }
+      }
+    },
     "Copy the secret key to the clipboard" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -6382,6 +6652,31 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copiar la bóveda en este dispositivo"
+          }
+        }
+      }
+    },
+    "Copy this vault's notes into a new vault of your own that you can change" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar las notas de esta bóveda en una bóveda nueva y tuya que puedes modificar"
+          }
+        }
+      }
+    },
+    "Copying note %lld of %lld" : {
+      "comment" : "Make a Copy progress: note number, notes in all",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiando la nota %1$lld de %2$lld"
           }
         }
       }
@@ -10585,6 +10880,18 @@
         }
       }
     },
+    "Include notes in Recently Deleted" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir las notas de Eliminadas recientemente"
+          }
+        }
+      }
+    },
     "Include the PDF" : {
       "comment" : "Export option for Markdown (toggle)",
       "extractionState" : "manual",
@@ -11901,6 +12208,18 @@
         }
       }
     },
+    "Make Copy" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hacer copia"
+          }
+        }
+      }
+    },
     "Make Home" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -11925,6 +12244,32 @@
         }
       }
     },
+    "Make a Copy" : {
+      "comment" : "Title of the Make a Copy sheet",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hacer una copia"
+          }
+        }
+      }
+    },
+    "Make a Copy…" : {
+      "comment" : "File menu: copy this vault into a new vault of your own",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hacer una copia…"
+          }
+        }
+      }
+    },
     "Make a note from a PDF: one page per PDF page, to write on" : {
       "comment" : "Help tag of Import PDF…",
       "extractionState" : "manual",
@@ -11934,6 +12279,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Crear una nota a partir de un PDF: una página por cada página del PDF, para escribir encima"
+          }
+        }
+      }
+    },
+    "Make the copy" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hacer la copia"
           }
         }
       }
@@ -13370,6 +13727,19 @@
         }
       }
     },
+    "Note %@ could not be copied, so no copy was made: %@" : {
+      "comment" : "Make a Copy with Stop on the first problem: the note's id prefix and the reason",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La nota %1$@ no se pudo copiar, así que no se hizo ninguna copia: %2$@"
+          }
+        }
+      }
+    },
     "Note Not Found" : {
       "comment" : "Note window: the note is gone",
       "extractionState" : "manual",
@@ -14603,6 +14973,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir en una ventana nueva"
+          }
+        }
+      }
+    },
+    "Open the Copy" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir la copia"
           }
         }
       }
@@ -19954,6 +20336,19 @@
         }
       }
     },
+    "Some notes of this vault are still downloading. Download them first, then make the copy." : {
+      "comment" : "Make a Copy: the vault is only partly on this device",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algunas notas de esta bóveda aún se están descargando. Descárgalas primero y luego haz la copia."
+          }
+        }
+      }
+    },
     "Some of them are changes this device checked, such as its own removal. Forgetting them lets it write and upload again until a sync meets the change again." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -20334,6 +20729,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dejar de unirse; se borra la clave nueva de este dispositivo"
+          }
+        }
+      }
+    },
+    "Stop making the copy, or close this window" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener la copia o cerrar esta ventana"
+          }
+        }
+      }
+    },
+    "Stop on the first problem" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parar en el primer problema"
           }
         }
       }
@@ -22181,6 +22600,19 @@
         }
       }
     },
+    "The copy gets its own recovery key, shown once when it is made: save it or print its kit. This device becomes the copy's home." : {
+      "comment" : "Footer of the Make a Copy recovery key section",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia tiene su propia clave de recuperación, que se muestra una sola vez al hacerla: guárdala o imprime su kit. Este dispositivo será el principal de la copia."
+          }
+        }
+      }
+    },
     "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline, so a long passphrase is worth it. Suggest a Passphrase makes seven random words." : {
       "comment" : "Footnote under the toggle that stores the key in the vault under a passphrase",
       "extractionState" : "manual",
@@ -22202,6 +22634,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se borran la copia de este dispositivo, la clave de este dispositivo para ella y la contraseña guardada. La bóveda del servidor no cambia."
+          }
+        }
+      }
+    },
+    "The copy was canceled. Nothing was made." : {
+      "comment" : "Make a Copy: the person stopped it",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se canceló la copia. No se hizo nada."
           }
         }
       }
@@ -23779,6 +24224,19 @@
         }
       }
     },
+    "This device could not confirm this vault's device list. The copy is a vault of its own and starts its own list." : {
+      "comment" : "Make a Copy notice: the vault's device list does not check here",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo no pudo confirmar la lista de dispositivos de esta bóveda. La copia es una bóveda propia y empieza su propia lista."
+          }
+        }
+      }
+    },
     "This device gets its own key, kept in its Keychain, and becomes the vault's home. Paste a secret key that starts with AGE-SECRET-KEY-PQ-1 to be the vault's recovery key (the whole output of age-keygen -pq works too), or choose a key file. A public key (age1pq1…) cannot open a vault, and classic keys (AGE-SECRET-KEY-1…) are not accepted." : {
       "comment" : "Footer of the recovery key choice: use an existing key",
       "extractionState" : "manual",
@@ -24113,6 +24571,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo se quitó de la lista de dispositivos de la bóveda: no toma notas de voz nuevas hasta que se vuelva a añadir."
+          }
+        }
+      }
+    },
+    "This device was removed from this vault, so notes written after that cannot be read and are left out of the copy." : {
+      "comment" : "Make a Copy notice: this device is no longer on the vault's list",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo fue eliminado de esta bóveda, así que las notas escritas después no se pueden leer y quedan fuera de la copia."
           }
         }
       }
@@ -24649,6 +25120,19 @@
         }
       }
     },
+    "This vault holds content written by a newer version of Sempere. What this version does not understand is not in the copy, and you can change the copy here." : {
+      "comment" : "Make a Copy notice: the vault is of a newer format",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda contiene contenido escrito por una versión más reciente de Sempere. Lo que esta versión no entiende no está en la copia, y aquí puedes modificar la copia."
+          }
+        }
+      }
+    },
     "This vault is already on this device as “%@”. Open it from the list." : {
       "comment" : "%@ is the vault's name",
       "extractionState" : "manual",
@@ -24674,6 +25158,19 @@
         }
       }
     },
+    "This vault is locked, so it cannot be copied." : {
+      "comment" : "Make a Copy: the vault is locked",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda está bloqueada, así que no se puede copiar."
+          }
+        }
+      }
+    },
     "This vault is not kept by the app, so there is no copy to remove." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -24695,6 +25192,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta bóveda solo está en este dispositivo. Añade una carpeta, por ejemplo en iCloud Drive, o un servidor WebDAV: tus otros dispositivos la abren para unirse, y cada cambio se sincroniza en ambos sentidos."
+          }
+        }
+      }
+    },
+    "This vault is open with its recovery key, which cannot change it. The copy is a vault you can change." : {
+      "comment" : "Make a Copy notice: the vault is open with the recovery key",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda está abierta con su clave de recuperación, que no puede modificarla. La copia es una bóveda que sí puedes modificar."
           }
         }
       }

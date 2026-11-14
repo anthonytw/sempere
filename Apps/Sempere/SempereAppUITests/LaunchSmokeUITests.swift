@@ -155,6 +155,16 @@ final class LaunchSmokeUITests: XCTestCase {
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "bulk export sheet")
 
+        // File > Make a Copy… (the open vault's notes as a new vault of your own; no shortcut).
+        focusLibrary(app)
+        app.menuBars.menuBarItems["File"].click()
+        let copy = app.menuItems["Make a Copy…"].firstMatch
+        require(copy, "File > Make a Copy…", in: app)
+        copy.click()
+        requireSheet("makeCopySheet", titled: "Make a Copy", "Make a Copy sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "make a copy sheet")
+
         // File > Sync Targets… (the open vault's targets; no shortcut).
         focusLibrary(app)
         app.menuBars.menuBarItems["File"].click()

@@ -37,6 +37,7 @@ extension MenuCommand {
         case .closeVault: return String(localized: "Close Vault")
         case .reloadVault: return String(localized: "Reload Vault")
         case .syncTargets: return String(localized: "Sync Targets…")
+        case .makeCopy: return String(localized: "Make a Copy…", comment: "File menu: copy this vault into a new vault of your own")
         case .importPDF: return String(localized: "Import PDF as New Note…")
         case .importFromApp:
             // The registered importer's name ("Import from Notability…"); a build without importers has no such entry.

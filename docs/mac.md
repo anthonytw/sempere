@@ -90,6 +90,7 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | File | Open Vault… | ⌘O |
 | File | Open Recent | submenu of the recent vaults |
 | File | Reopen Last Vault | ⇧⌘T |
+| File | Make a Copy… (a new vault of your own with this vault's notes as they are now; any unlocked vault whose notes are all on this device, read-only ones included; docs/io.md "Make a Copy") | (none) |
 | File | Close Vault | ⇧⌘W |
 | File | Import PDF as New Note… | ⇧⌘I |
 | File | Import from Notability… | (none) |

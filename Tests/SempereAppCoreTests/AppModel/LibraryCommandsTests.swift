@@ -102,6 +102,19 @@ extension AppModelSuites {
             model.close()
         }
 
+        @Test func makeCopyOpensItsSheetInTheWindowThatChoseIt() async throws {
+            let (model, _) = try await NoteWindowTests.unlockedModel()
+            let ui = WindowUI()
+            let context = MenuCommand.Context(window: .library, vault: .unlocked, canMakeCopy: model.canMakeCopy)
+            #expect(MenuCommand.makeCopy.isEnabled(in: context), "any unlocked vault with every note on this device")
+            #expect(!MenuCommand.makeCopy.isEnabled(in: MenuCommand.Context(window: .library, vault: .unlocked)))
+            #expect(!MenuCommand.makeCopy.isEnabled(in: MenuCommand.Context(window: .library, vault: .locked, canMakeCopy: true)))
+            #expect(!MenuCommand.makeCopy.isEnabled(in: MenuCommand.Context(window: .note, vault: .unlocked, canMakeCopy: true)))
+            _ = LibraryCommands.perform(.makeCopy, model: model, ui: ui, recents: [], storedColumns: "all")
+            #expect(model.makeCopyRequest?.window == ui.id)
+            model.close()
+        }
+
         // MARK: Note menu
 
         @Test func noteCommandsActOnTheSelectedNote() async throws {

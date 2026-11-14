@@ -193,11 +193,16 @@ struct VaultInitOptions: ParsableArguments {
         /// The copy's passphrase when the command made it (`--generate-passphrase`).
         var generatedPassphrase: String?
 
+        /// The JSON `vault init` and `store create` print.
+        func initOutput(path: String) -> InitOutput {
+            InitOutput(path: path, vaultId: vaultId.uuidString.lowercased(), root: Hex.encode(root),
+                       device: device, deviceKey: deviceKey, recoveryKey: recoveryKey,
+                       passphraseCopy: passphraseCopy, recoveryPassphrase: generatedPassphrase)
+        }
+
         func report(path: String, output: OutputOptions) throws {
             if output.json {
-                try output.emitJSON(InitOutput(path: path, vaultId: vaultId.uuidString.lowercased(), root: Hex.encode(root),
-                                               device: device, deviceKey: deviceKey, recoveryKey: recoveryKey,
-                                               passphraseCopy: passphraseCopy, recoveryPassphrase: generatedPassphrase))
+                try output.emitJSON(initOutput(path: path))
             } else {
                 output.info("Created \(path)\nVault id: \(vaultId.uuidString.lowercased())")
                 output.info("Root:     \(KitRecovery.rootGroups(root).map(\.group).joined(separator: " "))")
@@ -211,7 +216,7 @@ struct VaultInitOptions: ParsableArguments {
         }
     }
 
-    private struct InitOutput: Encodable {
+    struct InitOutput: Encodable {
         var path: String
         var vaultId: String
         var root: String
