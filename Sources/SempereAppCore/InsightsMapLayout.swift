@@ -238,6 +238,46 @@ public struct InsightsMapLayout: Sendable, Equatable {
         regions.filter { $0.level == 0 && $0.parent == group }
     }
 
+    /// How the whole map fits a view of `width` x `height` points: the points per unit square and the origin of the unit
+    /// square, such that every region's circle and every region's label box (about `labelWidth` points wide, `labelHeight`
+    /// high, centered on the region and never narrower than `minimumLabel`) and every note lies inside the view with
+    /// `margin` points to spare, the whole centered. A label is a fixed size on screen, a circle scales with the map, so the
+    /// scale is found by bisection (the extent only grows with it). Never below 1 point per unit.
+    public func fit(width: Double, height: Double, margin: Double = 16, labelWidth: (Region) -> Double,
+                    labelHeight: Double = 24) -> (scale: Double, originX: Double, originY: Double) {
+        // Everything that does not depend on the scale, once: each region's label half-width, the notes' extent.
+        let shown = regions.filter { !$0.isOther }.map { r in (x: r.x, y: r.y, radius: r.radius, half: labelWidth(r) / 2) }
+        let xs = nodes.lazy.map(\.x), ys = nodes.lazy.map(\.y)
+        let nodeX = xs.min().flatMap { lo in xs.max().map { (lo, $0) } }, nodeY = ys.min().flatMap { lo in ys.max().map { (lo, $0) } }
+        func extent(_ s: Double) -> (minX: Double, maxX: Double, minY: Double, maxY: Double)? {
+            var minX = Double.infinity, maxX = -Double.infinity, minY = Double.infinity, maxY = -Double.infinity
+            for r in shown {
+                let rad = r.radius * s, cx = r.x * s, cy = r.y * s
+                minX = min(minX, cx - rad, cx - r.half); maxX = max(maxX, cx + rad, cx + r.half)
+                minY = min(minY, cy - rad, cy - labelHeight / 2); maxY = max(maxY, cy + rad, cy + labelHeight / 2)
+            }
+            if let (lo, hi) = nodeX { minX = min(minX, lo * s); maxX = max(maxX, hi * s) }
+            if let (lo, hi) = nodeY { minY = min(minY, lo * s); maxY = max(maxY, hi * s) }
+            return minX.isFinite ? (minX, maxX, minY, maxY) : nil
+        }
+        let availW = max(width - 2 * margin, 1), availH = max(height - 2 * margin, 1)
+        var lo = 1.0, hi = max(width, height, 1) * 4
+        guard extent(lo) != nil else { let side = max(1, min(width, height)); return (side, (width - side) / 2, (height - side) / 2) }
+        for _ in 0..<30 {
+            let mid = (lo + hi) / 2
+            if let e = extent(mid), e.maxX - e.minX <= availW, e.maxY - e.minY <= availH { lo = mid } else { hi = mid }
+        }
+        let e = extent(lo)!
+        return (lo, (width - (e.maxX - e.minX)) / 2 - e.minX, (height - (e.maxY - e.minY)) / 2 - e.minY)
+    }
+
+    /// The points per unit a tap on `region` zooms to in a `width` x `height` view whose whole map fits at `whole` points per
+    /// unit: the region by the view's shorter side (a wide, short sheet fits a group by its height; the whole map's fit is
+    /// no measure of a group's room), never below `whole` nor above `whole * maxZoom`.
+    public static func zoomScale(toFit region: Region, width: Double, height: Double, whole: Double, maxZoom: Double) -> Double {
+        max(whole, pointsPerUnit(toFit: region, side: min(width, height), maxScale: whole * maxZoom))
+    }
+
     /// The points per unit that fit `region` in a view whose shorter side is `side` points (never below the whole map's
     /// fit, never above `maxScale`).
     public static func pointsPerUnit(toFit region: Region, side: Double, maxScale: Double) -> Double {

@@ -579,3 +579,25 @@ final class NearbyFlag: @unchecked Sendable {
         return value
     }
 }
+
+#if DEBUG
+extension AppModelCore {
+    /// `SEMPERE_DEMO_NEARBY_JOIN` (the website's screenshots): lists one synthetic request, as if a new device nearby had
+    /// sent it (throwaway keys, no network), so Add Device shows its row marked Nearby with its six words.
+    public func debugSeedNearbyRequest(name: String, kind: String) throws {
+        guard let vault else { return }
+        let keys = try DeviceKeys.generate()
+        var request = keys.joinRequest(vaultId: vault.vaultId, name: name, kind: kind)
+        // A fixed demo time (9:41 UTC on the demo's newest day, as the status bar), never the day of the run.
+        request.created = "2026-10-05T09:41:00Z"
+        keepNearbyRequest(request)
+        nearbyArrivals += 1
+    }
+
+    /// `SEMPERE_DEMO_NEARBY_JOIN`: pins the line the join and Add Device screens show for the nearby link.
+    public func debugSetNearby(joining: NearbyJoinStatus, approving: NearbyApproverStatus) {
+        nearbyJoining = joining
+        nearbyApproving = approving
+    }
+}
+#endif

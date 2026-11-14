@@ -262,6 +262,15 @@ final class InsightsPipelineTests: XCTestCase {
                      "one inferred word is enough to refuse a title")
     }
 
+    func testPrepositionsAndLightVerbsAreNeverATermOfARelatedNotesReason() {
+        // "inside" showed as a shared term ("energy, glucose, inside") in a related note's reason.
+        for word in ["inside", "outside", "become", "became", "among", "across", "toward", "beyond", "whether", "several"] {
+            XCTAssertTrue(InsightsStoplist.generic.contains(word), word)
+        }
+        XCTAssertEqual(InsightsNotes.tokens(text: "glucose inside the chloroplast became energy across the cell", gen: nil),
+                       ["glucose", "chloroplast", "energy", "cell"])
+    }
+
     func testSubjectWordsStayTokensAndRealSubjectsStayKeywords() {
         // The fact check skips "equation" or "diagram" in a summary, but in a note's text they name its subject.
         XCTAssertTrue(InsightsStoplist.summaryLanguage.contains("equation"))

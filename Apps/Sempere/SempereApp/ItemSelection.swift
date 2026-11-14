@@ -569,8 +569,61 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
             + ";edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);menu=\(menuShown ? 1 : 0)"
             + ";menus=\(menusShown);trace=\(debugTrace.joined(separator: ","));bar=\(bar.isHidden ? 0 : 1);barFrame=\(n(Double(bar.frame.minX))),\(n(Double(bar.frame.minY))),"
             + "\(n(Double(bar.frame.width))),\(n(Double(bar.frame.height)));palette=\(debugPalette() ? 1 : 0);strokes=\(debugStrokes());items="
-            + list.joined(separator: "|") + ";emoji=\(debugEmoji());\(debugInput());\(debugHighlights())" + (debugTyping().map { ";typing=" + $0 } ?? "")
+            + list.joined(separator: "|") + ";emoji=\(debugEmoji());\(debugInput());\(debugHighlights())" + inkCheck()
+            + (debugTyping().map { ";typing=" + $0 } ?? "")
     }
+
+    /// `SEMPERE_DEBUG_INKCHECK` (`InkAfterUndoUITests`): what the canvas's own layers show now against what its drawing
+    /// holds: `;inkcheck=onLeft,onRight,offLeft,offRight`, the ink pixels (a 1/4-scale picture, saturated or dark pixels)
+    /// in the left and right half of the visible page, drawn from the view's layers (`drawHierarchy`) and drawn offscreen
+    /// from `PKDrawing.image`. A page that is whole on screen has the offscreen counts' proportions. The report is
+    /// refreshed every second while this is on.
+    private func inkCheck() -> String {
+        guard DebugLaunch.environment["SEMPERE_DEBUG_INKCHECK"] != nil, let pk = canvas as? PKCanvasView else { return "" }
+        if debugTimer == nil {
+            debugTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+                guard let self else { timer.invalidate(); return }
+                self.debugReport()
+            }
+        }
+        let size = CGSize(width: max(pk.bounds.width / 4, 1).rounded(), height: max(pk.bounds.height / 4, 1).rounded())
+        func counts(_ image: UIImage?, ink: (UInt8, UInt8, UInt8, UInt8) -> Bool) -> (Int, Int) {
+            guard let cg = image?.cgImage else { return (0, 0) }
+            let w = cg.width, h = cg.height
+            var px = [UInt8](repeating: 0, count: w * h * 4)
+            guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return (0, 0) }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            var left = 0, right = 0
+            for y in 0..<h {
+                for x in 0..<w where ink(px[(y * w + x) * 4], px[(y * w + x) * 4 + 1], px[(y * w + x) * 4 + 2], px[(y * w + x) * 4 + 3]) {
+                    if x < w / 2 { left += 1 } else { right += 1 }
+                }
+            }
+            return (left, right)
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let on = UIGraphicsImageRenderer(size: size, format: format).image { c in
+            c.cgContext.scaleBy(x: size.width / max(pk.bounds.width, 1), y: size.height / max(pk.bounds.height, 1))
+            pk.drawHierarchy(in: pk.bounds, afterScreenUpdates: false)
+        }
+        let zoom = max(pk.zoomScale, 0.01)
+        let visible = CGRect(x: pk.contentOffset.x / zoom, y: pk.contentOffset.y / zoom, width: pk.bounds.width / zoom,
+                             height: pk.bounds.height / zoom)
+        let off = pk.drawing.image(from: visible, scale: size.width / visible.width)
+        // Saturated or dark: the demo's ink (blue, red, green, navy); the paper's rules and its tint are light and gray.
+        let isInk: (UInt8, UInt8, UInt8, UInt8) -> Bool = { r, g, b, a in
+            guard a > 128 else { return false }
+            let hi = max(r, g, b), lo = min(r, g, b)
+            return hi < 110 || (hi > 0 && Int(hi) - Int(lo) > 90)
+        }
+        let a = counts(on, ink: isInk), b = counts(off, ink: isInk)
+        return ";inkcheck=\(a.0),\(a.1),\(b.0),\(b.1)"
+    }
+
+    private var debugTimer: Timer?
 
     /// The text of the box being typed in on this page, if any (`debugReport`).
     var debugTyping: () -> String? = { nil }

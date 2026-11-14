@@ -9,7 +9,8 @@ import XCTest
 /// choices, a Settings page, a search), so a shot can fail when the UI moves: the test keeps going and
 /// still writes what was on screen, and the log says which shot never reached its screen.
 ///
-/// Run through `scripts/screenshots.sh docs-ipad|docs-iphone`, which passes `TEST_RUNNER_SEMPERE_SHOTS_DIR`.
+/// Run through `scripts/screenshots.sh docs-ipad|docs-iphone`, which passes `TEST_RUNNER_SEMPERE_SHOTS_DIR` and, for
+/// the dark twins (`SEMPERE_SHOTS_APPEARANCE=dark`, docs/design/1.2-screenshots.md §3.3), the appearance.
 /// Nothing here comes from real notes.
 final class DocsScreenshotTests: XCTestCase {
     #if targetEnvironment(macCatalyst)
@@ -136,6 +137,77 @@ final class DocsScreenshotTests: XCTestCase {
         shoot(app, "docs-search-highlight")
     }
 
+    /// Add Device on home with one request that came nearby (`SEMPERE_DEMO_NEARBY_JOIN`: a synthetic "Demo iPhone"):
+    /// its six words, Nearby, They Match and Decline. Through Settings ▸ Sync & Devices ▸ Devices ▸ Add Device.
+    @MainActor
+    func testNearbyJoinRequest() {
+        var env = demo(["SEMPERE_DEMO_SETTINGS": "1", "SEMPERE_DEMO_NEARBY_JOIN": "1"])
+        if !isPhone { env["SEMPERE_DEBUG_COLUMNS"] = "all" }
+        let app = launch(env, portrait: true)
+        defer { app.terminate() }
+        wait(element(app, "settingsForm"), "Settings", in: app, timeout: 90)
+        let sync = element(app, "settingsGroup.sync")
+        wait(sync, "the sync group", in: app)
+        guard sync.exists else { return }
+        sync.tap()
+        let devices = element(app, "settings.devices")
+        for _ in 0..<4 where !(devices.exists && devices.isHittable) { app.swipeUp() }
+        wait(devices, "the Devices link", in: app)
+        guard devices.exists else { return }
+        devices.tap()
+        wait(element(app, "devicesView"), "Devices", in: app)
+        let add = app.buttons["Add Device…"].firstMatch
+        for _ in 0..<6 where !(add.exists && add.isHittable) { app.swipeUp() }
+        wait(add, "Add Device…", in: app)
+        guard add.exists else { return }
+        add.tap()
+        wait(element(app, "addDevice.nearbyRequest"), "the nearby request row", in: app, timeout: 60)
+        // They Match waits 1.5 s before it enables; the rows settle.
+        settle(5)
+        shoot(app, "docs-nearby-join")
+    }
+
+    /// The new device's join screen waiting for its approval: its six words and QR code, the delivery line and the
+    /// line that says a device nearby has the request (`SEMPERE_DEMO_NEARBY_JOIN` on the locked demo; the in-memory
+    /// keys of `SEMPERE_DEBUG_MEMORY_KEYS` stand in for the Keychain, which an unsigned build cannot use).
+    @MainActor
+    func testJoinWaiting() {
+        let app = launch(demo(["SEMPERE_DEMO_LOCKED": "1", "SEMPERE_DEMO_NEARBY_JOIN": "1", "SEMPERE_DEBUG_MEMORY_KEYS": "1",
+                               "SEMPERE_DEBUG_COLUMNS": "all"]), portrait: true)
+        defer { app.terminate() }
+        let join = element(app, "unlock.join")
+        wait(join, "Join This Device…", in: app, timeout: 90)
+        guard join.exists else { return }
+        join.tap()
+        let ask = element(app, "join.start")
+        wait(ask, "Ask to Join", in: app)
+        guard ask.exists else { return }
+        ask.tap()
+        wait(element(app, "join.nearby"), "the nearby line", in: app, timeout: 60)
+        settle(4)
+        shoot(app, "docs-join-waiting")
+        // The iPad's form sheet is short: scroll it so the delivery and nearby lines show too (the phone's shows them above).
+        guard !isPhone else { return }
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.70))
+        from.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.40)),
+                   withVelocity: .slow, thenHoldForDuration: 0.2)
+        settle(3)
+        shoot(app, "docs-join-waiting-nearby")
+    }
+
+    /// Settings ▸ General ▸ Appearance ▸ Note Pages ▸ Dark (`-Sempere.notePages dark`): a note with dark paper and the
+    /// ink's lightness inverted, for the page that explains the setting (docs/design/1.2-screenshots.md, question 1).
+    @MainActor
+    func testDarkNotePages() {
+        var env = demo(["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEBUG_NOTE_MODE": "annotate"])
+        if !isPhone { env["SEMPERE_DEBUG_COLUMNS"] = "detailOnly" }
+        let app = launch(env, portrait: true, arguments: ["-Sempere.notePages", "dark"])
+        defer { app.terminate() }
+        wait(element(app, "Drawing-Palette"), "the drawing palette", in: app, timeout: 90)
+        settle(6)
+        shoot(app, "docs-pages-dark")
+    }
+
     // MARK: - Helpers
 
     private func demo(_ extra: [String: String]) -> [String: String] {
@@ -145,14 +217,17 @@ final class DocsScreenshotTests: XCTestCase {
     }
 
     @MainActor
-    private func launch(_ env: [String: String], portrait: Bool) -> XCUIApplication {
+    private func launch(_ env: [String: String], portrait: Bool, arguments: [String] = []) -> XCUIApplication {
         #if !targetEnvironment(macCatalyst)
         XCUIDevice.shared.orientation = portrait ? .portrait : .landscapeLeft
         #endif
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"] + arguments
         // UTC: the note list shows dates, and the demo dates are fractions of a day before noon UTC.
         app.launchEnvironment = env.merging(["TZ": "UTC"]) { mine, _ in mine }
+        // The dark twins (`scripts/screenshots.sh` with SEMPERE_SHOTS_APPEARANCE=dark): the demo's windows follow it.
+        let appearance = ProcessInfo.processInfo.environment["SEMPERE_SHOTS_APPEARANCE"] == "dark" ? "dark" : "light"
+        app.launchEnvironment["SEMPERE_DEMO_APPEARANCE"] = appearance
         app.launch()
         return app
     }

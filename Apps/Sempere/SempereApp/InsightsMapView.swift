@@ -96,6 +96,7 @@ struct InsightsMapCanvas: View {
     /// The pinch and the drag in progress.
     @State private var pinch: (start: CGFloat, anchor: CGPoint, origin: CGPoint)?
     @State private var dragStart: CGPoint?
+    @State private var fitCache = FitCache()
 
     static let palette: [SwiftUI.Color] = [.blue, .orange, .red, .teal, .green, .yellow, .purple, .pink, .brown, .indigo]
     static func color(_ id: Int?) -> SwiftUI.Color { id.map { palette[abs($0) % palette.count] } ?? .gray }
@@ -103,9 +104,10 @@ struct InsightsMapCanvas: View {
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let fit = Self.fitScale(size)
+            let whole = fitCache.whole(map, size)
+            let fit = whole.scale
             let s = scale ?? fit
-            let o = scale == nil ? Self.fitOrigin(size) : origin
+            let o = scale == nil ? whole.origin : origin
             // The notes by id, looked up only for the titles a frame draws (at most `MapDetail.titleLimit`).
             let notes = model.notesByID
             let selected = model.selectedNoteID.flatMap { map.index[$0] }
@@ -139,10 +141,30 @@ struct InsightsMapCanvas: View {
 
     // MARK: Geometry
 
-    static func fitScale(_ size: CGSize) -> CGFloat { max(1, min(size.width, size.height)) }
-    static func fitOrigin(_ size: CGSize) -> CGPoint {
-        let s = fitScale(size)
-        return CGPoint(x: (size.width - s) / 2, y: (size.height - s) / 2)
+    /// How the whole map fits `size`: every region's circle and label and every note inside it, with a margin
+    /// (`InsightsMapLayout.fit`).
+    /// `wholeMap` of the last map and size, so a drag or pinch frame does not fit again (one value per canvas; not observed).
+    final class FitCache {
+        private var key: (regions: [InsightsMapLayout.Region], nodes: Int, size: CGSize)?
+        private var value = (scale: CGFloat(1), origin: CGPoint.zero)
+        func whole(_ map: InsightsMapLayout, _ size: CGSize) -> (scale: CGFloat, origin: CGPoint) {
+            if let key, key.regions == map.regions, key.nodes == map.nodes.count, key.size == size { return value }
+            value = InsightsMapCanvas.wholeMap(map, size)
+            key = (map.regions, map.nodes.count, size)
+            return value
+        }
+    }
+
+    static func wholeMap(_ map: InsightsMapLayout, _ size: CGSize) -> (scale: CGFloat, origin: CGPoint) {
+        let f = map.fit(width: Double(size.width), height: Double(size.height), labelWidth: labelWidth)
+        return (CGFloat(f.scale), CGPoint(x: f.originX, y: f.originY))
+    }
+
+    /// About how wide a region's label box is on screen (its first three words in bold caption or subheadline type, the
+    /// padding included, at most the 220-point measure the drawing allows).
+    static func labelWidth(_ r: InsightsMapLayout.Region) -> Double {
+        let text = r.label.prefix(3).joined(separator: ", ")
+        return min(220, Double(text.count) * (r.level == 1 ? 8.5 : 7.5)) + 12
     }
     static let maxZoom: CGFloat = 40
 
@@ -247,8 +269,11 @@ struct InsightsMapCanvas: View {
             let text = context.resolve(Text(verbatim: label).font(detail.regionLevel == 1 ? .subheadline.bold() : .caption.bold())
                 .foregroundStyle(.primary))
             let measured = text.measure(in: CGSize(width: 220, height: 60))
-            let box = CGRect(x: c.x - measured.width / 2 - 6, y: c.y - measured.height / 2 - 3, width: measured.width + 12,
+            var box = CGRect(x: c.x - measured.width / 2 - 6, y: c.y - measured.height / 2 - 3, width: measured.width + 12,
                              height: measured.height + 6)
+            // A label stays inside the view: a cluster near the edge keeps its name readable.
+            box.origin.x = min(max(box.minX, 4), max(4, size.width - box.width - 4))
+            box.origin.y = min(max(box.minY, 4), max(4, size.height - box.height - 4))
             guard !taken.contains(where: { $0.intersects(box) }) else { continue }
             taken.append(box)
             context.fill(Path(roundedRect: box, cornerRadius: 6), with: .style(.background.opacity(0.85)))
@@ -287,7 +312,7 @@ struct InsightsMapCanvas: View {
     /// A tap: at the groups' level it zooms into the group; closer in it opens the note whose dot it hits, else zooms
     /// into the cluster around it (`InsightsMapLayout.tapTarget`).
     private func tap(_ point: CGPoint, scale s: CGFloat, origin o: CGPoint, size: CGSize) {
-        let fit = Self.fitScale(size)
+        let fit = fitCache.whole(map, size).scale
         let detail = onScreen(size: size, scale: s, origin: o, fit: fit).detail
         let target = map.tapTarget(x: Double((point.x - o.x) / s), y: Double((point.y - o.y) / s), pointsPerUnit: Double(s), detail: detail)
         switch target {
@@ -298,7 +323,8 @@ struct InsightsMapCanvas: View {
     }
 
     private func zoom(to r: InsightsMapLayout.Region, size: CGSize, fit: CGFloat) {
-        let s = CGFloat(InsightsMapLayout.pointsPerUnit(toFit: r, side: Double(fit), maxScale: Double(fit * Self.maxZoom)))
+        let s = CGFloat(InsightsMapLayout.zoomScale(toFit: r, width: Double(size.width), height: Double(size.height), whole: Double(fit),
+                                                    maxZoom: Double(Self.maxZoom)))
         scale = s
         origin = CGPoint(x: size.width / 2 - CGFloat(r.x) * s, y: size.height / 2 - CGFloat(r.y) * s)
     }

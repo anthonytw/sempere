@@ -71,6 +71,20 @@ struct DemoVaultTests {
         #expect(try Self.open(plain).passphraseCopyNames().isEmpty)
     }
 
+    /// `SEMPERE_DEMO_INSIGHTS`: every note has recognized text for Note Insights, and a plain demo has none.
+    @Test func insightsTextGivesEveryNoteWordsAndOnlyWhenAsked() async throws {
+        let (plain, plainDir) = try await Self.build()
+        defer { try? FileManager.default.removeItem(at: plainDir) }
+        #expect(try Self.open(plain).summaries().allSatisfy { $0.pageTexts.isEmpty })
+        let dir = TestTemp.root.appendingPathComponent("demo-insights-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let built = try await DemoVault.build(in: dir, insightsText: true, app: Self.app)
+        let summaries = try Self.open(built).summaries()
+        #expect(summaries.count == DemoVault.specs.count)
+        #expect(summaries.allSatisfy { $0.problem == nil && !$0.pageTexts.isEmpty })
+        #expect(Set(DemoVault.insightsTexts.keys) == Set(DemoVault.specs.map(\.key)))
+    }
+
     @Test func datesAreFixed() async throws {
         let (built, dir) = try await Self.build()
         defer { try? FileManager.default.removeItem(at: dir) }

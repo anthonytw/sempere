@@ -698,6 +698,7 @@ extension AppModelCore {
             guard generation == gen else { break }
             guard ignorePower || insightsServices.powerWindow() else { remains = true; break }
             var o = InsightsUpdateOptions()
+            o.now = insightsNow()
             o.limit = batch
             o.openNotes = Set([editor?.noteID].compactMap { $0 } + Array(windowEditors.keys))
             o.failureMemo = insightsFailureMemoURL
