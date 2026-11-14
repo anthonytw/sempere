@@ -80,7 +80,7 @@ public enum NearbyJoin {
         /// The approver: from the connection to a whole request, the `hello` and the `request` together (one limit).
         /// Until then a connection holds no session, only one of a few handshake places.
         public var request: Duration
-        /// The whole session, approval included: the user types six words on the approver meanwhile.
+        /// The whole session, approval included: the user compares six words on the approver (or types them) meanwhile.
         public var session: Duration
 
         /// - Parameter request: nil: `handshake`.

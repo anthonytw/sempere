@@ -123,6 +123,21 @@ final class CLIDevicesTests: CLITestCase {
         XCTAssertTrue(exists("joins/Not-A-Request.join.json"), "never declined silently")
     }
 
+    /// The CLI join stays typed (docs/design/1.2-join-confirm.md §3.4): no shortcut names a request by its id, and no
+    /// flag shows the reply words, because either would skip the comparison. Both are usage errors, and nothing is approved.
+    func testNoShortcutSkipsTheComparison() throws {
+        let (vault, _) = try initVault()
+        let v = ["--vault", vault]
+        let ask = try cli(["device", "init", "--name", "Laptop", "--json"] + v, env: machine("laptop"))
+        XCTAssertEqual(ask.status, 0, ask.err)
+        let askJSON = try XCTUnwrap(ask.json as? [String: Any])
+        let id = try XCTUnwrap((askJSON["request"] as? String).map { String($0.split(separator: "/").last ?? "").prefix(8) })
+        XCTAssertEqual(try cli(["devices", "approve", "--id", String(id)] + v, env: machine("home")).status, 2)
+        XCTAssertEqual(try cli(["device", "confirm", "--show"] + v, env: machine("laptop")).status, 2)
+        let list = try XCTUnwrap(try cli(["devices", "list", "--json"] + v, env: machine("home")).json as? [String: Any])
+        XCTAssertEqual((list["devices"] as? [[String: Any]])?.count, 1, "nothing was approved")
+    }
+
     /// `devices approve --qr`: the code's text (`device init --json` `qr`, what the app scans) names the same request
     /// the six words do; a code of another vault, junk, or words together with it are refused.
     func testApproveByTheScannedCodesText() throws {

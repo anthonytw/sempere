@@ -970,6 +970,55 @@
         }
       }
     },
+    "%lld devices are asking to join. Approve only the one whose words match." : {
+      "comment" : "Add Device: shown when two or more requests wait; the value is the count",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld device is asking to join. Approve only the one whose words match."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld devices are asking to join. Approve only the one whose words match."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de dispositivos piden unirse. Aprueba solo aquel cuyas palabras coincidan."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dispositivo pide unirse. Aprueba solo aquel cuyas palabras coincidan."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dispositivos piden unirse. Aprueba solo aquel cuyas palabras coincidan."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld dpi" : {
       "comment" : "Export resolution in dots per inch",
       "extractionState" : "manual",
@@ -6071,6 +6120,43 @@
         }
       }
     },
+    "Compare all six words. Tapping They Match is as safe as typing the words only if you compare them. They prove this is the vault that device approved, not a copy someone else made." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compara las seis palabras. Tocar Coinciden es tan seguro como escribir las palabras solo si las comparas. Demuestran que esta es la bóveda que aprobó ese dispositivo, no una copia hecha por otra persona."
+          }
+        }
+      }
+    },
+    "Compare these on the device that manages devices" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compáralas en el dispositivo que gestiona los dispositivos"
+          }
+        }
+      }
+    },
+    "Compare these with “%@”" : {
+      "comment" : "Add Device: the value is the new device's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compáralas con las de “%@”"
+          }
+        }
+      }
+    },
     "Confirm" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -7542,6 +7628,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ecuación en bloque"
+          }
+        }
+      }
+    },
+    "Do these six words match the ones on the device that approved you?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Coinciden estas seis palabras con las del dispositivo que te aprobó?"
+          }
+        }
+      }
+    },
+    "Do these six words match the ones on the new device? Approve only a device you hold. Tapping They Match is as safe as typing the words only if you compare them: compare all six. Typing is the way to approve a request that has not arrived here yet." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Coinciden estas seis palabras con las del dispositivo nuevo? Aprueba solo un dispositivo que tengas contigo. Tocar Coinciden es tan seguro como escribir las palabras solo si las comparas: compara las seis. Escribir es la forma de aprobar una solicitud que aún no ha llegado aquí."
           }
         }
       }
@@ -22397,6 +22507,18 @@
         }
       }
     },
+    "The new device shows six words. Compare them with the words of its request below." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dispositivo nuevo muestra seis palabras. Compáralas con las de su solicitud, abajo."
+          }
+        }
+      }
+    },
     "The new device then shows six words: type them here." : {
       "comment" : "Add Device",
       "extractionState" : "manual",
@@ -22845,6 +22967,19 @@
         }
       }
     },
+    "The six words are the same on both screens: compare all six first" : {
+      "comment" : "Tooltip of They Match",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las seis palabras son iguales en ambas pantallas: compara las seis primero"
+          }
+        }
+      }
+    },
     "The system does not trust it." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -23154,6 +23289,18 @@
         }
       }
     },
+    "The words changed. Compare all six again." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las palabras cambiaron. Vuelve a comparar las seis."
+          }
+        }
+      }
+    },
     "The “public key” line does not belong to the secret key: this is not one key file." : {
       "comment" : "age-keygen output whose public key comment names another key",
       "extractionState" : "manual",
@@ -23223,6 +23370,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estos archivos se reintentan en el próximo Continuar."
+          }
+        }
+      }
+    },
+    "They Match" : {
+      "comment" : "Button on both join screens: the user compared all six words and they are the same",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coinciden"
           }
         }
       }
@@ -23778,6 +23938,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este es el único dispositivo de la bóveda: una vez olvidada su clave, solo el kit de recuperación devuelve el acceso de escritura a la bóveda (Tomar el control)."
+          }
+        }
+      }
+    },
+    "This device makes its own key and asks to join “%@”. On the device that manages devices, open Settings ▸ Sync & Devices ▸ Devices ▸ Add Device and compare the six words shown next with the words of this request." : {
+      "comment" : "Join screen; the value is the vault name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo crea su propia clave y pide unirse a “%@”. En el dispositivo que gestiona los dispositivos, abre Ajustes ▸ Sincronización y dispositivos ▸ Dispositivos ▸ Añadir dispositivo y compara las seis palabras que se muestran a continuación con las de esta solicitud."
           }
         }
       }
@@ -25161,6 +25334,31 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Type the six words the other device shows, or scan its code there." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribe las seis palabras que muestra el otro dispositivo, o escanea su código allí."
+          }
+        }
+      }
+    },
+    "Type the words instead" : {
+      "comment" : "Disclosure on the join screens: the typed fallback",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribir las palabras en su lugar"
           }
         }
       }
