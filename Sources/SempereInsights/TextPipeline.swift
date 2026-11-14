@@ -269,7 +269,7 @@ public enum InsightsStoplist {
         "inside", "outside", "become", "becomes", "became", "becoming", "among", "amongst", "across", "along", "toward",
         "towards", "beyond", "behind", "beside", "besides", "against", "whether", "either", "neither", "several",
         "various", "certain", "whose", "whereas", "therefore", "however", "although", "though", "whenever", "wherever",
-        "throughout", "regarding", "around", "above", "below", "else", "each", "next", "gives", "gave", "given", "takes",
+        "throughout", "regarding", "around", "above", "below", "next", "gives", "gave", "given", "takes",
         "turns", "makes", "lets", "keeps", "called", "calls",
     ]
     /// Filler of handwritten notes, which carries no topic (D16: the map's labels): never a token of keyword overlap or

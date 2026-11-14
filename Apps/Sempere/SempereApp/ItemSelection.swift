@@ -581,7 +581,10 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     private func inkCheck() -> String {
         guard DebugLaunch.environment["SEMPERE_DEBUG_INKCHECK"] != nil, let pk = canvas as? PKCanvasView else { return "" }
         if debugTimer == nil {
-            debugTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.debugReport() }
+            debugTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+                guard let self else { timer.invalidate(); return }
+                self.debugReport()
+            }
         }
         let size = CGSize(width: max(pk.bounds.width / 4, 1).rounded(), height: max(pk.bounds.height / 4, 1).rounded())
         func counts(_ image: UIImage?, ink: (UInt8, UInt8, UInt8, UInt8) -> Bool) -> (Int, Int) {

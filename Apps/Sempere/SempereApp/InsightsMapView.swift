@@ -96,6 +96,7 @@ struct InsightsMapCanvas: View {
     /// The pinch and the drag in progress.
     @State private var pinch: (start: CGFloat, anchor: CGPoint, origin: CGPoint)?
     @State private var dragStart: CGPoint?
+    @State private var fitCache = FitCache()
 
     static let palette: [SwiftUI.Color] = [.blue, .orange, .red, .teal, .green, .yellow, .purple, .pink, .brown, .indigo]
     static func color(_ id: Int?) -> SwiftUI.Color { id.map { palette[abs($0) % palette.count] } ?? .gray }
@@ -103,7 +104,7 @@ struct InsightsMapCanvas: View {
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let whole = Self.wholeMap(map, size)
+            let whole = fitCache.whole(map, size)
             let fit = whole.scale
             let s = scale ?? fit
             let o = scale == nil ? whole.origin : origin
@@ -142,6 +143,18 @@ struct InsightsMapCanvas: View {
 
     /// How the whole map fits `size`: every region's circle and label and every note inside it, with a margin
     /// (`InsightsMapLayout.fit`).
+    /// `wholeMap` of the last map and size, so a drag or pinch frame does not fit again (one value per canvas; not observed).
+    final class FitCache {
+        private var key: (regions: [InsightsMapLayout.Region], nodes: Int, size: CGSize)?
+        private var value = (scale: CGFloat(1), origin: CGPoint.zero)
+        func whole(_ map: InsightsMapLayout, _ size: CGSize) -> (scale: CGFloat, origin: CGPoint) {
+            if let key, key.regions == map.regions, key.nodes == map.nodes.count, key.size == size { return value }
+            value = InsightsMapCanvas.wholeMap(map, size)
+            key = (map.regions, map.nodes.count, size)
+            return value
+        }
+    }
+
     static func wholeMap(_ map: InsightsMapLayout, _ size: CGSize) -> (scale: CGFloat, origin: CGPoint) {
         let f = map.fit(width: Double(size.width), height: Double(size.height), labelWidth: labelWidth)
         return (CGFloat(f.scale), CGPoint(x: f.originX, y: f.originY))
@@ -299,7 +312,7 @@ struct InsightsMapCanvas: View {
     /// A tap: at the groups' level it zooms into the group; closer in it opens the note whose dot it hits, else zooms
     /// into the cluster around it (`InsightsMapLayout.tapTarget`).
     private func tap(_ point: CGPoint, scale s: CGFloat, origin o: CGPoint, size: CGSize) {
-        let fit = Self.wholeMap(map, size).scale
+        let fit = fitCache.whole(map, size).scale
         let detail = onScreen(size: size, scale: s, origin: o, fit: fit).detail
         let target = map.tapTarget(x: Double((point.x - o.x) / s), y: Double((point.y - o.y) / s), pointsPerUnit: Double(s), detail: detail)
         switch target {
@@ -310,7 +323,8 @@ struct InsightsMapCanvas: View {
     }
 
     private func zoom(to r: InsightsMapLayout.Region, size: CGSize, fit: CGFloat) {
-        let s = CGFloat(InsightsMapLayout.pointsPerUnit(toFit: r, side: Double(fit), maxScale: Double(fit * Self.maxZoom)))
+        let s = CGFloat(InsightsMapLayout.zoomScale(toFit: r, width: Double(size.width), height: Double(size.height), whole: Double(fit),
+                                                    maxZoom: Double(Self.maxZoom)))
         scale = s
         origin = CGPoint(x: size.width / 2 - CGFloat(r.x) * s, y: size.height / 2 - CGFloat(r.y) * s)
     }

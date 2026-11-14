@@ -76,9 +76,26 @@ struct InsightsMapLayoutTests {
         var minX = Double.infinity, maxX = -Double.infinity, minY = Double.infinity, maxY = -Double.infinity
         for r in map.regions where !r.isOther {
             minX = min(minX, r.x * bigger - max(r.radius * bigger, labelWidth(r) / 2)); maxX = max(maxX, r.x * bigger + max(r.radius * bigger, labelWidth(r) / 2))
-            minY = min(minY, r.y * bigger - r.radius * bigger); maxY = max(maxY, r.y * bigger + r.radius * bigger)
+            minY = min(minY, r.y * bigger - max(r.radius * bigger, labelHeight / 2)); maxY = max(maxY, r.y * bigger + max(r.radius * bigger, labelHeight / 2))
+        }
+        for n in map.nodes {
+            minX = min(minX, n.x * bigger); maxX = max(maxX, n.x * bigger); minY = min(minY, n.y * bigger); maxY = max(maxY, n.y * bigger)
         }
         #expect(maxX - minX > width - 2 * margin || maxY - minY > height - 2 * margin, "a 5 % larger map would not fit")
+    }
+
+    /// A tapped group zooms by the view's shorter side: in a wide, short sheet (900 x 300) it stays inside the view, where the
+    /// whole-map fit as the side zoomed it off the screen.
+    @Test func aTappedGroupStaysInsideAWideShortSheet() throws {
+        let map = InsightsMapLayout(view: Self.view(), edges: nil)
+        let width = 900.0, height = 300.0
+        func labelWidth(_ r: InsightsMapLayout.Region) -> Double { 40 + 9 * Double(r.label.joined(separator: ", ").count) }
+        let whole = map.fit(width: width, height: height, labelWidth: labelWidth).scale
+        for r in map.regions where r.level == 0 {
+            let s = InsightsMapLayout.zoomScale(toFit: r, width: width, height: height, whole: whole, maxZoom: 40)
+            #expect(s >= whole)
+            #expect(2 * r.radius * s <= height + 1e-6 || s == whole, "group \(r.id): its circle (\(2 * r.radius * s) points) fits the 300-point height")
+        }
     }
 
     @Test func aLocalMapHasNoDashedNotesButSaysSo() {

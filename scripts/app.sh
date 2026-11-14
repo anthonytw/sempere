@@ -147,7 +147,7 @@ ui_phone=(PhoneCanvasUITests PhoneParityUITests PhoneReadingScrollUITests PhoneC
 # 18 launches: only `scripts/app.sh pseudo` (local-ci.sh --release).
 ui_pseudo=(PseudoLanguageUITests)
 # Screenshot generators (scripts/screenshots.sh): they assert nothing.
-ui_tooling=(ScreenshotTests DocsScreenshotTests)
+ui_tooling=(ScreenshotTests DocsScreenshotTests InkAfterUndoUITests)
 # ui-lists:end
 # `ui_suites NAME…`: -only-testing for those UI test entries (unless the caller narrowed the run).
 # Quarantine (owner rule 2026-11-12): a known flaky test leaves the main suites and runs only on its own

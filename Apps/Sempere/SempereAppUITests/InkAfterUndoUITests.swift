@@ -45,9 +45,16 @@ final class InkAfterUndoUITests: XCTestCase {
         }
         XCTAssertTrue(UIWait.until(10) { undo.isEnabled }, "Undo is enabled after the strokes")
         undo.tap()
-        // Twenty seconds for PencilKit to redraw whatever the Undo invalidated.
-        UIWait.pause(20)
-        guard let after = check(canvas) else { return XCTFail("no ink check after Undo") }
+        // Up to twenty seconds for PencilKit to redraw whatever the Undo invalidated: until its layers show what the drawing holds
+        // in both halves (the report is refreshed every second), else the last report.
+        var last: Check?
+        _ = UIWait.until(20) {
+            last = check(canvas)
+            guard let c = last, c.offLeft > 0, c.offRight > 0 else { return false }
+            return Double(c.onLeft) >= 0.8 * Double(c.offLeft) * Double(rest.onLeft) / Double(max(rest.offLeft, 1))
+                && Double(c.onRight) >= 0.8 * Double(c.offRight) * Double(rest.onRight) / Double(max(rest.offRight, 1))
+        }
+        guard let after = last ?? check(canvas) else { return XCTFail("no ink check after Undo") }
         print("INKCHECK rest=\(rest) after=\(after)")
         // The drawing holds one stroke more than at rest (the kept underline), in the left half: its halves are the reference.
         XCTAssertGreaterThan(after.offLeft, 0)
