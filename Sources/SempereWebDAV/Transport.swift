@@ -177,19 +177,45 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
     static let cancelGrace: DispatchTimeInterval = .seconds(30)
 
     /// A fresh stream of the request's body, for the one request kind that is sent as a stream (see `send`).
-    private static func bodyStream(_ request: WebDAVRequest) -> (@Sendable () -> InputStream?)? {
+    private static func bodyStream(_ request: WebDAVRequest, chunked: Bool) -> (@Sendable () -> InputStream?)? {
         #if canImport(FoundationNetworking)
-        guard request.method == "PUT" else { return nil }
+        guard chunked, request.method == "PUT" else { return nil }
         if let file = request.bodyFile { return { InputStream(url: file) } }
         if let body = request.body, !body.isEmpty { return { InputStream(data: body) } }
         #endif
         return nil
     }
 
+    /// The bytes of the request's body: the in-memory one, or the file's size.
+    private static func bodySize(_ request: WebDAVRequest) -> Int {
+        if let file = request.bodyFile {
+            return ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.intValue ?? 0
+        }
+        return request.body?.count ?? 0
+    }
+
+    /// True once a server answered a chunked PUT with 411 or 501: later PUTs of this transport go out with a fixed length.
+    private let lengthLock = NSLock()
+    private var serverWantsLength = false
+    var putsAreFixedLength: Bool { lengthLock.lock(); defer { lengthLock.unlock() }; return serverWantsLength }
+
     public func send(_ request: WebDAVRequest) throws -> WebDAVResponse {
+        #if canImport(FoundationNetworking)
+        // A chunked PUT is refused by a server that wants a length (411 Length Required, or 501): the same PUT goes out again
+        // with a fixed-length body, and so does every later PUT of this transport.
+        if request.method == "PUT", !putsAreFixedLength {
+            let response = try perform(request, chunked: true)
+            guard response.status == 411 || response.status == 501 else { return response }
+            lengthLock.lock(); serverWantsLength = true; lengthLock.unlock()
+        }
+        #endif
+        return try perform(request, chunked: false)
+    }
+
+    private func perform(_ request: WebDAVRequest, chunked: Bool) throws -> WebDAVResponse {
         var r = URLRequest(url: request.url)
         r.httpMethod = request.method
-        let bodyStream = Self.bodyStream(request)
+        let bodyStream = Self.bodyStream(request, chunked: chunked)
         var requestHeaders = request.headers
         #if canImport(FoundationNetworking)
         // On Linux a PUT body goes out as a stream, and the delegate hands out a new stream on demand (`needNewBodyStream`). A
@@ -198,12 +224,15 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         // drained, so the retry sent a Content-Length and no bytes and the server waited until the idle timeout
         // (docs/design/1.2-linux-upload-stall.md). corelibs sends a stream body chunked whatever the headers say (it has no
         // length for a stream), so a Content-Length of ours would ride along with `Transfer-Encoding: chunked`: it is dropped.
-        // Only PUT is streamed: wsgidav does not consume a chunked PROPFIND body, and reads its chunk framing as the next
+        // (A server that refuses a chunked PUT gets it again with a fixed length: `send`.) Only PUT is streamed: wsgidav does not consume a chunked PROPFIND body, and reads its chunk framing as the next
         // request on the connection (a stray 400 that fails the next request on it). Other requests with a body (PROPFIND,
         // LOCK, ...) keep a fixed-length body, and a retry of one of those on a dead connection is still not rewound.
         if let stream = bodyStream {
             r.httpBodyStream = stream()
             requestHeaders = requestHeaders.filter { $0.key.lowercased() != "content-length" }
+            // Nextcloud and ownCloud (Apache with PHP-FPM) can answer 201 for a chunked PUT and store a short or empty file;
+            // their sabre/dav reads the length a client announces here (the header Finder and Cyberduck also send).
+            requestHeaders["X-Expected-Entity-Length"] = String(Self.bodySize(request))
         } else {
             r.httpBody = request.body
         }
@@ -213,12 +242,8 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         for (k, v) in requestHeaders { r.setValue(v, forHTTPHeaderField: k) }
         let streamed = request.bodyFile != nil || request.responseFile != nil
         let (session, delegate) = streamed ? (streamSession, streamDelegate) : (self.session, self.delegate)
-        #if canImport(FoundationNetworking)
-        let task: URLSessionTask = session.dataTask(with: r)
-        #else
-        let task: URLSessionTask = request.bodyFile.map { session.uploadTask(with: r, fromFile: $0) }
+        let task: URLSessionTask = (bodyStream == nil ? request.bodyFile : nil).map { session.uploadTask(with: r, fromFile: $0) }
             ?? session.dataTask(with: r)
-        #endif
         let pending = Pending(limit: request.maxResponseBytes, file: request.responseFile, bodyStream: bodyStream)
         delegate.register(task.taskIdentifier, pending)
         defer { delegate.unregister(task.taskIdentifier) }

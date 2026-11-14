@@ -16,18 +16,22 @@ final class SlowHTTPServer: @unchecked Sendable {
     private let bytesPerSecond: Int
     private let response: String
     private let resetAfter: Int?
+    private let refuseChunked: Bool
     private let lock = NSLock()
     private var stopped = false
     private var _heads: [String] = []
     /// Each request's head (request line and headers), in order.
     var heads: [String] { lock.lock(); defer { lock.unlock() }; return _heads }
 
-    /// - Parameter resetAfter: when set, the server reads this many body bytes (all of it when the body is shorter) and
+    /// - Parameters:
+    ///   - refuseChunked: answer a chunked request with 411 (after reading it).
+    ///   - resetAfter: when set, the server reads this many body bytes (all of it when the body is shorter) and
     ///   then drops the connection with a TCP RST (`SO_LINGER` 0): a cut upload.
-    init(bytesPerSecond: Int = 1 << 30, resetAfter: Int? = nil,
+    init(bytesPerSecond: Int = 1 << 30, resetAfter: Int? = nil, refuseChunked: Bool = false,
          response: String = "HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n") throws {
         self.bytesPerSecond = bytesPerSecond
         self.resetAfter = resetAfter
+        self.refuseChunked = refuseChunked
         self.response = response
         #if canImport(Glibc)
         let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
@@ -122,7 +126,9 @@ final class SlowHTTPServer: @unchecked Sendable {
                 _ = line()   // the CRLF after the chunk, or the empty line after the last one
                 if size == 0 { break }
             }
-            _ = response.withCString { write(c, $0, strlen($0)) }
+            // A server that wants a length answers a chunked request, once it has read it, with 411.
+            let answer = refuseChunked ? "HTTP/1.1 411 Length Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n" : response
+            _ = answer.withCString { write(c, $0, strlen($0)) }
             return
         }
         var left = length

@@ -88,4 +88,59 @@ final class TransportResetTests: TempDirTestCase {
         XCTAssertTrue(heads.allSatisfy { $0.contains("\r\ncontent-length:") })
         #endif
     }
+
+    /// On Linux a PUT goes out chunked (a stream, which corelibs can rewind on a libcurl retry) with the exact length in
+    /// `X-Expected-Entity-Length` (Nextcloud and ownCloud behind Apache and PHP-FPM can store a short file for a chunked PUT
+    /// otherwise) and no `Content-Length`; elsewhere it keeps its `Content-Length` and sends no such header.
+    func testALinuxPutIsChunkedWithItsExpectedLengthAndNoContentLength() throws {
+        let server = try SlowHTTPServer()
+        defer { server.stop() }
+        let t = URLSessionTransport(timeout: 20)
+        let url = URL(string: "http://127.0.0.1:\(server.port)/f")!
+        let file = tmp.appendingPathComponent("expected")
+        try Data(repeating: 9, count: 5_000).write(to: file)
+        _ = try t.send(WebDAVRequest(method: "PUT", url: url, body: Data(repeating: 2, count: 3_000)))
+        _ = try t.send(WebDAVRequest(method: "PUT", url: url, headers: ["Content-Length": "5000"], bodyFile: file))
+        let heads = server.heads.map { $0.lowercased() }
+        XCTAssertEqual(heads.count, 2)
+        #if canImport(FoundationNetworking)
+        XCTAssertTrue(heads[0].contains("\r\nx-expected-entity-length: 3000\r\n"), heads[0])
+        XCTAssertTrue(heads[1].contains("\r\nx-expected-entity-length: 5000\r\n"), heads[1])
+        for head in heads {
+            XCTAssertTrue(head.contains("\r\ntransfer-encoding: chunked"), head)
+            XCTAssertFalse(head.contains("\r\ncontent-length:"), head)
+        }
+        #else
+        for head in heads {
+            XCTAssertTrue(head.contains("\r\ncontent-length:"), head)
+            XCTAssertFalse(head.contains("x-expected-entity-length"), head)
+        }
+        #endif
+    }
+
+    /// A server that answers a chunked PUT with 411 gets the same PUT again with a fixed length, and every later PUT of the
+    /// transport is fixed-length from the start (Linux; elsewhere a PUT is never chunked).
+    func testAServerThatWantsALengthGetsFixedLengthPutsAfterOne411() throws {
+        let server = try SlowHTTPServer(refuseChunked: true)
+        defer { server.stop() }
+        let t = URLSessionTransport(timeout: 20)
+        let url = URL(string: "http://127.0.0.1:\(server.port)/f")!
+        let file = tmp.appendingPathComponent("length")
+        try Data(repeating: 9, count: 5_000).write(to: file)
+        XCTAssertEqual(try t.send(WebDAVRequest(method: "PUT", url: url, body: Data(repeating: 2, count: 3_000))).status, 201)
+        XCTAssertEqual(try t.send(WebDAVRequest(method: "PUT", url: url, headers: ["Content-Length": "5000"], bodyFile: file)).status, 201)
+        XCTAssertEqual(try t.send(WebDAVRequest(method: "PUT", url: url, body: Data(repeating: 3, count: 100))).status, 201)
+        let heads = server.heads.map { $0.lowercased() }
+        #if canImport(FoundationNetworking)
+        XCTAssertEqual(heads.count, 4, "one refused chunked PUT, then three fixed-length ones")
+        XCTAssertTrue(heads[0].contains("\r\ntransfer-encoding: chunked"), heads[0])
+        XCTAssertTrue(heads[1].contains("\r\ncontent-length: 3000"), heads[1])
+        XCTAssertTrue(heads[2].contains("\r\ncontent-length: 5000"), heads[2])
+        XCTAssertTrue(heads[3].contains("\r\ncontent-length: 100"), heads[3])
+        XCTAssertTrue(t.putsAreFixedLength)
+        #else
+        XCTAssertEqual(heads.count, 3)
+        #endif
+        XCTAssertFalse(heads.dropFirst().contains { $0.contains("transfer-encoding") || $0.contains("x-expected-entity-length") })
+    }
 }
