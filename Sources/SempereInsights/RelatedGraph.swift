@@ -98,7 +98,9 @@ public enum RelatedGraph {
             for t in note.tokens { let x = corpus.idf(t); if x > 0 { w[t] = x } }
             return w
         }
-        var kw = [[Double]](repeating: [Double](repeating: 0, count: n), count: n)
+        // Flat n x n matrices, three in all (review of #50, L7: six nested ones were about 1.2 GB at 5 000 notes); the
+        // arithmetic and its order are the same as before, so the edges are too.
+        var kw = [Double](repeating: 0, count: n * n)
         for i in 0..<n {
             for j in (i + 1)..<n {
                 var inter = 0.0, union = 0.0
@@ -106,7 +108,7 @@ public enum RelatedGraph {
                 for (t, x) in a { if b[t] != nil { inter += x }; union += x }
                 for (t, x) in b where a[t] == nil { union += x }
                 let s = union > 0 ? inter / union : 0
-                kw[i][j] = s; kw[j][i] = s
+                kw[i * n + j] = s; kw[j * n + i] = s
             }
         }
         // Vector similarity: mean-centered, CSLS, over the notes that have a vector. A note without one (D16: a note of
@@ -115,61 +117,66 @@ public enum RelatedGraph {
         let hasVector = notes.map { $0.vector != nil }
         let vectorIdx = (0..<n).filter { hasVector[$0] }
         let withVectors = vectorIdx.count >= 3
-        var csls: [[Double]]?
+        // The cosines, turned into CSLS in place (each entry needs only its own cosine and the two `r`).
+        var csls: [Double]?
         if withVectors {
             let mean = VectorMath.mean(vectorIdx.compactMap { notes[$0].vector })
             var vs = [[Float]](repeating: [], count: n)
             for i in vectorIdx { if let v = notes[i].vector { vs[i] = VectorMath.centered(v, mean: mean) } }
-            var cos = [[Double]](repeating: [Double](repeating: 0, count: n), count: n)
+            var m = [Double](repeating: 0, count: n * n)
             for (a, i) in vectorIdx.enumerated() {
-                for j in vectorIdx[(a + 1)...] { let c = VectorMath.dot(vs[i], vs[j]); cos[i][j] = c; cos[j][i] = c }
+                for j in vectorIdx[(a + 1)...] { let c = VectorMath.dot(vs[i], vs[j]); m[i * n + j] = c; m[j * n + i] = c }
             }
+            vs = []
             let k = min(neighboursForHubness, vectorIdx.count - 1)
             var r = [Double](repeating: 0, count: n)
             for i in vectorIdx {
-                let top = vectorIdx.filter { $0 != i }.map { cos[i][$0] }.sorted(by: >).prefix(k)
+                let top = vectorIdx.filter { $0 != i }.map { m[i * n + $0] }.sorted(by: >).prefix(k)
                 r[i] = top.reduce(0, +) / Double(max(1, top.count))
             }
             let words = vectorIdx.map { notes[$0].words }.sorted()
             let median = Double(words[words.count / 2])
-            var s = cos
             for i in vectorIdx {
                 for j in vectorIdx where i != j {
-                    var x = 2 * cos[i][j] - r[i] - r[j]
+                    var x = 2 * m[i * n + j] - r[i] - r[j]
                     if median > 0, Double(notes[i].words) > 3 * median || Double(notes[j].words) > 3 * median { x *= 0.8 }
-                    s[i][j] = x
+                    m[i * n + j] = x
                 }
             }
-            csls = s
+            csls = m
         }
         // Combined score in z units over all pairs (the vector part over the pairs that have one).
-        func z(_ m: [[Double]], pairs: (Int, Int) -> Bool) -> [[Double]] {
-            var xs: [Double] = []
-            for i in 0..<n { for j in (i + 1)..<n where pairs(i, j) { xs.append(m[i][j]) } }
-            let mu = xs.reduce(0, +) / Double(max(1, xs.count))
-            let sd = sqrt(xs.map { ($0 - mu) * ($0 - mu) }.reduce(0, +) / Double(max(1, xs.count)))
-            return m.map { row in row.map { sd > 1e-12 ? ($0 - mu) / sd : 0 } }
+        func zParams(_ m: [Double], pairs: (Int, Int) -> Bool) -> (mu: Double, sd: Double) {
+            var sum = 0.0, count = 0
+            for i in 0..<n { for j in (i + 1)..<n where pairs(i, j) { sum += m[i * n + j]; count += 1 } }
+            let mu = sum / Double(max(1, count))
+            var sq = 0.0
+            for i in 0..<n { for j in (i + 1)..<n where pairs(i, j) { let d = m[i * n + j] - mu; sq += d * d } }
+            return (mu, sqrt(sq / Double(max(1, count))))
         }
-        let zk = z(kw) { _, _ in true }
-        var score = zk
+        func z(_ x: Double, _ p: (mu: Double, sd: Double)) -> Double { p.sd > 1e-12 ? (x - p.mu) / p.sd : 0 }
+        let pk = zParams(kw) { _, _ in true }
+        var score = kw.map { z($0, pk) }
         if let csls {
-            let zc = z(csls) { hasVector[$0] && hasVector[$1] }
-            for i in 0..<n { for j in 0..<n where hasVector[i] && hasVector[j] { score[i][j] = 0.6 * zc[i][j] + 0.4 * zk[i][j] } }
+            let pc = zParams(csls) { hasVector[$0] && hasVector[$1] }
+            for i in 0..<n where hasVector[i] {
+                for j in 0..<n where hasVector[j] { score[i * n + j] = 0.6 * z(csls[i * n + j], pc) + 0.4 * z(kw[i * n + j], pk) }
+            }
         }
         // Mutual top-12.
         let top: [Set<Int>] = (0..<n).map { i in
-            Set((0..<n).filter { $0 != i }.sorted { (score[i][$0], -$0) > (score[i][$1], -$1) }.prefix(mutualTop))
+            Set((0..<n).filter { $0 != i }.sorted { (score[i * n + $0], -$0) > (score[i * n + $1], -$1) }.prefix(mutualTop))
         }
         // Per-vault knee: the largest drop in the sorted pair scores above the floor; edges keep at least that.
         var pairs: [Double] = []
-        for i in 0..<n { for j in (i + 1)..<n where top[i].contains(j) && top[j].contains(i) { pairs.append(score[i][j]) } }
+        for i in 0..<n { for j in (i + 1)..<n where top[i].contains(j) && top[j].contains(i) { pairs.append(score[i * n + j]) } }
         let threshold = knee(pairs.sorted(by: >), floor: floor)
         var out: [UUID: [RelatedEdge]] = [:]
         for i in 0..<n {
             var edges: [(Int, Double)] = []
-            for j in 0..<n where j != i && top[i].contains(j) && top[j].contains(i) && score[i][j] >= threshold
-                && hasReason(keywordOverlap: kw[i][j], csls: csls?[i][j], words: min(notes[i].words, notes[j].words)) {
-                edges.append((j, score[i][j]))
+            for j in 0..<n where j != i && top[i].contains(j) && top[j].contains(i) && score[i * n + j] >= threshold
+                && hasReason(keywordOverlap: kw[i * n + j], csls: csls?[i * n + j], words: min(notes[i].words, notes[j].words)) {
+                edges.append((j, score[i * n + j]))
             }
             edges.sort { ($0.1, notes[$1.0].id.uuidString) > ($1.1, notes[$0.0].id.uuidString) }
             out[notes[i].id] = edges.prefix(maxEdges).map { j, s in
@@ -179,8 +186,8 @@ public enum RelatedGraph {
                     .sorted { (bothTerms.contains($0) ? 1 : 0, corpus.idf($0), $1) > (bothTerms.contains($1) ? 1 : 0, corpus.idf($1), $0) }
                     .prefix(3)
                 return RelatedEdge(note: notes[j].id, score: (s * 1000).rounded() / 1000,
-                                   csls: hasVector[i] && hasVector[j] ? csls.map { ($0[i][j] * 1000).rounded() / 1000 } : nil,
-                                   keywordOverlap: (kw[i][j] * 1000).rounded() / 1000, shared: Array(shared))
+                                   csls: hasVector[i] && hasVector[j] ? csls.map { ($0[i * n + j] * 1000).rounded() / 1000 } : nil,
+                                   keywordOverlap: (kw[i * n + j] * 1000).rounded() / 1000, shared: Array(shared))
             }
         }
         return out.filter { !$0.value.isEmpty }

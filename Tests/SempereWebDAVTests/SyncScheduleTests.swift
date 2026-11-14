@@ -70,6 +70,26 @@ final class SyncScheduleTests: SyncTestCase {
         XCTAssertFalse(c.journal)
         XCTAssertEqual(c.noteIDs, [noteID])
         XCTAssertTrue(LocalChanges(report: SyncReport()).isEmpty)
+        XCTAssertFalse(c.insights)
+    }
+
+    /// An insights file placed or deleted here is reported, so the app reads the insights again (Insights PR 2); an
+    /// upload or a deletion on the target is not.
+    func testLocalChangesNameArrivedInsightsFiles() {
+        var r = SyncReport()
+        r.uploaded = ["insights/\(UUID().uuidString.lowercased()).aaaaaaaa.insights.age"]
+        r.deleted = [.init(side: "remote", path: "insights/map.aaaaaaaa.insights.age")]
+        XCTAssertFalse(LocalChanges(report: r).insights)
+        r.downloaded = ["insights/map.bbbbbbbb.insights.age"]
+        var c = LocalChanges(report: r)
+        XCTAssertTrue(c.insights)
+        XCTAssertFalse(c.isEmpty)
+        r = SyncReport()
+        r.deleted = [.init(side: "local", path: "insights/device.bbbbbbbb.insights.age")]
+        XCTAssertTrue(LocalChanges(report: r).insights)
+        c = LocalChanges()
+        c.formUnion(LocalChanges(report: r))
+        XCTAssertTrue(c.insights)
     }
 
     /// A run reports what it wrote locally, and leaves the mutable files for the next run while

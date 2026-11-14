@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import Sempere
 import SempereImport
+import SempereInsights
 import SempereRender
 import SempereSync
 import SempereWebDAV
@@ -116,6 +117,7 @@ public final class AppModelCore<Host: AppModelHost> {
         didSet {
             listVersion &+= 1
             updateSearch(changed: listChangeIDs)
+            insightsNotesChanged()
         }
     }
     /// While `applyListChanges` assigns `notes`: the ids it may have changed, so
@@ -273,6 +275,14 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored public var attachmentNow: () -> Date = { Date() }
     /// Test seam: what an index update reads (a counting wrapper of the vault).
     @ObservationIgnored var attachmentIndexSource: (@Sendable (Vault) -> any AttachmentIndexSource)?
+    /// Note Insights (`AppModel+Insights`): the settings, this device's capability and status Settings shows.
+    public internal(set) var insights = InsightsModelState()
+    /// What the note panel and the clusters list show (`refreshInsights`); `insights.revision` says when it changed.
+    @ObservationIgnored public internal(set) var insightsIndex = InsightsIndex()
+    /// Note Insights' tasks.
+    @ObservationIgnored let insightsRuntime = InsightsRuntime()
+    /// The providers and power state of Note Insights (`services.insights`; tests set their own).
+    @ObservationIgnored public var insightsServices: InsightsServices
     /// What is being dragged inside the app (set when a drag starts, `beginDrag`), so the
     /// sidebar can tell whether a row would accept it while the drag is still over it.
     public var draggedPayload: DragPayload?
@@ -744,6 +754,7 @@ public final class AppModelCore<Host: AppModelHost> {
         nearbyTransport = services.nearby
         backgroundTasks = services.backgroundTasks
         syncScheduler = services.syncScheduler
+        insightsServices = services.insights
         backupStore = BackupStore(defaults: services.settings)
         releasesLocksInBackground = !services.platform.isMac
         searchTranscripts = TranscriptSearchPreference.isOn(services.settings)
@@ -992,6 +1003,7 @@ public final class AppModelCore<Host: AppModelHost> {
         await refreshDeviceState()
         Task { await rescheduleBackupReminder() }
         startSettingsSync()
+        startInsights()
     }
 
     /// Unlocks with the text of a key: a device key file (`DeviceKeys`, with
@@ -1221,6 +1233,7 @@ public final class AppModelCore<Host: AppModelHost> {
         // Settings sync stops and a drag in progress (and a sidebar row's flash) is forgotten; a backup, inbox
         // adoption or import still running is canceled below.
         stopSettingsSync()
+        stopInsights()
         draggedPayload = nil
         dropTarget = nil
         landedDrop = nil

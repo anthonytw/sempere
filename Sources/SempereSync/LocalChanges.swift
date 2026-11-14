@@ -20,6 +20,8 @@ public struct LocalChanges: Codable, Hashable, Sendable {
     public var notebooks = false
     /// Another device's `summaries/<device>.sealed` arrived.
     public var summaries = false
+    /// A file of `insights/` (format.md §16) was placed or deleted: the app reads the insights again.
+    public var insights = false
 
     public init() {}
 
@@ -38,6 +40,7 @@ public struct LocalChanges: Codable, Hashable, Sendable {
             case CaptureFile.folderName: inbox = true
             case NotebookRecords.folderName: notebooks = true
             case PublishedSummaries.deviceFolderName: summaries = true
+            case Vault.insightsName: insights = true
             default: break
             }
         }
@@ -46,7 +49,7 @@ public struct LocalChanges: Codable, Hashable, Sendable {
 
     /// Nothing changed locally.
     public var isEmpty: Bool {
-        notes.isEmpty && !manifest && !journal && !settings && !inbox && !notebooks && !summaries
+        notes.isEmpty && !manifest && !journal && !settings && !inbox && !notebooks && !summaries && !insights
     }
 
     /// Adds what `other` changed (two runs reported as one: a placing of staged files, then a run).
@@ -58,6 +61,7 @@ public struct LocalChanges: Codable, Hashable, Sendable {
         inbox = inbox || other.inbox
         notebooks = notebooks || other.notebooks
         summaries = summaries || other.summaries
+        insights = insights || other.insights
     }
 
     /// The changed notes as ids.

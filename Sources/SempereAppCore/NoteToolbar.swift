@@ -20,8 +20,8 @@ public enum NoteToolbar {
         case pageNavigation
         // Add Page (tap: after this one; hold: the page actions) and the thumbnails.
         case addPage, thumbnails
-        // The overflow menu ("⋯", "More").
-        case pages, paper, allRecordings, rename, export, saveVersion, versionHistory, keepScreenOn
+        // The overflow menu ("⋯", "More"). `insights`: the note's summary, keywords and related notes (Note Insights on).
+        case pages, paper, allRecordings, rename, export, saveVersion, versionHistory, insights, keepScreenOn
     }
 
     /// Where an item is.
@@ -52,10 +52,12 @@ public enum NoteToolbar {
         var noteWindow = false
         /// What the focused canvas's undo manager can do (`NoteEditorModel.undoAvailability`).
         public var undo = UndoAvailability()
+        /// Note Insights is on for the vault (`AppModel.insights.mode`).
+        public var insights = false
 
         public init(device: NoteDevice, mode: NoteMode = NoteMode.initial, readOnly: Bool = false, hasPage: Bool = true,
                     pageCount: Int = 1, pageless: Bool = false, hasRecordings: Bool = false, pageEntries: Bool = true,
-                    noteWindow: Bool = false, undo: UndoAvailability = UndoAvailability()) {
+                    noteWindow: Bool = false, undo: UndoAvailability = UndoAvailability(), insights: Bool = false) {
             self.device = device
             self.mode = mode
             self.readOnly = readOnly
@@ -66,6 +68,7 @@ public enum NoteToolbar {
             self.pageEntries = pageEntries
             self.noteWindow = noteWindow
             self.undo = undo
+            self.insights = insights
         }
     }
 
@@ -87,7 +90,7 @@ public enum NoteToolbar {
             return device == .phone ? .bottomBar : .bar
         case .addPage, .thumbnails:
             return device == .phone ? nil : .bar
-        case .pages, .paper, .allRecordings, .rename, .export, .saveVersion, .versionHistory, .keepScreenOn:
+        case .pages, .paper, .allRecordings, .rename, .export, .saveVersion, .versionHistory, .insights, .keepScreenOn:
             return .overflow
         }
     }
@@ -106,6 +109,8 @@ public enum NoteToolbar {
         // Recording needs a writable note; a read-only one can still play its recordings.
         case .recordings: return writable || s.hasRecordings
         case .favorite, .tags, .allRecordings, .rename, .export, .saveVersion, .versionHistory: return true
+        // Only while Note Insights is on; a read-only note still shows its insights.
+        case .insights: return s.insights
         case .pageNavigation:
             // The iPhone's bottom bar gives way to the palette while annotating (the Pages menu turns pages then).
             if s.device == .phone { return s.pageCount > 1 && (s.mode != .annotating || s.readOnly) }

@@ -10,6 +10,8 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Hashable, Sendable {
     case writing
     /// Recording, Transcription, Quick Voice Notes, transcript search.
     case audio
+    /// Note Insights: the switch, voice-note titles, the work device, status and clusters.
+    case insights
     /// Sync Settings, Device Keys.
     case sync
     /// Backups, Version History (and Thin Now), Storage.
@@ -23,6 +25,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .general: return String(localized: "General")
         case .writing: return String(localized: "Writing", comment: "Settings group: editor, new notes, recognition, photos")
         case .audio: return String(localized: "Audio & Transcription", comment: "Settings group")
+        case .insights: return String(localized: "Note Insights", comment: "Settings group: summaries, keywords and related notes")
         case .sync: return String(localized: "Sync & Devices", comment: "Settings group: settings sync and device keys")
         case .backups: return String(localized: "Backups & History", comment: "Settings group: backups, version history, storage")
         case .about: return String(localized: "About")
@@ -34,6 +37,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .general: return "gearshape"
         case .writing: return "pencil.tip"
         case .audio: return "waveform"
+        case .insights: return "sparkles"
         case .sync: return "arrow.triangle.2.circlepath"
         case .backups: return "clock.arrow.circlepath"
         case .about: return "info.circle"

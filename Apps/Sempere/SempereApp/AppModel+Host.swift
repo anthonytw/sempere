@@ -19,9 +19,10 @@ enum AppHost: AppModelHost {
     /// the network and the Keychain for WebDAV, iCloud, on-device speech, quick capture, Vision, the owner check,
     /// file coordination, PDFKit, ImageIO and CoreText for exports and imports, and PDFKit, Core Graphics, ImageIO,
     /// AVFoundation and `UTType` for inserts and opened files, `UIApplication`'s lifecycle and background time,
-    /// `BGTaskScheduler`, `NWPathMonitor`, and the nearby link of joining (`NWNearbyTransport`).
+    /// `BGTaskScheduler`, `NWPathMonitor`, the nearby link of joining (`NWNearbyTransport`), and Apple's on-device
+    /// model and sentence embedder for Note Insights (`AppInsights`).
     static func makeServices() -> AppModelServices {
-        AppModelServices(perf: AppPerfSink(), settings: UserDefaults.standard, bookmarks: SecurityScopedBookmarks(),
+        var services = AppModelServices(perf: AppPerfSink(), settings: UserDefaults.standard, bookmarks: SecurityScopedBookmarks(),
                          platform: AppPlatform(), webdavRemote: LiveWebDAVRemote(),
                          webdavPasswords: KeychainWebDAVPasswordStore(), iCloudHooks: CloudVault.Hooks.live,
                          transcriber: SpeechRecordingTranscriber(), appName: NoteWriter.appName,
@@ -38,6 +39,8 @@ enum AppHost: AppModelHost {
                          syncScheduler: BGTaskSyncScheduler(), makeReachability: { WebDAVReachability() },
                          nearby: debugNearbyTransport ?? NWNearbyTransport(),
                          describeError: AppModel.describe)
+        services.insights = AppInsights.services
+        return services
     }
 
     /// Debug builds: a scripted launch (UI tests, screenshots) keeps the nearby link on loopback, which needs no local

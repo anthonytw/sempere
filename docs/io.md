@@ -1805,7 +1805,8 @@ syncs with both ways.
   merges the new revisions in place (`AppModel+RemoteMerge`, as for any listing); `settings.age`
   taken or merged runs the settings pass (`SettingsSyncBridge` applies it); inbox files start
   adoption; notebook records reload the tree; other devices' published summaries refresh the rows of
-  notes not here yet. A new `vault.json` with another device list or secret (a key change made with
+  notes not here yet; insights files placed or deleted (`LocalChanges.insights`), or `settings.age`, read Note
+  Insights again (`AppModel+Insights`, `insightsFilesChanged`). A new `vault.json` with another device list or secret (a key change made with
   the CLI elsewhere) saves and closes every editor and opens the vault again with this device's keys,
   as after a key change made here (`keyEpoch`), then opens again the notes that were open (they say
   "Updated from another device"); if this device's key is no longer listed, the vault closes and says

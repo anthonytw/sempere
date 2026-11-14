@@ -92,6 +92,8 @@ final class LaunchSmokeUITests: XCTestCase {
         app.typeKey(",", modifierFlags: .command)
         let settings = app.descendants(matching: .any)["settingsForm"].firstMatch
         require(settings, "Settings window", in: app)
+        // Settings ▸ Note Insights (Insights PR 2): its page comes up.
+        openSettingsGroup("insights", in: app)
         openSettingsGroup("backups", in: app)
         clickInSettings("Restore from Backup…", settings, in: app)
         requireSheet("restoreBackupSheet", titled: "Restore from Backup", "Restore from Backup sheet", in: app)

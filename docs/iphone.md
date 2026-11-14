@@ -111,7 +111,8 @@ Read-first:
 - **The overflow menu** is the shared one ("The note view on every device"): Text and Object Eraser Size while
   annotating, Insert, Recordings (one submenu: record, and each recording), Favorite and Tags (the bar items
   that do not fit the phone's top bar, in the shared order), then Pages, Paper, All Recordings…, Rename, Export
-  (PDF, PNG, text), Save Version, Version History and Keep Screen On, as on the iPad and the Mac. Pages is the
+  (PDF, PNG, text), Save Version, Version History, Note Insights (while that is on) and Keep Screen On, as on the iPad
+  and the Mac. Pages is the
   sixth entry while reading, so it is visible without scrolling in a long (Spanish) menu. The title in the bar
   renames the note on tap or long press.
 
@@ -204,6 +205,7 @@ first, then the overflow menu's.
 | 16 | Export | ⋯ | ⋯ | ⋯ | always |
 | 17 | Save Version… | ⋯ | ⋯ | ⋯ | always (off for a deleted note) |
 | 18 | Version History… | ⋯ | ⋯ | ⋯ | always |
+| 18a | Note Insights… (summary, keywords, related notes) | ⋯ | ⋯ | ⋯ | Note Insights is on for the vault |
 | 19 | Keep Screen On | ⋯ | ⋯ | ⋯ (not in a note window) | always |
 
 Left of the title, the iPad and the Mac keep Show / Hide Note List (the iPhone's back button is its way to the

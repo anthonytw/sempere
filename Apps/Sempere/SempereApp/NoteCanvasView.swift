@@ -389,7 +389,7 @@ struct EditorView: View {
         NoteToolbar.State(device: .current, mode: ui.noteMode, readOnly: editor.isReadOnly,
                           hasPage: editor.currentPage != nil, pageCount: editor.pages.count, pageless: editor.isPageless,
                           hasRecordings: !editor.recordings.isEmpty, pageEntries: !pageEntries.isEmpty,
-                          noteWindow: model.windowEditors[editor.noteID] === editor)
+                          noteWindow: model.windowEditors[editor.noteID] === editor, insights: model.insights.mode == .on)
     }
 
     /// The note: its summary in the list (title, tags, favorite, deleted).
@@ -529,6 +529,9 @@ struct EditorView: View {
         case .versionHistory:
             Button("Version History…", systemImage: "clock.arrow.circlepath") { ui.historyNoteID = editor.noteID }
                 .help("Browse earlier versions of the note and restore one")
+        case .insights:
+            Button("Note Insights…", systemImage: "sparkles") { ui.insightsNoteID = editor.noteID }
+                .help("This note's summary, keywords and related notes")
         case .keepScreenOn:
             Toggle("Keep Screen On", systemImage: "sun.max", isOn: $keepScreenOn)
                 .help("Keep the screen awake while this note is open")

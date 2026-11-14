@@ -97,6 +97,8 @@ public enum BackgroundSyncRequest: Hashable, Sendable {
     /// folder, a provider's folder the system uploads) needs none, and a device that is never online would
     /// otherwise never get the task.
     case processing(needsNetwork: Bool)
+    /// `BGProcessingTask` with external power: Note Insights' passes (docs/design/1.2-note-insights.md §3.7), no network.
+    case insights
 }
 
 /// `BGTaskScheduler` in the app (`BGTaskSyncScheduler`); `NoBackgroundSyncScheduler` headless.

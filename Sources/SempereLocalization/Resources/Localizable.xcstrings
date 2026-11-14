@@ -1,6 +1,19 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ (%@)" : {
+      "comment" : "A device and what it can do",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
     "%@ (Restored)" : {
       "comment" : "Restore from Backup: suggested name of the new vault; %@ is the backed-up vault's name",
       "extractionState" : "manual",
@@ -87,6 +100,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ La bóveda del servidor no cambia."
+          }
+        }
+      }
+    },
+    "%@ cannot use it: they stop placing new notes until the work device processes them." : {
+      "comment" : "%@ is a list of device names",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no pueden usarlo: dejan de colocar notas nuevas hasta que el dispositivo de trabajo las procese."
           }
         }
       }
@@ -4444,6 +4470,18 @@
         }
       }
     },
+    "Also Process on This Kind of Device" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Procesar también en este tipo de dispositivo"
+          }
+        }
+      }
+    },
     "Also remove the devices “%@” added" : {
       "comment" : "Removal sheet; the value is a device name",
       "extractionState" : "manual",
@@ -4719,6 +4757,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apariencia"
+          }
+        }
+      }
+    },
+    "Apple Intelligence is available on this device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence está disponible en este dispositivo."
+          }
+        }
+      }
+    },
+    "Apple Intelligence is still getting ready on this device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence aún se está preparando en este dispositivo."
           }
         }
       }
@@ -6508,6 +6570,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Compáralas con las de “%@”"
+          }
+        }
+      }
+    },
+    "Compatible: this device places its new notes in the map at once." : {
+      "comment" : "Note Insights map status",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatible: este dispositivo coloca sus notas nuevas en el mapa al momento."
           }
         }
       }
@@ -8694,6 +8769,18 @@
         }
       }
     },
+    "Embedding Model" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelo de incrustación"
+          }
+        }
+      }
+    },
     "Emoji Suggestions" : {
       "comment" : "Accessibility label of the list of emoji offered while typing :name in a text field",
       "extractionState" : "manual",
@@ -8899,6 +8986,18 @@
         }
       }
     },
+    "Every device compares notes with the same embedding model. A newer one is used only when you choose it." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos los dispositivos comparan las notas con el mismo modelo de incrustación. Uno más nuevo se usa solo cuando lo eliges."
+          }
+        }
+      }
+    },
     "Every file in the vault is encrypted again under a new key, with a new recovery kit. Once it finishes, the old kit and the keys of removed devices open nothing, not even what was written before. Every sync target must be reachable to start; this device carries it through, and the other devices follow when they sync." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -8932,6 +9031,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toda historia deja su rastro."
+          }
+        }
+      }
+    },
+    "Every summary, keyword and related-note link of this vault is deleted on all its devices. Your notes are not changed." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se eliminan todos los resúmenes, palabras clave y vínculos entre notas relacionadas de esta bóveda en todos sus dispositivos. Tus notas no cambian."
           }
         }
       }
@@ -9954,6 +10065,19 @@
         }
       }
     },
+    "Generated on %@, %@" : {
+      "comment" : "Note Insights: device name, date",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generado en %1$@, %2$@"
+          }
+        }
+      }
+    },
     "Getting the video…" : {
       "comment" : "Video player: downloading and decrypting the clip",
       "extractionState" : "manual",
@@ -10027,6 +10151,31 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cuadriculado"
+          }
+        }
+      }
+    },
+    "Groups" : {
+      "comment" : "Note Insights: groups of related notes in the map",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grupos"
+          }
+        }
+      }
+    },
+    "Groups of Related Notes" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grupos de notas relacionadas"
           }
         }
       }
@@ -10939,6 +11088,19 @@
         }
       }
     },
+    "In Summaries and Keywords" : {
+      "comment" : "Search results section from Note Insights",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En resúmenes y palabras clave"
+          }
+        }
+      }
+    },
     "In Use" : {
       "comment" : "Settings ▸ Handwritten Math: this model reads handwriting",
       "extractionState" : "manual",
@@ -10948,6 +11110,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En uso"
+          }
+        }
+      }
+    },
+    "In the group “%@”." : {
+      "comment" : "%@ is a group's label words",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En el grupo «%@»."
           }
         }
       }
@@ -11912,6 +12087,18 @@
         }
       }
     },
+    "Last seen" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Visto por última vez"
+          }
+        }
+      }
+    },
     "Last sync %@" : {
       "comment" : "The value is a relative date (“5 minutes ago”)",
       "extractionState" : "manual",
@@ -12319,6 +12506,19 @@
         }
       }
     },
+    "Made on" : {
+      "comment" : "Note Insights: the devices that made the summaries",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hechas en"
+          }
+        }
+      }
+    },
     "Make Copy" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -12418,6 +12618,30 @@
         }
       }
     },
+    "Make this device the one that makes summaries and builds the map" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hacer que este dispositivo haga los resúmenes y cree el mapa"
+          }
+        }
+      }
+    },
+    "Make this device's summaries, keywords and related notes now, without waiting for it to charge" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hacer ahora los resúmenes, palabras clave y notas relacionadas de este dispositivo, sin esperar a que se cargue"
+          }
+        }
+      }
+    },
     "Make this version the note's current one" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -12452,6 +12676,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gestiona dispositivos"
+          }
+        }
+      }
+    },
+    "Map" : {
+      "comment" : "Note Insights: the map of related notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mapa"
           }
         }
       }
@@ -12503,6 +12740,45 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Como la app"
+          }
+        }
+      }
+    },
+    "Matched in concepts:" : {
+      "comment" : "Search result from Note Insights",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coincide en conceptos:"
+          }
+        }
+      }
+    },
+    "Matched in keywords:" : {
+      "comment" : "Search result from Note Insights",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coincide en palabras clave:"
+          }
+        }
+      }
+    },
+    "Matched in summary:" : {
+      "comment" : "Search result from Note Insights",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coincide en el resumen:"
           }
         }
       }
@@ -13409,6 +13685,18 @@
         }
       }
     },
+    "No groups yet: they appear once the work device has built the map." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todavía no hay grupos: aparecen cuando el dispositivo de trabajo haya creado el mapa."
+          }
+        }
+      }
+    },
     "No handwriting inside the loop. Circle the equation again." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -13441,6 +13729,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta versión de Sempere aún no ofrece ningún modelo de escritura."
+          }
+        }
+      }
+    },
+    "No map yet." : {
+      "comment" : "Note Insights map status",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todavía no hay mapa."
           }
         }
       }
@@ -13496,6 +13797,18 @@
         }
       }
     },
+    "No related notes yet." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todavía no hay notas relacionadas."
+          }
+        }
+      }
+    },
     "No request with these words has arrived yet. Check the words on the new device. Its request comes through the vault's sync target, and iCloud Drive can take a minute or two to deliver it: keep this open, and Sempere approves it when it arrives." : {
       "comment" : "Add Device: the typed words match no request in the copy, even after a sync",
       "extractionState" : "manual",
@@ -13518,6 +13831,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ningún motor de voz de este dispositivo puede transcribir este idioma."
+          }
+        }
+      }
+    },
+    "No summary for this note: its keywords only." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta nota no tiene resumen: solo sus palabras clave."
           }
         }
       }
@@ -13620,6 +13945,19 @@
         }
       }
     },
+    "None yet" : {
+      "comment" : "No work device chosen",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguno todavía"
+          }
+        }
+      }
+    },
     "None." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -13671,6 +14009,18 @@
         }
       }
     },
+    "Not Now" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ahora no"
+          }
+        }
+      }
+    },
     "Not Saved" : {
       "comment" : "Live Activity and banner: a voice note could not be saved",
       "extractionState" : "manual",
@@ -13697,6 +14047,19 @@
         }
       }
     },
+    "Not built yet" : {
+      "comment" : "Note Insights map",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no se ha creado"
+          }
+        }
+      }
+    },
     "Not checked: holds back only the targets that show it" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -13705,6 +14068,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sin comprobar: detiene solo los destinos que la muestran"
+          }
+        }
+      }
+    },
+    "Not chosen yet" : {
+      "comment" : "No embedding model revision yet",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no se ha elegido"
           }
         }
       }
@@ -13847,6 +14223,68 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La nota %1$@ no se pudo copiar, así que no se hizo ninguna copia: %2$@"
+          }
+        }
+      }
+    },
+    "Note Insights" : {
+      "comment" : "The feature's name: summaries, keywords and related notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ideas de notas"
+          }
+        }
+      }
+    },
+    "Note Insights could not be saved: %@" : {
+      "comment" : "%@ is the reason",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar Ideas de notas: %@"
+          }
+        }
+      }
+    },
+    "Note Insights is off for this vault." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ideas de notas está desactivado para esta bóveda."
+          }
+        }
+      }
+    },
+    "Note Insights writes a short summary and keywords for each note and finds related notes, on your devices only. About an hour of charging for 500 notes." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ideas de notas escribe un resumen breve y palabras clave para cada nota y encuentra notas relacionadas, solo en tus dispositivos. Alrededor de una hora de carga para 500 notas."
+          }
+        }
+      }
+    },
+    "Note Insights…" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ideas de notas…"
           }
         }
       }
@@ -14053,6 +14491,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las notas se cifran en tus dispositivos. No hay servidor de Sempere: tu almacenamiento ve archivos cifrados, su tamaño y sus fechas, y la lista de dispositivos de esta bóveda."
+          }
+        }
+      }
+    },
+    "Notes in the Map" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notas en el mapa"
           }
         }
       }
@@ -14555,6 +15005,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Una imagen PNG por página."
+          }
+        }
+      }
+    },
+    "One device makes the summaries, keywords and voice-note titles, and builds the map of related notes; the others show what it made. Any device that can run the models can do the work. On an iPhone or iPad it works while charging." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un dispositivo hace los resúmenes, las palabras clave y los títulos de las notas de voz, y crea el mapa de notas relacionadas; los demás muestran lo que hizo. Cualquier dispositivo que pueda usar los modelos puede hacer el trabajo. En un iPhone o iPad trabaja mientras se carga."
           }
         }
       }
@@ -15126,6 +15588,18 @@
         }
       }
     },
+    "Open this note" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir esta nota"
+          }
+        }
+      }
+    },
     "Open this vault" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -15349,6 +15823,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Otros archivos"
+          }
+        }
+      }
+    },
+    "Out of date" : {
+      "comment" : "Note Insights: notes whose summary is older than the note",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactualizadas"
           }
         }
       }
@@ -16226,6 +16713,18 @@
         }
       }
     },
+    "Placed on this device" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colocada en este dispositivo"
+          }
+        }
+      }
+    },
     "Play" : {
       "comment" : "Button: play a recording",
       "extractionState" : "manual",
@@ -16472,6 +16971,43 @@
         }
       }
     },
+    "Process Now" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Procesar ahora"
+          }
+        }
+      }
+    },
+    "Processed" : {
+      "comment" : "Note Insights: how many notes are processed",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Procesadas"
+          }
+        }
+      }
+    },
+    "Processing notes on this device…" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Procesando notas en este dispositivo…"
+          }
+        }
+      }
+    },
     "Protected PDFs not imported (open them again to enter their passwords): %@" : {
       "comment" : "The value lists file names",
       "extractionState" : "manual",
@@ -16608,6 +17144,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las notas de voz rápidas no están configuradas: abre Sempere, desbloquea la bóveda y actívalas en Ajustes."
+          }
+        }
+      }
+    },
+    "Quick voice notes are named from their transcript while they keep the title they were recorded with. {date} and {time} are when the note was recorded, {slug} a few words from the model. A title you set yourself is never replaced." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notas de voz rápidas se nombran a partir de su transcripción mientras conservan el título con el que se grabaron. {date} y {time} son el momento de la grabación, {slug} unas palabras del modelo. Un título que pongas tú nunca se reemplaza."
           }
         }
       }
@@ -17615,6 +18163,18 @@
         }
       }
     },
+    "Related Notes" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notas relacionadas"
+          }
+        }
+      }
+    },
     "Reload Vault" : {
       "comment" : "File menu: re-read the open vault",
       "extractionState" : "manual",
@@ -18569,6 +19129,19 @@
         }
       }
     },
+    "Revision %lld" : {
+      "comment" : "The pinned embedding model revision",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revisión %lld"
+          }
+        }
+      }
+    },
     "Revisions removed by compaction are not restore points and are not listed. Versions that depend on them are grayed out and cannot be shown or restored." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -19214,6 +19787,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buscar en transcripciones de grabaciones"
+          }
+        }
+      }
+    },
+    "Search for this keyword" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar esta palabra clave"
           }
         }
       }
@@ -20614,6 +21199,19 @@
         }
       }
     },
+    "Spring Lab Results" : {
+      "comment" : "An example of a voice note's generated title words",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resultados del laboratorio"
+          }
+        }
+      }
+    },
     "Staff line spacing" : {
       "comment" : "Paper parameter",
       "extractionState" : "manual",
@@ -20688,6 +21286,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Empezar a grabar"
+          }
+        }
+      }
+    },
+    "Status" : {
+      "comment" : "Note Insights settings section",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado"
           }
         }
       }
@@ -21182,6 +21793,55 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sugerir una frase de contraseña"
+          }
+        }
+      }
+    },
+    "Summaries cannot be made on this device: it shows the summaries other devices make." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En este dispositivo no se pueden hacer resúmenes: muestra los que hacen otros dispositivos."
+          }
+        }
+      }
+    },
+    "Summaries, keywords and related notes, made on your devices only with Apple's on-device model. They are stored in the vault, encrypted like your notes. Turning Note Insights off deletes them on every device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resúmenes, palabras clave y notas relacionadas, hechos solo en tus dispositivos con el modelo de Apple en el dispositivo. Se guardan en la bóveda, cifrados como tus notas. Al desactivar Ideas de notas se eliminan en todos los dispositivos."
+          }
+        }
+      }
+    },
+    "Summarize and connect your notes" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume y conecta tus notas"
+          }
+        }
+      }
+    },
+    "Summary" : {
+      "comment" : "Note Insights: a note's generated summary",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumen"
           }
         }
       }
@@ -23113,6 +23773,18 @@
         }
       }
     },
+    "The note changed since this was made; it is made again soon." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La nota cambió desde que se hizo esto; se volverá a hacer pronto."
+          }
+        }
+      }
+    },
     "The note could not be added now; try again when the vault can be written." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -23549,6 +24221,18 @@
         }
       }
     },
+    "The summary appears after a device with Apple Intelligence has processed this note." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El resumen aparece cuando un dispositivo con Apple Intelligence haya procesado esta nota."
+          }
+        }
+      }
+    },
     "The system does not trust it." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -23866,6 +24550,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las palabras cambiaron. Vuelve a comparar las seis."
+          }
+        }
+      }
+    },
+    "The work device embeds every note again (a few minutes for hundreds of notes)." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dispositivo de trabajo vuelve a procesar todas las notas (unos minutos para cientos de notas)."
+          }
+        }
+      }
+    },
+    "The work device has not been seen for 14 days. Summaries pause until it returns or another device does the work." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha visto el dispositivo de trabajo en 14 días. Los resúmenes se detienen hasta que vuelva o hasta que otro dispositivo haga el trabajo."
           }
         }
       }
@@ -24349,6 +25057,18 @@
         }
       }
     },
+    "This device cannot run Apple Intelligence: it shows the summaries other devices make." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo no puede usar Apple Intelligence: muestra los resúmenes que hacen otros dispositivos."
+          }
+        }
+      }
+    },
     "This device cannot run the handwriting model." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -24357,6 +25077,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo no puede ejecutar el modelo de escritura."
+          }
+        }
+      }
+    },
+    "This device compares only the %lld most recently changed notes, and this note is not one of them." : {
+      "comment" : "Note Insights: the related-notes bound of this device (always a large number)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo solo compara las %lld notas cambiadas más recientemente, y esta nota no es una de ellas."
           }
         }
       }
@@ -24663,6 +25396,19 @@
         }
       }
     },
+    "This device reads the shared map; its new notes join it once the work device processes them." : {
+      "comment" : "Note Insights map status",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo lee el mapa compartido; sus notas nuevas se suman cuando el dispositivo de trabajo las procesa."
+          }
+        }
+      }
+    },
     "This device then joins the vault again (approved by the device that manages devices), or takes over with the recovery kit. Its notes stay in the vault." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -24820,6 +25566,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La clave de este dispositivo está en la lista de la bóveda, pero este dispositivo no ha comprobado que esta bóveda sea aquella a la que pertenece la clave."
+          }
+        }
+      }
+    },
+    "This device's numbers differ from the work device's, so it builds its own map." : {
+      "comment" : "Note Insights map status",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los números de este dispositivo difieren de los del dispositivo de trabajo, así que crea su propio mapa."
           }
         }
       }
@@ -25000,6 +25759,19 @@
         }
       }
     },
+    "This is the work device." : {
+      "comment" : "Note Insights map status",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este es el dispositivo de trabajo."
+          }
+        }
+      }
+    },
     "This note came after Use on Apple Watch was turned off, or under an earlier key. If you lost a watch, it may be one the lost watch recorded: add it only if you recorded it yourself. It becomes a note in your vault." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -25141,6 +25913,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta nota alcanzó el límite de 60 minutos."
+          }
+        }
+      }
+    },
+    "This note's summary, keywords and related notes" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El resumen, las palabras clave y las notas relacionadas de esta nota"
           }
         }
       }
@@ -25346,6 +26130,18 @@
         }
       }
     },
+    "This vault is read-only here, so Note Insights cannot be changed." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda es de solo lectura aquí, así que Ideas de notas no se puede cambiar."
+          }
+        }
+      }
+    },
     "This vault is read-only: it was written by a newer version of Sempere." : {
       "comment" : "Sheet for PDFs opened with Sempere",
       "extractionState" : "manual",
@@ -25519,6 +26315,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Título"
+          }
+        }
+      }
+    },
+    "Title format" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formato del título"
           }
         }
       }
@@ -25850,6 +26658,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reintentar"
+          }
+        }
+      }
+    },
+    "Turn Off and Delete Insights" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivar y eliminar las ideas"
+          }
+        }
+      }
+    },
+    "Turn On" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar"
+          }
+        }
+      }
+    },
+    "Turn off Note Insights?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Desactivar Ideas de notas?"
+          }
+        }
+      }
+    },
+    "Turn on Apple Intelligence in Settings to make summaries on this device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa Apple Intelligence en Ajustes para hacer resúmenes en este dispositivo."
           }
         }
       }
@@ -26519,6 +27375,18 @@
         }
       }
     },
+    "Use Default" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar el predeterminado"
+          }
+        }
+      }
+    },
     "Use Full Palette" : {
       "comment" : "Tools menu: back from the compact palette",
       "extractionState" : "manual",
@@ -26532,6 +27400,18 @@
         }
       }
     },
+    "Use Revision %lld" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar la revisión %lld"
+          }
+        }
+      }
+    },
     "Use Synced Value" : {
       "comment" : "Settings row menu: follow the vault's value again",
       "extractionState" : "manual",
@@ -26541,6 +27421,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usar el valor sincronizado"
+          }
+        }
+      }
+    },
+    "Use This Device" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar este dispositivo"
           }
         }
       }
@@ -26648,6 +27540,31 @@
         }
       }
     },
+    "Use text and {date}, {time} and {slug} only." : {
+      "comment" : "Voice-note title format problem; keep the tokens as they are",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa solo texto y {date}, {time} y {slug}."
+          }
+        }
+      }
+    },
+    "Use the Newer Embedding Model…" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar el modelo de incrustación más nuevo…"
+          }
+        }
+      }
+    },
     "Use the Vault's Settings" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -26656,6 +27573,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usar los ajustes de la bóveda"
+          }
+        }
+      }
+    },
+    "Use the newer embedding model?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Usar el modelo de incrustación más nuevo?"
           }
         }
       }
@@ -26899,6 +27828,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nota de voz no grabada"
+          }
+        }
+      }
+    },
+    "Voice Note Titles" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Títulos de notas de voz"
           }
         }
       }
@@ -27303,6 +28244,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sin ella, la bóveda sigue en solo lectura aquí; unirse desde el dispositivo que gestiona los dispositivos, o tomar el control con el kit de recuperación, también permite escribir desde este dispositivo."
+          }
+        }
+      }
+    },
+    "Work Device" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivo de trabajo"
           }
         }
       }
@@ -27937,6 +28890,19 @@
         }
       }
     },
+    "nothing written yet" : {
+      "comment" : "Note Insights work device",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aún no ha escrito nada"
+          }
+        }
+      }
+    },
     "page %lld of the PDF cannot be read" : {
       "comment" : "Why a PDF cannot be added: lower case, no final period (shown inside a sentence)",
       "extractionState" : "manual",
@@ -27972,6 +28938,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "hace poco"
+          }
+        }
+      }
+    },
+    "related notes and map only" : {
+      "comment" : "Note Insights work device picker",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "solo notas relacionadas y mapa"
+          }
+        }
+      }
+    },
+    "similar wording" : {
+      "comment" : "Why two notes are related",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "redacción parecida"
           }
         }
       }

@@ -111,7 +111,8 @@ let package = Package(
         // `SyncSession`, `SyncStatus`) and the demo vault (DEBUG only).
         // Foundation and Observation only, and no user-facing text: the app words its values.
         .target(name: "SempereAppCore", dependencies: ["Sempere", "Age", "SempereImport", "SempereImporters", "SempereSync", "SempereRender",
-                                                       "SempereWebDAV", "SempereCapture", "SempereCaptureShared", "SempereSpeech"]),
+                                                       "SempereWebDAV", "SempereCapture", "SempereCaptureShared", "SempereSpeech",
+                                                       "SempereInsights"]),
         // What the quick voice note widgets, the control and the Live Activity share with the app (docs/design/thin-app.md
         // "Rules"): the status the widgets read, the links, the tap log and the intents' hooks. No dependencies (Foundation
         // only), so the widget extension links it without the core; the words and the AppIntents/ActivityKit glue stay in
@@ -184,7 +185,7 @@ let package = Package(
                                                        "TempDirSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereAppCoreTests", dependencies: ["SempereAppCore", "SempereCaptureShared", "Sempere", "SempereSync",
                                                          "SempereWebDAV", "SempereRender", "SempereImport", "SempereSpeech", "Age",
-                                                         "TempDirSupport", "VaultTestSupport"]),
+                                                         "SempereInsights", "TempDirSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereCaptureSharedTests", dependencies: ["SempereCaptureShared", "TempDirSupport"]),
         .testTarget(name: "SempereCaptureTests", dependencies: ["SempereCapture", "SempereCaptureShared", "Sempere", "Age", "FuzzSupport",
                                                                 "TempDirSupport", "VaultTestSupport",

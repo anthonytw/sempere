@@ -19,6 +19,8 @@ import UIKit
 enum BackgroundSync {
     static let refreshIdentifier = "io.github.anthonytw.sempere.sync.refresh"
     static let processingIdentifier = "io.github.anthonytw.sempere.sync.processing"
+    /// Note Insights' passes (`BackgroundSyncRequest.insights`): a processing task that asks for external power.
+    static let insightsIdentifier = "io.github.anthonytw.sempere.insights"
     /// The earliest a refresh is asked for after the app leaves the screen.
     static let refreshDelay: TimeInterval = 15 * 60
 
@@ -260,6 +262,12 @@ final class BGTaskSyncScheduler: BackgroundSyncScheduling {
             let r = BGProcessingTaskRequest(identifier: BackgroundSync.processingIdentifier)
             r.requiresNetworkConnectivity = needsNetwork
             r.requiresExternalPower = false
+            return r
+        case .insights:
+            // Hours of model work in all for a large vault: only while charging (design §3.7); no network.
+            let r = BGProcessingTaskRequest(identifier: BackgroundSync.insightsIdentifier)
+            r.requiresNetworkConnectivity = false
+            r.requiresExternalPower = true
             return r
         }
     }

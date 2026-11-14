@@ -141,6 +141,10 @@ struct WindowSheets: ViewModifier {
             .sheet(isPresented: Binding(get: { ui.historyNoteID != nil }, set: { if !$0 { ui.historyNoteID = nil } })) {
                 if let id = ui.historyNoteID { HistoryView(noteID: id) }
             }
+            // Note Insights: the note toolbar's overflow menu and the note list's context menu.
+            .sheet(isPresented: Binding(get: { ui.insightsNoteID != nil }, set: { if !$0 { ui.insightsNoteID = nil } })) {
+                if let id = ui.insightsNoteID { NoteInsightsSheet(noteID: id) }
+            }
             // The export sheet opens in the window that asked for it (a Mac may have several).
             .sheet(item: shown(\.exportRequest)) { ExportSheet(request: $0) }
             .sheet(item: shown(\.bulkExportRequest)) { BulkExportSheet(request: $0) }

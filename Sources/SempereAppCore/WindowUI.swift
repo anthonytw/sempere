@@ -51,6 +51,8 @@ public final class WindowUICore<Host: AppModelHost> {
     public var noteModeEditor: ObjectIdentifier?
     /// The note whose Version History sheet is open (`WindowSheets`).
     public var historyNoteID: UUID?
+    /// The note whose Note Insights sheet is open (`WindowSheets`): summary, keywords, related notes.
+    public var insightsNoteID: UUID?
 
     public init() {}
 }

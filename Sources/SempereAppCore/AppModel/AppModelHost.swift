@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereInsights
 import SempereRender
 import SempereSync
 
@@ -105,6 +106,9 @@ public struct AppModelServices {
     /// that failed to export, a failed read, the notices' reasons, the editors' save, recognition and recording
     /// failures, a quick voice note's banner. The app's `AppModel.describe`; headless, the error's own description.
     public var describeError: ErrorDescriber
+    /// Note Insights' providers and power state (`AppModel+Insights`): the app's Apple providers; headless, none.
+    /// Copied into the model at init (`insightsServices`).
+    public var insights: InsightsServices = .none
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,
