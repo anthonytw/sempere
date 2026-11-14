@@ -23,8 +23,12 @@ cd "$(dirname "$0")/.."
 source scripts/forge.sh
 max_back=${SEMPERE_SWEEP_LOOKBACK:-50}
 
-# Paths that do not reach the built app or CLI. Keep this list small and boring.
-neutral='^(CHANGELOG\.md|changelog\.d/.*|docs/.*|\.github/.*|\.gitea/.*|[^/]+\.md|justfile|packaging/homebrew/.*|packaging/allowed_signers|scripts/(release-[^/]*|test-release-[^/]*|test-mirror-gitea|changelog-[^/]*|update-formula|forge|local-ci)\.(sh|py))$'
+# Paths that do not reach the built app or CLI: one line in scripts/release-neutral.regex, which the PR gate's skip
+# decision (scripts/ci-gate-decision.py) reads too. Keep that list small and boring.
+neutral=$(<scripts/release-neutral.regex)
+# ... except what the app bundles from docs/ (scripts/release-bundled.regex; ci-gate-decision.py --self-test checks it against the
+# Xcode project's references).
+bundled=$(<scripts/release-bundled.regex)
 
 status_of() {   # sha context -> state, "missing", or "unknown" when Gitea cannot be asked
   local out
@@ -60,8 +64,9 @@ if [[ -z $base ]]; then
   exit 1
 fi
 
-changed=$(git diff --name-only "$base" "$sha")
-other=$(grep -Ev "$neutral" <<<"$changed" || true)
+# --no-renames: a file moved out of Sources/ into docs/ must list its old path too (git would show only the new one).
+changed=$(git diff --no-renames --name-only "$base" "$sha")
+other=$({ grep -Ev "$neutral" <<<"$changed" || true; grep -E "$bundled" <<<"$changed" || true; })
 if [[ -n $other ]]; then
   echo "FAIL  swept at ${base:0:8}, but ${sha:0:8} changes built files since: $(tr '\n' ' ' <<<"$other")— run 'just ci-release' on ${sha:0:8}"
   exit 1

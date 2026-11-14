@@ -82,12 +82,41 @@ jobs:
           path: ${{ runner.temp }}/ci-pass
           key: ci-pass-${{ matrix.job }}-main-${{ github.sha }}
 
+  # Whether the suites have anything to do (docs/ci.md "Skipping the suites"). When this says `run=false` the five suite jobs
+  # below are skipped by their job-level `if`; GitHub reports a job skipped that way as a success, which satisfies the `main`
+  # ruleset's required checks (the same behavior `Pass records` and the draft-PR skip already rely on). It says false only when
+  # (1) every changed file is release-neutral (scripts/release-neutral.regex) and not a workflow, action, test input or file the
+  # app bundles, or (2) a green push to main of this workflow already passed a commit with exactly this tree (artifact
+  # `ci-tree-<tree>` as a pointer, the facts checked through the API: scripts/ci-gate-decision.py). An empty or failed output
+  # counts as run (`!= 'false'`): a broken decision never skips a suite.
+  decide:
+    name: Gate decision
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      tree: ${{ steps.decide.outputs.tree }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 -I scripts/ci-gate-decision.py --base "$BASE"
+
   # npm ci, lint, typecheck, unit tests (which also compare the TypeScript renderer with the committed Swift goldens) and
   # the strict-CSP build. The golden files themselves are checked against the CLI in `Linux package tests`.
   web:
     name: Web viewer
-    needs: records
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: [records, decide]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -141,6 +170,7 @@ jobs:
           scripts/test-mirror-gitea.sh
           scripts/test-release-flow.sh
           scripts/test-release-sweep-tree.sh
+          python3 -I scripts/ci-gate-decision.py --self-test
           python3 -I scripts/test-runner.py --self-test
       - name: Portability
         run: scripts/check-portability.sh
@@ -153,8 +183,8 @@ jobs:
 
   ios-build:
     name: iOS build
-    needs: records
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: [records, decide]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
@@ -223,8 +253,8 @@ jobs:
 
   mac-package:
     name: Mac package tests
-    needs: records
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: [records, decide]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
@@ -255,8 +285,8 @@ jobs:
 
   linux-test:
     name: Linux package tests
-    needs: records
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: [records, decide]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
@@ -292,8 +322,8 @@ jobs:
 
   linux-webdav:
     name: Linux WebDAV tests
-    needs: records
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: [records, decide]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
@@ -323,3 +353,28 @@ jobs:
           path: ${{ runner.temp }}/ci-pass
           retention-days: 14
           if-no-files-found: ignore
+
+  # A full, green PUSH TO MAIN leaves the tree it passed as an artifact, so a later run of an identical tree (a revert, a
+  # release commit rebuilt on a tree main already passed) skips the suites. Only main's own runs write one: a pull request's
+  # workflow comes from the PR's ref and could say anything, and the lookup in scripts/ci-gate-decision.py re-checks the run
+  # through the API anyway. Not a required check. Runs only after every suite really ran (`run == 'true'`), never after a skip.
+  tree-record:
+    name: Tree record
+    needs: [decide, web, help, ios-build, mac-package, linux-test, linux-webdav]
+    if: ${{ success() && needs.decide.outputs.run == 'true' && needs.decide.outputs.tree != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: The tree id
+        env:
+          TREE: ${{ needs.decide.outputs.tree }}
+        run: |
+          set -euo pipefail
+          [[ $TREE =~ ^[0-9a-f]{40,64}$ ]]
+          mkdir -p "$RUNNER_TEMP/tree"
+          echo "$GITHUB_SHA $GITHUB_RUN_ID" > "$RUNNER_TEMP/tree/$TREE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-tree-${{ needs.decide.outputs.tree }}
+          path: ${{ runner.temp }}/tree
+          retention-days: 30

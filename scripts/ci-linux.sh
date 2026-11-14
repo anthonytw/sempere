@@ -14,8 +14,10 @@
 #                                      (sempere-linux-build-…), so the host's build folder is never touched.
 #                                      test and webdav never see the Static Linux SDK. A static job gets a fresh build volume
 #                                      and a fresh ~/.swiftpm volume of its own on every run, removed when it ends, so the SDK is
-#                                      downloaded and checked against its checksum each time (build-linux-static.sh) and nothing a
-#                                      test job could have written is ever reused in a release binary.
+#                                      installed from the host's cached archive (scripts/static-sdk-cache.sh: downloaded once, checked
+#                                      against the pin, mounted read-only and checked again in the container, build-linux-static.sh)
+#                                      and nothing a test job could have written is ever reused in a release binary. Two static jobs
+#                                      may run at once (release-build.sh does): each has volumes of its own.
 #                                      SEMPERE_LINUX_BUILD_VOLUME=NAME uses a build volume of your own (not for a release build);
 #                                      SEMPERE_LINUX_CPUS=1.2 caps the container's CPUs (to reproduce a test that fails on a loaded runner).
 #
@@ -175,6 +177,10 @@ in_docker() {   # JOB or JOB:ARG (static:x86_64)
     [[ -n ${SEMPERE_LINUX_BUILD_VOLUME:-} ]] || volume="$run-build"
     fresh=("$run-swiftpm"); [[ $volume == "$run-build" ]] && fresh+=("$volume")
     mounts=(-v "$run-swiftpm:/root/.swiftpm")
+    # The SDK archive comes from the host's cache (scripts/static-sdk-cache.sh: downloaded once, checked against the pin, bad
+    # files deleted), mounted read-only; build-linux-static.sh checks it again in the container. Nothing else is shared.
+    local sdk; sdk=$(scripts/static-sdk-cache.sh) || { echo "error: no verified Static Linux SDK archive" >&2; exit 1; }
+    mounts+=(-v "$sdk:/sdk/archive.tar.gz:ro" -e SEMPERE_SDK_ARCHIVE=/sdk/archive.tar.gz)
   fi
   local tty=(); [[ -t 1 ]] && tty=(-t)
   # The pass records (docs/design/ci-lean.md) live on the host, in the Mac gate's store, not in the build volume: a record is
