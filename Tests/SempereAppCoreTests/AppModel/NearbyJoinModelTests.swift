@@ -374,6 +374,84 @@ extension AppModelSuites {
             for c in opened { c.abort() }
         }
 
+        /// One handshake place per remote address: an address opening ten connections holds one place, and the other
+        /// devices' handshakes survive; the oldest of that address is the one ended.
+        @Test func oneAddressHoldsOneHandshakePlace() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.home.model.startNearbyApproving()
+            let peers = NearbyPeerBox()
+            let watch = w.link.browse(found: { peers.set($0) }, onFailure: {})
+            defer { watch.stop() }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { !peers.get().isEmpty })
+            let peer = try #require(peers.get().first)
+            // Three other devices, one connection each.
+            var others: [any NearbyJoinConnection] = []
+            for host in ["10.0.0.2", "10.0.0.3", "10.0.0.4"] { others.append(try await w.link.open(peer, from: host)) }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { w.home.model.nearby.handshakes.count == 3 })
+            // One address opens ten.
+            var fast: [any NearbyJoinConnection] = []
+            for _ in 0..<10 { fast.append(try await w.link.open(peer, from: "10.0.0.9")) }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) {
+                w.home.model.nearby.handshakes.count == NearbyJoinRuntime.handshakeLimit
+                    && w.home.model.nearby.handshakes.values.filter { $0.host == "10.0.0.9" }.count == 1
+            })
+            #expect(w.home.model.nearby.handshakes.values.filter { $0.host != "10.0.0.9" }.count == 3, "the others' places stay")
+            // The one that is held is the newest of that address: the first nine were ended without a byte.
+            let firstOfFast = fast[0]
+            let ended: Data? = await withTaskGroup(of: Data?.self) { group in
+                group.addTask { try? await firstOfFast.receive(maximum: 64) }
+                group.addTask { try? await Task.sleep(for: .seconds(5)); return nil }
+                let got = await group.next() ?? nil
+                group.cancelAll()
+                return got
+            }
+            #expect(ended == Data(), "the address's oldest was ended, not timed out")
+            for c in others + fast { c.abort() }
+        }
+
+        /// Two addresses hold one each; connections with no known address are each their own group, as before.
+        @Test func twoAddressesHoldOneEachAndUnknownAddressesBehaveAsBefore() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.home.model.startNearbyApproving()
+            let peers = NearbyPeerBox()
+            let watch = w.link.browse(found: { peers.set($0) }, onFailure: {})
+            defer { watch.stop() }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { !peers.get().isEmpty })
+            let peer = try #require(peers.get().first)
+            var opened: [any NearbyJoinConnection] = []
+            for host in ["10.0.0.1", "10.0.0.2", "10.0.0.1", "10.0.0.2", "10.0.0.1"] { opened.append(try await w.link.open(peer, from: host)) }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { w.home.model.nearby.handshakes.count == 2 })
+            #expect(Set(w.home.model.nearby.handshakes.values.compactMap(\.host)) == ["10.0.0.1", "10.0.0.2"])
+            for c in opened { c.abort() }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { w.home.model.nearby.handshakes.isEmpty })
+            // No address: every connection is its own group, so the global limit applies, oldest first.
+            for _ in 0..<(NearbyJoinRuntime.handshakeLimit + 2) { opened.append(try await w.link.open(peer)) }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) {
+                w.home.model.nearby.handshakes.count == NearbyJoinRuntime.handshakeLimit
+            })
+            for c in opened { c.abort() }
+        }
+
+        /// A real session that finished is not a handshake: its address is free for the next connection.
+        @Test func aFinishedSessionDoesNotCountAgainstItsAddress() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.home.model.startNearbyApproving()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(15)) { w.home.model.nearbyRequests.count == 1 })
+            #expect(w.home.model.nearby.handshakes.isEmpty, "the request took the session; no handshake place is held")
+            let peers = NearbyPeerBox()
+            let watch = w.link.browse(found: { peers.set($0) }, onFailure: {})
+            defer { watch.stop() }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { !peers.get().isEmpty })
+            let peer = try #require(peers.get().first)
+            let c = try await w.link.open(peer, from: "10.0.0.1")
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { w.home.model.nearby.handshakes.count == 1 })
+            c.abort()
+        }
+
         /// The listener fails alone: Add Device starts it again, and the join screen's browser is not touched.
         @Test func aFailedListenerLeavesTheBrowserAlone() async throws {
             let w = try await Self.asked()

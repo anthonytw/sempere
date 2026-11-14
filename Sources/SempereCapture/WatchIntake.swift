@@ -252,7 +252,7 @@ public struct WatchIntake: Sendable {
         // Step 3: admitted, or held.
         if let reason = try holdReason(sealed, vault: meta.vault, using: delivery) {
             guard let held else { return WatchIntakeResult(id: meta.id, outcome: .refused(.heldFull)) }
-            do { try held.hold(sealed, vault: meta.vault, reason: reason) } catch WatchHeldError.full {
+            do { try held.hold(sealed, vault: meta.vault, reason: reason) } catch let e as WatchHeldError where e == .full || e == .fullUnplaceable {
                 return WatchIntakeResult(id: meta.id, outcome: .refused(.heldFull))
             }
             try? received.insert(meta.id)

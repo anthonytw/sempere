@@ -355,6 +355,10 @@ public final class SyncEngine {
     /// Working-copy files this device set aside that are still in place (path → SHA-256): an accepted copy on
     /// the remote replaces them (design §5.4 step 4).
     var unacceptedHere: [String: String] = [:]
+    /// Bytes this run read to check a revision the listing gave no size for (`verifySizeless`), against its cap.
+    var sizelessRead: Int64 = 0
+    /// This run already reported that the record of checked revisions is full.
+    var sizelessFullReported = false
     /// The latest bytes (SHA-256) this device's write ledger holds per path: a shared file whose bytes changed
     /// here since both sides last matched (a catch-up's re-encryption) is compared with the remote's.
     var ledgerShas: [String: String] = [:]
@@ -516,6 +520,10 @@ public final class SyncEngine {
         }
         checkerBaseManifest = manifestHash()
         budget = RunBudget(options.limits)
+        sizelessRead = 0
+        sizelessFullReported = false
+        // The marker D-07 checks revisions against: set once, from the first run of this target with this code, never moved.
+        if state.sizelessCutoff == nil, !options.dryRun { state.sizelessCutoff = options.now }
         // A device that has asked to join and not confirmed (no key, its own key given, no trust record): it sends only
         // its join request until it confirms (review of #90, S2). Its copy holds nothing of its own to send.
         if vault == nil, !options.firstPullIdentities.isEmpty, !options.pushOnly, !Self.epochMutations.contains(.keylessUploadsManifest),
@@ -1606,7 +1614,10 @@ public final class SyncEngine {
             // In step on both sides again: no longer a settled deletion.
             state.thinned?[k] = nil
         }
-        for n in S where !L.contains(n) && !R.contains(n) { state.files[key(id, n)] = nil }
+        for n in S where !L.contains(n) && !R.contains(n) {
+            state.files[key(id, n)] = nil
+            state.sizelessChecked?[key(id, n)] = nil
+        }
         if L.isEmpty && R.isEmpty { for n in thinned { state.thinned?[key(id, n)] = nil } }
         if state.thinned?.isEmpty == true { state.thinned = nil }
     }
@@ -1805,7 +1816,12 @@ public final class SyncEngine {
         guard !options.dryRun, !options.pullOnly, let entry, let listed = entry.size, listed < local.count,
               let got = try? transport.read(remotePath, maxBytes: local.count) else { return false }
         try locked { try budget.downloaded(got.data.count) }
-        guard got.data.count < local.count, local.starts(with: got.data),
+        return try replaceCut(remotePath, local: local, got: got.data, entry: entry)
+    }
+
+    /// Replaces the server's copy `got` of `remotePath` by `local` when `got` is a strict prefix of it.
+    func replaceCut(_ remotePath: [String], local: Data, got: Data, entry: RemoteEntry) throws -> Bool {
+        guard got.count < local.count, local.starts(with: got),
               try placeWriteOnce(remotePath, .data(local), taken: .sameBytes(local), damaged: entry) == .placed else { return false }
         let path = remotePath.joined(separator: "/")
         locked {
@@ -1830,13 +1846,99 @@ public final class SyncEngine {
     func repairCutRevision(_ id: String, _ n: RevisionName, entry: RemoteEntry?, localDir: URL) throws -> Bool {
         let path = "notes/\(key(id, n))"
         // Not in a pull-only run (its writes are no-ops), and never a copy this device set aside (it is not uploaded).
-        guard !options.dryRun, !options.pullOnly, unacceptedHere[path] == nil, let entry, let listed = entry.size,
-              let have = LocalFS.regularFileSize(localDir.appendingPathComponent(n.filename)), listed < have,
+        guard !options.dryRun, !options.pullOnly, unacceptedHere[path] == nil, let entry,
+              let have = LocalFS.regularFileSize(localDir.appendingPathComponent(n.filename)),
               have <= options.maxFileBytes else { return false }
-        guard let local = try? BoundedRead.contents(of: localDir.appendingPathComponent(n.filename), maxBytes: options.maxFileBytes),
+        guard let listed = entry.size else {
+            return try verifySizeless(id, n, entry: entry, have: have, localDir: localDir)
+        }
+        guard listed < have,
+              let local = try? BoundedRead.contents(of: localDir.appendingPathComponent(n.filename), maxBytes: options.maxFileBytes),
               try repairCutFile([Vault.notesName, id, n.filename], local: local, entry: entry) else { return false }
         locked { placedShas[key(id, n)] = FileDigest.sha256(local) }
         return true
+    }
+
+    // MARK: Revisions the listing gives no size for (D-07, docs/design/1.2-audit-followups.md)
+
+    /// A run reads, to check such revisions, at most this part of its download bytes (`SyncLimits.maxDownloadBytes`); a vault with
+    /// many of them is checked over several runs.
+    static let sizelessReadFraction: Int64 = 16
+    /// What the sync state keeps of verified revisions: entries (about 200 bytes each in the state's JSON: the key, a 64-digit
+    /// digest and the field names, so about 0.8 MiB). A vault with more is reported in `skipped`, never silently left.
+    static let sizelessCheckedMax = 4096
+
+    /// A revision both sides list whose listing has no size: the repair above cannot compare sizes, so a revision this device
+    /// wrote before the target's marker (`SyncState.sizelessCutoff`, the time of its first run with this code: only an older
+    /// client cut uploads, and only a device that still holds the file can repair it) is checked once,
+    /// by one read of the server's copy bounded by the local file's size (the same read `repairCutFile` makes), charged to the
+    /// download budget. A strict prefix is replaced as `repairCutFile` does; a complete copy, or any other copy, is recorded
+    /// as verified in the sync state (the local size and a digest of the listing entry) and not read again until either
+    /// changes. A copy that is not a prefix is left alone and reported. Returns true when the server's copy was repaired.
+    func verifySizeless(_ id: String, _ n: RevisionName, entry: RemoteEntry, have: Int, localDir: URL) throws -> Bool {
+        let k = key(id, n)
+        guard let me = options.deviceID, n.device == me, have > 0, let cutoff = locked({ state.sizelessCutoff }),
+              Date(timeIntervalSince1970: Double(n.hlc.millis) / 1000) < cutoff else { return false }
+        let listing = Self.listingDigest(entry)
+        let (done, full, spent) = locked { (state.sizelessChecked?[k], (state.sizelessChecked?.count ?? 0) >= Self.sizelessCheckedMax,
+                                            sizelessRead) }
+        if let done, done.size == have, done.listing == listing { return false }
+        // No room to record it: reading it every run would be worse than leaving it.
+        guard !full || done != nil else {
+            let first = locked { () -> Bool in
+                defer { sizelessFullReported = true }
+                return !sizelessFullReported
+            }
+            if first {
+                locked {
+                    report.skipped.append(.init(path: "notes", message: "revisions with no listed size were not checked for a cut upload: "
+                        + "the record of checked revisions is full (\(Self.sizelessCheckedMax))"))
+                }
+            }
+            return false
+        }
+        guard spent + Int64(have) <= options.limits.maxDownloadBytes / Self.sizelessReadFraction else { return false }
+        guard let local = try? BoundedRead.contents(of: localDir.appendingPathComponent(n.filename), maxBytes: options.maxFileBytes),
+              local.count == have else { return false }
+        let remotePath = [Vault.notesName, id, n.filename]
+        func record(_ listing: String) {
+            locked {
+                var all = state.sizelessChecked ?? [:]
+                all[k] = SyncState.SizelessCheck(size: have, listing: listing)
+                state.sizelessChecked = all
+            }
+        }
+        let got: Data
+        do { got = try transport.read(remotePath, maxBytes: have).data } catch SyncError.responseTooLarge {
+            // Longer than the local file: not a cut copy of it.
+            record(listing)
+            locked { report.skipped.append(.init(path: "notes/\(k)", message: "the server's copy is longer than the local file; left alone")) }
+            return false
+        } catch {
+            try rethrowRunLimit(error)
+            return false   // not read now: the next run tries again
+        }
+        try locked {
+            sizelessRead += Int64(got.count)
+            try budget.downloaded(got.count)
+        }
+        if got.count < have, local.starts(with: got) {
+            guard try replaceCut(remotePath, local: local, got: got, entry: entry) else { return false }
+            locked { placedShas[k] = FileDigest.sha256(local) }
+            // The replacement has its own version tag: record the listing as it is now.
+            record((try? transport.stat(remotePath)).flatMap { $0 }.map(Self.listingDigest) ?? listing)
+            return true
+        }
+        record(listing)
+        if got != local {
+            locked { report.skipped.append(.init(path: "notes/\(k)", message: "the server's copy differs from the local file and is not a cut copy of it; left alone")) }
+        }
+        return false
+    }
+
+    /// A digest of what a listing says of a file (name, version tag, modification time), for `SyncState.sizelessChecked`.
+    static func listingDigest(_ e: RemoteEntry) -> String {
+        FileDigest.sha256(Data("\(e.name)\n\(e.etag ?? "")\n\(e.lastModified ?? "")".utf8))
     }
 
     /// True when this run must not upload `id`'s revisions (`blobsHeldBack`).

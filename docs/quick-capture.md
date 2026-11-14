@@ -432,8 +432,9 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
 - **What the phone admits.** A watch file gets a write-ledger entry only while Use on Apple Watch is on and its epoch is the one
   the phone holds for its vault (the plaintext `vault.json` epoch of the folder must not be ahead either). Anything else is
   **held**: kept on the phone only (`Application Support/Sempere/WatchHeld/`), never in a vault folder, never synced, never in
-  the ledger, and acknowledged so the watch drops its copy, at most 200 files and 500 MB (past that the file is refused and the
-  watch keeps it). Settings lists the held notes one by one, each with why it is held and when it came, with **Add…** (after a
+  the ledger, and acknowledged so the watch drops its copy, at most 200 files and 500 MB, of which at most 20 files and 50 MB may be notes that can only be deleted (a vault or epoch the phone never
+  held: a watch sending those cannot use up the room for notes you can add); past either the file is refused and the
+  watch keeps it. A file there without its record is removed once it is a day old (a younger one may be a note being written). Settings lists the held notes one by one, each with why it is held and when it came, with **Add…** (after a
   confirmation; it runs the normal path: catch-up then re-seals an older epoch's note under the current key), **Delete**, and
   **Delete All**. A note that came while Use on Apple Watch was off, or under an earlier key (after a lost watch's steps, what the
   lost watch sends), is offered for Delete first: adding it is **Add Anyway…**, with a warning, and `held add --all` skips it. A note sealed under an epoch the phone never held, or for a vault
@@ -445,7 +446,10 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
   manifest names its vault; a leftover is sealed only with a profile of the same vault (on the watch and on the phone), and
   with no profile at all (a clear, Reset) the watch's leftovers are deleted, as the phone's are (not while the watch's stored
   state cannot be read, before its first unlock: that is not "no profile"). The phone says once that a leftover of another vault
-  is kept.
+  is kept. The watch reports those it kept (another vault's, or one whose manifest names no vault; recordings with nothing in them are
+  removed silently): its screen says "N recordings could not be placed" (and how many are older than 30 days) with **Delete**, which
+  removes exactly those folders. The count is computed from the folders at each launch, never stored. Nothing deletes them by itself, and the
+  phone has no list and no remote delete (that would need a new WatchConnectivity command).
 - **The recording.** `WatchRecorder` is a start, stop and sweep state machine over the recorder protocols this document's
   phone recorder uses (`CaptureRecorder`, `CaptureRecording`, in `SempereCapture`); the watch app implements them on
   `AVAudioRecorder` (`WatchAudio.swift`): ADTS segments as above, a segment per five minutes, mono AAC-LC at 24 kHz and

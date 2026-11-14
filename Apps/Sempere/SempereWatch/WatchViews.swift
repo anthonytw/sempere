@@ -8,6 +8,7 @@ import SwiftUI
 struct WatchContentView: View {
     @Bindable var model: WatchModel
     @State private var confirmReset = false
+    @State private var confirmDeleteLeftovers = false
 
     var body: some View {
         ScrollView {
@@ -24,6 +25,12 @@ struct WatchContentView: View {
             .frame(maxWidth: .infinity)
         }
         .containerBackground(.black.gradient, for: .navigation)
+        .confirmationDialog("Delete these recordings?", isPresented: $confirmDeleteLeftovers, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { model.deleteLeftovers() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They cannot be put in a vault from here, and are gone for good.")
+        }
         .confirmationDialog("Reset Quick Voice Notes?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) { model.reset() }
             Button("Cancel", role: .cancel) {}
@@ -41,6 +48,7 @@ struct WatchContentView: View {
                 .font(.footnote).multilineTextAlignment(.center)
                 .accessibilityIdentifier("watch.notSetUp")
             unsentLine
+            leftoversLine
             resetButton
         }
     }
@@ -59,6 +67,7 @@ struct WatchContentView: View {
                     .accessibilityIdentifier("watch.vault")
             }
             unsentLine
+            leftoversLine
             resetButton
         }
     }
@@ -127,6 +136,22 @@ struct WatchContentView: View {
                 Text("Unsent notes: \(model.unsent)").font(.footnote).foregroundStyle(.orange)
                     .accessibilityIdentifier("watch.unsent")
                 Button("Send now") { model.sendNow() }.font(.footnote).accessibilityIdentifier("watch.sendNow")
+            }
+        }
+    }
+
+    /// "2 recordings could not be placed", with Delete: recordings no profile of this watch can place (another vault's, or none
+    /// named). Kept until the user deletes them; no names, no content.
+    @ViewBuilder private var leftoversLine: some View {
+        if model.leftovers.count > 0 {
+            VStack(spacing: 4) {
+                Text("\(model.leftovers.count) recordings could not be placed").font(.footnote).foregroundStyle(.orange)
+                    .accessibilityIdentifier("watch.leftovers")
+                if model.leftovers.older > 0 {
+                    Text("\(model.leftovers.older) of them are older than 30 days").font(.footnote).foregroundStyle(.secondary)
+                }
+                Button("Delete", role: .destructive) { confirmDeleteLeftovers = true }
+                    .font(.footnote).accessibilityIdentifier("watch.deleteLeftovers")
             }
         }
     }

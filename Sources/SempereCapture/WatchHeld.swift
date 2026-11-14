@@ -48,6 +48,9 @@ public struct HeldCapture: Codable, Equatable, Sendable {
 public enum WatchHeldError: Error, Equatable, Sendable, CustomStringConvertible {
     /// 200 files or 500 MB are held already: the file is refused, unacknowledged, and the watch keeps it.
     case full
+    /// 20 files or 50 MB of notes that can only be deleted (`WatchHeldReason.canAdd` false) are held already: refused like
+    /// `.full`, so a watch sending notes for a vault this phone does not hold cannot use up the room for notes the user can add.
+    case fullUnplaceable
     case notFound(String)
     case ambiguous(String)
     case unreadable(String)
@@ -55,6 +58,8 @@ public enum WatchHeldError: Error, Equatable, Sendable, CustomStringConvertible 
     public var description: String {
         switch self {
         case .full: return "too many Watch notes are held (200 files or 500 MB): add or delete some first"
+        case .fullUnplaceable:
+            return "too many Watch notes that can only be deleted are held (20 files or 50 MB): delete some first"
         case .notFound(let s): return "no held Watch note matches \(s)"
         case .ambiguous(let s): return "\(s) matches more than one held Watch note"
         case .unreadable(let s): return "the held note cannot be read: \(s)"
@@ -66,15 +71,31 @@ public enum WatchHeldError: Error, Equatable, Sendable, CustomStringConvertible 
 public final class WatchHeldStore: @unchecked Sendable {
     public static let maxFiles = 200
     public static let maxTotalBytes = 500 << 20
+    /// The sub-limit for notes that can only be deleted (`unknownVault`, `unknownEpoch`): inside the general caps, not extra room.
+    public static let maxUnplaceableFiles = 20
+    public static let maxUnplaceableBytes = 50 << 20
+    /// A file without a valid sidecar is removed once it is older than this: a younger one may be a `hold` in progress in
+    /// another process (file first, sidecar second; the store's lock is in-process only).
+    public static let orphanAge: TimeInterval = 24 * 3600
     static let sidecarSuffix = ".held.json"
 
     public let root: URL
     private let maxFiles: Int
     private let maxBytes: Int
+    private let maxUnplaceableFiles: Int
+    private let maxUnplaceableBytes: Int
     private let now: @Sendable () -> Date
     private let lock = NSLock()
+    private var orphansRemoved = 0
     /// Serializes "Add to inbox" (`take`), so two adds of one note cannot both place it.
     private let takeLock = NSLock()
+
+    /// Whether a store that holds `held` refuses another note that can only be deleted: the sub-limit `hold` applies.
+    public static func isFullOfUnplaceable(_ held: [HeldCapture], adding: Int = 1, maxFiles: Int = maxUnplaceableFiles,
+                                           maxBytes: Int = maxUnplaceableBytes) -> Bool {
+        let u = held.filter { !$0.canAdd }
+        return u.count >= maxFiles || u.reduce(0, { $0 + $1.bytes }) + adding > maxBytes
+    }
 
     /// Whether a store that holds `held` refuses another file: the rule `hold` applies (`adding` is the new file's size; with
     /// none, the least a file weighs).
@@ -89,11 +110,17 @@ public final class WatchHeldStore: @unchecked Sendable {
     /// - Parameters:
     ///   - maxFiles: the most files held (tests lower it).
     ///   - maxBytes: the most bytes held.
+    ///   - maxUnplaceableFiles: the most notes that can only be deleted.
+    ///   - maxUnplaceableBytes: their bytes.
     public init(root: URL, maxFiles: Int = WatchHeldStore.maxFiles, maxBytes: Int = WatchHeldStore.maxTotalBytes,
+                maxUnplaceableFiles: Int = WatchHeldStore.maxUnplaceableFiles,
+                maxUnplaceableBytes: Int = WatchHeldStore.maxUnplaceableBytes,
                 now: @escaping @Sendable () -> Date = { Date() }) {
         self.root = root
         self.maxFiles = maxFiles
         self.maxBytes = maxBytes
+        self.maxUnplaceableFiles = maxUnplaceableFiles
+        self.maxUnplaceableBytes = maxUnplaceableBytes
         self.now = now
     }
 
@@ -110,24 +137,58 @@ public final class WatchHeldStore: @unchecked Sendable {
         lock.withLock { scan() }
     }
 
+    /// Lists the held files, and removes what has no partner (a file without a valid sidecar, a sidecar without its file)
+    /// once it is older than `orphanAge`.
     private func scan() -> [HeldCapture] {
         let fm = FileManager.default
         var out: [HeldCapture] = []
+        let cutoff = now().addingTimeInterval(-Self.orphanAge)
+        func old(_ url: URL) -> Bool {
+            guard let m = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date else { return false }
+            return m < cutoff
+        }
         for dir in (try? fm.contentsOfDirectory(atPath: root.path)) ?? [] {
             guard UUID(uuidString: dir) != nil else { continue }
             let url = root.appendingPathComponent(dir, isDirectory: true)
-            for name in (try? fm.contentsOfDirectory(atPath: url.path)) ?? [] where name.hasSuffix(Self.sidecarSuffix) {
-                guard let data = try? BoundedRead.contents(of: url.appendingPathComponent(name), maxBytes: 4096),
+            let names = (try? fm.contentsOfDirectory(atPath: url.path)) ?? []
+            var paired = Set<String>()
+            for name in names where name.hasSuffix(Self.sidecarSuffix) {
+                let sidecar = url.appendingPathComponent(name)
+                guard let data = try? BoundedRead.contents(of: sidecar, maxBytes: 4096),
                       let held = try? decoder().decode(HeldCapture.self, from: data) else { continue }
-                let file = url.appendingPathComponent(CaptureFile.name(held.id, .capture))
-                guard fm.fileExists(atPath: file.path) else { continue }
+                let fileName = CaptureFile.name(held.id, .capture)
+                let file = url.appendingPathComponent(fileName)
+                guard fm.fileExists(atPath: file.path) else {
+                    if old(sidecar), (try? fm.removeItem(at: sidecar)) != nil { orphansRemoved += 1 }
+                    continue
+                }
+                paired.insert(fileName)
+                paired.insert(fileName + Self.sidecarSuffix)
                 out.append(held)
+            }
+            for name in names where !paired.contains(name) {
+                guard name.hasSuffix(Self.sidecarSuffix) || CaptureFile.parse(name: name)?.kind == .capture else { continue }
+                let target = url.appendingPathComponent(name)
+                if old(target), (try? fm.removeItem(at: target)) != nil { orphansRemoved += 1 }
             }
         }
         return out.sorted { ($0.receivedAt, $0.id.uuidString) < ($1.receivedAt, $1.id.uuidString) }
     }
 
     public var count: Int { list().count }
+
+    /// How many files (and sidecars) the sweeps of `list` and `hold` removed since the last call; the call resets it.
+    public func takeOrphansRemoved() -> Int {
+        lock.withLock {
+            defer { orphansRemoved = 0 }
+            return orphansRemoved
+        }
+    }
+
+    /// The held notes per reason, after a sweep.
+    public func countsByReason() -> [WatchHeldReason: Int] {
+        Dictionary(list().map { ($0.reason, 1) }, uniquingKeysWith: +)
+    }
 
     /// Keeps `sealed` (a file the intake checked), unless it is held already. Throws `.full` past the caps.
     public func hold(_ sealed: SealedCapture, vault: UUID, reason: WatchHeldReason) throws {
@@ -140,6 +201,10 @@ public final class WatchHeldStore: @unchecked Sendable {
             if existing.contains(where: { $0.id == parsed.id && $0.vault == vault }) { return }
             guard !Self.isFull(existing, adding: sealed.data.count, maxFiles: maxFiles, maxBytes: maxBytes) else {
                 throw WatchHeldError.full
+            }
+            guard reason.canAdd || !Self.isFullOfUnplaceable(existing, adding: sealed.data.count, maxFiles: maxUnplaceableFiles,
+                                                                maxBytes: maxUnplaceableBytes) else {
+                throw WatchHeldError.fullUnplaceable
             }
             let held = HeldCapture(id: parsed.id, vault: vault, epoch: epoch, epochId: Hex.encode(epochId), receivedAt: now(),
                                    reason: reason, bytes: sealed.data.count)

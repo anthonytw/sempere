@@ -211,6 +211,21 @@ final class NWNearbyConnection: NearbyJoinConnection, @unchecked Sendable {
 
     init(_ connection: NWConnection) { self.connection = connection }
 
+    /// The other end's address without a port or an interface scope (an incoming connection's `endpoint` is the remote one).
+    var remoteHost: String? {
+        let remote = connection.currentPath?.remoteEndpoint ?? connection.endpoint
+        guard case .hostPort(let host, _) = remote else { return nil }
+        let text: String
+        switch host {
+        case .ipv4(let address): text = "\(address)"
+        case .ipv6(let address): text = "\(address)"
+        case .name(let name, _): text = name
+        @unknown default: return nil
+        }
+        let bare = text.split(separator: "%", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? text
+        return bare.isEmpty ? nil : bare
+    }
+
     /// An incoming connection: started, and canceled if it fails (a pending receive then ends).
     func startIncoming(on queue: DispatchQueue) {
         connection.stateUpdateHandler = { [connection] state in

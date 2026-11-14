@@ -190,7 +190,7 @@ sent back, with the device list, is encrypted to the new device's key
   warns about notes that came after the setting was turned off or under an earlier key,
   which may be a lost watch's; a note under an epoch or vault the iPhone never held can
   only be deleted); **Delete** removes them. At most 200
-  files / 500 MB are held; past that the watch keeps them. Removing
+  files / 500 MB are held, of which 20 files / 50 MB at most may be notes that can only be deleted; past either the watch keeps them. Removing
   the iPhone from the vault ends the watch's captures too (they verify only under
   the iPhone's listed key). A key of its own for each watch, listed in the vault so
   that it can be revoked alone, is not in 1.1 (decision D1 of the design).

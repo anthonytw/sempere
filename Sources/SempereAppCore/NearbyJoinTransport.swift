@@ -156,7 +156,13 @@ public final class MemoryNearbyTransport: NearbyJoinTransport, @unchecked Sendab
     }
 
     public func open(_ peer: NearbyPeer) async throws -> any NearbyJoinConnection {
+        try await open(peer, from: nil)
+    }
+
+    /// `open`, as a device at `host`: the accepting end sees that address (`NearbyJoinConnection.remoteHost`).
+    public func open(_ peer: NearbyPeer, from host: String?) async throws -> any NearbyJoinConnection {
         let (mine, theirs) = NearbyJoinPipe.make()
+        theirs.remoteHost = host
         guard let accept = take(peer, mine) else { throw NearbyTransportError.notFound }
         accept(theirs)
         return mine

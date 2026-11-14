@@ -1207,6 +1207,14 @@ revisions still sync, and readers draw a placeholder for it meanwhile
   one, and whose server copy is a prefix of the local file (a cut upload an older client left under the final
   name), is replaced: the complete copy goes to a temporary name, the cut one is deleted under its ETag, and the
   `MOVE` places the new one (reported as uploaded and replaced).
+  A server whose listing gives no size for a file cannot show that difference, so a revision **this device wrote before the
+  target's marker** (`SyncState.sizelessCutoff`: the time of the target's first run with this check, never moved, since an older
+  client may have cut uploads until it was updated) is checked once instead (`verifySizeless`): one read of the server's copy, at
+  most the local file's size, charged to the run's download budget and capped at a sixteenth of `SyncLimits.maxDownloadBytes`
+  per run (a vault with many is checked over several runs). A strict prefix is replaced as above; a complete copy, or any other
+  copy (reported as left alone), is recorded in the target's sync state (`sizelessChecked`: the local size and a digest of the
+  listing entry, at most 4096 entries; a vault with more says so in `skipped`) and not read again until either changes. Other
+  devices' revisions and later ones are never read for this.
   Every other write-once file goes the same way, through one helper (`SyncEngine.placeWriteOnce`): notebook
   records (`notebooks/`), join requests (`joins/`) and passphrase copies (`keys/`), each to a temporary name in its
   own folder, then `MOVE` with `Overwrite: F`. A name already taken counts only when its listed size and a re-read

@@ -117,6 +117,12 @@ public enum NearbyJoinPipe {
         }
         private let lock = NSLock()
         private var sentBytes = Data()
+        private var host: String?
+        /// The address this end claims the other end came from (tests set it; `MemoryNearbyTransport.open(_:from:)`).
+        public var remoteHost: String? {
+            get { lock.lock(); defer { lock.unlock() }; return host }
+            set { lock.lock(); host = newValue; lock.unlock() }
+        }
 
         init(inbox: Queue, outbox: Queue) {
             self.inbox = inbox

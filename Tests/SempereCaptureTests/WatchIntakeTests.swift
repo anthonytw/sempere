@@ -469,6 +469,110 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertTrue(WatchHeldStore.isFull(store.list(), maxFiles: 2), "the file limit alone is full")
     }
 
+    // MARK: C-10: the sub-limit for notes that can only be deleted, and the orphan sweep
+
+    func testNotesThatCanOnlyBeDeletedHaveASmallCapInsideTheGeneralOne() throws {
+        XCTAssertEqual(WatchHeldStore.maxUnplaceableFiles, 20)
+        XCTAssertEqual(WatchHeldStore.maxUnplaceableBytes, 50 << 20)
+        let store = WatchHeldStore(root: makeScratch("heldsub"), maxFiles: 10, maxUnplaceableFiles: 3)
+        let strange = UUID(), known = UUID()
+        for i in 0..<3 { try store.hold(try WatchFixture.sealed(audio: Data("u\(i)".utf8)), vault: strange, reason: .unknownVault) }
+        XCTAssertThrowsError(try store.hold(try WatchFixture.sealed(), vault: strange, reason: .unknownEpoch)) {
+            XCTAssertEqual($0 as? WatchHeldError, .fullUnplaceable)
+        }
+        // Notes the user can add are still taken, up to the general cap, which counts every held note.
+        for i in 0..<7 { try store.hold(try WatchFixture.sealed(audio: Data("k\(i)".utf8)), vault: known, reason: .linkOff) }
+        XCTAssertEqual(store.count, 10)
+        XCTAssertThrowsError(try store.hold(try WatchFixture.sealed(), vault: known, reason: .linkOff)) {
+            XCTAssertEqual($0 as? WatchHeldError, .full)
+        }
+        XCTAssertEqual(store.countsByReason(), [.unknownVault: 3, .linkOff: 7])
+        // The sub-limit is not extra room: with the general cap used up by addable notes, an unaddable one is refused as full.
+        let tight = WatchHeldStore(root: makeScratch("heldsub2"), maxFiles: 4, maxUnplaceableFiles: 3)
+        for i in 0..<4 { try tight.hold(try WatchFixture.sealed(audio: Data("k\(i)".utf8)), vault: known, reason: .linkOff) }
+        XCTAssertThrowsError(try tight.hold(try WatchFixture.sealed(), vault: strange, reason: .unknownVault)) {
+            XCTAssertEqual($0 as? WatchHeldError, .full)
+        }
+        // Deleting one frees a slot.
+        let one = try XCTUnwrap(store.list().first { !$0.canAdd })
+        store.delete(one)
+        try store.hold(try WatchFixture.sealed(audio: Data("again".utf8)), vault: strange, reason: .unknownVault)
+    }
+
+    func testTheSubLimitInBytes() throws {
+        let store = WatchHeldStore(root: makeScratch("heldsubbytes"), maxUnplaceableBytes: 4000)
+        let vault = UUID()
+        try store.hold(try WatchFixture.sealed(audio: Data(count: 1500)), vault: vault, reason: .unknownVault)
+        XCTAssertThrowsError(try store.hold(try WatchFixture.sealed(audio: Data(count: 3000)), vault: vault, reason: .unknownVault)) {
+            XCTAssertEqual($0 as? WatchHeldError, .fullUnplaceable)
+        }
+        // The same size for a vault the phone holds is fine: only notes that can only be deleted count against the sub-limit.
+        try store.hold(try WatchFixture.sealed(audio: Data(count: 3000)), vault: vault, reason: .linkOff)
+        XCTAssertFalse(WatchHeldStore.isFullOfUnplaceable(store.list(), adding: 100, maxFiles: 20, maxBytes: 4000))
+        XCTAssertTrue(WatchHeldStore.isFullOfUnplaceable(store.list(), adding: 3000, maxFiles: 20, maxBytes: 4000))
+    }
+
+    /// The intake reports a full sub-limit like `.full`: refused, not acknowledged, the watch keeps the note.
+    func testTheIntakeRefusesAFullSubLimitLikeFull() throws {
+        let d = FakeDelivery()
+        d.current = try WatchFixture.profile.vaultId
+        let dir = makeScratch("intakesub")
+        let intake = WatchIntake(received: WatchReceivedSet(url: nil), delivery: d,
+                                 held: WatchHeldStore(root: dir.appendingPathComponent("held"), maxUnplaceableFiles: 1))
+        let r = Rig(intake: intake, delivery: d, dir: dir, vault: try WatchFixture.profile.vaultId)
+        let (f1, m1, _) = try transfer(r, vault: UUID())
+        XCTAssertEqual(try intake.receive(file: f1, meta: m1).outcome, .held(.unknownVault))
+        let (f2, m2, _) = try transfer(r, vault: UUID())
+        let second = try intake.receive(file: f2, meta: m2)
+        XCTAssertEqual(second.outcome, .refused(.heldFull))
+        XCTAssertFalse(second.acknowledged)
+        XCTAssertFalse(intake.received.contains(m2.id))
+    }
+
+    final class MutableClock: @unchecked Sendable {
+        var t: Date
+        init(_ t: Date) { self.t = t }
+    }
+
+    func testAFileWithoutARecordIsRemovedAfterADayAndNotBefore() throws {
+        let clock = MutableClock(Date())
+        let root = makeScratch("heldorphans")
+        let store = WatchHeldStore(root: root, now: { clock.t })
+        let vault = UUID()
+        let kept = try WatchFixture.sealed(audio: Data("kept".utf8))
+        try store.hold(kept, vault: vault, reason: .linkOff)
+        let dir = root.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true)
+        // A hold in progress: the file is there, the record is not yet.
+        let young = try WatchFixture.sealed(audio: Data("young".utf8))
+        try CaptureWriter.store(young, in: dir)
+        // A record whose file is gone.
+        let lone = try WatchFixture.sealed(audio: Data("lone".utf8))
+        let loneId = try XCTUnwrap(CaptureFile.parse(name: lone.name)).id
+        let held = HeldCapture(id: loneId, vault: vault, epoch: 1, epochId: String(repeating: "a", count: 64),
+                               receivedAt: clock.t, reason: .linkOff, bytes: 4)
+        let enc = JSONEncoder()
+        enc.dateEncodingStrategy = .iso8601
+        try enc.encode(held).write(to: dir.appendingPathComponent(lone.name + ".held.json"))
+        let fm = FileManager.default
+        func exists(_ name: String) -> Bool { fm.fileExists(atPath: dir.appendingPathComponent(name).path) }
+
+        XCTAssertEqual(store.list().count, 1)
+        XCTAssertEqual(store.takeOrphansRemoved(), 0, "nothing is older than a day")
+        XCTAssertTrue(exists(young.name), "a file younger than 24 hours may be a hold in progress")
+        clock.t = clock.t.addingTimeInterval(WatchHeldStore.orphanAge - 60)
+        XCTAssertEqual(store.list().count, 1)
+        XCTAssertTrue(exists(young.name))
+        XCTAssertEqual(store.takeOrphansRemoved(), 0)
+        clock.t = clock.t.addingTimeInterval(120)
+        // The held note is a day old too, and is never touched: it has its record and its file.
+        XCTAssertEqual(store.list().count, 1)
+        XCTAssertFalse(exists(young.name), "removed after 24 hours")
+        XCTAssertFalse(exists(lone.name + ".held.json"), "a record without its file goes with it")
+        XCTAssertTrue(exists(kept.name) && exists(kept.name + ".held.json"))
+        XCTAssertEqual(store.takeOrphansRemoved(), 2)
+        XCTAssertEqual(store.takeOrphansRemoved(), 0)
+    }
+
     // MARK: The received set
 
     func testTheReceivedSetPersistsPrunesAndBounds() throws {

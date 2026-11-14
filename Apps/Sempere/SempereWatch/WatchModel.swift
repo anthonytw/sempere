@@ -113,6 +113,8 @@ final class WatchModel {
     private(set) var vaultName: String?
     /// Notes saved on the watch that the iPhone has not acknowledged.
     private(set) var unsent = 0
+    /// Recordings no profile of this watch can place (`WatchRecorder.leftovers()`): computed from the folders, never stored.
+    private(set) var leftovers = WatchRecorder.Leftovers()
     /// A line for diagnostics (the system's text of a refusal), never shown as the screen's words.
     private(set) var diagnostics: String?
     /// Seconds recorded, refreshed while recording.
@@ -179,8 +181,9 @@ final class WatchModel {
             vaultName = state.payload?.vaultName
         }
         _ = try? identityForRequests()
-        let swept = await recorder.sweep()
-        if let note = swept.last { show(saved: note) }
+        let swept = await recorder.sweepReport()
+        leftovers = swept.kept
+        if let note = swept.sealed.last { show(saved: note) }
         flushOutbox(launch: true)
         // With no profile the watch asks on every activation: the phone keeps no request while "Use on Apple Watch" is off,
         // and the transport drops a duplicate that is still outstanding.
@@ -398,7 +401,17 @@ final class WatchModel {
 
     /// Seals or deletes what a recording left behind, by the recorder's rules (a recording in progress is left alone).
     private func sweepLeftovers() {
-        Task { [weak self] in _ = await self?.recorder.sweep() }
+        Task { [weak self] in
+            guard let self else { return }
+            _ = await recorder.sweep()
+            leftovers = recorder.leftovers()
+        }
+    }
+
+    /// Deletes the recordings counted in `leftovers`, and no others.
+    func deleteLeftovers() {
+        recorder.deleteLeftovers(shown: leftovers)
+        leftovers = recorder.leftovers()
     }
 
     /// "Reset": deletes the profile and its counter (back to -1, so the phone's next payload is taken) and asks again.

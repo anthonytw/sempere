@@ -259,6 +259,79 @@ struct WatchRecorderTests {
         #expect(rig.folders.isEmpty)
     }
 
+    /// The leftovers a sweep keeps are reported (counts and a size only), computed from the folders, so they survive a relaunch;
+    /// Delete removes exactly those folders; an empty leftover is still removed silently.
+    @Test func keptLeftoversAreReportedAndDeleteRemovesExactlyThem() async throws {
+        let rig = try Rig()
+        func leftover(vault: UUID?, started: Date? = nil) throws -> URL {
+            let id = UUID()
+            let folder = rig.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
+            let m = RecordingManifest(note: UUID(), recording: id, started: started ?? rig.clock.now, codec: "aac",
+                                      segments: ["segment-001.aac"], finished: 1, vault: vault,
+                                      epochId: vault == nil ? nil : String(repeating: "ab", count: 32))
+            try JSONEncoder().encode(m).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
+            return folder
+        }
+        let noVault = try leftover(vault: nil)
+        let other = try leftover(vault: UUID(), started: rig.clock.now.addingTimeInterval(-40 * 24 * 3600))
+        // One that this watch can place is sealed, not reported.
+        let mine = try leftover(vault: try #require(rig.payload).profile.vaultId)
+        // And an empty one: removed silently.
+        let empty = rig.root.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        try Data().write(to: empty.appendingPathComponent("segment-001.aac"))
+
+        let report = await rig.recorder.sweepReport()
+        #expect(report.sealed.count == 1)
+        #expect(report.kept.noVault == 1 && report.kept.otherVault == 1 && report.kept.count == 2)
+        #expect(report.kept.bytes > 0)
+        #expect(report.kept.older == 1, "the one that began 40 days ago is mentioned once more")
+        #expect(Set(rig.folders) == [noVault.lastPathComponent, other.lastPathComponent])
+        #expect(!FileManager.default.fileExists(atPath: mine.path) && !FileManager.default.fileExists(atPath: empty.path))
+        // A relaunch (another recorder over the same folders) counts the same: nothing is stored.
+        #expect(rig.recorder.leftovers() == report.kept)
+        // Delete removes exactly them.
+        let unrelated = rig.root.appendingPathComponent("not-a-recording", isDirectory: true)
+        try FileManager.default.createDirectory(at: unrelated, withIntermediateDirectories: true)
+        #expect(rig.recorder.deleteLeftovers() == 2)
+        #expect(rig.folders == [unrelated.lastPathComponent])
+        #expect(rig.recorder.leftovers().count == 0)
+        // With no profile at all they are deleted by the sweep, and nothing is reported.
+        let again = try leftover(vault: nil)
+        rig.payload = nil
+        #expect(await rig.recorder.sweepReport().kept.count == 0)
+        #expect(!FileManager.default.fileExists(atPath: again.path))
+    }
+
+    /// Delete removes the folders the screen showed, not ones a changed profile made placeable meanwhile or ones that came after.
+    @Test func deleteTakesOnlyWhatTheScreenShowedAndIsStillUnplaceable() async throws {
+        let rig = try Rig()
+        func leftover(vault: UUID) throws -> URL {
+            let id = UUID()
+            let folder = rig.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
+            let m = RecordingManifest(note: UUID(), recording: id, started: rig.clock.now, codec: "aac", segments: ["segment-001.aac"],
+                                      finished: 1, vault: vault, epochId: String(repeating: "ab", count: 32))
+            try JSONEncoder().encode(m).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
+            return folder
+        }
+        let shownOne = try leftover(vault: UUID())
+        let shownTwo = try leftover(vault: UUID())
+        let shown = rig.recorder.leftovers()
+        #expect(shown.count == 2)
+        // A folder that came after the count was shown, and a kept profile that makes the first one placeable meanwhile:
+        // neither is deleted.
+        let later = try leftover(vault: UUID())
+        try rig.keeper.keep(try #require(rig.payload), for: try #require(UUID(uuidString: shownOne.lastPathComponent)))
+        #expect(rig.recorder.deleteLeftovers(shown: shown) == 1)
+        #expect(FileManager.default.fileExists(atPath: shownOne.path), "now placeable: kept")
+        #expect(!FileManager.default.fileExists(atPath: shownTwo.path))
+        #expect(FileManager.default.fileExists(atPath: later.path), "never shown: kept")
+    }
+
     /// A clear that arrived mid-recording and then a crash: the kept start-time profile still seals the leftover, once.
     @Test func aKeptProfileSealsALeftoverAfterAClearAndACrash() async throws {
         let rig = try Rig()
