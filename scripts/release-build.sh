@@ -46,7 +46,7 @@ SMOKE_IMAGES=(
   $ALPINE_IMAGE
 )
 # The scripts this one copies from this checkout into the tag's worktree.
-TOOLING=(scripts/ci-linux.sh scripts/package-cli.sh scripts/smoke-linux-cli.sh scripts/build-linux-static.sh scripts/static-sdk-pin.sh scripts/static-sdk-cache.sh)
+TOOLING=(scripts/ci-linux.sh scripts/package-cli.sh scripts/smoke-linux-cli.sh scripts/build-linux-static.sh scripts/static-sdk-pin.sh scripts/static-sdk-cache.sh scripts/release-build-all.sh scripts/apt-install.sh)
 unset SEMPERE_LINUX_BUILD_VOLUME   # a release build always starts from fresh volumes
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
@@ -88,25 +88,16 @@ cd "$src"
 for f in "${TOOLING[@]}"; do cp "$repo/$f" "$f"; done
 
 step "The three builds, at once: Linux x86_64, Linux aarch64, macOS universal"
-# Independent builds on a Mac that sits mostly idle during a serial one. Each has its own log (build/release/vX/logs/), its own
-# fresh Docker volumes for .build and ~/.swiftpm (scripts/ci-linux.sh: one per static job, removed when it ends; the audit's F-01),
-# and writes its own output file; only the SDK archive, verified and read-only, is shared (scripts/static-sdk-cache.sh).
-# Downloaded here, once, before either container starts, so the two never race to fill the cache.
-scripts/static-sdk-cache.sh >/dev/null || die "cannot get a verified Static Linux SDK archive"
-logs=$out/logs; mkdir -p "$logs"
-pids=() names=()
-cleanup_builds() { local p; for p in ${pids[@]+"${pids[@]}"}; do kill "$p" 2>/dev/null || true; done; }
-trap 'cleanup_builds; git -C "$repo" worktree remove --force "$src" 2>/dev/null || true' EXIT
-scripts/ci-linux.sh docker static:x86_64 >"$logs/linux-x86_64.log" 2>&1 & pids+=($!) names+=(linux-x86_64)
-scripts/ci-linux.sh docker static:aarch64 >"$logs/linux-aarch64.log" 2>&1 & pids+=($!) names+=(linux-aarch64)
-swift build -c release --product sempere --arch arm64 --arch x86_64 >"$logs/macos-universal.log" 2>&1 & pids+=($!) names+=(macos-universal)
-failed_builds=()
-for i in "${!pids[@]}"; do
-  if wait "${pids[$i]}"; then echo "ok    ${names[$i]} built"
-  else echo "FAIL  ${names[$i]}: $logs/${names[$i]}.log (end of it below)"; tail -n 40 "$logs/${names[$i]}.log" | sed 's/^/      | /'; failed_builds+=("${names[$i]}"); fi
-done
-pids=()
-[[ ${#failed_builds[@]} -eq 0 ]] || die "build failed: ${failed_builds[*]}"
+# scripts/release-build-all.sh: independent builds on a Mac that sits mostly idle during a serial one; a log each in
+# build/release/vX/logs/ (the tail of a failed one is printed), fresh Docker volumes per Linux build (F-01), the SDK archive
+# downloaded once and verified (scripts/static-sdk-cache.sh). Run in the background and waited for, so a TERM or HUP to this
+# script reaches the trap below at once: it stops the builds (their containers included) before the worktree goes.
+all_pid=
+trap 'if [[ -n $all_pid ]]; then kill "$all_pid" 2>/dev/null || true; wait "$all_pid" 2>/dev/null || true; fi; git -C "$repo" worktree remove --force "$src" 2>/dev/null || true' EXIT
+trap 'exit 143' TERM HUP INT
+scripts/release-build-all.sh "$out/logs" & all_pid=$!
+wait "$all_pid" || { all_pid=; die "a build failed (see above)"; }
+all_pid=
 
 step "Linux static binaries"
 for arch in x86_64 aarch64; do

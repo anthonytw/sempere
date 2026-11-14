@@ -82,12 +82,13 @@ jobs:
           path: ${{ runner.temp }}/ci-pass
           key: ci-pass-${{ matrix.job }}-main-${{ github.sha }}
 
-  # Whether the suites have anything to do (docs/ci.md "Skipping the suites"). The suite jobs below keep running (their names
-  # are required checks of the `main` ruleset, and a job skipped by `if` is not the same as a successful one), but when this
-  # says `run=false` their steps are skipped and each concludes success in seconds. It says false only when (1) every
-  # changed file is release-neutral (scripts/release-neutral.regex) and not a workflow, action or test input, or (2) a full green
-  # run of this repository already passed a commit with exactly this tree (artifact `ci-tree-<tree>`, uploaded by `tree-record`).
-  # An empty or failed output counts as run (`!= 'false'` in the steps): a broken decision never skips a suite.
+  # Whether the suites have anything to do (docs/ci.md "Skipping the suites"). When this says `run=false` the five suite jobs
+  # below are skipped by their job-level `if`; GitHub reports a job skipped that way as a success, which satisfies the `main`
+  # ruleset's required checks (the same behavior `Pass records` and the draft-PR skip already rely on). It says false only when
+  # (1) every changed file is release-neutral (scripts/release-neutral.regex) and not a workflow, action, test input or file the
+  # app bundles, or (2) a green push to main of this workflow already passed a commit with exactly this tree (artifact
+  # `ci-tree-<tree>` as a pointer, the facts checked through the API: scripts/ci-gate-decision.py). An empty or failed output
+  # counts as run (`!= 'false'`): a broken decision never skips a suite.
   decide:
     name: Gate decision
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
@@ -115,7 +116,7 @@ jobs:
   web:
     name: Web viewer
     needs: [records, decide]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -123,29 +124,22 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.decide.outputs.run != 'false'
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: needs.decide.outputs.run != 'false'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install (lockfile only)
-        if: needs.decide.outputs.run != 'false'
         run: npm ci
       - name: Lint
-        if: needs.decide.outputs.run != 'false'
         run: npm run lint
       - name: Typecheck
-        if: needs.decide.outputs.run != 'false'
         run: npm run typecheck
       - name: Unit tests and cross-check against the committed Swift goldens
-        if: needs.decide.outputs.run != 'false'
         run: npm test
       - name: Build (strict CSP)
-        if: needs.decide.outputs.run != 'false'
         run: |
           npm run build
           grep -q 'Content-Security-Policy' dist/index.html
@@ -190,31 +184,26 @@ jobs:
   ios-build:
     name: iOS build
     needs: [records, decide]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.decide.outputs.run != 'false'
         with:
           persist-credentials: false
       - uses: ./.github/actions/select-xcode
-        if: needs.decide.outputs.run != 'false'
       - id: cache
-        if: needs.decide.outputs.run != 'false'
         uses: ./.github/actions/build-cache
         with:
           prefix: ios
           version-cmd: xcodebuild -version
           path: .build/xcode.noindex
       - name: Build the app, its unit tests and its UI tests for an iOS simulator (no tests)
-        if: needs.decide.outputs.run != 'false'
         shell: bash
         run: mkdir -p build && scripts/app.sh build-ios 2>&1 | tee build/ios-build.log
       # The device SDK only (no runtime): the watch's package targets must keep compiling for watchOS, arm64 and arm64_32
       # (docs/ci.md "watchOS compile"). The xcode-27 image has the watchOS SDK (checked 2026-11-09: watchOS 27.0).
       - name: Compile the watch's package targets for watchOS (no tests)
-        if: needs.decide.outputs.run != 'false'
         shell: bash
         run: scripts/build-watchos-package.sh
       # The Apple Watch app, its widgets and its tests for the generic watchOS Simulator destination, and the app and widgets
@@ -222,14 +211,13 @@ jobs:
       # runtime: the watch's unit and UI tests run on a Mac with the runtime (`local-ci.sh`'s `watch-test`), never here. The
       # step prints what the image has, so the log says whether a runtime is there to run them on one day.
       - name: Build the Apple Watch app and its widgets (no tests)
-        if: needs.decide.outputs.run != 'false'
         shell: bash
         run: |
           xcodebuild -showsdks | grep -i watch || true
           xcrun simctl list runtimes | grep -i watch || echo "no watchOS simulator runtime on this image (the SDK is enough to compile)"
           scripts/app.sh build-watch 2>&1 | tee build/watch-build.log
       - name: Save the build cache
-        if: ${{ needs.decide.outputs.run != 'false' && (success() && env.SAVE_BUILD_CACHE == 'true') }}
+        if: ${{ success() && env.SAVE_BUILD_CACHE == 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/xcode.noindex
@@ -266,32 +254,28 @@ jobs:
   mac-package:
     name: Mac package tests
     needs: [records, decide]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.decide.outputs.run != 'false'
         with:
           persist-credentials: false
       - uses: ./.github/actions/select-xcode
-        if: needs.decide.outputs.run != 'false'
       - id: pass
-        if: needs.decide.outputs.run != 'false'
         uses: ./.github/actions/pass-records
         with:
           job: mac-package
       - name: Package tests (swift build --build-tests, swift test --parallel)
-        if: needs.decide.outputs.run != 'false'
         run: scripts/ci-mac-package.sh
       - name: Save the pass records
-        if: ${{ needs.decide.outputs.run != 'false' && (success()) }}
+        if: success()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ci-pass
           key: ${{ steps.pass.outputs.key }}
       - name: Records for main (pull requests)
-        if: ${{ needs.decide.outputs.run != 'false' && (success()) }}
+        if: success()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-pass-mac-package
@@ -302,7 +286,7 @@ jobs:
   linux-test:
     name: Linux package tests
     needs: [records, decide]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
@@ -312,26 +296,23 @@ jobs:
       options: --cap-add=SYS_ADMIN --cap-add=NET_ADMIN
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.decide.outputs.run != 'false'
         with:
           persist-credentials: false
       - id: pass
-        if: needs.decide.outputs.run != 'false'
         uses: ./.github/actions/pass-records
         with:
           job: linux-test
       # Offline package tests, the portability guard and the removable-importers check.
       - name: scripts/ci-linux.sh test
-        if: needs.decide.outputs.run != 'false'
         run: scripts/ci-linux.sh test
       - name: Save the pass records
-        if: ${{ needs.decide.outputs.run != 'false' && (success()) }}
+        if: success()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ci-pass
           key: ${{ steps.pass.outputs.key }}
       - name: Records for main (pull requests)
-        if: ${{ needs.decide.outputs.run != 'false' && (success()) }}
+        if: success()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-pass-linux-test
@@ -342,33 +323,30 @@ jobs:
   linux-webdav:
     name: Linux WebDAV tests
     needs: [records, decide]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.decide.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
       image: swift:6.4-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.decide.outputs.run != 'false'
         with:
           persist-credentials: false
       - id: pass
-        if: needs.decide.outputs.run != 'false'
         uses: ./.github/actions/pass-records
         with:
           job: linux-webdav
       # WebDAV integration tests against wsgidav.
       - name: scripts/ci-linux.sh webdav
-        if: needs.decide.outputs.run != 'false'
         run: scripts/ci-linux.sh webdav
       - name: Save the pass records
-        if: ${{ needs.decide.outputs.run != 'false' && (success()) }}
+        if: success()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ci-pass
           key: ${{ steps.pass.outputs.key }}
       - name: Records for main (pull requests)
-        if: ${{ needs.decide.outputs.run != 'false' && (success()) }}
+        if: success()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-pass-linux-webdav
@@ -376,13 +354,14 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-  # A full, green run leaves the tree it passed as an artifact, so a later run of an identical tree (the squash merge of a
-  # pull request whose base did not move, a rebased copy, a release commit rebuilt from a swept tree) skips the suites.
-  # Not a required check. Runs only after every suite really ran (`run == 'true'`), never after a skip.
+  # A full, green PUSH TO MAIN leaves the tree it passed as an artifact, so a later run of an identical tree (a revert, a
+  # release commit rebuilt on a tree main already passed) skips the suites. Only main's own runs write one: a pull request's
+  # workflow comes from the PR's ref and could say anything, and the lookup in scripts/ci-gate-decision.py re-checks the run
+  # through the API anyway. Not a required check. Runs only after every suite really ran (`run == 'true'`), never after a skip.
   tree-record:
     name: Tree record
     needs: [decide, web, help, ios-build, mac-package, linux-test, linux-webdav]
-    if: ${{ success() && needs.decide.outputs.run == 'true' && needs.decide.outputs.tree != '' && github.event_name != 'workflow_dispatch' }}
+    if: ${{ success() && needs.decide.outputs.run == 'true' && needs.decide.outputs.tree != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
