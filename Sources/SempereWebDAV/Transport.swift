@@ -173,16 +173,78 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         streamSession.finishTasksAndInvalidate()
     }
 
+    /// How long `send` waits for a task's completion after canceling it, so a completion that never comes cannot hang the caller.
+    static let cancelGrace: DispatchTimeInterval = .seconds(30)
+
+    /// A fresh stream of the request's body, for the one request kind that is sent as a stream (see `send`).
+    private static func bodyStream(_ request: WebDAVRequest, chunked: Bool) -> (@Sendable () -> InputStream?)? {
+        #if canImport(FoundationNetworking)
+        guard chunked, request.method == "PUT" else { return nil }
+        if let file = request.bodyFile { return { InputStream(url: file) } }
+        if let body = request.body, !body.isEmpty { return { InputStream(data: body) } }
+        #endif
+        return nil
+    }
+
+    /// The bytes of the request's body: the in-memory one, or the file's size.
+    private static func bodySize(_ request: WebDAVRequest) -> Int {
+        if let file = request.bodyFile {
+            return ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.intValue ?? 0
+        }
+        return request.body?.count ?? 0
+    }
+
+    /// True once a server answered a chunked PUT with 411 or 501: later PUTs of this transport go out with a fixed length.
+    private let lengthLock = NSLock()
+    private var serverWantsLength = false
+    var putsAreFixedLength: Bool { lengthLock.lock(); defer { lengthLock.unlock() }; return serverWantsLength }
+
     public func send(_ request: WebDAVRequest) throws -> WebDAVResponse {
+        #if canImport(FoundationNetworking)
+        // A chunked PUT is refused by a server that wants a length (411 Length Required, or 501): the same PUT goes out again
+        // with a fixed-length body, and so does every later PUT of this transport.
+        if request.method == "PUT", !putsAreFixedLength {
+            let response = try perform(request, chunked: true)
+            guard response.status == 411 || response.status == 501 else { return response }
+            lengthLock.lock(); serverWantsLength = true; lengthLock.unlock()
+        }
+        #endif
+        return try perform(request, chunked: false)
+    }
+
+    private func perform(_ request: WebDAVRequest, chunked: Bool) throws -> WebDAVResponse {
         var r = URLRequest(url: request.url)
         r.httpMethod = request.method
+        let bodyStream = Self.bodyStream(request, chunked: chunked)
+        var requestHeaders = request.headers
+        #if canImport(FoundationNetworking)
+        // On Linux a PUT body goes out as a stream, and the delegate hands out a new stream on demand (`needNewBodyStream`). A
+        // request libcurl retries on a new connection, after the server closed a kept-alive one or reset it, rewinds its body
+        // that way: swift-corelibs-foundation can rewind only a stream, and a `httpBody` or `fromFile` body it "rewinds" stays
+        // drained, so the retry sent a Content-Length and no bytes and the server waited until the idle timeout
+        // (docs/design/1.2-linux-upload-stall.md). corelibs sends a stream body chunked whatever the headers say (it has no
+        // length for a stream), so a Content-Length of ours would ride along with `Transfer-Encoding: chunked`: it is dropped.
+        // (A server that refuses a chunked PUT gets it again with a fixed length: `send`.) Only PUT is streamed: wsgidav does not consume a chunked PROPFIND body, and reads its chunk framing as the next
+        // request on the connection (a stray 400 that fails the next request on it). Other requests with a body (PROPFIND,
+        // LOCK, ...) keep a fixed-length body, and a retry of one of those on a dead connection is still not rewound.
+        if let stream = bodyStream {
+            r.httpBodyStream = stream()
+            requestHeaders = requestHeaders.filter { $0.key.lowercased() != "content-length" }
+            // Nextcloud and ownCloud (Apache with PHP-FPM) can answer 201 for a chunked PUT and store a short or empty file;
+            // their sabre/dav reads the length a client announces here (the header Finder and Cyberduck also send).
+            requestHeaders["X-Expected-Entity-Length"] = String(Self.bodySize(request))
+        } else {
+            r.httpBody = request.body
+        }
+        #else
         if request.bodyFile == nil { r.httpBody = request.body }
-        for (k, v) in request.headers { r.setValue(v, forHTTPHeaderField: k) }
+        #endif
+        for (k, v) in requestHeaders { r.setValue(v, forHTTPHeaderField: k) }
         let streamed = request.bodyFile != nil || request.responseFile != nil
         let (session, delegate) = streamed ? (streamSession, streamDelegate) : (self.session, self.delegate)
-        let task: URLSessionTask = request.bodyFile.map { session.uploadTask(with: r, fromFile: $0) }
+        let task: URLSessionTask = (bodyStream == nil ? request.bodyFile : nil).map { session.uploadTask(with: r, fromFile: $0) }
             ?? session.dataTask(with: r)
-        let pending = Pending(limit: request.maxResponseBytes, file: request.responseFile)
+        let pending = Pending(limit: request.maxResponseBytes, file: request.responseFile, bodyStream: bodyStream)
         delegate.register(task.taskIdentifier, pending)
         defer { delegate.unregister(task.taskIdentifier) }
         task.resume()
@@ -190,7 +252,7 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
             while pending.done.wait(timeout: .now() + Self.interruptPoll) == .timedOut {
                 guard let stop = interrupt() else { continue }
                 task.cancel()
-                pending.done.wait()
+                _ = pending.done.wait(timeout: .now() + Self.cancelGrace)
                 if let failure = pending.fileFailure { throw failure }
                 throw stop
             }
@@ -248,6 +310,13 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         -1204,  // serverCertificateNotYetValid
     ]
 
+    /// libcurl's receive or send failure on a connection the peer reset (swift-corelibs-foundation reports it with a code
+    /// outside `offlineCodes`, only its text says what happened).
+    static func isConnectionReset(_ error: NSError) -> Bool {
+        let text = error.localizedDescription
+        return text.contains("Connection reset by peer") || text.contains("Broken pipe")
+    }
+
     /// The `WebDAVError` for a request that got no response.
     static func classify(_ error: Error) -> WebDAVError {
         let ns = error as NSError
@@ -256,6 +325,7 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         if ns.domain == NSPOSIXErrorDomain, offlineErrnos.contains(Int32(truncatingIfNeeded: ns.code)) {
             return notConnectedErrnos.contains(Int32(truncatingIfNeeded: ns.code)) ? .notConnected(message) : .offline(message)
         }
+        if Self.isConnectionReset(ns) { return .offline(message) }
         guard ns.domain == NSURLErrorDomain else { return .transport(message) }
         if offlineCodes.contains(ns.code) { return notConnectedCodes.contains(ns.code) ? .notConnected(message) : .offline(message) }
         if certificateCodes.contains(ns.code) {
@@ -285,7 +355,12 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         private var fileError: WebDAVError?
         private var refusedTrust: String?
 
-        init(limit: Int?, file: URL?) { self.limit = limit; self.file = file }
+        /// A new stream of the request's body, when it is sent as one (Linux).
+        let bodyStream: (@Sendable () -> InputStream?)?
+
+        init(limit: Int?, file: URL?, bodyStream: (@Sendable () -> InputStream?)? = nil) {
+            self.limit = limit; self.file = file; self.bodyStream = bodyStream
+        }
 
         /// Why a `WebDAVServerTrust` refused the server's certificate, if it did.
         var trustRefusal: String? { lock.lock(); defer { lock.unlock() }; return refusedTrust }
@@ -343,6 +418,7 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
 
         func set(response r: URLResponse) { lock.lock(); response = r; lock.unlock() }
         func set(challenged r: HTTPURLResponse) { lock.lock(); challenged = r; lock.unlock() }
+
         func finish(_ e: Error?) {
             lock.lock()
             error = e
@@ -411,6 +487,11 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard p.prepareFile(status: status) else { return completionHandler(.cancel) }
             completionHandler(p.accept(expected: response.expectedContentLength) ? .allow : .cancel)
+        }
+
+        /// libcurl rewinds the body to retry a request on a new connection: a new stream of it (nil for a task that has none).
+        func urlSession(_ session: URLSession, task: URLSessionTask, needNewBodyStream completionHandler: @escaping (InputStream?) -> Void) {
+            completionHandler(lookup(task.taskIdentifier)?.bodyStream?())
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {

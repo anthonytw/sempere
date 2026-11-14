@@ -31,10 +31,7 @@ final class ReencryptOverWsgidavFaultProxyTests: SyncTestCase {
     func testACutUploadOfAReencryptedFileLeavesTheOldOrTheNewCopyNeverAMix() throws {
         let target = EpochTarget("T1")
         let proxy = self.proxy!, path = self.path
-        // A short idle timeout: a reset upload is meant to fail at once, but on Linux the client of a cut upload can sit
-        // until its idle timeout (the default 60 s: six of them took this test 370 s there, 2 s on macOS), and the cut
-        // is what the test is about, not how long the client takes to notice it.
-        target.reach = { _ in WebDAVSyncRemote(try! proxy.client(path, transport: URLSessionTransport(timeout: 5))) }
+        target.reach = { _ in WebDAVSyncRemote(try! proxy.client(path)) }
         target.inspector = WebDAVSyncRemote(try proxy.client(path))
         let w = try EpochSyncWorld(in: tmp, names: ["A", "B"], made: [target])
         var titles: [UUID: String] = [:]
@@ -71,8 +68,13 @@ final class ReencryptOverWsgidavFaultProxyTests: SyncTestCase {
                                           afterBytes: 300, times: 100),
                                     .init(method: "PUT", path: "/\(path)/settings\\.age", action: "reset", direction: "request",
                                           afterBytes: 100, times: 100)])
+        let cutStart = Date()
         let cut = try w["A"].sync(target)
+        let cutSeconds = Date().timeIntervalSince(cutStart)
         XCTAssertFalse(cut.errors.isEmpty, "the uploads were cut: \(cut)")
+        // Each cut is noticed at once (a retry of the body on a new connection, or the reset itself); before, a cut on
+        // Linux waited for the 60 s idle timeout (six cuts: 370 s). A bound far under that.
+        XCTAssertLessThan(cutSeconds, 30, "the cut uploads took \(cutSeconds) s")
         let mine = try w["A"].open()
         let current = mine.identities, keys = old + current
         // Each file at a vault name is whole: the old bytes, or the new copy (a blob: its old name kept until the new
