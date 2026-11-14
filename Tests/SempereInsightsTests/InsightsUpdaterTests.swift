@@ -146,6 +146,55 @@ final class InsightsUpdaterTests: TempDirTestCase {
         XCTAssertEqual(r.embedded.count, 1, "embedding still runs")
     }
 
+    func testARefusedNoteWaitsInsteadOfCrowdingOutTheOthers() async throws {
+        // D16: refusals were asked again on every run and, under --limit, came first every time.
+        try note("Refused", Self.physics[0])
+        try enable()
+        let memoURL = try TestTemp.directory("d16-memo").appendingPathComponent("failures.json")
+        final class Refusing: ModelProvider, @unchecked Sendable {
+            let inner = FakeModelProvider()
+            var calls = 0
+            var identity: GenerationIdentity { inner.identity }
+            var availability: ModelAvailability { .available }
+            var contextTokens: Int { 8192 }
+            func supports(language: String?) -> Bool { true }
+            func extract(_ text: String, language: String?) async throws -> ModelExtraction {
+                calls += 1; throw InsightsProviderError.refused("a guardrail")
+            }
+            func merge(_ parts: [ModelExtraction], language: String?) async throws -> ModelExtraction { try await inner.merge(parts, language: language) }
+            func summarize(topic: String, summaries: [String], language: String?) async throws -> String { "" }
+            func title(transcript: String, language: String?) async throws -> String { "" }
+        }
+        let refusing = Refusing()
+        func runRefusing(at when: Date, force: Bool = false) async throws -> InsightsUpdateReport {
+            var o = InsightsUpdateOptions()
+            o.now = when; o.force = force; o.failureMemo = memoURL
+            o.platform = .init(platform: "mac", os: "macOS 27.2")
+            return try await InsightsUpdater(vault: vault, model: refusing, embedder: FakeEmbeddingProvider(), deviceState: state, app: "test/1")
+                .run(o, notes: try inputs())
+        }
+        let first = try await runRefusing(at: now)
+        XCTAssertEqual(first.failures.count, 1)
+        XCTAssertEqual(InsightsFailureMemo.load(from: memoURL).notes.count, 1)
+        let second = try await runRefusing(at: now.addingTimeInterval(3600))
+        XCTAssertEqual(second.failures.count, 0, "not asked again the next hour")
+        XCTAssertEqual(refusing.calls, 1)
+        XCTAssertTrue(second.notes.contains("1 notes backed off (failed earlier; --force to retry)"), "\(second.notes)")
+        _ = try await runRefusing(at: now.addingTimeInterval(InsightsFailureMemo.refusedFor + 60))
+        XCTAssertEqual(refusing.calls, 2, "asked again after the back-off")
+        _ = try await runRefusing(at: now.addingTimeInterval(InsightsFailureMemo.refusedFor + 120), force: true)
+        XCTAssertEqual(refusing.calls, 3, "--force asks at once")
+        // A changed text is a new question.
+        var memo = InsightsFailureMemo()
+        let id = UUID(), model = GenerationIdentity(model: "m", os: "1", prompt: 2)
+        memo.record(note: id, hash: "h1", identity: model, error: InsightsProviderError.failed("x"), now: now)
+        XCTAssertEqual(memo.backoff(notes: [(id, "h1")], identity: model)[id], now.addingTimeInterval(InsightsFailureMemo.failedFor))
+        XCTAssertTrue(memo.backoff(notes: [(id, "h2")], identity: model).isEmpty)
+        XCTAssertTrue(memo.backoff(notes: [(id, "h1")], identity: GenerationIdentity(model: "m", os: "1", prompt: 3)).isEmpty)
+        memo.clear(note: id)
+        XCTAssertTrue(memo.notes.isEmpty)
+    }
+
     func testEmbeddingsOnlyWithoutAModel() async throws {
         for (i, t) in Self.physics.enumerated() { try note("P\(i)", t) }
         try enable()

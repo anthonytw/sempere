@@ -169,7 +169,36 @@ public enum TermNormalizer {
         if words.allSatisfy({ InsightsStoplist.generic.contains($0) }) { return nil }
         if let last = words.last { words[words.count - 1] = singular(last) }
         let out = words.joined(separator: " ")
+        guard !metaTerms.contains(out) else { return nil }
         return out.count >= 3 && out.count <= InsightsLimits.maxTerm ? out : nil
+    }
+
+    /// Terms for the form of a note, not its subject, which the on-device model gives as keywords and concepts of
+    /// notes it cannot read (D16: "symbol", "random character", "mathematical expression", "data fragment").
+    /// Only the terms the run showed (a real subject such as "code", "data" or "test" stays).
+    public static let metaTerms: Set<String> = [
+        "symbol", "random character", "random string", "data fragment", "test fragment", "random test", "abbreviation",
+        "mathematical expression", "mathematical equation", "technical notation", "equation", "technical note",
+    ]
+
+    /// True for a term the model copied from unreadable handwriting (D16): a word with the same letter four times in a
+    /// row (`ncmuoffff…`). Digits never count, nor do Roman numerals (`VIII`, `XXX`). (A rule for long words rare in the
+    /// vault was tried and dropped: on real notes it took as many long real words (`thermodynamics`) as misread
+    /// ones.)
+    public static func isJunk(_ term: String) -> Bool {
+        for w in term.split(separator: " ") where !isRomanNumeral(w) {
+            var run = 1
+            var previous: Character?
+            for c in w {
+                if c.isLetter, c == previous { run += 1; if run >= 4 { return true } } else { run = 1 }
+                previous = c
+            }
+        }
+        return false
+    }
+
+    static func isRomanNumeral<S: StringProtocol>(_ w: S) -> Bool {
+        !w.isEmpty && w.lowercased().allSatisfy { "ivxlcdm".contains($0) }
     }
 
     /// The singular of one lowercase word.
@@ -187,10 +216,12 @@ public enum TermNormalizer {
 
     /// Normalized, deduplicated keywords in the model's order with rank weights (1.0, 0.95, …), at most
     /// `maxKeywords`; `merge` maps each word through the typo merge first.
+    /// Junk terms (`isJunk`) are dropped.
     public static func keywords(_ raw: [String], merge: (String) -> String = { $0 }) -> [InsightsKeyword] {
         var seen = Set<String>(), out: [InsightsKeyword] = []
         for r in raw {
-            guard let n = normalize(r).map({ mergedTerm($0, merge) }), seen.insert(n).inserted else { continue }
+            guard let n = normalize(r).map({ mergedTerm($0, merge) }), !isJunk(n),
+                  seen.insert(n).inserted else { continue }
             out.append(InsightsKeyword(t: n, w: max(0.1, 1.0 - 0.05 * Double(out.count))))
             if out.count == maxKeywords { break }
         }
@@ -201,7 +232,8 @@ public enum TermNormalizer {
     public static func concepts(_ raw: [String], keywords: [InsightsKeyword], merge: (String) -> String = { $0 }) -> [String] {
         var seen = Set(keywords.map(\.t)), out: [String] = []
         for r in raw {
-            guard let n = normalize(r).map({ mergedTerm($0, merge) }), seen.insert(n).inserted else { continue }
+            guard let n = normalize(r).map({ mergedTerm($0, merge) }), !isJunk(n),
+                  seen.insert(n).inserted else { continue }
             out.append(n)
             if out.count == maxConcepts { break }
         }
@@ -233,6 +265,26 @@ public enum InsightsStoplist {
         "summary", "overview", "introduction", "topic", "topics", "general", "basic", "important", "key", "main",
         "voice", "recording", "transcript", "untitled", "etc", "ie", "eg", "vs", "per",
     ]
+    /// Filler of handwritten notes, which carries no topic (D16: the map's labels): never a token of keyword overlap or
+    /// a map label. `latexit` is the name LaTeXiT leaves in the text of PDFs with its figures.
+    public static let filler: Set<String> = [
+        "maybe", "hopefully", "going", "really", "something", "anything", "everything", "nothing", "someone", "anyone",
+        "think", "thinking", "thought", "know", "knew", "above", "below", "still", "even", "ever", "never", "always",
+        "sometimes", "actually", "probably", "basically", "okay", "sure", "right", "whatever", "somehow", "pretty", "quite",
+        "enough", "able", "yeah", "gonna", "wanna", "doing", "getting", "trying", "hint", "suppose", "assume", "hence",
+        "thus", "once", "said", "says", "tell", "upon", "back", "come", "came", "went", "take", "took", "keep", "kept",
+        "find", "found", "show", "shown", "give", "gave", "put", "goes", "seen", "left", "next", "last", "less", "least",
+        "better", "best", "worse", "worst", "else", "otherwise", "anyway", "already", "though", "almost", "around",
+        "likely", "unlikely", "definitely", "certainly", "simply", "just", "here", "there", "where", "latexit",
+    ]
+
+    /// Words in `summaryLanguage` (the fact check skips them in a summary) that still name a subject, so they count as
+    /// content words of a note's text for keyword overlap and map labels.
+    public static let subjectWords: Set<String> = [
+        "equation", "equations", "formula", "formulas", "variable", "variables", "calculation", "calculations", "diagram",
+        "diagrams",
+    ]
+
     /// Words a summary uses to talk about a note, never checked against its text (step 5).
     public static let summaryLanguage: Set<String> = [
         "note", "notes", "describes", "describe", "described", "discusses", "discuss", "discussed", "explains", "explain",
@@ -269,6 +321,22 @@ public enum InsightsStoplist {
         "concerning", "particular", "certain", "relevant", "additional", "further", "following", "previous", "related",
         "associated", "involved", "according", "include", "included", "provides", "provided", "highlighted", "noting",
         "finally", "brings", "bring", "entire", "execution", "actions", "action", "defined", "contains", "needed", "needing",
+        // D16: how the on-device model describes a handwritten note's form rather than its subject.
+        "appears", "appear", "seems", "seem", "likely", "possibly", "series", "mathematical", "expressions", "expression",
+        "equations", "equation", "formulas", "formula", "symbols", "symbol", "notation", "notations", "references",
+        "reference", "referencing", "references", "phrases", "phrase", "terms", "term", "words", "letters", "characters",
+        "character", "random", "string", "strings", "written", "writes", "handwritten", "mentioning", "discussion",
+        "discussions", "discusses", "illustrates", "illustrate", "depicts", "consists", "comprises", "features",
+        "emphasizes", "emphasize", "emphasis", "reflects", "structured", "structure", "format", "entries", "entry", "items",
+        "fragments", "fragment", "snippets", "abbreviations", "collection", "compilation", "compiles", "spans", "short",
+        "single", "variables", "variable", "values", "calculations", "calculation", "elements", "involving", "related",
+        "sketch", "sketches", "diagram", "diagrams", "drawing", "drawings", "labels", "label", "labeled", "regards",
+        "keywords", "keyword", "parts", "contents", "unclear", "unreadable", "illegible", "fragmented", "technical",
+        // The same in Spanish, the vaults' other common language.
+        "contiene", "incluye", "describe", "menciona", "explica", "trata", "sobre", "también", "texto", "página", "resumen",
+        "serie", "expresiones", "matemáticas", "ecuaciones", "símbolos", "parece", "palabras", "términos", "notas",
+        "aparece", "aparecen", "varios", "varias", "diferentes", "relacionados", "relacionadas", "incluyendo", "algunos",
+        "algunas", "entre", "donde", "cuando", "desde", "hasta", "después", "antes", "parte", "partes", "forma",
     ]
 }
 
@@ -327,15 +395,24 @@ public struct TypoMerger: Sendable {
         self.init(frequencies: f)
     }
 
-    /// `word` (lowercase), or the frequent word it is a typo of.
+    /// A word seen this often in the vault is one of its words, never a typo (D16: `consent` was merged into
+    /// `content`, `instructional` into `instructions`).
+    public static let protectedFrequency = 3
+
+    /// `word` (lowercase), or the frequent word it is a typo of. Only a word the vault's text holds (a model's term
+    /// that is nowhere in the notes is spelled by the model, not misread: D16, `fasting` into `casting`), fewer than
+    /// `protectedFrequency` times, and only into a candidate with the same first letter (misreadings change letters
+    /// inside a word; D16: `bread` into `read`) of four letters or more (`milk` into
+    /// `mil`) that is not a stop word (`from`).
     public func merge(_ word: String) -> String {
         let n = word.count
-        guard n >= 4 else { return word }
         let own = frequencies[word] ?? 0
+        guard n >= 4, own >= 1, own < Self.protectedFrequency, let first = word.first else { return word }
         let maxDistance = n <= 7 ? 1 : 2
         var best: (d: Int, count: Int, word: String)?
         for len in (n - maxDistance)...(n + maxDistance) {
-            for cand in byLength[len] ?? [] where cand != word {
+            for cand in byLength[len] ?? [] where cand.count >= 4 && cand != word && cand.first == first
+                && !InsightsStoplist.generic.contains(cand) {
                 let c = frequencies[cand] ?? 0
                 guard c >= max(1, own) * 5 else { continue }
                 guard let d = Self.distance(word, cand, max: maxDistance) else { continue }
@@ -370,10 +447,19 @@ public struct TypoMerger: Sendable {
 
 // MARK: Step 5: summary fact check
 
-/// The summary fact check (design §4 step 5): every checkable token of a sentence (a mid-sentence capitalized word, a
-/// number, a symbol of a formula, a content word) must appear in the source after normalization and the typo merge,
-/// else the sentence is dropped (`dropped`). Over 40% dropped, or nothing left: no summary (keywords only). The result
-/// is cut to at most `maxSentences` sentences and `maxCharacters` characters [M: the model ignores lengths].
+/// The summary fact check (design §4 step 5, tuned by the D16 run on real notes). A sentence has two kinds of checkable
+/// tokens:
+/// - **strict** ones, each of which must appear in the source after normalization and the typo merge: numbers and words
+///   with digits, mid-sentence capitalized words (names) and the short symbols of a formula sentence. A name may also
+///   come from the note's title, notebook or tags.
+/// - **content words** (five letters or more, outside the stoplist and the words summaries use to talk about a note):
+///   at least `contentShare` of them must appear in the source, the note's title, notebook or tags, or the model's own
+///   keywords and concepts for the note, so a topic word the model inferred ("a recipe") does not drop a sentence whose
+///   other words the note supports, while a sentence about something the note never mentions is still dropped.
+///
+/// A sentence that fails either is dropped (`dropped`). Over `maxDroppedShare` dropped, or nothing left: no summary
+/// (keywords only). The result is cut to at most `maxSentences` sentences and `maxCharacters` characters [M: the model
+/// ignores lengths].
 public struct FactCheck: Sendable {
     public struct Result: Hashable, Sendable {
         public var summary: String?
@@ -381,16 +467,42 @@ public struct FactCheck: Sendable {
         public var kept: Int
     }
 
+    /// What a note says about itself besides its text: its title, notebook and tags, and the model's keywords and
+    /// concepts for it.
+    public struct Context: Hashable, Sendable {
+        public var title: String
+        public var notebook: String?
+        public var tags: [String]
+        public var terms: [String]
+        public init(title: String = "", notebook: String? = nil, tags: [String] = [], terms: [String] = []) {
+            self.title = title; self.notebook = notebook; self.tags = tags; self.terms = terms
+        }
+    }
+
+    /// The share of a sentence's content words the note must support (D16).
+    public static let contentShare = 0.5
+    /// This check's share: `contentShare` for summaries, 1 for a voice note's title (every word of it shows).
+    public let share: Double
+    /// Over this share of sentences dropped, the summary goes.
+    public static let maxDroppedShare = 0.5
+
     public let sourceTerms: Set<String>
+    /// Terms of the note's title, notebook and tags (names may come from these).
+    public let labelTerms: Set<String>
+    /// Terms of the model's keywords and concepts (support content words only).
+    public let modelTerms: Set<String>
     public let merger: TypoMerger?
 
-    public init(source: String, merger: TypoMerger? = nil) {
-        var terms = Set<String>()
-        for w in InsightsWords.words(source) {
-            let m = merger?.merge(w) ?? w
-            terms.formUnion(Self.variants(m))
+    public init(source: String, merger: TypoMerger? = nil, context: Context = Context(), share: Double = FactCheck.contentShare) {
+        self.share = share
+        func terms(_ text: String) -> Set<String> {
+            var out = Set<String>()
+            for w in InsightsWords.words(Self.withoutPossessives(text)) { out.formUnion(Self.variants(merger?.merge(w) ?? w)) }
+            return out
         }
-        sourceTerms = terms
+        sourceTerms = terms(source)
+        labelTerms = terms(([context.title, context.notebook ?? ""] + context.tags).joined(separator: " "))
+        modelTerms = terms(context.terms.joined(separator: " "))
         self.merger = merger
     }
 
@@ -399,11 +511,19 @@ public struct FactCheck: Sendable {
         let sentences = InsightsChunker.sentences(summary.replacingOccurrences(of: "\n", with: " "))
         var kept: [String] = []
         var dropped = 0
+        // Only sentences with unsupported terms count against the summary: one about the note's form, in LaTeX or
+        // copied from unreadable handwriting is just left out (D16: "The note contains two parts." took a good
+        // summary down with it).
+        var unsupported = 0
         for s in sentences {
-            if supported(s) { kept.append(s) } else { dropped += 1 }
+            switch unsupportedToken(s) {
+            case nil: kept.append(s)
+            case Self.markup?, Self.garbled?, Self.nothingFromTheNote?: dropped += 1
+            default: dropped += 1; unsupported += 1
+            }
         }
-        let total = kept.count + dropped
-        guard !kept.isEmpty, total > 0, Double(dropped) / Double(total) <= 0.4 else {
+        let total = kept.count + unsupported
+        guard !kept.isEmpty, total > 0, Double(unsupported) / Double(total) <= Self.maxDroppedShare else {
             return Result(summary: nil, dropped: dropped, kept: 0)
         }
         var out = ""
@@ -419,10 +539,20 @@ public struct FactCheck: Sendable {
         return Result(summary: out.isEmpty ? nil : out, dropped: dropped, kept: n)
     }
 
-    /// True when every checkable token of `sentence` is in the source.
-    public func supported(_ sentence: String) -> Bool {
+    /// True when `sentence` passes: every strict token supported, and enough of its content words.
+    public func supported(_ sentence: String) -> Bool { unsupportedToken(sentence) == nil }
+
+    /// Why `sentence` fails: its first unsupported strict token, else (too few content words supported) its first
+    /// unsupported content word; nil when it passes.
+    public func unsupportedToken(_ sentence: String) -> String? {
+        // LaTeX the model wrote (`$P_{\tau}$`) arrives with its backslash sequences read as escapes (a tab, a form
+        // feed): unreadable in a summary, so such a sentence goes.
+        if Self.hasLaTeX(sentence) || sentence.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) {
+            return Self.markup
+        }
+        if Self.isGarbled(sentence) { return Self.garbled }
         let isFormula = sentence.contains("=") || sentence.contains("^") || sentence.contains("\\")
-        let raw = sentence.precomposedStringWithCompatibilityMapping
+        let raw = Self.withoutPossessives(sentence.precomposedStringWithCompatibilityMapping)
         var tokens: [(text: String, capitalized: Bool, index: Int)] = []
         var cur = String.UnicodeScalarView()
         var index = 0
@@ -437,31 +567,101 @@ public struct FactCheck: Sendable {
             if u.properties.isAlphabetic || (0x30...0x39).contains(u.value) { cur.append(u) } else if u == "'" || u == "\u{2019}" { continue } else { flush() }
         }
         flush()
+        var content = 0
+        var contentSupported = 0
+        var fromSource = 0
+        var firstUnsupportedContent: String?
         for t in tokens {
             let lower = t.text.lowercased()
-            let isNumber = lower.allSatisfy(\.isNumber)
-            let hasDigit = lower.contains { $0.isNumber }
-            let checkable: Bool
-            if isNumber || hasDigit {
-                checkable = true
-            } else if t.capitalized && t.index > 0 && lower.count >= 2 {
-                checkable = !InsightsStoplist.summaryLanguage.contains(lower)
+            let forms = Self.variants(merger?.merge(lower) ?? lower)
+            let inSource = !sourceTerms.isDisjoint(with: forms)
+            // A misread run of letters copied from the note (`…uneffffi…`).
+            if TermNormalizer.isJunk(lower) { return Self.garbled }
+            let isWord = !InsightsStoplist.generic.contains(lower) && !InsightsStoplist.summaryLanguage.contains(lower)
+            if (inSource || !labelTerms.isDisjoint(with: forms)) && isWord && lower.count >= 2 { fromSource += 1 }
+            if lower.contains(where: \.isNumber) {
+                if !inSource { return t.text }
+            } else if t.capitalized && t.index > 0 && lower.count >= 2 && isWord {
+                // A name: the note's text, title, notebook or tags.
+                if !inSource && labelTerms.isDisjoint(with: forms) { return t.text }
             } else if isFormula && lower.count <= 3 && !InsightsStoplist.generic.contains(lower) {
-                checkable = true
-            } else {
-                // Content words (no part-of-speech tagger on Linux): five letters or more and not the words a summary
-                // talks about a note with; the D16 quality run tunes this.
-                checkable = lower.count >= 5 && !InsightsStoplist.generic.contains(lower)
-                    && !InsightsStoplist.summaryLanguage.contains(lower)
+                if !inSource { return t.text }
+            } else if lower.count >= 5 && isWord {
+                // A content word (no part-of-speech tagger on Linux): five letters or more, not the words a summary
+                // talks about a note with.
+                content += 1
+                if inSource || !labelTerms.isDisjoint(with: forms) || !modelTerms.isDisjoint(with: forms) {
+                    contentSupported += 1
+                } else if firstUnsupportedContent == nil {
+                    firstUnsupportedContent = t.text
+                }
             }
-            guard checkable else { continue }
-            let m = merger?.merge(lower) ?? lower
-            if !sourceTerms.isDisjoint(with: Self.variants(m)) {
-                continue
-            }
-            return false
         }
-        return true
+        // A sentence with no term of the note's own text, title, notebook or tags says nothing about it: about something
+        // else when a content word is unsupported, else about the note's form ("It appears to be a list of codes").
+        guard fromSource > 0 else { return firstUnsupportedContent ?? Self.nothingFromTheNote }
+        guard content > 0, Double(contentSupported) < share * Double(content) else { return nil }
+        return firstUnsupportedContent
+    }
+
+    /// True for LaTeX math in a sentence: a `$` directly followed by a backslash, a letter or one of `{ ^ _ (` (`$x$`,
+    /// `$\alpha`). A price (`$500`, `$ 12`, two of them) is not.
+    public static func hasLaTeX(_ sentence: String) -> Bool {
+        let chars = Array(sentence)
+        return chars.indices.contains { i in
+            chars[i] == "$" && i + 1 < chars.count && (chars[i + 1] == "\\" || chars[i + 1].isLetter || "{^_(".contains(chars[i + 1]))
+        }
+    }
+
+    /// `unsupportedToken`'s answer for a sentence with LaTeX or control characters.
+    public static let markup = "<markup>"
+    /// `unsupportedToken`'s answer for a sentence copied from handwriting the recognizer could not read.
+    public static let garbled = "<garbled>"
+
+    /// True for a sentence copied from unreadable handwriting rather than written about it (D16: the model copies the
+    /// recognizer's output of formulas and doodles when it cannot describe them, and every token of such a copy is "in
+    /// the note"): an emoji, pictograph or arrow (a degree sign is fine), a `#`, two `=` or more, unbalanced square or curly brackets,
+    /// or at least 40% of its tokens (of five or more) single characters other than the one-letter words `a`, `i`, `y`,
+    /// `o`, `e`.
+    public static func isGarbled(_ sentence: String) -> Bool {
+        for u in sentence.unicodeScalars where u != "°" {
+            if u == "#" || (0x2190...0x21FF).contains(u.value) || u.properties.generalCategory == .otherSymbol
+                || u.properties.isEmojiPresentation { return true }
+        }
+        if sentence.filter({ $0 == "=" }).count >= 2 { return true }
+        // Unbalanced brackets: a piece cut out of a copied formula ("(Qz Lm) vbn]"). Only `[` `]` `{` `}` count:
+        // parentheses are unbalanced in ordinary prose too (list markers "1)", "a)", emoticons, a sentence split
+        // inside a parenthesis), and the other signals catch copied formulas.
+        for (open, close) in [("[", "]"), ("{", "}")] as [(Character, Character)]
+        where sentence.filter({ $0 == open }).count != sentence.filter({ $0 == close }).count {
+            return true
+        }
+        let tokens = InsightsWords.words(sentence)
+        let singles = tokens.filter { $0.count == 1 && !["a", "i", "y", "o", "e"].contains($0) }.count
+        return tokens.count >= 5 && Double(singles) >= 0.4 * Double(tokens.count)
+    }
+
+    /// `unsupportedToken`'s answer for a sentence that names nothing of the note's text.
+    public static let nothingFromTheNote = "<nothing from the note>"
+
+    /// `text` without English possessive endings (`Newton's law`, `the students' notes`), so the name itself is checked
+    /// (the bare apostrophe removal used to turn `Newton's` into `newtons`).
+    public static func withoutPossessives(_ text: String) -> String {
+        var out = ""
+        let chars = Array(text)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            if c == "'" || c == "\u{2019}", i > 0, chars[i - 1].isLetter {
+                let next: Character = i + 1 < chars.count ? chars[i + 1] : " "
+                let after: Character = i + 2 < chars.count ? chars[i + 2] : " "
+                if next == "s" || next == "S", !after.isLetter { i += 2; continue }
+                if !next.isLetter { i += 1; continue }
+            }
+            out.append(c)
+            i += 1
+        }
+        return out
     }
 
     /// The forms a word is matched by: itself, its singular, its stem, and the stem with a final `e` or without a

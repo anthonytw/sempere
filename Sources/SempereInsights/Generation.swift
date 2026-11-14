@@ -4,27 +4,33 @@ import Sempere
 // MARK: - Generation of one note and of topic summaries (docs/design/1.2-note-insights.md §4 steps 1-5, 9; D14)
 
 public enum InsightsGenerator {
-    /// Sempere's prompt revision (`gen.prompt`): a change makes every generation stale (design §3.4).
-    public static let promptRevision = 1
+    /// Sempere's prompt revision (`gen.prompt`): a change makes every generation stale (design §3.4). 2: the D16
+    /// tuning (the prompt asks for the subject, not the note's form, and for no LaTeX; the fact check and the chunk
+    /// cap changed with it).
+    public static let promptRevision = 2
 
-    /// The note's `gen` from `text` (its insight text) with `model`: chunked to the context window (halved and retried
-    /// once on an overflow), merged, normalized, typo-merged and fact-checked. A voice note (`transcript` given) also
-    /// gets a fact-checked slug for its title.
+    /// At most this many chunks of a note are read (D16: a PDF of 100,000 words is 220 chunks, minutes of model time
+    /// and a merge call that cannot fit): evenly spaced ones, the first and the last always among them.
+    public static let maxChunks = 8
+
+    /// The note's `gen` from `text` (its insight text) with `model`: chunked to the context window (at most
+    /// `maxChunks`, halved and retried once on an overflow), merged, normalized and fact-checked against the text (the
+    /// typo merge applied to both sides), with `label` (the note's title, notebook and tags) and the model's own terms
+    /// as context (D16). Keywords and concepts keep the model's spelling: on real notes the typo merge turned more
+    /// correct words into other words (`patent` into `parent`) than it repaired misreadings (D16). A voice note (`transcript` given) also gets a fact-checked slug for its title.
     public static func generate(text: String, hash: String, language: String?, model: any ModelProvider,
-                                merger: TypoMerger?, transcript: String? = nil) async throws -> InsightsNoteFile.Gen {
+                                merger: TypoMerger?, transcript: String? = nil,
+                                label: FactCheck.Context = FactCheck.Context()) async throws -> InsightsNoteFile.Gen {
         let extraction = try await extract(text, language: language, model: model)
-        let merge: (String) -> String = { merger?.merge($0) ?? $0 }
-        let keywords = TermNormalizer.keywords(extraction.keywords, merge: merge)
-        let concepts = TermNormalizer.concepts(extraction.concepts, keywords: keywords, merge: merge)
-        let check = FactCheck(source: text, merger: merger).check(extraction.summary)
+        let keywords = TermNormalizer.keywords(extraction.keywords)
+        let concepts = TermNormalizer.concepts(extraction.concepts, keywords: keywords)
+        var context = label
+        context.terms = extraction.keywords + extraction.concepts
+        let check = FactCheck(source: text, merger: merger, context: context).check(extraction.summary)
         var slug: String?
-        if let transcript, !transcript.isEmpty {
-            let raw = try? await model.title(transcript: String(transcript.prefix(4000)), language: language)
-            if let raw {
-                let cleaned = VoiceNoteTitleFormat.cleaned(raw)
-                let words = InsightsWords.count(cleaned)
-                if (1...6).contains(words), FactCheck(source: transcript, merger: merger).supported(cleaned) { slug = cleaned }
-            }
+        if let transcript, !transcript.isEmpty,
+           let raw = try? await model.title(transcript: String(transcript.prefix(4000)), language: language) {
+            slug = Self.slug(raw, transcript: transcript, merger: merger)
         }
         return InsightsNoteFile.Gen(hash: hash, identity: model.identity, summary: check.summary, keywords: keywords,
                                     concepts: concepts, dropped: check.dropped, slug: slug)
@@ -32,10 +38,11 @@ public enum InsightsGenerator {
 
     /// One extraction of `text`: a single call up to the chunk size, else per chunk plus a merge.
     static func extract(_ text: String, language: String?, model: any ModelProvider) async throws -> ModelExtraction {
-        let chunks = InsightsChunker.chunks(text)
+        let chunks = spread(InsightsChunker.chunks(text), max: maxChunks)
         guard !chunks.isEmpty else { throw InsightsProviderError.refused("no text") }
         if chunks.count == 1 {
-            do { return try await model.extract(chunks[0], language: language) } catch InsightsProviderError.contextOverflow {
+            do { return try await model.extract(chunks[0], language: language) } catch InsightsProviderError.contextOverflow
+                where mayOverflow(chunks[0]) {
                 // Halve and retry once.
                 let halves = InsightsChunker.chunks(chunks[0], words: max(1, InsightsWords.count(chunks[0]) / 2))
                 var parts: [ModelExtraction] = []
@@ -43,15 +50,62 @@ public enum InsightsGenerator {
                 return parts.count == 1 ? parts[0] : try await model.merge(parts, language: language)
             }
         }
+        // One chunk the model cannot answer (a refusal, a runaway answer) costs that chunk, not the note (D16: a
+        // 5,000-word PDF lost everything to one chunk); with no part left, its error stands.
         var parts: [ModelExtraction] = []
+        var lastError: Error?
         for c in chunks {
-            do { parts.append(try await model.extract(c, language: language)) } catch InsightsProviderError.contextOverflow {
-                for h in InsightsChunker.chunks(c, words: max(1, InsightsChunker.chunkWords / 2)) {
-                    parts.append(try await model.extract(h, language: language))
+            do {
+                do { parts.append(try await model.extract(c, language: language)) } catch InsightsProviderError.contextOverflow
+                    where mayOverflow(c) {
+                    for h in InsightsChunker.chunks(c, words: max(1, InsightsChunker.chunkWords / 2)) {
+                        parts.append(try await model.extract(h, language: language))
+                    }
                 }
+            } catch InsightsProviderError.unavailable(let a) {
+                throw InsightsProviderError.unavailable(a)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // A refusal is the answer to keep (the failure memo backs a refused note off longer).
+                if case InsightsProviderError.refused? = lastError {} else { lastError = error }
             }
         }
-        return try await model.merge(parts, language: language)
+        if parts.isEmpty, let lastError { throw lastError }
+        return parts.count == 1 ? parts[0] : try await model.merge(parts, language: language)
+    }
+
+    /// The slug of a voice note's title (D14) from the model's `raw` answer: cleaned, 1 to 6 words, fact-checked
+    /// against the transcript with every content word required (a title shows each word). A longer answer that lists things is cut after its last comma, semicolon or dash within
+    /// the first six words (D16: a list of eight errands in a voice note was refused whole);
+    /// nil when nothing usable is left.
+    public static func slug(_ raw: String, transcript: String, merger: TypoMerger?) -> String? {
+        var cleaned = VoiceNoteTitleFormat.cleaned(raw)
+        let words = cleaned.split(whereSeparator: { $0.isWhitespace })
+        if words.count > 6 {
+            guard let cut = (1...5).reversed().first(where: { i in
+                words[i - 1].last.map { ",;".contains($0) } == true || ["-", "–", "—"].contains(String(words[i]))
+            }) else { return nil }
+            cleaned = VoiceNoteTitleFormat.cleaned(words.prefix(cut).joined(separator: " "))
+        }
+        guard (1...6).contains(InsightsWords.count(cleaned)),
+              FactCheck(source: transcript, merger: merger, share: 1).supported(cleaned) else {
+            return nil
+        }
+        return cleaned
+    }
+
+    /// Below this many estimated tokens an overflow is the model's runaway answer, not the input (D16: a 17-word note
+    /// ran for minutes and then overflowed), so halving the input cannot help: the error stands.
+    public static let halvingTokens = 250
+
+    static func mayOverflow(_ chunk: String) -> Bool { InsightsChunker.tokens(chunk) >= halvingTokens }
+
+    /// At most `max` of `chunks`, evenly spaced, the first and the last kept, in order.
+    public static func spread<T>(_ chunks: [T], max: Int) -> [T] {
+        guard chunks.count > max, max >= 2 else { return max == 1 ? Array(chunks.prefix(1)) : chunks }
+        let step = Double(chunks.count - 1) / Double(max - 1)
+        return (0..<max).map { chunks[Int((Double($0) * step).rounded())] }
     }
 }
 
@@ -201,12 +255,13 @@ public enum InsightsPolicy {
             guard n.hasText else { continue }
             let eligible = force || (!n.open && (n.modified.map { now.timeIntervalSince($0) >= settle } ?? true))
             guard eligible else { continue }
-            if let until = backoff[n.id], until > now, !force { continue }
+            // A back-off (a failed generation, `InsightsFailureMemo`) holds the model back, never the embedding.
+            let backedOff = backoff[n.id].map { $0 > now && !force } ?? false
             let others = (snapshot.notes[n.id] ?? [:]).filter { $0.key != me }
             let currentElsewhere = others.values.contains { f in
                 f.gen.map { $0.hash == n.hash && (c.model.map($0.identity.isCurrent(for:)) ?? true) } ?? false
             }
-            if generates, let model = c.model {
+            if generates, !backedOff, let model = c.model {
                 let ownCurrent = mine?.gen.map { $0.hash == n.hash && $0.identity.isCurrent(for: model) } ?? false
                 if force ? true : (!ownCurrent && !currentElsewhere) { out.append(.generate(n.id)) }
             }

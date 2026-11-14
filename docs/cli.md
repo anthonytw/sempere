@@ -2353,7 +2353,9 @@ claims it when none is set, and the role never moves by itself. Every command ta
   voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when more than
   10% changed or weekly (the first build pins the embedding revision, the lowest every recently seen device supports),
   write this device's record and the notebook and tag summaries that are due. A device that is not the work device
-  generates only with `insights.compute` `auto`, and never embeds into the vault. `--limit` caps model calls;
+  generates only with `insights.compute` `auto`, and never embeds into the vault. A note whose generation failed is
+  not asked again for a day, or for 30 days when the model refused it, unless its text or the model changes or with
+  `--force` (this machine's memo, `$XDG_STATE_HOME/sempere/insights/<vault id>-failures.json`). `--limit` caps model calls;
   `--embeddings-only` skips the model; `--dry-run` writes nothing. It needs Apple Intelligence (macOS 26): elsewhere,
   or with it turned off, it exits 3 with the reason (`disabled`, `notReady`, `deviceNotEligible`, or needs macOS 26)
   and writes nothing; `--embeddings-only` needs only the embedder. Off: exit 1.
@@ -2365,7 +2367,7 @@ claims it when none is set, and the role never moves by itself. Every command ta
   revision (a vector reader) and on Linux, keyword overlap alone without vectors.
 - `search` finds notes whose keywords, concepts or summary hold every word of the query ("matched in summary").
 - `status`: processed, stale and missing notes; the work device and when it was last seen ("not seen for 14 days"
-  offers `work-device --claim`); the pinned revision and an upgrade offer with the devices it would leave out; the map;
+  offers `work-device --claim`; one that has written nothing yet shows "nothing written yet"); the pinned revision and an upgrade offer with the devices it would leave out; the map;
   per device its files, model availability, embedding revisions and compatibility.
 - `topic` shows a notebook's or tag's generated summary and its members; `--generate` makes it now (needs the model).
 - `map` prints the map as JSON (nodes with positions and clusters, clusters with labels) or SVG. `--rebuild` (needs

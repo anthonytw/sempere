@@ -56,10 +56,22 @@ public enum InsightsNotes {
         var out = Set<String>()
         for k in gen?.keywords ?? [] { out.insert(k.t) }
         for c in gen?.concepts ?? [] { out.insert(c) }
-        for w in InsightsWords.words(text) where w.count >= 4 && !InsightsStoplist.generic.contains(w) && !w.contains(where: \.isNumber) {
+        for w in InsightsWords.words(text) where w.count >= 4 && !w.contains(where: \.isNumber) && isContentWord(w) {
             out.insert(TermNormalizer.singular(w))
         }
         return out
+    }
+
+    /// A note's generated keywords and concepts (`RelatedInput.terms`).
+    public static func terms(gen: InsightsNoteFile.Gen?) -> Set<String> {
+        Set((gen?.keywords ?? []).map(\.t) + (gen?.concepts ?? []))
+    }
+
+    /// A text word that says something about a note's subject (D16: map labels read "maybe, hopefully, going" and
+    /// "eeeee"): not a stop word, not one of the words summaries talk about notes with, not filler, not junk.
+    static func isContentWord(_ w: String) -> Bool {
+        !InsightsStoplist.generic.contains(w) && !InsightsStoplist.filler.contains(w) && !TermNormalizer.isJunk(w)
+            && (!InsightsStoplist.summaryLanguage.contains(w) || InsightsStoplist.subjectWords.contains(w))
     }
 }
 
@@ -75,6 +87,9 @@ public struct InsightsUpdateOptions: Sendable {
     public var now = Date()
     public var platform = InsightsPlatform.current
     public var powerWindow = true
+    /// This device's memo of failed generations (`InsightsFailureMemo`): read for the policy's back-off and updated
+    /// after the run; nil keeps none (tests, a dry run reads it only).
+    public var failureMemo: URL?
     public init() {}
 }
 
@@ -166,8 +181,12 @@ public struct InsightsUpdater: Sendable {
         let policyNotes = selected.map {
             PolicyNote(id: $0.id, hash: $0.hash, modified: $0.modified, deleted: $0.deleted, hasText: !$0.text.isEmpty)
         }
+        var memo = o.failureMemo.map(InsightsFailureMemo.load(from:)) ?? InsightsFailureMemo()
+        let backoff = usable.map { m in memo.backoff(notes: selected.map { ($0.id, $0.hash) }, identity: m.identity) } ?? [:]
+        let backedOff = o.force ? 0 : backoff.values.filter { $0 > o.now }.count
+        if backedOff > 0 { report.notes.append("\(backedOff) notes backed off (failed earlier; --force to retry)") }
         var plan = InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps,
-                                       pinKey: pinKey, now: o.now, force: o.force, deviceRecordChanged: changedRecord)
+                                       pinKey: pinKey, now: o.now, force: o.force, backoff: backoff, deviceRecordChanged: changedRecord)
         if o.rebuildMap, pinKey != nil, !plan.contains(.rebuildMap) { plan.append(.rebuildMap) }
         // Claim the role (D13: the first capable device to turn insights on), through the settings merge.
         if plan.contains(.claimWorkDevice) {
@@ -185,7 +204,7 @@ public struct InsightsUpdater: Sendable {
             if settings.workDevice != me {
                 // Another device's claim won the merge: plan again as a device that is not the work device.
                 plan = InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps,
-                                           pinKey: pinKey, now: o.now, force: o.force, deviceRecordChanged: changedRecord)
+                                           pinKey: pinKey, now: o.now, force: o.force, backoff: backoff, deviceRecordChanged: changedRecord)
             }
         }
         // A device that no longer holds the role says so with a tombstone map (no key): readers take the map and
@@ -211,12 +230,16 @@ public struct InsightsUpdater: Sendable {
                     let isVoice = !note.transcript.isEmpty
                     let gen = try await InsightsGenerator.generate(text: note.text, hash: note.hash, language: note.language,
                                                                    model: model, merger: merger,
-                                                                   transcript: isVoice ? note.transcript : nil)
+                                                                   transcript: isVoice ? note.transcript : nil,
+                                                                   label: FactCheck.Context(title: note.title, notebook: note.notebook,
+                                                                                            tags: note.tags))
                     var f = own(id); f.gen = gen; f.lang = note.language
                     pending[id] = f
                     report.generated.append(id.uuidString.lowercased())
+                    memo.clear(note: id)
                 } catch {
                     report.failures[id.uuidString.lowercased()] = "\(error)"
+                    memo.record(note: id, hash: note.hash, identity: model.identity, error: error, now: o.now)
                 }
             case .embed(let id):
                 guard let note = byId[id], let embedder, let r = canEmbed, let key = pinKey else { continue }
@@ -243,6 +266,8 @@ public struct InsightsUpdater: Sendable {
                 try store.write(.note(f), now: o.now)
             }
             snapshot = store.snapshot()
+            // Device-local and only a saving of model time: a memo that cannot be written is no reason to fail the run.
+            if let url = o.failureMemo { try? memo.save(to: url) }
         }
         // Voice-note titles (D14): from any device's current `gen` slug, while the title is the capture default.
         // Only the work device sets titles (format.md §16.8, D14; review of #50, M1); `insights title` stays manual anywhere.
@@ -386,7 +411,8 @@ public struct InsightsUpdater: Sendable {
             dim = dim ?? v.count
             guard v.count == dim else { continue }
             let gen = snapshot.bestGen(for: n.id, hash: n.hash)?.gen
-            rel.append(RelatedInput(id: n.id, vector: v, tokens: InsightsNotes.tokens(text: n.text, gen: gen), words: InsightsWords.count(n.text)))
+            rel.append(RelatedInput(id: n.id, vector: v, tokens: InsightsNotes.tokens(text: n.text, gen: gen), words: InsightsWords.count(n.text),
+                                    terms: InsightsNotes.terms(gen: gen)))
             pairs.append((n.id, e.hash))
         }
         guard let dim, !rel.isEmpty else { return nil }

@@ -146,12 +146,15 @@ public struct InsightsReader: Sendable {
         let language = InsightsUpdater.mainLanguage(inputs)
         let set = vectorSet(inputs: inputs, me: me, embedder: embedder, language: language)
         let live = inputs.filter { !$0.deleted && !$0.text.isEmpty }
-        // Vectors are used only when every note has one; otherwise keyword overlap alone (never a mix).
-        let allHave = !set.vectors.isEmpty && live.allSatisfy { set.vectors[$0.id] != nil }
+        // Vectors are used only when every note that can be embedded has one in the set; otherwise keyword overlap
+        // alone (never a mix of sets). A note with no embedding input (equations only) has none and joins by keyword
+        // overlap (D16: seven such notes turned the vectors off for a whole vault).
+        let allHave = !set.vectors.isEmpty
+            && live.allSatisfy { set.vectors[$0.id] != nil || EmbeddingInput.clean($0.text).isEmpty }
         let rel = live.map { n in
-            RelatedInput(id: n.id, vector: allHave ? set.vectors[n.id] : nil,
-                         tokens: InsightsNotes.tokens(text: n.text, gen: snapshot.bestGen(for: n.id, hash: n.hash)?.gen),
-                         words: InsightsWords.count(n.text))
+            let gen = snapshot.bestGen(for: n.id, hash: n.hash)?.gen
+            return RelatedInput(id: n.id, vector: allHave ? set.vectors[n.id] : nil, tokens: InsightsNotes.tokens(text: n.text, gen: gen),
+                                words: InsightsWords.count(n.text), terms: InsightsNotes.terms(gen: gen))
         }
         let graph = RelatedGraph.build(rel)
         let titles = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0.title) })
@@ -340,7 +343,11 @@ public struct InsightsReader: Sendable {
         if set.compatibility == .incompatible, let key = map.key {
             // A local map of this device's own vectors (never written; design §3.8).
             let rel = inputs.filter { live.contains($0.id) }.compactMap { n -> RelatedInput? in
-                set.vectors[n.id].map { RelatedInput(id: n.id, vector: $0, tokens: InsightsNotes.tokens(text: n.text, gen: nil), words: 0) }
+                let gen = snapshot.bestGen(for: n.id, hash: n.hash)?.gen
+                return set.vectors[n.id].map {
+                    RelatedInput(id: n.id, vector: $0, tokens: InsightsNotes.tokens(text: n.text, gen: gen), words: 0,
+                                 terms: InsightsNotes.terms(gen: gen))
+                }
             }
             let built = MapBuilder.build(rel, corpus: InsightsCorpus(rel.map(\.tokens)))
             source = InsightsMapFile(device: w, written: map.written, key: key, dim: rel.first?.vector?.count, canaries: nil,

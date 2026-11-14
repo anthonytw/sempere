@@ -18,14 +18,17 @@ public struct InsightsSettings: Hashable, Sendable {
     /// `insights.compute` for this device's type: `auto` lets a device that is not the work device compute too.
     public var computeAuto: Bool
     public var workDevice: DeviceID?
+    /// When `insights.workDevice` was last written (Unix ms, its slot's `modified`): the floor of the work device's
+    /// "last seen", so a device designated but never running shows "not seen" 14 days after the designation.
+    public var workDeviceSetAt: Int64?
     /// Per language, the pinned revision.
     public var pins: [String: Int]
     public var voiceNoteTitle: String
 
     public init(enabled: Bool = false, explicitlyOff: Bool = false, computeAuto: Bool = false, workDevice: DeviceID? = nil,
-                pins: [String: Int] = [:], voiceNoteTitle: String = VoiceNoteTitleFormat.defaultFormat) {
+                pins: [String: Int] = [:], voiceNoteTitle: String = VoiceNoteTitleFormat.defaultFormat, workDeviceSetAt: Int64? = nil) {
         self.enabled = enabled; self.explicitlyOff = explicitlyOff; self.computeAuto = computeAuto; self.workDevice = workDevice
-        self.pins = pins; self.voiceNoteTitle = voiceNoteTitle
+        self.pins = pins; self.voiceNoteTitle = voiceNoteTitle; self.workDeviceSetAt = workDeviceSetAt
     }
 
     public static let keys = (enabled: "insights.enabled", compute: "insights.compute", workDevice: "insights.workDevice",
@@ -43,6 +46,7 @@ public struct InsightsSettings: Hashable, Sendable {
         if case .bool(false)? = s.value(SettingSlotKey(Self.keys.enabled)) { explicitlyOff = true } else { explicitlyOff = false }
         if case .string(let c)? = value(Self.keys.compute) { computeAuto = c == "auto" } else { computeAuto = false }
         if case .string(let d)? = value(Self.keys.workDevice) { workDevice = DeviceID(d) } else { workDevice = nil }
+        workDeviceSetAt = s.slots[SettingSlotKey(Self.keys.workDevice)]?.meta?.modified
         var pins: [String: Int] = [:]
         if case .object(let o)? = value(Self.keys.pin) {
             for (k, v) in o { if case .number(let d) = v, d >= 1, d <= 1_000_000, d.rounded() == d { pins[k] = Int(d) } }
@@ -161,11 +165,11 @@ public struct WorkDeviceStatus: Hashable, Sendable {
             latest = mine.max()
         }
         lastSeen = latest.map { Date(timeIntervalSince1970: Double($0) / 1000) }
-        if settings.workDevice != nil {
-            notSeen = lastSeen.map { now.timeIntervalSince($0) > Self.notSeenAfter } ?? true
-        } else {
-            notSeen = false
-        }
+        // The 14 days run from its latest file, or from the designation when that is later or it has written nothing
+        // yet: a fresh claim is not missing (D16: it read "not seen for 14 days"; status says "nothing written yet"),
+        // but a designated device that never runs is, 14 days on.
+        let since = [latest, settings.workDevice == nil ? nil : settings.workDeviceSetAt].compactMap { $0 }.max()
+        notSeen = since.map { now.timeIntervalSince1970 - Double($0) / 1000 > Self.notSeenAfter } ?? false
         let pin = settings.pins[language]
         capable = snapshot.devices.filter { d, r in
             listed.contains(d) && !(r.supported[language] ?? []).isEmpty && (pin.map { (r.supported[language] ?? []).contains($0) } ?? true)

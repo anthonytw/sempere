@@ -95,7 +95,7 @@ final class InsightsPipelineTests: XCTestCase {
         let r = fc.check("The note describes the damping ratio. The amplitude decays. It explains wave behavior.")
         XCTAssertEqual(r.dropped, 1)
         XCTAssertEqual(r.summary, "The note describes the damping ratio. The amplitude decays.")
-        // Over 40% dropped: no summary at all.
+        // Over half dropped: no summary at all.
         let all = fc.check("Waves interfere. Light refracts. The amplitude decays.")
         XCTAssertNil(all.summary)
         XCTAssertEqual(all.dropped, 2)
@@ -105,6 +105,281 @@ final class InsightsPipelineTests: XCTestCase {
         // A typo merged before the check.
         let merger = TypoMerger(frequencies: ["kinematics": 30, "kinernatics": 1])
         XCTAssertTrue(FactCheck(source: "kinernatics of rigid bodies", merger: merger).supported("It covers kinematics."))
+    }
+
+    // MARK: D16 tuning (synthetic text only; the run's numbers are in the design doc, "D16 results")
+
+    static let breadSource = "Mix 500 g flour with water and salt. Knead ten minutes, let the dough rise overnight, bake at 230 C."
+
+    func testAnInferredTopicWordDoesNotDropASentenceTheNoteSupports() {
+        let summary = "The note is a recipe for bread: flour, water and salt are kneaded, and the dough rises overnight before baking."
+        // `recipe` and `bread` are nowhere in the note; every other content word is.
+        XCTAssertTrue(FactCheck(source: Self.breadSource).supported(summary))
+        // A sentence of inferred words alone is still dropped, unless the model's own terms name them.
+        let inferred = "It describes a traditional sourdough recipe."
+        XCTAssertFalse(FactCheck(source: Self.breadSource).supported(inferred))
+        XCTAssertEqual(FactCheck(source: Self.breadSource).unsupportedToken(inferred), "traditional")
+        let withTerms = FactCheck(source: Self.breadSource, context: .init(terms: ["sourdough recipe", "bread", "dough"]))
+        XCTAssertTrue(withTerms.supported("It is a sourdough recipe for dough that rises overnight."))
+    }
+
+    func testASentenceAboutSomethingElseIsStillDropped() {
+        let fc = FactCheck(source: Self.breadSource, context: .init(terms: ["bread", "baking"]))
+        XCTAssertFalse(fc.supported("It also explains orbital mechanics and planetary gravity for the dough."), "mostly unsupported words")
+        XCTAssertFalse(fc.supported("The dough rises like the Roman aqueducts."), "a name the note never mentions")
+        XCTAssertEqual(fc.unsupportedToken("Bake the dough at 250 C overnight."), "250", "numbers stay strict")
+        XCTAssertFalse(FactCheck(source: Self.breadSource, context: .init(terms: ["Roman"])).supported("It was a Roman bread."),
+                       "the model's terms never support a name")
+    }
+
+    func testNamesMayComeFromTheTitleNotebookOrTags() {
+        let source = "met with the team about the launch window and the fuel budget"
+        let summary = "The Orion team met about the launch window and the fuel budget."
+        XCTAssertFalse(FactCheck(source: source).supported(summary))
+        XCTAssertTrue(FactCheck(source: source, context: .init(title: "Orion sync")).supported(summary))
+        XCTAssertTrue(FactCheck(source: source, context: .init(notebook: "Projects/Orion")).supported(summary))
+        XCTAssertTrue(FactCheck(source: source, context: .init(tags: ["orion"])).supported(summary))
+    }
+
+    func testPossessivesAreCheckedAsTheName() {
+        let fc = FactCheck(source: "Newton second law: force equals mass times acceleration")
+        XCTAssertTrue(fc.supported("It states Newton's second law relating force, mass and acceleration."))
+        XCTAssertTrue(fc.supported("It states Newton\u{2019}s second law relating force, mass and acceleration."))
+        XCTAssertEqual(FactCheck.withoutPossessives("Newton's law, the students' notes, don't"), "Newton law, the students notes, don't")
+    }
+
+    func testSentencesAboutTheNotesFormOrInLaTeXAreDropped() {
+        let fc = FactCheck(source: "x7 qz ## !! lorem")
+        XCTAssertEqual(fc.unsupportedToken("The note contains a series of random characters and symbols."), FactCheck.nothingFromTheNote)
+        XCTAssertEqual(fc.unsupportedToken("It appears to be a list of codes."), "codes", "an unsupported word: about something else")
+        XCTAssertEqual(FactCheck(source: "x7 qz lorem", context: .init(terms: ["codes"])).unsupportedToken("It appears to be a list of codes."),
+                       FactCheck.nothingFromTheNote, "only the model's own term: about the note's form")
+        XCTAssertNil(fc.check("It appears to be a random string of characters.").summary)
+        // Such sentences are left out without counting against the summary; unsupported ones count.
+        let bread = FactCheck(source: Self.breadSource)
+        let r = bread.check("The note contains two parts. The dough rises overnight. It has 🙁 doodles. It lists random characters.")
+        XCTAssertEqual(r.summary, "The dough rises overnight.")
+        XCTAssertEqual(r.dropped, 3)
+        XCTAssertNil(bread.check("The dough rises overnight. Galaxies collide. Comets orbit.").summary, "two of three unsupported")
+        let math = FactCheck(source: "integral of one over x is the log of x")
+        XCTAssertEqual(math.unsupportedToken("It shows the integral $\\int 1/x$ of x."), FactCheck.markup)
+        // The model's `\frac` arrives with `\f` read as a form feed.
+        XCTAssertEqual(math.unsupportedToken("It shows \u{0C}rac{1}{x} for the integral."), FactCheck.markup)
+        XCTAssertTrue(math.supported("It shows that the integral of one over x is the log of x."))
+    }
+
+    func testASentenceCopiedFromUnreadableHandwritingIsDropped() {
+        // Every token of such a copy is in the note, so only its shape gives it away.
+        let source = "Qx = Lm Tz / Rn = Pq + Lm # 🙁 k ⇒ Wd v 3 j 7 z doodle oven bake at 230° fan"
+        let fc = FactCheck(source: source)
+        XCTAssertEqual(fc.unsupportedToken("Qx = Lm Tz, Rn = Pq + Lm."), FactCheck.garbled, "two equals signs")
+        XCTAssertEqual(fc.unsupportedToken("The doodle shows 🙁 next to the oven."), FactCheck.garbled, "an emoji")
+        XCTAssertEqual(fc.unsupportedToken("The oven k ⇒ Wd fan."), FactCheck.garbled, "an arrow")
+        XCTAssertEqual(fc.unsupportedToken("The doodle # oven."), FactCheck.garbled)
+        XCTAssertEqual(fc.unsupportedToken("v 3 j 7 z doodle"), FactCheck.garbled, "mostly single characters")
+        XCTAssertEqual(fc.unsupportedToken("(Lm Tz) doodle]"), FactCheck.garbled, "unbalanced brackets")
+        XCTAssertTrue(fc.supported("The doodle (an oven) is at 230°."))
+        XCTAssertTrue(fc.supported("Bake in the oven at 230° with the fan."), "a degree sign is fine")
+        XCTAssertTrue(FactCheck.isGarbled("x 3 j 7 z q") && !FactCheck.isGarbled("I bake a loaf at 230 degrees in a fan oven"))
+        XCTAssertEqual(fc.unsupportedToken("The doodle shows qrmuffffid."), FactCheck.garbled, "a misread run of letters")
+        XCTAssertTrue(FactCheck(source: "1000 ovens").supported("It lists 1000 ovens."), "numbers are never junk")
+    }
+
+    func testPricesListsAndEmoticonsAreNotMarkup() {
+        let fc = FactCheck(source: "The trip budget is 500 dollars: first mix the dough, then bake it. Pay 12 at the gate.")
+        XCTAssertTrue(fc.supported("The trip budget is $500."), "a price is not LaTeX")
+        XCTAssertTrue(fc.supported("Pay $ 12 at the gate, or $500 for the trip budget."))
+        XCTAssertFalse(FactCheck.hasLaTeX("Costs $500 and $12."))
+        XCTAssertTrue(FactCheck.hasLaTeX("The budget is $x$ dollars."))
+        XCTAssertTrue(FactCheck.hasLaTeX("It uses $\\alpha$."))
+        XCTAssertFalse(FactCheck.isGarbled("1) mix the dough and 2) bake it."), "list markers")
+        XCTAssertFalse(FactCheck.isGarbled("a) mix the dough, b) bake it :)"), "letter markers and an emoticon")
+        XCTAssertFalse(FactCheck.isGarbled("then bake it (at the end."), "a sentence split inside a parenthesis")
+        XCTAssertTrue(FactCheck.isGarbled("mix [the dough"), "a square bracket left open still counts")
+    }
+
+    func testRomanNumeralsUnitsAndShortRunsAreNotJunk() {
+        for term in ["henry viii", "part iii", "www", "1000kg", "xxx", "bookkeeper", "aaa battery"] {
+            XCTAssertFalse(TermNormalizer.isJunk(term), term)
+        }
+        XCTAssertTrue(TermNormalizer.isJunk("qrmuffffid"))
+        XCTAssertTrue(TermNormalizer.isJunk("zzzz top"), "four of a letter")
+    }
+
+    func testAnEmptySummaryLeavesKeywordsOnly() {
+        let r = FactCheck(source: Self.breadSource).check("")
+        XCTAssertNil(r.summary)
+        XCTAssertEqual(r.dropped, 0)
+    }
+
+    func testTypoMergeLeavesRealWordsAlone() {
+        let m = TypoMerger(frequencies: ["content": 27, "consent": 3, "rental": 136, "parental": 1, "finding": 43,
+                                         "lending": 28, "blending": 2, "from": 500, "fkom": 1, "kinematics": 20,
+                                         "kinernatics": 1, "momentum": 12, "momentun": 2, "milk": 1, "mil": 50])
+        XCTAssertEqual(m.merge("milk"), "milk", "never into a word of three letters")
+        XCTAssertEqual(m.merge("consent"), "consent", "seen 3 times: a word of the vault")
+        XCTAssertEqual(m.merge("parental"), "parental", "a different first letter")
+        XCTAssertEqual(m.merge("blending"), "blending", "a different first letter")
+        XCTAssertEqual(m.merge("fasting"), "fasting", "the model's spelling, nowhere in the notes")
+        XCTAssertEqual(m.merge("fkom"), "fkom", "never into a stop word")
+        XCTAssertEqual(m.merge("kinernatics"), "kinematics", "an OCR typo still merges")
+        XCTAssertEqual(m.merge("momentun"), "momentum")
+    }
+
+    func testKeywordsKeepTheModelsSpelling() async throws {
+        // D16: the merge turned rare correct words into frequent other words; keywords are left as the model wrote them.
+        let merger = TypoMerger(frequencies: ["patent": 2, "parent": 30, "filing": 2])
+        XCTAssertEqual(merger.merge("patent"), "parent", "the merge alone would change it")
+        let text = "Patent filing: the patent claims and the patent office deadline."
+        let gen = try await InsightsGenerator.generate(text: text, hash: InsightsText.hash(text), language: "en",
+                                                       model: FakeModelProvider(), merger: merger)
+        XCTAssertTrue(gen.keywords.contains { $0.t == "patent" }, "\(gen.keywords)")
+        XCTAssertFalse(gen.keywords.contains { $0.t == "parent" })
+    }
+
+    func testMetaAndJunkTermsAreDropped() {
+        for meta in ["Random Characters", "mathematical expressions", "Symbols", "data fragment", "Equation", "Technical notation"] {
+            XCTAssertNil(TermNormalizer.normalize(meta), meta)
+        }
+        XCTAssertEqual(TermNormalizer.normalize("Equation of motion"), "equation of motion", "a subject that names one")
+        XCTAssertTrue(TermNormalizer.isJunk("qrmuffffid"), "a letter three times in a row")
+        XCTAssertFalse(TermNormalizer.isJunk("thermodynamics"), "long and rare is still a word")
+        XCTAssertFalse(TermNormalizer.isJunk("1000 ovens"), "numbers are never junk")
+        let k = TermNormalizer.keywords(["Thermodynamics", "qrmuffffid", "random characters", "entropy"])
+        XCTAssertEqual(k.map(\.t), ["thermodynamics", "entropy"])
+        let c = TermNormalizer.concepts(["symbols", "heat engine", "qrmuffffid"], keywords: k)
+        XCTAssertEqual(c, ["heat engine"])
+    }
+
+    func testAVoiceNoteSlugIsCutAtAListAndEveryWordChecked() {
+        let transcript = "Buy lamp oil, rope and bombs. Also call the harbor master about the boat permit."
+        XCTAssertEqual(InsightsGenerator.slug("Lamp Oil, Rope, Bombs, Harbor Master, Boat Permit", transcript: transcript, merger: nil),
+                       "Lamp Oil, Rope, Bombs", "cut after the last comma within six words")
+        XCTAssertNil(InsightsGenerator.slug("Things to buy before the trip to the harbor", transcript: transcript, merger: nil),
+                     "too long and nowhere to cut")
+        XCTAssertEqual(InsightsGenerator.slug("Boat permit call", transcript: transcript, merger: nil), "Boat permit call")
+        XCTAssertNil(InsightsGenerator.slug("Shopping: oil, rope, bombs", transcript: transcript, merger: nil),
+                     "one inferred word is enough to refuse a title")
+    }
+
+    func testSubjectWordsStayTokensAndRealSubjectsStayKeywords() {
+        // The fact check skips "equation" or "diagram" in a summary, but in a note's text they name its subject.
+        XCTAssertTrue(InsightsStoplist.summaryLanguage.contains("equation"))
+        XCTAssertEqual(InsightsNotes.tokens(text: "heat equation formula variables diagram maybe", gen: nil),
+                       ["heat", "equation", "formula", "variable", "diagram"])
+        for subject in ["code", "data", "test", "Code review", "test data"] {
+            XCTAssertNotNil(TermNormalizer.normalize(subject), subject)
+        }
+    }
+
+    func testCancellationStopsAndARefusalIsTheErrorKept() async throws {
+        final class Scripted: ModelProvider, @unchecked Sendable {
+            let errors: [Error]
+            var i = 0
+            init(_ errors: [Error]) { self.errors = errors }
+            var identity: GenerationIdentity { .init(model: "m", os: "1", prompt: 2) }
+            var availability: ModelAvailability { .available }
+            var contextTokens: Int { 8192 }
+            func supports(language: String?) -> Bool { true }
+            func extract(_ text: String, language: String?) async throws -> ModelExtraction {
+                defer { i += 1 }
+                throw errors[min(i, errors.count - 1)]
+            }
+            func merge(_ parts: [ModelExtraction], language: String?) async throws -> ModelExtraction { parts[0] }
+            func summarize(topic: String, summaries: [String], language: String?) async throws -> String { "" }
+            func title(transcript: String, language: String?) async throws -> String { "" }
+        }
+        let text = Self.words(3 * InsightsChunker.chunkWords)
+        let hash = InsightsText.hash(text)
+        let refusedFirst = Scripted([InsightsProviderError.refused("a guardrail"), InsightsProviderError.failed("x")])
+        do {
+            _ = try await InsightsGenerator.generate(text: text, hash: hash, language: "en", model: refusedFirst, merger: nil)
+            XCTFail("no part left")
+        } catch InsightsProviderError.refused {}
+        let cancelled = Scripted([CancellationError()])
+        do {
+            _ = try await InsightsGenerator.generate(text: text, hash: hash, language: "en", model: cancelled, merger: nil)
+            XCTFail("cancelled")
+        } catch is CancellationError {}
+        XCTAssertEqual(cancelled.i, 1, "a cancellation stops at once, the other chunks are not asked")
+    }
+
+    func testFillerAndJunkWordsAreNoTokensOfOverlapOrLabels() {
+        let t = InsightsNotes.tokens(text: "Maybe hopefully going, eeeee latexit: the pendulum damping explains everything", gen: nil)
+        XCTAssertEqual(t, ["pendulum", "damping"])
+    }
+
+    func testALongNoteIsReadInAtMostMaxChunksSpreadOverIt() async throws {
+        XCTAssertEqual(InsightsGenerator.spread(Array(0..<20), max: 8), [0, 3, 5, 8, 11, 14, 16, 19])
+        XCTAssertEqual(InsightsGenerator.spread(Array(0..<5), max: 8), [0, 1, 2, 3, 4])
+        let model = FakeModelProvider()
+        let text = Self.words(20 * InsightsChunker.chunkWords)
+        _ = try await InsightsGenerator.generate(text: text, hash: InsightsText.hash(text), language: "en", model: model, merger: nil)
+        XCTAssertEqual(model.log.filter { $0 == "extract" }.count, InsightsGenerator.maxChunks)
+        XCTAssertEqual(model.log.last, "merge")
+    }
+
+    func testOneFailedChunkCostsThatChunkNotTheNote() async throws {
+        var s = FakeModelProvider.Script()
+        s.failures = 1
+        let model = FakeModelProvider(s)
+        let text = Self.words(3 * InsightsChunker.chunkWords)
+        let gen = try await InsightsGenerator.generate(text: text, hash: InsightsText.hash(text), language: "en", model: model, merger: nil)
+        XCTAssertNotNil(gen.summary)
+        XCTAssertEqual(model.log, ["extract", "extract", "extract", "merge"], "the first chunk failed; the note did not")
+        // Every chunk failing: the error stands.
+        s.failures = 100
+        do {
+            _ = try await InsightsGenerator.generate(text: text, hash: InsightsText.hash(text), language: "en",
+                                                     model: FakeModelProvider(s), merger: nil)
+            XCTFail("no part left")
+        } catch InsightsProviderError.failed {}
+    }
+
+    func testANoteWithoutAVectorDoesNotTurnTheVectorsOff() {
+        var notes = Self.corpus()
+        let equations = UUID(uuidString: "eeeeeeee-0000-4000-8000-000000000000")!
+        notes.append(RelatedInput(id: equations, vector: nil, tokens: Set(Self.topics[0]), words: 30))
+        let g = RelatedGraph.build(notes)
+        let vectorEdges = g.filter { $0.key != equations }.flatMap(\.value).filter { $0.note != equations }
+        XCTAssertFalse(vectorEdges.isEmpty)
+        XCTAssertTrue(vectorEdges.allSatisfy { $0.csls != nil }, "notes with vectors keep their vector scores")
+        XCTAssertTrue((g[equations] ?? []).allSatisfy { $0.csls == nil }, "the note without one links by keywords")
+    }
+
+    func testTinyNotesDoNotLinkBySimilarWordingAlone() {
+        // The vector of a note of a few words is noise: without a shared term, wording counts only for longer notes.
+        XCTAssertFalse(RelatedGraph.hasReason(keywordOverlap: 0, csls: 0.4, words: 3))
+        XCTAssertTrue(RelatedGraph.hasReason(keywordOverlap: 0, csls: 0.4, words: RelatedGraph.minWordsForWording))
+        XCTAssertTrue(RelatedGraph.hasReason(keywordOverlap: 0.1, csls: nil, words: 3), "a shared term is reason enough")
+        XCTAssertFalse(RelatedGraph.hasReason(keywordOverlap: 0, csls: -0.1, words: 400))
+    }
+
+    func testWhyAndLabelsPreferGeneratedTerms() {
+        // Two damping notes share a text word that reads like noise and a generated keyword.
+        var notes = Self.corpus()
+        for k in 0..<2 {
+            notes[k].tokens.formUnion(["qzxv", "resonance curve"])
+            notes[k].terms = ["resonance curve"]
+        }
+        let g = RelatedGraph.build(notes)
+        let edge = g[notes[0].id]?.first { $0.note == notes[1].id }
+        XCTAssertEqual(edge?.shared.first, "resonance curve")
+        let map = MapBuilder.build(notes, corpus: InsightsCorpus(notes.map(\.tokens)))
+        let damping = map.clusters.first { $0.level == 0 && $0.members.contains(notes[0].id) }
+        XCTAssertEqual(damping?.label, ["resonance curve"], "the members' generated terms, not their text words")
+    }
+
+    func testAnOverflowOnATinyNoteIsNotHalved() async throws {
+        var s = FakeModelProvider.Script()
+        s.overflowAbove = 0   // every call overflows: the answer ran away, not the input
+        let model = FakeModelProvider(s)
+        let text = "fuel budget for the launch window"
+        do {
+            _ = try await InsightsGenerator.generate(text: text, hash: InsightsText.hash(text), language: "en", model: model, merger: nil)
+            XCTFail("the overflow stands")
+        } catch InsightsProviderError.contextOverflow {}
+        XCTAssertEqual(model.log, ["extract"], "one call, no halves")
     }
 
     // MARK: Graph
@@ -283,6 +558,7 @@ final class InsightsPipelineTests: XCTestCase {
         let backed = InsightsPolicy.plan(notes: notes, snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: caps,
                                          pinKey: key, now: now, backoff: [notes[0].id: now.addingTimeInterval(60)], deviceRecordChanged: false)
         XCTAssertFalse(backed.contains(.generate(notes[0].id)))
+        XCTAssertTrue(backed.contains(.embed(notes[0].id)), "a back-off holds the model back, never the embedding")
         // Another device is the work device: nothing unless compute auto, and never embedding.
         settings.workDevice = DeviceID("22222222")!
         let other = InsightsPolicy.plan(notes: notes, snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: caps,
@@ -323,6 +599,22 @@ final class InsightsPipelineTests: XCTestCase {
                                       language: "en", now: now)
         XCTAssertTrue(status.notSeen)
         XCTAssertEqual(status.workDevice, w, "the role stays; status only offers a move")
+        // Just designated, nothing written yet: not missing (D16: a fresh claim read "not seen for 14 days").
+        let fresh = WorkDeviceStatus(settings: InsightsSettings(enabled: true, workDevice: w), snapshot: InsightsSnapshot(),
+                                     listed: [w], language: "en", now: now)
+        XCTAssertNil(fresh.lastSeen)
+        XCTAssertFalse(fresh.notSeen)
+        // Designated but never running: missing 14 days after the designation, so the claim hint shows.
+        let setAt = Int64(now.timeIntervalSince1970 * 1000)
+        let designated = InsightsSettings(enabled: true, workDevice: w, workDeviceSetAt: setAt)
+        XCTAssertFalse(WorkDeviceStatus(settings: designated, snapshot: InsightsSnapshot(), listed: [w], language: "en",
+                                        now: now.addingTimeInterval(13 * 86_400)).notSeen)
+        let later = WorkDeviceStatus(settings: designated, snapshot: InsightsSnapshot(), listed: [w], language: "en",
+                                     now: now.addingTimeInterval(15 * 86_400))
+        XCTAssertTrue(later.notSeen)
+        XCTAssertNil(later.lastSeen, "still nothing written")
+        // A designation newer than its files restarts the clock.
+        XCTAssertFalse(WorkDeviceStatus(settings: designated, snapshot: snap, listed: [w], language: "en", now: now).notSeen)
         let plan = InsightsPolicy.plan(notes: notesFor(now), snapshot: snap, me: DeviceID("11111111")!,
                                        settings: InsightsSettings(enabled: true, workDevice: w),
                                        capabilities: .init(model: .init(model: "m", os: "1", prompt: 1), embedRevision: 1, powerWindow: true),
