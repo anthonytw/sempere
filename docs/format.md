@@ -31,6 +31,9 @@ Notes.sempere/
   settings.age                            optional shared settings, merged per key (§13)
   notebooks/
     <recordId>.notebook.age               optional notebook record: keeps empty notebooks (§14)
+  insights/
+    <noteId>.<device>.insights.age        optional note insights: summary, keywords, vector, written by <device> (§16)
+    map|device|topics.<device>.insights.age   the work device's map, each device's record and topic summaries (§16)
 ```
 
 Everything under `notes/` (revisions and `att/` blobs alike), `notebooks/` and `epochs/` is
@@ -115,6 +118,7 @@ except these, which are replaced whole (atomically):
 | `settings.age` | devices that opted in | when a shared setting changes, or a device's merged copy is newer (§13.3) |
 | `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note changed (§12.4) |
 | `summaries/<device>.sealed` | that device only (signed by it) | when its listing changed (§12.5) |
+| `insights/*.<device>.insights.age` | that device only | when its insights change, or it re-seals or tombstones them (§16) |
 
 A file-sync service may keep two versions of one of them, written by two
 devices at once (iCloud Drive's conflict versions), or a whole other copy of
@@ -142,6 +146,8 @@ kept, and is the same whatever the order of copies merged:
 - **Published summaries** (§12): the version kept stays; they are hints and
   are rewritten by their writers. Of two copies of a per-device file, the later
   `version` is kept (§12.5).
+- **Insights** (§16): hints, one writer per file; of two copies of one file the later `written` is kept (then the
+  greater SHA-256), and only copies that open under the current key count.
 
 A writer that resolves such conflicts by itself never needs to ask the user
 to pick a version, and must not pick one by whole-vault or last-writer-wins
@@ -1601,7 +1607,7 @@ new item kinds and fields can be added without a version bump:
 
 `settings.age` (§13) carries its own versions (`$schemaVersion`,
 `$minReaderVersion`, §13.4), so new settings need no `features` entry and
-no format bump.
+no format bump. `insights/` (§16) carries its own `format` per file; it needs no `features` entry.
 
 A future change that older readers must not merge blindly (new merge
 semantics, not just a new kind of placed content) still needs a new op type
@@ -2874,6 +2880,7 @@ where the table says how they degrade.
 | published summaries (§12) | 64 MiB on disk, 256 MiB after gunzip; unknown fields skipped, not kept; any failure ignores the file, a bad entry only that entry | `PublishedSummaries.maxFileBytes` |
 | notebook records (§14) | 64 KiB on disk and after gunzip per record; 256 `add` paths and 4 096 `remove` ids per record, a path at most 1 200 Unicode scalars (else the record is refused); 10 000 records per vault (the rest ignored and reported) | `NotebookRecords.maxFileBytes`, `.maxAdds`, `.maxRemoves`, `.maxRecords` |
 | shared settings (§13) | 1 MiB on disk, 1 MiB after gunzip; 4 096 slots, 32 type blocks (else the file is refused); a malformed `$meta` entry or version, or an invalid value, is ignored alone | `SharedSettings.maxFileBytes`, `.maxSlots`, `.maxBlocks` |
+| note insights (§16) | a note file or device record 64 KiB, a topics file 1 MiB, a map 8 MiB, on disk and after gunzip; the counts and lengths of §16.7; any failure ignores the file | `InsightsFileKind.maxBytes`, `InsightsLimits` |
 
 Foundation's own parsers are not safe on hostile bytes on every platform:
 on Linux, `PropertyListSerialization` crashes on a binary plist holding a
@@ -3023,6 +3030,11 @@ It keeps four more, under the same derivation:
 - the **activity** file (purpose `activity`, magic `SMPA` ‖ `0x01`, one entry
   named `activity`, not keyed by `entryName`): the notes "Recognize All" read in
   the last seven days and the recent search queries, kept across launches;
+- the **insights cache** (purpose `insights-cache`, magic `SMPG` ‖ `0x01`, Application Support; the app, from Sempere
+  1.2): decoded insights files (§16), this device's placed or local vectors and any local map, sealed as above, so it
+  persists across launches and is unreadable without the vault key; a new epoch derives a new folder (vectors
+  recomputed, files read again). Insights terms join only the in-memory search index; nothing is donated to the
+  system's search;
 - the **saved selection** (purpose `selection`, Mac; no file): the library
   window's selection, which the system keeps in plaintext with its window
   state, names a notebook or tag only as `entryName("notebook|<canonical
@@ -4462,3 +4474,216 @@ Over sync (§15.15, in addition):
   stay in the set-aside store), and a received file it sets aside that opens under a key from before the finish (a
   `settings.age` it cannot use included) is deleted on the target where its list stands.
 - **Blob collection** (§8.1.6 rule 2) deletes nothing while a re-encryption is pending.
+
+## 16. Note insights
+
+A vault may hold `insights/`: derived data that makes notes findable and connectable (a summary, keywords and concepts
+per note, a vector per note, a map of the notes, notebook and tag summaries, and a record per device), made on the
+vault's own devices only (Apple's on-device language model and language framework in the reference implementation;
+never a server). Rationale: `docs/design/1.2-note-insights.md`. It carries its own `format` per file and needs no
+`features` entry (§7.5): readers that do not implement this section ignore the folder and never delete it (§1).
+
+Everything here is a **hint**: a file that does not decrypt, verify, parse or validate is ignored, never an error, and
+never makes a vault unhealthy. Insights describe only a note's current text; no insight is kept per version.
+
+### 16.1 Files
+
+```
+insights/<noteId>.<device>.insights.age    one note's summary, keywords and concepts (gen) and/or vector (emb)
+insights/map.<device>.insights.age         the work device's map: key, canaries, clusters, layout (§16.3)
+insights/device.<device>.insights.age      a device's record: OS, model, embedding revisions, canaries (§16.4)
+insights/topics.<device>.insights.age      a device's notebook and tag summaries (§16.5)
+```
+
+`<noteId>` is the lowercase UUID, `<device>` the writer's id in the vault (8 lowercase hex digits, §15.4). Any other
+name is not an insights file. Each file has **one writer**, the device it names, which replaces it whole (atomically);
+a device never writes a file named for another.
+
+Each file is an age file to the **current epoch's** vault identity `v_e` (one stanza, §4, §15.2) whose plaintext is
+the body framing of §4 with the label `insights` and the file's name in the tag:
+
+```
+Tag = HMAC-SHA256(key = tagKey, message = "sempere/1" ‖ 0x00 ‖ "insights" ‖ 0x00 ‖ <file name> ‖ 0x00 ‖ gzipBytes)
+```
+
+(`insights` is never a note id, §6.) The tag binds the name: a file renamed onto another note or device fails. Recovery
+without the app is that of §4: `age -d -i vault-keys.txt FILE.age | tail -c +38 | gunzip | jq .`
+
+**Read only under the current key.** A file that does not decrypt with the current `V_e` and verify under the current
+`tagKey` is ignored: it is not taken through the epoch chain (§15.7), is in no sealed set (§15.6) and in no write
+ledger (§15.14). A removed device, which holds only earlier keys, can therefore neither read later files nor plant
+one a reader shows.
+
+### 16.2 Note files
+
+```json
+{
+  "format": "sempere-insights/1",
+  "noteId": "6f1c2b9e-0a43-4f6e-9a51-2c8d7e3b4a10",
+  "device": "a1b2c3d4",
+  "written": 1764727900000,
+  "hashBasis": "text/1",
+  "lang": "en",
+  "gen": {
+    "hash": "9f2c4e1d7a0b3c58e6d1f4a2b7c90e13",
+    "model": "afm-ondevice", "os": "27.2", "prompt": 1,
+    "summary": "Free vibration of a damped spring-mass system ...",
+    "keywords": [ { "t": "damping ratio", "w": 0.82 } ],
+    "concepts": [ "critical damping", "logarithmic decrement" ],
+    "dropped": 1,
+    "slug": "Spring lab results"
+  },
+  "emb": {
+    "hash": "9f2c4e1d7a0b3c58e6d1f4a2b7c90e13",
+    "key": { "model": "nl-sentence", "lang": "en", "rev": 1, "input": 1 },
+    "dim": 512, "enc": "f16le-base64", "v": "..."
+  },
+  "titleOp": { "stamp": "17647279000000000-0000beef", "title": "2026-10-07 14.32 Spring lab results" }
+}
+```
+
+- `format`: the file's version; a reader skips a file whose `format` it does not implement. Members a reader does not
+  know are ignored (the only writer rewrites the file whole, so nothing needs keeping). The content's `device` (and
+  `noteId`) must be the file name's.
+- `written`: Unix milliseconds, 1 … 2^53 − 1, `max(now, previous + 1)` per file. **Order** of two copies of one file:
+  the greater `written`, then the greater SHA-256 of the file (lowercase hex). A copy whose `written` is more than 7
+  days ahead of the reader's clock is not ordered: it never wins over one that is.
+- `gen.hash`, `emb.hash`: the first 16 bytes (32 lowercase hex digits) of SHA-256 of the note's **insight text** after
+  NFKC, white-space runs collapsed to one space and the ends trimmed. `hashBasis` `text/1` defines the insight text:
+  `PageText.texts(of:)` of the note's pages (recognized handwriting, text boxes, PDF page text, LaTeX; §5.5, §8.2) joined
+  by blank lines, then each recording's transcript (§8.3.2, its segments' text joined by spaces) in recording order. A
+  recognition re-run that changes no text, an undo or a compaction keeps the hash.
+- `gen`: made by a generating device (`model`, `os`, `prompt` identify the generation; current for a reader when
+  `prompt` equals its own and the `os` major matches, else stale and recomputed). `summary` at most 2 000 characters
+  (writers keep it to 4 sentences and 600 characters), `keywords` at most 32 (`t` at most 120 characters, `w` finite,
+  0 … 1 000), `concepts` at most 16, `dropped` the summary sentences the writer's fact check dropped, `slug` a voice
+  note's suggested title (§16.8).
+- `emb`: the work device's vector of the note (§16.5), little-endian IEEE 754 binary16, base64 (`f16le-base64`),
+  `dim` values (1 … 4 096). `key`: model, language, pinned revision, and `input`, the writer's text-cleaning revision.
+- `titleOp`: the stamp (`<hlc>-<device>`, §5.1) of the revision in which this device set the note's title
+  automatically, and that title (§16.8).
+- `gen` and `emb` both absent: a **tombstone** (§16.6).
+
+A reader takes a note's `gen` from the best file: one whose `gen.hash` equals the note's current hash, then the later
+`written`, then the larger device id; without one, the latest `gen` of any hash, shown as stale. It takes `emb` only
+from the work device's file.
+
+### 16.3 The map file
+
+```json
+{ "format": "sempere-insights-map/1", "device": "a1b2c3d4", "written": 1764727900000,
+  "key": { "model": "nl-sentence", "lang": "en", "rev": 1, "input": 1 }, "dim": 512,
+  "canaries": { "set": 1, "enc": "f16le-base64", "v": ["...", "..."] },
+  "mean": "...",
+  "clusters": [ { "id": 7, "parent": 2, "level": 0, "label": ["damping ratio", "resonance", "vibration"],
+                  "centroid": "...", "members": ["6f1c2b9e-...", "..."] } ],
+  "layout": { "6f1c2b9e-...": [0.412, -0.118] },
+  "built": { "notes": 698, "hashes": "<SHA-256 hex over the sorted noteId:emb.hash lines>" } }
+```
+
+Written by the work device last, after the vectors it was built from. Readers use only vectors whose `key` equals the
+map's. `mean` and `centroid`s are binary16 base64 of `dim` values; clusters form two levels (`level` 0 note clusters,
+`parent` naming their level-1 cluster), cluster `0` is "Other" (clusters under 3 notes); `layout` positions are finite
+and within ±10⁶. A map without `key` is a tombstone: the device no longer holds the role.
+
+### 16.4 Device records
+
+```json
+{ "format": "sempere-insights-device/1", "device": "a1b2c3d4", "written": 1764727900000,
+  "os": "macOS 27.2", "platform": "mac",
+  "model": { "available": true, "reason": null, "identity": { "model": "afm-ondevice", "os": "27.2", "prompt": 1 } },
+  "supported": { "en": [1] },
+  "canaries": [ { "key": { "model": "nl-sentence", "lang": "en", "rev": 1, "input": 1 }, "dim": 512,
+                  "canaries": { "set": 1, "enc": "f16le-base64", "v": ["..."] } } ],
+  "compatibility": "compatible", "against": 1764727800000 }
+```
+
+Every device with Note Insights on writes its record (at most daily, and when its OS, model or supported revisions
+change): whether the generation model is available (`reason` when not: `disabled`, `notReady`, `deviceNotEligible`,
+`unsupported`) and its identity, the sentence-embedding revisions it supports per language, its canary vectors, and its
+result against the map whose `written` is `against` (`compatible`, `incompatible`, `vectorReader`, `workDevice`,
+`noMap`). A record is **recently seen** when written within 30 days by a device the current list has.
+
+### 16.5 The work device, the pin and canaries
+
+- **Work device.** The shared setting `insights.workDevice` (§13; `docs/settings-sync.md`) names the one device that
+  generates summaries, keywords and voice-note titles, embeds every note and builds the map. Any device where the
+  embedding (and, for summaries, the generation model) is available may hold it. Unset, the first capable device to
+  run insights claims it by writing its own id (§13.3's merge settles a race the same way everywhere). The role never
+  moves by itself: a work device that wrote nothing for 14 days is reported, and the user designates another. Other
+  devices generate only with `insights.compute` `auto`, and never embed into the vault.
+- **The pin.** `insights.embeddingRevision` (per language, `{"en": 1}`) names the sentence-embedding revision. Unset,
+  the first map build sets it to the lowest revision every recently seen device supports. It never moves by itself;
+  moving it (up or down) is a confirmed choice that lists the devices that do not support the new revision (they become
+  **vector readers**: they read the shared vectors and map, make none and place nothing). If the work device lacks the
+  new revision the role moves to one that has it. The work device then re-embeds every note and rebuilds; readers
+  never mix keys.
+- **Canaries.** Set 1 is these 8 sentences, embedded after the `input` cleaning:
+
+  1. The damping ratio decides whether a spring and mass system oscillates or settles slowly.
+  2. Photosynthesis turns light, water and carbon dioxide into sugar and oxygen.
+  3. The treaty ended the war and redrew the borders of several kingdoms.
+  4. A recursive function calls itself until it reaches a base case.
+  5. Knead the dough for ten minutes, then let it rise in a warm place.
+  6. Interest rates rose as the central bank tried to slow inflation.
+  7. The patient reported chest pain after climbing two flights of stairs.
+  8. Vectors in a basis span the space and are linearly independent.
+
+  A device that supports the pin is **compatible** with the map when model, language, revision and `input` match and
+  every canary's cosine with the map's is at least 0.999: it uses the shared vectors and places notes the work device
+  has not embedded yet locally (never in the vault). An **incompatible** one builds a local vector set and map, never
+  mixed with the shared one.
+
+### 16.6 Deletion, re-sealing and turning it off
+
+- **Tombstones.** A device "removes" its note file by replacing it with one without `gen` and `emb` at a later
+  `written`, so a device bridging two targets cannot bring the old one back: when the note is deleted (§5.2), and when
+  its `gen` is stale while another device's is current.
+- **Re-seal on a new epoch.** A device re-seals its own files under the current key from their content (opening them
+  with the earlier key the chain gives it); until then other devices ignore them.
+- **Below a re-encryption.** After a finished re-encryption (§15.8) a device deletes every insights file that opens
+  under a key from before it, locally and on each target where its own `vault.json` stands, so an older app that was
+  home (its pass skips `insights/`) leaves them only until a device implementing this section syncs.
+- **Removed devices.** Files named for a device that appears in an earlier list of the vault's chain and is absent from
+  the current one are ignored, and deleted locally and on each target where the device's own `vault.json` stands. A
+  device never deletes a file of a device it has not heard of (one that may just have joined).
+- **Off.** When `insights.enabled` is explicitly `false` at the top level of `settings.age`, every device deletes all
+  of `insights/` locally and on its targets and syncs none of it. Unset (no value) is not off: devices sync none of it
+  and delete nothing.
+- Nothing else deletes an insights file; unknown files in `insights/` are never deleted (§1).
+
+### 16.7 Sync, copies and the rest of the vault
+
+- **Sync** (docs/io.md): one listing of `insights/` per run, within the run's bounds (§9), each file fetched only within
+  its bound; unlocked runs only (a locked or staging run skips the folder). A copy is placed or uploaded only when it
+  opens under the current key; where both sides differ the later copy (§16.2) wins on both; a copy that does not open
+  never replaces one that does. A device uploads only in a run where its own `vault.json` stands on the target. A
+  provider's conflict versions of a file settle to the later copy.
+- **Copy-merge** (§1.3) copies a file the vault lacks, or holds with an earlier `written`, when it opens under the
+  current key; nothing is deleted.
+- **Backups and exports exclude `insights/`**: it is recomputable; a restored vault regenerates.
+- **Verify** lists the files as hints (open, stale, unreadable), never as problems.
+- **Read-only vaults** (§7.3) write and delete no insights file.
+
+| What | Limit |
+| --- | --- |
+| note file, device record | 64 KiB on disk (plus 4 KiB of framing) and after gunzip |
+| topics file | 1 MiB |
+| map file | 8 MiB |
+| vectors | 1 … 4 096 values; every value finite |
+| strings | a summary 2 000 characters, a term 120, a topic summary 4 000, a scope name 1 200, short identifiers 64 bytes |
+| counts | 32 keywords, 16 concepts, 32 canaries, 64 languages, 20 000 clusters, 200 000 notes in a map, 10 000 topics |
+
+### 16.8 Topics and voice-note titles
+
+- **Topics file** (`sempere-insights-topics/1`): `format`, `device`, `written`, and `topics`, a list of `{ "scope":
+  {"notebook": path} | {"tag": key}, "members": n, "membersHash": <SHA-256 hex over the sorted noteId:hash lines>,
+  "gen": {model, os, prompt, at, summary} }`. A scope has at least 3 summarized notes; `at` is Unix milliseconds. Scope
+  names stay inside the ciphertext. A summary is stale when the members' digest changed.
+- **Voice-note titles.** The work device sets a quick voice note's title (§11.3) from the shared format
+  `insights.voiceNoteTitle` (tokens `{date}` `YYYY-MM-DD` and `{time}` `HH.mm`, 24 hour, in the capture's time zone,
+  and `{slug}`, the model's 2-6 word title checked against the transcript and cut at 60 characters), in one delta, only
+  while the title is still the capture default: the title register has not been set since adoption. It records the
+  stamp of its revision in its note file's `titleOp`. A title set by another device after the adoption and before that
+  stamp (so not causally after it) lost to the automatic title only because the check was local: the work device writes
+  that title again. Ordinary notes are never retitled; without a usable slug the title stays.

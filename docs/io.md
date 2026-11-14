@@ -1325,6 +1325,18 @@ by the remote's version token and the local size and modification time, so a lar
 hashed or fetched again every run. Push-only runs upload and follow explained deletions on the
 server, never write locally.
 
+**Note insights** (`InsightsSync.swift`, format.md §16). `insights/` is synced after the notes, in unlocked runs only
+(a locked or staging run, or a joiner's, skips it), and only while `insights.enabled` is `true` in `settings.age`: an
+explicit `false` deletes every insights file here and on the target (where this device's `vault.json` stands), unset
+syncs and deletes nothing. One listing per run, counted against `SyncLimits`; each file is fetched within its kind's
+bound (a larger one is never fetched). A copy is placed or uploaded only when it opens under the current key; where
+both sides differ, the later `written` wins on both sides (then the greater SHA-256); a copy that does not open never
+replaces one that does, and is replaced by it. Uploads happen only where this device's `vault.json` stands on the
+target. Files that open under a key from before a finished re-encryption, and files named for a device the vault
+removed, are deleted locally and (where the list stands) on the target. A provider's conflict versions of a file settle
+to the later copy. Push-only runs upload and delete only. Copy-merge takes a later copy that opens; backups exclude the
+folder; `vault verify` lists the files as hints.
+
 **Per-device summaries** (`DeviceSummariesSync.swift`, format.md §12.5). `summaries/<device>.sealed`
 is written only by its device (`Vault.writeDevicePublishedSummaries`, `sempere vault summaries
 --device-file`), named by its id in the vault (`writerDevice`), with its device id and a `version`

@@ -92,6 +92,9 @@ your use (no telemetry).
   everything re-encrypted, from the same screen. Removing a device does not take
   back what it already read: old copies of the files (backups, a
   provider's version history) still open with the keys of the time.
+  Note insights are re-sealed under the new key by the device that made them. After everything is re-encrypted, a
+  device running Sempere 1.2 or later deletes insights left under the old key (an older app version does not know
+  them) at its next sync.
 
 ## Backups
 
@@ -122,9 +125,11 @@ Your storage provider, and anyone with a copy of the files, can see:
   and when it was created, the epoch number and the reason for each key change
   (a device removed, the home handed over, a takeover with the recovery kit, the
   kit replaced) (all in `vault.json`, which is not encrypted), and the
-  requests of devices waiting to join (`joins/`, also in the clear).
+  requests of devices waiting to join (`joins/`, also in the clear);
+- if Note Insights is on, an `insights/` folder with one small file per note for each device that processed it, one
+  map file and one record per device, so that the feature is on, which device processed which note, and when.
 
-They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
+They cannot see titles, text, ink, tags, notebooks, attachments, transcripts or summaries.
 
 While you add a device (Add Device on one, Join This Device on the other), anyone
 near enough to receive the two devices' Wi-Fi can see that Sempere is offering
@@ -161,8 +166,8 @@ sent back, with the device list, is encrypted to the new device's key
   system's data protection where the platform has it (on a Mac, which has none,
   the attachment cache is deleted when the app quits, and after a crash at the
   next launch, before any vault opens). The caches of note
-  listings, drawings and attachment previews are encrypted under keys derived
-  from the vault's key ([`format.md`](format.md) §10). Details: [`io.md`](io.md),
+  listings, drawings, attachment previews and note insights are encrypted under keys derived
+  from the vault's key ([`format.md`](format.md) §10, §16). Details: [`io.md`](io.md),
   [`quick-capture.md`](quick-capture.md).
 - **Exports.** A PDF, image or Markdown export is not encrypted. Where you send
   it is up to you.

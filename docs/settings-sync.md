@@ -250,6 +250,18 @@ which devices use it. Any key may also appear in a type block.
 Recognition and transcription still run on each device: one without the language model
 does what it can.
 
+Note Insights (`format.md` §16; `docs/design/1.2-note-insights.md`) reads its keys from the vault's file whatever
+a device's Sync Settings switch says: they describe the vault, not one device. The app's Settings ▸ Note Insights
+comes with Sempere 1.2's app; until then `sempere settings set` and `sempere insights` set them.
+
+| Key | Setting | Values | Default |
+| --- | --- | --- | --- |
+| `insights.enabled` | Note Insights (vault-wide; read at the top level only) | `true`, `false` (an explicit `false` deletes `insights/` on every device; unset is not off) | `false` |
+| `insights.compute` | Note Insights ▸ Also Compute on This Kind of Device (any type block) | `auto`, `never` | `never` |
+| `insights.workDevice` | Note Insights ▸ Work Device | a device id (8 hex digits), or `null` | `null` |
+| `insights.embeddingRevision` | Note Insights ▸ Embedding Model (the pinned revision per language) | an object of language to revision, `{"en": 1}` | `{}` (set by the first map build) |
+| `insights.voiceNoteTitle` | Note Insights ▸ Voice Note Titles | text with the tokens `{date}`, `{time}`, `{slug}` | `{date} {time} {slug}` |
+
 ### 5.2 Used by some device types
 
 | Key | Setting | Types | Values | Default |
