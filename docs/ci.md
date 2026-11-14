@@ -172,7 +172,7 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
 
   `SEMPERE_QUARANTINE_GROUP=ui|mac|watch` makes `test-quarantine` run one group (the default runs all three; each non-empty
   group runs, and the step fails if any did). Under xc-lock run it per group: `XC_KIND=mac` for `mac` (Catalyst jobs are
-  exclusive), `XC_KIND=build` for `watch` (a clone would be an iPhone), `XC_KIND=sim` for `ui`. A list may be empty; every
+  exclusive), `XC_KIND=build` for `watch` (a clone would be an iPhone), `XC_KIND=sim XC_NO_CLONE=1` for `ui`. A list may be empty; every
   expansion of one uses `${a[@]+"${a[@]}"}`, because macOS bash 3.2 with `set -u` fails on a bare `"${a[@]}"`.
 
   Deleted after review (their behavior is guarded elsewhere, so their lists are empty now: `ui_quarantine`, `swiftpm_quarantine`):
@@ -184,25 +184,19 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
     `testACutDownloadAmongConcurrentOnesResumes`. If a sister test flakes, the shared `cancelWhenBlobsAreInFlight` / `SegmentGate`
     harness is the cause and gets fixed there.
 
-  Kept in quarantine, with the reviewer's plan to make each deterministic (a follow-up PR; none is fixed yet). Until then none gates:
-  - `SempereAppTests/PseudoLanguageLayoutTests/screenFits(_:in:)` (`unit_quarantine_mac`): a sheet is still animating when the
-    layout is measured. It is the only per-PR layout check for localization (`pseudo` and `pseudo-mac` are release-only), so the
-    layouts are not gated meanwhile (docs/localization.md "Checking layouts"). Plan: in `LayoutHost.settle(sheet:)`
-    (`PseudoLanguageHarness.swift`) replace "3 equal snapshots 50 ms apart" with the end of the presentation as an event: present
-    with animations disabled (`Transaction(disablesAnimations: true)`); for a sheet, await the presenting controller's
-    `transitionCoordinator` completion (resume at once when it is nil), then require `isBeingPresented == false` and the presented
-    view's frame equal to `presentationController.frameOfPresentedViewInContainerView`; then `layoutIfNeeded()` and one snapshot.
-  - `SempereAppTests/LoadDeviceCheckTests/c20RecognitionWhileWritingSavesTheSummaryCacheRarely()` (`unit_quarantine_mac`): timing
-    under load. The only test of the `summaryCacheSaveInterval` throttle. Plan: inject the clock (`saveSummaryCacheIfDue` reads
-    `ContinuousClock.now`; give `AppModel` a `now` closure or a `Clock`, and make the recognition delay and editor debounce use it);
-    draw N strokes in a loop with no sleeps, wait on events (`editor.deltasWritten == n`, the `FakeRecognizer` call count),
-    advance a manual clock 0.45 s each, and assert the exact save count, `deltasWritten == N` and `calls == N`; drop the 6 s window
-    and the load-relative bounds.
-  - `SempereWatchTests/WatchModelTests/testRecordStopSealsIntoTheOutboxAndHandsItOver` (`unit_quarantine_watch`): the test host
-    crashed once. The only end-to-end happy-path test of the watch model. Plan: first pull the crash report from that run's
-    xcresult or DiagnosticReports and treat it as a bug; then remove the incidental timing: delete the
-    `Task.sleep(for: .milliseconds(300))` (`FakeWatchRecording.stop()` writes at least 8 frames whatever the elapsed time) and
-    replace the wall-clock `eventually("saved to go")` with an injected saved-to-ready timer, or await the model's saved-dismiss task.
+  Made deterministic and moved back into their suites (so `unit_quarantine_mac` and `unit_quarantine_watch` are empty now):
+  - `PseudoLanguageLayoutTests/screenFits(_:in:)` measured a sheet still animating. `LayoutHost.settle(sheet:)` now presents
+    with animations disabled (`Transaction(disablesAnimations: true)`), waits for the end of the presentation as an event (the
+    presenting controller's transition coordinator completing, `isBeingPresented == false`, the presented view at
+    `frameOfPresentedViewInContainerView`), then lays out once and takes one snapshot; the "3 equal snapshots" heuristic is gone.
+  - `LoadDeviceCheckTests/c20RecognitionWhileWritingSavesTheSummaryCacheRarely()` depended on wall-clock timing under load.
+    `AppModel.summaryCacheNow` is the clock `summaryCacheSaveInterval` is measured on, and `summaryCacheChecks` counts each
+    consideration of a save; the test advances a manual clock 0.45 s per stroke, waits per stroke on the autosave, the
+    recognition and the list update, and asserts exact counts.
+  - `WatchModelTests/testRecordStopSealsIntoTheOutboxAndHandsItOver` slept 300 ms before stopping and polled the wall clock for
+    Saved to go back to Ready. `FakeWatchRecording.stop()` writes at least 8 frames whatever the elapsed time, so the sleep is
+    gone; `WatchModel.savedWait` is the timer behind Saved, which the test fires by hand and then awaits `savedTask`. No crash
+    report of the one test-host crash survived (no DiagnosticReports, no watch xcresult bundle), so its cause is unknown.
 
   Adding one is a line in the runner's list and a line here with its reason; a reviewer then decides keep-or-delete.
 - Off CI, `scripts/app.sh` stops an `xcodebuild` that sits idle after the end of its whole run

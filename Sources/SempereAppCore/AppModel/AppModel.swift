@@ -475,8 +475,12 @@ public final class AppModelCore<Host: AppModelHost> {
     /// The shortest time between two summary-cache saves while notes arrive.
     public var summaryCacheSaveInterval = Duration.seconds(20)
     @ObservationIgnored var lastSummaryCacheSave: ContinuousClock.Instant?
+    /// The clock `summaryCacheSaveInterval` is measured on; tests drive it by hand (check c20).
+    @ObservationIgnored public var summaryCacheNow: @MainActor () -> ContinuousClock.Instant = { .now }
     /// Summary-cache saves started (each re-encodes and seals the whole index): check c20 counts them.
     @ObservationIgnored public var summaryCacheSaves = 0
+    /// Times a save was considered (`saveSummaryCacheIfDue`, saved or not): the event check c20 waits on.
+    @ObservationIgnored public var summaryCacheChecks = 0
     /// Test seam: awaited before an editor opened from the drawing cache
     /// takes the note it read in the background.
     @ObservationIgnored public var editorLoadHook: (@Sendable () async -> Void)?

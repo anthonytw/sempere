@@ -14,8 +14,7 @@
 #                             # Every UI test class is in exactly one device list below (scripts/check-ui-tests.sh, in
 #                             # local-ci's `help` step, fails on a class that is in none, or a name that is no class).
 #   scripts/app.sh pseudo     # UI-test layout check in the double-length, right-to-left and Spanish languages, iPad
-#                             # simulator (by hand; the in-process PseudoLanguageLayoutTests, in test-mac, is QUARANTINED
-#                             # (docs/ci.md): the gate does not check layouts until it is made deterministic)
+#                             # simulator (by hand; the in-process PseudoLanguageLayoutTests, in test-mac, is the per-PR check)
 #   scripts/app.sh pseudo-mac # the same as the Mac Catalyst app, at a narrow and a wide window (takes over the screen)
 #   scripts/app.sh test-mac   # every app suite on Mac Catalyst, ad-hoc signed and sandboxed
 #   scripts/app.sh test-mac-offline # the same with no network: signed with SempereOfflineTests.entitlements (no
@@ -35,7 +34,7 @@
 # watchOS runtime; under xc-lock they need XC_KIND=sim XC_NO_CLONE=1 (its clones are iPads and iPhones).
 # test-quarantine (xc-lock reads it as a plain build): run it per group, SEMPERE_QUARANTINE_GROUP=ui|mac|watch, with
 # XC_KIND=mac for mac (Catalyst jobs are exclusive: they share the app's container), XC_KIND=build for watch (a clone would be
-# an iPhone) and XC_KIND=sim for ui.
+# an iPhone) and XC_KIND=sim XC_NO_CLONE=1 for ui.
 #
 # The Mac UI tests (test-mac-ui, test-mac-smoke) are ad-hoc signed. Off CI they build without the
 # hardened runtime: on a Mac with a developer identity the ad-hoc UI-test runner otherwise refuses
@@ -161,9 +160,8 @@ ui_tooling=(ScreenshotTests DocsScreenshotTests)
 # The SwiftPM tests have their own list: swiftpm_quarantine in scripts/swiftpm-quarantine.sh (`scripts/ci-linux.sh docker quarantine`).
 # An empty list is fine; expand every list with ${a[@]+"${a[@]}"} (macOS bash 3.2 + set -u fails on a bare "${a[@]}").
 ui_quarantine=()
-unit_quarantine_mac=('SempereAppTests/PseudoLanguageLayoutTests/screenFits(_:in:)'
-                     'SempereAppTests/LoadDeviceCheckTests/c20RecognitionWhileWritingSavesTheSummaryCacheRarely()')
-unit_quarantine_watch=(SempereWatchTests/WatchModelTests/testRecordStopSealsIntoTheOutboxAndHandsItOver)
+unit_quarantine_mac=()
+unit_quarantine_watch=()
 # `-skip-testing:` / `-only-testing:` arguments for a list, one per line: quarantine_args skip|only PREFIX ENTRY...
 # (no namerefs: the system bash is 3.2). to_array NAME reads such lines from stdin into the array NAME.
 quarantine_args() { local kind=$1 prefix=$2 e; shift 2; for e in "$@"; do echo "-$kind-testing:$prefix$e"; done; }

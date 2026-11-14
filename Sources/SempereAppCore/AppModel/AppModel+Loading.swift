@@ -283,7 +283,8 @@ extension AppModelCore {
     /// `summaryCacheSaveInterval` ago (and not `force`): a pass that reads a
     /// few of many arriving notes does not re-encrypt the whole index each time.
     func saveSummaryCacheIfDue(force: Bool) {
-        let now = ContinuousClock.now
+        summaryCacheChecks += 1
+        let now = summaryCacheNow()
         if !force, let last = lastSummaryCacheSave, now - last < summaryCacheSaveInterval { return }
         guard summaryCache?.hasChanges == true else { return }
         lastSummaryCacheSave = now

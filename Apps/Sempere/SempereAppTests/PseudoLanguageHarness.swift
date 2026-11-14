@@ -356,7 +356,7 @@ final class LayoutHost {
 
     init(_ view: some View, size: CGSize, language: PseudoLanguage?) async throws {
         let scene = try await Self.scene()
-        let content = view.environment(\.timeZone, Self.utc)
+        let content = view.environment(\.timeZone, Self.utc).transaction { $0.disablesAnimations = true }
         controller = UIHostingController(rootView: language?.environment(content) ?? AnyView(content))
         window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
@@ -377,24 +377,43 @@ final class LayoutHost {
         throw CocoaError(.featureUnsupported)
     }
 
-    /// Lays out until the elements stop changing (three polls in a row, at least 300 ms, at most
-    /// `timeout`) and, with `sheet`, a sheet is up. Returns the elements.
-    func settle(sheet: Bool = false, timeout: Duration = .seconds(6)) async throws -> [LayoutElement] {
+    /// Waits for the end of the presentation as an event, then lays out once and returns the elements: with `sheet`, the
+    /// presented controller exists, its transition (if any) completed, it is no longer being presented and its view stands
+    /// at the presentation's final frame. Either way the accessibility tree must hold more than `minimumElements`. Animations are off (`init`), so nothing is
+    /// still moving when the one snapshot is taken. `timeout` only bounds a screen that never comes up.
+    func settle(sheet: Bool = false, minimumElements: Int = 0, timeout: Duration = .seconds(60)) async throws -> [LayoutElement] {
         let clock = ContinuousClock()
-        let start = clock.now
-        var last: [LayoutElement] = []
-        var stable = 0
-        while clock.now - start < timeout {
-            try await Task.sleep(for: .milliseconds(50))
+        let deadline = clock.now.advanced(by: timeout)
+        func pause() async throws {
+            guard clock.now < deadline else { throw CocoaError(.userCancelled) }
+            try await Task.sleep(for: .milliseconds(10))
             window.layoutIfNeeded()
-            controller.presentedViewController?.view.layoutIfNeeded()
-            let sheetUp = !sheet || (controller.presentedViewController.map { !$0.view.bounds.isEmpty } ?? false)
-            let now = LayoutCheck.elements(in: window, also: presentedViews)
-            stable = (now == last && sheetUp && !now.isEmpty) ? stable + 1 : 0
-            last = now
-            if stable >= 3, clock.now - start > .milliseconds(300) { break }
         }
-        return last
+        if sheet {
+            var presented = controller.presentedViewController
+            while presented == nil { try await pause(); presented = controller.presentedViewController }
+            guard let sheet = presented else { throw CocoaError(.featureUnsupported) }
+            if let coordinator = sheet.transitionCoordinator {
+                await withCheckedContinuation { done in coordinator.animate(alongsideTransition: nil) { _ in done.resume() } }
+            }
+            while sheet.isBeingPresented || sheet.isBeingDismissed || !Self.atFinalFrame(sheet) { try await pause() }
+        }
+        // SwiftUI builds its accessibility nodes after the layout, with no event to wait on: the screen is up once its tree
+        // holds more than `minimumElements` (the least a screen that came up shows).
+        while LayoutCheck.elements(in: window, also: presentedViews).count <= minimumElements { try await pause() }
+        window.layoutIfNeeded()
+        controller.presentedViewController?.view.layoutIfNeeded()
+        return LayoutCheck.elements(in: window, also: presentedViews)
+    }
+
+    /// Whether a presented controller's view is at the frame its presentation gives it.
+    private static func atFinalFrame(_ sheet: UIViewController) -> Bool {
+        guard let presentation = sheet.presentationController, let view = presentation.presentedView else {
+            return !sheet.view.bounds.isEmpty
+        }
+        let final = presentation.frameOfPresentedViewInContainerView
+        return !view.bounds.isEmpty && (final.isEmpty || (abs(view.frame.minX - final.minX) < 1 && abs(view.frame.minY - final.minY) < 1
+            && abs(view.frame.width - final.width) < 1 && abs(view.frame.height - final.height) < 1))
     }
 
     /// The views of the sheets up (on a Mac a sheet is not under the window's own views).

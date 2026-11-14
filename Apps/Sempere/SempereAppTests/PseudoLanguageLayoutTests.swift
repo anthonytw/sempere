@@ -112,7 +112,7 @@ struct PseudoLanguageLayoutTests {
         let start = clock.now
         let host = try await LayoutHost(view, size: size, language: language)
         defer { host.close() }
-        let elements = try await host.settle(sheet: sheet)
+        let elements = try await host.settle(sheet: sheet, minimumElements: minimum)
         let problems = LayoutCheck.problems(elements, bounds: host.window.bounds)
         let took = clock.now - start
         let ms = Int(Double(took.components.seconds) * 1000 + Double(took.components.attoseconds) / 1e15)

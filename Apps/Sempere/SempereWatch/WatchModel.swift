@@ -136,7 +136,7 @@ final class WatchModel {
     /// profile", so nothing is deleted on its account, and it is read again at activation.
     @ObservationIgnored private(set) var stateUnreadable = false
     @ObservationIgnored private var ticker: Task<Void, Never>?
-    @ObservationIgnored private var savedTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var savedTask: Task<Void, Never>?
     @ObservationIgnored private var requested = false
     /// The recording in progress was started from a surface (`startFromSurface`).
     @ObservationIgnored private var surfaceStart = false
@@ -144,6 +144,8 @@ final class WatchModel {
     @ObservationIgnored private var inForeground = true
     /// How long "Saved" stays up.
     @ObservationIgnored var savedDuration: Duration = .seconds(2)
+    /// How "Saved" waits out `savedDuration`; tests replace it with a timer they fire by hand.
+    @ObservationIgnored var savedWait: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
 
     init(environment: WatchEnvironment) throws {
         env = environment
@@ -257,8 +259,8 @@ final class WatchModel {
         updateUnsent()
         savedTask?.cancel()
         guard !stays else { return }
-        savedTask = Task { [weak self, savedDuration] in
-            try? await Task.sleep(for: savedDuration)
+        savedTask = Task { [weak self, savedDuration, savedWait] in
+            await savedWait(savedDuration)
             guard !Task.isCancelled else { return }
             self?.dismissSaved()
         }
