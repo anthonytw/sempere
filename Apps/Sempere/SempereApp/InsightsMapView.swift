@@ -103,9 +103,10 @@ struct InsightsMapCanvas: View {
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let fit = Self.fitScale(size)
+            let whole = Self.wholeMap(map, size)
+            let fit = whole.scale
             let s = scale ?? fit
-            let o = scale == nil ? Self.fitOrigin(size) : origin
+            let o = scale == nil ? whole.origin : origin
             // The notes by id, looked up only for the titles a frame draws (at most `MapDetail.titleLimit`).
             let notes = model.notesByID
             let selected = model.selectedNoteID.flatMap { map.index[$0] }
@@ -139,10 +140,18 @@ struct InsightsMapCanvas: View {
 
     // MARK: Geometry
 
-    static func fitScale(_ size: CGSize) -> CGFloat { max(1, min(size.width, size.height)) }
-    static func fitOrigin(_ size: CGSize) -> CGPoint {
-        let s = fitScale(size)
-        return CGPoint(x: (size.width - s) / 2, y: (size.height - s) / 2)
+    /// How the whole map fits `size`: every region's circle and label and every note inside it, with a margin
+    /// (`InsightsMapLayout.fit`).
+    static func wholeMap(_ map: InsightsMapLayout, _ size: CGSize) -> (scale: CGFloat, origin: CGPoint) {
+        let f = map.fit(width: Double(size.width), height: Double(size.height), labelWidth: labelWidth)
+        return (CGFloat(f.scale), CGPoint(x: f.originX, y: f.originY))
+    }
+
+    /// About how wide a region's label box is on screen (its first three words in bold caption or subheadline type, the
+    /// padding included, at most the 220-point measure the drawing allows).
+    static func labelWidth(_ r: InsightsMapLayout.Region) -> Double {
+        let text = r.label.prefix(3).joined(separator: ", ")
+        return min(220, Double(text.count) * (r.level == 1 ? 8.5 : 7.5)) + 12
     }
     static let maxZoom: CGFloat = 40
 
@@ -247,8 +256,11 @@ struct InsightsMapCanvas: View {
             let text = context.resolve(Text(verbatim: label).font(detail.regionLevel == 1 ? .subheadline.bold() : .caption.bold())
                 .foregroundStyle(.primary))
             let measured = text.measure(in: CGSize(width: 220, height: 60))
-            let box = CGRect(x: c.x - measured.width / 2 - 6, y: c.y - measured.height / 2 - 3, width: measured.width + 12,
+            var box = CGRect(x: c.x - measured.width / 2 - 6, y: c.y - measured.height / 2 - 3, width: measured.width + 12,
                              height: measured.height + 6)
+            // A label stays inside the view: a cluster near the edge keeps its name readable.
+            box.origin.x = min(max(box.minX, 4), max(4, size.width - box.width - 4))
+            box.origin.y = min(max(box.minY, 4), max(4, size.height - box.height - 4))
             guard !taken.contains(where: { $0.intersects(box) }) else { continue }
             taken.append(box)
             context.fill(Path(roundedRect: box, cornerRadius: 6), with: .style(.background.opacity(0.85)))
@@ -287,7 +299,7 @@ struct InsightsMapCanvas: View {
     /// A tap: at the groups' level it zooms into the group; closer in it opens the note whose dot it hits, else zooms
     /// into the cluster around it (`InsightsMapLayout.tapTarget`).
     private func tap(_ point: CGPoint, scale s: CGFloat, origin o: CGPoint, size: CGSize) {
-        let fit = Self.fitScale(size)
+        let fit = Self.wholeMap(map, size).scale
         let detail = onScreen(size: size, scale: s, origin: o, fit: fit).detail
         let target = map.tapTarget(x: Double((point.x - o.x) / s), y: Double((point.y - o.y) / s), pointsPerUnit: Double(s), detail: detail)
         switch target {

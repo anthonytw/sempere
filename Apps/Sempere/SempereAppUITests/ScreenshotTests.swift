@@ -71,15 +71,13 @@ final class ScreenshotTests: XCTestCase {
                  strokes: .init(kept: (CGVector(dx: 0.13, dy: 0.625), CGVector(dx: 0.52, dy: 0.625)),
                                 undone: (CGVector(dx: 0.13, dy: 0.655), CGVector(dx: 0.40, dy: 0.655)))),
             // Note Insights, the 1.2 headline: the note's sheet (summary, keywords, related notes). The map
-            // (`SEMPERE_DEMO_INSIGHTS=map`) is not shot for the store: the demo's twelve notes make one group, which says little.
+            // (`SEMPERE_DEMO_INSIGHTS=map`) is not shot for the store: with three groups of a few notes it reads as three circles in an empty sheet.
             Shot(name: "03-insights", environment: env(["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_INSIGHTS": "note"]),
                  waitFor: "noteInsights", timeout: 150, settle: 3),
-            Shot(name: "04-map", environment: env(["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_INSIGHTS": "map"]),
-                 waitFor: "insightsMap.canvas", timeout: 150, settle: 3, taps: ["Zoom Out"]),
-            Shot(name: "05-notes", environment: env(["SEMPERE_DEMO_SIDEBAR": "all"]), waitFor: "New Note"),
-            Shot(name: "06-tags", environment: env(["SEMPERE_DEMO_SIDEBAR": "tag:lecture"]), waitFor: "#lecture"),
-            Shot(name: "07-library", environment: env([:]), waitFor: "sidebar-notebook-School"),
-            Shot(name: "08-unlock", environment: env(["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
+            Shot(name: "04-notes", environment: env(["SEMPERE_DEMO_SIDEBAR": "all"]), waitFor: "New Note"),
+            Shot(name: "05-tags", environment: env(["SEMPERE_DEMO_SIDEBAR": "tag:lecture"]), waitFor: "#lecture"),
+            Shot(name: "06-library", environment: env([:]), waitFor: "sidebar-notebook-School"),
+            Shot(name: "07-unlock", environment: env(["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
         ]
     }
 
@@ -97,23 +95,25 @@ final class ScreenshotTests: XCTestCase {
             return e
         }
         return [
-            // The Mac's Undo and Redo are in its Edit menu, which a window shot does not show: its strokes are not drawn.
+            // On the Mac the toolbar has Undo and Redo too, so its strokes are drawn as well (short ones in a free place right of the text; the edited note then heads the note list under the day of the run).
             Shot(name: "01-write", environment: env(all, ["SEMPERE_DEMO_NOTE": "respiration"]), waitFor: respiration,
-                 strokes: isMac ? nil : .init(kept: (CGVector(dx: 0.14, dy: 0.82), CGVector(dx: 0.52, dy: 0.82)),
-                                              undone: (CGVector(dx: 0.14, dy: 0.85), CGVector(dx: 0.40, dy: 0.85)))),
+                 strokes: isMac ? .init(kept: (CGVector(dx: 0.60, dy: 0.895), CGVector(dx: 0.90, dy: 0.895)),
+                                        undone: (CGVector(dx: 0.60, dy: 0.912), CGVector(dx: 0.82, dy: 0.912)))
+                     : .init(kept: (CGVector(dx: 0.14, dy: 0.82), CGVector(dx: 0.52, dy: 0.82)),
+                             undone: (CGVector(dx: 0.14, dy: 0.85), CGVector(dx: 0.40, dy: 0.85)))),
             Shot(name: "02-sketch", environment: env(all, ["SEMPERE_DEMO_NOTE": "atlas"]), waitFor: atlas,
-                 strokes: isMac ? nil : .init(kept: (CGVector(dx: 0.14, dy: 0.82), CGVector(dx: 0.52, dy: 0.82)),
-                                              undone: (CGVector(dx: 0.14, dy: 0.85), CGVector(dx: 0.40, dy: 0.85)))),
+                 strokes: isMac ? .init(kept: (CGVector(dx: 0.60, dy: 0.895), CGVector(dx: 0.90, dy: 0.895)),
+                                        undone: (CGVector(dx: 0.60, dy: 0.912), CGVector(dx: 0.82, dy: 0.912)))
+                     : .init(kept: (CGVector(dx: 0.14, dy: 0.82), CGVector(dx: 0.52, dy: 0.82)),
+                             undone: (CGVector(dx: 0.14, dy: 0.85), CGVector(dx: 0.40, dy: 0.85)))),
             Shot(name: "03-insights", environment: env(all, ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_INSIGHTS": "note"]),
                  waitFor: "noteInsights", timeout: 150, settle: 3),
-            Shot(name: "04-map", environment: env(all, ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_INSIGHTS": "map"]),
-                 waitFor: "insightsMap.canvas", timeout: 150, settle: 3, taps: ["Zoom Out"]),
-            Shot(name: "05-notes", environment: env("doubleColumn", ["SEMPERE_DEMO_NOTE": "respiration"]), waitFor: respiration),
-            Shot(name: "06-tags", environment: env("all", ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_SIDEBAR": "tag:lecture"]),
+            Shot(name: "04-notes", environment: env("doubleColumn", ["SEMPERE_DEMO_NOTE": "respiration"]), waitFor: respiration),
+            Shot(name: "05-tags", environment: env("all", ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_SIDEBAR": "tag:lecture"]),
                  waitFor: "#lecture"),
-            Shot(name: "07-paper", environment: env(all, ["SEMPERE_DEMO_NOTE": "atlas", "SEMPERE_DEMO_PAPER_PICKER": "1"]),
+            Shot(name: "06-paper", environment: env(all, ["SEMPERE_DEMO_NOTE": "atlas", "SEMPERE_DEMO_PAPER_PICKER": "1"]),
                  waitFor: "Apply to This Page"),
-            Shot(name: "08-unlock", environment: env("all", ["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
+            Shot(name: "07-unlock", environment: env("all", ["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
         ]
     }
 
@@ -144,7 +144,11 @@ final class ScreenshotTests: XCTestCase {
         func stroke(_ line: (CGVector, CGVector)) {
             let from = window.coordinate(withNormalizedOffset: line.0)
             let to = window.coordinate(withNormalizedOffset: line.1)
+            #if targetEnvironment(macCatalyst)
+            from.click(forDuration: 0.1, thenDragTo: to, withVelocity: 300, thenHoldForDuration: 0.1)
+            #else
             from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
+            #endif
             Thread.sleep(forTimeInterval: 1.5)
         }
         let undo = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'undoButton' OR label BEGINSWITH 'Undo'")).firstMatch
@@ -153,7 +157,7 @@ final class ScreenshotTests: XCTestCase {
         func phase(_ name: String) {
             guard diag else { return }
             let value = app.descendants(matching: .any).matching(identifier: "pageCanvas").firstMatch.value as? String ?? "-"
-            print("SHOTDEBUG diag \(shot.name) \(name) \(value.split(separator: ";").first { $0.hasPrefix("strokes=") } ?? "no strokes=")")
+            print("SHOTDEBUG diag \(shot.name) \(name) undoEnabled=\(undo.isEnabled) redoEnabled=\(redo.isEnabled) \(value.split(separator: ";").first { $0.hasPrefix("strokes=") } ?? "no strokes=")")
             if let directory = ProcessInfo.processInfo.environment["SEMPERE_SHOTS_DIR"].map({ URL(fileURLWithPath: $0, isDirectory: true) }) {
                 try? XCUIScreen.main.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("diag-\(shot.name)-\(name).png"))
             }
@@ -165,7 +169,13 @@ final class ScreenshotTests: XCTestCase {
         phase("2-stroke2")
         let ready = undo.waitForExistence(timeout: 10) && waitUntil(10) { undo.isEnabled }
         XCTAssertTrue(ready, "\(shot.name): Undo never became enabled after the strokes")
-        if ready { undo.tap() }
+        if ready {
+            #if targetEnvironment(macCatalyst)
+            undo.click()
+            #else
+            undo.tap()
+            #endif
+        }
         Thread.sleep(forTimeInterval: 2)
         phase("3-undo2s")
         let redoReady = waitUntil(10) { redo.exists && redo.isEnabled }
@@ -177,6 +187,19 @@ final class ScreenshotTests: XCTestCase {
         // page missing (a vertical slice of the drawing gone, now the left part, a moment later the right: the stroke count
         // is right all the time, `SEMPERE_SHOTS_DIAG`). The whole page has the most ink of them, so the shot is the one
         // with the most ink of a dozen taken over the next 20 s.
+        // The Mac's shot is the window's own (`capture`), taken after the page settled: no screen frames (a banner could be in them).
+        if Self.isMac {
+            // The toolbar on the Mac showed Undo greyed after Undo until the pointer moved over it.
+            Thread.sleep(forTimeInterval: 3)
+            undo.hover()
+            Thread.sleep(forTimeInterval: 1)
+            redo.hover()
+            Thread.sleep(forTimeInterval: 2)
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.99)).hover()
+            Thread.sleep(forTimeInterval: 3)
+            phase("4-final")
+            return nil
+        }
         var frames: [(XCUIScreenshot, Int)] = []
         for _ in 0..<14 {
             let now = XCUIScreen.main.screenshot()
@@ -281,13 +304,24 @@ final class ScreenshotTests: XCTestCase {
         var whole: XCUIScreenshot?
         if let strokes = shot.strokes, found { whole = drawAndUndo(strokes, shot: shot, in: app) }
         let screenshot = whole ?? (Self.isMac ? app.windows.firstMatch.screenshot() : XCUIScreen.main.screenshot())
-        let attachment = XCTAttachment(screenshot: screenshot)
+        var png = screenshot.pngRepresentation
+        // The Mac's window screenshot of a page that was just drawn on showed the toolbar and the canvas as they were before
+        // the strokes (Undo greyed, no stroke) though the buttons were enabled: the window's part of a screen capture is true.
+        if Self.isMac, shot.strokes != nil, found {
+            let window = app.windows.firstMatch.frame
+            let screen = XCUIScreen.main.screenshot().image
+            let scale = screen.scale
+            if let cg = screen.cgImage,
+               let part = cg.cropping(to: CGRect(x: window.minX * scale, y: window.minY * scale, width: window.width * scale, height: window.height * scale)),
+               let data = UIImage(cgImage: part).pngData() { png = data }
+        }
+        let attachment = XCTAttachment(uniformTypeIdentifier: "public.png", name: shot.name, payload: png)
         attachment.name = shot.name
         attachment.lifetime = .keepAlways
         add(attachment)
         if let directory {
             do {
-                try screenshot.pngRepresentation.write(to: directory.appendingPathComponent("\(shot.name).png"))
+                try png.write(to: directory.appendingPathComponent("\(shot.name).png"))
             } catch {
                 // The Mac runner is sandboxed; its shots are read from the result bundle's attachments.
                 if !Self.isMac { XCTFail("\(shot.name): could not write the PNG: \(error)") }

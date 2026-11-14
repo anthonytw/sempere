@@ -52,11 +52,10 @@ has a title bar and the Mac layout differs from the iPad's (three columns side b
 | `01-write` | A lecture note on ruled paper with a margin: headings, a diagram, a highlight; the system tool palette. Full width. Undo and Redo in the bar are both enabled: two finger strokes were drawn under the last line and Undo tapped once, so one underline is left. |
 | `02-sketch` | A design sketch on cream dot paper. Full width. Same Undo and Redo state, one underline under the last bullet. |
 | `03-insights` | Note Insights (1.2): the lecture note's Note Insights sheet over the note: a summary, keywords, three related notes with their shared terms, and the note's group. |
-| `04-map` | The Map of Related Notes: three colored groups (biology and physics, a team's app project, a trip), each labeled. |
-| `05-notes` | The note list (all twelve notes: dates, pages, notebook, tag chips) next to the open note. |
-| `06-tags` | Sidebar (notebooks, tags) with the `lecture` tag selected, its notes, the open note. |
-| `07-paper` | The paper picker over the dot-paper note. |
-| `08-unlock` | The key / unlock screen of a locked vault (passphrase or pasted key). |
+| `04-notes` | The note list (all twelve notes: dates, pages, notebook, tag chips) next to the open note. |
+| `05-tags` | Sidebar (notebooks, tags) with the `lecture` tag selected, its notes, the open note. |
+| `06-paper` | The paper picker over the dot-paper note. |
+| `07-unlock` | The key / unlock screen of a locked vault (passphrase or pasted key). |
 
 On the Mac the full-width shots show all three columns instead, and `01-write` and `02-sketch` draw no strokes (Undo and
 Redo are in its Edit menu, which a window shot does not show). Captions are not drawn into the images;
@@ -72,15 +71,15 @@ and the next screenshot is whole), so the shot is the one with the most ink of f
 gives the demo's notes made-up recognized text (`DemoVault.insightsTexts`, `DemoInsightsText.swift`: three groups with words
 of their own, the science notes tied by energy, electrons and light), turns Note Insights on with the package's fake
 providers (a 512-dimension hashed embedder, fewer collisions than the default's 64) and runs the passes with them, so the
-sheet and the map show real stored insights in the real format. The fake summary is the text's first sentences.
+sheet shows real stored insights in the real format. The fake summary is the text's first sentences. The map (`map`) opens the same way and fits all its circles and labels in the sheet, but it is not a store shot: three groups of a few notes read as three circles in an empty sheet.
 Set `TEST_RUNNER_SEMPERE_SHOTS_ONLY=03-insights,01-write` to take only some shots.
 
 ### iPhone shots
 
 The iPhone is a stack, so each shot is one screen (`ScreenshotTests.phoneShots`): `01-write` and
 `02-sketch` the note view (reading mode, the "Annotate" pencil in the bar; the phone draws the two strokes and taps Undo
-in the compact palette, which has its own Undo and Redo), `03-insights` the Note Insights sheet, `04-map` the map, `05-notes` the note list,
-`06-tags` the list for the `lecture` tag, `07-library` the vault's notebooks and tags, `08-unlock` the
+in the compact palette, which has its own Undo and Redo), `03-insights` the Note Insights sheet, `04-notes` the note list,
+`05-tags` the list for the `lecture` tag, `06-library` the vault's notebooks and tags, `07-unlock` the
 unlock sheet. There is no paper-picker shot on the phone.
 
 ### Website user-guide shots

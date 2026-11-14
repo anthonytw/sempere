@@ -238,6 +238,38 @@ public struct InsightsMapLayout: Sendable, Equatable {
         regions.filter { $0.level == 0 && $0.parent == group }
     }
 
+    /// How the whole map fits a view of `width` x `height` points: the points per unit square and the origin of the unit
+    /// square, such that every region's circle and every region's label box (about `labelWidth` points wide, `labelHeight`
+    /// high, centered on the region and never narrower than `minimumLabel`) and every note lies inside the view with
+    /// `margin` points to spare, the whole centered. A label is a fixed size on screen, a circle scales with the map, so the
+    /// scale is found by bisection (the extent only grows with it). Never below 1 point per unit.
+    public func fit(width: Double, height: Double, margin: Double = 16, labelWidth: (Region) -> Double,
+                    labelHeight: Double = 24) -> (scale: Double, originX: Double, originY: Double) {
+        let shown = regions.filter { !$0.isOther }
+        func extent(_ s: Double) -> (minX: Double, maxX: Double, minY: Double, maxY: Double)? {
+            var minX = Double.infinity, maxX = -Double.infinity, minY = Double.infinity, maxY = -Double.infinity
+            func take(_ x0: Double, _ x1: Double, _ y0: Double, _ y1: Double) {
+                minX = min(minX, x0); maxX = max(maxX, x1); minY = min(minY, y0); maxY = max(maxY, y1)
+            }
+            for r in shown {
+                take((r.x - r.radius) * s, (r.x + r.radius) * s, (r.y - r.radius) * s, (r.y + r.radius) * s)
+                let half = labelWidth(r) / 2
+                take(r.x * s - half, r.x * s + half, r.y * s - labelHeight / 2, r.y * s + labelHeight / 2)
+            }
+            for n in nodes { take(n.x * s, n.x * s, n.y * s, n.y * s) }
+            return minX.isFinite ? (minX, maxX, minY, maxY) : nil
+        }
+        let availW = max(width - 2 * margin, 1), availH = max(height - 2 * margin, 1)
+        var lo = 1.0, hi = max(width, height, 1) * 4
+        guard extent(lo) != nil else { let side = max(1, min(width, height)); return (side, (width - side) / 2, (height - side) / 2) }
+        for _ in 0..<50 {
+            let mid = (lo + hi) / 2
+            if let e = extent(mid), e.maxX - e.minX <= availW, e.maxY - e.minY <= availH { lo = mid } else { hi = mid }
+        }
+        let e = extent(lo)!
+        return (lo, (width - (e.maxX - e.minX)) / 2 - e.minX, (height - (e.maxY - e.minY)) / 2 - e.minY)
+    }
+
     /// The points per unit that fit `region` in a view whose shorter side is `side` points (never below the whole map's
     /// fit, never above `maxScale`).
     public static func pointsPerUnit(toFit region: Region, side: Double, maxScale: Double) -> Double {

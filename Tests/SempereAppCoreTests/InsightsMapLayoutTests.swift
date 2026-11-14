@@ -51,6 +51,36 @@ struct InsightsMapLayoutTests {
         #expect(map.region(of: placed, level: 0)?.id == 1)
     }
 
+    /// The initial fit keeps every circle, every label box and every note inside the view, also in a narrow sheet (the 1.2
+    /// screenshots showed the right cluster's circle and label running past the sheet's edge).
+    @Test(arguments: [(520.0, 600.0), (390.0, 700.0), (300.0, 420.0), (900.0, 300.0)])
+    func theWholeMapFitsEveryCircleAndLabelInsideTheView(width: Double, height: Double) {
+        let map = InsightsMapLayout(view: Self.view(), edges: nil)
+        let labelHeight = 24.0, margin = 16.0
+        func labelWidth(_ r: InsightsMapLayout.Region) -> Double { 40 + 9 * Double(r.label.joined(separator: ", ").count) }
+        let f = map.fit(width: width, height: height, margin: margin, labelWidth: labelWidth, labelHeight: labelHeight)
+        #expect(f.scale >= 1)
+        let view = CGRect(x: 0, y: 0, width: width, height: height)
+        for r in map.regions where !r.isOther {
+            let cx = f.originX + r.x * f.scale, cy = f.originY + r.y * f.scale, rad = r.radius * f.scale
+            let circle = CGRect(x: cx - rad, y: cy - rad, width: 2 * rad, height: 2 * rad)
+            let label = CGRect(x: cx - labelWidth(r) / 2, y: cy - labelHeight / 2, width: labelWidth(r), height: labelHeight)
+            #expect(view.contains(circle), "circle of region \(r.id) in \(width) x \(height)")
+            #expect(view.contains(label), "label of region \(r.id) in \(width) x \(height)")
+        }
+        for n in map.nodes {
+            #expect(view.contains(CGPoint(x: f.originX + n.x * f.scale, y: f.originY + n.y * f.scale)))
+        }
+        // It also fills the view: a bigger scale would no longer fit one of the two directions.
+        let bigger = map.fit(width: width, height: height, margin: margin, labelWidth: labelWidth, labelHeight: labelHeight).scale * 1.05
+        var minX = Double.infinity, maxX = -Double.infinity, minY = Double.infinity, maxY = -Double.infinity
+        for r in map.regions where !r.isOther {
+            minX = min(minX, r.x * bigger - max(r.radius * bigger, labelWidth(r) / 2)); maxX = max(maxX, r.x * bigger + max(r.radius * bigger, labelWidth(r) / 2))
+            minY = min(minY, r.y * bigger - r.radius * bigger); maxY = max(maxY, r.y * bigger + r.radius * bigger)
+        }
+        #expect(maxX - minX > width - 2 * margin || maxY - minY > height - 2 * margin, "a 5 % larger map would not fit")
+    }
+
     @Test func aLocalMapHasNoDashedNotesButSaysSo() {
         var v = Self.view(basis: "local")
         for i in v.nodes.indices { v.nodes[i].placed = true }
