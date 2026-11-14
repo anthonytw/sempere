@@ -3602,6 +3602,19 @@
         }
       }
     },
+    "A notebook or tag gets a summary once it holds at least 3 summarized notes." : {
+      "comment" : "Settings ▸ Note Insights ▸ Topic Summaries, empty",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una libreta o etiqueta obtiene un resumen cuando tiene al menos 3 notas resumidas."
+          }
+        }
+      }
+    },
     "A one-time copy: the folder is never written, and the copy on this device is the only one." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -3687,6 +3700,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Una instantánea para recuperar la bóveda. No se comparte; los otros dispositivos no se sincronizan con ella. Haz copias en Ajustes ▸ Copias de seguridad."
+          }
+        }
+      }
+    },
+    "A summary needs at least 3 summarized notes." : {
+      "comment" : "Topic summary of a notebook or tag",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un resumen necesita al menos 3 notas resumidas."
           }
         }
       }
@@ -4773,6 +4799,19 @@
         }
       }
     },
+    "Apple Intelligence is not available on this device." : {
+      "comment" : "Topic summary: Regenerate on a device without the model",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence no está disponible en este dispositivo."
+          }
+        }
+      }
+    },
     "Apple Intelligence is still getting ready on this device." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -5806,6 +5845,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Comprobar ahora"
+          }
+        }
+      }
+    },
+    "Check Sources" : {
+      "comment" : "Topic summary: the notes it was made from",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobar las fuentes"
           }
         }
       }
@@ -7511,6 +7563,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Con páginas oscuras, el papel se ve oscuro y la tinta, el texto y las ecuaciones con la luminosidad invertida, conservando sus colores; las imágenes, los PDF y los vídeos se ven como son. Las notas se guardan y se exportan como en papel claro."
+          }
+        }
+      }
+    },
+    "Dashed notes are placed on this device; they join the shared map at its next rebuild." : {
+      "comment" : "Legend of the map of related notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notas con borde discontinuo se colocan en este dispositivo; se unen al mapa compartido en su próxima reconstrucción."
           }
         }
       }
@@ -10065,6 +10130,19 @@
         }
       }
     },
+    "Generated" : {
+      "comment" : "Badge: the text was written by the on-device model",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generado"
+          }
+        }
+      }
+    },
     "Generated on %@, %@" : {
       "comment" : "Note Insights: device name, date",
       "extractionState" : "manual",
@@ -10151,6 +10229,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cuadriculado"
+          }
+        }
+      }
+    },
+    "Group: %@; notes: %lld" : {
+      "comment" : "VoiceOver: a group of the map of related notes (its label words, its number of notes; a count after a colon) [not-plural]",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grupo: %@; notas: %lld"
           }
         }
       }
@@ -11550,6 +11641,19 @@
         }
       }
     },
+    "Its notes changed since this was made; it is made again within a day." : {
+      "comment" : "Topic summary: stale",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sus notas cambiaron desde que se creó; se vuelve a crear en menos de un día."
+          }
+        }
+      }
+    },
     "Join This Device" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -12642,6 +12746,19 @@
         }
       }
     },
+    "Make this summary again now on this device" : {
+      "comment" : "Tooltip of Regenerate",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a crear este resumen ahora en este dispositivo"
+          }
+        }
+      }
+    },
     "Make this version the note's current one" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -12668,6 +12785,19 @@
         }
       }
     },
+    "Making the Summary…" : {
+      "comment" : "Topic summary: Regenerate in progress",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creando el resumen…"
+          }
+        }
+      }
+    },
     "Manages devices" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -12689,6 +12819,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mapa"
+          }
+        }
+      }
+    },
+    "Map of Related Notes" : {
+      "comment" : "Title of Note Insights' map view, and the menu item that opens it",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mapa de notas relacionadas"
+          }
+        }
+      }
+    },
+    "Map of related notes" : {
+      "comment" : "VoiceOver label of the drawn map",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mapa de notas relacionadas"
           }
         }
       }
@@ -13520,6 +13676,19 @@
         }
       }
     },
+    "No Map Yet" : {
+      "comment" : "Empty map of related notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay mapa"
+          }
+        }
+      }
+    },
     "No Note Selected" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -13843,6 +14012,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta nota no tiene resumen: solo sus palabras clave."
+          }
+        }
+      }
+    },
+    "No summary yet" : {
+      "comment" : "Topic summaries list: a scope without a summary",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay resumen"
+          }
+        }
+      }
+    },
+    "No summary yet: the work device makes one in the background, at most once a day." : {
+      "comment" : "Topic summary of a notebook or tag",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay resumen: el dispositivo de trabajo crea uno en segundo plano, como mucho una vez al día."
           }
         }
       }
@@ -18163,6 +18358,19 @@
         }
       }
     },
+    "Regenerate" : {
+      "comment" : "Button: make a notebook's or tag's summary again now",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a generar"
+          }
+        }
+      }
+    },
     "Related Notes" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -20532,6 +20740,19 @@
         }
       }
     },
+    "Show" : {
+      "comment" : "Label of the picker between the map and the list of related notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar"
+          }
+        }
+      }
+    },
     "Show Here" : {
       "comment" : "Button: show the note's canvas in this window",
       "extractionState" : "manual",
@@ -20699,6 +20920,19 @@
         }
       }
     },
+    "Show the Whole Map" : {
+      "comment" : "VoiceOver label of the map's fit button",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar todo el mapa"
+          }
+        }
+      }
+    },
     "Show the existing notebooks" : {
       "comment" : "Help tag of the notebook field's chevron",
       "extractionState" : "manual",
@@ -20747,6 +20981,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar los subcuadernos"
+          }
+        }
+      }
+    },
+    "Show the whole map" : {
+      "comment" : "Tooltip of the map's fit button",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar todo el mapa"
           }
         }
       }
@@ -21855,6 +22102,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Área de resumen"
+          }
+        }
+      }
+    },
+    "Summary out of date" : {
+      "comment" : "Topic summaries list: the members changed since the summary was made",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumen desactualizado"
           }
         }
       }
@@ -23736,6 +23996,19 @@
         }
       }
     },
+    "The map appears once the work device has built it." : {
+      "comment" : "Empty map of related notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El mapa aparece cuando el dispositivo de trabajo lo ha creado."
+          }
+        }
+      }
+    },
     "The new device shows six words. Compare them with the words of its request below." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -23757,6 +24030,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Luego el dispositivo nuevo muestra seis palabras: escríbelas aquí."
+          }
+        }
+      }
+    },
+    "The new summary named things its notes do not support, so it was not kept." : {
+      "comment" : "Topic summary: Regenerate made nothing that passed the fact check",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El nuevo resumen nombraba cosas que sus notas no respaldan, así que no se guardó."
           }
         }
       }
@@ -24229,6 +24515,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El resumen aparece cuando un dispositivo con Apple Intelligence haya procesado esta nota."
+          }
+        }
+      }
+    },
+    "The summary could not be made: %@" : {
+      "comment" : "%@ is the reason",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo crear el resumen: %@"
+          }
+        }
+      }
+    },
+    "The summary is made from these notes' summaries. Check what it says against them." : {
+      "comment" : "Topic summary: footer of its sources",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El resumen se crea a partir de los resúmenes de estas notas. Compara lo que dice con ellas."
           }
         }
       }
@@ -25053,6 +25365,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo"
+          }
+        }
+      }
+    },
+    "This device builds its own map: its numbers differ from the work device's. Groups and places may differ from other devices." : {
+      "comment" : "Banner of the map of related notes on a device whose embeddings differ",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo crea su propio mapa: sus números difieren de los del dispositivo de trabajo. Los grupos y las posiciones pueden diferir de los de otros dispositivos."
           }
         }
       }
@@ -26500,6 +26825,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Margen superior"
+          }
+        }
+      }
+    },
+    "Topic Summaries" : {
+      "comment" : "Settings ▸ Note Insights: the notebooks' and tags' summaries",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resúmenes de temas"
           }
         }
       }
@@ -28517,6 +28855,32 @@
     },
     "Zoom Out" : {
       "comment" : "View menu (zoom, not history thinning)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reducir"
+          }
+        }
+      }
+    },
+    "Zoom in" : {
+      "comment" : "Tooltip of the map's zoom-in button",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ampliar"
+          }
+        }
+      }
+    },
+    "Zoom out" : {
+      "comment" : "Tooltip of the map's zoom-out button",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {

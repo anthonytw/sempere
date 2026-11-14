@@ -353,7 +353,7 @@ public struct InsightsUpdater: Sendable {
         }
         if o.topics, !o.embeddingsOnly, let model = usable, settings.workDevice == me || settings.computeAuto {
             report.topics = try await updateTopics(store: store, snapshot: snapshot, inputs: inputs, model: model, merger: merger,
-                                                   me: me, o: o, limit: o.limit.map { max(0, $0 - generations) })
+                                                   me: me, o: o, limit: o.limit.map { max(0, $0 - generations) }, report: &report)
         }
         return report
     }
@@ -517,30 +517,107 @@ public struct InsightsUpdater: Sendable {
         a.os == b.os && a.platform == b.platform && a.model == b.model && a.supported == b.supported
     }
 
+    /// The topic summaries due on this device (design §4 step 9, D8): each scope at most once a day, never one backed off
+    /// in the failure memo (the model threw or nothing survived the fact check), stopping between scopes when the task
+    /// is cancelled. Each made scope is written at once (`updateOwnTopics`), so a cancelled run keeps what it made.
+    /// Returns the scopes written (a dry run: the scopes due).
     func updateTopics(store: InsightsStore, snapshot: InsightsSnapshot, inputs: [InsightsNoteInput], model: any ModelProvider,
-                      merger: TypoMerger, me: DeviceID, o: InsightsUpdateOptions, limit: Int?) async throws -> [String] {
+                      merger: TypoMerger, me: DeviceID, o: InsightsUpdateOptions, limit: Int?,
+                      report: inout InsightsUpdateReport) async throws -> [String] {
         let scopes = TopicScopes.members(inputs: inputs, snapshot: snapshot)
-        let stored = snapshot.topics[me]
-        var topics = stored?.topics ?? []
+        let stored = snapshot.topics[me]?.topics ?? []
+        var memo = o.failureMemo.map(InsightsFailureMemo.load(from:)) ?? InsightsFailureMemo()
+        var memoChanged = false
+        defer { if memoChanged, !o.dryRun, let url = o.failureMemo { try? memo.save(to: url) } }
         var made: [String] = []
+        var attempts = 0
         for (scope, members) in scopes {
-            if let limit, made.count >= limit { break }
-            let old = topics.first { $0.scope == scope }
+            if let limit, attempts >= limit { break }
+            if Task.isCancelled { report.cancelled = true; break }
+            let name = TopicScopes.name(scope)
+            let old = stored.first { $0.scope == scope }
             guard TopicSummaries.isDue(members: members, stored: old, reader: model.identity, now: o.now) else { continue }
-            made.append(TopicScopes.name(scope))
-            if o.dryRun { continue }
-            guard let text = try? await TopicSummaries.generate(name: TopicScopes.name(scope), members: members,
-                                                                 language: InsightsNotes.languageOf(members, inputs), model: model,
-                                                                 merger: merger) else { continue }
-            let gen = InsightsTopicsFile.Gen(identity: model.identity, at: InsightsCodec.nextWritten(after: nil, now: o.now), summary: text)
-            topics.removeAll { $0.scope == scope }
-            topics.append(.init(scope: scope, members: members.count, membersHash: TopicSummaries.membersHash(members), gen: gen))
-        }
-        if !o.dryRun, !made.isEmpty {
-            topics.sort { TopicScopes.name($0.scope) < TopicScopes.name($1.scope) }
-            try store.write(.topics(InsightsTopicsFile(device: me, written: 0, topics: topics)), now: o.now)
+            let digest = TopicSummaries.membersHash(members)
+            if !o.force, let until = memo.topicBackoff(name, membersHash: digest, identity: model.identity), until > o.now { continue }
+            attempts += 1
+            if o.dryRun { made.append(name); continue }
+            do {
+                guard try await writeTopic(scope, members: members, inputs: inputs, model: model, merger: merger, store: store,
+                                           now: o.now) else {
+                    report.failures[name] = "nothing survived the fact check"
+                    memo.recordTopic(name, membersHash: digest, identity: model.identity, error: nil, now: o.now)
+                    memoChanged = true
+                    continue
+                }
+                made.append(name)
+                if memo.topics[name] != nil { memo.clearTopic(name); memoChanged = true }
+            } catch {
+                if error is CancellationError || Task.isCancelled { report.cancelled = true; break }
+                report.failures[name] = "\(error)"
+                memo.recordTopic(name, membersHash: digest, identity: model.identity, error: error, now: o.now)
+                memoChanged = true
+            }
         }
         return made
+    }
+
+    /// Makes `scope`'s summary from `members` and writes it into this device's topics file; false when nothing survived
+    /// the fact check (nothing written).
+    func writeTopic(_ scope: InsightsTopicsFile.Scope, members: [TopicSummaries.Member], inputs: [InsightsNoteInput],
+                    model: any ModelProvider, merger: TypoMerger, store: InsightsStore, now: Date) async throws -> Bool {
+        let name = TopicScopes.name(scope)
+        guard let text = try await TopicSummaries.generate(name: name, members: members, language: InsightsNotes.languageOf(members, inputs),
+                                                           model: model, merger: merger) else { return false }
+        try Task.checkCancellation()
+        let topic = InsightsTopicsFile.Topic(scope: scope, members: members.count, membersHash: TopicSummaries.membersHash(members),
+                                             gen: .init(identity: model.identity, at: InsightsCodec.nextWritten(after: nil, now: now), summary: text))
+        try store.updateOwnTopics(now: now) { topics in
+            topics.removeAll { $0.scope == scope }
+            topics.append(topic)
+            topics.sort { TopicScopes.name($0.scope) < TopicScopes.name($1.scope) }
+            return true
+        }
+        return true
+    }
+
+    /// Why a topic summary was not made now (`regenerateTopic`).
+    public enum TopicError: Error, Hashable, Sendable, CustomStringConvertible {
+        /// No usable model on this device.
+        case unavailable(String)
+        /// Fewer summarized members than `TopicSummaries.minMembers`.
+        case tooFewMembers(Int)
+        /// Nothing survived the fact check; nothing was written.
+        case factCheck
+        public var description: String {
+            switch self {
+            case .unavailable(let why): return "model unavailable: \(why)"
+            case .tooFewMembers(let n):
+                return "\(n) summarized note(s); a topic needs at least \(TopicSummaries.minMembers)"
+            case .factCheck: return "the summary did not survive the fact check; nothing written"
+            }
+        }
+    }
+
+    /// Makes `scope`'s topic summary now on this device and writes it ("Regenerate", `sempere insights topic --generate`),
+    /// whatever the once-a-day rule and the failure memo say; a success clears the memo's entry. Returns it as shown.
+    public func regenerateTopic(_ scope: InsightsTopicsFile.Scope, inputs: [InsightsNoteInput], failureMemo: URL? = nil,
+                                now: Date = Date()) async throws -> TopicSummaries.Shown {
+        try vault.requireWritable()
+        guard let model, model.availability.isAvailable else {
+            throw TopicError.unavailable(model?.availability.reason ?? "no model provider")
+        }
+        let store = InsightsStore(vault: vault)
+        _ = try store.writer()
+        let members = TopicScopes.members(inputs: inputs, snapshot: store.snapshot()).first { $0.0 == scope }?.1 ?? []
+        guard members.count >= TopicSummaries.minMembers else { throw TopicError.tooFewMembers(members.count) }
+        guard try await writeTopic(scope, members: members, inputs: inputs, model: model, merger: InsightsNotes.merger(inputs),
+                                   store: store, now: now) else { throw TopicError.factCheck }
+        if let failureMemo {
+            var memo = InsightsFailureMemo.load(from: failureMemo)
+            let name = TopicScopes.name(scope)
+            if memo.topics[name] != nil { memo.clearTopic(name); try? memo.save(to: failureMemo) }
+        }
+        return TopicSummaries.shown(scope, members: members, snapshot: store.snapshot())
     }
 }
 

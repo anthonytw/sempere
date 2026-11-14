@@ -63,18 +63,24 @@ struct NotebookRowAction: Identifiable, Sendable {
     /// The title in the app's language.
     var localizedTitle: String { String(localized: title) }
 
-    /// A notebook row's menu: New Notebook Inside…, Rename or Move…, Move Notebook To…,
+    /// A notebook row's menu: Summary when `summary` is given (Note Insights' topic summary, a notebook with 3
+    /// summarized notes), New Notebook Inside…, Rename or Move…, Move Notebook To…,
     /// Move to Top Level when `moveToTop` is given (a notebook inside another), Export Notebook…,
     /// and Delete Notebook when `delete` is given (an empty notebook).
-    static func notebookMenu(newInside: @escaping @MainActor @Sendable () -> Void,
+    static func notebookMenu(summary: (@MainActor @Sendable () -> Void)? = nil,
+                             newInside: @escaping @MainActor @Sendable () -> Void,
                              rename: @escaping @MainActor @Sendable () -> Void,
                              move: @escaping @MainActor @Sendable () -> Void,
                              moveToTop: (@MainActor @Sendable () -> Void)? = nil,
                              export: @escaping @MainActor @Sendable () -> Void,
                              delete: (@MainActor @Sendable () -> Void)? = nil) -> [NotebookRowAction] {
-        var actions = [NotebookRowAction(title: "New Notebook Inside…", systemImage: "folder.badge.plus", perform: newInside),
-                       NotebookRowAction(title: "Rename or Move…", systemImage: "pencil", perform: rename),
-                       NotebookRowAction(title: "Move Notebook To…", systemImage: "folder", perform: move)]
+        var actions: [NotebookRowAction] = []
+        if let summary {
+            actions.append(NotebookRowAction(title: "Summary", systemImage: "text.quote", perform: summary))
+        }
+        actions += [NotebookRowAction(title: "New Notebook Inside…", systemImage: "folder.badge.plus", perform: newInside),
+                    NotebookRowAction(title: "Rename or Move…", systemImage: "pencil", perform: rename),
+                    NotebookRowAction(title: "Move Notebook To…", systemImage: "folder", perform: move)]
         if let moveToTop {
             actions.append(NotebookRowAction(title: "Move to Top Level", systemImage: "arrow.up.to.line", perform: moveToTop))
         }

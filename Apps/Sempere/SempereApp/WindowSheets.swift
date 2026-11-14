@@ -145,6 +145,13 @@ struct WindowSheets: ViewModifier {
             .sheet(isPresented: Binding(get: { ui.insightsNoteID != nil }, set: { if !$0 { ui.insightsNoteID = nil } })) {
                 if let id = ui.insightsNoteID { NoteInsightsSheet(noteID: id) }
             }
+            // Note Insights' topic summary of a notebook or tag (the sidebar's menus) and the map (All Notes' menu).
+            .sheet(isPresented: Binding(get: { ui.insightsTopic != nil }, set: { if !$0 { ui.insightsTopic = nil } })) {
+                if let scope = ui.insightsTopic { TopicSummarySheet(scope: scope) }
+            }
+            .sheet(isPresented: Binding(get: { ui.insightsMapShown }, set: { ui.insightsMapShown = $0 })) {
+                InsightsMapSheet()
+            }
             // The export sheet opens in the window that asked for it (a Mac may have several).
             .sheet(item: shown(\.exportRequest)) { ExportSheet(request: $0) }
             .sheet(item: shown(\.bulkExportRequest)) { BulkExportSheet(request: $0) }

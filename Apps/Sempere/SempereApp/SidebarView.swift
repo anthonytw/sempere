@@ -39,7 +39,12 @@ struct SidebarView: View {
         if NotebookPath.components(path).count > 1 {
             moveToTop = { moveToTopLevel(path) }
         }
-        let actions = NotebookRowAction.notebookMenu(newInside: {
+        // Note Insights' topic summary (design §6 item 4): only for a notebook with 3 summarized notes.
+        var summary: (@MainActor @Sendable () -> Void)?
+        if let scope = model.insightsTopic(notebook: path)?.scope {
+            summary = { ui?.insightsTopic = scope }
+        }
+        let actions = NotebookRowAction.notebookMenu(summary: summary, newInside: {
             newNotebook = NewNotebookRequest(parent: path)
         }, rename: {
             newName = path
@@ -139,6 +144,12 @@ struct SidebarView: View {
                     Button("Export All Notes…", systemImage: ExportCommand.menuImage) {
                         model.requestBulkExport(.vault, window: ui?.id)
                     }
+                    // Note Insights' map (design §6 item 5), once the work device has built one.
+                    if !model.insightsMap.isEmpty {
+                        Button("Map of Related Notes", systemImage: "point.3.connected.trianglepath.dotted") {
+                            ui?.insightsMapShown = true
+                        }
+                    }
                 }
             // The Inbox (where quick voice notes land, to be moved on from) is listed with the
             // special lists, not among the notebooks (`SidebarSections`).
@@ -180,6 +191,12 @@ struct SidebarView: View {
                 Section("Tags") {
                     ForEach(model.tags, id: \.self) { tag in
                         Label(tag, systemImage: "tag").tag(SidebarItem.tag(tag))
+                            .contextMenu {
+                                // Note Insights' topic summary (design §6 item 4): a tag with 3 summarized notes.
+                                if let scope = model.insightsTopic(tag: tag)?.scope {
+                                    Button("Summary", systemImage: "text.quote") { ui?.insightsTopic = scope }
+                                }
+                            }
                     }
                 }
             }

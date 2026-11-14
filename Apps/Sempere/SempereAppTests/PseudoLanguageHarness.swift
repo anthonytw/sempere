@@ -459,7 +459,11 @@ final class LayoutHost {
             let now = tree()
             let missing = markers.filter { marker in !now.contains { marker.matches($0) } }
             if now.isEmpty { try await pause("the accessibility tree is empty") }
-            else if !missing.isEmpty { try await pause("no element with " + missing.map(\.description).joined(separator: ", ")) }
+            else if !missing.isEmpty {
+                // Names what the tree held instead, so a marker that never shows is easy to place.
+                let seen = now.prefix(40).map { $0.identifier.isEmpty ? "“\($0.label)”" : "[\($0.identifier)]" }.joined(separator: " ")
+                try await pause("no element with " + missing.map(\.description).joined(separator: ", ") + " (seen: \(seen))")
+            }
             else if LayoutHost.isBusy(now) { try await pause("a busy indicator is still showing") }
             else { break }
         }

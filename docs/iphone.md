@@ -36,6 +36,12 @@ A wide landscape iPhone (Pro Max) is a regular-width split view: the columns are
 system and the stored column choice (`ColumnLayout`) is ignored on the phone, so a list can never
 be left hidden.
 
+Note Insights' sheets open from the vault column's long-press menus on every device, the phone included
+(docs/design/1.2-note-insights.md "PR 3 notes"): "Summary" on a notebook or tag with 3 summarized notes
+(`TopicSummarySheet`) and "Map of Related Notes" on All Notes (`InsightsMapSheet`; also Settings ▸ Note
+Insights). The map is one `Canvas` at the phone's graph bound (1,500 notes): pinch and drag, zoom buttons in the
+corner, a tap on a note opens it and closes the sheet; its List form is the compact and VoiceOver form.
+
 ## The note view
 
 Read-first:
