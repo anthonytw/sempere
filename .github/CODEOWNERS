@@ -1,0 +1,23 @@
+# The trust anchors (docs/design/1.2-audit-followups.md F-13). With "Require review from Code Owners" on in the
+# repository ruleset, a PR that touches one of these paths needs the maintainer's approval, so an agent seat cannot
+# change who is trusted to sign releases, the release tooling, the security policy or the CI itself.
+# Every line names the same owner.
+
+# Who may sign releases, and where its fingerprint is published.
+/packaging/allowed_signers      @anthonytw
+/SECURITY.md                    @anthonytw
+
+# The release scripts (build, sign, publish, verify, tag, checks), their tests, and the checks that guard the tree.
+/scripts/release-*              @anthonytw
+/scripts/release.env.example    @anthonytw
+/scripts/test-release-*.sh      @anthonytw
+/scripts/check-security.sh      @anthonytw
+/scripts/security-allow.txt     @anthonytw
+/scripts/test-check-security.sh @anthonytw
+/scripts/check-tests-run.py     @anthonytw
+/scripts/ci-gate-decision.py    @anthonytw
+/scripts/apt-install.sh         @anthonytw
+/scripts/test-apt-install.sh    @anthonytw
+
+# The workflows, composite actions, PR template and this file.
+/.github/                       @anthonytw

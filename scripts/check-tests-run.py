@@ -9,8 +9,9 @@ The description must have a `## Tests run` section with something in it besides 
     scripts/check-tests-run.py --app-changed < body.md   (the PR changes files under Apps/)
     scripts/check-tests-run.py --self-test
 
-With --app-changed the section must also name `local-ci.sh` or `app.sh test-mac` with a result: the hosted gate does not run
-the Mac Catalyst app tests (docs/ci.md), so the author's run of them is the only check of an app change.
+With --app-changed the section must also name `local-ci.sh` or a plain `app.sh test-mac` with a result on the same line: the
+hosted gate does not run the Mac Catalyst app tests (docs/ci.md), so the author's run of them is the only check of an app
+change. A filtered run (`app.sh test-mac -only-testing:...`, `-skip-testing:...`) runs part of them and does not count.
 """
 from __future__ import annotations
 
@@ -40,7 +41,9 @@ def problem(body: str) -> str | None:
     return None
 
 
-APP_RUN = re.compile(r"local-ci\.sh|app\.sh\s+test-mac(?![-\w])")
+LOCAL_CI = re.compile(r"local-ci\.sh")
+APP_MAC = re.compile(r"app\.sh\s+test-mac(?![-\w])")
+FILTERED = re.compile(r"-(only|skip)-testing\b")
 APP_RESULT = re.compile(r"pass|green|ok\b|fail|flak", re.IGNORECASE)
 
 
@@ -53,9 +56,12 @@ def app_problem(body: str) -> str | None:
     end = NEXT_HEADING.search(rest)
     section = COMMENT.sub("", rest[: end.start()] if end else rest)
     for line in section.splitlines():
-        if APP_RUN.search(line) and APP_RESULT.search(line):
+        # local-ci.sh runs the whole app suite; test-mac counts only unfiltered.
+        ran = LOCAL_CI.search(line) or (APP_MAC.search(line) and not FILTERED.search(line))
+        if ran and APP_RESULT.search(line):
             return None
-    return "the PR changes files under Apps/, so `## Tests run` must name a run of `scripts/local-ci.sh` or `scripts/app.sh test-mac` and its result"
+    return ("the PR changes files under Apps/, so `## Tests run` must name a run of `scripts/local-ci.sh` or a plain "
+            "`scripts/app.sh test-mac` (not a filtered `-only-testing` one) and its result on the same line")
 
 
 def self_test() -> None:
@@ -79,6 +85,15 @@ def self_test() -> None:
         "## Tests run\n- `scripts/app.sh test-mac`: passed\n": True,
         "## Tests run\n- `scripts/app.sh test-mac`\n": False,
         "## Tests run\n<!-- scripts/local-ci.sh: passed -->\n- x\n": False,
+        "## Tests run\n- `scripts/app.sh test-mac -only-testing:SempereAppTests/FooTests`: passed\n": False,
+        "## Tests run\n- `scripts/app.sh test-mac -only-testing:SempereAppTests/FooTests -only-testing:A/B`: passed\n": False,
+        "## Tests run\n- `scripts/app.sh test-mac -skip-testing:SempereAppTests/FooTests`: passed\n": False,
+        "## Tests run\n- `scripts/app.sh test-mac -only-testing:X`: passed\n- `scripts/app.sh test-mac`: passed\n": True,
+        "## Tests run\n- `scripts/app.sh test-mac -only-testing:X`: passed\n- `scripts/app.sh test-mac`\n": False,
+        "## Tests run\n- `scripts/app.sh test-mac`: 1200 tests, 0 failures, green\n": True,
+        "## Tests run\n- `scripts/app.sh test-mac` passed\n": True,
+        "## Tests run\n- `scripts/local-ci.sh`: all steps ok\n- `scripts/app.sh test-mac -only-testing:X`: passed\n": True,
+        "## Tests run\n- `scripts/app.sh test-mac-ui`: passed\n": False,
     }
     failed = 0
     for body, ok in app_cases.items():

@@ -132,6 +132,40 @@ fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, e: Error) { perf.log(.err
 expect "a PerfSink call with localizedDescription fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
 fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, e: Error) { perf.log(.error, \"c\", \"failed: \\(LogSafe.describe(e))\") }"
 expect "a PerfSink call through LogSafe passes" ok
+# Every way the code binds an error to a name (docs/design/1.2-audit-followups.md F-16), each logged by its text.
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) {" "    do { try g() } catch let failure { perf.log(.error, \"c\", \"failed: \\(failure)\") }" "}"
+expect "catch let NAME interpolated in a PerfSink call fails" fail "interpolates an error's text: Sources/Lib/P.swift:2"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) {" "    do { try g() } catch let problem { perf.log(.error, \"c\", String(describing: problem)) }" "}"
+expect "String(describing:) of a catch let NAME fails" fail "interpolates an error's text: Sources/Lib/P.swift:2"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, r: Result<Int, Error>) {" "    if case .failure(let boom) = r { perf.log(.error, \"c\", \"failed: \\(boom)\") }" "}"
+expect ".failure(let NAME) interpolated in a PerfSink call fails" fail "interpolates an error's text: Sources/Lib/P.swift:2"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, r: Result<Int, Error>) {" "    switch r { case .failure(oops): perf.log(.error, \"c\", \"failed: \\(oops)\") default: break }" "}"
+expect "case .failure(NAME) interpolated in a PerfSink call fails" fail "interpolates an error's text: Sources/Lib/P.swift:2"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, cause: Error) { perf.log(.error, \"c\", \"failed: \\(cause)\") }"
+expect "a parameter declared NAME: Error fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, cause: any Error) { perf.log(.error, \"c\", \"failed: \\(cause)\") }"
+expect "a parameter declared NAME: any Error fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) {" "    run { (why: Error) in perf.log(.error, \"c\", \"failed: \\(why)\") }" "}"
+expect "a closure parameter typed Error fails" fail "interpolates an error's text: Sources/Lib/P.swift:2"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) {" "    do { try g() } catch { perf.log(.error, \"c\", \"failed: \\(error)\") }" "}"
+expect "the implicit error of a bare catch fails" fail "interpolates an error's text: Sources/Lib/P.swift:2"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) { run { perf.log(.error, \"c\", \"failed: \\(\$0)\") } }"
+expect "\$0 interpolated in a PerfSink call fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) { run { perf.log(.error, \"c\", String(describing: \$1)) } }"
+expect "\$1 in a PerfSink call fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) { run { perf.log(.error, \"c\", \"n=\\(\$10)\") } }"
+expect "\$10 is not \$1 and passes" ok
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) {" "    do { try g() } catch let failure { perf.log(.error, \"c\", \"failed: \\(LogSafe.describe(failure))\") }" "}"
+expect "a catch let NAME logged through LogSafe passes" ok
+fresh; put Sources/Lib/P.swift "enum Kind { case a }" "func f(perf: PerfSink, kind: Kind) {" "    do { try g() } catch let failure { perf.log(.error, \"c\", \"kind=\\(kind) \\(Kind.a)\") }" "}"
+expect "a catch let NAME whose text is not logged passes" ok
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, errorCount: Int, failureCount: Int) {" "    do { try g() } catch let failure { perf.log(.error, \"c\", \"errors=\\(errorCount) of \\(failureCount)\") }" "}"
+expect "a name that merely resembles an error (errorCount) passes" ok
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, count: Int, failure: Int) { perf.log(.error, \"c\", \"n=\\(failure)\") }"
+expect "a name used only as an Int, not bound as an error, passes" ok
+fresh; put Sources/Lib/A.swift "func f(cause: Error) {}"
+put Sources/Lib/P.swift "func g(perf: PerfSink, cause: Int) { perf.log(.error, \"c\", \"n=\\(cause)\") }"
+expect "an error name bound in another file does not count" ok
 # An entry covers one statement, not the file: a second call in the same file needs its own entry.
 fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, e: Error) { perf.log(.error, \"c\", \"one: \\(e)\") }"
 stmt_hash="$(hash_of "$(printf '%s' 'func f(perf: PerfSink, e: Error) { perf.log(.error, "c", "one: \(e)") }' | python3 -I -c 'import sys; print(" ".join(sys.stdin.read().split()), end="")')")"

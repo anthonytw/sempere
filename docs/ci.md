@@ -23,7 +23,7 @@ is updated):
 | `Linux package tests` | `swift:6.4-noble` container, offline (`NET_ADMIN`, `SYS_ADMIN`) | `scripts/ci-linux.sh test`: package tests with no network, portability, removable importers (the isolation grep always; the build without the module only when `CLITests`' hash has no record) | step `linux` |
 | `Linux WebDAV tests` | `swift:6.4-noble` container | `scripts/ci-linux.sh webdav`: the WebDAV integration tests against wsgidav | step `webdav` |
 | `Web viewer` | `ubuntu-24.04`, Node 22 | `cd web`: `npm ci`, lint, typecheck, `npm test` (which cross-checks the renderer with the committed Swift goldens), the strict-CSP build. The goldens themselves are checked against the CLI inside `Linux package tests` (`web/scripts/golden.sh`, every run, never skipped by hash). | none |
-| `PR lists tests run` | `ubuntu-24.04` | `pr-description.yml`: the description has a non-empty `## Tests run` section; **a PR that changes files under `Apps/` must also name a run of `scripts/local-ci.sh` or `scripts/app.sh test-mac` with its result** (`check-tests-run.py --app-changed`), because the hosted gate does not run the Mac Catalyst tests | none |
+| `PR lists tests run` | `ubuntu-24.04` | `pr-description.yml`: the description has a non-empty `## Tests run` section; **a PR that changes files under `Apps/` must also name a run of `scripts/local-ci.sh` or a plain `scripts/app.sh test-mac` (a filtered `-only-testing:` run does not count) with its result on the same line** (`check-tests-run.py --app-changed`), because the hosted gate does not run the Mac Catalyst tests | none |
 
 **Skipping the suites** (`Gate decision`, `scripts/ci-gate-decision.py`). When the decision says `run=false`, the five suite jobs
 (`Web viewer`, `iOS build`, `Mac package tests`, `Linux package tests`, `Linux WebDAV tests`) are skipped by their job-level `if`;
@@ -429,6 +429,20 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
   and `RememberedKeys` into its root view's environment, or when a view reads one of them
   with a plain `@Environment(X.self)` instead of the non-trapping wrappers
   (`AppModelEnvironment.swift`).
+- **Trust anchors have a code owner** (`.github/CODEOWNERS`; `docs/design/1.2-audit-followups.md` F-13). It names the maintainer for
+  `packaging/allowed_signers` (who may sign releases), `SECURITY.md`, the release scripts and their tests, the security and
+  test-run checks (`check-security.sh`, `security-allow.txt`, `check-tests-run.py`, `ci-gate-decision.py`), `apt-install.sh`
+  and `.github/`. The `main` ruleset's "Require review from Code Owners" makes a PR that touches one of them need the
+  maintainer's approval, so an agent seat can open such a PR but never merge it. Turning that setting on is the owner's step
+  (an agent does not edit rulesets); until then the file only documents the intent. Docs and code PRs are unaffected.
+- **The apt fallback mirror** (`scripts/apt-install.sh`, test `scripts/test-apt-install.sh`): after two failed attempts an
+  amd64 job switches the image's sources to `azure.archive.ubuntu.com` over HTTPS (HTTP only when the image has no
+  `ca-certificates` and cannot install it), with `Acquire::Check-Valid-Until=true` set. An arm64 job gets no switch: its
+  sources are on `ports.ubuntu.com`, which has no Azure mirror, so the fallback there is only a retry of the image's own.
+- **The log lint's error names** (`scripts/check-security.sh`; test `scripts/test-check-security.sh`): a `PerfSink` call must
+  not interpolate an error's text under any name the file binds to an error (`catch let NAME`, `.failure(let NAME)`,
+  `case .failure(NAME)`, `NAME: Error`, `NAME: any Error`, the implicit `error`), and `$0` or `$1` in a `PerfSink` call is
+  flagged whatever it holds. Reviewed exceptions go in `scripts/security-allow.txt` with a reason.
 - **Age is compiled with `-O` even in debug builds** (`Package.swift`): unoptimized scrypt
   makes the passphrase tests take minutes.
 - **Build caches:** `scripts/ci-linux.sh docker` keeps the Linux `.build` in a Docker volume per image

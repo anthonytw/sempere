@@ -77,6 +77,10 @@ v=$(git show "$sha:Sources/SempereCLI/Version.swift" | sed -n 's/^let sempereVer
 f=$(mktemp); git show "$sha:CHANGELOG.md" > "$f"
 scripts/changelog-section.sh --file "$f" "$version" > "$out/notes.md" || die "CHANGELOG.md at $tag has no finished section for $version"
 rm -f "$f"
+# The standard footer: the signing key's fingerprint, to compare with SECURITY.md and the website's security page (a key
+# change changes all three; docs/design/1.2-audit-followups.md F-13).
+signer_fingerprint="SHA256:u94X5C2t2zAT9krLN4+LLwC3UI/z8d0v0tmuq6y90fM"
+printf '\n---\n\nVerify this release: `SHA256SUMS.sig` is signed by the maintainer'"'"'s key, fingerprint `%s`. Compare it with `SECURITY.md` in the repository and the security page of the project website; if they differ, do not trust this release. See [Verifying releases](https://github.com/anthonytw/sempere/blob/main/SECURITY.md#verifying-releases).\n' "$signer_fingerprint" >> "$out/notes.md"
 echo "ok    Version.swift and CHANGELOG.md say $version"
 
 step "worktree of $tag"

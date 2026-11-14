@@ -582,4 +582,6 @@ SSH signing key, on the maintainer's own account after the build (`SHA256SUMS.si
 checked by `scripts/release-signature.sh`), and so are the release tags. The public key line, principal `maintainer`, is
 `packaging/allowed_signers`; its fingerprint is in `SECURITY.md`. `just release-verify X.Y.Z` checks the
 published files against `SHA256SUMS`, the signature and the local build. To change the key, replace the line in a PR the
-maintainer merges (it is the trust anchor).
+maintainer merges (it is the trust anchor: `.github/CODEOWNERS` makes it need the maintainer's review), and change the
+fingerprint everywhere it is published at the same time: `SECURITY.md`, the footer `release-build.sh` puts in every
+release's notes (`signer_fingerprint`), and the website's security page (a site-repo PR); the notes of the rotating release say so.
