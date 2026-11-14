@@ -108,8 +108,13 @@ jobs:
       - id: decide
         env:
           GH_TOKEN: ${{ github.token }}
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python3 -I scripts/ci-gate-decision.py --base "$BASE"
+          BEFORE: ${{ github.event.before }}
+        # A pull request checks out GitHub's merge commit, whose first parent is the base it was built on.
+        # pull_request.base.sha can be older (main moved after the push), and diffing against it counts
+        # files merged to main since then as this PR's changes.
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then BASE=$(git rev-parse HEAD^1); else BASE=$BEFORE; fi
+          python3 -I scripts/ci-gate-decision.py --base "$BASE"
 
   # npm ci, lint, typecheck, unit tests (which also compare the TypeScript renderer with the committed Swift goldens) and
   # the strict-CSP build. The golden files themselves are checked against the CLI in `Linux package tests`.
