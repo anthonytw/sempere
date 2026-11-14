@@ -24,6 +24,7 @@
 # Usage: scripts/check-security.sh [--root DIR]     (DIR must be a git work tree; default: this repository)
 set -euo pipefail
 
+here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -119,9 +120,18 @@ for l in sys.stdin:
 # --- 2. Logging -------------------------------------------------------------------------------------------------
 # awk: reads Swift files, skips comment lines and #if DEBUG regions (a debug build is not a shipped one).
 # mode=bad prints print/debugPrint/NSLog/os_log/Logger/dump lines; mode=perf prints PerfSink calls (joined across lines) that name
-# a sensitive word or interpolate an error's own text.
+# a sensitive word, interpolate an error's own text, or interpolate a closure's `$0`/`$1`. "An error" is any name the file
+# binds as one (error_names): `e`, `err`, `error` (also the implicit one of a bare `catch`), `catch let NAME`,
+# `.failure(let NAME)`, `case .failure(NAME)`, `NAME: Error` or `NAME: any Error`. A typed closure parameter is hard to
+# see in awk, so `$0` and `$1` are flagged whatever they hold (reviewed exceptions: scripts/security-allow.txt).
+error_names() {   # FILE: the names it binds to an error, `|`-joined, always with e, err and error
+  { echo e; echo err; echo error
+    grep -ohE 'catch let [A-Za-z_][A-Za-z0-9_]*|\.failure\((let )?[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*: *\(?(any )?Error([^A-Za-z0-9_]|$)' "$1" 2>/dev/null |
+      sed -E 's/^catch let //; s/^\.failure\((let )?//; s/: *\(?(any )?Error.*$//' || true
+  } | sort -u | paste -sd'|' -
+}
 swift_scan() {
-  awk -v mode="$1" '
+  awk -v mode="$1" -v names="${errnames:-e|err|error}" '
     FNR == 1 { depth = 0; dbg = 0; neg = 0; stmt = ""; pdepth = 0 }
     /^[[:space:]]*#if / {
       depth++
@@ -153,7 +163,8 @@ swift_scan() {
       if (stmt != "" && pdepth <= 0) {
         # A sensitive word, or the text of an error (String(describing:), \(error), localizedDescription): messages are public.
         if (tolower(stmt) ~ /key|secret|passphrase|identity|password|title/ ||
-            stmt ~ /String\((describing|reflecting): *(e|err|error)\)|\\\((e|err|error)\)|localizedDescription/) print FILENAME ":" startl ":" stmt
+            stmt ~ /localizedDescription|\$[01]([^0-9A-Za-z_]|$)/ ||
+            stmt ~ ("String\\((describing|reflecting): *(" names ")\\)|\\\\\\( *(" names ")( as [A-Za-z.]+|\\.(description|debugDescription|userInfo))? *\\)")) print FILENAME ":" startl ":" stmt
         stmt = ""
       }
     }
@@ -167,7 +178,8 @@ while IFS= read -r f; do
 done < <(swift_files Sources)
 if [ ${#src_files[@]} -gt 0 ]; then
   report logging "logging in Sources/" < <(swift_scan bad "${src_files[@]}")
-  report perf "PerfSink call names a sensitive word or interpolates an error's text" < <(swift_scan perf "${src_files[@]}")
+  report perf "PerfSink call names a sensitive word or interpolates an error's text" < <(
+    for f in "${src_files[@]}"; do errnames="$(error_names "$f")" swift_scan perf "$f"; done)
 fi
 # Apps/: a Logger call must not interpolate a sensitive word with `privacy: .public` (unified logging redacts strings
 # by default, so only an explicit .public publishes it).
@@ -235,6 +247,15 @@ while IFS= read -r f; do
   grep -qE '^permissions:' "$f" || fail "$f: no top-level 'permissions:' (a workflow declares its token scope)"
   grep -qE 'permissions:[[:space:]]*write-all' "$f" && fail "$f: 'permissions: write-all' (list the scopes a job needs)"
 done < <(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml')
+
+# --- 4. The signing key is published ------------------------------------------------------------------------------
+# Every key in packaging/allowed_signers has its fingerprint in SECURITY.md (release-build.sh refuses to build otherwise), so
+# a key change without the published fingerprint fails at the PR.
+if [ -f packaging/allowed_signers ]; then
+  if ! fp_out="$("$here/release-fingerprints.sh" check SECURITY.md 2>&1)"; then
+    fail "signing key not published: ${fp_out#error: }"
+  fi
+fi
 
 # --- Allow-list upkeep -----------------------------------------------------------------------------------------
 for i in "${!allow_rules[@]}"; do

@@ -23,7 +23,7 @@ is updated):
 | `Linux package tests` | `swift:6.4-noble` container, offline (`NET_ADMIN`, `SYS_ADMIN`) | `scripts/ci-linux.sh test`: package tests with no network, portability, removable importers (the isolation grep always; the build without the module only when `CLITests`' hash has no record) | step `linux` |
 | `Linux WebDAV tests` | `swift:6.4-noble` container | `scripts/ci-linux.sh webdav`: the WebDAV integration tests against wsgidav | step `webdav` |
 | `Web viewer` | `ubuntu-24.04`, Node 22 | `cd web`: `npm ci`, lint, typecheck, `npm test` (which cross-checks the renderer with the committed Swift goldens), the strict-CSP build. The goldens themselves are checked against the CLI inside `Linux package tests` (`web/scripts/golden.sh`, every run, never skipped by hash). | none |
-| `PR lists tests run` | `ubuntu-24.04` | `pr-description.yml`: the description has a non-empty `## Tests run` section; **a PR that changes files under `Apps/` must also name a run of `scripts/local-ci.sh` or `scripts/app.sh test-mac` with its result** (`check-tests-run.py --app-changed`), because the hosted gate does not run the Mac Catalyst tests | none |
+| `PR lists tests run` | `ubuntu-24.04` | `pr-description.yml`: the description has a non-empty `## Tests run` section; **a PR that changes files under `Apps/` must also name a run of `scripts/local-ci.sh` or a plain `scripts/app.sh test-mac` (a filtered `-only-testing:` run does not count) with its result on the same line** (`check-tests-run.py --app-changed`), because the hosted gate does not run the Mac Catalyst tests | none |
 
 **Skipping the suites** (`Gate decision`, `scripts/ci-gate-decision.py`). When the decision says `run=false`, the five suite jobs
 (`Web viewer`, `iOS build`, `Mac package tests`, `Linux package tests`, `Linux WebDAV tests`) are skipped by their job-level `if`;
@@ -429,6 +429,29 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
   and `RememberedKeys` into its root view's environment, or when a view reads one of them
   with a plain `@Environment(X.self)` instead of the non-trapping wrappers
   (`AppModelEnvironment.swift`).
+- **Trust anchors have a code owner** (`.github/CODEOWNERS`; `docs/design/1.2-audit-followups.md` F-13). It names the maintainer for
+  `packaging/` (who may sign releases, the formula), `SECURITY.md`, the release scripts and their tests, the build's pins
+  (`static-sdk-pin.sh`, which holds the static build image digest and the SDK checksum), `update-formula.sh`, the gate's own
+  files (`ci-hash.py`, `ci-targets.json`, `ci-gate-decision.py`), the security and test-run checks (`check-security.sh`,
+  `security-allow.txt`, `check-tests-run.py`), `apt-install.sh` and `.github/`. It takes effect only through the `main`
+  ruleset, and the owner turns that on (an agent does not edit rulesets): "Require review from Code Owners", plus "Require
+  approval of the most recent reviewable push" and "Dismiss stale pull request approvals when new commits are pushed".
+  Without the last two an agent seat with write access could push another commit after the owner's approval (for example one
+  that changes `allowed_signers`) and merge on the stale approval. With them, such a PR cannot merge without the maintainer's
+  approval of its latest push. The ruleset's approving-review count may stay 0; the code-owner requirement applies
+  regardless, but confirm it with a test PR that touches an owned file (it should show "Code owner review required").
+  Until the owner enables it the file only documents the intent. Docs and code PRs are unaffected. The key fingerprints are
+  derived from `packaging/allowed_signers` (`scripts/release-fingerprints.sh`), and `check-security.sh` fails a PR whose
+  signers file has a key `SECURITY.md` does not publish.
+- **The apt fallback mirror** (`scripts/apt-install.sh`, test `scripts/test-apt-install.sh`): after two failed attempts an
+  amd64 job switches the image's sources to `azure.archive.ubuntu.com` over HTTPS (HTTP only when the image has no
+  `ca-certificates` and cannot install it; plain HTTP has no freshness check, and `Acquire::Check-Valid-Until=true`, which is set,
+  does nothing for Ubuntu's `InRelease` files since they carry no `Valid-Until`). An arm64 job gets no switch: its
+  sources are on `ports.ubuntu.com`, which has no Azure mirror, so the fallback there is only a retry of the image's own.
+- **The log lint's error names** (`scripts/check-security.sh`; test `scripts/test-check-security.sh`): a `PerfSink` call must
+  not interpolate an error's text under any name the file binds to an error (`catch let NAME`, `.failure(let NAME)`,
+  `case .failure(NAME)`, `NAME: Error`, `NAME: any Error`, the implicit `error`), and `$0` or `$1` in a `PerfSink` call is
+  flagged whatever it holds. Reviewed exceptions go in `scripts/security-allow.txt` with a reason.
 - **Age is compiled with `-O` even in debug builds** (`Package.swift`): unoptimized scrypt
   makes the passphrase tests take minutes.
 - **Build caches:** `scripts/ci-linux.sh docker` keeps the Linux `.build` in a Docker volume per image

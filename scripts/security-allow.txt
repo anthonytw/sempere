@@ -31,3 +31,5 @@ secrets | web/test/vault.test.ts | sha256:b3b811f68292c2bcbb3f0a607e9f6dc3f5d8cb
 # perf: a PerfSink call the word scan flags, reviewed: neither logs a key or a title.
 perf | Sources/SempereAppCore/AppModel/AppModel+Loading.swift | sha256:59c6b9225eba9f366bcb82d63278d17234ae517bb94a278ce6bd2a3013948b30 | logs a note COUNT ("byTitle" is a sort function's name inside the closure)
 perf | Sources/SempereAppCore/NoteEditor/NoteEditor.swift | sha256:13af084c87a0ed24e2505b18130ae0dac66253475cfef25f5ce529efbc1875a3 | logs a short note id; `key` is the layout-cache key (a size), not key material
+perf | Sources/SempereAppCore/AppModel/AppModel+Reconcile.swift | sha256:9ff685cd1ddcf5d58c887626c1cb8bebee94caeb3ead0c8f49aec3e02760e449 | reviewed: `$0` is a note-id collection and only its count is logged
+perf | Sources/SempereAppCore/NoteEditor/NoteEditor.swift | sha256:b78dd27df063c0e14753c629bba2147515184833de7c0a350cfbd44b657d7ed1 | reviewed: `$0` is the changed-page list and only its count is logged

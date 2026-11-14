@@ -77,6 +77,12 @@ v=$(git show "$sha:Sources/SempereCLI/Version.swift" | sed -n 's/^let sempereVer
 f=$(mktemp); git show "$sha:CHANGELOG.md" > "$f"
 scripts/changelog-section.sh --file "$f" "$version" > "$out/notes.md" || die "CHANGELOG.md at $tag has no finished section for $version"
 rm -f "$f"
+# The standard footer: the signing keys' fingerprints, derived from packaging/allowed_signers (equal to main's, checked above),
+# to compare with SECURITY.md and the website's security page (a key change changes all three; docs/design/1.2-audit-followups.md
+# F-13). The build refuses when main's SECURITY.md does not publish every one of them.
+fps=$(scripts/release-fingerprints.sh list) || die "cannot read the key fingerprints in packaging/allowed_signers"
+git show "$remote/main:SECURITY.md" | scripts/release-fingerprints.sh check - || die "SECURITY.md on $remote/main must publish every key in packaging/allowed_signers"
+printf '\n---\n\nVerify this release: `SHA256SUMS.sig` is signed by the maintainer'"'"'s key, fingerprint(s) %s. Compare with `SECURITY.md` in the repository and the security page of the project website; if they differ, do not trust this release. See [Verifying releases](https://github.com/anthonytw/sempere/blob/main/SECURITY.md#verifying-releases).\n' "$(sed 's/.*/`&`/' <<<"$fps" | paste -sd, - | sed 's/,/, /g')" >> "$out/notes.md"
 echo "ok    Version.swift and CHANGELOG.md say $version"
 
 step "worktree of $tag"

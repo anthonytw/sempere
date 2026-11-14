@@ -183,6 +183,7 @@ jobs:
       - name: Security checks
         run: |
           scripts/test-check-security.sh
+          scripts/test-apt-install.sh
           scripts/test-release-tag-embargo.sh
           scripts/check-security.sh
 
