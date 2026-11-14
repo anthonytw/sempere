@@ -187,8 +187,13 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
   Made deterministic and moved back into their suites (so `unit_quarantine_mac` and `unit_quarantine_watch` are empty now):
   - `PseudoLanguageLayoutTests/screenFits(_:in:)` measured a sheet still animating. `LayoutHost.settle(sheet:)` now presents
     with animations disabled (`Transaction(disablesAnimations: true)`), waits for the end of the presentation as an event (the
-    presenting controller's transition coordinator completing, `isBeingPresented == false`, the presented view at
-    `frameOfPresentedViewInContainerView`), then lays out once and takes one snapshot; the "3 equal snapshots" heuristic is gone.
+    `isBeingPresented == false`, the presented view mounted and at
+    `frameOfPresentedViewInContainerView`), then lays out once and takes one snapshot; the "3 equal snapshots" heuristic is gone. The wait is on state, never on
+    stability: the sheet's view is mounted in a window, the screen's ready markers are in the tree (`Screen.markers`: the demo
+    vault's note titles, which are vault data and the same in every language, or the views' own accessibility identifiers, such
+    as `devices.replaceKit`, which exists only once `DevicesView` has loaded) and no busy indicator is; for a sheet only the
+    sheet's own elements are counted, never the screen behind it. The 60 s bound only ends a screen that never comes up, and
+    the failure names the screen and the condition that never held.
   - `LoadDeviceCheckTests/c20RecognitionWhileWritingSavesTheSummaryCacheRarely()` depended on wall-clock timing under load.
     `AppModel.summaryCacheNow` is the clock `summaryCacheSaveInterval` is measured on, and `summaryCacheChecks` counts each
     consideration of a save; the test advances a manual clock 0.45 s per stroke, waits per stroke on the autosave, the

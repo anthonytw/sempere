@@ -20,6 +20,23 @@ import UIKit
 struct PseudoLanguageLayoutTests {
     enum Screen: String, CaseIterable, Sendable {
         case library, locked, note, tags, paper, settings, devices
+
+        /// Whether the screen is a sheet (only the sheet's own elements are measured).
+        var isSheet: Bool { [.locked, .paper, .settings, .devices].contains(self) }
+
+        /// What shows only once the screen's data is in (`LayoutHost.settle`): the demo vault's note titles are vault data,
+        /// the same in every language; the identifiers are the views' own.
+        var markers: [LayoutHost.Marker] {
+            switch self {
+            case .library: [.label("Cellular Respiration"), .label("Sync design sketch")]
+            case .tags: [.label("Cellular Respiration"), .label("Quantum states")]
+            case .locked: [.identifier("unlock.withKey")]
+            case .note: [.labelContaining("Cellular Respiration")]
+            case .paper: [.identifier("Decrement")]   // the spacing stepper: the picker's own controls
+            case .settings: [.identifier("appTheme.system")]   // General's Appearance section
+            case .devices: [.identifier("devices.replaceKit")]   // in the snapshot's sections, after the load
+            }
+        }
     }
 
     /// The Mac window sizes `scripts/app.sh pseudo-mac` checks: 700 × 800 (narrower than an iPad mini
@@ -98,27 +115,27 @@ struct PseudoLanguageLayoutTests {
         }
         for size in Self.sizes {
             let name = "\(language.rawValue)/\(screen.rawValue)@\(Int(size.width))x\(Int(size.height))"
-            try await Self.check(view, size: size, language: language, sheet: [.locked, .paper, .settings, .devices].contains(screen),
+            try await Self.check(view, size: size, language: language, sheet: screen.isSheet, markers: screen.markers,
                                  name: name, expectMoreThan: 8)
         }
     }
 
     /// Hosts `view`, settles it and records every problem `LayoutCheck` finds.
-    static func check(_ view: some View, size: CGSize, language: PseudoLanguage?, sheet: Bool, name: String,
-                      expectMoreThan minimum: Int) async throws {
+    static func check(_ view: some View, size: CGSize, language: PseudoLanguage?, sheet: Bool, markers: [LayoutHost.Marker] = [],
+                      name: String, expectMoreThan minimum: Int) async throws {
         UIView.setAnimationsEnabled(false)
         defer { UIView.setAnimationsEnabled(true) }
         let clock = ContinuousClock()
         let start = clock.now
         let host = try await LayoutHost(view, size: size, language: language)
         defer { host.close() }
-        let elements = try await host.settle(sheet: sheet, minimumElements: minimum)
+        let elements = try await host.settle(sheet: sheet, markers: markers, screen: name)
         let problems = LayoutCheck.problems(elements, bounds: host.window.bounds)
         let took = clock.now - start
         let ms = Int(Double(took.components.seconds) * 1000 + Double(took.components.attoseconds) / 1e15)
         print("PSEUDO-LAYOUT \(name): \(elements.count) elements, \(problems.count) problems, \(ms) ms")
         if ProcessInfo.processInfo.environment["SEMPERE_PSEUDO_LAYOUT_DUMP"] != nil {
-            for e in elements { print("PSEUDO-LAYOUT   \(e.isStaticText ? "text" : "elem") “\(e.label)” \(LayoutCheck.rounded(e.frame))") }
+            for e in elements { print("PSEUDO-LAYOUT   \(e.isStaticText ? "text" : "elem") [\(e.identifier)] “\(e.label)” \(LayoutCheck.rounded(e.frame))") }
         }
         #expect(elements.count > minimum, "\(name): only \(elements.count) accessibility elements: the screen did not come up")
         for problem in problems { Issue.record("\(name): \(problem)") }

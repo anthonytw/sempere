@@ -202,6 +202,7 @@ struct LoadDeviceCheckTests {
         await model.summaryCacheSave?.value
         // Strokes land at 3.45, 3.9, ... 7.5 s. The first is due; the next save is the first stroke 2 s or more later (stroke 6, at 5.7 s;
         // stroke 5 is 1.8 s after it); strokes 7 to 10 are within 2 s of that one: two saves.
+        #expect(model.summaryCacheChecks - checks == strokes, "one save consideration per stroke, none after the last")
         #expect(fake.calls.count - calls == strokes, "one recognition per stroke")
         #expect(editor.deltasWritten - written == strokes, "the ink was saved as it was written")
         #expect(model.summaryCacheSaves - saves == 2, "\(model.summaryCacheSaves - saves) saves for \(strokes) strokes")
