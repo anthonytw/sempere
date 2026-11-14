@@ -87,7 +87,10 @@ step "Linux static binaries"
 scripts/ci-linux.sh docker static:x86_64 static:aarch64
 for arch in x86_64 aarch64; do
   platform=linux/amd64; [[ $arch == aarch64 ]] && platform=linux/arm64
-  got=$(docker run --rm --platform "$platform" -v "$src:/src:ro" "$ALPINE_IMAGE" /src/build/linux-static/sempere-$arch --version | head -1)
+  # The whole output, then its first line: `| head -1` closes the pipe early and, with pipefail, fails the build when
+  # the writer (docker here) is still writing the version text's other lines.
+  got=$(docker run --rm --platform "$platform" -v "$src:/src:ro" "$ALPINE_IMAGE" /src/build/linux-static/sempere-$arch --version)
+  got=${got%%$'\n'*}
   [[ $got == "sempere $version" ]] || die "the Linux $arch binary says '$got'"
   docker run --rm -v "$src:/src" -w /src "$PACK_IMAGE" \
     scripts/package-cli.sh "build/linux-static/sempere-$arch" "$version" "linux-$arch" build/dist >/dev/null
@@ -99,7 +102,7 @@ swift build -c release --product sempere --arch arm64 --arch x86_64
 bin="$(swift build -c release --product sempere --arch arm64 --arch x86_64 --show-bin-path)/sempere"
 archs=$(lipo -archs "$bin")
 [[ $archs == *arm64* && $archs == *x86_64* ]] || die "the macOS binary has only: $archs"
-got=$("$bin" --version | head -1)
+got=$("$bin" --version); got=${got%%$'\n'*}
 [[ $got == "sempere $version" ]] || die "the macOS binary says '$got'"
 scripts/package-cli.sh "$bin" "$version" macos-universal build/dist >/dev/null
 echo "ok    macos-universal ($archs)"
