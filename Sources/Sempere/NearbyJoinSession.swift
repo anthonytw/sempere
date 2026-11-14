@@ -21,10 +21,14 @@ public protocol NearbyJoinConnection: AnyObject, Sendable {
     func receive(maximum: Int) async throws -> Data
     func cancel()
     func abort()
+    /// The address the other end connected from, without a port or an interface scope; nil when the transport cannot tell.
+    /// An incoming connection's handshake place is per address (`AppModelCore.acceptNearby`).
+    var remoteHost: String? { get }
 }
 
 extension NearbyJoinConnection {
     public func abort() { cancel() }
+    public var remoteHost: String? { nil }
 }
 
 /// The frames of one connection, read one after the other.

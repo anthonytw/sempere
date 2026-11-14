@@ -402,6 +402,41 @@ final class WatchModelTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
     }
 
+    /// Review follow-up: recordings no profile of this watch can place are reported (count, size), kept, counted again after a
+    /// relaunch, and Delete removes exactly them.
+    func testLeftoversNoProfileCanPlaceAreReportedAndDeletedOnRequest() async throws {
+        let r = try rig()
+        await r.model.activate()
+        r.model.receive(try provisioning(r, seq: 0))
+        func leftover(vault: UUID?) throws -> URL {
+            let id = UUID()
+            let folder = r.support.appendingPathComponent("Capture/\(id.uuidString.lowercased())", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var audio = Data()
+            for i in 0..<40 { audio.append(FakeWatchRecording.frame(seed: UInt8(i))) }
+            try audio.write(to: folder.appendingPathComponent("segment-001.aac"))
+            let manifest = RecordingManifest(note: id, recording: id, started: Date(), codec: "aac", segments: ["segment-001.aac"],
+                                             finished: 0, vault: vault, epochId: vault.map { _ in WatchDebugLaunch.profile.epochId })
+            try JSONEncoder().encode(manifest).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
+            return folder
+        }
+        let noVault = try leftover(vault: nil)
+        let other = try leftover(vault: UUID())
+        await r.model.activate()
+        XCTAssertEqual(r.model.leftovers.count, 2)
+        XCTAssertEqual(r.model.leftovers.noVault, 1)
+        XCTAssertEqual(r.model.leftovers.otherVault, 1)
+        XCTAssertGreaterThan(r.model.leftovers.bytes, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: noVault.path) && FileManager.default.fileExists(atPath: other.path))
+        // A relaunch counts them again: nothing is stored.
+        let again = WatchModelTests.makeModel(secrets: r.secrets, support: r.support)
+        await again.model.activate()
+        XCTAssertEqual(again.model.leftovers.count, 2)
+        again.model.deleteLeftovers()
+        XCTAssertEqual(again.model.leftovers.count, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: noVault.path) || FileManager.default.fileExists(atPath: other.path))
+    }
+
     // MARK: Keychain
 
     func testTheKeychainStoreKeepsTheIdentityAndTheState() throws {

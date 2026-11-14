@@ -67,7 +67,7 @@ final class NearbyJoinRuntime {
     var advertisement: (any NearbyActivity)?
     /// Connections that have not sent a whole request yet, by their token: at most `handshakeLimit`, each within one
     /// short limit (`NearbyJoin.Timeouts.request`). None of them holds the session.
-    var handshakes: [UUID: (task: Task<Void, Never>, connection: any NearbyJoinConnection)] = [:]
+    var handshakes: [UUID: (task: Task<Void, Never>, connection: any NearbyJoinConnection, host: String?)] = [:]
     /// Their tokens, oldest first.
     var handshakeOrder: [UUID] = []
     /// The session going (one at a time, taken by a parsed request of this vault): its token, task and connection.
@@ -88,7 +88,8 @@ final class NearbyJoinRuntime {
 
     /// At most this many requests that came nearby are kept for Add Device (the oldest goes first).
     static let requestLimit = 4
-    /// At most this many connections in their handshake at once (a new one ends the oldest).
+    /// At most this many connections in their handshake at once (a new one ends the oldest), and one per remote address:
+    /// a new connection from an address that has one ends that address's oldest first and takes its slot.
     nonisolated static let handshakeLimit = 4
     /// At most this many devices never tried before are tried per minute by the join screen (design L5).
     nonisolated static let newPeersPerMinute = 6
@@ -217,6 +218,13 @@ extension AppModelCore {
     /// stays silent, or sends anything else, is dropped within `NearbyJoin.Timeouts.request` and keeps nobody out.
     func acceptNearby(_ connection: any NearbyJoinConnection) {
         guard nearby.advertisement != nil, let current = vault, phase == .unlocked else { connection.abort(); return }
+        // One place per remote address: an address that opens connections fast ends its own, never the others'. A
+        // connection with no known address is its own group. Only when its address has none and every place is taken does
+        // the oldest overall end. This is no defense against many addresses (nearby-join.md "Handshake places").
+        let host = connection.remoteHost
+        if let host, let same = nearby.handshakeOrder.first(where: { nearby.handshakes[$0]?.host == host }) {
+            nearby.endHandshake(same)
+        }
         while nearby.handshakes.count >= NearbyJoinRuntime.handshakeLimit, let oldest = nearby.handshakeOrder.first {
             nearby.endHandshake(oldest)
         }
@@ -230,7 +238,7 @@ extension AppModelCore {
             })
             self?.nearbyConnectionEnded(token)
         }
-        nearby.handshakes[token] = (task, connection)
+        nearby.handshakes[token] = (task, connection, host)
         nearby.handshakeOrder.append(token)
     }
 

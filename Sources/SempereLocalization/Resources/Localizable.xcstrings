@@ -1966,6 +1966,55 @@
         }
       }
     },
+    "%lld of them are older than 30 days" : {
+      "comment" : "Watch: of the recordings that could not be placed",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld of them is older than 30 days"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld of them are older than 30 days"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld tienen más de 30 días"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld tiene más de 30 días"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld tienen más de 30 días"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld of them are voice notes not in a note yet: only Save Files keeps them." : {
       "comment" : "Unlisted screen: inbox captures among the unsynced files",
       "extractionState" : "manual",
@@ -2315,6 +2364,55 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld grabaciones adjuntas"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld recordings could not be placed" : {
+      "comment" : "Watch: recordings no vault of this watch can take",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld recording could not be placed"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld recordings could not be placed"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "No se pudieron colocar %lld grabaciones"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "No se pudo colocar %lld grabación"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "No se pudieron colocar %lld grabaciones"
                 }
               }
             }
@@ -7189,6 +7287,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "¿Eliminar las notas del Watch retenidas?"
+          }
+        }
+      }
+    },
+    "Delete these recordings?" : {
+      "comment" : "Watch: confirmation title",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar estas grabaciones?"
           }
         }
       }
@@ -22397,6 +22508,19 @@
         }
       }
     },
+    "The limit of held Watch notes that can only be deleted is reached: the watch keeps further notes until you delete some" : {
+      "comment" : "Settings: the unplaceable held Watch notes sub-limit is reached",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se alcanzó el límite de notas retenidas del Watch que solo se pueden eliminar: el reloj conserva las demás hasta que elimines algunas."
+          }
+        }
+      }
+    },
     "The new device then shows six words: type them here." : {
       "comment" : "Add Device",
       "extractionState" : "manual",
@@ -23235,6 +23359,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se eliminan de este dispositivo y no se pueden recuperar."
+          }
+        }
+      }
+    },
+    "They cannot be put in a vault from here, and are gone for good." : {
+      "comment" : "Watch: confirmation message",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pueden poner en una bóveda desde aquí y se perderán para siempre."
           }
         }
       }

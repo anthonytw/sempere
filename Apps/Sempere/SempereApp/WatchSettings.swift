@@ -50,6 +50,10 @@ struct WatchSettingsSection: View {
                         Text("The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some")
                             .font(.footnote).foregroundStyle(.orange)
                     }
+                    if WatchHeldStore.isFullOfUnplaceable(held) {
+                        Text("The limit of held Watch notes that can only be deleted is reached: the watch keeps further notes until you delete some")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
                     if addable < held.count {
                         Text("\(held.count - addable) of them can only be deleted: they were sealed with a key this device never held")
                             .font(.footnote).foregroundStyle(.secondary)

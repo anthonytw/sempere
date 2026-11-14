@@ -2217,7 +2217,7 @@ for that vault (`--queue`, default `$XDG_STATE_HOME/sempere/capture/watch-queue/
 it, unrecorded until placed). A file is placed only if it is **admitted**: its epoch is the one this machine's write ledger holds for
 its vault (a machine with no device key, so no ledger, has nothing to protect and admits it) and the vault folder's
 `vault.json` is not on a newer epoch, and its vault is `--vault` or in the store. Any other file is acknowledged but **held**, in
-`--held` (default `$XDG_STATE_HOME/sempere/capture/watch-held/<vault id>/`, at most 200 files and 500 MB; past that it is refused,
+`--held` (default `$XDG_STATE_HOME/sempere/capture/watch-held/<vault id>/`, at most 200 files and 500 MB, of which at most 20 files and 50 MB may be notes that can only be deleted (`unknownVault`, `unknownEpoch`); past either it is refused,
 exit 1, and not acknowledged), never in a vault folder, the ledger or a queue. Received ids are kept in `--received` (default
 `$XDG_STATE_HOME/sempere/capture/watch-received.json`, 180 days), so running it twice places nothing the second time. It then
 writes the acknowledgement the phone would send (`{acked, have}`) to `--ack` (default `<outbox>/ack.json`). `inbox import`
@@ -2226,7 +2226,7 @@ adopts the captures as notes. `--json`: `keygen` gives `{identity, recipient}`; 
 is `placed`, `held`, `duplicate` or `refused`; `placement` is `vault`, `queued`, `otherVault` or `otherVaultQueued`; `reason` of a held file is
 `linkOff`, `oldEpoch`, `newerEpoch`, `unknownEpoch` or `unknownVault`).
 
-`held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, needsCheck, bytes, receivedAt}]`;
+`held list` shows what `receive` kept, with the count per reason, and first removes files with no record (and records with no file) that are more than 24 hours old, since a young one may be a `receive` still writing it (`--json`: `{notes: [{capture, vault, epoch, reason, canAdd, needsCheck, bytes, receivedAt}], counts: {reason: n}, orphansRemoved, limits: {files, bytes, unplaceableFiles, unplaceableBytes}}`;
 `needsCheck` marks a note that arrived after Use on Apple Watch went off (`linkOff`) or under an earlier key (`oldEpoch`),
 what a lost watch sends: `held add --all` skips those, and they are added one at a time by id after a check). `held add` is the
 decision to take a held note: it records it in this machine's ledger and places it in its vault's inbox as `receive` would

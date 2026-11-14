@@ -97,6 +97,15 @@ struct SyncState: Codable, Equatable {
     /// Where runs that list the note folders in batches got to (`BatchedListing.swift`, offline audit P7): the next one
     /// goes on from there. Nil while the note folders are listed in one go.
     var listingPass: ListingPass?
+    /// Revisions this device wrote before 1.1.0 whose server copy was checked once for a cut upload because the listing gave no
+    /// size (`SyncEngine.verifySizeless`, D-07), keyed like `files`, with the local file's size and a digest of the listing entry
+    /// when it was checked: read again only when either changes. Bounded (`SyncEngine.sizelessCheckedMax`). Nil: none.
+    var sizelessChecked: [String: SizelessCheck]?
+
+    struct SizelessCheck: Codable, Equatable {
+        var size: Int
+        var listing: String
+    }
     /// Large blob uploads a connection window cut short (`LargeUploads.swift`, offline audit P3). Nil: none.
     var largeUploads: LargeUploadRecord?
 

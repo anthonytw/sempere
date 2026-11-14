@@ -263,7 +263,83 @@ public final class WatchRecorder {
     /// vault, or whose manifest names no vault, stays). With no profile at all (a clear, Reset) the leftovers are deleted, as the phone's sweep does. Returns the
     /// notes sealed.
     @discardableResult
-    public func sweep() async -> [WatchSavedNote] {
+    public func sweep() async -> [WatchSavedNote] { await sweepReport().sealed }
+
+    /// What `sweep` sealed, and the leftovers it kept because no profile can place them (`leftovers()`).
+    public struct SweepReport: Equatable, Sendable {
+        public var sealed: [WatchSavedNote]
+        public var kept: Leftovers
+    }
+
+    /// Recordings the watch holds that no profile of this device can place: no vault in the manifest (its saves failed), or a
+    /// vault other than the current profile's. Kept as they are, never sealed or deleted by themselves (a recording is the
+    /// user's data; the watch's Settings page says they are there and offers Delete). Counts and a size only: no names, no content.
+    public struct Leftovers: Equatable, Sendable {
+        public var noVault = 0
+        public var otherVault = 0
+        public var bytes = 0
+        /// Of those, how many began more than 30 days ago.
+        public var older = 0
+        public var count: Int { noVault + otherVault }
+        public init() {}
+    }
+
+    /// `sweep()`, with the leftovers it kept.
+    public func sweepReport() async -> SweepReport {
+        let sealed = await sweepSealing()
+        return SweepReport(sealed: sealed, kept: leftovers())
+    }
+
+    /// How a leftover folder is judged: unplaceable ones only (a recording with a byte in it, no kept profile, and a current
+    /// profile of another vault or a manifest naming none).
+    private func unplaceable(_ folder: URL, current: WatchProfilePayload?) -> (leftover: CaptureSegments.Leftover, bytes: Int)? {
+        guard let current, let leftover = CaptureSegments.Leftover(folder: folder) else { return nil }
+        if let id = leftover.id, keeper?.load(for: id) != nil { return nil }
+        if leftover.vault == current.profile.vaultId { return nil }
+        let bytes = leftover.segments.reduce(0) {
+            $0 + ((try? FileManager.default.attributesOfItem(atPath: $1.path))?[.size] as? Int ?? 0)
+        }
+        return bytes > 0 ? (leftover, bytes) : nil
+    }
+
+    private func unplaceableFolders() -> [(folder: URL, leftover: CaptureSegments.Leftover, bytes: Int)] {
+        guard !saving, !starting, profileReadable() else { return [] }
+        let current = profile()
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).sorted()
+        return names.compactMap { name in
+            let folder = root.appendingPathComponent(name, isDirectory: true)
+            guard folder != activeFolder, folder.standardizedFileURL != activeFolder?.standardizedFileURL,
+                  let u = unplaceable(folder, current: current) else { return nil }
+            return (folder, u.leftover, u.bytes)
+        }
+    }
+
+    /// Computed from the folders each time, never stored, so it survives a relaunch.
+    public func leftovers() -> Leftovers {
+        var out = Leftovers()
+        let cutoff = now().addingTimeInterval(-30 * 24 * 3600)
+        for u in unplaceableFolders() {
+            if u.leftover.vault == nil { out.noVault += 1 } else { out.otherVault += 1 }
+            out.bytes += u.bytes
+            let began = u.leftover.started
+                ?? (try? FileManager.default.attributesOfItem(atPath: u.folder.path))?[.modificationDate] as? Date
+            if let began, began < cutoff { out.older += 1 }
+        }
+        return out
+    }
+
+    /// Deletes exactly the folders `leftovers()` counts. Returns how many.
+    @discardableResult
+    public func deleteLeftovers() -> Int {
+        let all = unplaceableFolders()
+        for u in all {
+            try? FileManager.default.removeItem(at: u.folder)
+            if let id = u.leftover.id { keeper?.discard(id) }
+        }
+        return all.count
+    }
+
+    private func sweepSealing() async -> [WatchSavedNote] {
         guard !saving, !starting, profileReadable() else { return [] }
         let current = profile()
         let fm = FileManager.default
