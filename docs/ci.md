@@ -134,9 +134,53 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
 - **Fail fast, then rerun** ([Fail fast](#fail-fast)): steps run cheapest first and the run stops at the first
   failed step; inside a step the tests stop at the first failed test, which then runs twice on its own and is
   reported as `FAILING` or `FLAKY`. A flaky test fails the step too: nothing retries silently.
-- **Quarantine**: a test known to be flaky leaves the main suites (`ui_quarantine` in `scripts/app.sh`, skipped by every
-  UI step) and runs only on its own (`scripts/app.sh test-quarantine`), outside every gate and sweep. Then it is either
-  deleted or made reliable; a sweep is never rerun because of a known flaky test.
+- **Quarantine**: a test known to be flaky leaves the main suites and runs only on its own, outside every gate and sweep.
+  Rule (owner, 2026-11-12): a known flaky test is quarantined, never rerun around; a reviewer then decides keep-or-delete
+  per test, and only a kept one is made reliable and moved back. Each runner has one list, skipped by its normal steps and run
+  alone by one command:
+
+  | List | Runner | Skipped by | Run alone by |
+  |---|---|---|---|
+  | `ui_quarantine` (`scripts/app.sh`) | iPhone simulator UI tests | every `ui_suites` step | `scripts/app.sh test-quarantine` (group `ui`) |
+  | `unit_quarantine_mac` (`scripts/app.sh`) | Mac Catalyst app unit tests | `test`, `test-mac`, `test-mac-offline` | `scripts/app.sh test-quarantine` (group `mac`) |
+  | `unit_quarantine_watch` (`scripts/app.sh`) | watchOS simulator unit tests | `test-watch` | `scripts/app.sh test-quarantine` (group `watch`) |
+  | `swiftpm_quarantine` (`scripts/swiftpm-quarantine.sh`) | SwiftPM: the Mac package step and the Linux `test` job | `ci-mac-package.sh`, `ci-linux.sh test`, `test-linux.sh` | `scripts/ci-linux.sh docker quarantine`, or `scripts/swiftpm-quarantine.sh` on a Mac |
+
+  `SEMPERE_QUARANTINE_GROUP=ui|mac|watch` makes `test-quarantine` run one group (the default runs all three; each non-empty
+  group runs, and the step fails if any did). Under xc-lock run it per group: `XC_KIND=mac` for `mac` (Catalyst jobs are
+  exclusive), `XC_KIND=build` for `watch` (a clone would be an iPhone), `XC_KIND=sim` for `ui`. A list may be empty; every
+  expansion of one uses `${a[@]+"${a[@]}"}`, because macOS bash 3.2 with `set -u` fails on a bare `"${a[@]}"`.
+
+  Deleted after review (their behavior is guarded elsewhere, so their lists are empty now: `ui_quarantine`, `swiftpm_quarantine`):
+  - `NoteToolbarUITests/testANoteOpensInReadingAndTheOverflowMenuListsItsRecordings`: every assertion is a model-level test
+    (`NoteModeTests.everyNoteOpensInReadingMode`, `everyDeviceReachesTheRecordingsList`, `theOverflowMenuIsTheSameOnEveryDevice`,
+    `AudioItemAppTests.recordingsListIsANoteMenuCommand`); what was left was a 60 s cold launch on three devices.
+  - `ConcurrentTransferTests/testCancelledMidwayWithSeveralInFlightResumes`: covered by `testReviewProgressMonotoneWhenResumeGets200`
+    (the same cancel-in-flight harness), `BlobResumeTests` and `PartialCopyTests` (Range at the kept offset) and
+    `testACutDownloadAmongConcurrentOnesResumes`. If a sister test flakes, the shared `cancelWhenBlobsAreInFlight` / `SegmentGate`
+    harness is the cause and gets fixed there.
+
+  Kept in quarantine, with the reviewer's plan to make each deterministic (a follow-up PR; none is fixed yet). Until then none gates:
+  - `SempereAppTests/PseudoLanguageLayoutTests/screenFits(_:in:)` (`unit_quarantine_mac`): a sheet is still animating when the
+    layout is measured. It is the only per-PR layout check for localization (`pseudo` and `pseudo-mac` are release-only), so the
+    layouts are not gated meanwhile (docs/localization.md "Checking layouts"). Plan: in `LayoutHost.settle(sheet:)`
+    (`PseudoLanguageHarness.swift`) replace "3 equal snapshots 50 ms apart" with the end of the presentation as an event: present
+    with animations disabled (`Transaction(disablesAnimations: true)`); for a sheet, await the presenting controller's
+    `transitionCoordinator` completion (resume at once when it is nil), then require `isBeingPresented == false` and the presented
+    view's frame equal to `presentationController.frameOfPresentedViewInContainerView`; then `layoutIfNeeded()` and one snapshot.
+  - `SempereAppTests/LoadDeviceCheckTests/c20RecognitionWhileWritingSavesTheSummaryCacheRarely()` (`unit_quarantine_mac`): timing
+    under load. The only test of the `summaryCacheSaveInterval` throttle. Plan: inject the clock (`saveSummaryCacheIfDue` reads
+    `ContinuousClock.now`; give `AppModel` a `now` closure or a `Clock`, and make the recognition delay and editor debounce use it);
+    draw N strokes in a loop with no sleeps, wait on events (`editor.deltasWritten == n`, the `FakeRecognizer` call count),
+    advance a manual clock 0.45 s each, and assert the exact save count, `deltasWritten == N` and `calls == N`; drop the 6 s window
+    and the load-relative bounds.
+  - `SempereWatchTests/WatchModelTests/testRecordStopSealsIntoTheOutboxAndHandsItOver` (`unit_quarantine_watch`): the test host
+    crashed once. The only end-to-end happy-path test of the watch model. Plan: first pull the crash report from that run's
+    xcresult or DiagnosticReports and treat it as a bug; then remove the incidental timing: delete the
+    `Task.sleep(for: .milliseconds(300))` (`FakeWatchRecording.stop()` writes at least 8 frames whatever the elapsed time) and
+    replace the wall-clock `eventually("saved to go")` with an injected saved-to-ready timer, or await the model's saved-dismiss task.
+
+  Adding one is a line in the runner's list and a line here with its reason; a reviewer then decides keep-or-delete.
 - Off CI, `scripts/app.sh` stops an `xcodebuild` that sits idle after the end of its whole run
   (`SEMPERE_STALL_SECS`, default 180 s): `Test Suite 'All tests'` or `'Selected tests'` passed or failed, or
   `Test run with N tests`, never a class's `Executed N tests`; a `◇ Test run started` after it (Swift Testing

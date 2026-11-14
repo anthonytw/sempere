@@ -6,6 +6,7 @@
 #                                      targets are skipped, scripts/bench.sh runs them),
 #                                      the portability guard and the removable-importers check
 #   scripts/ci-linux.sh webdav         the WebDAV integration tests against wsgidav (scripts/test-webdav.sh)
+#   scripts/ci-linux.sh quarantine     the quarantined tests alone (scripts/swiftpm-quarantine.sh; not a gate)
 #   scripts/ci-linux.sh static [ARCH]  the fully static release binary (scripts/build-linux-static.sh; Swift 6.4.2
 #                                      image), host architecture by default
 #   scripts/ci-linux.sh docker JOB...  run each JOB (or JOB:ARG, e.g. static:x86_64) in the right image with Docker, from a Mac or any Linux host. The
@@ -40,6 +41,8 @@ age_sha256() {
     arm64) echo 6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4 ;;
   esac
 }
+
+source scripts/swiftpm-quarantine.sh   # swiftpm_skips: the quarantined tests (docs/ci.md "Quarantine")
 
 apt_install() {   # retries, then falls back to a mirror (scripts/apt-install.sh)
   scripts/apt-install.sh "$@"
@@ -90,7 +93,7 @@ job_test() {
     echo "ci-linux: every test target skipped: each passed with its current hash (lines above name the commits)"
   else
     SEMPERE_REQUIRE_AGE_PQ=1 SEMPERE_REQUIRE_POPPLER=1 SEMPERE_REQUIRE_TOOLS=zbar,zip,pdftotext,bidi CI=1 \
-      scripts/test-offline.sh --skip-build --parallel --skip 'Benchmarks\.' ${skips[@]+"${skips[@]}"} ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
+      scripts/test-offline.sh --skip-build --parallel --skip 'Benchmarks\.' ${swiftpm_skips[@]+"${swiftpm_skips[@]}"} ${skips[@]+"${skips[@]}"} ${SEMPERE_BUILD_JOBS:+--num-workers "$SEMPERE_BUILD_JOBS"}
     python3 scripts/ci-hash.py record --plan "$plan"   # only after the whole run passed (set -e)
   fi
   # The web viewer's golden files are what the CLI writes now (web/scripts/golden.sh). Runs every time, after any skip: a skipped
@@ -125,6 +128,13 @@ removable_importers() {
   fi
   scripts/check-removable-importers.sh
   python3 scripts/ci-hash.py record --plan "$plan"
+}
+
+# The quarantined SwiftPM tests (scripts/swiftpm-quarantine.sh), alone: not a gate, no pass records.
+job_quarantine() {
+  lock_build
+  apt_install zlib1g-dev curl python3
+  scripts/swiftpm-quarantine.sh
 }
 
 job_webdav() {
@@ -185,6 +195,7 @@ in_docker() {   # JOB or JOB:ARG (static:x86_64)
 case ${1:-} in
   test) shift; job_test "$@" ;;
   webdav) shift; job_webdav "$@" ;;
+  quarantine) shift; job_quarantine "$@" ;;
   static) shift; job_static "$@" ;;
   docker) shift; for job in "$@"; do in_docker "$job"; done ;;
   *) sed -n '2,16p' "$0" >&2; exit 2 ;;

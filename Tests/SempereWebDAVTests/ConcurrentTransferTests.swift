@@ -288,38 +288,6 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
         XCTAssertEqual(push.progress?.filesTotal, 0)
     }
 
-    /// Canceled with several blobs in flight: what arrived is kept, partial blobs continue
-    /// (`Range` from where they stopped) and the copy ends identical to the server's.
-    func testCancelledMidwayWithSeveralInFlightResumes() throws {
-        let server = MockDAV()
-        try serverVault(server, blobs: 2, blobSize: 200_000)
-        let armed = cancelWhenBlobsAreInFlight(server)
-        let first = try pull("B", server, configure: armed.configure)
-        XCTAssertFalse(armed.gate.timedOut, "\(armed.gate.blobs) blobs never got to their second segment")
-        server.interceptor = nil
-        XCTAssertEqual(first.stoppedEarly, "sync run canceled", "\(first)")
-        XCTAssertTrue(first.quarantined.isEmpty, "\(first)")
-        let placed = first.downloaded.filter { $0.hasPrefix("notes/") }.count
-        XCTAssertLessThan(placed, 6 * 4)
-        let cut = partials("B")
-        XCTAssertGreaterThanOrEqual(cut.count, armed.gate.blobs, "blobs cut short are kept to continue")
-        let sizes = Dictionary(uniqueKeysWithValues: cut.map {
-            (String($0.lastPathComponent.dropFirst(SyncEngine.partialPrefix.count)), (try? Data(contentsOf: $0).count) ?? 0)
-        })
-
-        let before = server.headers.count
-        let second = try pull("B", server) { $0.concurrency = 6; $0.blobSegmentBytes = 16_384 }
-        XCTAssertTrue(second.errors.isEmpty && second.stoppedEarly == nil, "\(second)")
-        XCTAssertEqual(second.downloaded.filter { $0.hasPrefix("notes/") }.count, 6 * 4 - placed)
-        for (name, size) in sizes where size > 0 {
-            let firstGET = server.headers[before...].first { $0.method == "GET" && $0.path.hasSuffix(name) }
-            XCTAssertEqual(firstGET?.headers["Range"]?.hasPrefix("bytes=\(size)-"), true, "\(name) continues at \(size)")
-        }
-        XCTAssertTrue(partials("B").isEmpty)
-        XCTAssertEqual(contents("B"), contents("A"))
-        XCTAssertNoThrow(try Vault.open(at: dir("B"), identities: [identity]).loadNote(notes[5]))
-    }
-
     /// A connection cut on one blob among concurrent downloads fails that blob only; the next run resumes it.
     func testACutDownloadAmongConcurrentOnesResumes() throws {
         let server = MockDAV()

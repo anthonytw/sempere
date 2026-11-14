@@ -11,6 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+source scripts/swiftpm-quarantine.sh   # swiftpm_skips: the quarantined tests, which run alone (docs/ci.md "Quarantine")
 export SEMPERE_CI_PASS_DIR=${SEMPERE_CI_PASS_DIR:-$HOME/.cache/sempere-ci-pass}
 mkdir -p build
 plan=build/ci-mac-package.plan
@@ -24,5 +25,5 @@ if [[ $(/usr/bin/python3 -I scripts/ci-hash.py runs "$plan" | wc -l) -eq 0 ]]; t
   echo "package: every test target skipped (each passed with its current hash, or is left to Linux)"
   exit 0
 fi
-/usr/bin/python3 -I scripts/test-runner.py --kind swiftpm -- swift test --parallel --skip 'Benchmarks\.' ${skips[@]+"${skips[@]}"}
+/usr/bin/python3 -I scripts/test-runner.py --kind swiftpm -- swift test --parallel --skip 'Benchmarks\.' ${swiftpm_skips[@]+"${swiftpm_skips[@]}"} ${skips[@]+"${skips[@]}"}
 /usr/bin/python3 -I scripts/ci-hash.py record --plan "$plan"

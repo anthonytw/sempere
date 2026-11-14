@@ -14,7 +14,8 @@
 #                             # Every UI test class is in exactly one device list below (scripts/check-ui-tests.sh, in
 #                             # local-ci's `help` step, fails on a class that is in none, or a name that is no class).
 #   scripts/app.sh pseudo     # UI-test layout check in the double-length, right-to-left and Spanish languages, iPad
-#                             # simulator (by hand; the gate runs the in-process PseudoLanguageLayoutTests in test-mac)
+#                             # simulator (by hand; the in-process PseudoLanguageLayoutTests, in test-mac, is QUARANTINED
+#                             # (docs/ci.md): the gate does not check layouts until it is made deterministic)
 #   scripts/app.sh pseudo-mac # the same as the Mac Catalyst app, at a narrow and a wide window (takes over the screen)
 #   scripts/app.sh test-mac   # every app suite on Mac Catalyst, ad-hoc signed and sandboxed
 #   scripts/app.sh test-mac-offline # the same with no network: signed with SempereOfflineTests.entitlements (no
@@ -32,6 +33,9 @@
 #
 # SEMPERE_SIM_ID overrides the simulator choice. The watch runs (test-watch, test-watch-ui) pick an Apple Watch on the newest
 # watchOS runtime; under xc-lock they need XC_KIND=sim XC_NO_CLONE=1 (its clones are iPads and iPhones).
+# test-quarantine (xc-lock reads it as a plain build): run it per group, SEMPERE_QUARANTINE_GROUP=ui|mac|watch, with
+# XC_KIND=mac for mac (Catalyst jobs are exclusive: they share the app's container), XC_KIND=build for watch (a clone would be
+# an iPhone) and XC_KIND=sim for ui.
 #
 # The Mac UI tests (test-mac-ui, test-mac-smoke) are ad-hoc signed. Off CI they build without the
 # hardened runtime: on a Mac with a developer identity the ad-hoc UI-test runner otherwise refuses
@@ -148,13 +152,29 @@ ui_tooling=(ScreenshotTests DocsScreenshotTests)
 # ui-lists:end
 # `ui_suites NAME…`: -only-testing for those UI test entries (unless the caller narrowed the run).
 # Quarantine (owner rule 2026-11-12): a known flaky test leaves the main suites and runs only on its own
-# (`scripts/app.sh test-quarantine`, iPhone simulator), until it is deleted or made reliable. Entries are `Class/testName`.
-ui_quarantine=(NoteToolbarUITests/testANoteOpensInReadingAndTheOverflowMenuListsItsRecordings)
+# (`scripts/app.sh test-quarantine`, outside every gate and sweep), until a reviewer decides keep-or-delete per test and a
+# kept one is made reliable. docs/ci.md "Quarantine" gives each one's reason. One list per runner, entries `Class/testName`
+# (the unit lists `Target/Suite/test`); every list is skipped by its normal steps and run alone by test-quarantine.
+#   ui_quarantine          SempereAppUITests, iPhone simulator
+#   unit_quarantine_mac    SempereAppTests, Mac Catalyst (skipped by test, test-mac and test-mac-offline)
+#   unit_quarantine_watch  SempereWatchTests, watchOS simulator (skipped by test-watch)
+# The SwiftPM tests have their own list: swiftpm_quarantine in scripts/swiftpm-quarantine.sh (`scripts/ci-linux.sh docker quarantine`).
+# An empty list is fine; expand every list with ${a[@]+"${a[@]}"} (macOS bash 3.2 + set -u fails on a bare "${a[@]}").
+ui_quarantine=()
+unit_quarantine_mac=('SempereAppTests/PseudoLanguageLayoutTests/screenFits(_:in:)'
+                     'SempereAppTests/LoadDeviceCheckTests/c20RecognitionWhileWritingSavesTheSummaryCacheRarely()')
+unit_quarantine_watch=(SempereWatchTests/WatchModelTests/testRecordStopSealsIntoTheOutboxAndHandsItOver)
+# `-skip-testing:` / `-only-testing:` arguments for a list, one per line: quarantine_args skip|only PREFIX ENTRY...
+# (no namerefs: the system bash is 3.2). to_array NAME reads such lines from stdin into the array NAME.
+quarantine_args() { local kind=$1 prefix=$2 e; shift 2; for e in "$@"; do echo "-$kind-testing:$prefix$e"; done; }
+to_array() { local name=$1 line; eval "$name=()"; while IFS= read -r line; do eval "$name+=(\"\$line\")"; done; }
+to_array unit_skip_mac < <(quarantine_args skip "" ${unit_quarantine_mac[@]+"${unit_quarantine_mac[@]}"})
+to_array unit_skip_watch < <(quarantine_args skip "" ${unit_quarantine_watch[@]+"${unit_quarantine_watch[@]}"})
 
 ui_suites() {
   local entries=() entry
   for entry in "$@"; do entries+=("-only-testing:SempereAppUITests/$entry"); done
-  for entry in "${ui_quarantine[@]}"; do entries+=("-skip-testing:SempereAppUITests/$entry"); done
+  for entry in ${ui_quarantine[@]+"${ui_quarantine[@]}"}; do entries+=("-skip-testing:SempereAppUITests/$entry"); done
   suites "${entries[@]}"
 }
 
@@ -244,6 +264,7 @@ case "${1:-}" in
     sim=$(pick_simulator)
     settle_simulator "$sim"
     skip=("${perf_skip[@]}"); $narrowed && skip=()   # the benchmarks are the Mac's (test-mac-perf)
+    skip+=(${unit_skip_mac[@]+"${unit_skip_mac[@]}"})
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${skip[@]+"${skip[@]}"} ${extra[@]+"${extra[@]}"}
     ;;
@@ -265,15 +286,38 @@ case "${1:-}" in
     shutdown_simulators "$sim"
     ;;
   test-quarantine)
-    # The quarantined UI tests (ui_quarantine), on the iPhone simulator, outside every gate and sweep.
-    sim=$(pick_simulator iPhone)
-    settle_simulator "$sim"
-    only=(); for entry in "${ui_quarantine[@]}"; do only+=("-only-testing:SempereAppUITests/$entry"); done
-    xcb test "${lang[@]}" -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
-      -destination "platform=iOS Simulator,id=$sim" "${only[@]}" \
-      -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"} \
-      || { status=$?; shutdown_simulators "$sim"; exit $status; }
-    shutdown_simulators "$sim"
+    # Every quarantined test, alone, outside every gate and sweep: the UI list on the iPhone simulator, the Mac unit list on
+    # Mac Catalyst, the watch list on a watchOS simulator. SEMPERE_QUARANTINE_GROUP=ui|mac|watch runs one group. Every
+    # group runs; the step fails when any of them did.
+    group=${SEMPERE_QUARANTINE_GROUP:-all}
+    status=0
+    if [[ ( $group == all || $group == ui ) && ${#ui_quarantine[@]} -gt 0 ]]; then
+      sim=$(pick_simulator iPhone)
+      settle_simulator "$sim"
+      to_array only < <(quarantine_args only SempereAppUITests/ ${ui_quarantine[@]+"${ui_quarantine[@]}"})
+      xcb test "${lang[@]}" -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
+        -destination "platform=iOS Simulator,id=$sim" "${only[@]}" \
+        -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"} || status=$?
+      shutdown_simulators "$sim"
+    fi
+    if [[ ( $group == all || $group == mac ) && ${#unit_quarantine_mac[@]} -gt 0 ]]; then
+      shutdown_simulators
+      tmp_guard_start
+      to_array only < <(quarantine_args only "" ${unit_quarantine_mac[@]+"${unit_quarantine_mac[@]}"})
+      xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
+        -destination 'platform=macOS,variant=Mac Catalyst' "${only[@]}" \
+        CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${extra[@]+"${extra[@]}"} || status=$?
+    fi
+    if [[ ( $group == all || $group == watch ) && ${#unit_quarantine_watch[@]} -gt 0 ]]; then
+      sim=$(pick_simulator Watch)
+      settle_simulator "$sim"
+      to_array only < <(quarantine_args only "" ${unit_quarantine_watch[@]+"${unit_quarantine_watch[@]}"})
+      xcb test "${lang[@]}" -project "$project" -scheme SempereWatch -derivedDataPath "$derived" \
+        -destination "platform=watchOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO "${only[@]}" \
+        ${extra[@]+"${extra[@]}"} || status=$?
+      shutdown_simulators "$sim"
+    fi
+    exit $status
     ;;
   test-phone-ui)
     # The iPhone's canvas with a finger (SempereScreenshots scheme, which owns the UI tests): tap selects,
@@ -321,9 +365,10 @@ case "${1:-}" in
     sim=$(pick_simulator Watch)
     settle_simulator "$sim"
     if [[ $1 == test-watch ]]; then suites -only-testing:SempereWatchTests; else suites -only-testing:SempereWatchUITests; fi
+    watch_skip=(); [[ $1 == test-watch ]] && watch_skip=(${unit_skip_watch[@]+"${unit_skip_watch[@]}"})
     xcb test "${lang[@]}" -project "$project" -scheme SempereWatch -derivedDataPath "$derived" \
       -destination "platform=watchOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO \
-      ${only[@]+"${only[@]}"} ${extra[@]+"${extra[@]}"} \
+      ${only[@]+"${only[@]}"} ${watch_skip[@]+"${watch_skip[@]}"} ${extra[@]+"${extra[@]}"} \
       || { status=$?; shutdown_simulators "$sim"; exit $status; }
     shutdown_simulators "$sim"
     ;;
@@ -374,6 +419,7 @@ case "${1:-}" in
     # Ad-hoc signed: a sandboxed Catalyst test host has to be signed to launch.
     suites -only-testing:SempereAppTests
     skip=("${perf_skip[@]}"); $narrowed && skip=()
+    skip+=(${unit_skip_mac[@]+"${unit_skip_mac[@]}"})
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} ${skip[@]+"${skip[@]}"} \
       CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${extra[@]+"${extra[@]}"}
@@ -389,6 +435,7 @@ case "${1:-}" in
     tmp_guard_start
     suites -only-testing:SempereAppTests
     skip=("${perf_skip[@]}"); $narrowed && skip=()
+    skip+=(${unit_skip_mac[@]+"${unit_skip_mac[@]}"})
     offline_log=$(mktemp -t sempere-offline)
     set +e
     TEST_RUNNER_SEMPERE_OFFLINE_TEST=1 xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
@@ -449,7 +496,7 @@ case "${1:-}" in
       -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     ;;
   *)
-    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|build-ios|build-watch|test-watch|test-watch-ui|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|simulator" >&2
+    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|test-quarantine|build-ios|build-watch|test-watch|test-watch-ui|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|simulator" >&2
     exit 2
     ;;
 esac
