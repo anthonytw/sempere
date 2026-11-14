@@ -161,11 +161,9 @@ public struct WorkDeviceStatus: Hashable, Sendable {
             latest = mine.max()
         }
         lastSeen = latest.map { Date(timeIntervalSince1970: Double($0) / 1000) }
-        if settings.workDevice != nil {
-            notSeen = lastSeen.map { now.timeIntervalSince($0) > Self.notSeenAfter } ?? true
-        } else {
-            notSeen = false
-        }
+        // A work device that has written nothing yet (just designated or claimed) has not gone missing: status says
+        // "nothing written yet" instead (D16: a fresh claim read "not seen for 14 days").
+        notSeen = lastSeen.map { now.timeIntervalSince($0) > Self.notSeenAfter } ?? false
         let pin = settings.pins[language]
         capable = snapshot.devices.filter { d, r in
             listed.contains(d) && !(r.supported[language] ?? []).isEmpty && (pin.map { (r.supported[language] ?? []).contains($0) } ?? true)

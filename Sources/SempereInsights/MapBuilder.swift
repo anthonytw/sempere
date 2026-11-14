@@ -4,7 +4,8 @@ import Sempere
 // MARK: - Steps 7 and 8: clustering, layout and placement (docs/design/1.2-note-insights.md §4, §3.8)
 //
 // Louvain with sorted node order, a fixed resolution and ties by the lowest id; clusters under 3 notes merge into
-// "Other"; two levels kept; a label is the top 3 terms by in-cluster over out-of-cluster IDF weight. The layout is
+// "Other"; two levels kept; a label is the top 3 terms by in-cluster over out-of-cluster IDF weight (generated keywords
+// and concepts when the members have them, D16). The layout is
 // Fruchterman-Reingold, 300 iterations, initial positions from a hash of the note id (or the previous build's),
 // clusters pulled to ring slots by id, rounded to 1e-3. Cluster ids follow the previous build by member overlap, so
 // labels and positions stay put. Placement of a new note is a pure function too.
@@ -172,11 +173,14 @@ public enum MapBuilder {
         let ids0 = ids(for: sets0, previous: prev0)
         func centroid(_ members: [Int]) -> [Float] { VectorMath.normalized(VectorMath.mean(members.map { vs[$0] }) ?? []) }
         let allTokens = notes.map(\.tokens)
+        let allTerms = notes.map(\.terms)
         func label(_ members: [Int]) -> [String] {
             let inside = Set(members)
+            // The members' generated keywords and concepts when they have any, else their text words (D16).
+            let source = members.contains { !allTerms[$0].isEmpty } ? allTerms : allTokens
             var inW: [String: Double] = [:], outW: [String: Double] = [:]
             for i in 0..<n {
-                for t in allTokens[i] where corpus.idf(t) > 0 {
+                for t in source[i] where corpus.idf(t) > 0 {
                     if inside.contains(i) { inW[t, default: 0] += corpus.idf(t) } else { outW[t, default: 0] += corpus.idf(t) }
                 }
             }

@@ -106,6 +106,7 @@ struct InsightsUpdate: ParsableCommand {
         var o = InsightsUpdateOptions()
         if let note { o.note = try vault.resolveNote(note) }
         o.force = force; o.limit = limit; o.embeddingsOnly = embeddingsOnly; o.dryRun = dryRun
+        o.failureMemo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
         #if os(macOS)
         o.powerWindow = ProcessInfo.processInfo.thermalState != .serious && ProcessInfo.processInfo.thermalState != .critical
         #endif
@@ -245,7 +246,7 @@ struct InsightsStatus: ParsableCommand {
         print("Note Insights: \(s.enabled ? "on" : "off")")
         print("processed \(s.processed) of \(s.notes) notes (\(s.stale) stale, \(s.missing) missing)")
         if let w = s.workDevice {
-            print("work device: \(s.workDeviceName ?? w) (\(w)), last seen \(InsightsCLI.ms(s.workDeviceLastSeen))"
+            print("work device: \(s.workDeviceName ?? w) (\(w)), last seen \(s.workDeviceLastSeen == nil ? "- (nothing written yet)" : InsightsCLI.ms(s.workDeviceLastSeen))"
                   + (s.workDeviceNotSeen ? ": work device not seen for 14 days (sempere insights work-device --claim to use this device)" : ""))
         } else {
             print("work device: none (sempere insights work-device --claim)")
@@ -462,8 +463,7 @@ struct InsightsTitle: ParsableCommand {
             let transcript = n.transcript, merger = InsightsNotes.merger(inputs)
             slug = try blockingThrowing { () async throws -> String? in
                 let raw = try await model.title(transcript: String(transcript.prefix(4000)), language: n.language)
-                let cleaned = VoiceNoteTitleFormat.cleaned(raw)
-                return (1...6).contains(InsightsWords.count(cleaned)) && FactCheck(source: transcript, merger: merger).supported(cleaned) ? cleaned : nil
+                return InsightsGenerator.slug(raw, transcript: transcript, merger: merger)
             }
         }
         let updater = InsightsUpdater(vault: vault, model: nil, embedder: nil, deviceState: DeviceState.defaultURL(), app: appName)
@@ -551,7 +551,7 @@ struct InsightsWorkDevice: ParsableCommand {
                       lastSeen: w.lastSeen, notSeenFor14Days: w.notSeen, capable: w.capable.map(\.rawValue), changed: changed)
         if output.json { return try output.emitJSON(out) }
         if let d = out.workDevice {
-            print("work device: \(out.name ?? d) (\(d)), last seen \(InsightsCLI.ms(out.lastSeen))"
+            print("work device: \(out.name ?? d) (\(d)), last seen \(out.lastSeen == nil ? "- (nothing written yet)" : InsightsCLI.ms(out.lastSeen))"
                   + (out.notSeenFor14Days ? "; not seen for 14 days: summaries pause until it returns or another device is set" : ""))
         } else { print("work device: none") }
         if !out.capable.isEmpty { print("capable: " + out.capable.map { "\(reader.deviceNames[$0] ?? $0) (\($0))" }.joined(separator: ", ")) }

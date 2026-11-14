@@ -55,9 +55,12 @@ public struct RelatedInput: Hashable, Sendable {
     public var tokens: Set<String>
     /// The note's length in words (compilations weigh less).
     public var words: Int
+    /// Its generated keywords and concepts (a subset of `tokens`): an edge's "why" and a cluster's label prefer them
+    /// to raw text words (D16: "why" read like recognizer noise from PDFs, labels like "maybe, hopefully").
+    public var terms: Set<String>
 
-    public init(id: UUID, vector: [Float]?, tokens: Set<String>, words: Int) {
-        self.id = id; self.vector = vector; self.tokens = tokens; self.words = words
+    public init(id: UUID, vector: [Float]?, tokens: Set<String>, words: Int, terms: Set<String> = []) {
+        self.id = id; self.vector = vector; self.tokens = tokens; self.words = words; self.terms = terms
     }
 }
 
@@ -79,6 +82,9 @@ public enum RelatedGraph {
     public static let maxEdges = 8
     /// The score floor under the knee (in z units).
     public static let floor = 0.5
+    /// An edge with no shared term ("similar wording") needs both notes this long: the vector of a note of a few words
+    /// is noise (D16: three-word notes linked to other unrelated three-word notes).
+    public static let minWordsForWording = 25
 
     /// Each note's edges, best first (deterministic: ties by note id).
     public static func build(_ notes: [RelatedInput], corpus: InsightsCorpus? = nil) -> [UUID: [RelatedEdge]] {
@@ -103,25 +109,32 @@ public enum RelatedGraph {
                 kw[i][j] = s; kw[j][i] = s
             }
         }
-        // Vector similarity: mean-centered, CSLS.
-        let withVectors = notes.allSatisfy { $0.vector != nil } && notes.count >= 3
+        // Vector similarity: mean-centered, CSLS, over the notes that have a vector. A note without one (D16: a note of
+        // equations only has no embedding input) takes part by keyword overlap alone; it used to turn the vectors off
+        // for the whole vault.
+        let hasVector = notes.map { $0.vector != nil }
+        let vectorIdx = (0..<n).filter { hasVector[$0] }
+        let withVectors = vectorIdx.count >= 3
         var csls: [[Double]]?
         if withVectors {
-            let raw = notes.compactMap(\.vector)
-            let mean = VectorMath.mean(raw)
-            let vs = raw.map { VectorMath.centered($0, mean: mean) }
+            let mean = VectorMath.mean(vectorIdx.compactMap { notes[$0].vector })
+            var vs = [[Float]](repeating: [], count: n)
+            for i in vectorIdx { if let v = notes[i].vector { vs[i] = VectorMath.centered(v, mean: mean) } }
             var cos = [[Double]](repeating: [Double](repeating: 0, count: n), count: n)
-            for i in 0..<n { for j in (i + 1)..<n { let c = VectorMath.dot(vs[i], vs[j]); cos[i][j] = c; cos[j][i] = c } }
-            let k = min(neighboursForHubness, n - 1)
-            let r: [Double] = (0..<n).map { i in
-                let top = (0..<n).filter { $0 != i }.map { cos[i][$0] }.sorted(by: >).prefix(k)
-                return top.reduce(0, +) / Double(max(1, top.count))
+            for (a, i) in vectorIdx.enumerated() {
+                for j in vectorIdx[(a + 1)...] { let c = VectorMath.dot(vs[i], vs[j]); cos[i][j] = c; cos[j][i] = c }
             }
-            let words = notes.map(\.words).sorted()
+            let k = min(neighboursForHubness, vectorIdx.count - 1)
+            var r = [Double](repeating: 0, count: n)
+            for i in vectorIdx {
+                let top = vectorIdx.filter { $0 != i }.map { cos[i][$0] }.sorted(by: >).prefix(k)
+                r[i] = top.reduce(0, +) / Double(max(1, top.count))
+            }
+            let words = vectorIdx.map { notes[$0].words }.sorted()
             let median = Double(words[words.count / 2])
             var s = cos
-            for i in 0..<n {
-                for j in 0..<n where i != j {
+            for i in vectorIdx {
+                for j in vectorIdx where i != j {
                     var x = 2 * cos[i][j] - r[i] - r[j]
                     if median > 0, Double(notes[i].words) > 3 * median || Double(notes[j].words) > 3 * median { x *= 0.8 }
                     s[i][j] = x
@@ -129,19 +142,19 @@ public enum RelatedGraph {
             }
             csls = s
         }
-        // Combined score in z units over all pairs.
-        func z(_ m: [[Double]]) -> [[Double]] {
+        // Combined score in z units over all pairs (the vector part over the pairs that have one).
+        func z(_ m: [[Double]], pairs: (Int, Int) -> Bool) -> [[Double]] {
             var xs: [Double] = []
-            for i in 0..<n { for j in (i + 1)..<n { xs.append(m[i][j]) } }
+            for i in 0..<n { for j in (i + 1)..<n where pairs(i, j) { xs.append(m[i][j]) } }
             let mu = xs.reduce(0, +) / Double(max(1, xs.count))
             let sd = sqrt(xs.map { ($0 - mu) * ($0 - mu) }.reduce(0, +) / Double(max(1, xs.count)))
             return m.map { row in row.map { sd > 1e-12 ? ($0 - mu) / sd : 0 } }
         }
-        let zk = z(kw)
+        let zk = z(kw) { _, _ in true }
         var score = zk
         if let csls {
-            let zc = z(csls)
-            for i in 0..<n { for j in 0..<n { score[i][j] = 0.6 * zc[i][j] + 0.4 * zk[i][j] } }
+            let zc = z(csls) { hasVector[$0] && hasVector[$1] }
+            for i in 0..<n { for j in 0..<n where hasVector[i] && hasVector[j] { score[i][j] = 0.6 * zc[i][j] + 0.4 * zk[i][j] } }
         }
         // Mutual top-12.
         let top: [Set<Int>] = (0..<n).map { i in
@@ -155,19 +168,28 @@ public enum RelatedGraph {
         for i in 0..<n {
             var edges: [(Int, Double)] = []
             for j in 0..<n where j != i && top[i].contains(j) && top[j].contains(i) && score[i][j] >= threshold
-                && (kw[i][j] > 0 || (csls?[i][j] ?? 0) > 0) {
+                && hasReason(keywordOverlap: kw[i][j], csls: csls?[i][j], words: min(notes[i].words, notes[j].words)) {
                 edges.append((j, score[i][j]))
             }
             edges.sort { ($0.1, notes[$1.0].id.uuidString) > ($1.1, notes[$0.0].id.uuidString) }
             out[notes[i].id] = edges.prefix(maxEdges).map { j, s in
+                // Shared generated terms first, then shared text words, each by IDF.
+                let bothTerms = notes[i].terms.intersection(notes[j].terms)
                 let shared = notes[i].tokens.intersection(notes[j].tokens).filter { corpus.idf($0) > 0 }
-                    .sorted { (corpus.idf($0), $1) > (corpus.idf($1), $0) }.prefix(3)
+                    .sorted { (bothTerms.contains($0) ? 1 : 0, corpus.idf($0), $1) > (bothTerms.contains($1) ? 1 : 0, corpus.idf($1), $0) }
+                    .prefix(3)
                 return RelatedEdge(note: notes[j].id, score: (s * 1000).rounded() / 1000,
-                                   csls: csls.map { ($0[i][j] * 1000).rounded() / 1000 },
+                                   csls: hasVector[i] && hasVector[j] ? csls.map { ($0[i][j] * 1000).rounded() / 1000 } : nil,
                                    keywordOverlap: (kw[i][j] * 1000).rounded() / 1000, shared: Array(shared))
             }
         }
         return out.filter { !$0.value.isEmpty }
+    }
+
+    /// An edge needs a reason: a shared term, or similar wording (a positive CSLS) between notes of at least
+    /// `minWordsForWording` words (`words`: the shorter one's).
+    public static func hasReason(keywordOverlap: Double, csls: Double?, words: Int) -> Bool {
+        keywordOverlap > 0 || ((csls ?? 0) > 0 && words >= minWordsForWording)
     }
 
     /// The knee of descending `scores`: the score just above the largest gap among those at or above `floor`, so the
