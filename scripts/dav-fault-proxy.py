@@ -134,13 +134,17 @@ def make_handler(state, upstream):
             conn = getattr(local, "conn", None)
             if conn is None:
                 conn = local.conn = http.client.HTTPConnection(up.hostname, up.port, timeout=600)
+            sent = False
             try:
                 conn.request(method, path, body=body, headers=headers)
+                sent = True
                 return conn, conn.getresponse()
             except (http.client.HTTPException, OSError):
                 conn.close()
                 local.conn = None
-                if attempt:
+                # A request that may have reached the server is replayed only if it is idempotent (a stale kept-alive
+                # connection fails the send, or a read, before anything happened): never a MOVE, PUT or DELETE twice.
+                if attempt or (sent and method not in ("GET", "HEAD", "PROPFIND", "OPTIONS")):
                     raise
 
     class Handler(BaseHTTPRequestHandler):
@@ -306,6 +310,9 @@ def make_handler(state, upstream):
                 self.send_header("Content-Length", length)
             self.end_headers()
             if no_body:
+                # Read the (empty) upstream answer through: left unread, the kept-alive connection sends the next request
+                # early and the retry above would replay it.
+                resp.read()
                 return
             cut = rule.get("afterBytes", 0) if action == "reset" else None
             drip = rule.get("bytesPerSecond", 64) if action == "drip" else rate

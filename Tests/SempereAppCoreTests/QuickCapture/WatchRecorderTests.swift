@@ -305,6 +305,33 @@ struct WatchRecorderTests {
         #expect(!FileManager.default.fileExists(atPath: again.path))
     }
 
+    /// Delete removes the folders the screen showed, not ones a changed profile made placeable meanwhile or ones that came after.
+    @Test func deleteTakesOnlyWhatTheScreenShowedAndIsStillUnplaceable() async throws {
+        let rig = try Rig()
+        func leftover(vault: UUID) throws -> URL {
+            let id = UUID()
+            let folder = rig.root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Self.adts(frames: 30).write(to: folder.appendingPathComponent("segment-001.aac"))
+            let m = RecordingManifest(note: UUID(), recording: id, started: rig.clock.now, codec: "aac", segments: ["segment-001.aac"],
+                                      finished: 1, vault: vault, epochId: String(repeating: "ab", count: 32))
+            try JSONEncoder().encode(m).write(to: folder.appendingPathComponent(RecordingManifest.fileName))
+            return folder
+        }
+        let shownOne = try leftover(vault: UUID())
+        let shownTwo = try leftover(vault: UUID())
+        let shown = rig.recorder.leftovers()
+        #expect(shown.count == 2)
+        // A folder that came after the count was shown, and a kept profile that makes the first one placeable meanwhile:
+        // neither is deleted.
+        let later = try leftover(vault: UUID())
+        try rig.keeper.keep(try #require(rig.payload), for: try #require(UUID(uuidString: shownOne.lastPathComponent)))
+        #expect(rig.recorder.deleteLeftovers(shown: shown) == 1)
+        #expect(FileManager.default.fileExists(atPath: shownOne.path), "now placeable: kept")
+        #expect(!FileManager.default.fileExists(atPath: shownTwo.path))
+        #expect(FileManager.default.fileExists(atPath: later.path), "never shown: kept")
+    }
+
     /// A clear that arrived mid-recording and then a crash: the kept start-time profile still seals the leftover, once.
     @Test func aKeptProfileSealsALeftoverAfterAClearAndACrash() async throws {
         let rig = try Rig()

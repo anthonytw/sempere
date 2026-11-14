@@ -2192,6 +2192,7 @@ sempere inbox watch provision --to RECIPIENT --out FILE [--notebook NAME] [--seq
 sempere inbox watch seal AUDIO --payload FILE --identity FILE --outbox DIR [--title T] [--started TIME]
 sempere inbox watch receive OUTBOX [--vault PATH] [--received FILE] [--queue DIR] [--held DIR] [--ack FILE] [--store DIR]
 sempere inbox watch held list [--held DIR]
+sempere inbox watch held summary [--held DIR]
 sempere inbox watch held add ID… | --all [--held DIR] [--queue DIR] [--vault PATH] [--store DIR]
 sempere inbox watch held delete ID… | --all [--held DIR]
 ```
@@ -2226,9 +2227,9 @@ adopts the captures as notes. `--json`: `keygen` gives `{identity, recipient}`; 
 is `placed`, `held`, `duplicate` or `refused`; `placement` is `vault`, `queued`, `otherVault` or `otherVaultQueued`; `reason` of a held file is
 `linkOff`, `oldEpoch`, `newerEpoch`, `unknownEpoch` or `unknownVault`).
 
-`held list` shows what `receive` kept, with the count per reason, and first removes files with no record (and records with no file) that are more than 24 hours old, since a young one may be a `receive` still writing it (`--json`: `{notes: [{capture, vault, epoch, reason, canAdd, needsCheck, bytes, receivedAt}], counts: {reason: n}, orphansRemoved, limits: {files, bytes, unplaceableFiles, unplaceableBytes}}`;
+`held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, needsCheck, bytes, receivedAt}]`;
 `needsCheck` marks a note that arrived after Use on Apple Watch went off (`linkOff`) or under an earlier key (`oldEpoch`),
-what a lost watch sends: `held add --all` skips those, and they are added one at a time by id after a check). `held add` is the
+what a lost watch sends: `held add --all` skips those, and they are added one at a time by id after a check). `held summary` gives the count per reason, the limits and the leftover files it removed (`--json`: `{counts: {reason: n}, orphansRemoved, limits: {files, bytes, unplaceableFiles, unplaceableBytes}}`); like `list` it first removes files with no record (and records with no file) that are more than 24 hours old, since a younger one may be a `receive` still writing it. `held add` is the
 decision to take a held note: it records it in this machine's ledger and places it in its vault's inbox as `receive` would
 (`--vault`, `--store`, `--queue` as there), and the next catch-up re-seals an older epoch's note under the current key
 (`--json`: `[{capture, outcome, placement, problem}]`, `outcome` `added`, `notHeld` (already taken by an earlier add: a no-op, not a failure) or `failed`; exit 1 if any failed). A note whose epoch

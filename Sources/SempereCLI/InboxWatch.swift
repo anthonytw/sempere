@@ -424,9 +424,9 @@ struct InboxWatchHeld: ParsableCommand {
             takes it into the inbox as `receive` would (catch-up then re-seals it under the current key), `delete` removes it. \
             A file sealed under an epoch this machine never held cannot be added. At most 200 files or 500 MB are held, of \
             which at most 20 files or 50 MB may be notes that can only be deleted; past either a file is refused, \
-            unacknowledged, and the watch keeps it. `list` also removes leftover files that have no record and are over a day old.
+            unacknowledged, and the watch keeps it. `list` and `summary` also remove leftover files that have no record and are over a day old.
             """,
-        subcommands: [InboxWatchHeldList.self, InboxWatchHeldAdd.self, InboxWatchHeldDelete.self]
+        subcommands: [InboxWatchHeldList.self, InboxWatchHeldSummary.self, InboxWatchHeldAdd.self, InboxWatchHeldDelete.self]
     )
 }
 
@@ -468,27 +468,8 @@ struct InboxWatchHeldList: ParsableCommand {
         let store = WatchHeldFolder.store(options.held)
         let rows = store.list().map(HeldRow.init)
         let removed = store.takeOrphansRemoved()
-        var counts: [String: Int] = [:]
-        for r in rows { counts[r.reason, default: 0] += 1 }
         if output.json {
-            struct Out: Encodable {
-                var notes: [HeldRow]
-                /// Held notes per reason.
-                var counts: [String: Int]
-                /// Files without their record (and records without their file) older than 24 hours, removed by this listing.
-                var orphansRemoved: Int
-                var limits: Limits
-            }
-            struct Limits: Encodable {
-                var files: Int
-                var bytes: Int
-                var unplaceableFiles: Int
-                var unplaceableBytes: Int
-            }
-            try output.emitJSON(Out(notes: rows, counts: counts, orphansRemoved: removed,
-                                    limits: Limits(files: WatchHeldStore.maxFiles, bytes: WatchHeldStore.maxTotalBytes,
-                                                   unplaceableFiles: WatchHeldStore.maxUnplaceableFiles,
-                                                   unplaceableBytes: WatchHeldStore.maxUnplaceableBytes)))
+            try output.emitJSON(rows)
         } else if rows.isEmpty {
             output.info("No Watch notes are held.")
         } else {
@@ -496,9 +477,48 @@ struct InboxWatchHeldList: ParsableCommand {
                 let note = !r.canAdd ? " (delete only)" : r.needsCheck ? " (check before adding: add by id)" : ""
                 print("\(r.capture)  \(r.reason)\(note)  vault \(r.vault.prefix(8))  \(r.bytes) bytes  \(r.receivedAt)")
             }
-            output.info("Held: " + counts.sorted { $0.key < $1.key }.map { "\($0.value) \($0.key)" }.joined(separator: ", "))
         }
         if removed > 0 && !output.json { output.info("Removed \(removed) leftover file(s) older than 24 hours.") }
+    }
+}
+
+struct InboxWatchHeldSummary: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "summary",
+        abstract: "The count of held Watch notes per reason, the limits, and the leftover files removed.",
+        discussion: "Sweeps as `list` does: a file with no record (or a record with no file) that is over 24 hours old is removed "
+            + "and counted in `orphansRemoved`."
+    )
+
+    @OptionGroup var options: HeldOptions
+    @OptionGroup var output: OutputOptions
+
+    func run() throws {
+        let store = WatchHeldFolder.store(options.held)
+        let counts = store.countsByReason()
+        let removed = store.takeOrphansRemoved()
+        let byName = Dictionary(uniqueKeysWithValues: counts.map { ($0.key.rawValue, $0.value) })
+        if output.json {
+            struct Limits: Encodable {
+                var files: Int
+                var bytes: Int
+                var unplaceableFiles: Int
+                var unplaceableBytes: Int
+            }
+            struct Out: Encodable {
+                var counts: [String: Int]
+                var orphansRemoved: Int
+                var limits: Limits
+            }
+            try output.emitJSON(Out(counts: byName, orphansRemoved: removed,
+                                    limits: Limits(files: WatchHeldStore.maxFiles, bytes: WatchHeldStore.maxTotalBytes,
+                                                   unplaceableFiles: WatchHeldStore.maxUnplaceableFiles,
+                                                   unplaceableBytes: WatchHeldStore.maxUnplaceableBytes)))
+        } else {
+            output.info(byName.isEmpty ? "No Watch notes are held."
+                        : "Held: " + byName.sorted { $0.key < $1.key }.map { "\($0.value) \($0.key)" }.joined(separator: ", "))
+            output.info("Removed \(removed) leftover file(s) older than 24 hours.")
+        }
     }
 }
 

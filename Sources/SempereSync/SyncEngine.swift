@@ -357,6 +357,8 @@ public final class SyncEngine {
     var unacceptedHere: [String: String] = [:]
     /// Bytes this run read to check a revision the listing gave no size for (`verifySizeless`), against its cap.
     var sizelessRead: Int64 = 0
+    /// This run already reported that the record of checked revisions is full.
+    var sizelessFullReported = false
     /// The latest bytes (SHA-256) this device's write ledger holds per path: a shared file whose bytes changed
     /// here since both sides last matched (a catch-up's re-encryption) is compared with the remote's.
     var ledgerShas: [String: String] = [:]
@@ -518,6 +520,10 @@ public final class SyncEngine {
         }
         checkerBaseManifest = manifestHash()
         budget = RunBudget(options.limits)
+        sizelessRead = 0
+        sizelessFullReported = false
+        // The marker D-07 checks revisions against: set once, from the first run of this target with this code, never moved.
+        if state.sizelessCutoff == nil, !options.dryRun { state.sizelessCutoff = options.now }
         // A device that has asked to join and not confirmed (no key, its own key given, no trust record): it sends only
         // its join request until it confirms (review of #90, S2). Its copy holds nothing of its own to send.
         if vault == nil, !options.firstPullIdentities.isEmpty, !options.pushOnly, !Self.epochMutations.contains(.keylessUploadsManifest),
@@ -1855,31 +1861,42 @@ public final class SyncEngine {
 
     // MARK: Revisions the listing gives no size for (D-07, docs/design/1.2-audit-followups.md)
 
-    /// 1.1.0's release date: no upload cut under its final name was made from it on (a revision goes through a temporary
-    /// name and a move, design F11), so only a revision written before it can have been left cut.
-    static let cutUploadsEndedAt = Date(timeIntervalSince1970: 1_794_528_000)   // 2026-11-13T00:00:00Z
     /// A run reads, to check such revisions, at most this part of its download bytes (`SyncLimits.maxDownloadBytes`); a vault with
     /// many of them is checked over several runs.
     static let sizelessReadFraction: Int64 = 16
-    /// What the sync state keeps of verified revisions: entries (a revision's key is about 100 bytes, so under half a MiB).
+    /// What the sync state keeps of verified revisions: entries (about 200 bytes each in the state's JSON: the key, a 64-digit
+    /// digest and the field names, so about 0.8 MiB). A vault with more is reported in `skipped`, never silently left.
     static let sizelessCheckedMax = 4096
 
     /// A revision both sides list whose listing has no size: the repair above cannot compare sizes, so a revision this device
-    /// wrote before 1.1.0 (only 1.0.x cut uploads, and only a device that still holds the file can repair it) is checked once,
+    /// wrote before the target's marker (`SyncState.sizelessCutoff`, the time of its first run with this code: only an older
+    /// client cut uploads, and only a device that still holds the file can repair it) is checked once,
     /// by one read of the server's copy bounded by the local file's size (the same read `repairCutFile` makes), charged to the
     /// download budget. A strict prefix is replaced as `repairCutFile` does; a complete copy, or any other copy, is recorded
     /// as verified in the sync state (the local size and a digest of the listing entry) and not read again until either
     /// changes. A copy that is not a prefix is left alone and reported. Returns true when the server's copy was repaired.
     func verifySizeless(_ id: String, _ n: RevisionName, entry: RemoteEntry, have: Int, localDir: URL) throws -> Bool {
         let k = key(id, n)
-        guard let me = options.deviceID, n.device == me, have > 0,
-              Date(timeIntervalSince1970: Double(n.hlc.millis) / 1000) < Self.cutUploadsEndedAt else { return false }
+        guard let me = options.deviceID, n.device == me, have > 0, let cutoff = locked({ state.sizelessCutoff }),
+              Date(timeIntervalSince1970: Double(n.hlc.millis) / 1000) < cutoff else { return false }
         let listing = Self.listingDigest(entry)
         let (done, full, spent) = locked { (state.sizelessChecked?[k], (state.sizelessChecked?.count ?? 0) >= Self.sizelessCheckedMax,
                                             sizelessRead) }
         if let done, done.size == have, done.listing == listing { return false }
         // No room to record it: reading it every run would be worse than leaving it.
-        guard !full || done != nil else { return false }
+        guard !full || done != nil else {
+            let first = locked { () -> Bool in
+                defer { sizelessFullReported = true }
+                return !sizelessFullReported
+            }
+            if first {
+                locked {
+                    report.skipped.append(.init(path: "notes", message: "revisions with no listed size were not checked for a cut upload: "
+                        + "the record of checked revisions is full (\(Self.sizelessCheckedMax))"))
+                }
+            }
+            return false
+        }
         guard spent + Int64(have) <= options.limits.maxDownloadBytes / Self.sizelessReadFraction else { return false }
         guard let local = try? BoundedRead.contents(of: localDir.appendingPathComponent(n.filename), maxBytes: options.maxFileBytes),
               local.count == have else { return false }

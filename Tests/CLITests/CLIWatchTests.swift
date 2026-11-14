@@ -149,10 +149,9 @@ final class CLIWatchTests: CLITestCase {
                                                watch.identity, "--outbox", outbox, "--json"]))["capture"] as? String)
     }
 
-    /// `held list --json`'s notes.
+    /// `held list --json`: still the array 1.1.0 shipped.
     func heldNotes(_ held: String) throws -> [[String: Any]] {
-        let o = try XCTUnwrap(try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [String: Any])
-        return try XCTUnwrap(o["notes"] as? [[String: Any]])
+        try XCTUnwrap(try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [[String: Any]])
     }
 
     /// A file of a vault this machine does not hold is not admitted: it is acknowledged and held, never queued, recorded or
@@ -173,10 +172,10 @@ final class CLIWatchTests: CLITestCase {
         XCTAssertEqual(((try? FileManager.default.contentsOfDirectory(atPath: inboxA)) ?? []).filter { $0.hasSuffix(".capture.age") }, [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: path("q")), "not queued")
 
-        let listing = try XCTUnwrap(try cli(["inbox", "watch", "held", "list", "--held", path("held"), "--json"]).json as? [String: Any])
-        XCTAssertEqual(listing["counts"] as? [String: Int], ["unknownVault": 1])
-        XCTAssertEqual(listing["orphansRemoved"] as? Int, 0)
-        let listed = try XCTUnwrap(listing["notes"] as? [[String: Any]])
+        let summary = try XCTUnwrap(try cli(["inbox", "watch", "held", "summary", "--held", path("held"), "--json"]).json as? [String: Any])
+        XCTAssertEqual(summary["counts"] as? [String: Int], ["unknownVault": 1])
+        XCTAssertEqual(summary["orphansRemoved"] as? Int, 0)
+        let listed = try heldNotes(path("held"))
         XCTAssertEqual(listed.count, 1)
         XCTAssertEqual(listed.first?["capture"] as? String, capture)
         XCTAssertEqual(listed.first?["reason"] as? String, "unknownVault")
@@ -194,8 +193,9 @@ final class CLIWatchTests: CLITestCase {
         XCTAssertEqual((again["files"] as? [[String: Any]])?.first?["outcome"] as? String, "duplicate")
     }
 
-    /// `held list` reports the count per reason and removes a file without its record once it is a day old (not before).
-    func testHeldListReportsCountsAndRemovesOldOrphans() throws {
+    /// `held summary` reports the count per reason and the limits, and removes a file without its record once it is a day old
+    /// (not before); `held list --json` stays an array.
+    func testHeldSummaryReportsCountsAndRemovesOldOrphans() throws {
         let held = path("held")
         let dir = "\(held)/\(UUID().uuidString.lowercased())"
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -203,13 +203,18 @@ final class CLIWatchTests: CLITestCase {
         let young = "\(dir)/\(UUID().uuidString.lowercased()).capture.age"
         for f in [old, young] { try Data("x".utf8).write(to: URL(fileURLWithPath: f)) }
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-2 * 24 * 3600)], ofItemAtPath: old)
-        let listing = try XCTUnwrap(try cli(["inbox", "watch", "held", "list", "--held", held, "--json"]).json as? [String: Any])
-        XCTAssertEqual(listing["orphansRemoved"] as? Int, 1)
-        XCTAssertEqual((listing["notes"] as? [Any])?.count, 0)
-        XCTAssertEqual((listing["limits"] as? [String: Int])?["unplaceableFiles"], 20)
+        XCTAssertEqual(try heldNotes(held).count, 0, "list --json is an array (the sweep ran)")
+        let again = "\(dir)/\(UUID().uuidString.lowercased()).capture.age"
+        try Data("x".utf8).write(to: URL(fileURLWithPath: again))
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-3 * 24 * 3600)], ofItemAtPath: again)
+        let summary = try XCTUnwrap(try cli(["inbox", "watch", "held", "summary", "--held", held, "--json"]).json as? [String: Any])
+        XCTAssertEqual(summary["orphansRemoved"] as? Int, 1)
+        XCTAssertEqual(summary["counts"] as? [String: Int], [:])
+        XCTAssertEqual((summary["limits"] as? [String: Int])?["unplaceableFiles"], 20)
         XCTAssertFalse(FileManager.default.fileExists(atPath: old))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: again))
         XCTAssertTrue(FileManager.default.fileExists(atPath: young), "a young file may be a receive still writing it")
-        let text = try cli(["inbox", "watch", "held", "list", "--held", held])
+        let text = try cli(["inbox", "watch", "held", "summary", "--held", held])
         XCTAssertEqual(text.status, 0)
     }
 

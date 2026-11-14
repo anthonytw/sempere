@@ -410,7 +410,7 @@ final class WatchModel {
 
     /// Deletes the recordings counted in `leftovers`, and no others.
     func deleteLeftovers() {
-        recorder.deleteLeftovers()
+        recorder.deleteLeftovers(shown: leftovers)
         leftovers = recorder.leftovers()
     }
 

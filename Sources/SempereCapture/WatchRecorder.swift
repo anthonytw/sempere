@@ -280,6 +280,8 @@ public final class WatchRecorder {
         public var bytes = 0
         /// Of those, how many began more than 30 days ago.
         public var older = 0
+        /// The folders counted (names only: never shown), so a Delete removes the ones the screen showed.
+        public var folders: [String] = []
         public var count: Int { noVault + otherVault }
         public init() {}
     }
@@ -321,6 +323,7 @@ public final class WatchRecorder {
         for u in unplaceableFolders() {
             if u.leftover.vault == nil { out.noVault += 1 } else { out.otherVault += 1 }
             out.bytes += u.bytes
+            out.folders.append(u.folder.lastPathComponent)
             let began = u.leftover.started
                 ?? (try? FileManager.default.attributesOfItem(atPath: u.folder.path))?[.modificationDate] as? Date
             if let began, began < cutoff { out.older += 1 }
@@ -328,10 +331,12 @@ public final class WatchRecorder {
         return out
     }
 
-    /// Deletes exactly the folders `leftovers()` counts. Returns how many.
+    /// Deletes exactly the folders `shown` (a `leftovers()` the screen displayed) counted, and only those still unplaceable:
+    /// a profile that changed since (a new payload for another vault) may have made one placeable, and one that appeared
+    /// since was never shown. With no `shown`, every folder `leftovers()` counts now. Returns how many.
     @discardableResult
-    public func deleteLeftovers() -> Int {
-        let all = unplaceableFolders()
+    public func deleteLeftovers(shown: Leftovers? = nil) -> Int {
+        let all = unplaceableFolders().filter { shown?.folders.contains($0.folder.lastPathComponent) ?? true }
         for u in all {
             try? FileManager.default.removeItem(at: u.folder)
             if let id = u.leftover.id { keeper?.discard(id) }

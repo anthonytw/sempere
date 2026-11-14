@@ -101,6 +101,9 @@ struct SyncState: Codable, Equatable {
     /// size (`SyncEngine.verifySizeless`, D-07), keyed like `files`, with the local file's size and a digest of the listing entry
     /// when it was checked: read again only when either changes. Bounded (`SyncEngine.sizelessCheckedMax`). Nil: none.
     var sizelessChecked: [String: SizelessCheck]?
+    /// The time of this target's first run with the D-07 check (`SyncEngine.options.now`), never moved: only this device's
+    /// revisions written before it are checked, since an older client may still have cut them. Nil until such a run.
+    var sizelessCutoff: Date?
 
     struct SizelessCheck: Codable, Equatable {
         var size: Int

@@ -88,9 +88,10 @@ final class SizelessRepairTests: SyncTestCase {
     }
 
     @discardableResult
-    private func syncOnce(device: DeviceID? = nil, maxDownload: Int64? = nil) throws -> SyncReport {
+    private func syncOnce(device: DeviceID? = nil, maxDownload: Int64? = nil, now: Date? = nil) throws -> SyncReport {
         var o = SyncOptions(deviceLabel: "A")
         o.deviceID = device ?? devA
+        if let now { o.now = now }
         if let maxDownload { o.limits.maxDownloadBytes = maxDownload }
         return try SyncEngine(directory: dir("A"), vault: try openVault("A"), remote: remote,
                               stateURL: tmp.appendingPathComponent("state-A.json"), options: o).run()
@@ -170,22 +171,43 @@ final class SizelessRepairTests: SyncTestCase {
         XCTAssertEqual(remote.reads(of: name(r)), before)
     }
 
-    func testARevisionWrittenFrom110OnOrByAnotherDeviceIsNotRead() throws {
-        let after = Int64(SyncEngine.cutUploadsEndedAt.timeIntervalSince1970 * 1000) - baseMillis + 5
+    /// The marker is the time of the target's first run with this check, set once and never moved: a revision written after
+    /// it, or by another device, is not read.
+    func testARevisionWrittenAfterTheMarkerOrByAnotherDeviceIsNotRead() throws {
+        let marker = Date(timeIntervalSince1970: Double(baseMillis + 5_000) / 1000)
         let a = try makeVault("A")
         _ = try delta(a, device: devA, t: 0, title: "one")
-        let late = try delta(a, device: devA, t: after, title: "late")
         let theirs = try delta(a, device: devB, t: 10, title: "theirs")
-        XCTAssertTrue(try syncOnce().errors.isEmpty)
+        XCTAssertTrue(try syncOnce(now: marker).errors.isEmpty)
+        XCTAssertEqual(try XCTUnwrap(try SyncState.load(tmp.appendingPathComponent("state-A.json"))).sizelessCutoff, marker)
+        let late = try delta(a, device: devA, t: 20_000, title: "late")
+        XCTAssertTrue(try syncOnce(now: marker.addingTimeInterval(60)).errors.isEmpty)
         let cut = try local(late).prefix(40)
         store.putDirect(path(late), cut)
         store.putDirect(path(theirs), try local(theirs).prefix(40))
         let before = [late, theirs].map { remote.reads(of: name($0)) }
-        try syncOnce()
+        try syncOnce(now: marker.addingTimeInterval(3600))
         XCTAssertEqual([late, theirs].map { remote.reads(of: name($0)) }, before)
         XCTAssertEqual(store.file(path(late)), Data(cut), "left as it is")
-        XCTAssertEqual(try checked().count, 1, "only the first, early revision of this device")
+        XCTAssertEqual(try XCTUnwrap(try SyncState.load(tmp.appendingPathComponent("state-A.json"))).sizelessCutoff, marker, "never moved")
+        XCTAssertEqual(try checked().count, 1, "only the first revision of this device, written before the marker")
     }
+
+    /// A full record of checked revisions is reported, once per run, never a silent skip.
+    func testAFullRecordIsReportedInSkipped() throws {
+        let revs = try seeded([10])
+        let url = tmp.appendingPathComponent("state-A.json")
+        var state = try XCTUnwrap(try SyncState.load(url))
+        var full: [String: SyncState.SizelessCheck] = [:]
+        for i in 0..<SyncEngine.sizelessCheckedMax { full["x/\(i)"] = SyncState.SizelessCheck(size: 1, listing: "d") }
+        state.sizelessChecked = full
+        try state.save(url)
+        let before = remote.reads(of: name(revs[1]))
+        let report = try syncOnce()
+        XCTAssertEqual(report.skipped.filter { $0.message.contains("record of checked revisions is full") }.count, 1, "\(report.skipped)")
+        XCTAssertEqual(remote.reads(of: name(revs[1])), before, "nothing was read")
+    }
+
 }
 
 /// D-07 against wsgidav, through the fault proxy, with the sizes hidden from the engine: a cut copy is repaired, and a
@@ -212,14 +234,11 @@ final class WsgidavSizelessRepairTests: SyncTestCase {
         // What an old upload left: the file under its final name, cut.
         let held = try XCTUnwrap(try inner.stat(rel))
         XCTAssertTrue(try inner.write(rel, .data(whole.prefix(40)), condition: held.etag.map { .replace(etag: $0) } ?? .unconditional))
-        // wsgidav answers the MOVE onto the name just deleted with a 500 although it moved the file (the same with sizes
-        // listed: the repair's own steps, not the check), so the run reports that one error and the copy is whole.
         let repaired = try syncOnce()
-        XCTAssertTrue(repaired.errors.allSatisfy { $0.path.hasSuffix(name) && $0.message.contains("MOVE") }, "\(repaired.errors)")
+        XCTAssertTrue(repaired.errors.isEmpty, "\(repaired.errors)")
         XCTAssertEqual(try inner.read(rel, maxBytes: whole.count + 1).data, whole)
         XCTAssertGreaterThan(remote.reads(of: name), 0, "the cut copy was read to be checked")
-        // The next run finds a complete copy: one more read, and none after that.
-        XCTAssertTrue(try syncOnce().errors.isEmpty)
+        // Verified in that run: no more reads after it.
         let reads = remote.reads(of: name)
         XCTAssertTrue(try syncOnce().replaced.isEmpty)
         XCTAssertTrue(try syncOnce().replaced.isEmpty)

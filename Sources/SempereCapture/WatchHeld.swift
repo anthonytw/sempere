@@ -90,8 +90,6 @@ public final class WatchHeldStore: @unchecked Sendable {
     /// Serializes "Add to inbox" (`take`), so two adds of one note cannot both place it.
     private let takeLock = NSLock()
 
-    /// Whether a store that holds `held` refuses another file: the rule `hold` applies (`adding` is the new file's size; with
-    /// none, the least a file weighs).
     /// Whether a store that holds `held` refuses another note that can only be deleted: the sub-limit `hold` applies.
     public static func isFullOfUnplaceable(_ held: [HeldCapture], adding: Int = 1, maxFiles: Int = maxUnplaceableFiles,
                                            maxBytes: Int = maxUnplaceableBytes) -> Bool {
@@ -99,6 +97,8 @@ public final class WatchHeldStore: @unchecked Sendable {
         return u.count >= maxFiles || u.reduce(0, { $0 + $1.bytes }) + adding > maxBytes
     }
 
+    /// Whether a store that holds `held` refuses another file: the rule `hold` applies (`adding` is the new file's size; with
+    /// none, the least a file weighs).
     public static func isFull(_ held: [HeldCapture], adding: Int = 1, maxFiles: Int = maxFiles,
                               maxBytes: Int = maxTotalBytes) -> Bool {
         held.count >= maxFiles || held.reduce(0, { $0 + $1.bytes }) + adding > maxBytes
