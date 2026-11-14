@@ -51,7 +51,7 @@ struct SixWordsView: View {
 }
 
 /// "They Match" (docs/design/1.2-join-confirm.md §3.3): enabled only once its words have been on screen for
-/// `MatchConfirmGate.delay`, so a double tap on arrival cannot confirm, and never while something is running.
+/// `MatchConfirmGate.defaultDelay`, so a double tap on arrival cannot confirm, and never while something is running.
 struct MatchButton: View {
     let busy: Bool
     let identifier: String
@@ -146,13 +146,15 @@ struct JoinDeviceView: View {
     @State private var reply = ""
     @State private var working = false
     @State private var failure: String?
+    /// The six words on screen were replaced by others while confirming.
+    @State private var wordsChanged = false
 
     var body: some View {
         Form {
             switch keys.joinStage {
             case nil:
                 Section {
-                    Text("This device makes its own key and asks to join “\(model.vaultName ?? "")”. On the device that manages devices, open Settings ▸ Sync & Devices ▸ Devices ▸ Add Device and type the six words shown next.",
+                    Text("This device makes its own key and asks to join “\(model.vaultName ?? "")”. On the device that manages devices, open Settings ▸ Sync & Devices ▸ Devices ▸ Add Device and compare the six words shown next with the words of this request.",
                          comment: "Join screen; the value is the vault name")
                     Button("Ask to Join", systemImage: "person.badge.plus") { start() }
                         .accessibilityIdentifier("join.start")
@@ -162,7 +164,7 @@ struct JoinDeviceView: View {
                     SixWordsView(words: words)
                     QRCodeView(text: qr).frame(maxWidth: .infinity)
                 } header: {
-                    Text("Type these on the device that manages devices")
+                    Text("Compare these on the device that manages devices")
                 } footer: {
                     Text("Or scan the code there. Keep this screen open: the approval arrives with the next sync.")
                 }
@@ -194,7 +196,15 @@ struct JoinDeviceView: View {
             case .confirming(let words)?:
                 Section {
                     SixWordsView(words: words)
+                    if wordsChanged {
+                        Label("The words changed. Compare all six again.", systemImage: "exclamationmark.triangle")
+                            .font(.footnote.bold())
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("join.wordsChanged")
+                    }
+                    // Keyed by the words: new words restart the 1.5 s wait, never keep an open gate.
                     MatchButton(busy: working, identifier: "join.match") { confirm(qr: nil, tapped: words) }
+                        .id(words)
                 } header: {
                     Text("Do these six words match the ones on the device that approved you?")
                 } footer: {
@@ -233,6 +243,10 @@ struct JoinDeviceView: View {
             if model.nearbyJoining == .received { Task { await recheck() } }
         }
         .onDisappear { model.stopNearbyJoin() }
+        .onChange(of: keys.joinStage) { old, new in
+            if case .confirming(let was)? = old, case .confirming(let now)? = new, was != now { wordsChanged = true }
+            if new?.isConfirming != true { wordsChanged = false }
+        }
         .task(id: keys.joinStage == nil ? 0 : 1) {
             // While waiting: the approval may arrive with any run, and runs are asked for more often than the
             // targets' idle pace (each `joinLookInterval`), so neither the request nor the approval waits for it.
@@ -349,7 +363,7 @@ struct AddDeviceSheet: View {
                         SixWordsView(words: reply.words)
                         QRCodeView(text: reply.qr).frame(maxWidth: .infinity)
                     } header: {
-                        Text("Type these on “\(reply.deviceName)”", comment: "Add Device: the value is the new device's name")
+                        Text("Compare these with “\(reply.deviceName)”", comment: "Add Device: the value is the new device's name")
                     } footer: {
                         Text("Or scan this code there. They prove to the new device that this is the vault it asked to join.")
                     }
@@ -376,6 +390,7 @@ struct AddDeviceSheet: View {
                             ForEach(lookout.requests, id: \.commitment) { request in
                                 JoinRequestRow(
                                     request: request, busy: working,
+                                    listKey: lookout.requests.map(\.commitment),
                                     nearby: model.nearbyRequests.contains(where: { $0.commitment == request.commitment }),
                                     match: { Task { await approval.approve(request: request) } },
                                     decline: { declining = request })
@@ -482,6 +497,9 @@ struct AddDeviceSheet: View {
 struct JoinRequestRow: View {
     let request: JoinRequest
     let busy: Bool
+    /// The list the row is in: when it changes (a request came or went) every row's wait starts again, so a row never
+    /// slides under the finger with an open gate.
+    let listKey: [Data]
     let nearby: Bool
     let match: () -> Void
     let decline: () -> Void
@@ -504,6 +522,7 @@ struct JoinRequestRow: View {
             }
             HStack {
                 MatchButton(busy: busy, identifier: "addDevice.match", action: match)
+                    .id(listKey)
                     .buttonStyle(.borderedProminent)
                 Spacer()
                 Button("Decline", role: .destructive, action: decline)

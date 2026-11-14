@@ -46,14 +46,14 @@ public struct JoinReply: Equatable, Sendable {
 /// "They Match" is not enabled until its words have been on screen for `delay` (docs/design/1.2-join-confirm.md §3.3), so
 /// a double tap on arrival cannot confirm. The time is passed in, so tests run it on their own clock.
 public struct MatchConfirmGate: Equatable, Sendable {
-    /// What the screens wait before enabling the button.
-    public static let delay: Duration = .milliseconds(1500)
+    /// What the screens wait before enabling the button, in seconds.
+    public static let defaultDelay: TimeInterval = 1.5
 
     /// When the words first showed (nil: not yet).
     public var shownAt: Date?
     public var delay: TimeInterval
 
-    public init(shownAt: Date? = nil, delay: TimeInterval = 1.5) {
+    public init(shownAt: Date? = nil, delay: TimeInterval = MatchConfirmGate.defaultDelay) {
         self.shownAt = shownAt
         self.delay = delay
     }

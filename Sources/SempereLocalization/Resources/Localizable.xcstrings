@@ -6132,6 +6132,31 @@
         }
       }
     },
+    "Compare these on the device that manages devices" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compáralas en el dispositivo que gestiona los dispositivos"
+          }
+        }
+      }
+    },
+    "Compare these with “%@”" : {
+      "comment" : "Add Device: the value is the new device's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compáralas con las de “%@”"
+          }
+        }
+      }
+    },
     "Confirm" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -22942,6 +22967,19 @@
         }
       }
     },
+    "The six words are the same on both screens: compare all six first" : {
+      "comment" : "Tooltip of They Match",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las seis palabras son iguales en ambas pantallas: compara las seis primero"
+          }
+        }
+      }
+    },
     "The system does not trust it." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -23247,6 +23285,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El reloj guarda las notas de voz en «%@»."
+          }
+        }
+      }
+    },
+    "The words changed. Compare all six again." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las palabras cambiaron. Vuelve a comparar las seis."
           }
         }
       }
@@ -23888,6 +23938,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este es el único dispositivo de la bóveda: una vez olvidada su clave, solo el kit de recuperación devuelve el acceso de escritura a la bóveda (Tomar el control)."
+          }
+        }
+      }
+    },
+    "This device makes its own key and asks to join “%@”. On the device that manages devices, open Settings ▸ Sync & Devices ▸ Devices ▸ Add Device and compare the six words shown next with the words of this request." : {
+      "comment" : "Join screen; the value is the vault name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo crea su propia clave y pide unirse a “%@”. En el dispositivo que gestiona los dispositivos, abre Ajustes ▸ Sincronización y dispositivos ▸ Dispositivos ▸ Añadir dispositivo y compara las seis palabras que se muestran a continuación con las de esta solicitud."
           }
         }
       }

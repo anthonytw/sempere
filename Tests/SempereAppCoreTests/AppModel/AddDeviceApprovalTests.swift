@@ -267,5 +267,20 @@ extension AppModelSuites {
             #expect(gate.isEnabled(at: t0.addingTimeInterval(1.5)))
             #expect(!gate.isEnabled(at: t0.addingTimeInterval(5), busy: true), "disabled while the owner check runs")
         }
+
+        /// A request that arrives while the list shows goes last: rows already shown keep their places.
+        @Test func aNewRequestJoinsTheEndOfTheList() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            w.provider.arrivalDelay = 0
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            await approval.look()
+            let first = try #require(approval.lookout?.requests.first)
+            // A nearby request comes in: `pendingJoinRequests` lists nearby ones first, the sheet does not.
+            let late = try MemoryDeviceKeyStore().generate().joinRequest(vaultId: w.home.vaultID, name: "Late", kind: "ipad")
+            w.home.model.keepNearbyRequest(late)
+            await approval.refresh()
+            #expect(approval.lookout?.requests.map(\.commitment) == [first.commitment, late.commitment])
+        }
     }
 }

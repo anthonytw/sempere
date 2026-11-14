@@ -23,6 +23,23 @@ extension AppModelSuites {
             return (vault, try String(contentsOf: ModelFixture.fixtures.appendingPathComponent("sample.key"), encoding: .utf8))
         }
 
+        /// A read-only vault approves nobody, by the tap route as by the typed one (docs/design/1.2-join-confirm.md §5).
+        @Test func theTapApprovesNobodyInAReadOnlyVault() async throws {
+            let (url, keyText) = try await Self.newerVault()
+            let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .seconds(60), services: .headless())
+            defer { model.close() }
+            try await model.openVault(at: url)
+            try await model.unlock(identityText: keyText)
+            #expect(model.isVaultReadOnly)
+            model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
+            let id = try #require(model.vault?.vaultId)
+            let request = try MemoryDeviceKeyStore().generate().joinRequest(vaultId: id, name: "S", kind: "cli")
+            model.keepNearbyRequest(request)
+            await #expect(throws: VaultError.self) { _ = try await model.approveDevice(request: request) }
+            await #expect(throws: VaultError.self) { _ = try await model.approveDevice(words: nil, qr: nil) }
+            #expect(model.vault?.devices.count == 1)
+        }
+
         @Test func opensReadOnlyAndShowsWhatItUnderstands() async throws {
             let (url, keyText) = try await Self.newerVault()
             let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .seconds(60), services: .headless())

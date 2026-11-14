@@ -128,6 +128,33 @@ extension AppModelSuites {
             #expect(w.pad.model.phase == .unlocked)
         }
 
+        /// Only home approves: on a joined device a held request is refused with `notHome` and nothing is written.
+        @Test func theTapRefusesOnADeviceThatIsNotHome() async throws {
+            let w = try await Self.asked()
+            defer { w.home.model.close(); w.pad.model.close() }
+            let approval = AddDeviceApprovalCore<TestHost>(model: w.home.model)
+            approval.startNearby()
+            w.pad.model.startNearbyJoin()
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.home.model.nearbyRequests.count == 1 })
+            await approval.refresh()
+            #expect(await approval.approve(request: try #require(approval.lookout?.requests.first)))
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { w.pad.model.nearbyJoining == .received })
+            let keys = RememberedKeys(store: w.padKeys)
+            _ = await keys.unlockWithDeviceKey(w.pad.model)
+            let device = try await w.padKeys.keys(for: w.pad.vaultID, reason: .unlock(vaultName: nil))
+            try await w.pad.model.confirmJoin(words: try #require(keys.joinStage.flatMap { s -> [String]? in
+                if case .confirming(let words) = s { return words } else { return nil } }), keys: device)
+            w.pad.model.ownerAuthenticator = ScriptedOwnerCheck(.pass)
+            let stranger = try MemoryDeviceKeyStore().generate().joinRequest(vaultId: w.pad.vaultID, name: "S", kind: "cli")
+            w.pad.model.keepNearbyRequest(stranger)
+            do {
+                _ = try await w.pad.model.approveDevice(request: stranger)
+                Issue.record("approved on a device that is not home")
+            } catch VaultError.notHome {
+            } catch { Issue.record("unexpected \(error)") }
+            #expect(w.pad.model.vault?.devices.count == 2)
+        }
+
         /// Four requests fill the nearby list; a fifth displaces the oldest, and the warning shows throughout.
         @Test func displacementKeepsTheWarningOn() async throws {
             let w = try await Self.asked()
