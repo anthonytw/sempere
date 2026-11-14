@@ -125,6 +125,13 @@ public struct InsightsUpdater: Sendable {
         self.vault = vault; self.model = model; self.embedder = embedder; self.deviceState = deviceState; self.app = app
     }
 
+    /// The device id this device's revisions carry (its state file's), which a `titleOp` of its own names; nil before
+    /// the state file exists (then no `titleOp` is this device's).
+    var revisionWriter: DeviceID? {
+        guard FileManager.default.fileExists(atPath: deviceState.path) else { return nil }
+        return (try? DeviceState.loadOrCreate(at: deviceState))?.device
+    }
+
     public func run(_ o: InsightsUpdateOptions, notes inputs: [InsightsNoteInput]) async throws -> InsightsUpdateReport {
         var report = InsightsUpdateReport()
         report.dryRun = o.dryRun
@@ -238,7 +245,8 @@ public struct InsightsUpdater: Sendable {
             snapshot = store.snapshot()
         }
         // Voice-note titles (D14): from any device's current `gen` slug, while the title is the capture default.
-        if o.titles, !o.embeddingsOnly {
+        // Only the work device sets titles (format.md §16.8, D14; review of #50, M1); `insights title` stays manual anywhere.
+        if o.titles, !o.embeddingsOnly, settings.workDevice == me {
             for note in selected where !note.deleted && !note.transcript.isEmpty {
                 guard let outcome = try applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle,
                                                    dryRun: o.dryRun, now: o.now) else { continue }
@@ -309,7 +317,7 @@ public struct InsightsUpdater: Sendable {
         let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
                                                             started: titles.started ?? note.modified ?? now)
         let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        switch titles.decide(applied: ownFile?.titleOp, proposed: proposed) {
+        switch titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: revisionWriter) {
         case .keep: return nil
         case .apply(let title):
             guard !dryRun else { return .apply }
@@ -335,7 +343,8 @@ public struct InsightsUpdater: Sendable {
         let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
                                                             started: titles.started ?? note.modified ?? Date())
         let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        return (titles.decide(applied: me.flatMap { snapshot.notes[note.id]?[$0]?.titleOp }, proposed: proposed), titles.isVoiceNote)
+        return (titles.decide(applied: me.flatMap { snapshot.notes[note.id]?[$0]?.titleOp }, proposed: proposed, writer: revisionWriter),
+                titles.isVoiceNote)
     }
 
     /// Writes the title of `insights title` (D14) with `format` and `slug`; returns the decision applied.
@@ -349,7 +358,7 @@ public struct InsightsUpdater: Sendable {
                                                             started: titles.started ?? note.modified ?? now)
         let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
         let ownFile = snapshot.notes[note.id]?[me]
-        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed)
+        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: revisionWriter)
         switch decision {
         case .keep: break
         case .apply(let title):

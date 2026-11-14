@@ -161,6 +161,25 @@ final class InsightsStoreTests: VaultTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: v.insightsURL.path), ["README.txt"], "unknown files are never deleted")
     }
 
+    /// Review of #50, M2: copy-merge never replaces this device's own file with a copy, even a later one that opens.
+    func testCopyMergeNeverReplacesTheOwnFile() throws {
+        let (v, _) = try makeOne()
+        try v.updateSharedSettings { s in
+            try s.write(SharedSettingsCatalog.spec(named: "insights.enabled")!, .bool(true), block: nil, type: nil, now: now)
+        }
+        let store = InsightsStore(vault: v)
+        let name = try store.write(.note(InsightsNoteFile(noteId: note, device: try store.writer(), written: 0, gen: gen())), now: now)
+        let mine = try Data(contentsOf: v.insightsURL.appendingPathComponent(name.fileName))
+        let copy = tmp.appendingPathComponent("Copy.sempere")
+        try FileManager.default.copyItem(at: v.url, to: copy)
+        let planted = try v.sealInsights(.note(InsightsNoteFile(noteId: note, device: name.device, written: 1_890_000_000_000,
+                                                               gen: gen(summary: "Planted."))), name: name)
+        try planted.write(to: copy.appendingPathComponent("insights/\(name.fileName)"))
+        let r = try v.mergeCopy(from: copy)
+        XCTAssertFalse(r.added.contains("insights/\(name.fileName)"))
+        XCTAssertEqual(try Data(contentsOf: v.insightsURL.appendingPathComponent(name.fileName)), mine)
+    }
+
     // MARK: Epochs
 
     /// A removal starts a new epoch: B's files stop opening; B re-seals its own under the new key (no model work);

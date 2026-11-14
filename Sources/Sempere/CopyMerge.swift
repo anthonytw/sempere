@@ -213,7 +213,7 @@ extension Vault {
 
         // insights/<name> (§16): hints read under the current key only, so merged only unlocked: a file the vault
         // lacks, or holds with an earlier `written`, is copied in when it opens here (§16.6). Never deleted.
-        if canRead, !isReadOnly, insightsMode() != .off {
+        if canRead, !isReadOnly, insightsMode() == .on {
             let otherInsights = other.appendingPathComponent(Self.insightsName, isDirectory: true)
             let removed = removedInsightsDevices()
             for name in Self.visibleEntries(otherInsights) {
@@ -225,6 +225,8 @@ extension Vault {
                     continue   // a hint that does not open here is skipped, never refused (insights are derived)
                 }
                 let to = insightsURL.appendingPathComponent(name)
+                // This device's own files are its truth (as its summaries file is, §12.5): never replaced by a copy.
+                if n.device == writerDevice, FileIO.exists(to) { continue }
                 if let ours = try? FileIO.read(to, maxBytes: limit) {
                     if ours == theirs { continue }
                     let own = try? openInsights(ours, name: n)

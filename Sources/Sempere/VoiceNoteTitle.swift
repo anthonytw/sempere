@@ -153,18 +153,48 @@ public struct VoiceNoteTitleState: Hashable, Sendable {
         case keep
     }
 
-    public func decide(applied: InsightsNoteFile.TitleOp?, proposed: String?) -> Decision {
+    /// True when `title` has the shape of a capture's default title: it ends with the capture's local
+    /// `YYYY-MM-DD HH:mm` (`CaptureWriter.defaultTitle`, `WatchRecorder.title`, the app's localized form).
+    public static func isCaptureDefault(_ title: String) -> Bool {
+        let scalars = Array(title.trimmingCharacters(in: .whitespaces).unicodeScalars)
+        guard scalars.count >= 16 else { return false }
+        var tail = String.UnicodeScalarView()
+        tail.append(contentsOf: scalars.suffix(16))
+        return VoiceNoteTitleFormat.localStamp(in: String(tail)) != nil
+    }
+
+    /// The note's title is still the capture default, decided by VALUE (review of #50, H1), never by the position of its
+    /// stamp: it equals the first title the history holds and has the default's shape. Thinning can drop the adoption
+    /// delta (the first title is then a user's rename, which has no such shape), and two devices may adopt one capture
+    /// (two sets of the same default title).
+    public var isStillDefault: Bool {
+        guard let first = defaultTitle, let current else { return false }
+        return current.title == first.title && Self.isCaptureDefault(current.title)
+    }
+
+    /// `applied` as this device's own title op: nil unless its stamp names `writer` (the device id this device's
+    /// revisions carry) and the history holds that stamp with that title (review of #50, M2: a copy of the file could
+    /// have been planted).
+    public func ownTitleOp(_ applied: InsightsNoteFile.TitleOp?, writer: DeviceID?) -> Stamp? {
+        guard let applied, let writer, let s = Stamp(applied.stamp), s.device == writer,
+              sets.contains(where: { $0.stamp == s && $0.title == applied.title }) else { return nil }
+        return s
+    }
+
+    /// - Parameter writer: the device id this device's revisions carry (its state file's), which `titleOp` must name.
+    public func decide(applied: InsightsNoteFile.TitleOp?, proposed: String?, writer: DeviceID?) -> Decision {
         guard isVoiceNote, let first = defaultTitle, let current else { return .keep }
-        let mine = applied.flatMap { Stamp($0.stamp) }
-        if let mine, current.stamp == mine {
+        if let mine = ownTitleOp(applied, writer: writer), current.stamp == mine {
             // This device's own title wins: a title another device set after the adoption and before it was not seen
-            // when it was written (not causally after it), so the user's value comes back.
-            if let lost = sets.last(where: { $0.stamp > first.stamp && $0.stamp < mine && $0.stamp.device != mine.device }) {
+            // when it was written (not causally after it), so the user's value comes back. Another adoption's default
+            // title, or an automatic title equal to this one, is never taken for a rename.
+            if let lost = sets.last(where: { $0.stamp > first.stamp && $0.stamp < mine && $0.stamp.device != mine.device
+                                             && !Self.isCaptureDefault($0.title) && $0.title != applied?.title }) {
                 return .restore(lost.title)
             }
             return .keep
         }
-        guard current.stamp == first.stamp, let proposed, proposed != current.title else { return .keep }
+        guard isStillDefault, let proposed, proposed != current.title else { return .keep }
         return .apply(proposed)
     }
 }

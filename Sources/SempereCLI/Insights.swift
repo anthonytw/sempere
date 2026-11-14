@@ -101,7 +101,7 @@ struct InsightsUpdate: ParsableCommand {
             guard let model = p.model, model.availability.isAvailable else { throw InsightsCLI.unavailable(InsightsCLI.modelReason(p.model)) }
         }
         let vault = try access.openVault(.required)
-        try vault.requireWritable()
+        if !dryRun { try vault.requireWritable() }
         let inputs = try InsightsCLI.inputs(vault, cache: cache)
         var o = InsightsUpdateOptions()
         if let note { o.note = try vault.resolveNote(note) }

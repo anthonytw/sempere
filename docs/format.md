@@ -4657,10 +4657,11 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
 - **Sync** (docs/io.md): one listing of `insights/` per run, within the run's bounds (§9), each file fetched only within
   its bound; unlocked runs only (a locked or staging run skips the folder). A copy is placed or uploaded only when it
   opens under the current key; where both sides differ the later copy (§16.2) wins on both; a copy that does not open
-  never replaces one that does. A device uploads only in a run where its own `vault.json` stands on the target. A
+  never replaces one that does. A device's own file held locally is its truth and is never replaced from a target or
+  a copy (one only on the target is taken). A device uploads only in a run where its own `vault.json` stands on the target. A
   provider's conflict versions of a file settle to the later copy.
-- **Copy-merge** (§1.3) copies a file the vault lacks, or holds with an earlier `written`, when it opens under the
-  current key; nothing is deleted.
+- **Copy-merge** (§1.3), while `insights.enabled` is `true`, copies a file the vault lacks, or holds with an earlier
+  `written`, when it opens under the current key, never over the device's own file; nothing is deleted.
 - **Backups and exports exclude `insights/`**: it is recomputable; a restored vault regenerates.
 - **Verify** lists the files as hints (open, stale, unreadable), never as problems.
 - **Read-only vaults** (§7.3) write and delete no insights file.
@@ -4682,8 +4683,11 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   names stay inside the ciphertext. A summary is stale when the members' digest changed.
 - **Voice-note titles.** The work device sets a quick voice note's title (§11.3) from the shared format
   `insights.voiceNoteTitle` (tokens `{date}` `YYYY-MM-DD` and `{time}` `HH.mm`, 24 hour, in the capture's time zone,
-  and `{slug}`, the model's 2-6 word title checked against the transcript and cut at 60 characters), in one delta, only
-  while the title is still the capture default: the title register has not been set since adoption. It records the
-  stamp of its revision in its note file's `titleOp`. A title set by another device after the adoption and before that
-  stamp (so not causally after it) lost to the automatic title only because the check was local: the work device writes
-  that title again. Ordinary notes are never retitled; without a usable slug the title stays.
+  read from the capture's default title, which a capture writes in its device's zone, and in UTC when the default
+  title holds no `YYYY-MM-DD HH:mm`; and `{slug}`, the model's 2-6 word title checked against the transcript and cut at 60 characters), in one delta, only
+  while the title is still the capture default, decided by value: the current title equals the first title the note's
+  history holds and ends with the capture's `YYYY-MM-DD HH:mm` (a history thinned past the adoption, whose first title
+  is a rename, is never retitled). It records the stamp of its revision in its note file's `titleOp`, and trusts a
+  `titleOp` only when that stamp names the device's own revisions and the history holds it with that title. A title
+  set by another device after the adoption and before that stamp (so not causally after it), other than a default
+  title or that same automatic title, lost only because the check was local: the work device writes that title again. Ordinary notes are never retitled; without a usable slug the title stays.

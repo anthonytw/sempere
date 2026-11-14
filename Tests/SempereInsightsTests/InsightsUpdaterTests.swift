@@ -224,6 +224,80 @@ final class InsightsUpdaterTests: TempDirTestCase {
         XCTAssertEqual(try title(id), "Spring lab (mine)")
     }
 
+    /// Another device's revision of `id` setting `title`, at `hlc` (default: after everything).
+    func otherDeviceTitle(_ id: UUID, _ title: String, device: String = "0000beef", hlc: HLC? = nil) throws {
+        let d = DeviceID(device)!
+        let latest = try vault.loadNote(id).revisions.map(\.hlc).max()!
+        let at = hlc ?? HLC(millis: latest.millis, counter: latest.counter + 1)!
+        try vault.write(Revision(noteId: id, device: d, seq: try vault.nextSeq(noteId: id, device: d), hlc: at, wall: now,
+                                 app: "other/1", body: .delta(ops: [.setMeta(.title(title))])))
+    }
+
+    /// Review of #50, H1: thinning dropped the adoption delta, so the first title in the history is the user's rename.
+    /// It has no capture-default shape: never retitled.
+    func testARenamedVoiceNoteWhoseHistoryWasThinnedKeepsItsTitle() async throws {
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        try enable()
+        try vault.apply([.setMeta(.title("My lab"))], to: id, deviceState: state, app: "test/1", wall: now)
+        var clock = HybridClock(millis: Int64(now.timeIntervalSince1970 * 1000) + 60_000)
+        let snap = try vault.snapshot(noteId: id, device: DeviceID("abcdef01")!, clock: &clock, wall: now, app: "test/1")
+        let dir = vault.url.appendingPathComponent("notes/\(id.uuidString.lowercased())")
+        for name in try FileManager.default.contentsOfDirectory(atPath: dir.path) where name.hasSuffix(".delta.age") {
+            try FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+        }
+        XCTAssertEqual(try vault.loadNote(id).revisions.map(\.name), [snap.name])
+        let r = try await run { $0.force = true }
+        XCTAssertEqual(r.titled, [])
+        XCTAssertEqual(try title(id), "My lab")
+    }
+
+    /// Review of #50, H1: two devices adopted the same capture (two sets of the same default title). The note is still
+    /// titled, and the second adoption's default title is never taken for a lost rename.
+    func testTwoAdoptionsOfOneCaptureKeepTheAutomaticTitle() async throws {
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        try enable()
+        try otherDeviceTitle(id, "Voice note 2026-09-21 10:46")
+        let r = try await run { $0.force = true }
+        XCTAssertEqual(r.titled, [id.uuidString.lowercased()])
+        let auto = try title(id)
+        XCTAssertEqual(auto, "2026-09-21 10.46 Spring Lab Results Show")
+        // The other adoption's default title with a stamp just below the automatic title's: not a rename.
+        let ours = try XCTUnwrap(InsightsStore(vault: vault).snapshot().notes[id]?[vault.writerDevice!]?.titleOp.flatMap { Stamp($0.stamp) })
+        try otherDeviceTitle(id, "Voice note 2026-09-21 10:46", device: "0000aaaa", hlc: ours.hlc)
+        let again = try await run { $0.force = true }
+        XCTAssertEqual(again.restoredTitles, [])
+        XCTAssertEqual(try title(id), auto)
+    }
+
+    /// Review of #50, M1: only the work device sets titles.
+    func testOnlyTheWorkDeviceTitles() async throws {
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        try enable()
+        try vault.updateSharedSettings { s in
+            try s.write(SharedSettingsCatalog.spec(named: "insights.workDevice")!, .string("0000beef"), block: nil, type: nil, now: now)
+        }
+        let r = try await run { $0.force = true }
+        XCTAssertEqual(r.titled, [])
+        XCTAssertEqual(try title(id), "Voice note 2026-09-21 10:46")
+    }
+
+    /// Review of #50, M2: a planted `titleOp` (a stamp of another device's rename) is not this device's: it never makes
+    /// the work device restore an older title over the user's latest rename.
+    func testAPlantedTitleOpIsIgnored() async throws {
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        try enable()
+        try otherDeviceTitle(id, "First rename", device: "0000aaaa")
+        try otherDeviceTitle(id, "Latest rename", device: "0000bbbb")
+        let latest = try XCTUnwrap(try vault.loadNote(id).revisions.last)
+        let store = InsightsStore(vault: vault)
+        try store.write(.note(InsightsNoteFile(noteId: id, device: try store.writer(), written: 0,
+                                               titleOp: .init(stamp: Stamp(hlc: latest.hlc, device: latest.device).description,
+                                                              title: "Latest rename"))), now: now)
+        let r = try await run { $0.force = true }
+        XCTAssertEqual(r.restoredTitles + r.titled, [])
+        XCTAssertEqual(try title(id), "Latest rename")
+    }
+
     func testOrdinaryNotesAreNeverRetitled() async throws {
         let id = try note("Lecture", Self.physics[0])
         try enable()

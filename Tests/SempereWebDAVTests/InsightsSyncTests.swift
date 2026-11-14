@@ -192,6 +192,45 @@ class InsightsSyncScenarioCase: SyncTestCase {
         XCTAssertFalse(localInsights("B").contains(xName), label)
     }
 
+    /// A later copy of A's own file planted on the target (another listed device sealed it under the vault's key): A's
+    /// local file is its truth, never replaced, and A puts it back (review of #50, M2).
+    func scenarioOwnFileIsLocalTruth() throws {
+        try devices()
+        try setEnabled(true)
+        try settle("A"); try settle("B")
+        let name = try writeSidecar(on: "A", summary: "Mine.")
+        try settle("A"); try settle("B")
+        let gen = InsightsNoteFile.Gen(hash: String(repeating: "a", count: 32), identity: .init(model: "m", os: "27.2", prompt: 1),
+                                       summary: "Planted.", keywords: [], concepts: [], dropped: 0)
+        let later = InsightsCodec.nextWritten(after: nil, now: Date().addingTimeInterval(3600))
+        let planted = try openVault("B").sealInsights(.note(InsightsNoteFile(noteId: note, device: device("A"), written: later, gen: gen)),
+                                                     name: name)
+        try t.inspector.write(["insights", name.fileName], .data(planted), condition: .unconditional)
+        try settle("A")
+        XCTAssertEqual(try summary(on: "A", name), "Mine.", label)
+        let back = try t.inspector.read(["insights", name.fileName], maxBytes: 1 << 20).data
+        XCTAssertEqual(back, try Data(contentsOf: dir("A").appendingPathComponent("insights/\(name.fileName)")), "\(label): put back")
+    }
+
+    /// A device whose list does not stand on the target (here: removed, so its runs are held) neither pushes nor deletes
+    /// anything in `insights/` (review of #50, M4b).
+    func scenarioALaggingListNeitherPushesNorDeletes() throws {
+        try devices(["A", "B", "X"])
+        try setEnabled(true)
+        try settle("A"); try settle("B"); try settle("X")
+        let bName = try writeSidecar(on: "B")
+        try settle("B")
+        try writeSidecar(on: "X")
+        var a = try openVault("A")
+        try a.removeDevices([device("X").rawValue])
+        try settle("A")
+        let before = try remoteInsights()
+        XCTAssertTrue(before.contains(bName.fileName))
+        let r = try run("X")
+        XCTAssertFalse((r.uploaded + r.deleted.map(\.path)).contains { $0.hasPrefix("insights/") }, "\(label): \(StressWorld.brief(r))")
+        XCTAssertEqual(try remoteInsights(), before, label)
+    }
+
     /// What a reader that does not know `insights/` does (main before 1.2, and 1.2 with the setting unset): every vault
     /// path leaves the folder as it is.
     func scenarioOldReaderLeavesInsightsUntouched() throws {
@@ -231,6 +270,8 @@ final class InsightsSyncOverMemoryTests: InsightsSyncScenarioCase {
     func testOffDeletesEverywhere() throws { try scenarioOffDeletesEverywhere() }
     func testRemovedDevicesFileIsDeleted() throws { try scenarioRemovedDevicesFileIsDeleted() }
     func testOldReaderLeavesInsightsUntouched() throws { try scenarioOldReaderLeavesInsightsUntouched() }
+    func testOwnFileIsLocalTruth() throws { try scenarioOwnFileIsLocalTruth() }
+    func testALaggingListNeitherPushesNorDeletes() throws { try scenarioALaggingListNeitherPushesNorDeletes() }
 
     /// Insights count against the run's bounds (D17): a run that may download nothing more stops, reported.
     func testInsightsCountAgainstTheRunBounds() throws {
@@ -251,10 +292,91 @@ final class InsightsSyncOverWebDAVMockTests: InsightsSyncScenarioCase {
     func testOldReaderLeavesInsightsUntouched() throws { try scenarioOldReaderLeavesInsightsUntouched() }
 }
 
+/// A provider's conflict versions of an insights file settle to the later copy (review of #50, M4c).
+final class InsightsSyncOverEvictingFolderTests: InsightsSyncScenarioCase {
+    private var provider: EvictingFolderProvider!
+    override func transport() throws -> TransportUnderTest {
+        let (t, p) = TransportUnderTest.evictingFolder(tmp.appendingPathComponent("remote"))
+        provider = p
+        return t
+    }
+
+    func testOwnUpOthersDownLaterWins() throws { try scenarioOwnUpOthersDownLaterWins() }
+
+    func testConflictVersionsSettleToTheLaterCopy() throws {
+        try devices()
+        try setEnabled(true)
+        try settle("A"); try settle("B")
+        let name = try writeSidecar(on: "B", summary: "One.")
+        try settle("B"); try settle("A")
+        XCTAssertEqual(try summary(on: "A", name), "One.")
+        // B's later copy reaches the provider only as a conflict version of the file (two installs wrote it at once).
+        try writeSidecar(on: "B", summary: "Two.", now: Date().addingTimeInterval(5))
+        let later = try Data(contentsOf: dir("B").appendingPathComponent("insights/\(name.fileName)"))
+        _ = try provider.addConflict("insights/\(name.fileName)", later, device: "iPad")
+        XCTAssertFalse(try t.remote.conflictVersions(["insights", name.fileName]).isEmpty)
+        let r = try run("A")
+        XCTAssertTrue(r.uploaded.contains("insights/\(name.fileName)"), StressWorld.brief(r))
+        XCTAssertEqual(try summary(on: "A", name), "Two.")
+        XCTAssertEqual(t.remote.conflictVersions(["insights", name.fileName]), [], "settled")
+        XCTAssertEqual(try t.inspector.read(["insights", name.fileName], maxBytes: 1 << 20).data, later)
+    }
+}
+
 final class InsightsSyncOverWsgidavTests: InsightsSyncScenarioCase {
     override func transport() throws -> TransportUnderTest { try .wsgidav() }
     func testOwnUpOthersDownLaterWins() throws { try scenarioOwnUpOthersDownLaterWins() }
     func testOnlyCurrentKeyCopiesTravel() throws { try scenarioOnlyCurrentKeyCopiesTravel() }
     func testOffDeletesEverywhere() throws { try scenarioOffDeletesEverywhere() }
     func testRemovedDevicesFileIsDeleted() throws { try scenarioRemovedDevicesFileIsDeleted() }
+}
+
+/// After a finished re-encryption (claimed, advanced and confirmed on the target as home does it), an insights file under
+/// a key from before it, one an old app's home left or put back on the target, is deleted there (review of #50, M4a).
+final class InsightsReencryptSyncTests: SyncTestCase {
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26 (always on Linux)")
+    }
+
+    func testBelowAFinishedReencryptionTheTargetCopyGoes() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B"], targets: ["T1"])
+        let t1 = w.target("T1")
+        try w["A"].open().updateSharedSettings { s in
+            try s.write(SharedSettingsCatalog.spec(named: "insights.enabled")!, .bool(true), block: nil, type: nil, now: Date())
+        }
+        for _ in 0..<2 { try w["A"].sync(t1); try w["B"].sync(t1) }
+        let b = try w["B"].open()
+        let store = InsightsStore(vault: b)
+        let gen = InsightsNoteFile.Gen(hash: String(repeating: "a", count: 32), identity: .init(model: "m", os: "27.2", prompt: 1),
+                                       summary: "Old key.", keywords: [], concepts: [], dropped: 0)
+        let name = try store.write(.note(InsightsNoteFile(noteId: UUID(), device: try store.writer(), written: 0, gen: gen)))
+        for _ in 0..<2 { try w["B"].sync(t1); try w["A"].sync(t1) }
+        let path = "insights/\(name.fileName)"
+        let old = try XCTUnwrap(t1.file(path), "B's file reached the target")
+        var a = try w["A"].open()
+        let bid = try XCTUnwrap(a.manifest.devices.first { $0.fingerprint == w["B"].keys.fingerprint }?.id)
+        let prep = try a.prepareReencryption(try MLKEM768X25519Identity(), keep: [bid], remove: [])
+        var seen: ReencryptCoordinator.ClaimSightings = [:]
+        XCTAssertTrue(ReencryptCoordinator.claim(prep.journalFile, vault: a, on: [.init(name: "T1", remote: t1.remote(for: "A"))],
+                                                 seen: &seen).values.allSatisfy(\.isClaimed))
+        try a.beginReencryption(prep)
+        var finished = false
+        for _ in 0..<6 where !finished {
+            try w["B"].sync(t1)
+            var v = try w["A"].open()
+            var memo: [String: [String: String]] = [:]
+            finished = try ReencryptCoordinator.advance(&v, targets: [.init(name: "T1", remote: t1.remote(for: "A"))],
+                                                        sync: { _ in _ = try w["A"].sync(t1) }, memo: &memo,
+                                                        scratch: w["A"].root.appendingPathComponent("confirm")).finished
+        }
+        XCTAssertTrue(finished)
+        for _ in 0..<2 { try w["A"].sync(t1); try w["B"].sync(t1) }
+        XCTAssertNil(t1.file(path), "gone from the target after the finish")
+        // An old app's home put it back: the next run deletes it again.
+        _ = try t1.remote(for: "X").write(["insights", name.fileName], .data(old), condition: .unconditional)
+        let r = try w["A"].sync(t1)
+        XCTAssertTrue(r.deleted.contains { $0.side == "remote" && $0.path == path }, StressWorld.brief(r))
+        XCTAssertNil(t1.file(path))
+    }
 }

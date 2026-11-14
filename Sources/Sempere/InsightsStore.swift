@@ -105,14 +105,17 @@ extension Vault {
     @discardableResult
     public func removeInsightsBelowReencryption() -> [String] {
         guard !isReencryptPending, let m = reencryptEpoch, !isReadOnly, case .device = openedWith else { return [] }
-        var out: [String] = []
-        for name in InsightsStore.names(in: insightsURL) {
-            let file = insightsURL.appendingPathComponent(name.fileName)
-            guard let data = try? BoundedRead.contents(of: file, maxBytes: name.kind.maxBytes + 4096),
-                  insightsUnderEpoch(below: m.epoch, data, name: name), (try? FileIO.remove(file)) != nil else { continue }
-            out.append("\(Self.insightsName)/\(name.fileName)")
+        let run = { () -> [String] in
+            var out: [String] = []
+            for name in InsightsStore.names(in: self.insightsURL) {
+                let file = self.insightsURL.appendingPathComponent(name.fileName)
+                guard let data = try? BoundedRead.contents(of: file, maxBytes: name.kind.maxBytes + 4096),
+                      self.insightsUnderEpoch(below: m.epoch, data, name: name), (try? FileIO.remove(file)) != nil else { continue }
+                out.append("\(Self.insightsName)/\(name.fileName)")
+            }
+            return out.sorted()
         }
-        return out.sorted()
+        return (try? epochWriteLock.withLock(timeout: 30, run)) ?? []
     }
 }
 
@@ -211,17 +214,24 @@ public struct InsightsStore: Sendable {
         return d
     }
 
-    /// The `written` this device's own file `name` holds now (any key), for `nextWritten`.
+    /// The `written` this device's own file `name` holds now (read under the current key), for `nextWritten`.
     func previousWritten(_ name: InsightsFileName) -> Int64? {
         (try? read(name))??.written
     }
 
     /// Writes `content` as this device's file of its kind (and note), replacing it atomically. `written` is set to
-    /// `max(now, previous + 1)`. A vault write (`requireWritable`).
+    /// `max(now, previous + 1)`. A vault write (`requireWritable`), made under the vault's write lock
+    /// (`epochWriteLock`: the store's for a store vault, else the hidden lock file), which the sync engine's local
+    /// insights changes take too (review of #50, M3). The lock is not reentrant: never call these holding it.
     @discardableResult
     public func write(_ content: InsightsFileContent, now: Date = Date()) throws -> InsightsFileName {
         try vault.requireWritable()
         let me = try writer()
+        return try vault.epochWriteLock.withLock(timeout: 30) { try writeLocked(content, me: me, now: now) }
+    }
+
+    /// `write` with the lock held.
+    func writeLocked(_ content: InsightsFileContent, me: DeviceID, now: Date) throws -> InsightsFileName {
         var content = content
         let name: InsightsFileName
         switch content {
@@ -257,25 +267,30 @@ public struct InsightsStore: Sendable {
     /// bridging two targets cannot bring the old one back. Nothing when this device has no file for it.
     @discardableResult
     public func tombstone(note: UUID, now: Date = Date()) throws -> Bool {
+        try vault.requireWritable()
         let me = try writer()
         let name = InsightsFileName(note: note, device: me)
-        guard FileIO.exists(folder.appendingPathComponent(name.fileName)) else { return false }
-        if case .note(let f)? = try? read(name), f.isTombstone { return false }
-        try write(.note(InsightsNoteFile(noteId: note, device: me, written: 0)), now: now)
-        return true
+        return try vault.epochWriteLock.withLock(timeout: 30) {
+            guard FileIO.exists(folder.appendingPathComponent(name.fileName)) else { return false }
+            if case .note(let f)? = try? read(name), f.isTombstone { return false }
+            _ = try writeLocked(.note(InsightsNoteFile(noteId: note, device: me, written: 0)), me: me, now: now)
+            return true
+        }
     }
 
     /// Deletes every file of `insights/` here (format.md §16.6: what turning the feature off does). Returns the paths.
     @discardableResult
     public func purge() throws -> [String] {
         try vault.requireWritable()
-        var out: [String] = []
-        for name in ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
-        where InsightsFileName(name) != nil {
-            try FileIO.remove(folder.appendingPathComponent(name))
-            out.append("\(Vault.insightsName)/\(name)")
+        return try vault.epochWriteLock.withLock(timeout: 30) {
+            var out: [String] = []
+            for name in ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
+            where InsightsFileName(name) != nil {
+                try FileIO.remove(folder.appendingPathComponent(name))
+                out.append("\(Vault.insightsName)/\(name)")
+            }
+            return out
         }
-        return out
     }
 
     /// Deletes the files here named for devices the vault removed (format.md §16.6). A device's own `vault.json` is
@@ -285,12 +300,14 @@ public struct InsightsStore: Sendable {
         try vault.requireWritable()
         let removed = vault.removedInsightsDevices()
         guard !removed.isEmpty else { return [] }
-        var out: [String] = []
-        for name in Self.names(in: folder) where removed.contains(name.device) {
-            try FileIO.remove(folder.appendingPathComponent(name.fileName))
-            out.append("\(Vault.insightsName)/\(name.fileName)")
+        return try vault.epochWriteLock.withLock(timeout: 30) {
+            var out: [String] = []
+            for name in Self.names(in: folder) where removed.contains(name.device) {
+                try FileIO.remove(folder.appendingPathComponent(name.fileName))
+                out.append("\(Vault.insightsName)/\(name.fileName)")
+            }
+            return out
         }
-        return out
     }
 
     /// Re-seals this device's own files that open only under an earlier key, under the current key (format.md §16.6;
@@ -299,20 +316,24 @@ public struct InsightsStore: Sendable {
     public func resealOwn(now: Date = Date()) throws -> [String] {
         try vault.requireWritable()
         let me = try writer()
-        var out: [String] = []
-        for name in Self.names(in: folder) where name.device == me {
-            let file = folder.appendingPathComponent(name.fileName)
-            guard let data = try? vault.readFile(file, maxBytes: name.kind.maxBytes + 4096),
-                  (try? vault.openInsights(data, name: name)) == nil,
-                  let old = vault.openInsightsUnderEarlierKey(data, name: name) else { continue }
-            // Below a finished re-encryption a file under an older key goes instead (format.md §16.6).
-            if let m = vault.reencryptEpoch?.epoch, !vault.isReencryptPending, old.epoch < m {
-                try FileIO.remove(file)
-                continue
+        return try vault.epochWriteLock.withLock(timeout: 30) {
+            var out: [String] = []
+            for name in Self.names(in: folder) where name.device == me {
+                let file = folder.appendingPathComponent(name.fileName)
+                guard let data = try? vault.readFile(file, maxBytes: name.kind.maxBytes + 4096),
+                      (try? vault.openInsights(data, name: name)) == nil,
+                      let old = vault.openInsightsUnderEarlierKey(data, name: name) else { continue }
+                // Below a finished re-encryption a file under an older key goes instead (format.md §16.6).
+                if let m = vault.reencryptEpoch?.epoch, !vault.isReencryptPending, old.epoch < m {
+                    try FileIO.remove(file)
+                    continue
+                }
+                // A device's own files are never replaced from a target or a copy (local truth, review of #50, M2),
+                // and a `titleOp` counts only when the note's history holds it as this device's (`ownTitleOp`).
+                _ = try writeLocked(old.content, me: me, now: now)
+                out.append("\(Vault.insightsName)/\(name.fileName)")
             }
-            try write(old.content, now: now)
-            out.append("\(Vault.insightsName)/\(name.fileName)")
+            return out
         }
-        return out
     }
 }

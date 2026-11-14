@@ -68,7 +68,7 @@ your key, nobody can decrypt your notes.**
   there before it is saved, and sent to your iPhone over the watch's own connection to it (Apple's
   WatchConnectivity). The watch app makes no other connection and keeps no key that can read a note.
 - **Note insights** (optional, off by default) use Apple's on-device language model to write a short summary and
-  keywords for each note, and Apple's on-device language framework to find related notes. They are made only on your
+  keywords for each note (and a title for each quick voice note), and Apple's on-device language framework to find related notes. They are made only on your
   devices (one without Apple Intelligence shows the others'), never use Private Cloud Compute or any other server, and
   nothing about them is sent to us or anyone else. Summaries, keywords and the numeric fingerprints that connect notes
   are saved in your vault, encrypted like your notes, and sync with it; turning Note Insights off deletes them.

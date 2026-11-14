@@ -15,8 +15,13 @@ import Sempere
 // - nothing is pushed unless this device's own `vault.json` stands on the target (`listStandsHere`), so a lagging or
 //   removed device never puts old-key files back;
 // - deletions: files that open under a key from before a finished re-encryption, files named for a device the vault
-//   removed (both locally, and on the target where this device's list stands), and everything when `insights.enabled`
-//   is explicitly off. Unset leaves `insights/` alone on both sides;
+//   removed (both locally, and on the target where this device's list stands, under a strong version tag), and
+//   everything when `insights.enabled` is explicitly off. Unset leaves `insights/` alone on both sides;
+// - this device's own files are its truth (as its summaries file is, format.md §12.5): an existing local one is never
+//   replaced from a target (review of #50, M2); one only on the target is taken;
+// - every local change (a placement or a deletion) is made under the vault's write lock (`withLocalWriteLock`, never
+//   across a request) after the local bytes are read again: a file a writer replaced since it was judged is left
+//   (review of #50, M3);
 // - a provider's conflict versions of a file settle to the later `written` (`ConflictVersions`).
 
 extension SyncEngine {
@@ -39,13 +44,10 @@ extension SyncEngine {
         // Off: every insights file goes, here and on the target (format.md §16.6), and nothing is synced.
         if mode == .off {
             if !options.pushOnly {
-                for name in local.sorted() {
-                    try LocalFS.remove(localDir.appendingPathComponent(name))
-                    report.deleted.append(.init(side: "local", path: "\(folder)/\(name)"))
-                }
+                for name in local.sorted() { try removeLocalInsights(name, localDir: localDir) }
             }
             if stands {
-                for (name, e) in listed.sorted(by: { $0.key < $1.key }) { try deleteRemoteInsights(name, entry: e) }
+                for (name, e) in listed.sorted(by: { $0.key < $1.key }) { try deleteRemoteInsights(name, entry: e, requireStrong: false) }
             }
             state.insights = nil
             return
@@ -54,14 +56,12 @@ extension SyncEngine {
         let removed = v.removedInsightsDevices()
         for name in local.sorted() {
             guard let n = InsightsFileName(name), removed.contains(n.device), !options.pushOnly else { continue }
-            try LocalFS.remove(localDir.appendingPathComponent(name))
-            local.remove(name)
-            report.deleted.append(.init(side: "local", path: "\(folder)/\(name)"))
+            if try removeLocalInsights(name, localDir: localDir) { local.remove(name) }
         }
         if stands {
             for (name, e) in listed.sorted(by: { $0.key < $1.key }) {
                 guard let n = InsightsFileName(name), removed.contains(n.device) else { continue }
-                if try deleteRemoteInsights(name, entry: e) { listed[name] = nil }
+                if try deleteRemoteInsights(name, entry: e, requireStrong: true) { listed[name] = nil }
             }
         }
         // Below a finished re-encryption (format.md §16.6): files under a key from before it go.
@@ -70,9 +70,7 @@ extension SyncEngine {
                 guard !options.pushOnly, let n = InsightsFileName(name),
                       let data = try? BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: n.kind.maxBytes + 4096),
                       v.insightsUnderEpoch(below: m, data, name: n) else { continue }
-                try LocalFS.remove(localDir.appendingPathComponent(name))
-                local.remove(name)
-                report.deleted.append(.init(side: "local", path: "\(folder)/\(name)"))
+                if try removeLocalInsights(name, localDir: localDir, judged: data) { local.remove(name) }
             }
         }
         let records = state.insights ?? [:]
@@ -104,14 +102,25 @@ extension SyncEngine {
         let max = n.kind.maxBytes + 4096
         let localData = hasLocal ? try? BoundedRead.contents(of: file, maxBytes: max) : nil
         let localHash = localData.map { FileDigest.sha256($0) }
-        let localOpens = localData.flatMap { try? v.openInsights($0, name: n) }
+        // Decrypted only when needed (a post-quantum decapsulation per file): not for an unchanged pair.
+        var openedLocal: InsightsFileContent??
+        func localOpensNow() -> InsightsFileContent? {
+            if let o = openedLocal { return o }
+            let o = localData.flatMap { try? v.openInsights($0, name: n) }
+            openedLocal = .some(o)
+            return o
+        }
+        let own = n.device == v.writerDevice
         guard let remote else {
             // Only here: up, when it opens under the current key and this device's list stands there.
-            guard let localData, let localHash, localOpens != nil, stands else { return nil }
+            guard let localData, let localHash, stands, localOpensNow() != nil else { return nil }
             return try putInsights(n, localData, hash: localHash, condition: .create)
         }
         if try !available([folder, name], entry: remote) { return record }
-        if let record, record.stamp != nil, record.stamp == remote.stamp, record.hash == localHash { return record }
+        // A provider's conflict versions do not move the file's stamp: a file that has some is looked at again.
+        let hasVersions = !options.pushOnly && stands && !transport.conflictVersions([folder, name]).isEmpty
+        if !hasVersions, let record, record.stamp != nil, record.stamp == remote.stamp, record.hash == localHash { return record }
+        let localOpens = localOpensNow()
         if let size = remote.size, size > max {
             report.skipped.append(.init(path: "\(folder)/\(name)", message: "larger than an insights file may be; not fetched"))
             return record
@@ -131,18 +140,28 @@ extension SyncEngine {
         let remoteOpens = try? v.openInsights(got.data, name: n)
         // Under a key from before a finished re-encryption (an old app's home left it): deleted on the target too.
         if remoteOpens == nil, stands, let m = v.recordsObsoleteBelow, v.insightsUnderEpoch(below: m, got.data, name: n) {
-            guard try deleteRemoteInsights(name, entry: remote) else { return record }
+            guard try deleteRemoteInsights(name, entry: remote, requireStrong: true) else { return record }
             guard let localData, let localHash, localOpens != nil else { return nil }
             return try putInsights(n, localData, hash: localHash, condition: .create)
         }
         let condition = stamp.flatMap { Self.isStrong($0) ? PutCondition.replace(etag: $0) : nil } ?? .unconditional
+        // This device's own file, held here: the truth; never replaced from the target (review of #50, M2).
+        if own, let localData, let localHash {
+            guard localOpens != nil else {
+                report.skipped.append(.init(path: "\(folder)/\(name)", message: "this device's own file does not open under the "
+                    + "current key yet (it re-seals it); the target's copy is not taken"))
+                return .init(hash: localHash, stamp: stamp)
+            }
+            guard stands else { return record }
+            return try putInsights(n, localData, hash: localHash, condition: condition)
+        }
         switch (localOpens, remoteOpens) {
         case (nil, nil):
             if localData == nil { return nil }
             report.skipped.append(.init(path: "\(folder)/\(name)", message: "neither copy opens under the current key; neither is replaced"))
             return .init(hash: localHash ?? remoteHash, stamp: stamp)
         case (nil, _?):
-            return try placeInsights(n, got.data, stamp: stamp, replacing: localData != nil)
+            return try placeInsights(n, got.data, stamp: stamp, judged: localData)
         case (_?, nil):
             guard stands, let localData, let localHash else { return record }
             return try putInsights(n, localData, hash: localHash, condition: condition)
@@ -154,7 +173,7 @@ extension SyncEngine {
                 return try putInsights(n, localData, hash: localHash, condition: condition)
             }
             let remoteLater = InsightsCodec.isLater((r.written, remoteHash), than: (l.written, localHash), now: options.now)
-            if remoteLater { return try placeInsights(n, got.data, stamp: stamp, replacing: true) }
+            if remoteLater { return try placeInsights(n, got.data, stamp: stamp, judged: localData) }
             report.skipped.append(.init(path: "\(folder)/\(name)", message: "neither copy is ordered (written beyond 7 days ahead); neither is replaced"))
             return .init(hash: localHash, stamp: stamp)
         }
@@ -164,19 +183,22 @@ extension SyncEngine {
     /// current copy stays (the versions are still resolved: a later copy replaces none of them).
     private func settleInsightsVersions(_ n: InsightsFileName, current: Data, vault v: Vault, stands: Bool) throws -> Data? {
         let path = [Vault.insightsName, n.fileName]
+        // A lagging device cannot judge copies under a newer key: it leaves the versions alone (review of #50, L2).
+        guard stands else { return nil }
         let versions = transport.conflictVersions(path)
         guard !versions.isEmpty else { return nil }
         var best = current
         var bestKey: (Int64?, String) = ((try? v.openInsights(current, name: n))?.written, FileDigest.sha256(current))
         for version in versions {
             guard let data = try? transport.readVersion(path, version, maxBytes: n.kind.maxBytes + 4096) else { continue }
+            try locked { try budget.downloaded(data.count) }
             let key: (Int64?, String) = ((try? v.openInsights(data, name: n))?.written, FileDigest.sha256(data))
             if key.0 != nil, InsightsCodec.isLater((key.0, key.1), than: (bestKey.0, bestKey.1), now: options.now) {
                 best = data; bestKey = key
             }
         }
         if best != current {
-            guard stands, try transport.write(path, .data(best), condition: .unconditional) else { return nil }
+            guard try transport.write(path, .data(best), condition: .unconditional) else { return nil }
             report.uploaded.append(path.joined(separator: "/"))
         }
         try transport.resolveConflicts(path, versions)
@@ -197,16 +219,48 @@ extension SyncEngine {
         }
     }
 
-    /// Places a received copy that opened under the current key.
-    private func placeInsights(_ n: InsightsFileName, _ data: Data, stamp: String?, replacing: Bool) throws -> SyncState.MutableRecord? {
+    /// Places a received copy that opened under the current key, under the vault's write lock, only when the local file
+    /// is still the one judged (`judged`: its bytes then, nil when there was none).
+    private func placeInsights(_ n: InsightsFileName, _ data: Data, stamp: String?, judged: Data?) throws -> SyncState.MutableRecord? {
         guard !options.pushOnly else { return nil }
         let path = "\(Vault.insightsName)/\(n.fileName)"
         try requireLocalWrite("write \(path)")
         let dir = root.appendingPathComponent(Vault.insightsName, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        guard try LocalFS.write(data, to: dir.appendingPathComponent(n.fileName), replacing: replacing) else { return nil }
+        let url = dir.appendingPathComponent(n.fileName)
+        var placed = false
+        try withLocalWriteLock {
+            guard Self.localBytes(url, n) == judged else { return }
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            placed = try LocalFS.write(data, to: url, replacing: judged != nil)
+        }
+        guard placed else {
+            report.skipped.append(.init(path: path, message: "changed here while the run judged it; compared again next run"))
+            return nil
+        }
         report.downloaded.append(path)
         return .init(hash: FileDigest.sha256(data), stamp: stamp)
+    }
+
+    /// The local bytes of an insights file now (nil when there is none or it cannot be read).
+    static func localBytes(_ url: URL, _ n: InsightsFileName) -> Data? {
+        try? BoundedRead.contents(of: url, maxBytes: n.kind.maxBytes + 4096)
+    }
+
+    /// Deletes a local insights file under the vault's write lock, only when its bytes are still `judged` (read now when
+    /// nil). True when it went.
+    @discardableResult
+    private func removeLocalInsights(_ name: String, localDir: URL, judged: Data? = nil) throws -> Bool {
+        guard let n = InsightsFileName(name) else { return false }
+        let url = localDir.appendingPathComponent(name)
+        let expected = judged ?? Self.localBytes(url, n)
+        var removed = false
+        try withLocalWriteLock {
+            guard Self.localBytes(url, n) == expected else { return }
+            try LocalFS.remove(url)
+            removed = true
+        }
+        if removed { report.deleted.append(.init(side: "local", path: "\(Vault.insightsName)/\(name)")) }
+        return removed
     }
 
     private func putInsights(_ n: InsightsFileName, _ data: Data, hash: String, condition: PutCondition) throws -> SyncState.MutableRecord? {
@@ -218,10 +272,16 @@ extension SyncEngine {
         return .init(hash: hash, stamp: stamp)
     }
 
-    /// Deletes a target's copy (under its strong version tag when it has one). True when it went.
+    /// Deletes a target's copy (under its strong version tag when it has one; with `requireStrong`, never without one,
+    /// as `DeviceSummariesSync` does). True when it went.
     @discardableResult
-    private func deleteRemoteInsights(_ name: String, entry e: RemoteEntry) throws -> Bool {
+    private func deleteRemoteInsights(_ name: String, entry e: RemoteEntry, requireStrong: Bool) throws -> Bool {
         let tag = e.etag.flatMap { Self.isStrong($0) ? $0 : nil }
+        if requireStrong, tag == nil {
+            report.skipped.append(.init(path: "\(Vault.insightsName)/\(name)", message: "the target gives no strong version tag "
+                + "to delete it under; left"))
+            return false
+        }
         guard try transport.delete([Vault.insightsName, name], ifETag: tag) else { return false }
         report.deleted.append(.init(side: "remote", path: "\(Vault.insightsName)/\(name)"))
         return true

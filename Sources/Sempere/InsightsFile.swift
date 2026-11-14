@@ -438,7 +438,7 @@ public struct InsightsDeviceRecord: Hashable, Sendable, Codable {
     public var supported: [String: [Int]]
     /// Canary vectors at the revisions this device embeds (at the pin, when it supports it).
     public var canaries: [CanaryVectors]
-    /// `compatible`, `incompatible`, `vectorReader` or `local`, against the map whose `written` is `against`.
+    /// `compatible`, `incompatible`, `vectorReader`, `workDevice` or `noMap`, against the map whose `written` is `against`.
     public var compatibility: String?
     public var against: Int64?
 
