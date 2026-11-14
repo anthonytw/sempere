@@ -25,6 +25,21 @@ is updated):
 | `Web viewer` | `ubuntu-24.04`, Node 22 | `cd web`: `npm ci`, lint, typecheck, `npm test` (which cross-checks the renderer with the committed Swift goldens), the strict-CSP build. The goldens themselves are checked against the CLI inside `Linux package tests` (`web/scripts/golden.sh`, every run, never skipped by hash). | none |
 | `PR lists tests run` | `ubuntu-24.04` | `pr-description.yml`: the description has a non-empty `## Tests run` section; **a PR that changes files under `Apps/` must also name a run of `scripts/local-ci.sh` or `scripts/app.sh test-mac` with its result** (`check-tests-run.py --app-changed`), because the hosted gate does not run the Mac Catalyst tests | none |
 
+**Skipping the suites** (`Gate decision`, `scripts/ci-gate-decision.py`). The suite jobs (`Web viewer`, `iOS build`, `Mac package
+tests`, `Linux package tests`, `Linux WebDAV tests`) keep their names and always run as jobs, but when the decision says
+`run=false` every step of them is skipped and each concludes **success** in seconds (a required check never goes missing; an empty or
+failed decision runs the suites). It says false in two cases only: (1) every file changed since the PR's base is release-neutral,
+the list in `scripts/release-neutral.regex` (one line, read by `scripts/release-sweep-check.sh` too), **minus** anything under
+`.github/` (a workflow change must run the workflow) and anything a test reads (the `extra_inputs` of `scripts/ci-targets.json`:
+`docs/format.md`, `docs/security.md`, `SECURITY.md`, ...); (2) a full green run of this repository already passed a commit with exactly
+this tree: such a run leaves an artifact `ci-tree-<tree id>` (job `Tree record`, 30 days, never from a fork's run, never from a skipped
+run), which covers the squash merge of a PR whose base did not move and a rebased or re-pushed copy. A tree that only a local
+sweep passed (the release PR built from a local commit) is invisible to GitHub: its release changes (`Version.swift`, the app's
+version) are not neutral, so it runs once; if the PR is rebuilt from an already-tested tree, case 2 skips it.
+`Help and portability checks` is **not** skipped (a minute: it holds the secret scan of docs and changelog and the tests of the release
+scripts). `PR lists tests run` is unchanged; "None beyond the gate: docs only" satisfies it. A push to `main` is decided the same way
+(against the push's `before`).
+
 `Pass records (...)` (three jobs) are bookkeeping and not required (the gate jobs wait for them and run even when they fail, `!cancelled()`: a failed bookkeeping job never turns a gate job into a skipped, passing check). Jobs of a draft pull request are skipped.
 
 Wall times on the hosted runners (the first run on the branch that added the workflow, 2026-11-09). Cold: every test ran, no

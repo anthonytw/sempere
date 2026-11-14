@@ -464,7 +464,10 @@ Approval with manual release leaves the version "Pending Developer Release". On 
 2. **Build the binaries here.** `just release-build 1.0.0` (about 20 minutes, Docker running; as the build account, once
    the maintainer's signed tag is on GitHub). From a clean
    worktree of the tag it re-runs the checks, builds the fully static Linux binaries for x86_64 and aarch64
-   (Static Linux SDK in `swift:6.4.2-noble`, `scripts/build-linux-static.sh`) and the macOS universal binary,
+   (Static Linux SDK in `swift:6.4.2-noble`, `scripts/build-linux-static.sh`) and the macOS universal binary, all three
+   at once (a log each in `build/release/vX.Y.Z/logs/`, shown when one fails; each Linux build has fresh Docker volumes of
+   its own; the SDK archive is downloaded once into `~/.cache/sempere/swift-sdk`, checked against its pinned SHA-256 on
+   every use, mounted read-only and checked again in the container: `scripts/static-sdk-cache.sh`),
    checks each prints the tag's version, packages `sempere-X.Y.Z-<platform>.tar.gz` (binary, LICENSE,
    LICENSE-EXCEPTION, README, CHANGELOG, `docs/cli.md`, `fonts/`; `scripts/package-cli.sh`), installs and runs the
    Linux tarballs in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20 (`scripts/smoke-linux-cli.sh`;

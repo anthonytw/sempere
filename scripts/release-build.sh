@@ -14,6 +14,10 @@
 #   2. Linux x86_64 and aarch64: the fully static binaries (Static Linux SDK, scripts/ci-linux.sh static),
 #      built in the swift:6.4.2 image for both architectures from this Mac's one
 #   3. macOS: the universal binary (swift build --arch arm64 --arch x86_64)
+#      Steps 2 and 3 are three builds that run AT ONCE (a log each under build/release/vVERSION/logs/, printed when one fails;
+#      each Linux build has fresh Docker volumes of its own, F-01). The Static Linux SDK archive is downloaded once into
+#      ~/.cache/sempere/swift-sdk, checked against its pinned SHA-256 on every use (a bad file is deleted and fetched again)
+#      and mounted read-only (scripts/static-sdk-cache.sh). The versions and tarballs are checked after all three finish.
 #   4. each binary reports VERSION; tarballs via scripts/package-cli.sh (Linux ones in the image, GNU tar)
 #   5. the Linux tarballs installed and run in Debian 12, Ubuntu 22.04 and 26.04, Fedora 41 and Alpine 3.20
 #      (scripts/smoke-linux-cli.sh). The architecture Docker runs natively must pass; the emulated one
@@ -42,7 +46,7 @@ SMOKE_IMAGES=(
   $ALPINE_IMAGE
 )
 # The scripts this one copies from this checkout into the tag's worktree.
-TOOLING=(scripts/ci-linux.sh scripts/package-cli.sh scripts/smoke-linux-cli.sh)
+TOOLING=(scripts/ci-linux.sh scripts/package-cli.sh scripts/smoke-linux-cli.sh scripts/build-linux-static.sh scripts/static-sdk-pin.sh scripts/static-sdk-cache.sh)
 unset SEMPERE_LINUX_BUILD_VOLUME   # a release build always starts from fresh volumes
 
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no tag $tag here (just release-tag $version)"
@@ -83,8 +87,28 @@ cd "$src"
 # The release tooling is this checkout's (a tag may predate it; checked above to be main's); the sources are the tag's.
 for f in "${TOOLING[@]}"; do cp "$repo/$f" "$f"; done
 
+step "The three builds, at once: Linux x86_64, Linux aarch64, macOS universal"
+# Independent builds on a Mac that sits mostly idle during a serial one. Each has its own log (build/release/vX/logs/), its own
+# fresh Docker volumes for .build and ~/.swiftpm (scripts/ci-linux.sh: one per static job, removed when it ends; the audit's F-01),
+# and writes its own output file; only the SDK archive, verified and read-only, is shared (scripts/static-sdk-cache.sh).
+# Downloaded here, once, before either container starts, so the two never race to fill the cache.
+scripts/static-sdk-cache.sh >/dev/null || die "cannot get a verified Static Linux SDK archive"
+logs=$out/logs; mkdir -p "$logs"
+pids=() names=()
+cleanup_builds() { local p; for p in ${pids[@]+"${pids[@]}"}; do kill "$p" 2>/dev/null || true; done; }
+trap 'cleanup_builds; git -C "$repo" worktree remove --force "$src" 2>/dev/null || true' EXIT
+scripts/ci-linux.sh docker static:x86_64 >"$logs/linux-x86_64.log" 2>&1 & pids+=($!) names+=(linux-x86_64)
+scripts/ci-linux.sh docker static:aarch64 >"$logs/linux-aarch64.log" 2>&1 & pids+=($!) names+=(linux-aarch64)
+swift build -c release --product sempere --arch arm64 --arch x86_64 >"$logs/macos-universal.log" 2>&1 & pids+=($!) names+=(macos-universal)
+failed_builds=()
+for i in "${!pids[@]}"; do
+  if wait "${pids[$i]}"; then echo "ok    ${names[$i]} built"
+  else echo "FAIL  ${names[$i]}: $logs/${names[$i]}.log (end of it below)"; tail -n 40 "$logs/${names[$i]}.log" | sed 's/^/      | /'; failed_builds+=("${names[$i]}"); fi
+done
+pids=()
+[[ ${#failed_builds[@]} -eq 0 ]] || die "build failed: ${failed_builds[*]}"
+
 step "Linux static binaries"
-scripts/ci-linux.sh docker static:x86_64 static:aarch64
 for arch in x86_64 aarch64; do
   platform=linux/amd64; [[ $arch == aarch64 ]] && platform=linux/arm64
   # The whole output, then its first line: `| head -1` closes the pipe early and, with pipefail, fails the build when
@@ -98,7 +122,6 @@ done
 echo "ok    linux-x86_64, linux-aarch64"
 
 step "macOS universal binary"
-swift build -c release --product sempere --arch arm64 --arch x86_64
 bin="$(swift build -c release --product sempere --arch arm64 --arch x86_64 --show-bin-path)/sempere"
 archs=$(lipo -archs "$bin")
 [[ $archs == *arm64* && $archs == *x86_64* ]] || die "the macOS binary has only: $archs"

@@ -6,14 +6,14 @@
 #                                                (copied to OUT if given)
 #
 # Runs in the `swift:$SWIFT_VERSION-noble` image (scripts/ci-linux.sh static, scripts/release-build.sh): the SDK must
-# be exactly the compiler's version, so both pins live here. Bump them together: the checksum is the
-# "Static SDK" entry for that release in https://www.swift.org/api/v1/install/releases.json.
+# be exactly the compiler's version, so the pins (scripts/static-sdk-pin.sh) go with STATIC_IMAGE in ci-linux.sh. With
+# SEMPERE_SDK_ARCHIVE=FILE (set by `ci-linux.sh docker`, which mounts the host's cached archive,
+# scripts/static-sdk-cache.sh) the SDK is installed from that file after its SHA-256 is checked here; without it, it is
+# downloaded with `--checksum`.
 # The binary is stripped (-Xlinker -s): about 80 MB instead of 240 MB.
 set -euo pipefail
 
-SWIFT_VERSION=6.4.2
-SDK_SHA256=3786b179936d9cc9e266dd506bd1654176358d7b25288e243359f4d17cc4dc5a
-SDK_URL="https://download.swift.org/swift-$SWIFT_VERSION-release/static-sdk/swift-$SWIFT_VERSION-RELEASE/swift-$SWIFT_VERSION-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz"
+source "$(dirname "$0")/static-sdk-pin.sh"   # SWIFT_VERSION, SDK_URL, SDK_SHA256, sha256_of
 
 arch=${1:?usage: $0 x86_64|aarch64 [OUT]}
 out=${2:-}
@@ -29,7 +29,20 @@ fi
 # it is removed and installed again from the checksummed archive, so the SDK of every build is the pinned one.
 name="swift-$SWIFT_VERSION-RELEASE_static-linux-0.1.0"
 if swift sdk list 2>/dev/null | grep -qx "$name"; then swift sdk remove "$name" >&2; fi
-swift sdk install "$SDK_URL" --checksum "$SDK_SHA256" >&2
+if [[ -n ${SEMPERE_SDK_ARCHIVE:-} ]]; then
+  # The host's cache of the archive (scripts/static-sdk-cache.sh, mounted read-only): copied here, checked against the pin HERE
+  # (never trusted because the host checked it), and installed from that copy, so the file that was checked is the file that is
+  # installed. A file that does not match is an error, not a fallback to the network.
+  [[ -f $SEMPERE_SDK_ARCHIVE ]] || { echo "error: SEMPERE_SDK_ARCHIVE=$SEMPERE_SDK_ARCHIVE is not a file" >&2; exit 1; }
+  sdk_tmp=$(mktemp -d); trap 'rm -rf "$sdk_tmp"' EXIT
+  sdk_file=$sdk_tmp/${SDK_URL##*/}
+  cp "$SEMPERE_SDK_ARCHIVE" "$sdk_file"
+  got=$(sha256_of "$sdk_file")
+  [[ $got == "$SDK_SHA256" ]] || { echo "error: the cached SDK archive has SHA-256 $got, expected $SDK_SHA256" >&2; exit 1; }
+  swift sdk install "$sdk_file" >&2
+else
+  swift sdk install "$SDK_URL" --checksum "$SDK_SHA256" >&2
+fi
 swift sdk list 2>/dev/null | grep -qx "$name" || { echo "error: the Static Linux SDK $name is not installed" >&2; exit 1; }
 
 flags=(-c release --product sempere --swift-sdk "$arch-swift-linux-musl" -Xlinker -s)

@@ -23,8 +23,9 @@ cd "$(dirname "$0")/.."
 source scripts/forge.sh
 max_back=${SEMPERE_SWEEP_LOOKBACK:-50}
 
-# Paths that do not reach the built app or CLI. Keep this list small and boring.
-neutral='^(CHANGELOG\.md|changelog\.d/.*|docs/.*|\.github/.*|\.gitea/.*|[^/]+\.md|justfile|packaging/homebrew/.*|packaging/allowed_signers|scripts/(release-[^/]*|test-release-[^/]*|test-mirror-gitea|changelog-[^/]*|update-formula|forge|local-ci)\.(sh|py))$'
+# Paths that do not reach the built app or CLI: one line in scripts/release-neutral.regex, which the PR gate's skip
+# decision (scripts/ci-gate-decision.py) reads too. Keep that list small and boring.
+neutral=$(<scripts/release-neutral.regex)
 
 status_of() {   # sha context -> state, "missing", or "unknown" when Gitea cannot be asked
   local out
