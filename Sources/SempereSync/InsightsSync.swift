@@ -82,7 +82,7 @@ extension SyncEngine {
                 try budget.checkTime()
                 if let r = try syncInsightsFile(n, localDir: localDir, hasLocal: local.contains(name), remote: listed[name],
                                                 record: records[name], vault: v, stands: stands) {
-                    kept[name] = r
+                    kept[name] = Self.timedSummary(r, previous: records[name])
                 }
             } catch {
                 try rethrowRunLimit(error)
@@ -119,7 +119,8 @@ extension SyncEngine {
         if try !available([folder, name], entry: remote) { return record }
         // A provider's conflict versions do not move the file's stamp: a file that has some is looked at again.
         let hasVersions = !options.pushOnly && stands && !transport.conflictVersions([folder, name]).isEmpty
-        if !hasVersions, let record, record.stamp != nil, record.stamp == remote.stamp, record.hash == localHash { return record }
+        // Only a settled stamp (`SyncEngine.settle`): a whole-second tag hides a same-size rewrite within the second.
+        if !hasVersions, let record, record.settled, record.stamp != nil, record.stamp == remote.stamp, record.hash == localHash { return record }
         let localOpens = localOpensNow()
         if let size = remote.size, size > max {
             report.skipped.append(.init(path: "\(folder)/\(name)", message: "larger than an insights file may be; not fetched"))
