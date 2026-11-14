@@ -149,6 +149,14 @@ fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) {" "    run { (why: Error
 expect "a closure parameter typed Error fails" fail "interpolates an error's text: Sources/Lib/P.swift:2"
 fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) {" "    do { try g() } catch { perf.log(.error, \"c\", \"failed: \\(error)\") }" "}"
 expect "the implicit error of a bare catch fails" fail "interpolates an error's text: Sources/Lib/P.swift:2"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, failure: Error) { perf.log(.error, \"c\", \"failed: \\(failure.description)\") }"
+expect "NAME.description of an error fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, failure: Error) { perf.log(.error, \"c\", \"failed: \\(failure as NSError)\") }"
+expect "NAME as NSError of an error fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, failure: Error) { perf.log(.error, \"c\", \"failed: \\( failure )\") }"
+expect "spaces inside the interpolation of an error fail" fail "interpolates an error's text: Sources/Lib/P.swift:1"
+fresh; put Sources/Lib/P.swift "func f(perf: PerfSink, cause: (any Error)?) { perf.log(.error, \"c\", \"failed: \\(cause)\") }"
+expect "a parameter declared (any Error)? fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
 fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) { run { perf.log(.error, \"c\", \"failed: \\(\$0)\") } }"
 expect "\$0 interpolated in a PerfSink call fails" fail "interpolates an error's text: Sources/Lib/P.swift:1"
 fresh; put Sources/Lib/P.swift "func f(perf: PerfSink) { run { perf.log(.error, \"c\", String(describing: \$1)) } }"
@@ -179,6 +187,21 @@ fresh; put Apps/App/Log.swift "func f(logger: Logger, title: String) { logger.in
 expect "an Apps log of a title with the default (redacted) privacy passes" ok
 fresh; put Apps/App/Log.swift "func f(logger: Logger, title: String) { logger.info(\"opened \\(title, privacy: .private)\") }"
 expect "an Apps log of a title with .private passes" ok
+
+# The signing key is published (scripts/release-fingerprints.sh): every key in packaging/allowed_signers is in SECURITY.md.
+ssh-keygen -q -t ed25519 -N "" -C one -f "$tmp/k1"; ssh-keygen -q -t ed25519 -N "" -C two -f "$tmp/k2"
+fp1="$(ssh-keygen -lf "$tmp/k1.pub" | awk '{print $2}')"; fp2="$(ssh-keygen -lf "$tmp/k2.pub" | awk '{print $2}')"
+signer() { echo "$1 namespaces=\"git,file\" $(cut -d' ' -f1,2 "$tmp/$2.pub")"; }
+fresh; put packaging/allowed_signers "$(signer maintainer k1)"; put SECURITY.md "fingerprint $fp1 (maintainer)"
+expect "a signers key whose fingerprint SECURITY.md publishes passes" ok
+fresh; put packaging/allowed_signers "# the maintainer" "$(signer maintainer k1)"; put SECURITY.md "no fingerprint here"
+expect "a signers key missing from SECURITY.md fails" fail "signing key not published: SECURITY.md does not publish SHA256:"
+fresh; put packaging/allowed_signers "$(signer maintainer k1)" "$(signer next k2)"; put SECURITY.md "fingerprint $fp1"
+expect "a second (rotation) key missing from SECURITY.md fails" fail "signing key not published"
+fresh; put packaging/allowed_signers "$(signer maintainer k1)" "$(signer next k2)"; put SECURITY.md "$fp1" "$fp2"
+expect "two keys, both published, pass" ok
+fresh; put packaging/allowed_signers "not a key"; put SECURITY.md "x"
+expect "an unreadable signers file fails" fail "cannot read a key fingerprint"
 
 # Pins
 fresh; put .github/workflows/ci.yml "name: CI" "on: push" "permissions:" "  contents: read" "jobs:" "  a:" "    steps:" "      - uses: actions/checkout@v4"

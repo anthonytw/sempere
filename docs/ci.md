@@ -430,14 +430,23 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
   with a plain `@Environment(X.self)` instead of the non-trapping wrappers
   (`AppModelEnvironment.swift`).
 - **Trust anchors have a code owner** (`.github/CODEOWNERS`; `docs/design/1.2-audit-followups.md` F-13). It names the maintainer for
-  `packaging/allowed_signers` (who may sign releases), `SECURITY.md`, the release scripts and their tests, the security and
-  test-run checks (`check-security.sh`, `security-allow.txt`, `check-tests-run.py`, `ci-gate-decision.py`), `apt-install.sh`
-  and `.github/`. The `main` ruleset's "Require review from Code Owners" makes a PR that touches one of them need the
-  maintainer's approval, so an agent seat can open such a PR but never merge it. Turning that setting on is the owner's step
-  (an agent does not edit rulesets); until then the file only documents the intent. Docs and code PRs are unaffected.
+  `packaging/` (who may sign releases, the formula), `SECURITY.md`, the release scripts and their tests, the build's pins
+  (`static-sdk-pin.sh`, which holds the static build image digest and the SDK checksum), `update-formula.sh`, the gate's own
+  files (`ci-hash.py`, `ci-targets.json`, `ci-gate-decision.py`), the security and test-run checks (`check-security.sh`,
+  `security-allow.txt`, `check-tests-run.py`), `apt-install.sh` and `.github/`. It takes effect only through the `main`
+  ruleset, and the owner turns that on (an agent does not edit rulesets): "Require review from Code Owners", plus "Require
+  approval of the most recent reviewable push" and "Dismiss stale pull request approvals when new commits are pushed".
+  Without the last two an agent seat with write access could push another commit after the owner's approval (for example one
+  that changes `allowed_signers`) and merge on the stale approval. With them, such a PR cannot merge without the maintainer's
+  approval of its latest push. The ruleset's approving-review count may stay 0; the code-owner requirement applies
+  regardless, but confirm it with a test PR that touches an owned file (it should show "Code owner review required").
+  Until the owner enables it the file only documents the intent. Docs and code PRs are unaffected. The key fingerprints are
+  derived from `packaging/allowed_signers` (`scripts/release-fingerprints.sh`), and `check-security.sh` fails a PR whose
+  signers file has a key `SECURITY.md` does not publish.
 - **The apt fallback mirror** (`scripts/apt-install.sh`, test `scripts/test-apt-install.sh`): after two failed attempts an
   amd64 job switches the image's sources to `azure.archive.ubuntu.com` over HTTPS (HTTP only when the image has no
-  `ca-certificates` and cannot install it), with `Acquire::Check-Valid-Until=true` set. An arm64 job gets no switch: its
+  `ca-certificates` and cannot install it; plain HTTP has no freshness check, and `Acquire::Check-Valid-Until=true`, which is set,
+  does nothing for Ubuntu's `InRelease` files since they carry no `Valid-Until`). An arm64 job gets no switch: its
   sources are on `ports.ubuntu.com`, which has no Azure mirror, so the fallback there is only a retry of the image's own.
 - **The log lint's error names** (`scripts/check-security.sh`; test `scripts/test-check-security.sh`): a `PerfSink` call must
   not interpolate an error's text under any name the file binds to an error (`catch let NAME`, `.failure(let NAME)`,

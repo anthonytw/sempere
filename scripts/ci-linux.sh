@@ -33,9 +33,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TEST_IMAGE=${SEMPERE_LINUX_IMAGE:-swift:6.4-noble}
-# scripts/build-linux-static.sh pins the SDK to exactly this compiler. Pinned by digest, as the workflow pins the test image
-# (docs/ci.md): the release binaries are never built in a tag's new content.
-STATIC_IMAGE=swift:6.4.2-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
+# STATIC_IMAGE, the digest-pinned image of the static (release) build, comes from scripts/static-sdk-pin.sh with the SDK pin
+# (a code-owner file, .github/CODEOWNERS: it decides what the release binaries are built with).
+source scripts/static-sdk-pin.sh
 AGE_VERSION=1.3.2
 age_sha256() {
   case $1 in

@@ -584,4 +584,4 @@ checked by `scripts/release-signature.sh`), and so are the release tags. The pub
 published files against `SHA256SUMS`, the signature and the local build. To change the key, replace the line in a PR the
 maintainer merges (it is the trust anchor: `.github/CODEOWNERS` makes it need the maintainer's review), and change the
 fingerprint everywhere it is published at the same time: `SECURITY.md`, the footer `release-build.sh` puts in every
-release's notes (`signer_fingerprint`), and the website's security page (a site-repo PR); the notes of the rotating release say so.
+release's notes (derived from the signers file, and the build refuses when `SECURITY.md` lacks a key), and the website's security page (a site-repo PR); the notes of the rotating release say so.

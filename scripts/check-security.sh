@@ -24,6 +24,7 @@
 # Usage: scripts/check-security.sh [--root DIR]     (DIR must be a git work tree; default: this repository)
 set -euo pipefail
 
+here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -125,8 +126,8 @@ for l in sys.stdin:
 # see in awk, so `$0` and `$1` are flagged whatever they hold (reviewed exceptions: scripts/security-allow.txt).
 error_names() {   # FILE: the names it binds to an error, `|`-joined, always with e, err and error
   { echo e; echo err; echo error
-    grep -ohE 'catch let [A-Za-z_][A-Za-z0-9_]*|\.failure\((let )?[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*: *(any )?Error([^A-Za-z0-9_]|$)' "$1" 2>/dev/null |
-      sed -E 's/^catch let //; s/^\.failure\((let )?//; s/: *(any )?Error.*$//' || true
+    grep -ohE 'catch let [A-Za-z_][A-Za-z0-9_]*|\.failure\((let )?[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*: *\(?(any )?Error([^A-Za-z0-9_]|$)' "$1" 2>/dev/null |
+      sed -E 's/^catch let //; s/^\.failure\((let )?//; s/: *\(?(any )?Error.*$//' || true
   } | sort -u | paste -sd'|' -
 }
 swift_scan() {
@@ -163,7 +164,7 @@ swift_scan() {
         # A sensitive word, or the text of an error (String(describing:), \(error), localizedDescription): messages are public.
         if (tolower(stmt) ~ /key|secret|passphrase|identity|password|title/ ||
             stmt ~ /localizedDescription|\$[01]([^0-9A-Za-z_]|$)/ ||
-            stmt ~ ("String\\((describing|reflecting): *(" names ")\\)|\\\\\\((" names ")\\)")) print FILENAME ":" startl ":" stmt
+            stmt ~ ("String\\((describing|reflecting): *(" names ")\\)|\\\\\\( *(" names ")( as [A-Za-z.]+|\\.(description|debugDescription|userInfo))? *\\)")) print FILENAME ":" startl ":" stmt
         stmt = ""
       }
     }
@@ -246,6 +247,15 @@ while IFS= read -r f; do
   grep -qE '^permissions:' "$f" || fail "$f: no top-level 'permissions:' (a workflow declares its token scope)"
   grep -qE 'permissions:[[:space:]]*write-all' "$f" && fail "$f: 'permissions: write-all' (list the scopes a job needs)"
 done < <(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml')
+
+# --- 4. The signing key is published ------------------------------------------------------------------------------
+# Every key in packaging/allowed_signers has its fingerprint in SECURITY.md (release-build.sh refuses to build otherwise), so
+# a key change without the published fingerprint fails at the PR.
+if [ -f packaging/allowed_signers ]; then
+  if ! fp_out="$("$here/release-fingerprints.sh" check SECURITY.md 2>&1)"; then
+    fail "signing key not published: ${fp_out#error: }"
+  fi
+fi
 
 # --- Allow-list upkeep -----------------------------------------------------------------------------------------
 for i in "${!allow_rules[@]}"; do

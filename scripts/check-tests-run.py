@@ -44,6 +44,8 @@ def problem(body: str) -> str | None:
 LOCAL_CI = re.compile(r"local-ci\.sh")
 APP_MAC = re.compile(r"app\.sh\s+test-mac(?![-\w])")
 FILTERED = re.compile(r"-(only|skip)-testing\b")
+# local-ci.sh modes that run no app tests (a CLI-only run, a listing, the sweep's status post).
+LOCAL_CI_NO_APP = re.compile(r"local-ci\.sh\s+(?:\S+\s+)*?--(cli|list|post-sweep)\b")
 APP_RESULT = re.compile(r"pass|green|ok\b|fail|flak", re.IGNORECASE)
 
 
@@ -57,7 +59,7 @@ def app_problem(body: str) -> str | None:
     section = COMMENT.sub("", rest[: end.start()] if end else rest)
     for line in section.splitlines():
         # local-ci.sh runs the whole app suite; test-mac counts only unfiltered.
-        ran = LOCAL_CI.search(line) or (APP_MAC.search(line) and not FILTERED.search(line))
+        ran = (LOCAL_CI.search(line) and not LOCAL_CI_NO_APP.search(line)) or (APP_MAC.search(line) and not FILTERED.search(line))
         if ran and APP_RESULT.search(line):
             return None
     return ("the PR changes files under Apps/, so `## Tests run` must name a run of `scripts/local-ci.sh` or a plain "
@@ -94,6 +96,11 @@ def self_test() -> None:
         "## Tests run\n- `scripts/app.sh test-mac` passed\n": True,
         "## Tests run\n- `scripts/local-ci.sh`: all steps ok\n- `scripts/app.sh test-mac -only-testing:X`: passed\n": True,
         "## Tests run\n- `scripts/app.sh test-mac-ui`: passed\n": False,
+        "## Tests run\n- `scripts/local-ci.sh --cli`: passed\n": False,
+        "## Tests run\n- `scripts/local-ci.sh --list`: ok\n": False,
+        "## Tests run\n- `scripts/local-ci.sh --post-sweep`: ok\n": False,
+        "## Tests run\n- `scripts/local-ci.sh --testflight`: passed\n": True,
+        "## Tests run\n- `scripts/local-ci.sh --cli`: passed\n- `scripts/local-ci.sh`: passed\n": True,
     }
     failed = 0
     for body, ok in app_cases.items():

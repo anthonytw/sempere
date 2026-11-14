@@ -9,10 +9,10 @@
 # so the mirror changes where packages come from, never what is trusted.
 #
 # The mirror is served over HTTPS (azure.archive.ubuntu.com answers on 443, checked 2026-11-14), which keeps what is
-# fetched private and stops an on-path party from withholding or replaying old (still validly signed) indexes. HTTPS
-# needs ca-certificates in the image: when it is absent the script tries to install it from the image's own sources, and
-# if it is still not there the mirror stays plain HTTP. Acquire::Check-Valid-Until is set explicitly (apt's default for
-# signed repositories) so an expired, replayed index is refused.
+# fetched private and is what stops an on-path party from withholding or replaying old (still validly signed) indexes.
+# HTTPS needs ca-certificates in the image: when it is absent the script tries to install it from the image's own sources,
+# and if it is still not there the mirror stays plain HTTP, which has no freshness check (Ubuntu's InRelease files carry no
+# Valid-Until, so Acquire::Check-Valid-Until, which is set explicitly, protects nothing for these archives; it is harmless).
 #
 # arm64 gets no mirror switch: its sources point at ports.ubuntu.com, which Azure does not mirror, and the sed below
 # does not match that host, so the fallback there is only a retry of the image's own sources.
@@ -24,6 +24,7 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 arch=${APT_INSTALL_ARCH:-$(dpkg --print-architecture)}
 nap=${APT_INSTALL_SLEEP:-1}
+[[ $nap =~ ^[0-9]+$ ]] || nap=1   # used in arithmetic below: never an expression
 ca_file=${APT_INSTALL_CA_FILE:-/etc/ssl/certs/ca-certificates.crt}
 mirror_host=azure.archive.ubuntu.com
 opts=(-o Acquire::Retries=3 -o Acquire::Check-Valid-Until=true)
