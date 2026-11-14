@@ -514,13 +514,15 @@ copy (`store import`, `vault merge-copy`) is the same vault, still read-only her
   favorite, paper, page size, language, recordings with their transcripts, and each page's recognized text. Note,
   page, stroke, item and recording ids are kept (a note named by id prefix is the same note in both). The notebooks the
   source declared (format.md §14) that a copied note is in are declared in the copy. Notes in Recently Deleted are
-  left out unless "Include notes in Recently Deleted" (`--include-deleted`), then written deleted. The note's
+  left out unless "Include notes in Recently Deleted" (`--include-deleted`), then written deleted (the Recently Deleted timer starts again at the copy, as the copy's note is new). The note's
   modified date is kept; its created date is not (one revision has one date).
 - **Not copied.** Revision history, the device list, sync targets, settings, the inbox, joins, epochs and keys. The copy has
   its own keys, never the source's; the source's authors' forgotten edits do not travel.
 - **Attachments.** Every blob the copied notes reference (images, PDFs, video, audio, transcripts, equation renders)
   is read through the source's reference (framing, hash and keyed name checked), streamed, and written to the
-  copy before the delta that names it (format.md §8.1.4). A blob that cannot be read fails its note, never leaves a
+  copy before the delta that names it (format.md §8.1.4). References are found structurally in the written ops (any
+  object with a `sha256`, format.md §8.1.1), so a blob named by a field a later version added to an item, a recording or
+  a text run is copied too. A cancel stops a long clip within a piece. A blob that cannot be read fails its note, never leaves a
   dangling reference.
 - **Which sources.** Any vault that reads: with a device key, with the recovery key (the copy is writable), of a newer
   format (what this version does not understand, skipped ops and elements, is not in the copy, listed per note;

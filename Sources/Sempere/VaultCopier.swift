@@ -202,7 +202,7 @@ public enum VaultCopier {
             if cancellation?.isCancelled == true { throw CopyError.cancelled }
             do {
                 if let notebook = try copyNote(id, from: source, into: dest, device: device, clock: &clock, options: options,
-                                               checkpoint: checkpoint, report: &report) {
+                                               checkpoint: checkpoint, cancellation: cancellation, report: &report) {
                     usedNotebooks.append(notebook)
                 }
             } catch let e as CopyError {
@@ -215,14 +215,15 @@ public enum VaultCopier {
             progress?(CopyProgress(done: i + 1, total: ids.count, notes: report.notes, blobBytes: report.blobBytes))
         }
         if cancellation?.isCancelled == true { throw CopyError.cancelled }
-        report.notebooks = try copyNotebooks(from: source, into: dest, used: usedNotebooks, now: options.now())
+        report.notebooks = try copyNotebooks(from: source, into: dest, used: usedNotebooks, now: options.now(),
+                                             warnings: &report.warnings)
         return report
     }
 
     /// Copies one note; returns its notebook ("" for none) when it was written.
     private static func copyNote(_ id: UUID, from source: Vault, into dest: Vault?, device: DeviceID,
                                  clock: inout HybridClock, options: Options, checkpoint: Checkpoint,
-                                 report: inout CopyReport) throws -> String? {
+                                 cancellation: CopyCancellation?, report: inout CopyReport) throws -> String? {
         let loaded = try source.loadNote(id)
         // Strict: any revision that failed to read fails the note (newer ones are reported, not failed).
         let state = try source.reconstruct(loaded)
@@ -235,14 +236,14 @@ public enum VaultCopier {
             report.deletedSkipped += 1
             return nil
         }
-        let refs = state.blobReferences
         let ops = Self.ops(for: state)
+        let refs = try Self.blobReferences(of: state, ops: ops)
         var bytes: Int64 = 0
         var wroteAnything = false
         do {
             // Blobs first: a delta never names a blob that is not written yet (format.md §8.1.4).
             for ref in refs {
-                try copyBlob(ref, note: id, from: source, into: dest)
+                try copyBlob(ref, note: id, from: source, into: dest, cancellation: cancellation)
                 wroteAnything = true
                 bytes += ref.size
             }
@@ -272,21 +273,54 @@ public enum VaultCopier {
 
     /// Reads the blob `ref` of `note` through the source (framing, hash and keyed name checked) and writes it to the
     /// destination's copy of the note; with no destination it is only read.
-    private static func copyBlob(_ ref: BlobRef, note: UUID, from source: Vault, into dest: Vault?) throws {
+    /// A cancel is checked in every piece, so a clip of a gigabyte stops at once.
+    private static func copyBlob(_ ref: BlobRef, note: UUID, from source: Vault, into dest: Vault?,
+                                 cancellation: CopyCancellation?) throws {
         guard let dest else {
-            try source.streamBlob(note: note, ref, maxBytes: ref.size) { _ in }
+            try source.streamBlob(note: note, ref, maxBytes: ref.size) { _ in
+                if cancellation?.isCancelled == true { throw CopyError.cancelled }
+            }
             return
         }
         guard let digest = ref.digest else { throw BlobError.invalidReference }
         try dest.writeBlobStream(note: note, ref: ref, digest: digest) { emit in
-            try source.streamBlob(note: note, ref, maxBytes: ref.size) { try emit($0) }
+            try source.streamBlob(note: note, ref, maxBytes: ref.size) {
+                if cancellation?.isCancelled == true { throw CopyError.cancelled }
+                try emit($0)
+            }
         }
     }
 
+    /// Every blob the note's written ops reference: the state's known references, then any other object with a
+    /// `sha256` in the encoded ops (format.md §8.1.1: found structurally, so a field a later version added to an item,
+    /// a recording or a text run is copied with its blob, never left dangling). A well-formed reference found there
+    /// is read like the others, so one that cannot be read fails the note.
+    static func blobReferences(of state: NoteState, ops: [Op]) throws -> [BlobRef] {
+        var refs = state.blobReferences
+        var seen = Set(refs.map(\.sha256))
+        let encoded = try JSONEncoder().encode(ops)
+        for found in try BlobReferenceScan.references(in: encoded) {
+            guard let ref = found.ref, seen.insert(ref.sha256).inserted else { continue }
+            refs.append(ref)
+        }
+        return refs
+    }
+
     /// The notebooks the source declared (format.md §14) that a copied note is in or below, declared in the copy.
-    private static func copyNotebooks(from source: Vault, into dest: Vault?, used: [String], now: Date) throws -> Int {
+    private static func copyNotebooks(from source: Vault, into dest: Vault?, used: [String], now: Date,
+                                      warnings: inout [String]) throws -> Int {
         guard !used.isEmpty else { return 0 }
-        let declared = (try? source.readNotebookRecords().declared) ?? []
+        let declared: [String]
+        do {
+            let records = try source.readNotebookRecords()
+            if !records.problems.isEmpty {
+                warnings.append("\(records.problems.count) notebook records could not be read: empty notebooks they declare may be missing")
+            }
+            declared = records.declared
+        } catch {
+            warnings.append("the notebook records could not be read (\(describe(error))): empty notebooks may be missing")
+            declared = []
+        }
         var count = 0
         for path in declared where used.contains(where: { !$0.isEmpty && NotebookPath.name($0, isWithin: path) }) {
             guard let dest else { count += 1; continue }
@@ -324,7 +358,8 @@ public enum VaultCopier {
             r.origin = nil; r.clocks = nil
             ops.append(.addRecording(r))
         }
-        ops += NoteOps.normalizedTags(m.tags).map(Op.addTag)
+        // The tag rule's own builder, on a note with none (`NoteOps.tagKey` decides which spellings are one tag).
+        ops += NoteOps.setTags(m.tags, on: NoteState(meta: NoteMeta(created: m.created)))
         for page in state.pages {
             if let paper = page.paper { ops.append(.setPagePaper(pageId: page.id, paper: paper)) }
             if let recognition = page.recognition { ops.append(.setPageRecognition(pageId: page.id, recognition: recognition)) }

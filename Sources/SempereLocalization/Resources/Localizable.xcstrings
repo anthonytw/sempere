@@ -13617,6 +13617,19 @@
         }
       }
     },
+    "Note %@ could not be copied, so no copy was made: %@" : {
+      "comment" : "Make a Copy with Stop on the first problem: the note's id prefix and the reason",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La nota %1$@ no se pudo copiar, así que no se hizo ninguna copia: %2$@"
+          }
+        }
+      }
+    },
     "Note Not Found" : {
       "comment" : "Note window: the note is gone",
       "extractionState" : "manual",
@@ -20213,6 +20226,19 @@
         }
       }
     },
+    "Some notes of this vault are still downloading. Download them first, then make the copy." : {
+      "comment" : "Make a Copy: the vault is only partly on this device",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algunas notas de esta bóveda aún se están descargando. Descárgalas primero y luego haz la copia."
+          }
+        }
+      }
+    },
     "Some of them are changes this device checked, such as its own removal. Forgetting them lets it write and upload again until a sync meets the change again." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -22498,6 +22524,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se borran la copia de este dispositivo, la clave de este dispositivo para ella y la contraseña guardada. La bóveda del servidor no cambia."
+          }
+        }
+      }
+    },
+    "The copy was canceled. Nothing was made." : {
+      "comment" : "Make a Copy: the person stopped it",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se canceló la copia. No se hizo nada."
           }
         }
       }
@@ -24942,6 +24981,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta bóveda ya está en este dispositivo. Al reemplazarla, la copia de seguridad ocupa su lugar: se pierden los cambios hechos después de la copia de seguridad."
+          }
+        }
+      }
+    },
+    "This vault is locked, so it cannot be copied." : {
+      "comment" : "Make a Copy: the vault is locked",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda está bloqueada, así que no se puede copiar."
           }
         }
       }

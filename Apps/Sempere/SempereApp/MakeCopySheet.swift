@@ -253,14 +253,34 @@ struct MakeCopySheet: View {
     }
 }
 
+extension CopyError {
+    /// What the sheet says for a copy that stopped (the library's errors carry no user-facing text).
+    var text: String {
+        switch self {
+        case .cancelled:
+            return String(localized: "The copy was canceled. Nothing was made.", comment: "Make a Copy: the person stopped it")
+        case .partialSource:
+            return String(localized: "Some notes of this vault are still downloading. Download them first, then make the copy.",
+                          comment: "Make a Copy: the vault is only partly on this device")
+        case .unreadableSource:
+            return String(localized: "This vault is locked, so it cannot be copied.", comment: "Make a Copy: the vault is locked")
+        case .stopped(let note, let reason):
+            let id = String(note.uuidString.lowercased().prefix(8))
+            return String(localized: "Note \(id) could not be copied, so no copy was made: \(reason)",
+                          comment: "Make a Copy with Stop on the first problem: the note's id prefix and the reason")
+        }
+    }
+}
+
 /// The result's section: the copy's counts, and never a copy with problems shown as complete.
 private struct MakeCopyReport: View {
     let report: CopyReport
 
     var body: some View {
         Section {
-            ForEach(MakeCopySheet.lines(report), id: \.self) { line in
-                Label(line, systemImage: line == MakeCopySheet.lines(report).first ? "checkmark.circle" : "exclamationmark.triangle")
+            let lines = MakeCopySheet.lines(report)
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                Label(line, systemImage: index == 0 ? "checkmark.circle" : "exclamationmark.triangle")
                     .font(.callout)
             }
             // The names of the notes that failed are ids and the library's reasons, never note text.

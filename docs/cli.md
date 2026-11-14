@@ -647,7 +647,7 @@ sempere store list [--store DIR] [--json]
 sempere store path VAULT [--store DIR] [--json]
 sempere store create NAME (--recovery-out FILE | --recovery-key FILE) [vault init's options] [--store DIR] [--json]
 sempere store copy SOURCE NAME (--recovery-out FILE | --recovery-key FILE) [vault init's options]
-                   [--identity FILE ... | --source-recovery-key FILE [--root HEX]] [--include-deleted] [--strict]
+                   [--identity FILE ... | --source-recovery-key FILE [--root HEX]] [--source-passphrase-env VAR] [--include-deleted] [--strict]
                    [--dry-run] [--store DIR] [--json]
 sempere store import SOURCE [--name NAME] [--keep-syncing] [--store DIR] [--json]
 sempere store restore BACKUP [--name NAME] [--replace] [--store DIR] [--json]
@@ -690,16 +690,22 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   their current state, one checkpoint per note ("Copied from ..."), with note ids, attachments, recordings and notebooks
   kept; history, devices, sync targets and settings are not. `SOURCE` is a vault folder or a store vault (id, id prefix
   or name). The source is read with this machine's key for it, `--identity FILE` (a device key or any age identity), or
-  `--source-recovery-key FILE` (the kit's identity file, or the vault's passphrase copy read with `--passphrase-env`;
-  `--root` checks it as elsewhere). The source may be read-only (a newer format, an unconfirmed or refused device
+  `--source-recovery-key FILE` (the kit's identity file, or the vault's passphrase copy; `--root` checks it as elsewhere).
+  The source's passphrase (that copy, or a passphrase-wrapped device key) comes from `--source-passphrase-env VAR`, else
+  `$SEMPERE_PASSPHRASE`, else the terminal; the new vault's own passphrases (`--recovery-passphrase`, `--passphrase`) come
+  from `--passphrase-env`. They are two secrets: the same variable for both is refused (exit 2), and so is
+  `$SEMPERE_PASSPHRASE` serving both when the new vault takes a passphrase. The source may be read-only (a newer format, an unconfirmed or refused device
   list, a removed device, a recovery-key read): the copy is writable, and stderr warns what it cannot keep (notes of
   a newer version with their skipped ops, unreadable later epochs). A partly downloaded source is refused (exit 1). Notes in
   Recently Deleted are left out unless `--include-deleted`. A note that cannot be read or copied is listed on stderr (in
   `failed` with `--json`) and left out, the copy still appears, and the exit status is 1; `--strict` stops at the first
   one instead and leaves no vault (and no recovery key file). `--dry-run` reads everything (attachments included) and
-  writes nothing, no key, no vault. `--json` prints the report: `{dryRun, sourceVaultId, destinationVaultId, sourceNotes,
-  notes, pages, strokes, items, recordings, blobs, blobBytes, deletedCopied, deletedSkipped, notebooks, failed:
-  [{note, reason}], newer: [{note, skippedOps, skippedElements, unreadableRevisions, newerRevisions}], warnings}`;
+  writes nothing, no key, no vault. The new vault's keys are reported as `store create` reports them (the recovery key file, this
+  machine's device key, the passphrase copy, and a passphrase made by `--generate-passphrase`, shown once). `--json` prints
+  `{vault, report}`: `vault` is `store create`'s object (`path`, `vaultId`, `root`, `device`, `deviceKey`, `recoveryKey`,
+  `passphraseCopy`, `recoveryPassphrase`), null in a dry run; `report` is `{dryRun, sourceVaultId, destinationVaultId,
+  sourceNotes, notes, pages, strokes, items, recordings, blobs, blobBytes, deletedCopied, deletedSkipped, notebooks,
+  failed: [{note, reason}], newer: [{note, skippedOps, skippedElements, unreadableRevisions, newerRevisions}], warnings}`;
   `-v` reports progress on stderr, `-q` prints only the new path. The copy is built in the store's staging folder and
   appears at once when complete.
 - `import SOURCE` copies the vault folder `SOURCE` into the store, as the app's Open Vault… does. The

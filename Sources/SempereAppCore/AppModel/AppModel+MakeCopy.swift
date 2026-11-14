@@ -94,22 +94,34 @@ extension AppModelCore {
         let options = request.options
         let store = library.vaultStore
         let trust = self.trust
-        let ledger: (any WriteLedgerStore)? = writeStores?.ledger(for: keys.vaultId)
+        let fileLedger = writeStores?.ledger(for: keys.vaultId)
+        let ledger: (any WriteLedgerStore)? = fileLedger
         let copyOptions = VaultCopier.Options(includeDeleted: includeDeleted, strict: strict, app: services.appName,
                                               sourceName: VaultLibrary.displayName(of: vaultURL ?? source.url),
                                               ledger: ledger)
         let name = request.name
         let hook = makeCopyStepHook
-        let (entry, built, report) = try await clock.withClock(save: true) { c -> (VaultStore.Entry, Vault, CopyReport) in
-            let (entry, made) = try store.create(name: name) { url -> (Vault, CopyReport) in
-                let destination = try VaultCreation.create(at: url, keys: keys, options: options, trust: trust)
-                let report = try VaultCopier.copy(from: source, into: destination, device: device, clock: &c,
-                                                  options: copyOptions, progress: { hook?($0); relay.post($0) },
-                                                  cancellation: cancellation)
-                return (destination, report)
+        // The whole copy runs on the device clock (`withClock`), as an import does: nothing else may stamp revisions with
+        // this state file meanwhile (never a second clock on it), so a save in another window of a writable source waits
+        // until the copy ends. That is intended: a copy takes seconds for a typical vault, and Cancel stops it.
+        let made: (VaultStore.Entry, Vault, CopyReport)
+        do {
+            made = try await clock.withClock(save: true) { c -> (VaultStore.Entry, Vault, CopyReport) in
+                let (entry, made) = try store.create(name: name) { url -> (Vault, CopyReport) in
+                    let destination = try VaultCreation.create(at: url, keys: keys, options: options, trust: trust)
+                    let report = try VaultCopier.copy(from: source, into: destination, device: device, clock: &c,
+                                                      options: copyOptions, progress: { hook?($0); relay.post($0) },
+                                                      cancellation: cancellation)
+                    return (destination, report)
+                }
+                return (entry, made.0, made.1)
             }
-            return (entry, made.0, made.1)
+        } catch {
+            // The ledger of a vault that was never made.
+            if let fileLedger { try? FileManager.default.removeItem(at: fileLedger.folder) }
+            throw error
         }
+        let (entry, built, report) = made
         let created = VaultLibrary.created(built, url: entry.url, keys: keys)
         library.rememberStored(entry)
         return MadeCopy(created: created, entry: entry, report: report)

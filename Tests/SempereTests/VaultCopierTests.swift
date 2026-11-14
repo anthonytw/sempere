@@ -269,6 +269,33 @@ final class VaultCopierTests: VaultTestCase {
         XCTAssertEqual(try dest.loadNote(note).revisions[0].checkpoint?.name, "Copied from Rich")
     }
 
+    /// A blob referenced from a field this version does not know (here an image item's `thumb`, which a later version
+    /// may write in an unmarked revision of a writable vault) is found structurally and copied with the note.
+    func testABlobReferencedFromAnUnknownFieldIsCopiedToo() throws {
+        let source = try makeVault(pqIdentity(), name: "Unknown")
+        XCTAssertFalse(source.isReadOnly)
+        let note = UUID(), page = UUID()
+        let main = try source.writeBlob(note: note, Data("main picture".utf8), type: "image/png")
+        let thumbData = Data("a thumbnail a later version wrote".utf8)
+        let thumb = try source.writeBlob(note: note, thumbData, type: "image/png")
+        var item = Item(kind: .image, frame: Rect(x: 0, y: 0, w: 10, h: 10), z: "a0", blob: main,
+                        pixelSize: Size(w: 1, h: 1))
+        item.extra["thumb"] = .object(["sha256": .string(thumb.sha256), "size": .number(Double(thumb.size)),
+                                       "type": .string("image/png")])
+        try source.write(Revision(noteId: note, device: DeviceID("a1b2c3d4")!, seq: 1,
+                                  hlc: HLC(millis: 1_700_000_100_000, counter: 0)!, wall: Date(timeIntervalSince1970: 1_700_000_100),
+                                  app: "t", body: .delta(ops: [.addPage(Page(id: page, order: "a0")), .setMeta(.title("U")),
+                                                              .addItem(page: page, item: item)])))
+        let made = try copy(source)
+        XCTAssertTrue(made.report.isComplete, "\(made.report.failed)")
+        XCTAssertEqual(made.report.blobs, 2)
+        let dest = try openCopy(made)
+        var read = Data()
+        try dest.streamBlob(note: note, thumb) { read += $0 }
+        XCTAssertEqual(read, thumbData)
+        XCTAssertTrue(dest.verify().isHealthy)
+    }
+
     func testACopyOfACopyEqualsTheCopy() throws {
         let (source, note) = try richSource()
         let first = try openCopy(try copy(source, name: "One"))

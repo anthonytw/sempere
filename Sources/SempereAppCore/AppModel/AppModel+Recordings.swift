@@ -16,14 +16,16 @@ public enum RecordingRecovery {
     public static var manifestName: String { RecordingManifest.fileName }
 
     /// Folders under `root` whose manifest names `note` and whose recording is not `inUse` (running, or still being
-    /// saved or transcribed: `AppModelServices.recordingsInUse`).
-    static func pending(for note: UUID, root: URL, inUse: Set<UUID>) -> [(URL, RecordingManifest)] {
+    /// saved or transcribed: `AppModelServices.recordingsInUse`). A manifest that names a vault matches only that vault
+    /// (`vault`; one that names none, from an earlier build, matches any): note ids are kept by Make a Copy, so a note id
+    /// alone is not unique across the vaults of a device.
+    static func pending(for note: UUID, vault: UUID? = nil, root: URL, inUse: Set<UUID>) -> [(URL, RecordingManifest)] {
         let fm = FileManager.default
         guard let dirs = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return [] }
         return dirs.compactMap { dir -> (URL, RecordingManifest)? in
             guard let data = try? BoundedRead.contents(of: dir.appendingPathComponent(manifestName), maxBytes: 1 << 20),
                   let m = try? JSONDecoder().decode(RecordingManifest.self, from: data), m.note == note,
-                  !inUse.contains(m.recording) else { return nil }
+                  vault == nil || m.vault == nil || m.vault == vault, !inUse.contains(m.recording) else { return nil }
             return (dir, m)
         }
     }
@@ -228,7 +230,7 @@ extension AppModelCore {
     func recoverRecordings(into editor: Editor) async {
         let note = editor.noteID
         guard !recoveringNotes.contains(note) else { return }
-        let pending = RecordingRecovery.pending(for: note, root: recordingRoot, inUse: services.recordingsInUse())
+        let pending = RecordingRecovery.pending(for: note, vault: vault?.vaultId, root: recordingRoot, inUse: services.recordingsInUse())
         guard !pending.isEmpty, editor.canEditItems else { return }
         recoveringNotes.insert(note)
         defer { recoveringNotes.remove(note) }
