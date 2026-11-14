@@ -726,6 +726,13 @@ public final class SyncEngine {
                 report.errors.append(.init(path: PublishedSummaries.deviceFolderName, message: Self.describe(error)))
             }
         }
+        // Note insights (format.md §16): unlocked runs only, after the notes (hints, rewritten by their devices).
+        if report.stoppedEarly == nil {
+            do { try syncInsights(remoteRoot: remoteRoot) } catch {
+                if let e = error as? SyncError, e.isRunLimit { report.stoppedEarly = Self.describe(e) }
+                report.errors.append(.init(path: Vault.insightsName, message: Self.describe(error)))
+            }
+        }
         if options.pushOnly { deleteRemoteJunk() }
         let hasIndex = remoteRoot[WebIndex.fileName].map { !$0.isCollection } ?? false
         let hasSummaries = remoteRoot[PublishedSummaries.fileName].map { !$0.isCollection } ?? false
