@@ -107,22 +107,29 @@ extension AppModelSuites {
             try await note(model, "A", Self.physics[0])
             await model.setInsightsEnabled(true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
-            #expect(await model.runInsightsPass(batch: 4, ignorePower: false).isEmpty, "not on power: nothing runs")
+            let off = await model.runInsightsPass(batch: 4, ignorePower: false)
+            #expect(off.reports.isEmpty, "not on power: nothing runs")
+            #expect(off.remains, "work is left for the next power window")
             power.on = true
-            #expect(!(await model.runInsightsPass(batch: 4, ignorePower: false)).isEmpty)
+            #expect(!(await model.runInsightsPass(batch: 4, ignorePower: false)).reports.isEmpty)
         }
 
         @Test func aDeviceThatIsNotTheWorkDeviceDoesNothing() async throws {
-            let model = try await model()
+            let power = Power()
+            power.on = false   // no automatic pass: this device has made nothing when the work device moves away
+            let model = try await model(power: power)
             try await note(model, "A", Self.physics[0])
             await model.setInsightsEnabled(true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
             await model.setInsightsWorkDevice(DeviceID("0000beef"))
             #expect(model.insights.settings.workDevice == DeviceID("0000beef"))
             #expect(!model.insightsHasRole)
-            #expect(await model.runInsightsPass(batch: 4, ignorePower: true).isEmpty)
+            #expect(await model.runInsightsPass(batch: 4, ignorePower: true).reports.isEmpty)
             await model.setInsightsComputeHere(true)
             #expect(model.insightsHasRole, "insights.compute auto for this kind of device")
+            // ...and the pass really generates: the updater reads this device type's block too (review of #52).
+            let pass = await model.runInsightsPass(batch: 4, ignorePower: true)
+            #expect(pass.reports.contains { !$0.generated.isEmpty }, "a type block's compute auto generates")
             await model.claimInsightsWorkDevice()
             #expect(model.insights.settings.workDevice == model.vault?.writerDevice)
         }
@@ -143,9 +150,55 @@ extension AppModelSuites {
         @Test func titlesGoThroughTheModelsClock() async throws {
             let model = try await model()
             let id = try await note(model, "Voice note 2026-09-21 10:46", "Spring lab results.")
-            let name = try await model.writeInsightsTitle(id, [.setMeta(.title("2026-09-21 10.46 Spring Lab"))], wall: Date())
-            #expect(name.device == (try model.deviceClockForWriting()).device)
+            let name = try await model.writeInsightsTitle(id, { [.setMeta(.title("2026-09-21 10.46 Spring Lab"))] }, wall: Date())
+            #expect(name?.device == (try model.deviceClockForWriting()).device)
             #expect(model.notes.first { $0.id == id }?.title == "2026-09-21 10.46 Spring Lab")
+            // The builder decides inside the edit gate: one that finds a rename made in between writes nothing.
+            #expect(try await model.writeInsightsTitle(id, { nil }, wall: Date()) == nil)
+            // A note open in an editor is never retitled.
+            model.selectedNoteID = id
+            await model.showSelectedNote()
+            #expect(try await model.writeInsightsTitle(id, { [.setMeta(.title("X"))] }, wall: Date()) == nil)
+            #expect(model.notes.first { $0.id == id }?.title == "2026-09-21 10.46 Spring Lab")
+        }
+
+        /// Turning off stops a running pass and waits for it before the purge, so no sidecar is written after it.
+        @Test func offWaitsForTheRunningPass() async throws {
+            let model = try await model()
+            for (i, t) in Self.physics.enumerated() { try await note(model, "N\(i)", t) }
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            model.requestInsightsPass(force: true)
+            await model.setInsightsEnabled(false)
+            #expect(model.insightsRuntime.pass == nil)
+            #expect(insightsFiles(model).isEmpty)
+        }
+
+        /// Reads run one at a time; concurrent requests share the read after the running one.
+        @Test func refreshesRunOneAtATime() async throws {
+            let model = try await model()
+            await model.setInsightsEnabled(true)
+            let before = model.insightsRuntime.refreshDone
+            async let a: Void = model.refreshInsights()
+            async let b: Void = model.refreshInsights()
+            async let c: Void = model.refreshInsights()
+            _ = await (a, b, c)
+            #expect(model.insightsRuntime.refreshing == nil)
+            #expect(model.insightsRuntime.refreshDone >= before + 3, "every request answered")
+        }
+
+        /// The background task: the pass is in the model's one slot (so closing the vault cancels it), and work left
+        /// when it is cancelled is reported, so the task is asked for again.
+        @Test func theBackgroundPassIsTheModelsAndReportsWorkLeft() async throws {
+            let model = try await model()
+            for (i, t) in Self.physics.enumerated() { try await note(model, "N\(i)", t) }
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            let bg = Task { await model.runInsightsInBackground() }
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { model.insightsRuntime.pass != nil || model.insights.lastPass != nil })
+            bg.cancel()
+            _ = await bg.value
+            #expect(model.insightsRuntime.pass == nil)
         }
 
         /// A run that placed or deleted insights files reads them again (PR 1 notes, item 12).

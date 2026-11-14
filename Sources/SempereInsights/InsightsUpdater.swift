@@ -90,8 +90,11 @@ public struct InsightsUpdateOptions: Sendable {
     /// This device's memo of failed generations (`InsightsFailureMemo`): read for the policy's back-off and updated
     /// after the run; nil keeps none (tests, a dry run reads it only).
     public var failureMemo: URL?
-    /// Notes open in an editor on this device: not eligible while open (design §3.7, `PolicyNote.open`).
+    /// Notes open in an editor on this device: not eligible while open (design §3.7, `PolicyNote.open`), and never
+    /// retitled while open.
     public var openNotes: Set<UUID> = []
+    /// This device's settings type (`insights.compute` lives in any type block, D13): nil reads the top level only.
+    public var deviceType: SettingsDeviceType?
     public init() {}
 }
 
@@ -116,6 +119,9 @@ public struct InsightsUpdateReport: Hashable, Sendable, Codable {
     /// Why nothing was generated or embedded (`model unavailable: …`), when so.
     public var notes: [String] = []
     public var dryRun = false
+    /// The run was cancelled (the app's background time ran out): what was made so far is saved, nothing after the
+    /// notes ran (titles, the map, the record, topics).
+    public var cancelled = false
     public init() {}
 }
 
@@ -130,10 +136,12 @@ public enum InsightsUpdateError: Error, Hashable, Sendable, CustomStringConverti
     }
 }
 
-/// Writes one delta of `ops` (a voice note's rename, D14) to `note` and returns the revision written. The app's: through
-/// its model's `DeviceClock` (CLAUDE.md: never open a second clock on a state file a `DeviceClock` holds); without one
-/// the updater writes with `Vault.apply` and the machine's `DeviceState` (the CLI).
-public typealias InsightsTitleWriter = @Sendable (_ note: UUID, _ ops: [Op], _ now: Date) async throws -> RevisionName
+/// Writes one delta to `note` (a voice note's rename, D14) whose ops `build` decides from the note as it is on disk at
+/// the moment of writing (nil: nothing to write, a rename in between won), and returns the revision written, or nil.
+/// The app's: through its model's `DeviceClock` and edit gate (CLAUDE.md: never open a second clock on a state file a
+/// `DeviceClock` holds); without one the updater writes with `Vault.apply` and the machine's `DeviceState` (the CLI).
+public typealias InsightsTitleWriter = @Sendable (_ note: UUID, _ build: @escaping @Sendable () throws -> [Op]?, _ now: Date)
+    async throws -> RevisionName?
 
 public struct InsightsUpdater: Sendable {
     public var vault: Vault
@@ -163,7 +171,7 @@ public struct InsightsUpdater: Sendable {
     public func run(_ o: InsightsUpdateOptions, notes inputs: [InsightsNoteInput]) async throws -> InsightsUpdateReport {
         var report = InsightsUpdateReport()
         report.dryRun = o.dryRun
-        var settings = InsightsSettings.read(vault)
+        var settings = InsightsSettings.read(vault, type: o.deviceType)
         guard settings.enabled else { throw InsightsUpdateError.disabled }
         let store = InsightsStore(vault: vault)
         let me = try store.writer()
@@ -211,7 +219,7 @@ public struct InsightsUpdater: Sendable {
                     if case .string = s.resolve(spec, for: nil).value { return }   // claimed meanwhile
                     try s.write(spec, .string(me.rawValue), block: nil, type: nil, now: o.now)
                 }
-                settings = InsightsSettings.read(vault)
+                settings = InsightsSettings.read(vault, type: o.deviceType)
             } else {
                 settings.workDevice = me
             }
@@ -234,7 +242,10 @@ public struct InsightsUpdater: Sendable {
         func own(_ id: UUID) -> InsightsNoteFile {
             pending[id] ?? snapshot.notes[id]?[me] ?? InsightsNoteFile(noteId: id, device: me, written: 0)
         }
-        for item in plan {
+        var cancelled = false
+        planLoop: for item in plan {
+            // Cancelled (background time ran out): stop between notes; what was made so far is saved below.
+            if Task.isCancelled { cancelled = true; break planLoop }
             switch item {
             case .generate(let id):
                 guard let note = byId[id], let model = usable else { continue }
@@ -252,6 +263,8 @@ public struct InsightsUpdater: Sendable {
                     report.generated.append(id.uuidString.lowercased())
                     memo.clear(note: id)
                 } catch {
+                    // A cancellation is not the note's failure: no back-off, and the run stops.
+                    if error is CancellationError || Task.isCancelled { generations -= 1; cancelled = true; break planLoop }
                     report.failures[id.uuidString.lowercased()] = "\(error)"
                     memo.record(note: id, hash: note.hash, identity: model.identity, error: error, now: o.now)
                 }
@@ -283,10 +296,15 @@ public struct InsightsUpdater: Sendable {
             // Device-local and only a saving of model time: a memo that cannot be written is no reason to fail the run.
             if let url = o.failureMemo { try? memo.save(to: url) }
         }
+        if cancelled || Task.isCancelled {
+            report.cancelled = true
+            return report
+        }
         // Voice-note titles (D14): from any device's current `gen` slug, while the title is the capture default.
         // Only the work device sets titles (format.md §16.8, D14; review of #50, M1); `insights title` stays manual anywhere.
         if o.titles, !o.embeddingsOnly, settings.workDevice == me {
-            for note in selected where !note.deleted && !note.transcript.isEmpty {
+            for note in selected where !note.deleted && !note.transcript.isEmpty && !o.openNotes.contains(note.id) {
+                if Task.isCancelled { report.cancelled = true; return report }
                 guard let outcome = try await applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle,
                                                    dryRun: o.dryRun, now: o.now) else { continue }
                 switch outcome {
@@ -297,6 +315,7 @@ public struct InsightsUpdater: Sendable {
             }
             if !o.dryRun { snapshot = store.snapshot() }
         }
+        if Task.isCancelled { report.cancelled = true; return report }
         // The pin is written by the first map build (D12).
         if plan.contains(.rebuildMap), let r = canEmbed, settings.pins[main] == nil {
             report.pinSet[main] = r
@@ -325,7 +344,7 @@ public struct InsightsUpdater: Sendable {
             if !o.dryRun {
                 var record = ownRecord
                 record.canaries = canaryVectors(supported: supported, pin: pin, language: main)
-                let comp = InsightsReader(vault: vault, snapshot: snapshot, settings: InsightsSettings.read(vault))
+                let comp = InsightsReader(vault: vault, snapshot: snapshot, settings: InsightsSettings.read(vault, type: o.deviceType))
                     .compatibility(me: me, embedder: embedder, language: main)
                 record.compatibility = comp.rawValue
                 record.against = settings.workDevice.flatMap { snapshot.map(of: $0)?.written }
@@ -356,29 +375,47 @@ public struct InsightsUpdater: Sendable {
         let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
                                                             started: titles.started ?? note.modified ?? now)
         let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        switch titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: revisionWriter) {
+        let writer = revisionWriter
+        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: writer)
+        switch decision {
         case .keep: return nil
         case .apply(let title):
             guard !dryRun else { return .apply }
-            let stamp = try await rename(note.id, to: title, state: state, now: now)
+            guard let stamp = try await rename(note.id, decision: decision, applied: ownFile?.titleOp, proposed: proposed,
+                                               writer: writer, now: now) else { return nil }
             var f = ownFile ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
             f.titleOp = .init(stamp: stamp.description, title: title)
             try InsightsStore(vault: vault).write(.note(f), now: now)
             return .apply
-        case .restore(let title):
+        case .restore:
             guard !dryRun else { return .restore }
-            _ = try await rename(note.id, to: title, state: state, now: now)
+            guard try await rename(note.id, decision: decision, applied: ownFile?.titleOp, proposed: proposed, writer: writer,
+                                   now: now) != nil else { return nil }
             return .restore
         }
     }
 
-    /// One rename delta through `titleWriter`, else `Vault.apply` with `deviceState`; the stamp of the revision written.
-    func rename(_ id: UUID, to title: String, state: NoteState, now: Date) async throws -> Stamp {
-        let ops = NoteOps.rename(to: title, state: state)
+    /// One rename delta through `titleWriter`, else `Vault.apply` with `deviceState`; the stamp of the revision written,
+    /// nil when the note as it is on disk at the moment of writing no longer gives `decision` (a rename in between wins).
+    func rename(_ id: UUID, decision: VoiceNoteTitleState.Decision, applied: InsightsNoteFile.TitleOp?, proposed: String?,
+                writer: DeviceID?, now: Date) async throws -> Stamp? {
+        let vault = self.vault
+        let build: @Sendable () throws -> [Op]? = {
+            let loaded = try vault.loadNote(id)
+            let state = try vault.reconstruct(loaded)
+            let again = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
+                .decide(applied: applied, proposed: proposed, writer: writer)
+            switch (again, decision) {
+            case (.apply(let a), .apply(let b)) where a == b: return NoteOps.rename(to: a, state: state)
+            case (.restore(let a), .restore(let b)) where a == b: return NoteOps.rename(to: a, state: state)
+            default: return nil
+            }
+        }
         if let titleWriter {
-            let r = try await titleWriter(id, ops, now)
+            guard let r = try await titleWriter(id, build, now) else { return nil }
             return Stamp(hlc: r.hlc, device: r.device)
         }
+        guard let ops = try build() else { return nil }
         let rev = try vault.apply(ops, to: id, deviceState: deviceState, app: app, wall: now)
         return Stamp(hlc: rev.hlc, device: rev.device)
     }

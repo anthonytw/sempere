@@ -291,7 +291,7 @@ struct InsightsSettingsSection: View {
     }
 
     private func pinMessage(_ move: InsightsSettingsWrite.PinMove) -> String {
-        let names = Dictionary(uniqueKeysWithValues: (state.status?.devices ?? []).map { ($0.device, InsightsText.deviceName($0)) })
+        let names = Dictionary((state.status?.devices ?? []).map { ($0.device, InsightsText.deviceName($0)) }, uniquingKeysWith: { a, _ in a })
         var parts = [String(localized: "The work device embeds every note again (a few minutes for hundreds of notes).")]
         if !move.leftOut.isEmpty {
             let left = move.leftOut.map { names[$0.rawValue] ?? $0.rawValue }.joined(separator: ", ")
@@ -414,7 +414,11 @@ struct NoteInsightsSheet: View {
 
     @ViewBuilder private func relatedSection(_ panel: NoteInsightsPanel) -> some View {
         Section {
-            if panel.related.isEmpty {
+            if let bound = panel.outsideGraph {
+                Text("This device compares only the \(bound) most recently changed notes, and this note is not one of them.",
+                     comment: "Note Insights: the related-notes bound of this device")
+                    .foregroundStyle(.secondary)
+            } else if panel.related.isEmpty {
                 Text("No related notes yet.").foregroundStyle(.secondary)
             }
             ForEach(panel.related, id: \.note) { r in

@@ -97,6 +97,9 @@ public struct InsightsReader: Sendable {
         public var related: [Related]
     }
 
+    /// A compatible vector set as `vectorSet` gives it.
+    public typealias VectorSet = (vectors: [UUID: [Float]], placed: Set<UUID>, basis: String, compatibility: MapCompatibility)
+
     /// The vectors of the compatible set (design §3.8), with the ids embedded on this device.
     public func vectorSet(inputs: [InsightsNoteInput], me: DeviceID?, embedder: (any EmbeddingProvider)?,
                           language: String) -> (vectors: [UUID: [Float]], placed: Set<UUID>, basis: String, compatibility: MapCompatibility) {
@@ -154,17 +157,24 @@ public struct InsightsReader: Sendable {
         public var leftOut: Int
     }
 
+    /// The live notes with text that take part in a graph of at most `maxNotes` (the most recently modified first, ties
+    /// by id), and how many are left out.
+    public static func bounded(_ all: [InsightsNoteInput], maxNotes: Int?) -> (inputs: [InsightsNoteInput], leftOut: [UUID]) {
+        let inputs = all.filter { !$0.deleted && !$0.text.isEmpty }
+        guard let maxNotes, inputs.count > maxNotes else { return (inputs, []) }
+        let sorted = inputs.sorted { ($0.modified ?? .distantPast, $0.id.uuidString) > ($1.modified ?? .distantPast, $1.id.uuidString) }
+        let cut = max(0, maxNotes)
+        return (Array(sorted.prefix(cut)), sorted.dropFirst(cut).map(\.id))
+    }
+
+    /// `set`: the vector set of `bounded(all, maxNotes)` when the caller computed it already (the app builds the graph
+    /// and the map from one set per refresh).
     public func relatedGraph(inputs all: [InsightsNoteInput], me: DeviceID?, embedder: (any EmbeddingProvider)?,
-                             maxNotes: Int? = nil) -> RelatedGraphResult {
-        var inputs = all.filter { !$0.deleted && !$0.text.isEmpty }
-        var leftOut = 0
-        if let maxNotes, inputs.count > maxNotes {
-            leftOut = inputs.count - maxNotes
-            inputs = Array(inputs.sorted { ($0.modified ?? .distantPast, $0.id.uuidString) > ($1.modified ?? .distantPast, $1.id.uuidString) }
-                .prefix(max(0, maxNotes)))
-        }
+                             maxNotes: Int? = nil, set given: VectorSet? = nil) -> RelatedGraphResult {
+        let (inputs, out) = Self.bounded(all, maxNotes: maxNotes)
+        let leftOut = out.count
         let language = InsightsUpdater.mainLanguage(all)
-        let set = vectorSet(inputs: inputs, me: me, embedder: embedder, language: language)
+        let set = given ?? vectorSet(inputs: inputs, me: me, embedder: embedder, language: language)
         // Vectors are used only when every note that can be embedded has one in the set; otherwise keyword overlap
         // alone (never a mix of sets). A note with no embedding input (equations only) has none and joins by keyword
         // overlap (D16: seven such notes turned the vectors off for a whole vault).
@@ -366,14 +376,15 @@ public struct InsightsReader: Sendable {
 
     /// The map as this device shows it: the work device's clusters and positions, plus notes it places itself
     /// (compatible) or its own local map (incompatible, `local`), or nothing (no map).
-    public func mapView(inputs: [InsightsNoteInput], me: DeviceID?, embedder: (any EmbeddingProvider)?) -> MapView {
+    public func mapView(inputs: [InsightsNoteInput], me: DeviceID?, embedder: (any EmbeddingProvider)?,
+                        set given: VectorSet? = nil) -> MapView {
         let language = InsightsUpdater.mainLanguage(inputs)
         let titles = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0.title) })
         let live = Set(inputs.filter { !$0.deleted }.map(\.id))
         guard let w = settings.workDevice, let map = snapshot.map(of: w) else {
             return MapView(device: nil, key: nil, basis: "none", nodes: [], clusters: [])
         }
-        let set = vectorSet(inputs: inputs, me: me, embedder: embedder, language: language)
+        let set = given ?? vectorSet(inputs: inputs, me: me, embedder: embedder, language: language)
         var source = map
         var basis = "shared"
         if set.compatibility == .incompatible, let key = map.key {

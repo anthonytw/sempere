@@ -79,8 +79,9 @@ extension AppModelCore {
     public func runBackgroundTask(_ kind: BackgroundSyncRequest) async {
         if kind == .insights {
             // Note Insights' passes on the open, unlocked vault (nothing to do otherwise: the vault's key is needed).
-            await runInsightsInBackground()
-            if insightsHasRole, !Task.isCancelled { syncScheduler.schedule(.insights) }
+            let remains = await runInsightsInBackground()
+            // Asked for again while work remains, also when the system took the time back (that is when most remains).
+            if insightsHasRole, remains { syncScheduler.schedule(.insights) }
             return
         }
         let coordinator = syncCoordinator

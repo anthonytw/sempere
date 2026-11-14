@@ -108,6 +108,7 @@ struct InsightsUpdate: ParsableCommand {
         o.force = force; o.limit = limit; o.embeddingsOnly = embeddingsOnly; o.dryRun = dryRun
         o.failureMemo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
         #if os(macOS)
+        o.deviceType = .mac   // `insights.compute` of the Mac's block (D13); elsewhere the top level only
         o.powerWindow = ProcessInfo.processInfo.thermalState != .serious && ProcessInfo.processInfo.thermalState != .critical
         #endif
         let updater = InsightsUpdater(vault: vault, model: embeddingsOnly ? nil : p.model, embedder: p.embedder,

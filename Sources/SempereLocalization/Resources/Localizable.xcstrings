@@ -25081,6 +25081,19 @@
         }
       }
     },
+    "This device compares only the %lld most recently changed notes, and this note is not one of them." : {
+      "comment" : "Note Insights: the related-notes bound of this device (always a large number)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo solo compara las %lld notas cambiadas más recientemente, y esta nota no es una de ellas."
+          }
+        }
+      }
+    },
     "This device could not confirm this vault's device list. The copy is a vault of its own and starts its own list." : {
       "comment" : "Make a Copy notice: the vault's device list does not check here",
       "extractionState" : "manual",

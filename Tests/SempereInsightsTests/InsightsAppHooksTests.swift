@@ -20,9 +20,10 @@ extension InsightsUpdaterTests {
         var updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
                                       deviceState: tmp.appendingPathComponent("missing.json"), app: "test/1")
         let vault = self.vault!, state = self.state
-        updater.titleWriter = { note, ops, wall in
+        updater.titleWriter = { note, build, wall in
             calls.add(note)
-            // The caller's own clock (here: the test's state file) writes the delta.
+            // The caller's own clock (here: the test's state file) writes the delta the builder decides on disk.
+            guard let ops = try build() else { return nil }
             let rev = try vault.apply(ops, to: note, deviceState: state, app: "app/1", wall: wall)
             return RevisionName(hlc: rev.hlc, device: rev.device, seq: rev.seq, kind: .delta)
         }
@@ -36,6 +37,81 @@ extension InsightsUpdaterTests {
         XCTAssertEqual(again.titled, [])
         XCTAssertEqual(again.restoredTitles, [])
         XCTAssertEqual(calls.ids, [id])
+    }
+
+    /// A rename made between the decision and the write wins: the writer's builder reads the note on disk again and
+    /// gives no ops (review of #52).
+    func testARenameBetweenTheDecisionAndTheWriteWins() async throws {
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        try enable()
+        var o = InsightsUpdateOptions()
+        o.now = now; o.force = true
+        o.platform = .init(platform: "mac", os: "macOS 27.2")
+        var updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
+                                      deviceState: state, app: "test/1")
+        let vault = self.vault!, state = self.state, now = self.now
+        updater.titleWriter = { note, build, wall in
+            // The user renames the note just before the write.
+            try vault.apply([.setMeta(.title("My lab"))], to: note, deviceState: state, app: "app/1", wall: now)
+            guard let ops = try build() else { return nil }
+            let rev = try vault.apply(ops, to: note, deviceState: state, app: "app/1", wall: wall)
+            return RevisionName(hlc: rev.hlc, device: rev.device, seq: rev.seq, kind: .delta)
+        }
+        updater.writerDevice = try DeviceState.loadOrCreate(at: state).device
+        let r = try await updater.run(o, notes: try inputs())
+        XCTAssertEqual(r.titled, [])
+        XCTAssertEqual(try title(id), "My lab")
+        XCTAssertNil(InsightsStore(vault: vault).snapshot().notes[id]?[vault.writerDevice!]?.titleOp, "no titleOp for a title not written")
+    }
+
+    /// `insights.compute` auto in a device type's block makes a device that is not the work device generate, when the
+    /// run says which type it is (review of #52: the app's switch did nothing).
+    func testATypeBlocksComputeAutoGenerates() async throws {
+        try note("A", Self.physics[0])
+        try enable()
+        try InsightsSettingsWrite.setWorkDevice(DeviceID("0000beef"), vault: vault, now: now)
+        try InsightsSettingsWrite.setCompute(auto: true, type: .ipad, vault: vault, now: now)
+        let top = try await run { $0.deviceType = nil }
+        XCTAssertEqual(top.generated, [], "the top level says never")
+        let ipad = try await run { $0.deviceType = .ipad }
+        XCTAssertEqual(ipad.generated.count, 1)
+    }
+
+    /// A cancelled run stops between notes, saves what it made, backs nothing off and runs nothing after the notes
+    /// (review of #52).
+    func testACancelledRunStopsWithoutBackingOff() async throws {
+        for (i, t) in Self.physics.enumerated() { try note("P\(i)", t) }
+        try enable()
+        let memoURL = try TestTemp.directory("cancel-memo").appendingPathComponent("failures.json")
+        final class Cancelling: ModelProvider, @unchecked Sendable {
+            let inner = FakeModelProvider()
+            var identity: GenerationIdentity { inner.identity }
+            var availability: ModelAvailability { .available }
+            var contextTokens: Int { 8192 }
+            func supports(language: String?) -> Bool { true }
+            func extract(_ text: String, language: String?) async throws -> ModelExtraction { throw CancellationError() }
+            func merge(_ parts: [ModelExtraction], language: String?) async throws -> ModelExtraction { try await inner.merge(parts, language: language) }
+            func summarize(topic: String, summaries: [String], language: String?) async throws -> String { "" }
+            func title(transcript: String, language: String?) async throws -> String { "" }
+        }
+        var o = InsightsUpdateOptions()
+        o.now = now; o.failureMemo = memoURL
+        o.platform = .init(platform: "mac", os: "macOS 27.2")
+        let r = try await InsightsUpdater(vault: vault, model: Cancelling(), embedder: FakeEmbeddingProvider(), deviceState: state,
+                                          app: "test/1").run(o, notes: try inputs())
+        XCTAssertTrue(r.cancelled)
+        XCTAssertEqual(r.failures, [:])
+        XCTAssertTrue(InsightsFailureMemo.load(from: memoURL).notes.isEmpty, "no back-off for a cancellation")
+        XCTAssertFalse(r.mapBuilt)
+        XCTAssertFalse(r.deviceRecord)
+        // A task cancelled before it starts does nothing at all.
+        let vault = self.vault!, state = self.state, inputs = try inputs()
+        let t = Task { try await InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
+                                                 deviceState: state, app: "test/1").run(o, notes: inputs) }
+        t.cancel()
+        let c = try await t.value
+        XCTAssertTrue(c.cancelled)
+        XCTAssertEqual(c.generated, [])
     }
 
     func testOpenNotesWaitUntilClosed() async throws {

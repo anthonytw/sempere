@@ -117,6 +117,7 @@ public final class AppModelCore<Host: AppModelHost> {
         didSet {
             listVersion &+= 1
             updateSearch(changed: listChangeIDs)
+            insightsNotesChanged()
         }
     }
     /// While `applyListChanges` assigns `notes`: the ids it may have changed, so

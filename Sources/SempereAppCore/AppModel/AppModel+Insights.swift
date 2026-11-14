@@ -98,6 +98,9 @@ public struct NoteInsightsPanel: Equatable, Sendable {
     public var basis: String
     /// The level-0 cluster the note is in (its label), when there is a map.
     public var cluster: [String]?
+    /// The note is not in the related graph here: only this many most recently modified notes are compared on this
+    /// device (L7's bound).
+    public var outsideGraph: Int?
     /// The note's text has changed since its summary was made.
     public var stale: Bool { shown?.state == "stale" }
     /// No summary from any device yet.
@@ -121,6 +124,8 @@ public struct InsightsIndex: Sendable {
     public var clusters: [InsightsCluster] = []
     /// The cluster of each note.
     public var clusterOf: [UUID: Int] = [:]
+    /// Notes left out of the graph by this device's bound (`InsightsServices.maxGraphNotes`).
+    public var outsideGraph: Set<UUID> = []
     /// What the index was made from (notes and files), so a refresh with nothing new is skipped.
     var signature = 0
     public init() {}
@@ -129,8 +134,18 @@ public struct InsightsIndex: Sendable {
 /// The tasks and timers of Note Insights (one per model).
 @MainActor
 final class InsightsRuntime {
+    /// The unlock's wait for the listing, then the first read and the loop.
+    var start: Task<Void, Never>?
+    /// A scheduled read (`scheduleInsightsRefresh`), waiting out its delay.
     var refresh: Task<Void, Never>?
-    var pass: Task<Void, Never>?
+    /// The read running now (at most one: `refreshInsights`), and the request it answers.
+    var refreshing: Task<Void, Never>?
+    var refreshRequested = 0
+    var refreshDone = 0
+    var lastRefreshEnded: ContinuousClock.Instant?
+    /// The pass running now, foreground or background (at most one), and its number.
+    var pass: Task<Bool, Never>?
+    var passID = 0
     var loop: Task<Void, Never>?
     /// Bumped by every change to the vault's insights files seen here (a pass, a sync arrival).
     var filesRevision = 0
@@ -149,6 +164,8 @@ extension AppModelCore {
     static var insightsBackgroundBatch: Int { 1 }
     /// How often the foreground looks for work while the vault is open and the device on power.
     static var insightsLoopInterval: Duration { .seconds(15 * 60) }
+    /// Reads caused by arrivals and note edits come at most this often (each reads every sidecar and builds the graph).
+    static var insightsRefreshInterval: Duration { .seconds(30) }
 
     nonisolated static func insightsOfferKey(_ vaultId: UUID) -> String {
         "Sempere.insightsOffer.\(vaultId.uuidString.lowercased())"
@@ -178,8 +195,8 @@ extension AppModelCore {
         insights.capability = InsightsCapability(model: runtime.model?.availability, embedder: runtime.embedder != nil)
         insights.offerAnswered = services.settings.bool(forKey: Self.insightsOfferKey(vault.vaultId))
         let gen = generation
-        runtime.refresh?.cancel()
-        runtime.refresh = Task { [weak self] in
+        runtime.start?.cancel()
+        runtime.start = Task { [weak self] in
             try? await self?.notesLoaded()
             guard let self, self.generation == gen else { return }
             await self.refreshInsights()
@@ -190,7 +207,9 @@ extension AppModelCore {
     /// The vault closed (or locked): every pass and refresh stops, the index goes.
     func stopInsights() {
         let runtime = insightsRuntime
+        runtime.start?.cancel(); runtime.start = nil
         runtime.refresh?.cancel(); runtime.refresh = nil
+        // The pass in either slot, foreground or the background task's (`runInsightsInBackground` waits on it).
         runtime.pass?.cancel(); runtime.pass = nil
         runtime.loop?.cancel(); runtime.loop = nil
         insightsIndex = InsightsIndex()
@@ -203,16 +222,29 @@ extension AppModelCore {
     /// a pass wrote): the index is read again soon.
     public func insightsFilesChanged() {
         insightsRuntime.filesRevision += 1
-        scheduleInsightsRefresh()
+        scheduleInsightsRefresh(throttled: true)
     }
 
-    /// Reads the index again after a short pause (coalescing bursts of changes).
-    public func scheduleInsightsRefresh(after delay: Duration = .seconds(2)) {
+    /// The notes changed (an edit here, a listing of what arrived): the index is read again, at most every
+    /// `insightsRefreshInterval`, so a stale or new note shows as such.
+    func insightsNotesChanged() {
+        guard insights.mode == .on else { return }
+        scheduleInsightsRefresh(after: .seconds(5), throttled: true)
+    }
+
+    /// Reads the index again after `delay` (coalescing bursts of changes: a later request replaces a waiting one);
+    /// `throttled` waits until `insightsRefreshInterval` has passed since the last read ended.
+    public func scheduleInsightsRefresh(after delay: Duration = .seconds(2), throttled: Bool = false) {
         guard phase == .unlocked else { return }
         let runtime = insightsRuntime
+        var wait = delay
+        if throttled, let last = runtime.lastRefreshEnded {
+            let left = Self.insightsRefreshInterval - (ContinuousClock.now - last)
+            if left > wait { wait = left }
+        }
         runtime.refresh?.cancel()
         runtime.refresh = Task { [weak self] in
-            if delay > .zero { try? await Task.sleep(for: delay) }
+            if wait > .zero { try? await Task.sleep(for: wait) }
             guard !Task.isCancelled else { return }
             await self?.refreshInsights()
         }
@@ -235,8 +267,29 @@ extension AppModelCore {
         return h.finalize()
     }
 
-    /// Reads the settings, the status and the index off the main actor (the vault's sidecars are dropped after).
+    /// Reads the settings, the status and the index off the main actor (the vault's sidecars are dropped after). One
+    /// read runs at a time (each holds every sidecar and the graph's matrices while it runs): a call while one runs waits
+    /// for it, and the waiters share one read after it, which answers all of them.
     public func refreshInsights() async {
+        let runtime = insightsRuntime
+        runtime.refreshRequested += 1
+        let wanted = runtime.refreshRequested
+        while let running = runtime.refreshing { await running.value }
+        guard runtime.refreshDone < wanted else { return }
+        let answers = runtime.refreshRequested
+        let task = Task { @MainActor [weak self] in
+            await self?.readInsights()
+            // Cleared by the read itself, so a waiter that wakes sees the next read or none (never this one again).
+            runtime.refreshing = nil
+            runtime.refreshDone = max(runtime.refreshDone, answers)
+            runtime.lastRefreshEnded = .now
+        }
+        runtime.refreshing = task
+        await task.value
+    }
+
+    /// One read (`refreshInsights`); its result is dropped when the vault changed meanwhile.
+    func readInsights() async {
         guard let vault, phase == .unlocked else { return }
         let gen = generation
         let type = settingsDeviceType
@@ -276,8 +329,12 @@ extension AppModelCore {
         var index = InsightsIndex()
         index.signature = signature
         for n in inputs where !n.deleted { index.shown[n.id] = reader.show(n) }
-        index.graph = reader.relatedGraph(inputs: inputs, me: me, embedder: embedder, maxNotes: maxNotes)
-        let map = reader.mapView(inputs: inputs, me: me, embedder: embedder)
+        // One vector set for the graph and the map (a compatible device embeds the notes it places only once).
+        let bounded = InsightsReader.bounded(inputs, maxNotes: maxNotes)
+        let set = reader.vectorSet(inputs: bounded.inputs, me: me, embedder: embedder, language: InsightsUpdater.mainLanguage(inputs))
+        index.graph = reader.relatedGraph(inputs: inputs, me: me, embedder: embedder, maxNotes: maxNotes, set: set)
+        index.outsideGraph = Set(bounded.leftOut)
+        let map = reader.mapView(inputs: inputs, me: me, embedder: embedder, set: set)
         var members: [Int: [UUID]] = [:], placed: [Int: Set<UUID>] = [:]
         for node in map.nodes {
             guard let c = node.cluster, let id = UUID(uuidString: node.note) else { continue }
@@ -304,7 +361,8 @@ extension AppModelCore {
         if let graph = index.graph { related = InsightsReader.related(id, in: graph, titles: titles) }
         let rows = (related?.related ?? []).filter { UUID(uuidString: $0.note).map { !deleted.contains($0) && titles[$0] != nil } ?? false }
         let cluster = index.clusterOf[id].flatMap { c in index.clusters.first { $0.id == c }?.label }
-        return NoteInsightsPanel(shown: index.shown[id], related: rows, basis: related?.basis ?? "keywords", cluster: cluster)
+        return NoteInsightsPanel(shown: index.shown[id], related: rows, basis: related?.basis ?? "keywords", cluster: cluster,
+                                 outsideGraph: index.outsideGraph.contains(id) ? insightsServices.maxGraphNotes : nil)
     }
 
     /// The clusters of the map as a grouped list.
@@ -334,9 +392,12 @@ extension AppModelCore {
     /// Settings' switch (D4): on writes `insights.enabled` true (the first capable device then claims the work device
     /// in its first pass); off writes the explicit false that deletes `insights/` everywhere, and deletes this copy's.
     public func setInsightsEnabled(_ on: Bool) async {
+        // Off: every pass (foreground or the background task's) stops and has ended before the false is written and the
+        // files are deleted, so none writes a sidecar after the purge.
+        if !on { await cancelInsightsPass() }
         await writeInsightsSettings { vault in _ = try InsightsSettingsWrite.setEnabled(on, vault: vault) }
         answerInsightsOffer()
-        if on { requestInsightsPass(force: false) } else { insightsRuntime.pass?.cancel() }
+        if on { requestInsightsPass(force: false) }
     }
 
     /// Designates the work device (D13; nil clears it).
@@ -422,14 +483,32 @@ extension AppModelCore {
         return s.workDevice == vault?.writerDevice
     }
 
-    /// Starts a pass now unless one runs (`force`: Settings' "Update Now", which does not wait for a power window).
+    /// Starts a pass now unless one runs (`force`: Settings' "Process Now", which does not wait for a power window).
     public func requestInsightsPass(force: Bool) {
         guard insightsRuntime.pass == nil else { return }
+        startInsightsPass(batch: Self.insightsForegroundBatch, ignorePower: force)
+    }
+
+    /// Puts a pass in the one slot; it clears the slot when it ends, only while the slot is still its own.
+    @discardableResult
+    func startInsightsPass(batch: Int, ignorePower: Bool) -> Task<Bool, Never> {
         let runtime = insightsRuntime
-        runtime.pass = Task { [weak self] in
-            await self?.runInsightsPass(batch: Self.insightsForegroundBatch, ignorePower: force)
-            runtime.pass = nil
+        runtime.passID += 1
+        let id = runtime.passID
+        let task = Task { @MainActor [weak self] () -> Bool in
+            let remains = await self?.runInsightsPass(batch: batch, ignorePower: ignorePower).remains ?? false
+            if runtime.passID == id { runtime.pass = nil }
+            return remains
         }
+        runtime.pass = task
+        return task
+    }
+
+    /// Stops the running pass, if any, and waits until it has ended.
+    func cancelInsightsPass() async {
+        guard let running = insightsRuntime.pass else { return }
+        running.cancel()
+        _ = await running.value
     }
 
     /// The foreground's look for work: now, then every `insightsLoopInterval`, while the vault stays open.
@@ -446,13 +525,15 @@ extension AppModelCore {
         }
     }
 
-    /// The background processing task (`BackgroundSyncRequest.insights`): passes until done or the system takes the
-    /// time back (which cancels this between notes; each note is saved before the next starts).
-    public func runInsightsInBackground() async {
-        insightsRuntime.pass?.cancel()
-        if let running = insightsRuntime.pass { await running.value }
+    /// The background processing task (`BackgroundSyncRequest.insights`): a pass in the model's one slot (a foreground
+    /// pass is stopped first; `stopInsights` cancels this one too) until done or the system takes the time back, which
+    /// cancels it between notes (each note is saved before the next starts). Returns whether work remains.
+    @discardableResult
+    public func runInsightsInBackground() async -> Bool {
+        await cancelInsightsPass()
         // The task asked for external power: the system's window is the power window.
-        await runInsightsPass(batch: Self.insightsBackgroundBatch, ignorePower: true)
+        let task = startInsightsPass(batch: Self.insightsBackgroundBatch, ignorePower: true)
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     /// The app leaves the screen (iOS): a running pass stops (background time is short); the processing task, which
@@ -464,28 +545,33 @@ extension AppModelCore {
 
     /// Runs updater passes of `batch` generations each until nothing is left, the task is cancelled, the power window
     /// closes or the vault changes. Returns the reports.
+    /// `remains`: the pass stopped with work left (cancelled, the power window closed, or a run still generating).
     @discardableResult
-    func runInsightsPass(batch: Int, ignorePower: Bool) async -> [InsightsUpdateReport] {
-        guard let vault, phase == .unlocked, insights.mode == .on, !isVaultReadOnly, insightsHasRole, !isChangingKeys else { return [] }
+    func runInsightsPass(batch: Int, ignorePower: Bool) async -> (reports: [InsightsUpdateReport], remains: Bool) {
+        guard let vault, phase == .unlocked, insights.mode == .on, !isVaultReadOnly, insightsHasRole, !isChangingKeys else { return ([], false) }
         let gen = generation
         let runtime = insightsRuntime
         // A device of the vault's list, writing with the model's one clock.
-        guard vault.writerDevice != nil, let clock = try? deviceClockForWriting() else { return [] }
+        guard vault.writerDevice != nil, let clock = try? deviceClockForWriting() else { return ([], false) }
         insights.isWorking = true
         defer { insights.isWorking = false; insights.lastPass = Date() }
         var reports: [InsightsUpdateReport] = []
+        var remains = false
         var updater = InsightsUpdater(vault: vault, model: runtime.model, embedder: runtime.embedder, deviceState: deviceStateURL,
                                       app: services.appName)
-        updater.titleWriter = { [self] id, ops, now in try await self.writeInsightsTitle(id, ops, wall: now) }
+        updater.titleWriter = { [self] id, build, now in try await self.writeInsightsTitle(id, build, wall: now) }
         updater.writerDevice = clock.device
-        while !Task.isCancelled {
-            guard generation == gen, ignorePower || insightsServices.powerWindow() else { break }
+        while true {
+            guard !Task.isCancelled else { remains = true; break }
+            guard generation == gen else { break }
+            guard ignorePower || insightsServices.powerWindow() else { remains = true; break }
             var o = InsightsUpdateOptions()
             o.limit = batch
             o.openNotes = Set([editor?.noteID].compactMap { $0 } + Array(windowEditors.keys))
             o.failureMemo = insightsFailureMemoURL
             o.platform = insightsServices.platform
             o.powerWindow = true
+            o.deviceType = settingsDeviceType   // `insights.compute` of this kind of device (D13)
             // Topic summaries are behind the cut line (D19): no screen shows them yet, so a battery device does not make them.
             o.topics = false
             let summaries = insightsSummaries
@@ -493,11 +579,13 @@ extension AppModelCore {
             let report: InsightsUpdateReport
             do {
                 let inputs = try await offMain(priority: .utility) { InsightsNotes.inputs(vault, summaries: summaries) }
-                guard generation == gen, !Task.isCancelled else { break }
+                guard generation == gen else { break }
+                guard !Task.isCancelled else { remains = true; break }
                 report = try await updater.run(options, notes: inputs)
             } catch InsightsUpdateError.disabled {
                 break
             } catch {
+                if error is CancellationError || Task.isCancelled { remains = true; break }
                 insights.problem = .failed(services.describeError(error))
                 break
             }
@@ -508,20 +596,24 @@ extension AppModelCore {
             // Read again once the pass pauses (each refresh reads every sidecar; not after every run of a long pass).
             insightsRuntime.filesRevision += 1
             scheduleInsightsRefresh(after: .seconds(10))
+            if report.cancelled { remains = true; break }
             // Done when this run generated nothing new (everything current, backed off or not allowed here).
             if report.generated.isEmpty { break }
         }
         if generation == gen { await refreshInsights() }
-        return reports
+        return (reports, remains)
     }
 
-    /// A voice note's automatic title (D14), written through the model's clock like every other edit.
-    func writeInsightsTitle(_ id: UUID, _ ops: [Op], wall: Date) async throws -> RevisionName {
+    /// A voice note's automatic title (D14), written through the model's clock like every other edit, inside the edit
+    /// gate: `build` decides from the note as it is on disk then, so a rename made here in between wins (it gives no
+    /// ops). Nothing is written to a note open in an editor. Nil when nothing was written.
+    func writeInsightsTitle(_ id: UUID, _ build: @escaping @Sendable () throws -> [Op]?, wall: Date) async throws -> RevisionName? {
+        guard !isNoteOpen(id) else { return nil }
         var written: RevisionName?
         try await commit(ids: [id]) { vault, clock, verifier in
+            guard let ops = try build(), !ops.isEmpty else { return }
             written = try await NoteWriter.append(ops, to: id, vault: vault, clock: clock, wall: wall, verify: verifier(id))
         }
-        guard let written else { throw ModelError.noteNotFound }
         return written
     }
 }

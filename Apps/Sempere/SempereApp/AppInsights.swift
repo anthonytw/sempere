@@ -1,4 +1,7 @@
 import Foundation
+#if targetEnvironment(macCatalyst) && canImport(IOKit)
+import IOKit.ps
+#endif
 import SempereAppCore
 import SempereInsights
 import SempereInsightsApple
@@ -22,14 +25,24 @@ enum AppInsights {
     @MainActor static var powerWindow: Bool {
         let info = ProcessInfo.processInfo
         guard !info.isLowPowerModeEnabled, info.thermalState != .serious, info.thermalState != .critical else { return false }
+        if let ac = macOnExternalPower { return ac }
         let device = UIDevice.current
         if !device.isBatteryMonitoringEnabled { device.isBatteryMonitoringEnabled = true }
         switch device.batteryState {
         case .charging, .full: return true
-        // A Mac without a battery reports no state: it is on power.
-        case .unknown: return Platform.isMac
-        case .unplugged: return false
+        // Unknown is not taken for power (the safe side: "Process Now" still runs).
+        case .unknown, .unplugged: return false
         @unknown default: return false
         }
+    }
+
+    /// On a Mac, whether it runs on external power (IOKit's power sources: no time limit means AC, also on a Mac
+    /// without a battery); nil elsewhere.
+    static var macOnExternalPower: Bool? {
+        #if targetEnvironment(macCatalyst) && canImport(IOKit)
+        return IOPSGetTimeRemainingEstimate() == -2.0   // kIOPSTimeRemainingUnlimited
+        #else
+        return nil
+        #endif
     }
 }
