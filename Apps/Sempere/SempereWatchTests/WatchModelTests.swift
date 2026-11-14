@@ -23,7 +23,16 @@ final class WatchModelTests: XCTestCase {
         var events: [WatchHaptic] = []
     }
 
-    func rig(free: Int64? = nil, limits: WatchOutbox.Limits = WatchOutbox.Limits()) throws -> Rig {
+    /// A timer that waits until the test fires it (a fire before the wait is kept).
+    final class ManualTimer: @unchecked Sendable {
+        private let stream: AsyncStream<Void>
+        private let continuation: AsyncStream<Void>.Continuation
+        init() { (stream, continuation) = AsyncStream<Void>.makeStream() }
+        func wait() async { for await _ in stream { return } }
+        func fire() { continuation.yield() }
+    }
+
+    func rig(free: Int64? = nil, limits: WatchOutbox.Limits = WatchOutbox.Limits(), timer: ManualTimer? = nil) throws -> Rig {
         let support = try TestTemp.directory("watch")
         let secrets = MemoryWatchSecretStore()
         let transport = NoWatchTransport()
@@ -33,6 +42,7 @@ final class WatchModelTests: XCTestCase {
                                    freeBytes: { free }, haptic: { haptics.events.append($0) }, outboxLimits: limits)
         let model = try WatchModel(environment: env)
         model.savedDuration = .milliseconds(50)
+        if let timer { model.savedWait = { _ in await timer.wait() } }
         return Rig(model: model, transport: transport, audio: audio, secrets: secrets, support: support, haptics: haptics)
     }
 
@@ -236,12 +246,12 @@ final class WatchModelTests: XCTestCase {
     // MARK: Recording
 
     func testRecordStopSealsIntoTheOutboxAndHandsItOver() async throws {
-        let r = try rig()
+        let timer = ManualTimer()
+        let r = try rig(timer: timer)
         await r.model.activate()
         r.model.receive(try provisioning(r, seq: 0))
         await r.model.record()
         XCTAssertEqual(r.model.screen, .recording)
-        try await Task.sleep(for: .milliseconds(300))
         await r.model.stop()
         guard case .saved(let note) = r.model.screen else { return XCTFail("\(r.model.screen)") }
         XCTAssertEqual(note.vaultName, "Home")
@@ -257,8 +267,11 @@ final class WatchModelTests: XCTestCase {
         XCTAssertEqual(r.model.unsent, 1)
         r.model.receive(ack: WatchAck(acked: [note.id]))
         XCTAssertEqual(r.model.unsent, 0)
-        // Saved goes back to Ready by itself.
-        try await eventually("saved to go") { r.model.screen == .ready }
+        // Saved stays until its timer runs out, then goes back to Ready by itself.
+        guard case .saved = r.model.screen else { return XCTFail("Saved went before its timer: \(r.model.screen)") }
+        timer.fire()
+        await r.model.savedTask?.value
+        XCTAssertEqual(r.model.screen, .ready)
     }
 
     func testAFailedTransferKeepsTheFileAndALaunchRetriesIt() async throws {

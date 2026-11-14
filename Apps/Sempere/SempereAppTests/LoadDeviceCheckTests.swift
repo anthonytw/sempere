@@ -151,9 +151,11 @@ struct LoadDeviceCheckTests {
 
     // MARK: - c20
 
-    /// c20: with recognition on, writing steadily (a word every 0.45 s for 6 s, each saved and
+    /// c20: with recognition on, writing steadily (a word every 0.45 s of a manual clock, each saved and
     /// recognized in the pause after it) on a vault of 300 notes saves the summary cache at most once per
-    /// `summaryCacheSaveInterval`, however many recognition writes and edits reach the list.
+    /// `summaryCacheSaveInterval`, however many recognition writes and edits reach the list. The summary cache's
+    /// clock is injected (`summaryCacheNow`) and every step waits on an event (the autosave, the recognition, the
+    /// list update that considers a save), so the count is exact and no wall-clock window is involved.
     @Test func c20RecognitionWhileWritingSavesTheSummaryCacheRarely() async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         let vault = try Self.vault(url, key)
@@ -177,27 +179,33 @@ struct LoadDeviceCheckTests {
         let i = try InkInjector(editor: editor)
         defer { i.close() }
         #expect(await i.ready())
-        let saves = model.summaryCacheSaves, written = editor.deltasWritten
-        let clock = ContinuousClock(), start = clock.now
-        var k = 0
-        // A word every 0.45 s: each pause lets the autosave (0.15 s) and recognition (0.25 s) run.
-        while clock.now - start < .seconds(6) {
+
+        // The note's own first recognition pass (when it opened) has reached the list: its summary shows the text.
+        #expect(await TS.waitUntil(timeout: .seconds(30)) {
+            model.notes.first { $0.id == AppModelTests.lecture }?.pageTexts.contains { $0.text.contains("fake") } == true
+        }, "the opening pass was recognized and listed")
+        await model.summaryCacheSave?.value
+        // The manual clock starts 3 s past the last real save, so the first recognition's save is due.
+        let base = ContinuousClock.now
+        var elapsed = Duration.seconds(3)
+        model.summaryCacheNow = { base.advanced(by: elapsed) }
+        let saves = model.summaryCacheSaves, checks = model.summaryCacheChecks, written = editor.deltasWritten, calls = fake.calls.count
+        let strokes = 10
+        for k in 1...strokes {
             i.draw([TS.stroke(x: 40 + Double(k % 12) * 45, y: 700 + Double(k / 12) * 30, n: 20)])
-            k += 1
-            try await Task.sleep(for: .milliseconds(450))
+            elapsed += .milliseconds(450)
+            // Events, in order: the autosave, the recognition pass, the list update that follows it.
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { editor.deltasWritten - written == k }, "stroke \(k) saved")
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { fake.calls.count - calls == k }, "stroke \(k) recognized")
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.summaryCacheChecks - checks == k }, "stroke \(k) reached the list")
         }
-        try await Task.sleep(for: .milliseconds(600))   // the last save and recognition
-        let elapsed = (clock.now - start) / .seconds(1)
-        let made = model.summaryCacheSaves - saves
-        print("PERF-REPORT c20 \(k) strokes in \(String(format: "%.1f", elapsed)) s: \(editor.deltasWritten - written) deltas, "
-              + "\(fake.calls.count) recognitions, \(made) summary-cache saves")
-        #expect(fake.calls.count >= 4, "recognition ran while writing")
-        // Relative to the strokes drawn (k): a loaded machine fits only 7 of the 14 in the 6 s window (#42), and a fixed count
-        // failed there. Nearly every stroke must still have been saved by the time the last pause ended.
-        #expect(k >= 3, "only \(k) strokes fit the window: too loaded to say anything")
-        #expect(editor.deltasWritten - written >= k - 2, "the ink was saved as it was written (\(k) strokes)")
-        #expect(Double(made) <= elapsed / 2 + 1, "\(made) saves in \(elapsed) s")
-        #expect(made >= 1, "the index is still saved as the notes change")
+        await model.summaryCacheSave?.value
+        // Strokes land at 3.45, 3.9, ... 7.5 s. The first is due; the next save is the first stroke 2 s or more later (stroke 6, at 5.7 s;
+        // stroke 5 is 1.8 s after it); strokes 7 to 10 are within 2 s of that one: two saves.
+        #expect(model.summaryCacheChecks - checks == strokes, "one save consideration per stroke, none after the last")
+        #expect(fake.calls.count - calls == strokes, "one recognition per stroke")
+        #expect(editor.deltasWritten - written == strokes, "the ink was saved as it was written")
+        #expect(model.summaryCacheSaves - saves == 2, "\(model.summaryCacheSaves - saves) saves for \(strokes) strokes")
     }
 
     // MARK: - c21, c42

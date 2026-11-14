@@ -271,6 +271,8 @@ enum InProcessAccessibility {
 /// One accessibility element as the check sees it.
 struct LayoutElement: Hashable {
     let label: String
+    /// The `accessibilityIdentifier` (empty when none): stable across languages, what a screen's ready marker names.
+    let identifier: String
     /// In window coordinates.
     let frame: CGRect
     let isStaticText: Bool
@@ -281,7 +283,7 @@ enum LayoutCheck {
     /// The accessibility elements under `root`, in `window` coordinates, that a person could reach:
     /// in a view that is not hidden, with a label and a frame whose center is in the window
     /// (the UI test's `isHittable`; a list row scrolled out of sight is not checked).
-    static func elements(in window: UIWindow, also extra: [UIView] = []) -> [LayoutElement] {
+    static func elements(in window: UIWindow, also extra: [UIView] = [], only roots: [UIView]? = nil) -> [LayoutElement] {
         var out: [LayoutElement] = []
         var seen = Set<ObjectIdentifier>()
         // Accessibility frames are in screen coordinates: the window's own origin there.
@@ -293,7 +295,8 @@ enum LayoutCheck {
                 let label = node.accessibilityLabel ?? ""
                 let frame = node.accessibilityFrame.offsetBy(dx: -origin.x, dy: -origin.y)
                 if !label.isEmpty, !frame.isEmpty, window.bounds.contains(CGPoint(x: frame.midX, y: frame.midY)) {
-                    out.append(LayoutElement(label: label, frame: frame,
+                    out.append(LayoutElement(label: label, identifier: (node as? UIAccessibilityIdentification)?.accessibilityIdentifier ?? (node.value(forKey: "accessibilityIdentifier") as? String) ?? "",
+                                             frame: frame,
                                              isStaticText: node.accessibilityTraits.contains(.staticText)))
                 }
             }
@@ -310,8 +313,12 @@ enum LayoutCheck {
             if let view = node as? UIView, node.accessibilityElements == nil { children += view.subviews }
             for child in children { visit(child, depth: depth + 1) }
         }
-        visit(window, depth: 0)
-        for view in extra { visit(view, depth: 0) }
+        if let roots {
+            for view in roots { visit(view, depth: 0) }
+        } else {
+            visit(window, depth: 0)
+            for view in extra { visit(view, depth: 0) }
+        }
         return out
     }
 
@@ -356,7 +363,7 @@ final class LayoutHost {
 
     init(_ view: some View, size: CGSize, language: PseudoLanguage?) async throws {
         let scene = try await Self.scene()
-        let content = view.environment(\.timeZone, Self.utc)
+        let content = view.environment(\.timeZone, Self.utc).transaction { $0.disablesAnimations = true }
         controller = UIHostingController(rootView: language?.environment(content) ?? AnyView(content))
         window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
@@ -377,24 +384,98 @@ final class LayoutHost {
         throw CocoaError(.featureUnsupported)
     }
 
-    /// Lays out until the elements stop changing (three polls in a row, at least 300 ms, at most
-    /// `timeout`) and, with `sheet`, a sheet is up. Returns the elements.
-    func settle(sheet: Bool = false, timeout: Duration = .seconds(6)) async throws -> [LayoutElement] {
-        let clock = ContinuousClock()
-        let start = clock.now
-        var last: [LayoutElement] = []
-        var stable = 0
-        while clock.now - start < timeout {
-            try await Task.sleep(for: .milliseconds(50))
-            window.layoutIfNeeded()
-            controller.presentedViewController?.view.layoutIfNeeded()
-            let sheetUp = !sheet || (controller.presentedViewController.map { !$0.view.bounds.isEmpty } ?? false)
-            let now = LayoutCheck.elements(in: window, also: presentedViews)
-            stable = (now == last && sheetUp && !now.isEmpty) ? stable + 1 : 0
-            last = now
-            if stable >= 3, clock.now - start > .milliseconds(300) { break }
+    /// What a screen shows only once its data is in: an element with this `accessibilityIdentifier` or this exact label
+    /// (vault data such as a note's title is never translated, so it is a marker in every language).
+    enum Marker: Hashable, CustomStringConvertible {
+        case identifier(String)
+        case label(String)
+        case labelContaining(String)
+
+        func matches(_ e: LayoutElement) -> Bool {
+            switch self {
+            case .identifier(let id): e.identifier == id
+            case .label(let text): e.label == text
+            case .labelContaining(let text): e.label.contains(text)
+            }
         }
-        return last
+
+        var description: String {
+            switch self {
+            case .identifier(let id): "identifier \(id)"
+            case .label(let text): "label “\(text)”"
+            case .labelContaining(let text): "a label containing “\(text)”"
+            }
+        }
+    }
+
+    /// A screen that did not come up: names what never happened.
+    struct NotReady: Error, CustomStringConvertible {
+        let screen: String
+        let missing: String
+        var description: String { "\(screen): not ready after the deadline: \(missing)" }
+    }
+
+    /// Whether `elements` show a busy indicator (a `ProgressView`; its accessibility label is the system's key).
+    static func isBusy(_ elements: [LayoutElement]) -> Bool {
+        elements.contains { $0.label.contains("activity.indicator.inprogress") }
+    }
+
+    /// Waits for the screen to be up and returns its elements, taken once after one layout. The wait is on state, never on
+    /// stability: with `sheet`, the presented controller exists, is no longer being presented, has its view mounted in a
+    /// window and stands at the presentation's final frame (animations are off, `init`); then, for the sheet or the window,
+    /// every `markers` element is in the tree (the content's own data is in) and no busy indicator is. For a sheet only the
+    /// sheet's own elements count, never the screen behind it. `timeout` only bounds a screen that never comes up, and the
+    /// error names the condition that never held.
+    func settle(sheet: Bool = false, markers: [Marker] = [], screen: String = "screen",
+                timeout: Duration = .seconds(60)) async throws -> [LayoutElement] {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        func pause(_ missing: @autoclosure () -> String) async throws {
+            guard clock.now < deadline else { throw NotReady(screen: screen, missing: missing()) }
+            try await Task.sleep(for: .milliseconds(10))
+            window.layoutIfNeeded()
+        }
+        var presented: UIViewController?
+        if sheet {
+            while presented == nil {
+                presented = controller.presentedViewController
+                if presented == nil { try await pause("no sheet was presented") }
+            }
+            guard let sheet = presented else { throw NotReady(screen: screen, missing: "no sheet was presented") }
+            func settled() -> Bool {
+                !sheet.isBeingPresented && !sheet.isBeingDismissed && sheet.viewIfLoaded?.window != nil
+                    && !sheet.view.bounds.isEmpty && Self.atFinalFrame(sheet)
+            }
+            while !settled() {
+                try await pause("the sheet is still being presented or not mounted (being presented \(sheet.isBeingPresented), "
+                                + "window \(sheet.viewIfLoaded?.window != nil), bounds \(sheet.viewIfLoaded?.bounds ?? .zero))")
+            }
+        }
+        func tree() -> [LayoutElement] {
+            if let presented { return LayoutCheck.elements(in: window, only: [presented.view]) }
+            return LayoutCheck.elements(in: window)
+        }
+        while true {
+            let now = tree()
+            let missing = markers.filter { marker in !now.contains { marker.matches($0) } }
+            if now.isEmpty { try await pause("the accessibility tree is empty") }
+            else if !missing.isEmpty { try await pause("no element with " + missing.map(\.description).joined(separator: ", ")) }
+            else if LayoutHost.isBusy(now) { try await pause("a busy indicator is still showing") }
+            else { break }
+        }
+        window.layoutIfNeeded()
+        presented?.view.layoutIfNeeded()
+        return tree()
+    }
+
+    /// Whether a presented controller's view is at the frame its presentation gives it.
+    private static func atFinalFrame(_ sheet: UIViewController) -> Bool {
+        guard let presentation = sheet.presentationController, let view = presentation.presentedView else {
+            return !sheet.view.bounds.isEmpty
+        }
+        let final = presentation.frameOfPresentedViewInContainerView
+        return !view.bounds.isEmpty && (final.isEmpty || (abs(view.frame.minX - final.minX) < 1 && abs(view.frame.minY - final.minY) < 1
+            && abs(view.frame.width - final.width) < 1 && abs(view.frame.height - final.height) < 1))
     }
 
     /// The views of the sheets up (on a Mac a sheet is not under the window's own views).
