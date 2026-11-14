@@ -72,9 +72,9 @@ final class ReencryptOverWsgidavFaultProxyTests: SyncTestCase {
         let cut = try w["A"].sync(target)
         let cutSeconds = Date().timeIntervalSince(cutStart)
         XCTAssertFalse(cut.errors.isEmpty, "the uploads were cut: \(cut)")
-        // Each cut is noticed at once, or at the Linux upload watchdog (`UploadStall`, 15 s) at the latest; before it, a cut on
-        // Linux waited for the 60 s idle timeout (six cuts: 370 s). The bound is generous so a slow runner does not flake it.
-        XCTAssertLessThan(cutSeconds, 150, "the cut uploads took \(cutSeconds) s")
+        // Each cut is noticed at once (a retry of the body on a new connection, or the reset itself); before, a cut on
+        // Linux waited for the 60 s idle timeout (six cuts: 370 s). A bound far under that.
+        XCTAssertLessThan(cutSeconds, 30, "the cut uploads took \(cutSeconds) s")
         let mine = try w["A"].open()
         let current = mine.identities, keys = old + current
         // Each file at a vault name is whole: the old bytes, or the new copy (a blob: its old name kept until the new
