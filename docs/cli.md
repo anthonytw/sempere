@@ -2325,6 +2325,70 @@ known}]}`; `get` gives `{key, value, source}`; `set` and `reset` give `{key, val
 block}`; `edit` gives `{changed}`; `validate` gives `{valid, issues: [{severity,
 path, message}]}`.
 
+### Note insights
+
+```
+sempere insights update  [--note N] [--force] [--limit N] [--embeddings-only] [--dry-run]
+sempere insights show    NOTE
+sempere insights related NOTE [--limit N]
+sempere insights search  QUERY
+sempere insights status
+sempere insights topic   --notebook P | --tag T [--generate]
+sempere insights map     [--format json|svg] [--rebuild] [--pin REV [--yes]]
+sempere insights title   NOTE [--format F] [--dry-run]
+sempere insights work-device [ID | --claim]
+sempere insights purge
+```
+
+Summaries, keywords and concepts per note, related notes, a map of the notes, notebook and tag summaries and
+voice-note titles, made on the vault's devices only (`format.md` §16, `docs/design/1.2-note-insights.md`): Apple's
+on-device language model (`SystemLanguageModel.default`) and NaturalLanguage's sentence embedding at a pinned
+revision; never a server. They are off until `sempere settings set insights.enabled true`. One **work device**
+(`insights.workDevice`) generates, embeds every note and builds the map; the first capable device to run `update`
+claims it when none is set, and the role never moves by itself. Every command takes `--json`, the access options and
+`--no-cache`.
+
+- `update` does this device's work now (the scheduling policy of the design's §3.7): on the work device, generate and
+  embed each eligible note (text unchanged for 10 minutes, `--force`: now and again), tombstone deleted notes, title
+  voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when more than
+  10% changed or weekly (the first build pins the embedding revision, the lowest every recently seen device supports),
+  write this device's record and the notebook and tag summaries that are due. A device that is not the work device
+  generates only with `insights.compute` `auto`, and never embeds into the vault. `--limit` caps model calls;
+  `--embeddings-only` skips the model; `--dry-run` writes nothing. It needs Apple Intelligence (macOS 26): elsewhere,
+  or with it turned off, it exits 3 with the reason (`disabled`, `notReady`, `deviceNotEligible`, or needs macOS 26)
+  and writes nothing; `--embeddings-only` needs only the embedder. Off: exit 1.
+- `show` prints a note's summary, keywords, concepts, which device made them and when, and whether they are
+  `current`, `stale` (an older text or model), `missing` or `deleted`.
+- `related` lists related notes with their score and why (shared keywords, or "similar wording"): from the work
+  device's vectors when this device passes the map's canaries (notes not embedded yet are embedded here and marked
+  placed, never written), a local set when it fails them, the shared set as it is on a device without the pinned
+  revision (a vector reader) and on Linux, keyword overlap alone without vectors.
+- `search` finds notes whose keywords, concepts or summary hold every word of the query ("matched in summary").
+- `status`: processed, stale and missing notes; the work device and when it was last seen ("not seen for 14 days"
+  offers `work-device --claim`); the pinned revision and an upgrade offer with the devices it would leave out; the map;
+  per device its files, model availability, embedding revisions and compatibility.
+- `topic` shows a notebook's or tag's generated summary and its members; `--generate` makes it now (needs the model).
+- `map` prints the map as JSON (nodes with positions and clusters, clusters with labels) or SVG. `--rebuild` (needs
+  the embedder) rebuilds it on the work device, or shows one built here elsewhere. `--pin REV` moves the pinned
+  revision: it lists the devices left out (they become vector readers) and needs `--yes`; if the work device lacks
+  `REV`, the role moves to a device that has it.
+- `title` titles a voice note from its insights while its title is still the capture default (a user's title is never
+  replaced; a rename from another device that lost to this device's title is restored), with `--format` or the
+  vault's format; it uses a stored slug, else asks the model (exit 3 without one).
+- `work-device` shows the work device and the capable devices; `ID` sets it, `--claim` takes it for this device
+  (needs the embedder).
+- `purge` turns Note Insights off (`insights.enabled false`) and deletes every insights file here; the next sync
+  deletes them on the targets, and every device deletes its own.
+
+Linux runs everything but `update`, `topic --generate`, `map --rebuild` and `work-device --claim` (exit 3, "needs
+macOS 26"); `map --pin` works there (it only writes the setting). Writes are refused like every write (exit 6, 7).
+`--json`: `update` gives `{device, claimedWorkDevice, generated, embedded, tombstoned, dropped, titled,
+restoredTitles, resealed, removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
+`{note, title, state, summary, keywords: [{t, w}], concepts, device, deviceName, written, model, os, prompt, dropped,
+slug, embedded, embeddingKey}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
+keywordOverlap, why, shared, placed}]}`; `search` gives `[{note, title, field, matched, stale}]`; `status`,
+`topic`, `map`, `title`, `work-device` and `purge` give their fields as named in the text output.
+
 ### Export
 
 ```

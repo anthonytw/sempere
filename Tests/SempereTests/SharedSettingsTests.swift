@@ -279,7 +279,11 @@ final class SharedSettingsTests: VaultTestCase {
         let catalog = SharedSettingsCatalog.allKeyNames
         // Settings with no row of their own in these views: the eraser and palette are bound in the editor.
         XCTAssertEqual(Set(shown.keys).subtracting(catalog), [], "bound in the app but not in the catalog")
-        XCTAssertEqual(catalog.subtracting(shown.keys), [], "in the catalog but shown nowhere")
+        // Note Insights' keys have no screen yet: Settings ▸ Note Insights comes with the app's PR (Insights PR 2,
+        // docs/design/1.2-note-insights.md §10); until then the CLI sets them. Remove this once it binds them.
+        let notYetShown: Set<String> = ["insights.enabled", "insights.compute", "insights.workDevice", "insights.embeddingRevision",
+                                        "insights.voiceNoteTitle"]
+        XCTAssertEqual(catalog.subtracting(shown.keys).subtracting(notYetShown), [], "in the catalog but shown nowhere")
         for spec in SharedSettingsCatalog.specs {
             guard let types = spec.types else { continue }
             // Within the 8 lines before the row there is a platform check naming the same side.

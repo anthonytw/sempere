@@ -124,7 +124,17 @@ public enum CloudScan {
     public static func items(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
         try essentialItems(inVault: root, fileManager: fileManager)
             + notebookItems(inVault: root, fileManager: fileManager)
+            + insightsItems(inVault: root, fileManager: fileManager)
             + noteGroups(inVault: root, fileManager: fileManager).flatMap(\.items)
+    }
+
+    /// The note insights files (format.md §16), `insights/<name>.insights.age`, placeholders mapped to their real
+    /// names; empty without `insights/`. Other names are skipped.
+    public static func insightsItems(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
+        let folder = root.appendingPathComponent(Vault.insightsName, isDirectory: true)
+        return try list(folder, fileManager, allowMissing: true)
+            .filter { !$0.isDirectory && InsightsFileName($0.name) != nil }
+            .map { $0.item(in: folder) }
     }
 
     /// `vault.json`, `rewrap-journal.json` and `keys/*.age`: what unlocking

@@ -602,6 +602,7 @@ extension Vault {
         try? FileIO.remove(journalURL)
         removeRecordsBelowReencryption()
         removeSummariesBelowReencryption()
+        removeInsightsBelowReencryption()
         sweepStaleTemporaryFiles()
         let again = try reopened()
         try again.rememberList()

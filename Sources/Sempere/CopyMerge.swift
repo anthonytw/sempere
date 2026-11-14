@@ -211,6 +211,36 @@ extension Vault {
             }
         }
 
+        // insights/<name> (§16): hints read under the current key only, so merged only unlocked: a file the vault
+        // lacks, or holds with an earlier `written`, is copied in when it opens here (§16.6). Never deleted.
+        if canRead, !isReadOnly, insightsMode() == .on {
+            let otherInsights = other.appendingPathComponent(Self.insightsName, isDirectory: true)
+            let removed = removedInsightsDevices()
+            for name in Self.visibleEntries(otherInsights) {
+                guard let n = InsightsFileName(name), !removed.contains(n.device) else { continue }
+                let path = "\(Self.insightsName)/\(name)"
+                let limit = n.kind.maxBytes + 4096
+                guard let theirs = try? BoundedRead.contents(of: otherInsights.appendingPathComponent(name), maxBytes: limit),
+                      let opened = try? openInsights(theirs, name: n) else {
+                    continue   // a hint that does not open here is skipped, never refused (insights are derived)
+                }
+                let to = insightsURL.appendingPathComponent(name)
+                // This device's own files are its truth (as its summaries file is, §12.5): never replaced by a copy.
+                if n.device == writerDevice, FileIO.exists(to) { continue }
+                if let ours = try? FileIO.read(to, maxBytes: limit) {
+                    if ours == theirs { continue }
+                    let own = try? openInsights(ours, name: n)
+                    guard InsightsCodec.isLater((opened.written, FileDigest.sha256(theirs)),
+                                                than: (own?.written, FileDigest.sha256(ours)), now: Date()) else { continue }
+                }
+                report.added.append(path)
+                if !dryRun {
+                    try FileIO.createDirectory(insightsURL)
+                    try FileIO.writeAtomically(theirs, to: to, replacing: true)
+                }
+            }
+        }
+
         // settings.age: merged per key (§13.3).
         let otherSettingsURL = other.appendingPathComponent(SharedSettings.fileName)
         if FileIO.exists(otherSettingsURL) {

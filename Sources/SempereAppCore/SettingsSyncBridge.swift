@@ -64,9 +64,12 @@ public enum SettingsSyncBridge {
     }
 
     /// Keys whose values live outside the settings store (or need the model to act):
-    /// `apply` returns them for the model instead of writing them.
+    /// `apply` returns them for the model instead of writing them. The Note Insights keys are read from the vault's
+    /// file by the insights code itself (docs/design/1.2-note-insights.md §3.7), never stored on the device.
     public static let modelKeys: Set<String> = ["quickCapture.notebook", "quickCapture.transcribe", "backup.reminderDays",
-                                                "handwriting.recognize", "search.transcripts", "appearance.icon"]
+                                                "handwriting.recognize", "search.transcripts", "appearance.icon",
+                                                "insights.enabled", "insights.compute", "insights.workDevice",
+                                                "insights.embeddingRevision", "insights.voiceNoteTitle"]
 
     /// This device's effective value of every setting a device of `type` uses,
     /// in the stored form of `SharedSettingSpec.validated`. A setting that cannot

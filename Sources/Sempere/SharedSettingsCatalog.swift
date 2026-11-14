@@ -20,6 +20,12 @@ public struct SharedSettingSpec: Sendable {
         case paper
         /// A locale identifier, or `null` for "the device's".
         case localeOrNull
+        /// A device id in the vault (8 lowercase hex digits, format.md §15.4), or `null` for none.
+        case deviceIdOrNull
+        /// Per language (a BCP 47 primary tag), a pinned embedding revision: `{"en": 1}` (format.md §16.5).
+        case revisionPins
+        /// A voice-note title format: text with the tokens `{date}`, `{time}` and `{slug}` (D14).
+        case voiceTitleFormat
     }
 
     /// The key: `newNote.titleFormat`.
@@ -70,6 +76,20 @@ public struct SharedSettingSpec: Sendable {
                let v = try? JSONValue(encoding: paper.validated()) {
                 return v
             }
+        case .deviceIdOrNull:
+            if value == .null { return value }
+            if case .string(let s) = value, DeviceID(s) != nil { return value }
+        case .revisionPins:
+            if case .object(let o) = value, o.count <= 64,
+               o.allSatisfy({ k, v in
+                   guard (1...8).contains(k.utf8.count), k.utf8.allSatisfy({ (0x61...0x7a).contains($0) }),
+                         case .number(let d) = v else { return false }
+                   return d.rounded(.towardZero) == d && d >= 1 && d <= 1_000_000
+               }) {
+                return value
+            }
+        case .voiceTitleFormat:
+            if case .string(let s) = value, VoiceNoteTitleFormat.check(s) == nil { return value }
         case .localeOrNull:
             if value == .null { return value }
             if case .string(let s) = value, (1...35).contains(s.utf8.count),
@@ -106,6 +126,13 @@ public struct SharedSettingSpec: Sendable {
             return validated(v)
         case .localeOrNull:
             return ["null", "device", "none"].contains(t.lowercased()) ? .null : validated(.string(t))
+        case .deviceIdOrNull:
+            return ["null", "none"].contains(t.lowercased()) ? .null : validated(.string(t.lowercased()))
+        case .revisionPins:
+            guard let data = t.data(using: .utf8), let v = try? InkJSON.decoder().decode(JSONValue.self, from: data) else { return nil }
+            return validated(v)
+        case .voiceTitleFormat:
+            return validated(.string(text))
         }
     }
 
@@ -119,6 +146,9 @@ public struct SharedSettingSpec: Sendable {
         case .notebook: return "a notebook path"
         case .paper: return "a paper kind (ruled, grid, …) or a paper JSON object (format.md §5.4.2)"
         case .localeOrNull: return "a locale identifier (es_ES), or null for the device's"
+        case .deviceIdOrNull: return "a device id (8 hex digits, sempere devices list), or null"
+        case .revisionPins: return "a JSON object of language to embedding revision, e.g. {\"en\":1}"
+        case .voiceTitleFormat: return "text with the tokens {date}, {time} and {slug}, e.g. {date} {time} {slug}"
         }
     }
 }
@@ -170,6 +200,16 @@ public enum SharedSettingsCatalog {
               "How note pages are shown (dark: inverted on screen only)"),
         .init("drag.format", types: [.mac], .choice(["pdf", "markdown", "html"]), default: .string("pdf"),
               "File a note dragged out of the note list becomes"),
+        .init("insights.enabled", .bool, default: .bool(false),
+              "Note Insights: summaries, keywords, related notes and a map, made on the vault's devices (vault-wide)"),
+        .init("insights.compute", .choice(["auto", "never"]), default: .string("never"),
+              "Note Insights work on a device that is not the work device (auto: it computes too)"),
+        .init("insights.workDevice", .deviceIdOrNull, default: .null,
+              "The device that makes summaries, embeds every note and builds the map (null: none yet)"),
+        .init("insights.embeddingRevision", .revisionPins, default: .object([:]),
+              "The pinned sentence-embedding revision per language (empty: set by the first map build)"),
+        .init("insights.voiceNoteTitle", .voiceTitleFormat, default: .string(VoiceNoteTitleFormat.defaultFormat),
+              "Title of a voice note once its transcript is summarized"),
     ]
 
     /// The setting `name`; nil for a key this version does not know.
@@ -314,6 +354,15 @@ public enum SharedSettingsSchema {
         case .localeOrNull:
             o = ["oneOf": .array([.object(["type": .string("null")]),
                                   .object(["type": .string("string"), "pattern": .string("^[A-Za-z][A-Za-z0-9_-]{0,34}$")])])]
+        case .deviceIdOrNull:
+            o = ["oneOf": .array([.object(["type": .string("null")]),
+                                  .object(["type": .string("string"), "pattern": .string("^[0-9a-f]{8}$")])])]
+        case .revisionPins:
+            o = ["type": .string("object"), "maxProperties": .number(64),
+                 "propertyNames": .object(["pattern": .string("^[a-z]{1,8}$")]),
+                 "additionalProperties": .object(["type": .string("integer"), "minimum": .number(1), "maximum": .number(1_000_000)])]
+        case .voiceTitleFormat:
+            o = ["type": .string("string"), "minLength": .number(1), "maxLength": .number(Double(VoiceNoteTitleFormat.maxLength))]
         }
         let used = spec.types.map { " Used by: \($0.map(\.rawValue).joined(separator: ", "))." } ?? ""
         o["description"] = .string(spec.summary + "." + used)

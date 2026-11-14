@@ -178,6 +178,9 @@ struct SyncState: Codable, Equatable {
     /// §12.5) as both sides held them at the end of the last run, keyed by file
     /// name (`DeviceSummariesSync.swift`). Nil in older state files.
     var deviceSummaries: [String: MutableRecord]?
+    /// Note insights files (`insights/`, format.md §16) as both sides held them at the end of the last run, keyed by
+    /// file name (`InsightsSync.swift`). Nil in older state files.
+    var insights: [String: MutableRecord]?
     /// Join requests (`joins/`, format.md §15.12) both sides held at the end of the last run: one a side lacks
     /// since was deleted there (home approved or expired it), and is deleted on the other (KH4).
     var joins: [String]?
