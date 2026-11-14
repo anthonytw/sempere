@@ -502,6 +502,41 @@ records the files in its manifest, so a re-run skips unchanged notes and a
 changed note's earlier files are removed first. Shared code: `MediaExport`
 (SempereRender), used by `ShareExport`, `BulkExportSession` and the CLI.
 
+## Make a Copy (app and CLI)
+
+"Make a Copy…" (File menu, and a button in the banner of a read-only vault) and `sempere store copy` turn a vault
+into a new vault of the person's own: a new vault id, a new recovery key, this device its home, and the source's
+notes in their current state (issue #12, [design](design/1.2-make-a-copy.md)). The source is never changed. A byte
+copy (`store import`, `vault merge-copy`) is the same vault, still read-only here; this is a different one.
+
+- **What is copied.** Per note, one checkpoint delta named "Copied from <source>" (format.md §5.8.1, so thinning
+  keeps it), written as the new vault's device: every page, live stroke and item, the title, tags, notebook,
+  favorite, paper, page size, language, recordings with their transcripts, and each page's recognized text. Note,
+  page, stroke, item and recording ids are kept (a note named by id prefix is the same note in both). The notebooks the
+  source declared (format.md §14) that a copied note is in are declared in the copy. Notes in Recently Deleted are
+  left out unless "Include notes in Recently Deleted" (`--include-deleted`), then written deleted. The note's
+  modified date is kept; its created date is not (one revision has one date).
+- **Not copied.** Revision history, the device list, sync targets, settings, the inbox, joins, epochs and keys. The copy has
+  its own keys, never the source's; the source's authors' forgotten edits do not travel.
+- **Attachments.** Every blob the copied notes reference (images, PDFs, video, audio, transcripts, equation renders)
+  is read through the source's reference (framing, hash and keyed name checked), streamed, and written to the
+  copy before the delta that names it (format.md §8.1.4). A blob that cannot be read fails its note, never leaves a
+  dangling reference.
+- **Which sources.** Any vault that reads: with a device key, with the recovery key (the copy is writable), of a newer
+  format (what this version does not understand, skipped ops and elements, is not in the copy, listed per note;
+  the copy is not marked newer), with a device list this device could not confirm (the copy starts its own trust), or
+  after this device was removed (notes of later epochs cannot be read and are listed as not copied). A partly downloaded
+  source (format.md §1.2) is refused; the app disables the command until every note is on the device.
+- **Atomic.** The copy is built in the store's staging folder (`VaultStore.create`) and installed by one rename, so it
+  appears complete or not at all; a cancel, a failure with `--strict` ("Stop on the first problem") or a crash
+  leaves only a staging folder the next store command removes. Without `--strict` a note that cannot be read or
+  copied is listed and left out, the copy exists, and it is never presented as complete (CLI exit 1).
+- **Code.** `VaultCopier` (`Sources/Sempere`, Linux-tested: `VaultCopierTests`), with its own `CopyProgress`,
+  `CopyCancellation` and `CopyReport`; the CLI is `StoreCopy`; the app's model is `AppModel+MakeCopy` (SempereAppCore:
+  the generation check after every await, progress through `ProgressRelay`, cancel when the vault closes) and its
+  sheet `MakeCopySheet`, which reuses New Vault's recovery-key receipt. The copier reads through the existing
+  bounded readers and parses nothing of its own, so it adds no fuzz target.
+
 ## Vaults are folders (app)
 
 The app exports the UTType `io.github.anthonytw.sempere.vault` (extension
