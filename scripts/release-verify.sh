@@ -53,5 +53,5 @@ if [[ -f $sums ]]; then
 fi
 if [[ $(uname) == Darwin ]]; then
   tar -xzf "$d/sempere-$version-macos-universal.tar.gz" -C "$d"
-  "$d/sempere-$version-macos-universal/sempere" --version | head -1
+  v=$("$d/sempere-$version-macos-universal/sempere" --version); echo "${v%%$'\n'*}"
 fi
