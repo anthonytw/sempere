@@ -156,3 +156,4 @@ A path in two rows runs both lanes. A path in none (documentation, tests) runs n
 | Report | Kind | Code audited |
 | --- | --- | --- |
 | [2026-11-1.1](2026-11-1.1.md) | Full + release | 6a7afb0, and the delta 6a7afb0..54b9ed6 |
+| [2026-11-1.2](2026-11-1.2.md) | Release | the delta v1.1.0 (47f9b59)..bec36a9 |

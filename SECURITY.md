@@ -81,8 +81,9 @@ stated guarantee in released versions. Low, Info, hardening and findings only in
 | Audit | Date | Version | Report |
 | --- | --- | --- | --- |
 | Full + release | 2026-11 | 1.1 | [2026-11-1.1](docs/audits/2026-11-1.1.md) |
+| Release | 2026-11 | 1.2 | [2026-11-1.2](docs/audits/2026-11-1.2.md) |
 
-The first audit, a full audit of 1.1, was also 1.1's release audit; its fixes shipped in 1.1.0.
+The first audit, a full audit of 1.1, was also 1.1's release audit; its fixes shipped in 1.1.0. The 1.2 release audit's fixes shipped in 1.2.0.
 
 ## Verifying releases
 
