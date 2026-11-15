@@ -418,11 +418,16 @@ final class FolderPickerUITests: XCTestCase {
         onDevice.tap()
         let newFolder = app.buttons.matching(NSPredicate(format: "label == %@", "New Folder")).firstMatch
         require(newFolder, "the picker's New Folder", in: app, timeout: 10)
-        newFolder.tap()
         // The new folder, named in place ("untitled folder").
         let made = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier == %@ OR identifier BEGINSWITH %@ OR label BEGINSWITH %@",
             "DOC.inlineRenameField", "untitled folder", "untitled folder")).firstMatch
+        // The picker can drop a tap that lands while On My iPad is still loading (the button stays, no folder):
+        // tap again while it is still offered.
+        newFolder.tap()
+        for _ in 0..<2 where !made.waitForExistence(timeout: 5) && newFolder.exists && newFolder.isHittable {
+            newFolder.tap()
+        }
         if !made.waitForExistence(timeout: 15) { print("PICKERTREE\n\(app.debugDescription)") }
         XCTAssertTrue(made.exists, "New Folder made a folder")
         #endif

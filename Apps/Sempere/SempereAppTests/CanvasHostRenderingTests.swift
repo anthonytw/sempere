@@ -99,7 +99,15 @@ struct CanvasHostRenderingTests {
     static func expectBandMatches(_ host: PageCanvasHost, _ strokes: [Stroke], top: Double, _ label: String,
                                   attempts: Int = 5) async throws {
         var canvas = 0, ref = 0, y = 0.0
-        for _ in 0..<attempts {
+        for attempt in 0..<attempts {
+            if attempt > 0 {
+                // A simulator canvas can settle with tiles missing (a stable, partial count): scroll a screen away
+                // and back, so PencilKit draws the band's tiles again.
+                let off = host.canvas.contentOffset.y, page = host.canvas.bounds.height
+                host.canvas.setContentOffset(CGPoint(x: 0, y: off > page ? off - page : off + page), animated: false)
+                host.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(300))
+            }
             let (shot, rect) = try await snapshot(host, top: top)
             let px = CGSize(width: shot.size.width * shot.scale, height: shot.size.height * shot.scale)
             canvas = darkPixels(shot)
