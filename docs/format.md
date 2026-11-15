@@ -4675,6 +4675,7 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
 | vectors | 1 … 4 096 values; every value finite |
 | strings | a summary 2 000 characters, a term 120, a topic summary 4 000, a scope name 1 200, short identifiers 64 bytes |
 | counts | 32 keywords, 16 concepts, 32 canaries, 64 languages, 20 000 clusters, 200 000 notes in a map, 10 000 topics |
+| cluster `id`, `parent` | 0 … 1 000 000 000 |
 
 ### 16.8 Topics and voice-note titles
 

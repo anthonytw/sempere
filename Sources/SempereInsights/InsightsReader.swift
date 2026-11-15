@@ -437,7 +437,7 @@ public struct InsightsReader: Sendable {
         var out = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(Int(size))\" height=\"\(Int(size))\" viewBox=\"0 0 \(Int(size)) \(Int(size))\">\n"
         out += "<rect width=\"100%\" height=\"100%\" fill=\"#ffffff\"/>\n"
         for n in view.nodes {
-            let color = n.cluster.map { palette[abs($0) % palette.count] } ?? "#888888"
+            let color = n.cluster.map { palette[Int($0.magnitude % UInt(palette.count))] } ?? "#888888"
             out += "<circle cx=\"\(px(n.x))\" cy=\"\(px(n.y))\" r=\"6\" fill=\"\(color)\"" + (n.placed ? " stroke=\"#000\" stroke-dasharray=\"2 2\"" : "")
                 + "><title>\(esc(n.title))</title></circle>\n"
         }

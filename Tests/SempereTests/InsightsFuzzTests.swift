@@ -106,6 +106,24 @@ final class UntrustedInsightsTests: VaultTestCase {
         }
     }
 
+    func testMapClusterIdsAndParentsAreBounded() throws {
+        let map = InsightsFileName(.map, device: InsightsFuzzTests.device)
+        let c = Float16Codec.encode([1, 0])
+        func json(id: String, parent: String) -> Data {
+            Data((#"{"format":"sempere-insights-map/1","device":"a1b2c3d4","written":1,"key":{"model":"m","lang":"en","rev":1,"input":1},"dim":2,"#
+                + #""clusters":[{"id":\#(id),"parent":\#(parent),"level":0,"label":["a"],"centroid":"\#(c)","members":["6f1c2b9e-0a43-4f6e-9a51-2c8d7e3b4a10"]}],"#
+                + #""layout":{"6f1c2b9e-0a43-4f6e-9a51-2c8d7e3b4a10":[0.1,0.2]}}"#).utf8)
+        }
+        for (id, parent) in [("-9223372036854775808", "1"), ("9223372036854775807", "1"), ("-1", "1"), ("1000000001", "1"),
+                             ("1", "-9223372036854775808"), ("1", "9223372036854775807"), ("1", "-1")] {
+            XCTAssertThrowsError(try InsightsCodec.decode(json(id: id, parent: parent), name: map), "\(id) \(parent)") { e in
+                XCTAssertTrue(e is InsightsFileError, "\(e)")
+            }
+        }
+        XCTAssertNoThrow(try InsightsCodec.decode(json(id: "1000000000", parent: "0"), name: map))
+        XCTAssertNoThrow(try InsightsCodec.decode(json(id: "7", parent: "null"), name: map))
+    }
+
     func testAMapWithNonFinitePositionsIsRefused() {
         let map = InsightsFileName(.map, device: InsightsFuzzTests.device)
         let json = #"{"format":"sempere-insights-map/1","device":"a1b2c3d4","written":1,"key":{"model":"m","lang":"en","rev":1,"input":1},"#

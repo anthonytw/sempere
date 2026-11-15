@@ -123,6 +123,8 @@ public enum InsightsLimits {
     public static let maxShortString = 64
     public static let maxDimension = 4_096
     public static let maxClusters = 20_000
+    /// The largest cluster id (and `parent`) a map may hold; ids are 0 … this.
+    public static let maxClusterId = 1_000_000_000
     public static let maxNotesInMap = 200_000
     public static let maxCanaries = 32
     public static let maxTopics = 10_000
@@ -385,7 +387,9 @@ public struct InsightsMapFile: Hashable, Sendable, Codable {
         if let mean, Float16Codec.decode(mean, count: dim) == nil { throw InsightsFileError.invalid("map mean") }
         var members = 0
         for c in clusters {
-            guard (0...1).contains(c.level), c.label.count <= 8, Float16Codec.decode(c.centroid, count: dim) != nil else {
+            guard (0...1).contains(c.level), (0...InsightsLimits.maxClusterId).contains(c.id),
+                  c.parent.map({ (0...InsightsLimits.maxClusterId).contains($0) }) ?? true,
+                  c.label.count <= 8, Float16Codec.decode(c.centroid, count: dim) != nil else {
                 throw InsightsFileError.invalid("cluster")
             }
             for l in c.label { try InsightsValidate.text(l, max: InsightsLimits.maxTerm, "cluster label") }

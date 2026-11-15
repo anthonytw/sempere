@@ -379,6 +379,33 @@ final class InsightsPipelineTests: XCTestCase {
         XCTAssertEqual(damping?.label, ["resonance curve"], "the members' generated terms, not their text words")
     }
 
+    func testClusterIdsStayInRangeWhateverThePreviousMapHolds() throws {
+        let notes = Self.corpus()
+        let corpus = InsightsCorpus(notes.map(\.tokens))
+        let first = MapBuilder.build(notes, corpus: corpus)
+        for top in [Int.max, Int.max - 1, InsightsLimits.maxClusterId, -5, Int.min] {
+            let clusters = first.clusters.map { c -> InsightsMapFile.Cluster in
+                InsightsMapFile.Cluster(id: c.id == MapBuilder.otherId ? c.id : top, parent: c.parent.map { _ in top },
+                                        level: c.level, label: c.label, centroid: c.centroid, members: c.members)
+            }
+            let previous = InsightsMapFile(device: try XCTUnwrap(DeviceID("a1b2c3d4")), written: 1,
+                                           key: EmbeddingKey(model: "m", lang: "en", rev: 1, input: 1), dim: 1, canaries: nil,
+                                           mean: nil, clusters: clusters, layout: [:], built: nil)
+            let map = MapBuilder.build(notes, corpus: corpus, previous: previous)
+            let ids = map.clusters.map { $0.id }
+            XCTAssertTrue(ids.allSatisfy { (0...InsightsLimits.maxClusterId).contains($0) }, "\(top): \(ids)")
+            XCTAssertEqual(Set(ids.filter { $0 != MapBuilder.otherId }).count, ids.filter { $0 != MapBuilder.otherId }.count,
+                           "\(top): ids unique")
+        }
+    }
+
+    func testTheMapDrawingTakesAnyClusterId() {
+        let view = InsightsReader.MapView(device: nil, key: nil, basis: "shared",
+                                          nodes: [.init(note: "n", title: "t", x: 0, y: 0, cluster: Int.min, placed: false)],
+                                          clusters: [.init(id: Int.min, parent: Int.min, level: 0, label: ["a"], members: 1)])
+        XCTAssertTrue(InsightsReader.svg(view).hasPrefix("<svg"))
+    }
+
     func testAnOverflowOnATinyNoteIsNotHalved() async throws {
         var s = FakeModelProvider.Script()
         s.overflowAbove = 0   // every call overflows: the answer ran away, not the input

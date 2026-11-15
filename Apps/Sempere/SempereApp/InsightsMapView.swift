@@ -99,7 +99,7 @@ struct InsightsMapCanvas: View {
     @State private var fitCache = FitCache()
 
     static let palette: [SwiftUI.Color] = [.blue, .orange, .red, .teal, .green, .yellow, .purple, .pink, .brown, .indigo]
-    static func color(_ id: Int?) -> SwiftUI.Color { id.map { palette[abs($0) % palette.count] } ?? .gray }
+    static func color(_ id: Int?) -> SwiftUI.Color { id.map { palette[Int($0.magnitude % UInt(palette.count))] } ?? .gray }
 
     var body: some View {
         GeometryReader { geo in
