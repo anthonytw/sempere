@@ -4552,7 +4552,8 @@ one a reader shows.
   `noteId`) must be the file name's.
 - `written`: Unix milliseconds, 1 … 2^53 − 1, `max(now, previous + 1)` per file. **Order** of two copies of one file:
   the greater `written`, then the greater SHA-256 of the file (lowercase hex). A copy whose `written` is more than 7
-  days ahead of the reader's clock is not ordered: it never wins over one that is.
+  days ahead of the reader's clock is not ordered: it never wins over one that is, neither between two copies of a file
+  nor when a reader picks which device's `gen` of a note to show.
 - `gen.hash`, `emb.hash`: the first 16 bytes (32 lowercase hex digits) of SHA-256 of the note's **insight text** after
   NFKC, white-space runs collapsed to one space and the ends trimmed. `hashBasis` `text/1` defines the insight text:
   `PageText.texts(of:)` of the note's pages (recognized handwriting, text boxes, PDF page text, LaTeX; §5.5, §8.2) joined

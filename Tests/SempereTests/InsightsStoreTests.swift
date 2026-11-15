@@ -139,6 +139,15 @@ final class InsightsStoreTests: VaultTestCase {
         XCTAssertEqual(snap.bestGen(for: note, hash: String(repeating: "a", count: 32))?.current, true)
         XCTAssertEqual(snap.bestGen(for: note, hash: String(repeating: "f", count: 32))?.device, d1, "stale: the later one")
         XCTAssertEqual(snap.bestGen(for: note, hash: String(repeating: "f", count: 32))?.current, false)
+        // A `written` beyond the future window is unordered: it loses to any ordered file, as in `isLater`.
+        let ahead = Int64((now.timeIntervalSince1970 + InsightsLimits.futureWindow + 3600) * 1000)
+        var future = InsightsSnapshot()
+        future.notes[note] = [d1: InsightsNoteFile(noteId: note, device: d1, written: 10, gen: gen()),
+                              d2: InsightsNoteFile(noteId: note, device: d2, written: ahead, gen: gen())]
+        XCTAssertEqual(future.bestGen(for: note, hash: String(repeating: "a", count: 32), now: now)?.device, d1)
+        XCTAssertEqual(future.bestGen(for: note, hash: nil, now: now)?.device, d1)
+        XCTAssertEqual(future.bestGen(for: note, hash: nil, now: now.addingTimeInterval(2 * InsightsLimits.futureWindow))?.device, d2,
+                       "within the window of a later clock: ordered again")
         // `emb` only from the named device.
         snap.notes[note]?[d1]?.emb = .init(hash: String(repeating: "c", count: 32), key: .init(model: "m", lang: "en", rev: 1, input: 1), vector: [1])
         XCTAssertNotNil(snap.emb(for: note, from: d1))
