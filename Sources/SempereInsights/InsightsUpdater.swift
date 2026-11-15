@@ -3,9 +3,9 @@ import Sempere
 
 // MARK: - The updater (docs/design/1.2-note-insights.md §3.7, §3.8, §4, D13-D15; `sempere insights update`)
 //
-// One pass over a vault for this device: re-seal its own files under the current key, delete what removed devices
-// left, claim the work device when none is set, then per note (in the policy's order) generate, embed, tombstone and
-// title, then rebuild the map, write this device's record and the topic summaries due. Every write goes through
+// One pass over a vault for this device: delete its own files under an earlier key (written again below) and what
+// removed devices left, claim the work device when none is set, then per note (in the policy's order) generate, embed,
+// tombstone and title, then rebuild the map, write this device's record and the topic summaries due. Every write goes through
 // `InsightsStore` (and voice-note titles through `Vault.apply`), so a read-only vault refuses them all. The app (PR 2)
 // and the CLI call it alike.
 
@@ -108,7 +108,6 @@ public struct InsightsUpdateReport: Hashable, Sendable, Codable {
     public var dropped: [String] = []
     public var titled: [String] = []
     public var restoredTitles: [String] = []
-    public var resealed: [String] = []
     public var removed: [String] = []
     public var mapBuilt = false
     public var deviceRecord = false
@@ -177,8 +176,7 @@ public struct InsightsUpdater: Sendable {
         let me = try store.writer()
         report.device = me.rawValue
         if !o.dryRun {
-            report.resealed = try store.resealOwn(now: o.now)
-            report.removed = try store.removeRemovedDevices()
+            report.removed = try store.removeOwnEarlierKey() + store.removeRemovedDevices()
         }
         var snapshot = store.snapshot()
         let usable = model.flatMap { $0.availability.isAvailable ? $0 : nil }

@@ -50,7 +50,7 @@ extension Vault {
     }
 
     /// The content and epoch of the bytes of file `name` when they open under an EARLIER key this vault value holds
-    /// (never the current one): what re-sealing reads (format.md §16.6). Nil otherwise.
+    /// (never the current one): how a stale file is told from a damaged one (format.md §16.6). Nil otherwise.
     public func openInsightsUnderEarlierKey(_ data: Data, name: InsightsFileName) -> (epoch: Int, content: InsightsFileContent)? {
         guard data.count <= name.kind.maxBytes + 4096 else { return nil }
         for (epoch, key) in keyring?.knownKeys() ?? [] where epoch < manifest.epoch {
@@ -336,10 +336,12 @@ public struct InsightsStore: Sendable {
         }
     }
 
-    /// Re-seals this device's own files that open only under an earlier key, under the current key (format.md §16.6;
-    /// no model work), keeping their content. Returns the paths re-sealed.
+    /// Deletes this device's own files that open only under an earlier key (format.md §16.6), so the next pass writes
+    /// them again under the current key. Their content is never carried over: bytes named for this device under an
+    /// earlier key may have been written by any holder of that key, including a device removed since, and insights are
+    /// recomputable. Returns the paths deleted.
     @discardableResult
-    public func resealOwn(now: Date = Date()) throws -> [String] {
+    public func removeOwnEarlierKey() throws -> [String] {
         try vault.requireWritable()
         let me = try writer()
         return try vault.epochWriteLock.withLock(timeout: 30) {
@@ -348,15 +350,8 @@ public struct InsightsStore: Sendable {
                 let file = folder.appendingPathComponent(name.fileName)
                 guard let data = try? vault.readFile(file, maxBytes: name.kind.maxBytes + 4096),
                       (try? vault.openInsights(data, name: name)) == nil,
-                      let old = vault.openInsightsUnderEarlierKey(data, name: name) else { continue }
-                // Below a finished re-encryption a file under an older key goes instead (format.md §16.6).
-                if let m = vault.reencryptEpoch?.epoch, !vault.isReencryptPending, old.epoch < m {
-                    try FileIO.remove(file)
-                    continue
-                }
-                // A device's own files are never replaced from a target or a copy (local truth, review of #50, M2),
-                // and a `titleOp` counts only when the note's history holds it as this device's (`ownTitleOp`).
-                _ = try writeLocked(old.content, me: me, now: now)
+                      vault.openInsightsUnderEarlierKey(data, name: name) != nil else { continue }
+                try FileIO.remove(file)
                 out.append("\(Vault.insightsName)/\(name.fileName)")
             }
             return out

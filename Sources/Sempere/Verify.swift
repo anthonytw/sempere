@@ -86,7 +86,7 @@ public struct VerifyReport: Hashable, Sendable {
         public enum State: String, Hashable, Sendable, CaseIterable {
             /// Opens and validates under the current key.
             case open
-            /// Opens only under an earlier key: its device re-seals it, or it goes below a re-encryption.
+            /// Opens only under an earlier key: its device deletes it and writes it again, or it goes below a re-encryption.
             case stale
             /// Does not open (damaged, another vault's, forged), or the vault is locked.
             case unreadable

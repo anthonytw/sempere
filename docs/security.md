@@ -92,7 +92,8 @@ your use (no telemetry).
   everything re-encrypted, from the same screen. Removing a device does not take
   back what it already read: old copies of the files (backups, a
   provider's version history) still open with the keys of the time.
-  Note insights are re-sealed under the new key by the device that made them. After everything is re-encrypted, a
+  Each device deletes its note insights under the old key and makes them again under the new one (their content is
+  not carried over, since any holder of the old key could have written it). After everything is re-encrypted, a
   device running Sempere 1.2 or later deletes insights left under the old key (an older app version does not know
   them) at its next sync.
 

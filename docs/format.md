@@ -4634,13 +4634,14 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   has not embedded yet locally (never in the vault). An **incompatible** one builds a local vector set and map, never
   mixed with the shared one.
 
-### 16.6 Deletion, re-sealing and turning it off
+### 16.6 Deletion, new epochs and turning it off
 
 - **Tombstones.** A device "removes" its note file by replacing it with one without `gen` and `emb` at a later
   `written`, so a device bridging two targets cannot bring the old one back: when the note is deleted (§5.2), and when
   its `gen` is stale while another device's is current.
-- **Re-seal on a new epoch.** A device re-seals its own files under the current key from their content (opening them
-  with the earlier key the chain gives it); until then other devices ignore them.
+- **A new epoch.** A device deletes its own files that open only under an earlier key and writes them again under the
+  current key by its ordinary pass; until then other devices ignore them. The content of such a file is never carried
+  over: any holder of that key, a device removed since included, could have written bytes under a device's name.
 - **Below a re-encryption.** After a finished re-encryption (§15.8) a device deletes every insights file that opens
   under a key from before it, locally and on each target where its own `vault.json` stands, so an older app that was
   home (its pass skips `insights/`) leaves them only until a device implementing this section syncs.

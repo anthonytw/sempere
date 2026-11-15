@@ -6,7 +6,7 @@ import VaultTestSupport
 
 /// The insights codec and store (format.md §16; docs/design/1.2-note-insights.md §3.3, §9 "Codec and store"): round
 /// trip, wrong key, wrong tag, renamed file, oversize, bad JSON, unknown `format`, unknown members, `written` order and
-/// the future window, tombstones, the best-file pick, re-sealing after a removal, files of removed devices, deletion
+/// the future window, tombstones, the best-file pick, own files under an earlier key after a removal, files of removed devices, deletion
 /// below a finished re-encryption, purge and the read-only rule.
 final class InsightsStoreTests: VaultTestCase {
     override func setUpWithError() throws {
@@ -182,9 +182,9 @@ final class InsightsStoreTests: VaultTestCase {
 
     // MARK: Epochs
 
-    /// A removal starts a new epoch: B's files stop opening; B re-seals its own under the new key (no model work);
-    /// files named for the removed device X are ignored and deleted by any device.
-    func testResealAfterARemovalAndRemovedDevicesFiles() throws {
+    /// A removal starts a new epoch: B's files stop opening; B deletes its own under the earlier key (its next pass
+    /// writes them again); files named for the removed device X are ignored and deleted by any device.
+    func testOwnEarlierKeyFilesGoAfterARemovalAndRemovedDevicesFiles() throws {
         let w = try EpochWorld(in: tmp, names: ["A", "B", "X"])
         let a0 = try w.open("A"), b0 = try w.open("B"), x0 = try w.open("X")
         let bName = try InsightsStore(vault: b0).write(.note(InsightsNoteFile(noteId: note, device: try InsightsStore(vault: b0).writer(),
@@ -198,13 +198,44 @@ final class InsightsStoreTests: VaultTestCase {
         let b = try w.open("B")
         XCTAssertNil(try? InsightsStore(vault: b).read(bName), "under the old key: not read")
         XCTAssertEqual(InsightsStore(vault: b).snapshot().notes[note], nil)
-        XCTAssertEqual(try InsightsStore(vault: b).resealOwn(now: now), ["insights/\(bName.fileName)"])
-        guard case .note(let f)? = try InsightsStore(vault: b).read(bName) else { return XCTFail("not re-sealed") }
-        XCTAssertEqual(f.gen, gen())
+        XCTAssertEqual(try InsightsStore(vault: b).removeOwnEarlierKey(), ["insights/\(bName.fileName)"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: b.insightsURL.appendingPathComponent(bName.fileName).path))
+        XCTAssertEqual(try InsightsStore(vault: b).removeOwnEarlierKey(), [], "nothing left to delete")
         // X's record: never shown, deleted.
         let a2 = try w.open("A")
         XCTAssertTrue(a2.removedInsightsDevices().contains(DeviceID(w["X"].id)!))
         XCTAssertEqual(try InsightsStore(vault: a2).removeRemovedDevices(), ["insights/device.\(w["X"].id).insights.age"])
+    }
+
+    /// A file named for a current device but sealed under an earlier key is never carried into the current epoch: the
+    /// named device deletes it, and no reader (summary, title slug, vectors) ever takes its content.
+    func testEarlierKeyFileNamedForACurrentDeviceIsNeverShown() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B", "X"])
+        let x0 = try w.open("X")
+        var a = try w.open("A")
+        try a.removeDevices([w["X"].id])
+        let bId = try XCTUnwrap(DeviceID(w["B"].id))
+        let hash = String(repeating: "a", count: 32)
+        var g = gen(hash, summary: "Earlier-key content.")
+        g.slug = "Earlier key title"
+        let file = InsightsNoteFile(noteId: note, device: bId, written: 1_790_000_000_000, gen: g,
+                                    emb: .init(hash: hash, key: EmbeddingKey(model: "nl-sentence", lang: "en", rev: 1, input: 1),
+                                               vector: [1, 0]))
+        let name = InsightsFileName(note: note, device: bId)
+        let sealed = try x0.sealInsights(.note(file), name: name)
+        try FileManager.default.createDirectory(at: x0.insightsURL, withIntermediateDirectories: true)
+        try sealed.write(to: x0.insightsURL.appendingPathComponent(name.fileName))
+
+        let b = try w.open("B")
+        for v in [try w.open("A"), b] {
+            let snap = InsightsStore(vault: v).snapshot()
+            XCTAssertNil(snap.notes[note])
+            XCTAssertNil(snap.bestGen(for: note, hash: hash))
+            XCTAssertNil(snap.emb(for: note, from: bId))
+        }
+        XCTAssertEqual(try InsightsStore(vault: b).removeOwnEarlierKey(), ["insights/\(name.fileName)"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: b.insightsURL.appendingPathComponent(name.fileName).path))
+        XCTAssertNil(InsightsStore(vault: try w.open("A")).snapshot().bestGen(for: note, hash: hash))
     }
 
     /// A device on an older list never deletes a just-joined device's file (it has not heard of it).
