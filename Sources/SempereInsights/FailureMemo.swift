@@ -7,7 +7,11 @@ import Sempere
 /// on every run (D16: on a real library about one note in twenty was refused by the model's guardrail; each run asked
 /// again, and with `--limit` the refusals came first and crowded out the notes behind them). Keyed by the note's
 /// insight hash and the model's identity: a changed text, model or prompt is tried at once. Device-local state
-/// (`$XDG_STATE_HOME/sempere/insights/<vault id>-failures.json` for the CLI), never in the vault.
+/// (`$XDG_STATE_HOME/sempere/insights/<vault id>-failures` for the CLI), never in the vault. The file is sealed under a
+/// key derived from the vault key (`LocalCacheKey`, purpose `insights-failures`, format.md §10.1), so note ids, scope
+/// names and text hashes are unreadable without it; it is private to the user (0600), excluded from backups, and
+/// deleted when Note Insights is turned off or the vault leaves the device. A new epoch derives another key, and the
+/// memo starts empty.
 public struct InsightsFailureMemo: Codable, Hashable, Sendable {
     public struct Entry: Codable, Hashable, Sendable {
         public var hash: String
@@ -45,26 +49,66 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
 
     public static func key(_ identity: GenerationIdentity) -> String { "\(identity.model) \(identity.os) \(identity.prompt)" }
 
-    /// `$XDG_STATE_HOME/sempere/insights/<vault id>-failures.json`.
-    public static func defaultURL(vaultId: UUID, environment: [String: String] = ProcessInfo.processInfo.environment,
-                                  home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) -> URL {
-        DeviceState.defaultURL(environment: environment, home: home).deletingLastPathComponent()
-            .appendingPathComponent("insights").appendingPathComponent("\(vaultId.uuidString.lowercased())-failures.json")
+    static let purpose = "insights-failures"
+    static let magic: [UInt8] = Array("SMPF".utf8) + [0x01]
+
+    /// The memo file of `vaultId` in `folder`.
+    public static func fileURL(in folder: URL, vaultId: UUID) -> URL {
+        folder.appendingPathComponent("\(vaultId.uuidString.lowercased())-failures")
     }
 
-    /// The memo at `url`; a missing, unreadable or malformed file is an empty memo (it only saves model time).
-    public static func load(from url: URL) -> InsightsFailureMemo {
-        guard let data = try? BoundedRead.contents(of: url, maxBytes: maxFileBytes),
-              let memo = try? JSONDecoder().decode(InsightsFailureMemo.self, from: data) else { return InsightsFailureMemo() }
+    /// `$XDG_STATE_HOME/sempere/insights/<vault id>-failures`.
+    public static func defaultURL(vaultId: UUID, environment: [String: String] = ProcessInfo.processInfo.environment,
+                                  home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) -> URL {
+        fileURL(in: DeviceState.defaultURL(environment: environment, home: home).deletingLastPathComponent()
+            .appendingPathComponent("insights"), vaultId: vaultId)
+    }
+
+    /// The memo at `url` for `vault`; a missing, unreadable, malformed or differently keyed file (another epoch), or a
+    /// locked vault, is an empty memo (it only saves model time).
+    public static func load(from url: URL, vault: Vault) -> InsightsFailureMemo {
+        guard let key = try? LocalCacheKey(vault: vault, purpose: purpose, magic: magic),
+              let data = try? BoundedRead.contents(of: url, maxBytes: maxFileBytes),
+              let plain = try? key.open(data, fileName: url.lastPathComponent),
+              let memo = try? JSONDecoder().decode(InsightsFailureMemo.self, from: plain) else { return InsightsFailureMemo() }
         return memo
     }
 
-    /// Writes the memo atomically, creating its directory.
-    public func save(to url: URL) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    /// Writes the memo sealed for `vault`, atomically, private to the user and excluded from backups, creating its
+    /// directory (0700).
+    public func save(to url: URL, vault: Vault) throws {
+        let key = try LocalCacheKey(vault: vault, purpose: Self.purpose, magic: Self.magic)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        try encoder.encode(self).write(to: url, options: .atomic)
+        let sealed = try key.seal(try encoder.encode(self), fileName: url.lastPathComponent)
+        let folder = url.deletingLastPathComponent()
+        let fm = FileManager.default
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        Self.excludeFromBackup(folder)
+        try sealed.write(to: url, options: [.atomic, .completeFileProtection])
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        Self.excludeFromBackup(url)
+        // A memo of an earlier build, in plain JSON: never read, deleted.
+        try? fm.removeItem(at: Self.legacyURL(url))
+    }
+
+    /// Deletes the memo at `url` (and an earlier build's plain one beside it); nothing when there is none.
+    public static func remove(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
+        try? FileManager.default.removeItem(at: legacyURL(url))
+    }
+
+    static func legacyURL(_ url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".json")
+    }
+
+    static func excludeFromBackup(_ url: URL) {
+        #if canImport(Darwin)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var u = url
+        try? u.setResourceValues(values)
+        #endif
     }
 
     /// Remembers that generating `note` at `hash` with `identity` failed with `error` at `now`.

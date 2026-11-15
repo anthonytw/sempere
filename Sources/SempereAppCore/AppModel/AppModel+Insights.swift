@@ -194,11 +194,17 @@ extension AppModelCore {
     }
 
     /// This device's memo of failed generations for the open vault (`InsightsFailureMemo`), beside the device state.
-    var insightsFailureMemoURL: URL? {
-        vault.map {
-            deviceStateURL.deletingLastPathComponent().appendingPathComponent("Insights", isDirectory: true)
-                .appendingPathComponent("\($0.vaultId.uuidString.lowercased())-failures.json")
-        }
+    var insightsFailureMemoURL: URL? { vault.map { insightsFailureMemoURL(for: $0.vaultId) } }
+
+    /// This device's memo of failed generations for the vault `vaultId`, open or not.
+    func insightsFailureMemoURL(for vaultId: UUID) -> URL {
+        InsightsFailureMemo.fileURL(in: deviceStateURL.deletingLastPathComponent().appendingPathComponent("Insights", isDirectory: true),
+                                    vaultId: vaultId)
+    }
+
+    /// Deletes this device's memo of failed generations for `vaultId` (Note Insights off, the vault removed).
+    func forgetInsightsFailures(vaultId: UUID) {
+        InsightsFailureMemo.remove(at: insightsFailureMemoURL(for: vaultId))
     }
 
     // MARK: Opening and closing
@@ -519,6 +525,7 @@ extension AppModelCore {
         // files are deleted, so none writes a sidecar after the purge.
         if !on { await cancelInsightsPass() }
         await writeInsightsSettings { vault in _ = try InsightsSettingsWrite.setEnabled(on, vault: vault) }
+        if !on, let id = vault?.vaultId { forgetInsightsFailures(vaultId: id) }
         answerInsightsOffer()
         if on { requestInsightsPass(force: false) }
     }

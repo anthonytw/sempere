@@ -571,6 +571,7 @@ struct InsightsPurge: ParsableCommand {
         let vault = try access.openVault(.required)
         try vault.requireWritable()
         let deleted = try InsightsSettingsWrite.setEnabled(false, vault: vault)
+        InsightsFailureMemo.remove(at: InsightsFailureMemo.defaultURL(vaultId: vault.vaultId))
         struct Out: Encodable { var deleted: [String] }
         if output.json { return try output.emitJSON(Out(deleted: deleted)) }
         output.info("Note Insights is off; deleted \(deleted.count) file(s)")

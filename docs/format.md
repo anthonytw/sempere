@@ -3030,6 +3030,11 @@ It keeps four more, under the same derivation:
 - the **activity** file (purpose `activity`, magic `SMPA` ‖ `0x01`, one entry
   named `activity`, not keyed by `entryName`): the notes "Recognize All" read in
   the last seven days and the recent search queries, kept across launches;
+- the **insights failure memo** (purpose `insights-failures`, magic `SMPF` ‖ `0x01`, one entry named
+  `<vault id>-failures`, not keyed by `entryName`, beside the device state; from Sempere 1.2): the notes and topic
+  scopes whose generation failed (§16), with their text or members digests, so a refusal is not asked again at once;
+  private to the user, excluded from backups, and deleted when Note Insights is turned off or the vault leaves the
+  device;
 - the **insights cache** (purpose `insights-cache`, magic `SMPG` ‖ `0x01`, Application Support; the app, from Sempere
   1.2): decoded insights files (§16), this device's placed or local vectors and any local map, sealed as above, so it
   persists across launches and is unreadable without the vault key; a new epoch derives a new folder (vectors

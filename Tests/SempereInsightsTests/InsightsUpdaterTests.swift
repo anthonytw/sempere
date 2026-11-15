@@ -175,7 +175,7 @@ final class InsightsUpdaterTests: TempDirTestCase {
         }
         let first = try await runRefusing(at: now)
         XCTAssertEqual(first.failures.count, 1)
-        XCTAssertEqual(InsightsFailureMemo.load(from: memoURL).notes.count, 1)
+        XCTAssertEqual(InsightsFailureMemo.load(from: memoURL, vault: vault).notes.count, 1)
         let second = try await runRefusing(at: now.addingTimeInterval(3600))
         XCTAssertEqual(second.failures.count, 0, "not asked again the next hour")
         XCTAssertEqual(refusing.calls, 1)

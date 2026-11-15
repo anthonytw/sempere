@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 
 /// `sempere store`: the vaults kept in a store folder (`VaultStore`), as the app keeps its own
@@ -271,6 +272,7 @@ struct StoreRemove: ParsableCommand {
                 + "permanently; pass --yes")
         }
         try store.remove(entry.vaultId)
+        InsightsFailureMemo.remove(at: InsightsFailureMemo.defaultURL(vaultId: entry.vaultId))
         if output.json { return try output.emitJSON(entry) }
         output.info("Removed “\(entry.name)” (\(entry.vaultId.uuidString.lowercased()))")
     }
