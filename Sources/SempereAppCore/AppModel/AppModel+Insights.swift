@@ -658,12 +658,20 @@ extension AppModelCore {
         runtime.loop?.cancel()
         let gen = generation
         runtime.loop = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self, self.generation == gen else { return }
-                if !self.services.lifecycle.isInBackground { self.requestInsightsPass(force: false) }
+            // The model is held only for each look, never across the wait: a `guard let self` in this loop kept it
+            // strongly through the sleep, so a model let go with its vault open lived on for the interval (and its
+            // scratch folder with it).
+            while !Task.isCancelled, self?.insightsLoopLook(generation: gen) == true {
                 try? await Task.sleep(for: Self.insightsLoopInterval)
             }
         }
+    }
+
+    /// One look of the foreground loop (`startInsightsLoop`); false once the vault changed (the loop ends).
+    private func insightsLoopLook(generation gen: Int) -> Bool {
+        guard generation == gen else { return false }
+        if !services.lifecycle.isInBackground { requestInsightsPass(force: false) }
+        return true
     }
 
     /// The background processing task (`BackgroundSyncRequest.insights`): a pass in the model's one slot (a foreground
