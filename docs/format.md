@@ -3013,7 +3013,7 @@ are checked against the revisions read from the vault before they are drawn
 on. It is limited in size (least recently used entries go first) and deleted
 when the vault is closed on that device.
 
-It keeps four more, under the same derivation:
+It keeps these others, under the same derivation:
 
 - the **render cache** (purpose `render-cache`, magic `SMPI` ‖ `0x01`):
   pictures of image items and previews of PDF page items as drawn on that
@@ -3035,11 +3035,6 @@ It keeps four more, under the same derivation:
   scopes whose generation failed (§16), with their text or members digests, so a refusal is not asked again at once;
   private to the user, excluded from backups, and deleted when Note Insights is turned off or the vault leaves the
   device;
-- the **insights cache** (purpose `insights-cache`, magic `SMPG` ‖ `0x01`, Application Support; the app, from Sempere
-  1.2): decoded insights files (§16), this device's placed or local vectors and any local map, sealed as above, so it
-  persists across launches and is unreadable without the vault key; a new epoch derives a new folder (vectors
-  recomputed, files read again). Insights terms join only the in-memory search index; nothing is donated to the
-  system's search;
 - the **saved selection** (purpose `selection`, Mac; no file): the library
   window's selection, which the system keeps in plaintext with its window
   state, names a notebook or tag only as `entryName("notebook|<canonical

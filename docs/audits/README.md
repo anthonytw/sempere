@@ -82,6 +82,8 @@ card.
 - **Time limits (aims):** Critical and High fixed in the next release, within 30 days; Medium within 90. A fix that
   needs a format change goes through a `features` marker (`format.md` section 7) and the advisory says who is affected.
   A finding that cannot ship in 90 days is published as withheld: id, severity, area, advisory link, no reproduction.
+- **Unreleased code:** a finding only in code that no tagged release and no distributed build (TestFlight, App Store)
+  contains is fixed on the open track before the release that would first ship it, and the report says so.
 - **Outside reports** found between runs follow the same track and appear in the next report's "Reports from outside
   the audit" section.
 

@@ -128,7 +128,11 @@ Your storage provider, and anyone with a copy of the files, can see:
   kit replaced) (all in `vault.json`, which is not encrypted), and the
   requests of devices waiting to join (`joins/`, also in the clear);
 - if Note Insights is on, an `insights/` folder with one small file per note for each device that processed it, one
-  map file and one record per device, so that the feature is on, which device processed which note, and when.
+  map file and one record per device, so that the feature is on, which device processed which note, and when. These
+  files are not padded: their exact sizes show which notes have a summary and which a vector, and roughly how many
+  notebooks and tags have a topic summary;
+- that two vaults hold the same notes, when one is a copy of the other (Make a Copy) and both are on storage they can
+  read: a copy keeps the source's note ids, which name the notes' folders and insights files.
 
 They cannot see titles, text, ink, tags, notebooks, attachments, transcripts or summaries.
 
@@ -167,8 +171,10 @@ sent back, with the device list, is encrypted to the new device's key
   system's data protection where the platform has it (on a Mac, which has none,
   the attachment cache is deleted when the app quits, and after a crash at the
   next launch, before any vault opens). The caches of note
-  listings, drawings, attachment previews and note insights are encrypted under keys derived
-  from the vault's key ([`format.md`](format.md) §10, §16). Details: [`io.md`](io.md),
+  listings, drawings and attachment previews, and the memo of notes whose insights could not be made (so they are
+  not asked of the model again at once; private, not backed up, deleted when Note Insights is turned off or the vault
+  is removed from the device), are encrypted under keys derived from the vault's key ([`format.md`](format.md) §10).
+  Note insights are kept on the device only in memory, outside the vault's own `insights/` files. Details: [`io.md`](io.md),
   [`quick-capture.md`](quick-capture.md).
 - **Exports.** A PDF, image or Markdown export is not encrypted. Where you send
   it is up to you.

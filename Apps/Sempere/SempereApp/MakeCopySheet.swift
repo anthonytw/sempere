@@ -88,7 +88,7 @@ struct MakeCopySheet: View {
             } header: {
                 Text("Name")
             } footer: {
-                Text("A new vault of your own with these notes as they are now: its own recovery key, and none of this vault's history, devices or sync targets. “\(sourceName)” is not changed.")
+                Text("A new vault of your own with these notes as they are now: its own recovery key, and none of this vault's history, devices or sync targets. “\(sourceName)” is not changed. Notes keep their ids, so anyone who can see the storage of both vaults can tell that they hold the same notes.")
             }
             let notices = model.makeCopyNotices
             if !notices.isEmpty {

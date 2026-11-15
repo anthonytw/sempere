@@ -54,6 +54,10 @@ vault, and the vault's integrity.
 | Someone using the unlocked device | They can record voice notes, which is the feature. They cannot listen to past ones without unlocking the vault. |
 | A removed device (key hierarchy KH3) | Removing a device starts a new epoch with a new vault key, so the old capture keys no longer verify, and a reader derives device capture keys only for devices still listed: its later captures are set aside, kept in the inbox and never adopted. Captures already in the inbox at that moment are sealed by the removal and adopted (`docs/design/key-hierarchy.md` §5.7). A still-listed device whose profile is of an older epoch records each voice note in its write ledger before placing it, and re-seals it under the current key at its next unlock (`format.md` §15.14 "Catch-up"); its profile is then made again. A device that learns it was removed (unlisted, key-hierarchy design §5.5) marks its profile `suspended`: a start is refused ("removed from the vault's device list"), while a recording in progress, leftovers and the queue are still sealed and recorded in the write ledger, so the unlisted screen's Save Files keeps them; listed again, the suspension is lifted. |
 
+With Note Insights on (from 1.2), a voice note added by any of these is treated like any other note once adopted: its
+transcript is summarized, and it joins related notes, the map and its notebook's or tags' topic summaries, with
+nothing in them marking which note a sentence came from.
+
 ### Plaintext audio
 
 - While recording, `AVAudioRecorder` writes the audio to a file in the app's
