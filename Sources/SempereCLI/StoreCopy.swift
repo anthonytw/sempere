@@ -20,7 +20,7 @@ struct StoreCopy: ParsableCommand {
             (the kit's identity file, or the vault's passphrase copy, whose passphrase comes from \
             --source-passphrase-env, else $SEMPERE_PASSPHRASE, else the terminal; a passphrase-wrapped device key of \
             the source too). The new vault takes vault init's options, and its own passphrases come from \
-            --passphrase-env: never the same variable as the source's. \(VaultInitOptions.discussion)
+            --passphrase-env: never the same variable, or the same passphrase, as the source's. \(VaultInitOptions.discussion)
 
             The copy is built in the store's staging folder and appears at once when complete; a cancel or a failure \
             leaves nothing in the store. A note that cannot be read or copied is listed in the report and left out \
@@ -68,15 +68,29 @@ struct StoreCopy: ParsableCommand {
 
     func validate() throws {
         do { _ = try VaultStore.folderName(for: name) } catch { throw ValidationError("\(error)") }
-        // One variable must never serve both vaults: the copy's own passphrases are new secrets.
-        if sourcePassphraseEnv == nil, spec.passphraseEnv == nil, spec.passphrase || spec.recoveryPassphrase,
-           Env.vars["SEMPERE_PASSPHRASE"] != nil {
-            throw ValidationError("$SEMPERE_PASSPHRASE would serve both the source and the new vault: give "
-                + "--source-passphrase-env and --passphrase-env (different variables)")
-        }
-        if let a = sourcePassphraseEnv, a == spec.passphraseEnv {
+        // One variable must never serve both vaults: the copy's own passphrases are new secrets. Compared as the
+        // variables each side actually reads (`--…-env`, else $SEMPERE_PASSPHRASE), and only when both read one.
+        let sourceVar = sourcePassphraseEnv ?? "SEMPERE_PASSPHRASE"
+        let newVar = spec.passphraseEnv ?? "SEMPERE_PASSPHRASE"
+        guard sourceVar == newVar, newVaultReadsPassphrase, sourceMayReadPassphrase, Env.vars[sourceVar] != nil else { return }
+        if sourcePassphraseEnv != nil, spec.passphraseEnv != nil {
             throw ValidationError("--source-passphrase-env and --passphrase-env name the same variable")
         }
+        throw ValidationError("$\(sourceVar) would serve both the source and the new vault: give "
+            + "--source-passphrase-env and --passphrase-env (different variables)")
+    }
+
+    /// The new vault asks for a passphrase of its own (a generated one is not read).
+    private var newVaultReadsPassphrase: Bool {
+        spec.passphrase || (spec.recoveryPassphrase && !spec.generatePassphrase)
+    }
+
+    /// The source might be read with a passphrase: its recovery key (maybe the passphrase copy) or this machine's
+    /// device key for it (maybe passphrase-wrapped); never when key files are given (`--identity`, $SEMPERE_IDENTITY).
+    private var sourceMayReadPassphrase: Bool {
+        if sourceRecoveryKey != nil { return true }
+        if !identity.isEmpty { return false }
+        return Env.vars["SEMPERE_IDENTITY"].map(\.isEmpty) ?? true
     }
 
     func run() throws {
@@ -87,7 +101,9 @@ struct StoreCopy: ParsableCommand {
         access.recoveryKey = sourceRecoveryKey
         access.root = root
         access.passphraseEnv = sourcePassphraseEnv
+        let readBefore = PassphrasesRead.count
         let sourceVault = try access.openVault(at: sourceURL, .required)
+        let sourcePassphrases = PassphrasesRead.since(readBefore)
 
         let verbose = output.verbose && !output.json && !output.quiet
         var progress: (@Sendable (CopyProgress) -> Void)?
@@ -105,13 +121,20 @@ struct StoreCopy: ParsableCommand {
         }
 
         let prepared = try spec.prepare()
+        // Two secrets, however they were given (two variables holding one value, or one typed at both prompts).
+        let chosen = [prepared.generatedPassphrase == nil ? prepared.copyPassphrase : nil, prepared.deviceKeyPassphrase]
+        if chosen.contains(where: { p in p.map(sourcePassphrases.contains) ?? false }) {
+            throw CLIError.usage("the new vault's passphrase is the source's: choose a different one")
+        }
         let keys = prepared.keys
         let ledger = cliLedger(vaultId: keys.vaultId, device: keys.device.identity)
         var file = try DeviceClockFile(url: DeviceState.defaultURL())
         let device = file.device
         var created: VaultInitOptions.Created?
+        let entry: VaultStore.Entry
+        let report: CopyReport
         do {
-            let (entry, report) = try store.create(name: name) { url -> CopyReport in
+            (entry, report) = try store.create(name: name) { url -> CopyReport in
                 created = try spec.create(at: url, prepared: prepared)
                 let destination = try Vault.open(at: url, identities: [keys.device.nativeIdentity],
                                                  signing: keys.device.signing, trust: trustStore())
@@ -121,17 +144,17 @@ struct StoreCopy: ParsableCommand {
                                          options: copyOptions(ledger: ledger), progress: progress)
                 }
             }
-            try finish(report, entry: entry, created: created)
-        } catch let e as ExitCode {
-            throw e
         } catch {
-            // What belongs to a vault that does not exist: its keys and ledger (`spec.create` and the copy wrote them
-            // before it failed) and the unused recovery key.
+            // The vault does not exist. What belongs to it: its keys and ledger (`spec.create` and the copy wrote them
+            // before it failed) and the unused recovery key, only when this run wrote it (`spec.create` returned; when
+            // it throws it removes what it wrote, and a file that was there before is never this run's).
             try? FileManager.default.removeItem(at: CLIDeviceKeyFiles.directory(vaultId: keys.vaultId))
             try? FileManager.default.removeItem(at: ledger.folder)
-            if let out = spec.recoveryOut { try? FileManager.default.removeItem(atPath: out) }
+            if created != nil, let out = spec.recoveryOut { try? FileManager.default.removeItem(atPath: out) }
             throw error
         }
+        // The vault is installed: nothing of it is removed after this point, whatever reporting does.
+        try finish(report, entry: entry, created: created)
     }
 
     private func copyOptions(ledger: (any WriteLedgerStore)?) -> VaultCopier.Options {

@@ -696,8 +696,12 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   `--source-recovery-key FILE` (the kit's identity file, or the vault's passphrase copy; `--root` checks it as elsewhere).
   The source's passphrase (that copy, or a passphrase-wrapped device key) comes from `--source-passphrase-env VAR`, else
   `$SEMPERE_PASSPHRASE`, else the terminal; the new vault's own passphrases (`--recovery-passphrase`, `--passphrase`) come
-  from `--passphrase-env`. They are two secrets: the same variable for both is refused (exit 2), and so is
-  `$SEMPERE_PASSPHRASE` serving both when the new vault takes a passphrase. The source may be read-only (a newer format, an unconfirmed or refused device
+  from `--passphrase-env`, else `$SEMPERE_PASSPHRASE`, else the terminal (a `--generate-passphrase` one is made, not
+  read). They are two secrets: when both sides read a passphrase, one variable serving both is refused (exit 2), however
+  it is named (`--source-passphrase-env` and `--passphrase-env` alike, or either one naming `SEMPERE_PASSPHRASE` while the
+  other side falls back to it), and so is the new vault's passphrase being the one the source was opened with (two
+  variables holding it, or the same one typed at both prompts; exit 2, before anything is written). A source read with
+  `--identity` reads no passphrase. An existing `--recovery-out` file is refused (exit 1) and left as it was. The source may be read-only (a newer format, an unconfirmed or refused device
   list, a removed device, a recovery-key read): the copy is writable, and stderr warns what it cannot keep (notes of
   a newer version with their skipped ops, unreadable later epochs). A partly downloaded source is refused (exit 1). Notes in
   Recently Deleted are left out unless `--include-deleted`. A note that cannot be read or copied is listed on stderr (in
