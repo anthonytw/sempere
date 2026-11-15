@@ -6,6 +6,71 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [Unreleased]
 
+## [1.2.0] - TODO(user): release date (YYYY-MM-DD)
+
+### Security
+
+The release audit for 1.2 ([report](https://github.com/anthonytw/sempere/blob/main/docs/audits/2026-11-1.2.md)) found
+one issue in released versions, rated Low: since 1.0.0, after a re-encryption, a sync could download every device's
+published summaries file again on every run without counting it against the run's download limit, so a storage host
+could make a run download more than the limit allows. It is fixed in this release. The audit's other findings were in code that no release had
+contained, and they were fixed before this release.
+
+### Note Insights
+
+Note Insights is new (Settings ▸ Note Insights; off until you turn it on). It makes a short summary, keywords and related
+notes for each note on your devices only, with Apple's on-device model, and stores them encrypted in the vault.
+
+- Open a note's insights from its More menu or the note list's context menu. Search also finds notes by their summaries
+  and keywords.
+- A map of related notes (All Notes' menu, or Settings ▸ Note Insights ▸ Map of Related Notes): notes sit in labeled
+  groups that split into smaller ones as you zoom in, lines join related notes, and a tap opens a note. Notes this device
+  placed itself are dashed, and a device that has to build its own map says so. A list form shows the same groups for
+  VoiceOver and small screens.
+- Topic summaries: "Summary" on a notebook or tag with at least 3 summarized notes shows a generated paragraph and the
+  notes to check it against, marked when those notes changed. They are made in the background at most once a day each,
+  and Regenerate makes one now.
+- One work device does the processing (any device that can run the models; an iPhone or iPad while charging) and names
+  quick voice notes from their transcripts in a format you choose.
+- Turning it off deletes the insights on every device.
+- On the command line, `sempere insights` makes them (macOS 26 with Apple Intelligence), and reading them (`show`,
+  `related`, `search`, `status`, `map`, `topic --list`) works on Linux too. `sempere insights purge` turns it off and
+  deletes them.
+
+### Joining a device
+
+- Both screens now show the six words, and you tap They Match after comparing all six instead of typing them. Typing the
+  words and scanning the code stay under "Type the words instead". Tapping is as safe as typing only if you compare all six
+  words.
+- Add Device warns when two or more devices are asking to join, and They Match waits 1.5 seconds after the words show.
+- Add Device keeps one handshake place per remote address, so a device that opens connections very fast ends only its
+  own, never the others'.
+
+### Make a Copy
+
+File ▸ Make a Copy… (and a button in the banner of a read-only vault) copies a vault's notes, as they are now, into a new
+vault of your own with its own recovery key, attachments and recordings included. It works for a vault opened with its
+recovery key, one from a newer version, or one whose device list this device could not confirm, and the copy can be
+changed. `sempere store copy` does the same on the command line.
+
+### Apple Watch
+
+- The iPhone holds at most 20 files or 50 MB of Watch notes that can only be deleted (for a vault or key it never held),
+  inside the general limit, so a watch sending those cannot use up the room for notes you can add. A file left in the held
+  folder without its record is removed after a day. `sempere inbox watch held summary` shows the count per reason, the
+  limits and what it removed (`held list --json` is unchanged).
+- Recordings the watch cannot place (another vault's, or one whose manifest names none) are no longer silent: the watch
+  says "N recordings could not be placed", with Delete. Nothing is deleted by itself.
+
+### Fixed
+
+- Sync: a revision this device wrote before 1.1.0 and left cut on a server that lists no file sizes is now found and
+  replaced (one bounded check per revision, remembered in the sync state).
+- Sync: after a re-encryption, a sync no longer downloads every device's published summaries file again on every run,
+  and those downloads count against the run's download limit.
+- Linux CLI: a WebDAV upload cut by a connection reset on a kept-alive connection failed after the 60-second idle
+  timeout; it now fails at once (or is retried with its whole body), and a reset counts as a lost connection.
+
 ## [1.1.0] - 2026-11-13
 
 ### Security
@@ -148,7 +213,8 @@ This release fixes four issues found by the project's first security audit
 
 Initial release.
 
-[Unreleased]: https://github.com/anthonytw/sempere/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/anthonytw/sempere/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/anthonytw/sempere/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/anthonytw/sempere/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/anthonytw/sempere/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/anthonytw/sempere/releases/tag/v1.0.0
