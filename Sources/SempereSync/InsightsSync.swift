@@ -158,7 +158,7 @@ extension SyncEngine {
         if own, let localData, let localHash {
             guard localOpens != nil else {
                 report.skipped.append(.init(path: "\(folder)/\(name)", message: "this device's own file does not open under the "
-                    + "current key yet (it re-seals it); the target's copy is not taken"))
+                    + "current key yet (it deletes and remakes it); the target's copy is not taken"))
                 return .init(hash: localHash, stamp: stamp)
             }
             guard stands else { return record }
