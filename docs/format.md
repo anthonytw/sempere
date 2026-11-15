@@ -118,7 +118,7 @@ except these, which are replaced whole (atomically):
 | `settings.age` | devices that opted in | when a shared setting changes, or a device's merged copy is newer (§13.3) |
 | `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note changed (§12.4) |
 | `summaries/<device>.sealed` | that device only (signed by it) | when its listing changed (§12.5) |
-| `insights/*.<device>.insights.age` | that device only | when its insights change, or it re-seals or tombstones them (§16) |
+| `insights/*.<device>.insights.age` | that device only | when its insights change, or it tombstones them or writes them again under a new key (§16) |
 
 A file-sync service may keep two versions of one of them, written by two
 devices at once (iCloud Drive's conflict versions), or a whole other copy of
@@ -4660,7 +4660,8 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   its bound; unlocked runs only (a locked or staging run skips the folder). A copy is placed or uploaded only when it
   opens under the current key; where both sides differ the later copy (§16.2) wins on both; a copy that does not open
   never replaces one that does. A device's own file held locally is its truth and is never replaced from a target or
-  a copy (one only on the target is taken). A device uploads only in a run where its own `vault.json` stands on the target. A
+  a copy; one only on the target is not fetched (the device deleted it, or never had it), and the copy the device
+  writes next replaces it. A device uploads only in a run where its own `vault.json` stands on the target. A
   provider's conflict versions of a file settle to the later copy.
 - **Copy-merge** (§1.3), while `insights.enabled` is `true`, copies a file the vault lacks, or holds with an earlier
   `written`, when it opens under the current key, never over the device's own file; nothing is deleted.

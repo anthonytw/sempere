@@ -83,7 +83,8 @@ card.
   needs a format change goes through a `features` marker (`format.md` section 7) and the advisory says who is affected.
   A finding that cannot ship in 90 days is published as withheld: id, severity, area, advisory link, no reproduction.
 - **Unreleased code:** a finding only in code that no tagged release and no distributed build (TestFlight, App Store)
-  contains is fixed on the open track before the release that would first ship it, and the report says so.
+  contains is not a vulnerability: no advisory, no embargo, no CVE, whatever its rating. It is fixed in the run's
+  open-track PR before the release that would first ship it, and the report lists it as caught before release.
 - **Outside reports** found between runs follow the same track and appear in the next report's "Reports from outside
   the audit" section.
 

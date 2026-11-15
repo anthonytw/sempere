@@ -18,14 +18,16 @@ import Sempere
 //   removed (both locally, and on the target where this device's list stands, under a strong version tag), and
 //   everything when `insights.enabled` is explicitly off. Unset leaves `insights/` alone on both sides;
 // - this device's own files are its truth (as its summaries file is, format.md §12.5): an existing local one is never
-//   replaced from a target (review of #50, M2); one only on the target is taken;
+//   replaced from a target (review of #50, M2); one only on the target is not fetched (this device deleted it, or never
+//   had it), and the copy this device writes next replaces it;
 // - every local change (a placement or a deletion) is made under the vault's write lock (`withLocalWriteLock`, never
 //   across a request) after the local bytes are read again: a file a writer replaced since it was judged is left
 //   (review of #50, M3);
 // - a provider's conflict versions of a file settle to the later `written` (`ConflictVersions`);
 // - a copy only on the target that opens under no key this device holds is remembered (its hash, settled stamp and the
-//   key it was tried under) and not fetched again until one of them changes; each fetch of one counts with the run's
-//   refused files (`RunBudget.refusedFiles`), without a quarantine copy.
+//   key it was tried under) and not fetched again until one of them changes; each fetch of one that opens under no
+//   earlier key either counts with the run's refused files (`RunBudget.refusedFiles`), without a quarantine copy. The
+//   records are kept when a run limit stops the pass.
 
 extension SyncEngine {
     /// The pass over `insights/` (after the notes, with the other hints).
@@ -77,9 +79,24 @@ extension SyncEngine {
             }
         }
         let records = state.insights ?? [:]
+        let me = v.writerDevice
+        let names = local.union(listed.keys).sorted().filter { name in
+            guard let n = InsightsFileName(name), !removed.contains(n.device) else { return false }
+            // This device's own file only on the target: not fetched. Here it is gone because this device deleted it (its
+            // updater deletes its own files under an earlier key and writes them again) or never had it; the copy it
+            // writes next replaces the target's.
+            return !(n.device == me && !local.contains(name))
+        }
         var kept: [String: SyncState.MutableRecord] = [:]
-        for name in local.union(listed.keys).sorted() {
-            guard let n = InsightsFileName(name), !removed.contains(n.device) else { continue }
+        var pending = Set(names)
+        // Also when a run limit stops the pass: the records of files judged so far are kept, and those of files not
+        // reached yet carried over, so the next run goes on from them rather than from nothing.
+        defer {
+            for name in pending { if let r = records[name] { kept[name] = r } }
+            state.insights = kept.isEmpty ? nil : kept
+        }
+        for name in names {
+            guard let n = InsightsFileName(name) else { continue }
             do {
                 try checkCancelled()
                 try budget.checkTime()
@@ -92,8 +109,8 @@ extension SyncEngine {
                 report.errors.append(.init(path: "\(folder)/\(name)", message: Self.describe(error)))
                 if let r = records[name] { kept[name] = r }
             }
+            pending.remove(name)
         }
-        state.insights = kept.isEmpty ? nil : kept
     }
 
     /// One file; returns the record of the two sides once they hold the same bytes (or nothing changed).
@@ -167,11 +184,14 @@ extension SyncEngine {
         switch (localOpens, remoteOpens) {
         case (nil, nil):
             if localData == nil {
-                // Only on the target and opens under no key this device holds: remembered, so it is not fetched again
-                // until it changes or the key does, and counted with the run's refused files (not quarantined: a hint).
-                locked {
-                    budget.refusedBytes += Int64(got.data.count)
-                    budget.refusedFiles += 1
+                // Only on the target and does not open under the current key: remembered, so it is not fetched again
+                // until it changes or the key does. A copy under an earlier key this device holds is a stale hint (its
+                // writer writes it again); any other counts with the run's refused files (not quarantined: a hint).
+                if !v.insightsUnderEpoch(below: v.manifest.epoch, got.data, name: n) {
+                    locked {
+                        budget.refusedBytes += Int64(got.data.count)
+                        budget.refusedFiles += 1
+                    }
                 }
                 report.skipped.append(.init(path: "\(folder)/\(name)", message: "does not open under the current key; not "
                     + "taken, and not fetched again until it changes"))

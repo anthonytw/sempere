@@ -87,4 +87,87 @@ final class InsightsUnopenedCopyTests: InsightsSyncScenarioCase {
         let r = try run("B") { $0.limits.maxRefusedFiles = 3 }
         XCTAssertNotNil(r.stoppedEarly, StressWorld.brief(r))
     }
+
+    /// A run stopped by the refused-files limit keeps the records of the files it judged: later runs go on from them and
+    /// the pass comes to rest.
+    func testARunStoppedByTheRefusedLimitKeepsItsRecords() throws {
+        try devices()
+        try setEnabled(true)
+        try settle("A"); try settle("B")
+        _ = try plantUnopenable(6)
+        let mem = try XCTUnwrap(t.remote as? MemoryRemote)
+        var last: (stopped: String?, reads: Int) = ("never ran", -1)
+        for _ in 0..<6 {
+            tick()
+            let faults = MemoryFaults(seed: 1)
+            let r = try run("B", via: mem.with(faults: faults)) { $0.limits.maxRefusedFiles = 3 }
+            last = (r.stoppedEarly, faults.log.filter { $0.path.first == "insights" && ($0.verb == .read || $0.verb == .download) }.count)
+        }
+        XCTAssertNil(last.stopped)
+        XCTAssertEqual(last.reads, 0)
+    }
+
+    /// Sidecars on `name` for `count` new notes.
+    private func writeSidecars(on name: String, count: Int) throws -> [InsightsFileName] {
+        let store = InsightsStore(vault: try openVault(name))
+        let gen = InsightsNoteFile.Gen(hash: String(repeating: "a", count: 32), identity: .init(model: "m", os: "27.2", prompt: 1),
+                                       summary: "A summary.", keywords: [], concepts: [], dropped: 0)
+        return try (0..<count).map { _ in
+            try store.write(.note(InsightsNoteFile(noteId: UUID(), device: try store.writer(), written: 0, gen: gen)))
+        }
+    }
+
+    /// After an epoch change without a re-encryption a device deletes its own files under the earlier key; the target
+    /// still holds their earlier copies. Its runs neither fetch them nor count them as refused files.
+    func testOwnEarlierKeyCopiesOnTheTargetDoNotStopARun() throws {
+        try devices(["A", "B", "X"])
+        try setEnabled(true)
+        try settle("A"); try settle("B"); try settle("X")
+        let own = try writeSidecars(on: "A", count: 5)
+        try settle("A")
+        XCTAssertTrue(Set(try remoteInsights()).isSuperset(of: own.map(\.fileName)))
+        var a = try openVault("A")
+        try a.removeDevices([device("X").rawValue])
+        let deleted = try InsightsStore(vault: try openVault("A")).removeOwnEarlierKey()
+        XCTAssertEqual(Set(deleted), Set(own.map { "insights/\($0.fileName)" }))
+        tick()
+        let mem = try XCTUnwrap(t.remote as? MemoryRemote)
+        for round in 0..<2 {
+            let faults = MemoryFaults(seed: 1)
+            let r = try run("A", via: mem.with(faults: faults)) { $0.limits.maxRefusedFiles = 3 }
+            XCTAssertNil(r.stoppedEarly, "round \(round): \(StressWorld.brief(r))")
+            let reads = faults.log.filter { f in
+                f.path.first == "insights" && own.contains { $0.fileName == f.path.last } && (f.verb == .read || f.verb == .download)
+            }
+            XCTAssertEqual(reads.count, 0, "round \(round)")
+            tick()
+        }
+    }
+
+    /// Another device's copies under an earlier key this device holds, only on the target: fetched until their version
+    /// tags settle, not counted as refused files, and then not fetched again.
+    func testEarlierKeyCopiesOfAnotherDeviceAreNotRefusedFiles() throws {
+        try devices(["A", "B", "X"])
+        try setEnabled(true)
+        try settle("A"); try settle("B"); try settle("X")
+        let theirs = try writeSidecars(on: "B", count: 5)
+        try settle("B"); try settle("A")
+        for n in theirs { try FileManager.default.removeItem(at: dir("A").appendingPathComponent("insights/\(n.fileName)")) }
+        var a = try openVault("A")
+        try a.removeDevices([device("X").rawValue])
+        tick()
+        let mem = try XCTUnwrap(t.remote as? MemoryRemote)
+        var reads: [Int] = []
+        for round in 0..<3 {
+            let faults = MemoryFaults(seed: 1)
+            let r = try run("A", via: mem.with(faults: faults)) { $0.limits.maxRefusedFiles = 3 }
+            XCTAssertNil(r.stoppedEarly, "round \(round): \(StressWorld.brief(r))")
+            reads.append(faults.log.filter { f in
+                f.path.first == "insights" && theirs.contains { $0.fileName == f.path.last } && (f.verb == .read || f.verb == .download)
+            }.count)
+            tick()
+        }
+        XCTAssertEqual(reads.first, theirs.count, "\(reads)")
+        XCTAssertEqual(reads.last, 0, "\(reads)")
+    }
 }

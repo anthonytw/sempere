@@ -1341,10 +1341,12 @@ both sides differ, the later `written` wins on both sides (then the greater SHA-
 replaces one that does, and is replaced by it. Uploads happen only where this device's `vault.json` stands on the
 target. Files that open under a key from before a finished re-encryption, and files named for a device the vault
 removed, are deleted locally and (where the list stands) on the target. A provider's conflict versions of a file settle
-to the later copy. A copy only on the target that opens under no key this device holds is listed in `skipped`, counted
-with the run's refused files (`SyncLimits.maxRefusedFiles`, no quarantine copy) and remembered
+to the later copy. This device's own file only on the target is not fetched: this device deleted it (its own files
+under an earlier key, after an epoch change) or never had it, and the copy it writes next replaces the target's. A copy
+only on the target that does not open under the current key is listed in `skipped` and remembered
 (`SyncState.MutableRecord.unopenedUnder`): it is not fetched again while its settled version tag and this device's key
-stay the same. Push-only runs upload and delete only. Copy-merge takes a later copy that opens; backups exclude the
+stay the same. One that opens under no earlier key this device holds either also counts with the run's refused files
+(`SyncLimits.maxRefusedFiles`, no quarantine copy). A run that a limit stops keeps the records of the files it judged. Push-only runs upload and delete only. Copy-merge takes a later copy that opens; backups exclude the
 folder; `vault verify` lists the files as hints.
 
 **Per-device summaries** (`DeviceSummariesSync.swift`, format.md §12.5). `summaries/<device>.sealed`
