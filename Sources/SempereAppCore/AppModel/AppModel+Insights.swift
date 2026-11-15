@@ -356,6 +356,8 @@ extension AppModelCore {
             insightsIndex = index
             insights.revision += 1
         }
+        // Turned off here or on another device: this device's memo of failed generations goes with it.
+        if result.1 == .off { forgetInsightsFailures(vaultId: vault.vaultId) }
         // Turned on here or on another device (its settings arrived): look for work now, not at the next tick.
         if turnedOn, insightsRuntime.pass == nil, !services.lifecycle.isInBackground { requestInsightsPass(force: false) }
     }
