@@ -58,6 +58,22 @@ extension AppModelSuites {
             return ((try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? []).filter { $0.hasSuffix(".insights.age") }
         }
 
+        /// The foreground loop waits `insightsLoopInterval` (15 minutes) between looks without holding the model: a model
+        /// let go with its vault still open goes away (with its scratch folder), as before 1.2. The 1.2.0 release sweep
+        /// left a `SempereModel-…` folder in tmp for every app test that unlocked and never closed.
+        @Test func anUnlockedModelLetGoIsReleasedWhileTheLoopWaits() async throws {
+            weak var weakModel: AppModel?
+            do {
+                let model = try await model()
+                #expect(await TS.waitUntil { model.insightsRuntime.loop != nil }, "the loop started")
+                // Let the loop's first look run and reach its wait.
+                for _ in 0..<20 { await Task.yield() }
+                try await Task.sleep(for: .milliseconds(50))
+                weakModel = model
+            }
+            #expect(await TS.waitUntil { weakModel == nil }, "nothing holds the model while the loop waits")
+        }
+
         @Test func theOfferTheSwitchAPassAndThePanel() async throws {
             let model = try await model()
             #expect(model.insights.mode == .unset)
