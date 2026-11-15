@@ -40,6 +40,62 @@ public enum AppleInsightsProviders {
     }
 }
 
+/// The prompts of `AppleModelProvider`: fixed text, then the note's data between `<note>` and `</note>`. Built here,
+/// outside the framework, so every platform tests them.
+public enum InsightsPrompts {
+    /// `text` with every `<note>` or `</note>` marker (any case, spaces inside the brackets) turned into `[note]` or
+    /// `[/note]`, so the data cannot close its own block or open another.
+    public static func neutralized(_ text: String) -> String {
+        let b = Array(text.utf8)
+        guard b.contains(UInt8(ascii: "<")) else { return text }
+        func isSpace(_ c: UInt8) -> Bool { c == 0x20 || (0x09...0x0D).contains(c) }
+        let name = Array("note".utf8)
+        var out: [UInt8] = []
+        out.reserveCapacity(b.count)
+        var i = 0
+        while i < b.count {
+            // A marker: "<", spaces, an optional "/", spaces, "note" in any case, spaces, ">".
+            if b[i] == UInt8(ascii: "<") {
+                var j = i + 1
+                while j < b.count, isSpace(b[j]) { j += 1 }
+                let closing = j < b.count && b[j] == UInt8(ascii: "/")
+                if closing { j += 1 }
+                while j < b.count, isSpace(b[j]) { j += 1 }
+                if j + name.count <= b.count, zip(b[j..<(j + name.count)], name).allSatisfy({ $0 | 0x20 == $1 }) {
+                    var k = j + name.count
+                    while k < b.count, isSpace(b[k]) { k += 1 }
+                    if k < b.count, b[k] == UInt8(ascii: ">") {
+                        out += Array((closing ? "[/note]" : "[note]").utf8)
+                        i = k + 1
+                        continue
+                    }
+                }
+            }
+            out.append(b[i])
+            i += 1
+        }
+        return String(decoding: out, as: UTF8.self)
+    }
+
+    /// `lead`, then `data` (neutralized) between the markers.
+    public static func prompt(_ lead: String, data: String) -> String { "\(lead)\n<note>\n\(neutralized(data))\n</note>" }
+
+    public static func extract(_ text: String) -> String { prompt("Describe this note.", data: text) }
+
+    public static func merge(_ parts: [ModelExtraction]) -> String {
+        let joined = parts.enumerated().map { i, p in
+            "Part \(i + 1): \(p.summary)\nKeywords: \(p.keywords.joined(separator: ", "))\nConcepts: \(p.concepts.joined(separator: ", "))"
+        }.joined(separator: "\n\n")
+        return prompt("These describe the parts of one note. Combine them.", data: joined)
+    }
+
+    public static func summarize(_ summaries: [String]) -> String {
+        prompt("Summarize what these notes together cover.", data: summaries.map { "- \($0)" }.joined(separator: "\n"))
+    }
+
+    public static func title(_ transcript: String) -> String { prompt("Give this voice note a short title.", data: transcript) }
+}
+
 #if canImport(FoundationModels)
 import FoundationModels
 
@@ -98,16 +154,13 @@ public struct AppleModelProvider: ModelProvider {
             .init(name: "concepts", description: "Up to 5 broader topics the note deals with",
                   schema: .init(arrayOf: .init(type: String.self), maximumElements: 5)),
         ]), dependencies: [])
-        let content = try await respond("Describe this note.\n<note>\n\(text)\n</note>", schema: schema, maximumTokens: 600)
+        let content = try await respond(InsightsPrompts.extract(text), schema: schema, maximumTokens: 600)
         return ModelExtraction(summary: (try? content.value(String.self, forProperty: "summary")) ?? "",
                                keywords: (try? content.value([String].self, forProperty: "keywords")) ?? [],
                                concepts: (try? content.value([String].self, forProperty: "concepts")) ?? [])
     }
 
     public func merge(_ parts: [ModelExtraction], language: String?) async throws -> ModelExtraction {
-        let joined = parts.enumerated().map { i, p in
-            "Part \(i + 1): \(p.summary)\nKeywords: \(p.keywords.joined(separator: ", "))\nConcepts: \(p.concepts.joined(separator: ", "))"
-        }.joined(separator: "\n\n")
         let schema = try GenerationSchema(root: DynamicGenerationSchema(name: "MergedInsights", properties: [
             .init(name: "summary", description: "Two to four sentences about the whole note", schema: .init(type: String.self)),
             .init(name: "keywords", description: "Up to 10 key terms of the whole note",
@@ -115,8 +168,7 @@ public struct AppleModelProvider: ModelProvider {
             .init(name: "concepts", description: "Up to 5 broader concepts",
                   schema: .init(arrayOf: .init(type: String.self), maximumElements: 5)),
         ]), dependencies: [])
-        let content = try await respond("These describe the parts of one note. Combine them.\n<note>\n\(joined)\n</note>", schema: schema,
-                                        maximumTokens: 600)
+        let content = try await respond(InsightsPrompts.merge(parts), schema: schema, maximumTokens: 600)
         return ModelExtraction(summary: (try? content.value(String.self, forProperty: "summary")) ?? "",
                                keywords: (try? content.value([String].self, forProperty: "keywords")) ?? [],
                                concepts: (try? content.value([String].self, forProperty: "concepts")) ?? [])
@@ -126,9 +178,7 @@ public struct AppleModelProvider: ModelProvider {
         let schema = try GenerationSchema(root: DynamicGenerationSchema(name: "TopicSummary", properties: [
             .init(name: "summary", description: "At most six sentences over all the notes", schema: .init(type: String.self)),
         ]), dependencies: [])
-        let joined = summaries.map { "- \($0)" }.joined(separator: "\n")
-        let content = try await respond("Summarize what these notes together cover.\n<note>\n\(joined)\n</note>", schema: schema,
-                                        maximumTokens: 500)
+        let content = try await respond(InsightsPrompts.summarize(summaries), schema: schema, maximumTokens: 500)
         return (try? content.value(String.self, forProperty: "summary")) ?? ""
     }
 
@@ -136,8 +186,7 @@ public struct AppleModelProvider: ModelProvider {
         let schema = try GenerationSchema(root: DynamicGenerationSchema(name: "VoiceNoteTitle", properties: [
             .init(name: "title", description: "A title of two to six words, using words from the recording", schema: .init(type: String.self)),
         ]), dependencies: [])
-        let content = try await respond("Give this voice note a short title.\n<note>\n\(transcript)\n</note>", schema: schema,
-                                        maximumTokens: 60)
+        let content = try await respond(InsightsPrompts.title(transcript), schema: schema, maximumTokens: 60)
         return (try? content.value(String.self, forProperty: "title")) ?? ""
     }
 
