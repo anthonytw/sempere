@@ -42,6 +42,37 @@ final class RevisionUploadTests: BlobSyncTestCase {
         XCTAssertEqual(try title(try openVault("B")), "two")
     }
 
+    /// A streamed (chunked) PUT the server answers 2xx for but stores short is caught before the MOVE: the temporary
+    /// name is removed, nothing appears under the revision's name, and the next run uploads it whole. Without a streamed
+    /// body there is no check (and no extra PROPFIND).
+    func testAShortStoredStreamedRevisionUploadIsNotMovedIntoPlace() throws {
+        let server = MockDAV()
+        server.streamsPutBodies = true
+        let a = try makeVault("A")
+        _ = try delta(a, device: devA, t: 0, title: "one")
+        XCTAssertTrue(try sync("A", server).errors.isEmpty)
+        let r2 = try delta(a, device: devA, t: 10, title: "two")
+        let name = revisionName(r2)
+        server.shortPUT[".sempere-tmp-"] = 40
+        let start = server.requestLog.count
+        let first = try sync("A", server)
+        XCTAssertEqual(first.errors.map(\.path), ["notes/\(id)/\(name)"], "\(first)")
+        XCTAssertTrue(first.errors.contains { $0.message.contains("stored 40 of") }, "\(first.errors)")
+        XCTAssertEqual(server.names(under: "notes/\(id)").filter { $0 == name || $0.hasPrefix(".sempere-tmp-") }, [])
+        XCTAssertFalse(server.requestLog.dropFirst(start).contains { $0.method == "MOVE" })
+        let second = try sync("A", server)
+        XCTAssertTrue(second.errors.isEmpty, "\(second)")
+        XCTAssertEqual(server.file("notes/\(id)/\(name)"), try Data(contentsOf: dir("A").appendingPathComponent("notes/\(id)/\(name)")))
+        XCTAssertEqual(try stateTemps(), [])
+
+        // A fixed-length body: the server's own answer is trusted, no PROPFIND of the temporary name.
+        server.streamsPutBodies = false
+        _ = try delta(a, device: devA, t: 20, title: "three")
+        let before = server.requestLog.count
+        XCTAssertTrue(try sync("A", server).errors.isEmpty)
+        XCTAssertFalse(server.requestLog.dropFirst(before).contains { $0.method == "PROPFIND" && $0.path.contains(".sempere-tmp-") }, "\(server.requestLog.dropFirst(before).map { "\($0.method) \($0.path)" })")
+    }
+
     /// A temporary name that cannot be deleted is remembered, and the next run deletes it.
     func testLeftoverRevisionTempIsDeletedByTheNextRun() throws {
         let server = MockDAV()

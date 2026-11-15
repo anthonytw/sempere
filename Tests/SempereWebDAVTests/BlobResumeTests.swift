@@ -207,6 +207,23 @@ final class BlobResumeTests: BlobSyncTestCase {
         XCTAssertNil(try SyncState.load(tmp.appendingPathComponent("state-A.json"))?.remoteTemps.first)
     }
 
+    /// A streamed blob PUT stored short (answered 201) is removed before the MOVE and sent again by the next run.
+    func testAShortStoredStreamedBlobUploadIsNotMovedIntoPlace() throws {
+        let server = MockDAV()
+        server.streamsPutBodies = true
+        let a = try makeVault("A")
+        let ref = try a.writeBlob(note: noteID, syntheticBlob(200_000), type: "application/pdf")
+        try referencing(a, device: devA, t: 0, [ref])
+        let name = try blobFile(a, ref)
+        server.shortPUT[".sempere-tmp-"] = 64_000
+        let first = try sync("A", server)
+        XCTAssertTrue(first.errors.contains { $0.path == "notes/\(id)/att/\(name)" }, "\(first)")
+        XCTAssertEqual(server.names(under: "notes/\(id)/att"), [])
+        let second = try sync("A", server)
+        XCTAssertTrue(second.errors.isEmpty, "\(second)")
+        XCTAssertEqual(server.file("notes/\(id)/att/\(name)"), try Data(contentsOf: att("A").appendingPathComponent(name)))
+    }
+
     /// If the temporary file cannot be deleted when the upload fails, the
     /// state remembers it and the next run deletes it.
     func testLeftoverTempIsDeletedByTheNextRun() throws {

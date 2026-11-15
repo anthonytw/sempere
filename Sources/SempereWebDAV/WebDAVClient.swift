@@ -188,10 +188,29 @@ public struct WebDAVClient: Sendable {
         }
         let r = try send("PUT", path, collection: false, headers: h, body: data)
         switch r.status {
-        case 200, 201, 204: return true
+        case 200, 201, 204:
+            try checkStoredLength(path, expected: data.count, condition: condition)
+            return true
         case 412: return false
         default: throw try failure("PUT", path, r)
         }
+    }
+
+    /// After a create-only PUT sent with a streamed body (`WebDAVTransport.streamsPutBodies`: Linux, until a server asks
+    /// for a length), a `Depth: 0` PROPFIND of the new file: a server that answered 2xx but stored a different number of
+    /// bytes than were sent (a chunked body cut short) gets the file deleted again and the write fails, so a cut copy is
+    /// never moved into place under its final name (`SyncEngine.placeWriteOnce` writes there next run). A server that
+    /// lists no length, or answers the PROPFIND with an error status, is trusted. Replacing PUTs are not checked: the next
+    /// run compares their bytes again.
+    private func checkStoredLength(_ path: [String], expected: Int, condition: PutCondition) throws {
+        guard case .create = condition, transport.streamsPutBodies else { return }
+        let listed: RemoteEntry?
+        do { listed = try stat(path) } catch WebDAVError.http { return }
+        guard let entry = listed, let size = entry.size, size != expected else { return }
+        let tag = entry.etag.flatMap { $0.hasPrefix("W/") ? nil : $0 }
+        _ = try? delete(path, ifMatch: tag)
+        throw WebDAVError.malformedResponse("PUT /\(path.joined(separator: "/")): the server stored \(size) of \(expected) "
+            + "bytes; removed, sent again next run")
     }
 
     /// Uploads a file, streamed from disk (never held in memory). Returns
@@ -212,7 +231,9 @@ public struct WebDAVClient: Sendable {
         }
         let r = try send("PUT", path, collection: false, headers: h, bodyFile: file)
         switch r.status {
-        case 200, 201, 204: return true
+        case 200, 201, 204:
+            try checkStoredLength(path, expected: size, condition: condition)
+            return true
         case 412: return false
         default: throw try failure("PUT", path, r)
         }
