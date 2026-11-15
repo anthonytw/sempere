@@ -188,10 +188,31 @@ public struct WebDAVClient: Sendable {
         }
         let r = try send("PUT", path, collection: false, headers: h, body: data)
         switch r.status {
-        case 200, 201, 204: return true
+        case 200, 201, 204:
+            try checkStoredLength(path, expected: data.count, condition: condition)
+            return true
         case 412: return false
         default: throw try failure("PUT", path, r)
         }
+    }
+
+    /// After a create-only PUT sent with a streamed body (`WebDAVTransport.streamsPutBodies`: Linux, until a server asks
+    /// for a length), a `Depth: 0` PROPFIND of the new file: when the server answered 2xx but lists a different number of
+    /// bytes than were sent (a chunked body cut short), the write fails, so a cut copy is never moved into place under
+    /// its final name (`SyncEngine.placeWriteOnce` writes there next run). The file is deleted here only under a strong
+    /// ETag (a weak or missing one cannot make the delete conditional; the caller's own clean-up and the next run's write
+    /// repair it). A server that lists no length, or a PROPFIND that fails in any way (an error status, the transport, a
+    /// listing that does not parse), leaves the PUT trusted. Replacing PUTs are not checked: the next run compares their
+    /// bytes again.
+    private func checkStoredLength(_ path: [String], expected: Int, condition: PutCondition) throws {
+        guard case .create = condition, transport.streamsPutBodies else { return }
+        guard let entry = try? stat(path), let size = entry.size, size != expected else { return }
+        let where_ = "PUT /\(path.joined(separator: "/")): the server stored \(size) of \(expected) bytes"
+        guard let tag = entry.etag, !tag.hasPrefix("W/") else {
+            throw WebDAVError.malformedResponse(where_ + "; not usable, written again next run")
+        }
+        _ = try? delete(path, ifMatch: tag)
+        throw WebDAVError.malformedResponse(where_ + "; removed, sent again next run")
     }
 
     /// Uploads a file, streamed from disk (never held in memory). Returns
@@ -212,7 +233,9 @@ public struct WebDAVClient: Sendable {
         }
         let r = try send("PUT", path, collection: false, headers: h, bodyFile: file)
         switch r.status {
-        case 200, 201, 204: return true
+        case 200, 201, 204:
+            try checkStoredLength(path, expected: size, condition: condition)
+            return true
         case 412: return false
         default: throw try failure("PUT", path, r)
         }

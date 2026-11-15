@@ -92,10 +92,15 @@ extension AppModelSuites {
             let found = Set(model.searchResults.map(\.note))
             #expect(model.insightsSearchHits.allSatisfy { UUID(uuidString: $0.note).map { !found.contains($0) } ?? false })
             model.searchText = ""
-            // Off deletes every insights file here (and says so to the other devices through the explicit false).
+            // Off deletes every insights file here (and says so to the other devices through the explicit false), and
+            // this device's memo of failed generations.
+            let memo = try #require(model.insightsFailureMemoURL)
+            try FileManager.default.createDirectory(at: memo.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("x".utf8).write(to: memo)
             await model.setInsightsEnabled(false)
             #expect(model.insights.mode == .off)
             #expect(insightsFiles(model).isEmpty)
+            #expect(!FileManager.default.fileExists(atPath: memo.path))
             #expect(model.insightsPanel(for: ids[0]) == nil)
             #expect(!model.showsInsightsOffer, "never offered again after an explicit off")
         }

@@ -13,6 +13,8 @@ import SempereCaptureShared
 //
 //   SEMPERE_WATCH_DEBUG=1             use a throwaway folder, an in-memory Keychain, the fake recorder and no WatchConnectivity
 //   SEMPERE_WATCH_DEBUG_PROFILE=1     start provisioned (a profile for a vault called "Debug Vault")
+//   SEMPERE_WATCH_DEBUG_VAULT_NAME=X  the profile's vault name instead of "Debug Vault" (the screenshots use the demo vault's, "My Notes")
+//   SEMPERE_WATCH_DEBUG_SAVED_SECONDS=N   how long "Saved" stays up (default 2), so a screenshot test can catch it
 //   SEMPERE_WATCH_DEBUG_UNSENT=N      N sealed notes already in the outbox
 //   SEMPERE_WATCH_DEBUG_BLOCK=mic|full|storage   why a start is refused (microphone denied, outbox full, low storage)
 enum WatchDebugLaunch {
@@ -42,6 +44,13 @@ enum WatchDebugLaunch {
         return environment
     }
 
+    /// Applies the debug settings that belong to the model rather than the environment (how long "Saved" stays).
+    @MainActor
+    static func configure(_ model: WatchModel) {
+        guard isActive, let seconds = env["SEMPERE_WATCH_DEBUG_SAVED_SECONDS"].flatMap({ Double($0) }), seconds > 0 else { return }
+        model.savedDuration = .seconds(seconds)
+    }
+
     /// The profile of the debug vault (and of the unit tests' phone).
     static let profile: CaptureProfile = {
         let identity = (try? NativeIdentity.generate(.postQuantum))
@@ -51,7 +60,7 @@ enum WatchDebugLaunch {
     }()
 
     static func seedProfile(_ secrets: MemoryWatchSecretStore) {
-        let payload = WatchProfilePayload(profile: profile, vaultName: "Debug Vault", seq: 0, issued: Date())
+        let payload = WatchProfilePayload(profile: profile, vaultName: env["SEMPERE_WATCH_DEBUG_VAULT_NAME"] ?? "Debug Vault", seq: 0, issued: Date())
         try? WatchSecrets(store: secrets).save(WatchProfileState(seq: 0, payload: payload))
     }
 

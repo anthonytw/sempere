@@ -117,7 +117,7 @@ extension InsightsUpdaterTests {
             let first = try await runTopics(model, at: now, memo: memo)
             XCTAssertEqual(first.topics, [], "\(mode): nothing made")
             XCTAssertEqual(Set(first.failures.keys), ["notebook:Kitchen", "tag:physics"], "\(mode)")
-            XCTAssertEqual(InsightsFailureMemo.load(from: memo).topics.count, 2)
+            XCTAssertEqual(InsightsFailureMemo.load(from: memo, vault: vault).topics.count, 2)
             let calls = model.summarizeCalls
             let second = try await runTopics(model, at: now.addingTimeInterval(3600), memo: memo)
             XCTAssertEqual(model.summarizeCalls, calls, "\(mode): not asked again the next hour")
@@ -128,7 +128,7 @@ extension InsightsUpdaterTests {
         // A success clears the scope's entry.
         let ok = try await runTopics(FakeModelProvider(), at: now.addingTimeInterval(3 * InsightsFailureMemo.failedFor), memo: memo, force: true)
         XCTAssertEqual(ok.topics.sorted(), ["notebook:Kitchen", "tag:physics"])
-        XCTAssertTrue(InsightsFailureMemo.load(from: memo).topics.isEmpty)
+        XCTAssertTrue(InsightsFailureMemo.load(from: memo, vault: vault).topics.isEmpty)
     }
 
     func testACancelledRunStopsBetweenTopicsAndKeepsWhatItMade() async throws {
@@ -184,9 +184,8 @@ extension InsightsUpdaterTests {
     }
 
     func testAMemoWithoutTopicsStillDecodes() throws {
-        let url = try TestTemp.directory("old-memo").appendingPathComponent("failures.json")
-        try Data(#"{"notes":{"x":{"hash":"h","identity":"m 1 2","refused":false,"at":1,"count":1}}}"#.utf8).write(to: url)
-        let memo = InsightsFailureMemo.load(from: url)
+        let memo = try JSONDecoder().decode(InsightsFailureMemo.self,
+                                            from: Data(#"{"notes":{"x":{"hash":"h","identity":"m 1 2","refused":false,"at":1,"count":1}}}"#.utf8))
         XCTAssertEqual(memo.notes.count, 1)
         XCTAssertTrue(memo.topics.isEmpty)
         var m = memo
@@ -194,7 +193,55 @@ extension InsightsUpdaterTests {
         m.recordTopic("tag:x", membersHash: "d1", identity: id, error: InsightsProviderError.refused("no"), now: now)
         XCTAssertEqual(m.topicBackoff("tag:x", membersHash: "d1", identity: id), now.addingTimeInterval(InsightsFailureMemo.refusedFor))
         XCTAssertNil(m.topicBackoff("tag:x", membersHash: "d2", identity: id), "other members: a new question")
-        try m.save(to: url)
-        XCTAssertEqual(InsightsFailureMemo.load(from: url), m)
+        let url = InsightsFailureMemo.fileURL(in: try TestTemp.directory("old-memo"), vaultId: vault.vaultId)
+        try m.save(to: url, vault: vault)
+        XCTAssertEqual(InsightsFailureMemo.load(from: url, vault: vault), m)
+    }
+
+    /// Loading the memo deletes an earlier build's plain file beside it, also when no sealed memo exists yet.
+    func testLoadingDeletesThePlainMemo() throws {
+        let folder = try TestTemp.directory("plain-memo")
+        let url = InsightsFailureMemo.fileURL(in: folder, vaultId: vault.vaultId)
+        let legacy = folder.appendingPathComponent(url.lastPathComponent + ".json")
+        try Data("{}".utf8).write(to: legacy)
+        XCTAssertEqual(InsightsFailureMemo.load(from: url, vault: vault), InsightsFailureMemo())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+    }
+
+    /// The memo is sealed under a key of the vault's (nothing of a note, scope or text hash is readable without it),
+    /// private to the user, replaces an earlier build's plain file, and goes when Note Insights is off.
+    func testTheMemoIsSealedPrivateAndGoesWhenInsightsIsOff() async throws {
+        try physicsAndKitchen()
+        let folder = try TestTemp.directory("sealed-memo")
+        let url = InsightsFailureMemo.fileURL(in: folder, vaultId: vault.vaultId)
+        let legacy = folder.appendingPathComponent(url.lastPathComponent + ".json")
+        try Data("{}".utf8).write(to: legacy)
+        let note = UUID()
+        var m = InsightsFailureMemo()
+        let id = GenerationIdentity(model: "m", os: "1", prompt: 2)
+        m.record(note: note, hash: "textdigest0123456789", identity: id, error: InsightsProviderError.refused("no"), now: now)
+        m.recordTopic("notebook:Private Matters", membersHash: "membersdigest98765", identity: id, error: nil, now: now)
+        try m.save(to: url, vault: vault)
+        let bytes = try Data(contentsOf: url)
+        for clear in [note.uuidString.lowercased(), "textdigest0123456789", "Private Matters", "membersdigest98765", "notes"] {
+            XCTAssertNil(bytes.range(of: Data(clear.utf8)), "\(clear) in the clear")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path), "the plain file goes")
+        let mode = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual((mode?.intValue ?? 0) & 0o777, 0o600)
+        XCTAssertEqual(InsightsFailureMemo.load(from: url, vault: vault), m)
+        // Off (here or from another device): the next pass deletes it.
+        try vault.updateSharedSettings { s in
+            try s.write(SharedSettingsCatalog.spec(named: "insights.enabled")!, .bool(false), block: nil, type: nil, now: now)
+        }
+        var o = InsightsUpdateOptions()
+        o.now = now; o.failureMemo = url
+        o.platform = .init(platform: "mac", os: "macOS 27.2")
+        do {
+            _ = try await InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: nil, deviceState: state, app: "test/1")
+                .run(o, notes: try inputs())
+            XCTFail("ran while off")
+        } catch InsightsUpdateError.disabled {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 }

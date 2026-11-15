@@ -19,6 +19,10 @@ struct SyncState: Codable, Equatable {
         /// an unchanged stamp skips the read only then. Nil: not settled.
         var timing: StampTiming? = nil
         var settled: Bool { timing?.settled == true }
+        /// Insights only: the target's copy, held only there, did not open under the key this names
+        /// (`SyncEngine.checkerKeyID`): it is not fetched again while its settled stamp stands and the key is the same.
+        /// `hash` is then the target's bytes. Nil: both sides held `hash`.
+        var unopenedUnder: String? = nil
     }
 
     /// A revision or blob file both sides had.
@@ -241,6 +245,17 @@ struct SyncState: Codable, Equatable {
     /// its removal, its list in conflict: design §10's residual) is left, not deleted at every run: deleting it each
     /// time kept two devices changing the target for ever (sync stress seed 17).
     var deletedObsolete: [String: String]?
+    /// Per-device summaries files on the target already read for the deletion below a finished re-encryption, by path:
+    /// not read again while their settled stamp stands and the epoch below which files are obsolete is the same.
+    var summariesObsoleteChecked: [String: ObsoleteCheck]?
+
+    struct ObsoleteCheck: Codable, Equatable {
+        /// The target's version tag (`RemoteEntry.stamp`) of the bytes read.
+        var stamp: String
+        /// `Vault.recordsObsoleteBelow` then.
+        var below: Int
+        var timing: StampTiming?
+    }
 
     /// An inbox file as both sides held it.
     struct InboxRecord: Codable, Equatable {

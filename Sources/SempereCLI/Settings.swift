@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 
 #if canImport(Glibc)
 import Glibc
@@ -212,6 +213,7 @@ struct SettingsSet: ParsableCommand {
         }
         let vault = try access.openVault(.required)
         try vault.updateSharedSettings { try $0.write(spec, parsed, block: deviceType?.rawValue, type: nil, now: Date()) }
+        forgetInsightsFailures(key: key, value: parsed, block: deviceType?.rawValue, vault: vault)
         if output.json {
             try output.emitJSON(Out(key: key, value: parsed, block: deviceType?.rawValue))
         } else {
@@ -303,6 +305,7 @@ struct SettingsEdit: ParsableCommand {
             }
             s.extra = changes.extra
         }
+        for (slot, value) in changes.slots { forgetInsightsFailures(key: slot.key, value: value, block: slot.block, vault: vault) }
         let names = changes.slots.keys.sorted().map(\.description)
         if output.json { try output.emitJSON(Out(changed: names)) } else { output.info("changed: \(names.joined(separator: ", "))") }
     }
@@ -393,4 +396,11 @@ struct SettingsSchema: ParsableCommand {
     func run() throws {
         FileHandle.standardOutput.write(try SharedSettingsSchema.json())
     }
+}
+
+/// Turning Note Insights off for the vault (`insights.enabled` false at the top level) also deletes this machine's memo
+/// of failed generations for it, as `insights purge` does.
+func forgetInsightsFailures(key: String, value: JSONValue?, block: String?, vault: Vault) {
+    guard key == InsightsSettings.keys.enabled, block == nil, value == .bool(false) else { return }
+    InsightsFailureMemo.remove(at: InsightsFailureMemo.defaultURL(vaultId: vault.vaultId))
 }

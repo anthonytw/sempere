@@ -250,6 +250,59 @@ final class CLIStoreCopyTests: CLITestCase {
         XCTAssertEqual(try storeCount(), 1)
     }
 
+    /// A `--recovery-out` file that was there before is refused and left exactly as it was, with nothing in the store.
+    func testAnExistingRecoveryOutFileIsLeftUntouched() throws {
+        let source = try fixtureCopy("items.sempere")
+        let out = recoveryOut()
+        let before = Data("not a key, and not this run's\n".utf8)
+        try before.write(to: URL(fileURLWithPath: out))
+        let r = try cli(["store", "copy", source, "Kept", "--identity", Self.fixtureKey, "--recovery-out", out,
+                         "--store", store])
+        XCTAssertEqual(r.status, 1, r.err)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: out)), before)
+        XCTAssertEqual(try storeCount(), 0)
+    }
+
+    /// The variable each side reads is compared, however it is named, and only when both read one.
+    func testOnePassphraseVariableForBothIsRefusedHoweverItIsNamed() throws {
+        let source = try fixtureCopy("sample.sempere")
+        let keys = try FileManager.default.contentsOfDirectory(atPath: source + "/keys").filter { $0.hasSuffix(".key.age") }
+        let copyFile = source + "/keys/" + (try XCTUnwrap(keys.first))
+        let env = ["SEMPERE_PASSPHRASE": Self.passphrase]
+        let base = ["store", "copy", source, "X", "--source-recovery-key", copyFile, "--recovery-passphrase",
+                    "--work-factor", "10", "--store", store]
+        let explicitSource = try cli(base + ["--source-passphrase-env", "SEMPERE_PASSPHRASE", "--recovery-out", recoveryOut()],
+                                     env: env)
+        XCTAssertEqual(explicitSource.status, 2, explicitSource.err)
+        let explicitNew = try cli(base + ["--passphrase-env", "SEMPERE_PASSPHRASE", "--recovery-out", recoveryOut()], env: env)
+        XCTAssertEqual(explicitNew.status, 2, explicitNew.err)
+        // Two variables holding one passphrase: refused before anything is written.
+        let out = recoveryOut()
+        let sameValue = try cli(base + ["--source-passphrase-env", "A", "--passphrase-env", "B", "--recovery-out", out],
+                                env: ["A": Self.passphrase, "B": Self.passphrase])
+        XCTAssertEqual(sameValue.status, 2, sameValue.err)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: out))
+        XCTAssertEqual(try storeCount(), 0)
+    }
+
+    /// No refusal when only one side reads a passphrase: a source read with a key file, or a generated new passphrase.
+    func testOneVariableIsFineWhenOnlyOneSideReadsIt() throws {
+        let items = try fixtureCopy("items.sempere")
+        let viaIdentity = try cli(["store", "copy", items, "ByKey", "--identity", Self.fixtureKey, "--recovery-out", recoveryOut(),
+                                   "--recovery-passphrase", "--work-factor", "10", "--store", store],
+                                  env: ["SEMPERE_PASSPHRASE": "the-copy's-own-passphrase"])
+        XCTAssertEqual(viaIdentity.status, 0, viaIdentity.err)
+
+        let sample = try fixtureCopy("sample.sempere")
+        let keys = try FileManager.default.contentsOfDirectory(atPath: sample + "/keys").filter { $0.hasSuffix(".key.age") }
+        let copyFile = sample + "/keys/" + (try XCTUnwrap(keys.first))
+        let generated = try cli(["store", "copy", sample, "Generated", "--source-recovery-key", copyFile,
+                                 "--recovery-out", recoveryOut(), "--recovery-passphrase", "--generate-passphrase",
+                                 "--work-factor", "10", "--store", store], env: ["SEMPERE_PASSPHRASE": Self.passphrase])
+        XCTAssertEqual(generated.status, 0, generated.err)
+        XCTAssertEqual(try storeCount(), 2)
+    }
+
     /// The kit's frozen script (format.md §15.13) with stock `age` 1.3+ and `jq`, from the COPY's recovery key, opens a
     /// revision and a blob of the copy: the end-to-end proof that the copy's kit opens the copy, not the source.
     func testTheCopysKitScriptOpensItWithStockAge() throws {

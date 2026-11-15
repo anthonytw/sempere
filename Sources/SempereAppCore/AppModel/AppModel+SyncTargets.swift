@@ -478,11 +478,12 @@ extension AppModelCore {
     }
 
     /// Removes the store vault `entry` from this device (`VaultLibrary.removeStored`) and forgets what the device kept
-    /// about it in its preferences (its last place). Every path that removes a vault from the device goes through here
-    /// or forgets the place itself.
+    /// about it (its last place, its memo of failed insights). Every path that removes a vault from the device goes
+    /// through here or forgets those itself.
     public func removeStoredVault(_ entry: VaultStore.Entry, library: VaultLibrary) async throws {
         try await library.removeStored(entry)
         LastPlace.forget(vault: entry.vaultId, in: deviceMemory)
+        forgetInsightsFailures(vaultId: entry.vaultId)
     }
 
     /// Removes a target of the store vault `vaultID`: never anything at the target itself. A WebDAV
@@ -496,7 +497,10 @@ extension AppModelCore {
             try await offMain { try passwords.delete(for: id) }
             try webdavLocations.remove(id)
             // A copy the first download never completed goes with its only target: its last place too.
-            if syncStore.entry(id: vaultID) == nil { LastPlace.forget(vault: vaultID, in: deviceMemory) }
+            if syncStore.entry(id: vaultID) == nil {
+                LastPlace.forget(vault: vaultID, in: deviceMemory)
+                forgetInsightsFailures(vaultId: vaultID)
+            }
         } else {
             try syncStore.targets.remove(id, of: vaultID)
         }

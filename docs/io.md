@@ -1221,7 +1221,16 @@ revisions still sync, and readers draw a placeholder for it meanwhile
   hash match the local file (a blob is keyed by its hash: any file under its name counts). A notebook record, join request
   or passphrase copy both sides list whose server copy is a cut prefix of the local file is repaired as a revision
   is. A join request counts as delivered (`SyncReport.joinsHeld`) only when the target lists it at the local size.
-  The inbox does the same on a remote without atomic creates. `epochs/` records repair themselves under a strong
+  The inbox does the same on a remote without atomic creates.
+  On Linux a PUT body is streamed and goes out chunked (until a server answers 411 or 501, then fixed-length,
+  [the upload-stall design](design/1.2-linux-upload-stall.md)). A server may answer 2xx to a chunked PUT and store fewer bytes, so after every
+  create-only PUT sent that way (`WebDAVTransport.streamsPutBodies`) the client asks for the new file's size (a `Depth: 0`
+  PROPFIND, one more request per upload): when the server lists a size other than the bytes sent, the write fails (and the file is deleted
+  under its strong ETag; under a weak or missing one it is left for the caller's clean-up and the next write), so a
+  temporary upload stored short is never moved into place (the next run sends it again). The limit: a server that lists
+  no size for the file, or a PROPFIND that fails in any way (an error status, the transport, a listing that does not
+  parse), leaves the PUT trusted, and a replacing PUT (`vault.json`,
+  `settings.age`, the other mutable files) is not checked; the next run compares its bytes again. `epochs/` records repair themselves under a strong
   ETag. The mutable files are replaced, not created: `vault.json` and `settings.age` go up under `If-Match` (or a
   re-read), and a cut copy of either is repaired by the next two-way run that holds the vault's key (a
   `vault.json` that does not parse is replaced by the local one when the local one is the verified list home
@@ -1334,7 +1343,12 @@ both sides differ, the later `written` wins on both sides (then the greater SHA-
 replaces one that does, and is replaced by it. Uploads happen only where this device's `vault.json` stands on the
 target. Files that open under a key from before a finished re-encryption, and files named for a device the vault
 removed, are deleted locally and (where the list stands) on the target. A provider's conflict versions of a file settle
-to the later copy. Push-only runs upload and delete only. Copy-merge takes a later copy that opens; backups exclude the
+to the later copy. This device's own file only on the target is not fetched: this device deleted it (its own files
+under an earlier key, after an epoch change) or never had it, and the copy it writes next replaces the target's. A copy
+only on the target that does not open under the current key is listed in `skipped` and remembered
+(`SyncState.MutableRecord.unopenedUnder`): it is not fetched again while its settled version tag and this device's key
+stay the same. One that opens under no earlier key this device holds either also counts with the run's refused files
+(`SyncLimits.maxRefusedFiles`, no quarantine copy). A run that a limit stops keeps the records of the files it judged. Push-only runs upload and delete only. Copy-merge takes a later copy that opens; backups exclude the
 folder; `vault verify` lists the files as hints.
 
 **Per-device summaries** (`DeviceSummariesSync.swift`, format.md §12.5). `summaries/<device>.sealed`
@@ -1372,7 +1386,10 @@ cannot take the server's `vault.json` for that check says so in `skipped`. Locke
 run (pull-only) stages the remote copy for the placing run to order; push-only runs never replace a
 later copy. A received file is placed only when it is ordered (unlocked) or starts with `SMPU` `0x01`
 or `0x04` (locked); otherwise it is listed in `skipped` (a hint, not quarantined: after a key change
-an older file is only stale). Nothing is deleted.
+an older file is only stale). Nothing is deleted, except below a finished re-encryption: files sealed under a key from
+before it go here and, where this device's list stands, on the target (under a strong version tag). For that check each
+target file is read once per settled version tag (`SyncState.summariesObsoleteChecked`), within the run's download
+bound.
 
 **Push-only mirror** (`--push-only`, `SyncOptions.pushOnly`). A two-way
 sync rejects a `vault.json` that is not a later version by the home device

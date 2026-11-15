@@ -43,6 +43,10 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
     /// For a PUT of a path whose final component starts with the key's
     /// prefix: store this many bytes, then fail (used once, then removed).
     var cutPUT: [String: Int] = [:]
+    /// Like `cutPUT`, but the PUT is answered 201 as if all had arrived (a chunked body cut short; used once).
+    var shortPUT: [String: Int] = [:]
+    /// What the client is told about PUT bodies (`WebDAVTransport.streamsPutBodies`: true as on Linux).
+    var streamsPutBodies = false
     /// Answer `Range` requests (a server may ignore them and send 200).
     var honoursRange = true
 
@@ -82,6 +86,14 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
     /// Give files no ETag at all (listings and GETs; the mock sends no `Last-Modified` either): a client's only
     /// stamp is then the size.
     var noFileETags = false
+    /// Files whose name starts with this are listed without a length (`getcontentlength`).
+    var unsizedPrefix: String?
+    private func listedSize(_ key: String, _ s: Stored) -> Int? {
+        guard let p = unsizedPrefix, key[(key.lastIndex(of: "/").map { key.index(after: $0) } ?? key.startIndex)...].hasPrefix(p) else {
+            return s.size
+        }
+        return nil
+    }
     private func listedETag(_ s: Stored) -> String? { noFileETags ? nil : fileETag(s) }
     /// When set, a file's ETag is made from this server clock's whole second and the file's size, as wsgidav's,
     /// nginx's and lighttpd's are (inode, mtime in seconds, size): a same-size rewrite within one second keeps it.
@@ -182,7 +194,7 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
                         }
                         for (f, s) in files.sorted(by: { $0.key < $1.key }) where f.hasPrefix(key + "/") {
                             if let omit, f.hasSuffix(omit) { continue }
-                            xml += entry(f, etag: listedETag(s), collection: false, size: s.size)
+                            xml += entry(f, etag: listedETag(s), collection: false, size: listedSize(f, s))
                         }
                         return multistatus(xml)
                     }
@@ -192,12 +204,12 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
                     for c in collections where c != key && parent(c) == key { kids.insert(c) }
                     for c in kids.sorted() { xml += entry(c + "/", etag: collectionETag(c), collection: true, size: nil) }
                     for (f, s) in files.sorted(by: { $0.key < $1.key }) where parent(f) == key {
-                        xml += entry(f, etag: listedETag(s), collection: false, size: s.size)
+                        xml += entry(f, etag: listedETag(s), collection: false, size: listedSize(f, s))
                     }
                 }
                 return multistatus(xml)
             }
-            if let s = files[key] { return multistatus(entry(key, etag: listedETag(s), collection: false, size: s.size)) }
+            if let s = files[key] { return multistatus(entry(key, etag: listedETag(s), collection: false, size: listedSize(key, s))) }
             return WebDAVResponse(status: 404)
         case "GET":
             guard let s = files[key] else { return WebDAVResponse(status: 404) }
@@ -248,8 +260,11 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
             if let m = r.headers["If-Match"], existing?.etag != m { return WebDAVResponse(status: 412) }
             counter += 1
             let name = String(key[key.index(after: key.lastIndex(of: "/")!)...])
-            let cut = cutPUT.first { name.hasPrefix($0.key) }
-            if let cut { cutPUT[cut.key] = nil }
+            let failing = cutPUT.first { name.hasPrefix($0.key) }
+            if let failing { cutPUT[failing.key] = nil }
+            let short = failing == nil ? shortPUT.first { name.hasPrefix($0.key) } : nil
+            if let short { shortPUT[short.key] = nil }
+            let cut = failing ?? short
             var stored = Stored(size: 0, etag: "\"e\(counter)\"")
             if let storage {
                 let url = storage.appendingPathComponent(UUID().uuidString)
@@ -272,7 +287,7 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
             if secondETagClock != nil { stored.etag = newETag(size: stored.size) }
             // Like a server that writes in place: a cut upload leaves its part behind.
             files[key] = stored
-            if cut != nil { throw WebDAVError.transport("connection lost (test)") }
+            if failing != nil { throw WebDAVError.transport("connection lost (test)") }
             return WebDAVResponse(status: existing == nil ? 201 : 204)
         case "MKCOL":
             if collections.contains(key) { return WebDAVResponse(status: 405) }

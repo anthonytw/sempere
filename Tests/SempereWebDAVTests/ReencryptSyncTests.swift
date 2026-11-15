@@ -209,6 +209,47 @@ final class ReencryptSyncTests: SyncTestCase {
         XCTAssertEqual(try w["B"].titles(), titles)
     }
 
+    /// After a finished re-encryption the per-device summaries files on the target are read for the obsolete-key
+    /// check once per settled version tag, not on every run (and each read counts against the run's download bound).
+    func testSummariesAreNotReadAgainEveryRunAfterAReencryption() throws {
+        let clock = Locked(Date(timeIntervalSince1970: 1_900_000_000))
+        let uptime = Locked(TimeInterval(1_000))
+        SyncEngine.stampClock = { clock.value }
+        SyncEngine.stampUptime = { uptime.value }
+        defer {
+            SyncEngine.stampClock = { Date() }
+            SyncEngine.stampUptime = { ProcessInfo.processInfo.systemUptime }
+        }
+        func tick() { clock.value = clock.value.addingTimeInterval(10); uptime.value += 10 }
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B"], targets: ["T1"])
+        let t1 = w.target("T1")
+        _ = try w["B"].write("B one")
+        for n in ["A", "B"] { try w[n].open().writeDevicePublishedSummaries([:]) }
+        for _ in 0..<2 { for n in ["B", "A"] { try w[n].sync(t1) } }
+        try Self.start(w, home: "A", targets: [t1])
+        var finished = false
+        for _ in 0..<6 where !finished {
+            try w["B"].sync(t1)
+            finished = try Self.advance(w, home: "A", targets: [t1]).finished
+        }
+        XCTAssertTrue(finished)
+        XCTAssertNotNil(try w["A"].open().recordsObsoleteBelow)
+        for _ in 0..<3 { tick(); try w["B"].sync(t1); try w["A"].sync(t1) }
+        XCTAssertFalse(t1.paths.filter { $0.hasPrefix("\(PublishedSummaries.deviceFolderName)/") }.isEmpty)
+
+        let log = ReadLog()
+        let store = t1.store
+        t1.reach = { _ in ListFailingRemote(base: MemoryRemote(store: store), failing: { _ in false }, reads: log) }
+        var perRun: [Int] = []
+        for _ in 0..<3 {
+            tick()
+            log.reset()
+            try w["A"].sync(t1)
+            perRun.append(log.paths.filter { $0.hasPrefix("\(PublishedSummaries.deviceFolderName)/") }.count)
+        }
+        XCTAssertEqual(perRun.last, 0, "summaries reads per run: \(perRun)")
+    }
+
     /// Review of #89, N2 (the KH4 follow-up): junk set aside under a record's name and the right record fetched under it
     /// with the same size and modification time is hashed again by every target's run, also where the file system
     /// gives no file numbers (the cache key carries the set-aside's stamp).

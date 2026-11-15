@@ -101,7 +101,7 @@ extension InsightsUpdaterTests {
                                           app: "test/1").run(o, notes: try inputs())
         XCTAssertTrue(r.cancelled)
         XCTAssertEqual(r.failures, [:])
-        XCTAssertTrue(InsightsFailureMemo.load(from: memoURL).notes.isEmpty, "no back-off for a cancellation")
+        XCTAssertTrue(InsightsFailureMemo.load(from: memoURL, vault: vault).notes.isEmpty, "no back-off for a cancellation")
         XCTAssertFalse(r.mapBuilt)
         XCTAssertFalse(r.deviceRecord)
         // A task cancelled before it starts does nothing at all.

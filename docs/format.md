@@ -118,7 +118,7 @@ except these, which are replaced whole (atomically):
 | `settings.age` | devices that opted in | when a shared setting changes, or a device's merged copy is newer (§13.3) |
 | `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note changed (§12.4) |
 | `summaries/<device>.sealed` | that device only (signed by it) | when its listing changed (§12.5) |
-| `insights/*.<device>.insights.age` | that device only | when its insights change, or it re-seals or tombstones them (§16) |
+| `insights/*.<device>.insights.age` | that device only | when its insights change, or it tombstones them or writes them again under a new key (§16) |
 
 A file-sync service may keep two versions of one of them, written by two
 devices at once (iCloud Drive's conflict versions), or a whole other copy of
@@ -3013,7 +3013,7 @@ are checked against the revisions read from the vault before they are drawn
 on. It is limited in size (least recently used entries go first) and deleted
 when the vault is closed on that device.
 
-It keeps four more, under the same derivation:
+It keeps these others, under the same derivation:
 
 - the **render cache** (purpose `render-cache`, magic `SMPI` ‖ `0x01`):
   pictures of image items and previews of PDF page items as drawn on that
@@ -3030,11 +3030,11 @@ It keeps four more, under the same derivation:
 - the **activity** file (purpose `activity`, magic `SMPA` ‖ `0x01`, one entry
   named `activity`, not keyed by `entryName`): the notes "Recognize All" read in
   the last seven days and the recent search queries, kept across launches;
-- the **insights cache** (purpose `insights-cache`, magic `SMPG` ‖ `0x01`, Application Support; the app, from Sempere
-  1.2): decoded insights files (§16), this device's placed or local vectors and any local map, sealed as above, so it
-  persists across launches and is unreadable without the vault key; a new epoch derives a new folder (vectors
-  recomputed, files read again). Insights terms join only the in-memory search index; nothing is donated to the
-  system's search;
+- the **insights failure memo** (purpose `insights-failures`, magic `SMPF` ‖ `0x01`, one entry named
+  `<vault id>-failures`, not keyed by `entryName`, beside the device state; from Sempere 1.2): the notes and topic
+  scopes whose generation failed (§16), with their text or members digests, so a refusal is not asked again at once;
+  private to the user, excluded from backups, and deleted when Note Insights is turned off on this device, or at the next
+  pass after it is turned off elsewhere, and when the vault leaves the device;
 - the **saved selection** (purpose `selection`, Mac; no file): the library
   window's selection, which the system keeps in plaintext with its window
   state, names a notebook or tag only as `entryName("notebook|<canonical
@@ -4547,7 +4547,8 @@ one a reader shows.
   `noteId`) must be the file name's.
 - `written`: Unix milliseconds, 1 … 2^53 − 1, `max(now, previous + 1)` per file. **Order** of two copies of one file:
   the greater `written`, then the greater SHA-256 of the file (lowercase hex). A copy whose `written` is more than 7
-  days ahead of the reader's clock is not ordered: it never wins over one that is.
+  days ahead of the reader's clock is not ordered: it never wins over one that is, neither between two copies of a file
+  nor when a reader picks which device's `gen` of a note to show.
 - `gen.hash`, `emb.hash`: the first 16 bytes (32 lowercase hex digits) of SHA-256 of the note's **insight text** after
   NFKC, white-space runs collapsed to one space and the ends trimmed. `hashBasis` `text/1` defines the insight text:
   `PageText.texts(of:)` of the note's pages (recognized handwriting, text boxes, PDF page text, LaTeX; §5.5, §8.2) joined
@@ -4634,13 +4635,14 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   has not embedded yet locally (never in the vault). An **incompatible** one builds a local vector set and map, never
   mixed with the shared one.
 
-### 16.6 Deletion, re-sealing and turning it off
+### 16.6 Deletion, new epochs and turning it off
 
 - **Tombstones.** A device "removes" its note file by replacing it with one without `gen` and `emb` at a later
   `written`, so a device bridging two targets cannot bring the old one back: when the note is deleted (§5.2), and when
   its `gen` is stale while another device's is current.
-- **Re-seal on a new epoch.** A device re-seals its own files under the current key from their content (opening them
-  with the earlier key the chain gives it); until then other devices ignore them.
+- **A new epoch.** A device deletes its own files that open only under an earlier key and writes them again under the
+  current key by its ordinary pass; until then other devices ignore them. The content of such a file is never carried
+  over: any holder of that key, a device removed since included, could have written bytes under a device's name.
 - **Below a re-encryption.** After a finished re-encryption (§15.8) a device deletes every insights file that opens
   under a key from before it, locally and on each target where its own `vault.json` stands, so an older app that was
   home (its pass skips `insights/`) leaves them only until a device implementing this section syncs.
@@ -4658,7 +4660,8 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   its bound; unlocked runs only (a locked or staging run skips the folder). A copy is placed or uploaded only when it
   opens under the current key; where both sides differ the later copy (§16.2) wins on both; a copy that does not open
   never replaces one that does. A device's own file held locally is its truth and is never replaced from a target or
-  a copy (one only on the target is taken). A device uploads only in a run where its own `vault.json` stands on the target. A
+  a copy; one only on the target is not fetched (the device deleted it, or never had it), and the copy the device
+  writes next replaces it. A device uploads only in a run where its own `vault.json` stands on the target. A
   provider's conflict versions of a file settle to the later copy.
 - **Copy-merge** (§1.3), while `insights.enabled` is `true`, copies a file the vault lacks, or holds with an earlier
   `written`, when it opens under the current key, never over the device's own file; nothing is deleted.
@@ -4674,6 +4677,7 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
 | vectors | 1 … 4 096 values; every value finite |
 | strings | a summary 2 000 characters, a term 120, a topic summary 4 000, a scope name 1 200, short identifiers 64 bytes |
 | counts | 32 keywords, 16 concepts, 32 canaries, 64 languages, 20 000 clusters, 200 000 notes in a map, 10 000 topics |
+| cluster `id`, `parent` | 0 … 1 000 000 000 |
 
 ### 16.8 Topics and voice-note titles
 

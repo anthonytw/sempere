@@ -696,8 +696,12 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   `--source-recovery-key FILE` (the kit's identity file, or the vault's passphrase copy; `--root` checks it as elsewhere).
   The source's passphrase (that copy, or a passphrase-wrapped device key) comes from `--source-passphrase-env VAR`, else
   `$SEMPERE_PASSPHRASE`, else the terminal; the new vault's own passphrases (`--recovery-passphrase`, `--passphrase`) come
-  from `--passphrase-env`. They are two secrets: the same variable for both is refused (exit 2), and so is
-  `$SEMPERE_PASSPHRASE` serving both when the new vault takes a passphrase. The source may be read-only (a newer format, an unconfirmed or refused device
+  from `--passphrase-env`, else `$SEMPERE_PASSPHRASE`, else the terminal (a `--generate-passphrase` one is made, not
+  read). They are two secrets: when both sides read a passphrase, one variable serving both is refused (exit 2), however
+  it is named (`--source-passphrase-env` and `--passphrase-env` alike, or either one naming `SEMPERE_PASSPHRASE` while the
+  other side falls back to it), and so is the new vault's passphrase being the one the source was opened with (two
+  variables holding it, or the same one typed at both prompts; exit 2, before anything is written). A source read with
+  `--identity` reads no passphrase. An existing `--recovery-out` file is refused (exit 1) and left as it was. The source may be read-only (a newer format, an unconfirmed or refused device
   list, a removed device, a recovery-key read): the copy is writable, and stderr warns what it cannot keep (notes of
   a newer version with their skipped ops, unreadable later epochs). A partly downloaded source is refused (exit 1). Notes in
   Recently Deleted are left out unless `--include-deleted`. A note that cannot be read or copied is listed on stderr (in
@@ -2356,7 +2360,7 @@ claims it when none is set, and the role never moves by itself. Every command ta
   model call failed or left nothing after the fact check waits a day, 30 days when refused, in the same memo). A device that is not the work device
   generates only with `insights.compute` `auto`, and never embeds into the vault. A note whose generation failed is
   not asked again for a day, or for 30 days when the model refused it, unless its text or the model changes or with
-  `--force` (this machine's memo, `$XDG_STATE_HOME/sempere/insights/<vault id>-failures.json`). `--limit` caps model calls;
+  `--force` (this machine's memo, sealed under the vault's key, `$XDG_STATE_HOME/sempere/insights/<vault id>-failures`, deleted when Note Insights is turned off on this machine (`insights purge`, `settings set insights.enabled false`), or at the next `insights update` after it is turned off elsewhere). `--limit` caps model calls;
   `--embeddings-only` skips the model; `--dry-run` writes nothing. It needs Apple Intelligence (macOS 26): elsewhere,
   or with it turned off, it exits 3 with the reason (`disabled`, `notReady`, `deviceNotEligible`, or needs macOS 26)
   and writes nothing; `--embeddings-only` needs only the embedder. Off: exit 1.
@@ -2390,7 +2394,7 @@ claims it when none is set, and the role never moves by itself. Every command ta
 Linux runs everything but `update`, `topic --generate`, `map --rebuild` and `work-device --claim` (exit 3, "needs
 macOS 26"); `map --pin` works there (it only writes the setting). Writes are refused like every write (exit 6, 7).
 `--json`: `update` gives `{device, claimedWorkDevice, generated, embedded, tombstoned, dropped, titled,
-restoredTitles, resealed, removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
+restoredTitles, removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
 `{note, title, state, summary, keywords: [{t, w}], concepts, device, deviceName, written, model, os, prompt, dropped,
 slug, embedded, embeddingKey}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
 keywordOverlap, why, shared, placed}]}`; `search` gives `[{note, title, field, matched, stale}]`; `topic` gives `{scope, members, summary, generated, stale, device,

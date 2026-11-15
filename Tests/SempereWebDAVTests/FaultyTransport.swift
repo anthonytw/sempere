@@ -27,6 +27,7 @@ final class FaultyTransport: WebDAVTransport, @unchecked Sendable {
     }
 
     let inner: any WebDAVTransport
+    var streamsPutBodies: Bool { inner.streamsPutBodies }
     private let lock = NSLock()
     private var rng: SeededRNG
     private var _rates: Rates

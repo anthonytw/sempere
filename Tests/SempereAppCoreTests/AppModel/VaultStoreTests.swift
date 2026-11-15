@@ -146,7 +146,8 @@ extension AppModelSuites {
             #expect(library.vaultStore.list().isEmpty)
         }
 
-        /// Removing a store vault from the device forgets its last place in the device's preferences too.
+        /// Removing a store vault from the device forgets its last place in the device's preferences too, and its memo of
+        /// failed insights.
         @Test func removingAVaultForgetsItsLastPlace() async throws {
             let library = try BrowserTests.library()
             let model = try Self.model()
@@ -157,8 +158,12 @@ extension AppModelSuites {
             LastPlace.save(RestorableSelection(sidebar: .allNotes, note: UUID(), vault: entry.vaultId, digest: { $0 }),
                            vault: entry.vaultId, in: model.deviceMemory)
             #expect(model.deviceMemory.string(forKey: LastPlace.key(entry.vaultId)) != nil)
+            let memo = model.insightsFailureMemoURL(for: entry.vaultId)
+            try FileManager.default.createDirectory(at: memo.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("x".utf8).write(to: memo)
             try await model.removeStoredVault(entry, library: library)
             #expect(model.deviceMemory.string(forKey: LastPlace.key(entry.vaultId)) == nil)
+            #expect(!FileManager.default.fileExists(atPath: memo.path))
             #expect(library.storedVaults.isEmpty)
         }
 

@@ -102,6 +102,14 @@ public protocol WebDAVServerTrust: Sendable {
 /// an in-memory server for this.
 public protocol WebDAVTransport: Sendable {
     func send(_ request: WebDAVRequest) throws -> WebDAVResponse
+
+    /// True while a PUT goes out with a streamed (chunked) body and no length the server must honor: the server may
+    /// answer 2xx and store fewer bytes (`WebDAVClient` then checks what it stored, docs/io.md). Default: false.
+    var streamsPutBodies: Bool { get }
+}
+
+extension WebDAVTransport {
+    public var streamsPutBodies: Bool { false }
 }
 
 /// The `URLSession` transport. Redirects are never followed: a redirect would
@@ -198,6 +206,15 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
     private let lengthLock = NSLock()
     private var serverWantsLength = false
     var putsAreFixedLength: Bool { lengthLock.lock(); defer { lengthLock.unlock() }; return serverWantsLength }
+
+    /// On Linux, until a server asked for a length (`send`): a PUT body is a stream, sent chunked.
+    public var streamsPutBodies: Bool {
+        #if canImport(FoundationNetworking)
+        return !putsAreFixedLength
+        #else
+        return false
+        #endif
+    }
 
     public func send(_ request: WebDAVRequest) throws -> WebDAVResponse {
         #if canImport(FoundationNetworking)

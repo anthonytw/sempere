@@ -3,9 +3,9 @@ import Sempere
 
 // MARK: - The updater (docs/design/1.2-note-insights.md §3.7, §3.8, §4, D13-D15; `sempere insights update`)
 //
-// One pass over a vault for this device: re-seal its own files under the current key, delete what removed devices
-// left, claim the work device when none is set, then per note (in the policy's order) generate, embed, tombstone and
-// title, then rebuild the map, write this device's record and the topic summaries due. Every write goes through
+// One pass over a vault for this device: delete its own files under an earlier key (written again below) and what
+// removed devices left, claim the work device when none is set, then per note (in the policy's order) generate, embed,
+// tombstone and title, then rebuild the map, write this device's record and the topic summaries due. Every write goes through
 // `InsightsStore` (and voice-note titles through `Vault.apply`), so a read-only vault refuses them all. The app (PR 2)
 // and the CLI call it alike.
 
@@ -108,7 +108,6 @@ public struct InsightsUpdateReport: Hashable, Sendable, Codable {
     public var dropped: [String] = []
     public var titled: [String] = []
     public var restoredTitles: [String] = []
-    public var resealed: [String] = []
     public var removed: [String] = []
     public var mapBuilt = false
     public var deviceRecord = false
@@ -172,13 +171,16 @@ public struct InsightsUpdater: Sendable {
         var report = InsightsUpdateReport()
         report.dryRun = o.dryRun
         var settings = InsightsSettings.read(vault, type: o.deviceType)
-        guard settings.enabled else { throw InsightsUpdateError.disabled }
+        guard settings.enabled else {
+            // Off (here or by another device): this device's memo of failures goes too.
+            if let url = o.failureMemo, !o.dryRun { InsightsFailureMemo.remove(at: url) }
+            throw InsightsUpdateError.disabled
+        }
         let store = InsightsStore(vault: vault)
         let me = try store.writer()
         report.device = me.rawValue
         if !o.dryRun {
-            report.resealed = try store.resealOwn(now: o.now)
-            report.removed = try store.removeRemovedDevices()
+            report.removed = try store.removeOwnEarlierKey() + store.removeRemovedDevices()
         }
         var snapshot = store.snapshot()
         let usable = model.flatMap { $0.availability.isAvailable ? $0 : nil }
@@ -203,7 +205,7 @@ public struct InsightsUpdater: Sendable {
             PolicyNote(id: $0.id, hash: $0.hash, modified: $0.modified, deleted: $0.deleted, open: o.openNotes.contains($0.id),
                        hasText: !$0.text.isEmpty)
         }
-        var memo = o.failureMemo.map(InsightsFailureMemo.load(from:)) ?? InsightsFailureMemo()
+        var memo = o.failureMemo.map { InsightsFailureMemo.load(from: $0, vault: vault) } ?? InsightsFailureMemo()
         let backoff = usable.map { m in memo.backoff(notes: selected.map { ($0.id, $0.hash) }, identity: m.identity) } ?? [:]
         let backedOff = o.force ? 0 : backoff.values.filter { $0 > o.now }.count
         if backedOff > 0 { report.notes.append("\(backedOff) notes backed off (failed earlier; --force to retry)") }
@@ -294,7 +296,7 @@ public struct InsightsUpdater: Sendable {
             }
             snapshot = store.snapshot()
             // Device-local and only a saving of model time: a memo that cannot be written is no reason to fail the run.
-            if let url = o.failureMemo { try? memo.save(to: url) }
+            if let url = o.failureMemo { try? memo.save(to: url, vault: vault) }
         }
         if cancelled || Task.isCancelled {
             report.cancelled = true
@@ -526,9 +528,9 @@ public struct InsightsUpdater: Sendable {
                       report: inout InsightsUpdateReport) async throws -> [String] {
         let scopes = TopicScopes.members(inputs: inputs, snapshot: snapshot)
         let stored = snapshot.topics[me]?.topics ?? []
-        var memo = o.failureMemo.map(InsightsFailureMemo.load(from:)) ?? InsightsFailureMemo()
+        var memo = o.failureMemo.map { InsightsFailureMemo.load(from: $0, vault: vault) } ?? InsightsFailureMemo()
         var memoChanged = false
-        defer { if memoChanged, !o.dryRun, let url = o.failureMemo { try? memo.save(to: url) } }
+        defer { if memoChanged, !o.dryRun, let url = o.failureMemo { try? memo.save(to: url, vault: vault) } }
         var made: [String] = []
         var attempts = 0
         for (scope, members) in scopes {
@@ -613,9 +615,9 @@ public struct InsightsUpdater: Sendable {
         guard try await writeTopic(scope, members: members, inputs: inputs, model: model, merger: InsightsNotes.merger(inputs),
                                    store: store, now: now) else { throw TopicError.factCheck }
         if let failureMemo {
-            var memo = InsightsFailureMemo.load(from: failureMemo)
+            var memo = InsightsFailureMemo.load(from: failureMemo, vault: vault)
             let name = TopicScopes.name(scope)
-            if memo.topics[name] != nil { memo.clearTopic(name); try? memo.save(to: failureMemo) }
+            if memo.topics[name] != nil { memo.clearTopic(name); try? memo.save(to: failureMemo, vault: vault) }
         }
         return TopicSummaries.shown(scope, members: members, snapshot: store.snapshot())
     }

@@ -3566,14 +3566,15 @@
         }
       }
     },
-    "A new vault of your own with these notes as they are now: its own recovery key, and none of this vault's history, devices or sync targets. “%@” is not changed." : {
+    "A new vault of your own with these notes as they are now: its own recovery key, and none of this vault's history, devices or sync targets. “%@” is not changed. Notes keep their ids, so anyone who can see the storage of both vaults can tell that they hold the same notes." : {
+      "comment" : "Make a Copy sheet: footer under the name field; the value is the source vault's name",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una bóveda nueva y tuya con estas notas tal como están ahora: con su propia clave de recuperación y sin el historial, los dispositivos ni los destinos de sincronización de esta bóveda. «%@» no cambia."
+            "value" : "Una bóveda nueva y tuya con estas notas tal como están ahora: con su propia clave de recuperación y sin el historial, los dispositivos ni los destinos de sincronización de esta bóveda. «%@» no cambia. Las notas conservan sus identificadores, así que quien vea el almacenamiento de ambas bóvedas puede saber que contienen las mismas notas."
           }
         }
       }

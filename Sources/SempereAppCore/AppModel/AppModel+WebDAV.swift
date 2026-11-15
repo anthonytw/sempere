@@ -503,6 +503,7 @@ extension AppModelCore {
         if let vault, syncStore.entry(id: vault) == nil {
             library.forgetStored(vault)
             LastPlace.forget(vault: vault, in: deviceMemory)
+            forgetInsightsFailures(vaultId: vault)
         }
         syncTargetsChanged()
     }

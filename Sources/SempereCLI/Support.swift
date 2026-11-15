@@ -389,7 +389,21 @@ func obtainPassphrase(envName: String?, prompt: String = "Vault passphrase: ", c
                       asError: (String) -> CLIError = CLIError.cannotDecrypt) throws -> String {
     let pass = try readPassphrase(envName: envName, prompt: prompt, confirm: confirm, asError: asError)
     if confirm && pass.isEmpty { throw CLIError.usage("the passphrase is empty") }
+    PassphrasesRead.record(pass)
     return pass
+}
+
+/// The passphrases this process has read (`obtainPassphrase`), in order: `store copy` refuses a new vault's passphrase
+/// that is the one its source was opened with. The CLI runs one command per process, on one thread.
+enum PassphrasesRead {
+    nonisolated(unsafe) private static var read: [String] = []
+
+    static var count: Int { read.count }
+
+    static func record(_ passphrase: String) { read.append(passphrase) }
+
+    /// Those read after the first `index`.
+    static func since(_ index: Int) -> Set<String> { Set(read.dropFirst(index)) }
 }
 
 private func readPassphrase(envName: String?, prompt: String, confirm: Bool,

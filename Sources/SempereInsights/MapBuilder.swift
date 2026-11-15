@@ -137,10 +137,16 @@ public enum MapBuilder {
         }
         var groups1: [Int: [Int]] = [:]
         for (members, parent) in made0 { groups1[parent, default: []] += members }
-        // Ids follow the previous build by member overlap.
-        let prev0 = (previous?.clusters ?? []).filter { $0.level == 0 && $0.id != otherId }
-        let prev1 = (previous?.clusters ?? []).filter { $0.level == 1 }
-        var nextId = max(otherId, (previous?.clusters.map(\.id).max() ?? 0)) + 1
+        // Ids follow the previous build by member overlap. New ids continue after the previous build's; when they would
+        // run past `maxClusterId` (or a previous id is negative), numbering starts again and no id is carried over, so
+        // two clusters never share one.
+        let previousMax = max(otherId, previous?.clusters.map(\.id).max() ?? otherId)
+        let room = previousMax <= InsightsLimits.maxClusterId - 2 * InsightsLimits.maxNotesInMap
+            && (previous?.clusters ?? []).allSatisfy { $0.id >= 0 }
+        let kept = room ? (previous?.clusters ?? []) : []
+        let prev0 = kept.filter { $0.level == 0 && $0.id != otherId }
+        let prev1 = kept.filter { $0.level == 1 }
+        var nextId = (room ? previousMax : otherId) + 1
         func ids(for sets: [[Int]], previous: [InsightsMapFile.Cluster]) -> [Int] {
             let memberSets = sets.map { Set($0.map { notes[$0].id.uuidString.lowercased() }) }
             var candidates: [(overlap: Double, set: Int, prev: Int)] = []
