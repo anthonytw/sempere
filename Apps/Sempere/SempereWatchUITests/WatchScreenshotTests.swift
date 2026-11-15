@@ -6,7 +6,8 @@ import XCTest
 /// passes `TEST_RUNNER_SEMPERE_SHOTS_DIR` (and, for the dark twins, `SEMPERE_SHOTS_APPEARANCE`; the watch is dark either
 /// way, so a dark run saves the same screens under its own name). The shots are also attached to the result bundle, where
 /// the script takes them from when the runner cannot write into the checkout. Nothing is asserted but that each screen
-/// showed. The vault's name on the screen is the debug profile's "Debug Vault", a made-up name.
+/// showed. The vault's name on the screen is the demo vault's, "My Notes" (as on the iPhone and iPad shots).
+/// "Saved" stays up only two seconds in the app, less than a screenshot takes, so the run holds it for ten.
 final class WatchScreenshotTests: XCTestCase {
     private var directory: URL? {
         ProcessInfo.processInfo.environment["SEMPERE_SHOTS_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -22,13 +23,15 @@ final class WatchScreenshotTests: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["SEMPERE_WATCH_DEBUG"] = "1"
         app.launchEnvironment["SEMPERE_WATCH_DEBUG_PROFILE"] = "1"
+        app.launchEnvironment["SEMPERE_WATCH_DEBUG_VAULT_NAME"] = "My Notes"   // DemoVault.folderName without ".sempere"
+        app.launchEnvironment["SEMPERE_WATCH_DEBUG_SAVED_SECONDS"] = "10"
         if unsent > 0 { app.launchEnvironment["SEMPERE_WATCH_DEBUG_UNSENT"] = "\(unsent)" }
         app.launch()
         return app
     }
 
-    private func shoot(_ app: XCUIApplication, _ name: String) {
-        Thread.sleep(forTimeInterval: 1.5)
+    private func shoot(_ app: XCUIApplication, _ name: String, after delay: TimeInterval = 1.5) {
+        Thread.sleep(forTimeInterval: delay)
         let screenshot = app.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
@@ -66,7 +69,12 @@ final class WatchScreenshotTests: XCTestCase {
         let stop = app.buttons["watch.stop"]
         guard expect(stop, "Stop", in: app) else { return }
         stop.tap()
-        if expect(app.staticTexts["watch.saved"], "Saved", in: app, timeout: 15) { shoot(app, "03-saved") }
-        if expect(app.staticTexts["watch.unsent"], "the unsent count", in: app, timeout: 15) { shoot(app, "04-unsent") }
+        // Saved stays for ten seconds here; a short pause lets the check mark settle, well inside that.
+        if expect(app.staticTexts["watch.saved"], "Saved", in: app, timeout: 15) { shoot(app, "03-saved", after: 0.5) }
+        // Then Ready again, with the note counted as waiting. (Before, Saved lasted two seconds and the 03 shot, taken
+        // 1.5 seconds after it showed, caught this screen: 03 and 04 were the same PNG.)
+        if expect(record, "Record again", in: app, timeout: 30), expect(app.staticTexts["watch.unsent"], "the unsent count", in: app, timeout: 15) {
+            shoot(app, "04-unsent")
+        }
     }
 }

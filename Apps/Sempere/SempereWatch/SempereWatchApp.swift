@@ -16,6 +16,9 @@ struct SempereWatchApp: App {
         do {
             let model = try WatchModel(environment: environment)
             client.attach(model)
+            #if DEBUG
+            WatchDebugLaunch.configure(model)
+            #endif
             _model = State(initialValue: model)
             WatchActions.record = { model.startFromSurface() }
             WatchActions.stop = { await model.stop() }
