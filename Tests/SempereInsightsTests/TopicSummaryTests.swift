@@ -198,6 +198,16 @@ extension InsightsUpdaterTests {
         XCTAssertEqual(InsightsFailureMemo.load(from: url, vault: vault), m)
     }
 
+    /// Loading the memo deletes an earlier build's plain file beside it, also when no sealed memo exists yet.
+    func testLoadingDeletesThePlainMemo() throws {
+        let folder = try TestTemp.directory("plain-memo")
+        let url = InsightsFailureMemo.fileURL(in: folder, vaultId: vault.vaultId)
+        let legacy = folder.appendingPathComponent(url.lastPathComponent + ".json")
+        try Data("{}".utf8).write(to: legacy)
+        XCTAssertEqual(InsightsFailureMemo.load(from: url, vault: vault), InsightsFailureMemo())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+    }
+
     /// The memo is sealed under a key of the vault's (nothing of a note, scope or text hash is readable without it),
     /// private to the user, replaces an earlier build's plain file, and goes when Note Insights is off.
     func testTheMemoIsSealedPrivateAndGoesWhenInsightsIsOff() async throws {

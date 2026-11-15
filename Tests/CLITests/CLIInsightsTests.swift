@@ -142,6 +142,22 @@ final class CLIInsightsTests: CLITestCase {
         XCTAssertEqual(try cli(["settings", "set", "insights.voiceNoteTitle", "{slug} ({date})"] + args).status, 0)
     }
 
+    /// `settings set insights.enabled false` deletes this machine's memo of failed generations for the vault (and its
+    /// plain predecessor); `true`, or a value for one kind of device, leaves it.
+    func testTurningOffBySettingsDeletesTheMemo() throws {
+        let (args, vault) = try setUpVault()
+        let memo = tmp.appendingPathComponent("state/sempere/insights/\(vault.vaultId.uuidString.lowercased())-failures")
+        let legacy = memo.deletingLastPathComponent().appendingPathComponent(memo.lastPathComponent + ".json")
+        try FileManager.default.createDirectory(at: memo.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: memo)
+        try Data("{}".utf8).write(to: legacy)
+        XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + args).status, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: memo.path))
+        XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "false"] + args).status, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: memo.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+    }
+
     func testExitCodes() throws {
         let (args, _) = try setUpVault()
         XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + args).status, 0)

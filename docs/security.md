@@ -172,8 +172,8 @@ sent back, with the device list, is encrypted to the new device's key
   the attachment cache is deleted when the app quits, and after a crash at the
   next launch, before any vault opens). The caches of note
   listings, drawings and attachment previews, and the memo of notes whose insights could not be made (so they are
-  not asked of the model again at once; private, not backed up, deleted when Note Insights is turned off or the vault
-  is removed from the device), are encrypted under keys derived from the vault's key ([`format.md`](format.md) §10).
+  not asked of the model again at once; private, not backed up, deleted when Note Insights is turned off on this device,
+  or at the next pass after it is turned off elsewhere, and when the vault is removed from the device), are encrypted under keys derived from the vault's key ([`format.md`](format.md) §10).
   Note insights are kept on the device only in memory, outside the vault's own `insights/` files. Details: [`io.md`](io.md),
   [`quick-capture.md`](quick-capture.md).
 - **Exports.** A PDF, image or Markdown export is not encrypted. Where you send

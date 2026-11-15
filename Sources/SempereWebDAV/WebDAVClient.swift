@@ -197,20 +197,22 @@ public struct WebDAVClient: Sendable {
     }
 
     /// After a create-only PUT sent with a streamed body (`WebDAVTransport.streamsPutBodies`: Linux, until a server asks
-    /// for a length), a `Depth: 0` PROPFIND of the new file: a server that answered 2xx but stored a different number of
-    /// bytes than were sent (a chunked body cut short) gets the file deleted again and the write fails, so a cut copy is
-    /// never moved into place under its final name (`SyncEngine.placeWriteOnce` writes there next run). A server that
-    /// lists no length, or answers the PROPFIND with an error status, is trusted. Replacing PUTs are not checked: the next
-    /// run compares their bytes again.
+    /// for a length), a `Depth: 0` PROPFIND of the new file: when the server answered 2xx but lists a different number of
+    /// bytes than were sent (a chunked body cut short), the write fails, so a cut copy is never moved into place under
+    /// its final name (`SyncEngine.placeWriteOnce` writes there next run). The file is deleted here only under a strong
+    /// ETag (a weak or missing one cannot make the delete conditional; the caller's own clean-up and the next run's write
+    /// repair it). A server that lists no length, or a PROPFIND that fails in any way (an error status, the transport, a
+    /// listing that does not parse), leaves the PUT trusted. Replacing PUTs are not checked: the next run compares their
+    /// bytes again.
     private func checkStoredLength(_ path: [String], expected: Int, condition: PutCondition) throws {
         guard case .create = condition, transport.streamsPutBodies else { return }
-        let listed: RemoteEntry?
-        do { listed = try stat(path) } catch WebDAVError.http { return }
-        guard let entry = listed, let size = entry.size, size != expected else { return }
-        let tag = entry.etag.flatMap { $0.hasPrefix("W/") ? nil : $0 }
+        guard let entry = try? stat(path), let size = entry.size, size != expected else { return }
+        let where_ = "PUT /\(path.joined(separator: "/")): the server stored \(size) of \(expected) bytes"
+        guard let tag = entry.etag, !tag.hasPrefix("W/") else {
+            throw WebDAVError.malformedResponse(where_ + "; not usable, written again next run")
+        }
         _ = try? delete(path, ifMatch: tag)
-        throw WebDAVError.malformedResponse("PUT /\(path.joined(separator: "/")): the server stored \(size) of \(expected) "
-            + "bytes; removed, sent again next run")
+        throw WebDAVError.malformedResponse(where_ + "; removed, sent again next run")
     }
 
     /// Uploads a file, streamed from disk (never held in memory). Returns

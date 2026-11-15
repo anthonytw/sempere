@@ -10,7 +10,8 @@ import Sempere
 /// (`$XDG_STATE_HOME/sempere/insights/<vault id>-failures` for the CLI), never in the vault. The file is sealed under a
 /// key derived from the vault key (`LocalCacheKey`, purpose `insights-failures`, format.md §10.1), so note ids, scope
 /// names and text hashes are unreadable without it; it is private to the user (0600), excluded from backups, and
-/// deleted when Note Insights is turned off or the vault leaves the device. A new epoch derives another key, and the
+/// deleted when Note Insights is turned off on this device, or at the next pass after it is turned off elsewhere, and
+/// when the vault leaves the device. A new epoch derives another key, and the
 /// memo starts empty.
 public struct InsightsFailureMemo: Codable, Hashable, Sendable {
     public struct Entry: Codable, Hashable, Sendable {
@@ -67,6 +68,8 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
     /// The memo at `url` for `vault`; a missing, unreadable, malformed or differently keyed file (another epoch), or a
     /// locked vault, is an empty memo (it only saves model time).
     public static func load(from url: URL, vault: Vault) -> InsightsFailureMemo {
+        // A memo of an earlier build, in plain JSON: never read, deleted.
+        try? FileManager.default.removeItem(at: legacyURL(url))
         guard let key = try? LocalCacheKey(vault: vault, purpose: purpose, magic: magic),
               let data = try? BoundedRead.contents(of: url, maxBytes: maxFileBytes),
               let plain = try? key.open(data, fileName: url.lastPathComponent),

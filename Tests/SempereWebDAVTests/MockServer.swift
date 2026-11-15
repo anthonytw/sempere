@@ -86,6 +86,14 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
     /// Give files no ETag at all (listings and GETs; the mock sends no `Last-Modified` either): a client's only
     /// stamp is then the size.
     var noFileETags = false
+    /// Files whose name starts with this are listed without a length (`getcontentlength`).
+    var unsizedPrefix: String?
+    private func listedSize(_ key: String, _ s: Stored) -> Int? {
+        guard let p = unsizedPrefix, key[(key.lastIndex(of: "/").map { key.index(after: $0) } ?? key.startIndex)...].hasPrefix(p) else {
+            return s.size
+        }
+        return nil
+    }
     private func listedETag(_ s: Stored) -> String? { noFileETags ? nil : fileETag(s) }
     /// When set, a file's ETag is made from this server clock's whole second and the file's size, as wsgidav's,
     /// nginx's and lighttpd's are (inode, mtime in seconds, size): a same-size rewrite within one second keeps it.
@@ -186,7 +194,7 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
                         }
                         for (f, s) in files.sorted(by: { $0.key < $1.key }) where f.hasPrefix(key + "/") {
                             if let omit, f.hasSuffix(omit) { continue }
-                            xml += entry(f, etag: listedETag(s), collection: false, size: s.size)
+                            xml += entry(f, etag: listedETag(s), collection: false, size: listedSize(f, s))
                         }
                         return multistatus(xml)
                     }
@@ -196,12 +204,12 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
                     for c in collections where c != key && parent(c) == key { kids.insert(c) }
                     for c in kids.sorted() { xml += entry(c + "/", etag: collectionETag(c), collection: true, size: nil) }
                     for (f, s) in files.sorted(by: { $0.key < $1.key }) where parent(f) == key {
-                        xml += entry(f, etag: listedETag(s), collection: false, size: s.size)
+                        xml += entry(f, etag: listedETag(s), collection: false, size: listedSize(f, s))
                     }
                 }
                 return multistatus(xml)
             }
-            if let s = files[key] { return multistatus(entry(key, etag: listedETag(s), collection: false, size: s.size)) }
+            if let s = files[key] { return multistatus(entry(key, etag: listedETag(s), collection: false, size: listedSize(key, s))) }
             return WebDAVResponse(status: 404)
         case "GET":
             guard let s = files[key] else { return WebDAVResponse(status: 404) }

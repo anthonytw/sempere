@@ -1225,9 +1225,11 @@ revisions still sync, and readers draw a placeholder for it meanwhile
   On Linux a PUT body is streamed and goes out chunked (until a server answers 411 or 501, then fixed-length,
   [the upload-stall design](design/1.2-linux-upload-stall.md)). A server may answer 2xx to a chunked PUT and store fewer bytes, so after every
   create-only PUT sent that way (`WebDAVTransport.streamsPutBodies`) the client asks for the new file's size (a `Depth: 0`
-  PROPFIND, one more request per upload): when the server lists a size other than the bytes sent, the file is deleted
-  and the write fails, so a temporary upload stored short is never moved into place (the next run sends it again). The
-  limit: a server that lists no size for the file (or refuses the PROPFIND) is trusted, and a replacing PUT (`vault.json`,
+  PROPFIND, one more request per upload): when the server lists a size other than the bytes sent, the write fails (and the file is deleted
+  under its strong ETag; under a weak or missing one it is left for the caller's clean-up and the next write), so a
+  temporary upload stored short is never moved into place (the next run sends it again). The limit: a server that lists
+  no size for the file, or a PROPFIND that fails in any way (an error status, the transport, a listing that does not
+  parse), leaves the PUT trusted, and a replacing PUT (`vault.json`,
   `settings.age`, the other mutable files) is not checked; the next run compares its bytes again. `epochs/` records repair themselves under a strong
   ETag. The mutable files are replaced, not created: `vault.json` and `settings.age` go up under `If-Match` (or a
   re-read), and a cut copy of either is repaired by the next two-way run that holds the vault's key (a

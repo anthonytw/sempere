@@ -3033,8 +3033,8 @@ It keeps these others, under the same derivation:
 - the **insights failure memo** (purpose `insights-failures`, magic `SMPF` ‖ `0x01`, one entry named
   `<vault id>-failures`, not keyed by `entryName`, beside the device state; from Sempere 1.2): the notes and topic
   scopes whose generation failed (§16), with their text or members digests, so a refusal is not asked again at once;
-  private to the user, excluded from backups, and deleted when Note Insights is turned off or the vault leaves the
-  device;
+  private to the user, excluded from backups, and deleted when Note Insights is turned off on this device, or at the next
+  pass after it is turned off elsewhere, and when the vault leaves the device;
 - the **saved selection** (purpose `selection`, Mac; no file): the library
   window's selection, which the system keeps in plaintext with its window
   state, names a notebook or tag only as `entryName("notebook|<canonical

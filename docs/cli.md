@@ -2360,7 +2360,7 @@ claims it when none is set, and the role never moves by itself. Every command ta
   model call failed or left nothing after the fact check waits a day, 30 days when refused, in the same memo). A device that is not the work device
   generates only with `insights.compute` `auto`, and never embeds into the vault. A note whose generation failed is
   not asked again for a day, or for 30 days when the model refused it, unless its text or the model changes or with
-  `--force` (this machine's memo, sealed under the vault's key, `$XDG_STATE_HOME/sempere/insights/<vault id>-failures`). `--limit` caps model calls;
+  `--force` (this machine's memo, sealed under the vault's key, `$XDG_STATE_HOME/sempere/insights/<vault id>-failures`, deleted when Note Insights is turned off on this machine (`insights purge`, `settings set insights.enabled false`), or at the next `insights update` after it is turned off elsewhere). `--limit` caps model calls;
   `--embeddings-only` skips the model; `--dry-run` writes nothing. It needs Apple Intelligence (macOS 26): elsewhere,
   or with it turned off, it exits 3 with the reason (`disabled`, `notReady`, `deviceNotEligible`, or needs macOS 26)
   and writes nothing; `--embeddings-only` needs only the embedder. Off: exit 1.
