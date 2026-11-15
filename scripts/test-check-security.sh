@@ -227,5 +227,22 @@ expect "a Package.resolved pin without a revision fails" fail "no 40-hex revisio
 fresh; python3 -I -c 'import json; d=json.load(open("Package.resolved")); d["pins"]=[p for p in d["pins"] if p["identity"]!="swift-crypto"]; json.dump(d, open("Package.resolved","w"))'; git add -A
 expect "a Package.swift dependency missing from Package.resolved fails" fail "no pin for swift-crypto"
 
+# 5. owners: the scripts release-build.sh copies, and what owned or copied scripts source, have a CODEOWNERS line.
+owners_tree() {   # owners_tree CODEOWNERS-LINES...: a release-build.sh copying a.sh, a.sh sourcing b.sh
+  fresh
+  put scripts/release-build.sh '#!/usr/bin/env bash' 'TOOLING=(scripts/a.sh)'
+  put scripts/a.sh '#!/usr/bin/env bash' 'source scripts/b.sh'
+  put scripts/b.sh '# shellcheck shell=bash'
+  put .github/CODEOWNERS "$@"
+}
+owners_tree '/scripts/release-*  @o' '/scripts/a.sh  @o' '/scripts/b.sh  @o'
+expect "owned release tooling passes" ok
+owners_tree '/scripts/release-*  @o' '/scripts/b.sh  @o'
+expect "a TOOLING script without an owner fails" fail "no owner for scripts/a.sh"
+owners_tree '/scripts/release-*  @o' '/scripts/a.sh  @o'
+expect "a script sourced by owned tooling without an owner fails" fail "no owner for scripts/b.sh"
+owners_tree '/scripts/  @o'
+expect "a directory pattern owns the scripts in it" ok
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -13,6 +13,9 @@
 #   3. pins      Package.resolved entries have revisions and cover Package.swift; every package in
 #                web/package-lock.json has an integrity hash; every `uses:` in .github is a full commit SHA (local
 #                ./.github/actions paths excepted); every workflow declares `permissions:`
+#   4. signers   every key in packaging/allowed_signers has its fingerprint in SECURITY.md
+#   5. owners    every script release-build.sh copies (TOOLING) and every scripts/ file an owned or TOOLING script
+#                sources has a .github/CODEOWNERS pattern, so the release tooling cannot drift out of the code-owner list
 #
 # scripts/security-allow.txt lists the exceptions, one per line: `rule | path | sha256:HASH | reason`. For `secrets`, HASH is
 # the SHA-256 of the matched token (never the key itself); for the other rules it is the SHA-256 of the flagged statement
@@ -255,6 +258,41 @@ if [ -f packaging/allowed_signers ]; then
   if ! fp_out="$("$here/release-fingerprints.sh" check SECURITY.md 2>&1)"; then
     fail "signing key not published: ${fp_out#error: }"
   fi
+fi
+
+# --- 5. The release tooling has a code owner --------------------------------------------------------------------
+# release-build.sh copies its TOOLING scripts from main into the tag's worktree and runs them, and scripts source others;
+# each must match a CODEOWNERS pattern (docs/ci.md "Trust anchors have a code owner").
+if [ -f .github/CODEOWNERS ] && [ -f scripts/release-build.sh ]; then
+  owners_out="$(python3 -I - <<'PY'
+import fnmatch, re, subprocess
+pats = []
+for line in open(".github/CODEOWNERS"):
+    line = line.split("#", 1)[0].strip()
+    if line:
+        pats.append(line.split()[0])
+def owned(path):
+    for p in pats:
+        a = p.lstrip("/")
+        if a.endswith("/") and path.startswith(a): return True
+        if fnmatch.fnmatchcase(path, a): return True
+    return False
+tracked = set(subprocess.run(["git", "ls-files", "scripts/"], capture_output=True, text=True).stdout.split())
+m = re.search(r"^TOOLING=\(([^)]*)\)", open("scripts/release-build.sh").read(), re.M)
+need = set(m.group(1).split()) if m else set()
+roots = need | {f for f in tracked if owned(f)}
+for f in sorted(roots):
+    if f not in tracked or not f.endswith(".sh"): continue
+    for line in open(f, errors="replace"):
+        s = re.match(r"\s*(?:source|\.)\s+\"?(scripts/[A-Za-z0-9._-]+)", line)
+        if s: need.add(s.group(1))
+for f in sorted(need):
+    if not owned(f): print(f)
+PY
+)"
+  while IFS= read -r f; do
+    [ -n "$f" ] && fail ".github/CODEOWNERS: no owner for $f (release tooling: add a line for it)"
+  done <<<"$owners_out"
 fi
 
 # --- Allow-list upkeep -----------------------------------------------------------------------------------------
