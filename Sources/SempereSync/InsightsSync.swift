@@ -22,7 +22,10 @@ import Sempere
 // - every local change (a placement or a deletion) is made under the vault's write lock (`withLocalWriteLock`, never
 //   across a request) after the local bytes are read again: a file a writer replaced since it was judged is left
 //   (review of #50, M3);
-// - a provider's conflict versions of a file settle to the later `written` (`ConflictVersions`).
+// - a provider's conflict versions of a file settle to the later `written` (`ConflictVersions`);
+// - a copy only on the target that opens under no key this device holds is remembered (its hash, settled stamp and the
+//   key it was tried under) and not fetched again until one of them changes; each fetch of one counts with the run's
+//   refused files (`RunBudget.refusedFiles`), without a quarantine copy.
 
 extension SyncEngine {
     /// The pass over `insights/` (after the notes, with the other hints).
@@ -120,7 +123,12 @@ extension SyncEngine {
         // A provider's conflict versions do not move the file's stamp: a file that has some is looked at again.
         let hasVersions = !options.pushOnly && stands && !transport.conflictVersions([folder, name]).isEmpty
         // Only a settled stamp (`SyncEngine.settle`): a whole-second tag hides a same-size rewrite within the second.
-        if !hasVersions, let record, record.settled, record.stamp != nil, record.stamp == remote.stamp, record.hash == localHash { return record }
+        if !hasVersions, let record, record.settled, record.stamp != nil, record.stamp == remote.stamp {
+            if record.unopenedUnder == nil, record.hash == localHash { return record }
+            // A copy only on the target that did not open: not fetched again under the same key (it still counts in the
+            // run's refused files when it is fetched, below).
+            if let key = record.unopenedUnder, localData == nil, key == Self.checkerKeyID(v) { return record }
+        }
         let localOpens = localOpensNow()
         if let size = remote.size, size > max {
             report.skipped.append(.init(path: "\(folder)/\(name)", message: "larger than an insights file may be; not fetched"))
@@ -158,7 +166,18 @@ extension SyncEngine {
         }
         switch (localOpens, remoteOpens) {
         case (nil, nil):
-            if localData == nil { return nil }
+            if localData == nil {
+                // Only on the target and opens under no key this device holds: remembered, so it is not fetched again
+                // until it changes or the key does, and counted with the run's refused files (not quarantined: a hint).
+                locked {
+                    budget.refusedBytes += Int64(got.data.count)
+                    budget.refusedFiles += 1
+                }
+                report.skipped.append(.init(path: "\(folder)/\(name)", message: "does not open under the current key; not "
+                    + "taken, and not fetched again until it changes"))
+                guard let key = Self.checkerKeyID(v) else { return nil }
+                return .init(hash: remoteHash, stamp: stamp, unopenedUnder: key)
+            }
             report.skipped.append(.init(path: "\(folder)/\(name)", message: "neither copy opens under the current key; neither is replaced"))
             return .init(hash: localHash ?? remoteHash, stamp: stamp)
         case (nil, _?):

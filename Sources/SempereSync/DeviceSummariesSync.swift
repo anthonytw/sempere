@@ -123,10 +123,29 @@ extension SyncEngine {
             report.deleted.append(.init(side: "local", path: "\(folder)/\(name)"))
         }
         guard listStandsHere(v) else { return left }
+        // Each target file is read once per version tag (settled) and epoch, counted against the run's download bound.
+        let checked = state.summariesObsoleteChecked ?? [:]
+        var stillChecked: [String: SyncState.ObsoleteCheck] = [:]
+        defer { state.summariesObsoleteChecked = stillChecked.isEmpty ? nil : stillChecked }
         for (name, e) in listed.sorted(by: { $0.key < $1.key }) {
             let path = "\(folder)/\(name)"
-            guard let got = try? transport.read([folder, name], maxBytes: PublishedSummaries.maxFileBytes),
-                  v.summariesUnderEpoch(below: m, got.data) else { continue }
+            if let c = checked[path], c.below == m, c.stamp == e.stamp, c.timing?.settled == true {
+                stillChecked[path] = c
+                continue
+            }
+            if let size = e.size, size > PublishedSummaries.maxFileBytes { continue }
+            let reserved = try locked { try budget.willDownload(e.size) }
+            guard let got = try? transport.read([folder, name], maxBytes: PublishedSummaries.maxFileBytes) else {
+                locked { budget.release(reserved) }
+                continue
+            }
+            try locked { try budget.downloaded(got.data.count, reserved: reserved) }
+            if let stamp = e.stamp {
+                let previous = checked[path].flatMap { $0.below == m && $0.stamp == stamp ? $0.timing : nil }
+                stillChecked[path] = .init(stamp: stamp, below: m,
+                                           timing: Self.settle(previous, trusted: Self.stampCanSettle(stamp)))
+            }
+            guard v.summariesUnderEpoch(below: m, got.data) else { continue }
             let sha = FileDigest.sha256(got.data)
             guard state.deletedObsolete?[path] != sha else { continue }
             guard let etag = (got.etag ?? e.etag).flatMap({ Self.isStrong($0) ? $0 : nil }) else {
@@ -135,6 +154,7 @@ extension SyncEngine {
                 continue
             }
             if try transport.delete([folder, name], ifETag: etag) {
+                stillChecked[path] = nil
                 report.deleted.append(.init(side: "remote", path: path))
                 state.deletedObsolete = state.deletedObsolete ?? [:]
                 state.deletedObsolete?[path] = sha

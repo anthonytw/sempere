@@ -1334,7 +1334,10 @@ both sides differ, the later `written` wins on both sides (then the greater SHA-
 replaces one that does, and is replaced by it. Uploads happen only where this device's `vault.json` stands on the
 target. Files that open under a key from before a finished re-encryption, and files named for a device the vault
 removed, are deleted locally and (where the list stands) on the target. A provider's conflict versions of a file settle
-to the later copy. Push-only runs upload and delete only. Copy-merge takes a later copy that opens; backups exclude the
+to the later copy. A copy only on the target that opens under no key this device holds is listed in `skipped`, counted
+with the run's refused files (`SyncLimits.maxRefusedFiles`, no quarantine copy) and remembered
+(`SyncState.MutableRecord.unopenedUnder`): it is not fetched again while its settled version tag and this device's key
+stay the same. Push-only runs upload and delete only. Copy-merge takes a later copy that opens; backups exclude the
 folder; `vault verify` lists the files as hints.
 
 **Per-device summaries** (`DeviceSummariesSync.swift`, format.md §12.5). `summaries/<device>.sealed`
@@ -1372,7 +1375,10 @@ cannot take the server's `vault.json` for that check says so in `skipped`. Locke
 run (pull-only) stages the remote copy for the placing run to order; push-only runs never replace a
 later copy. A received file is placed only when it is ordered (unlocked) or starts with `SMPU` `0x01`
 or `0x04` (locked); otherwise it is listed in `skipped` (a hint, not quarantined: after a key change
-an older file is only stale). Nothing is deleted.
+an older file is only stale). Nothing is deleted, except below a finished re-encryption: files sealed under a key from
+before it go here and, where this device's list stands, on the target (under a strong version tag). For that check each
+target file is read once per settled version tag (`SyncState.summariesObsoleteChecked`), within the run's download
+bound.
 
 **Push-only mirror** (`--push-only`, `SyncOptions.pushOnly`). A two-way
 sync rejects a `vault.json` that is not a later version by the home device
