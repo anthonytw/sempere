@@ -276,10 +276,10 @@ final class FolderPickerUITests: XCTestCase {
         // The folder holding the open (demo) vault: an alert, not a line under the section.
         clickInSettings("Change Backup Folder…", settings, in: app)
         guard let window = panel(app) else { return XCTFail("the folder panel") }
-        go(to: appTemporaryFolder, in: window)
-        // Typing a name in the file list selects that folder.
-        window.typeText("SempereDemo")
-        sleep(1)
+        // Go into the folder and choose it as the current folder. Type-selecting "SempereDemo" in the crowded
+        // temporary folder broke on 2026-11-16: the panel opened in column view with the key column left on
+        // ~/Library/Containers, so the keystrokes selected another app's container.
+        go(to: "\(appTemporaryFolder)/SempereDemo", in: window)
         choose(in: window, app)
         let alert = app.staticTexts["Choose Another Backup Folder"].firstMatch
         require(alert, "the alert", in: app, timeout: 20)
