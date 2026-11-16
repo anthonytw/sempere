@@ -62,9 +62,20 @@ changed. `sempere store copy` does the same on the command line.
   limits and what it removed (`held list --json` is unchanged).
 - Recordings the watch cannot place (another vault's, or one whose manifest names none) are no longer silent: the watch
   says "N recordings could not be placed", with Delete. Nothing is deleted by itself.
+- Notes held for a reason that has since cleared (the iPhone listed again, or the vault now on the iPhone) go in by
+  themselves. Notes sent while Use on Apple Watch was off, or sealed before the vault's key changed, still wait for you,
+  and Settings shows why each one is held now. Held Watch notes are kept only on this iPhone, and Settings says so.
+- A watch that asks for a profile while Use on Apple Watch is off (after Sempere was reinstalled on the iPhone) is cleared.
 
 ### Fixed
 
+- Apple Watch: after a device was removed (or the vault's key changed another way), every Watch note was held in
+  Settings ("The vault has a newer key than this device"), and reinstalling did not help. The quick voice notes profile
+  now takes the new key's epoch with the key; a device in that state is repaired at the next unlock, and the watch gets
+  the repaired profile. Notes already held for this reason can be added in Settings ▸ Quick Voice Notes. Voice notes
+  recorded in that state no longer make each write retry a catch-up that could not finish (`sempere vault catch-up`
+  reports them as `relabeled`).
+- Turning Quick Voice Notes off and on again keeps your Transcribe Voice Notes choice.
 - Sync: a revision this device wrote before 1.1.0 and left cut on a server that lists no file sizes is now found and
   replaced (one bounded check per revision, remembered in the sync state).
 - Sync: after a re-encryption, a sync no longer downloads every device's published summaries file again on every run,
