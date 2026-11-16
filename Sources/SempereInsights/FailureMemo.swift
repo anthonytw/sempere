@@ -23,12 +23,24 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
         /// Seconds since 1970 of the latest failure.
         public var at: Double
         public var count: Int
-        /// Why it first failed (the error's words, at most `maxReason` characters), so a later pass can say why the note
+        /// Why it first failed (the error's words, at most `maxReason` UTF-8 bytes), so a later pass can say why the note
         /// waits ("Process Now"'s outcome); nil in an entry of an earlier build.
         public var reason: String?
     }
 
-    static let maxReason = 300
+    /// A reason is at most this many UTF-8 bytes (cut at a character boundary).
+    static let maxReason = 120
+
+    static func capped(_ s: String) -> String {
+        var out = ""
+        var bytes = 0
+        for ch in s {
+            let n = String(ch).utf8.count
+            if bytes + n > maxReason { break }
+            out.append(ch); bytes += n
+        }
+        return out
+    }
 
     /// A refusal is asked again after this long; any other failure after `failedFor`.
     public static let refusedFor: TimeInterval = 30 * 24 * 3600
@@ -126,7 +138,7 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
         if case InsightsProviderError.refused = error { refused = true }
         let previous = notes[id].flatMap { $0.hash == hash && $0.identity == key ? $0 : nil }
         notes[id] = Entry(hash: hash, identity: key, refused: refused, at: now.timeIntervalSince1970, count: (previous?.count ?? 0) + 1,
-                          reason: previous?.reason ?? String(String(describing: error).prefix(Self.maxReason)))
+                          reason: previous?.reason ?? Self.capped(String(describing: error)))
         if notes.count > Self.maxEntries, let oldest = notes.min(by: { ($0.value.at, $0.key) < ($1.value.at, $1.key) })?.key {
             notes[oldest] = nil
         }
@@ -145,7 +157,7 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
         var refused = false
         if let error, case InsightsProviderError.refused = error { refused = true }
         let previous = topics[scope].flatMap { $0.hash == membersHash && $0.identity == key ? $0 : nil }
-        let why = error.map { String(String(describing: $0).prefix(Self.maxReason)) } ?? "nothing survived the fact check"
+        let why = error.map { Self.capped(String(describing: $0)) } ?? "nothing survived the fact check"
         topics[scope] = Entry(hash: membersHash, identity: key, refused: refused, at: now.timeIntervalSince1970,
                               count: (previous?.count ?? 0) + 1, reason: previous?.reason ?? why)
         if topics.count > Self.maxEntries, let oldest = topics.min(by: { ($0.value.at, $0.key) < ($1.value.at, $1.key) })?.key {

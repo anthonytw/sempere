@@ -148,7 +148,7 @@ public struct WorkDeviceStatus: Hashable, Sendable {
     public var workDevice: DeviceID?
     /// Its latest `written` among its files, nil when it has none.
     public var lastSeen: Date?
-    /// It wrote nothing for 14 days: the next capable device to run a pass claims the role (`InsightsPolicy.plan`'s
+    /// It wrote nothing for 14 days, or it is no longer in the device list: the next capable device to run a pass claims the role (`InsightsPolicy.plan`'s
     /// `workDeviceMissing`, through the same settings merge as a first claim), and status offers "Use This Device".
     public var notSeen: Bool
     /// Devices whose records say they can hold the role (they support the pin, or any revision when unset), sorted.
@@ -167,7 +167,9 @@ public struct WorkDeviceStatus: Hashable, Sendable {
         // yet: a fresh claim is not missing (D16: it read "not seen for 14 days"; status says "nothing written yet"),
         // but a designated device that never runs is, 14 days on.
         let since = [latest, settings.workDevice == nil ? nil : settings.workDeviceSetAt].compactMap { $0 }.max()
-        notSeen = since.map { now.timeIntervalSince1970 - Double($0) / 1000 > Self.notSeenAfter } ?? false
+        // A work device no longer in the device list is missing at once (it can write nothing any more).
+        let removed = settings.workDevice.map { !listed.contains($0) } ?? false
+        notSeen = removed || (since.map { now.timeIntervalSince1970 - Double($0) / 1000 > Self.notSeenAfter } ?? false)
         let pin = settings.pins[language]
         capable = snapshot.devices.filter { d, r in
             listed.contains(d) && !(r.supported[language] ?? []).isEmpty && (pin.map { (r.supported[language] ?? []).contains($0) } ?? true)

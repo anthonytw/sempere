@@ -166,7 +166,9 @@ final class CLIInsightsTests: CLITestCase {
         let compute = try cli(["settings", "set", "insights.compute", "auto"] + args)
         XCTAssertNotEqual(compute.status, 0, "an unknown key")
         XCTAssertEqual(try cli(["settings", "set", "insights.workDevice", "0000beef"] + args).status, 0)
-        let up = json(try cli(["insights", "update", "--json"] + args, env: fake))
+        // Without the embedder: it cannot take over 0000beef (unlisted, so missing at once), it only summarizes.
+        let up = json(try cli(["insights", "update", "--json"] + args,
+                              env: fake.merging(["SEMPERE_INSIGHTS_FAKE_EMBEDDER": "off"]) { $1 }))
         XCTAssertEqual((up["generated"] as? [String])?.count, 6)
         XCTAssertEqual((up["embedded"] as? [String])?.count, 0)
         XCTAssertEqual(up["mapBuilt"] as? Bool, false)

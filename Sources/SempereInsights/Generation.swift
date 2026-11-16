@@ -274,8 +274,9 @@ public enum InsightsPolicy {
     /// The work for this device, in order. `force` ignores the settle time and regenerates stale and current alike;
     /// `ignoreSettle` only skips the settle time ("Process Now": open notes still wait, current ones are not redone).
     /// Every device with the model generates (D13: summaries are per device files, and a note current on another device
-    /// is skipped); embedding, the map (and the updater's voice-note titles) stay with the work device, which a capable
-    /// device claims when none is set or when it is `workDeviceMissing` (not seen for 14 days, `WorkDeviceStatus`).
+    /// is skipped); embedding, the map (and the updater's voice-note titles) stay with the work device, which a device
+    /// that embeds at the pin claims when none is set or when it is `workDeviceMissing` (not seen for 14 days, or no longer
+    /// listed: `WorkDeviceStatus`).
     public static func plan(notes: [PolicyNote], snapshot: InsightsSnapshot, me: DeviceID, settings: InsightsSettings,
                             capabilities c: PolicyCapabilities, pinKey: EmbeddingKey?, now: Date, force: Bool = false,
                             ignoreSettle: Bool = false, backoff: [UUID: Date] = [:], workDeviceMissing: Bool = false,
@@ -283,7 +284,9 @@ public enum InsightsPolicy {
         guard settings.enabled else { return [] }
         var out: [WorkItem] = []
         let isWork = settings.workDevice == me
-        let capable = c.embedRevision != nil || c.model != nil
+        // Holding the role means embedding at the pin (the map and titles device): a device that only generates never
+        // claims it, as `WorkDeviceStatus.capable` lists only devices that support the pin.
+        let capable = c.embedRevision != nil
         let vacant = settings.workDevice == nil || (workDeviceMissing && !isWork)
         if vacant, capable { out.append(.claimWorkDevice) }
         let willHold = isWork || (vacant && capable)

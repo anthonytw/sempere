@@ -153,6 +153,12 @@ public enum InsightsPassOutcome: Hashable, Sendable {
     case noteOpen(Int)
     /// Every note with text is summarized (here or on another device).
     case nothingToDo
+    /// The pass could not start (the app's early checks, a forced pass only): the vault is read-only here.
+    case readOnly
+    /// The pass could not start: this device is not in the vault's device list, so it cannot write.
+    case notListed
+    /// The pass could not start or stopped with an error: why (the app's words of the error).
+    case cannotWrite(String)
 
     /// The outcome of a pass of `reports` on a device whose model is `availability` (nil: no model provider); nil when the
     /// pass made something, was cut off, or ran no update.
@@ -160,8 +166,9 @@ public enum InsightsPassOutcome: Hashable, Sendable {
         guard let last = reports.last, !last.cancelled else { return nil }
         if reports.contains(where: { !$0.generated.isEmpty || !$0.topics.isEmpty }) { return nil }
         if availability?.isAvailable != true { return .modelUnavailable(availability) }
+        // Notes only (failures are keyed by note id or by topic scope name): a topic that failed is no note's failure.
         var failures: [String: String] = [:]
-        for r in reports { failures.merge(r.failures) { a, _ in a } }
+        for r in reports { failures.merge(r.failures.filter { UUID(uuidString: $0.key) != nil }) { a, _ in a } }
         if let first = failures.keys.sorted().first, let why = failures[first] { return .failed(count: failures.count, reason: why) }
         if last.backedOff > 0 { return .backedOff(count: last.backedOff, reason: last.backedOffReason) }
         if last.waitingToSettle > 0 { return .waitingToSettle(last.waitingToSettle) }

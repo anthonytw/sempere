@@ -54,8 +54,9 @@ public struct InsightsCapability: Equatable, Sendable {
 
     /// Summaries, keywords and titles can be made here.
     public var generates: Bool { model?.isAvailable == true }
-    /// The device can hold the work device (D13): it makes summaries, or embeds (related notes and the map at least).
-    public var canWork: Bool { generates || embedder }
+    /// The device can hold the work device, the map and titles device (D13): it embeds. Making summaries alone is not
+    /// enough (vectors and the map need the embedder; `WorkDeviceStatus.capable` lists only devices with the pin).
+    public var canWork: Bool { embedder }
 }
 
 /// Why Note Insights could not do something (worded by the app).
@@ -555,7 +556,7 @@ extension AppModelCore {
     /// "Use This Device" (D13: the user designates; a device also takes the role by itself once the work device has not
     /// been seen for 14 days, in its next pass).
     public func claimInsightsWorkDevice() async {
-        guard let me = vault?.writerDevice else { return }
+        guard let me = vault?.writerDevice, insights.capability.canWork else { return }
         await setInsightsWorkDevice(me)
     }
 
@@ -618,9 +619,9 @@ extension AppModelCore {
     /// work device, would claim a role nobody holds, or would take over a work device not seen for 14 days.
     public var insightsHasRole: Bool {
         let s = insights.settings
-        guard insights.mode == .on, insights.capability.canWork else { return false }
+        guard insights.mode == .on else { return false }
         if insights.capability.generates { return true }
-        guard insights.capability.embedder else { return false }
+        guard insights.capability.canWork else { return false }
         return s.workDevice == nil || s.workDevice == vault?.writerDevice || insights.status?.workDeviceNotSeen == true
     }
 
@@ -713,15 +714,34 @@ extension AppModelCore {
     @discardableResult
     func runInsightsPass(batch: Int, ignorePower: Bool, forced: Bool = false) async -> (reports: [InsightsUpdateReport], remains: Bool) {
         refreshInsightsCapability()
-        guard let vault, phase == .unlocked, insights.mode == .on, !isVaultReadOnly, insightsHasRole, !isChangingKeys else { return ([], false) }
+        // What the model was at the start: the outcome says why this pass made nothing, not what changed after it.
+        let availability = insights.capability.model
+        guard let vault, phase == .unlocked, insights.mode == .on, insightsHasRole, !isChangingKeys else {
+            insights.passOutcome = nil
+            return ([], false)
+        }
+        // A forced pass ("Process Now") that cannot start says why; any other clears what an earlier one said.
+        guard !isVaultReadOnly else {
+            insights.passOutcome = forced ? .readOnly : nil
+            return ([], false)
+        }
         let gen = generation
         let runtime = insightsRuntime
         // A device of the vault's list, writing with the model's one clock.
-        guard vault.writerDevice != nil, let clock = try? deviceClockForWriting() else { return ([], false) }
+        guard vault.writerDevice != nil else {
+            insights.passOutcome = forced ? .notListed : nil
+            return ([], false)
+        }
+        let clock: DeviceClock
+        do { clock = try deviceClockForWriting() } catch {
+            insights.passOutcome = forced ? .cannotWrite(services.describeError(error)) : nil
+            return ([], false)
+        }
         insights.isWorking = true
         defer { insights.isWorking = false; insights.lastPass = Date() }
         var reports: [InsightsUpdateReport] = []
         var remains = false
+        var failed = false
         let started = insightsNow()
         var updater = InsightsUpdater(vault: vault, model: runtime.model, embedder: runtime.embedder, deviceState: deviceStateURL,
                                       app: services.appName)
@@ -756,6 +776,7 @@ extension AppModelCore {
             } catch {
                 if error is CancellationError || Task.isCancelled { remains = true; break }
                 insights.problem = .failed(services.describeError(error))
+                failed = true
                 break
             }
             guard generation == gen else { break }
@@ -771,11 +792,9 @@ extension AppModelCore {
             if report.generated.isEmpty && report.topics.isEmpty { break }
         }
         if generation == gen {
-            if !reports.isEmpty, !remains {
-                insights.passOutcome = InsightsPassOutcome.of(reports, availability: insights.capability.model)
-            } else if reports.contains(where: { !$0.generated.isEmpty || !$0.topics.isEmpty }) {
-                insights.passOutcome = nil
-            }
+            // Said only for a pass that ran to its end; one that failed (its problem shows), ran nothing or was cut off
+            // clears what an earlier pass said.
+            insights.passOutcome = !reports.isEmpty && !remains && !failed ? InsightsPassOutcome.of(reports, availability: availability) : nil
             await refreshInsights()
         }
         return (reports, remains)

@@ -4613,10 +4613,11 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   devices may summarize the same note within a sync's delay; both files stay and are read as one.
 - **Work device.** The shared setting `insights.workDevice` (§13; `docs/settings-sync.md`) names the one device that
   embeds every note, builds the map and sets voice-note titles (vectors are comparable only under one embedding key,
-  and a title is a delta to the note). Any device where the embedding or the generation model is available may hold
-  it. Unset, the first capable device to run insights claims it by writing its own id (§13.3's merge settles a race
-  the same way everywhere). A work device that wrote nothing in `insights/` for 14 days (counted from its designation
-  when that is later) is taken over the same way by the next capable device to run insights, which writes its own id
+  and a title is a delta to the note). Any device that supports the pinned embedding revision may hold it (a device
+  with only the generation model never does). Unset, the first capable device to run insights claims it by writing its
+  own id (§13.3's merge settles a race the same way everywhere). A work device that wrote nothing in `insights/` for 14
+  days (counted from its designation when that is later), or that is no longer in the device list, is taken over the
+  same way by the next capable device to run insights, which writes its own id
   only while the setting still names the missing device. Other devices never embed into the vault.
 - **The pin.** `insights.embeddingRevision` (per language, `{"en": 1}`) names the sentence-embedding revision. Unset,
   the first map build sets it to the lowest revision every recently seen device supports. It never moves by itself;

@@ -34,7 +34,7 @@ struct InsightsMapScreen: View {
             .padding(.vertical, 8)
             .accessibilityIdentifier("insightsMap.form")
             if map.isLocal {
-                banner(String(localized: "This device builds its own map: its numbers differ from the work device's. Groups and places may differ from other devices."),
+                banner(String(localized: "This device builds its own map: its numbers differ from the map and titles device's. Groups and places may differ from other devices."),
                        systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("insightsMap.localBanner")
             } else if map.placedCount > 0, shown == .map {
@@ -43,7 +43,7 @@ struct InsightsMapScreen: View {
             }
             if map.isEmpty {
                 ContentUnavailableView("No Map Yet", systemImage: "point.3.connected.trianglepath.dotted",
-                                       description: Text("The map appears once the work device has built it."))
+                                       description: Text("The map appears once the map and titles device has built it."))
                     .frame(maxHeight: .infinity)
             } else if shown == .map {
                 InsightsMapCanvas(map: map, onOpen: onOpen)
@@ -375,7 +375,7 @@ struct InsightsClustersList: View {
         List {
             let clusters = model.insightsClusters
             if clusters.isEmpty {
-                Text("No groups yet: they appear once the work device has built the map.").foregroundStyle(.secondary)
+                Text("No groups yet: they appear once the map and titles device has built the map.").foregroundStyle(.secondary)
             }
             ForEach(clusters) { c in
                 Section {

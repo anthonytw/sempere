@@ -27,10 +27,10 @@ extension AppModelSuites {
 
         final class Power: @unchecked Sendable { var on = true }
 
-        func model(power: Power = Power(), model provider: any ModelProvider = FakeModelProvider()) async throws -> AppModel {
+        func model(power: Power = Power(), model provider: any ModelProvider = FakeModelProvider(), embedder: Bool = true) async throws -> AppModel {
             let (url, key) = try await ModelFixture.vault()
             var services = AppModelServices.headless()
-            services.insights = InsightsServices(model: { provider }, embedder: { FakeEmbeddingProvider() },
+            services.insights = InsightsServices(model: { provider }, embedder: { embedder ? FakeEmbeddingProvider() : nil },
                                                  powerWindow: { power.on }, platform: .init(platform: "ios", os: "iOS 27.2"))
             let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50), services: services)
             try await model.openVault(at: url)
@@ -136,11 +136,12 @@ extension AppModelSuites {
         }
 
         /// Every device with the model makes summaries (the owner's iPhone: "Process Now" did nothing, "0 of 10"), never
-        /// the vectors, the map or titles, which stay with the work device.
+        /// the vectors, the map or titles, which stay with the work device. Without the embedder it never takes that role,
+        /// not even from a work device that is missing (here: not in the device list).
         @Test func aDeviceThatIsNotTheWorkDeviceGeneratesButNeverMaps() async throws {
             let power = Power()
             power.on = false   // no automatic pass: this device has made nothing when the work device moves away
-            let model = try await model(power: power)
+            let model = try await model(power: power, embedder: false)
             try await note(model, "A", Self.physics[0])
             await model.setInsightsEnabled(true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
@@ -151,8 +152,9 @@ extension AppModelSuites {
             #expect(pass.reports.contains { !$0.generated.isEmpty })
             #expect(pass.reports.allSatisfy { $0.embedded.isEmpty && !$0.mapBuilt && !$0.claimedWorkDevice })
             #expect(model.insights.status?.processed == 1)
+            #expect(model.insights.settings.workDevice == DeviceID("0000beef"), "a device without the embedder takes no role")
             await model.claimInsightsWorkDevice()
-            #expect(model.insights.settings.workDevice == model.vault?.writerDevice)
+            #expect(model.insights.settings.workDevice == DeviceID("0000beef"), "Use This Device needs the embedder")
         }
 
         /// A model whose availability the test changes (Apple Intelligence turned on after the unlock).
@@ -183,11 +185,14 @@ extension AppModelSuites {
             #expect(!model.insightsHasRole, "off")
             await model.setInsightsEnabled(true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
-            // Embeds only: the work device, or a role nobody holds.
+            // Embeds only: the work device, a role nobody holds, or one whose holder is missing.
             #expect(!model.insights.capability.generates)
             await model.setInsightsWorkDevice(nil)
             #expect(model.insightsHasRole, "would claim an empty role")
             await model.setInsightsWorkDevice(DeviceID("0000beef"))
+            #expect(model.insights.status?.workDeviceNotSeen == true, "not in the device list: missing at once")
+            #expect(model.insightsHasRole, "would take over a missing work device")
+            model.insights.status?.workDeviceNotSeen = false   // as for a listed device seen lately
             #expect(!model.insightsHasRole, "embeds only, and another device holds the role")
             await model.claimInsightsWorkDevice()
             #expect(model.insightsHasRole, "the work device")
@@ -205,7 +210,7 @@ extension AppModelSuites {
         @Test func processNowSkipsTheSettleTimeAndTheBackOffAndSaysWhy() async throws {
             let power = Power()
             power.on = false
-            let model = try await model(power: power)
+            let model = try await model(power: power, embedder: false)
             await model.setInsightsEnabled(true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
             await model.setInsightsWorkDevice(DeviceID("0000beef"))
@@ -232,6 +237,9 @@ extension AppModelSuites {
             model.requestInsightsPass(force: true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil && model.insights.passOutcome != nil })
             #expect(model.insights.passOutcome == .nothingToDo)
+            // A pass that runs nothing (off power) clears it.
+            _ = await model.runInsightsPass(batch: 4, ignorePower: false)
+            #expect(model.insights.passOutcome == nil)
         }
 
         @Test func processNowOnADeviceThatCannotSummarizeSaysSo() async throws {

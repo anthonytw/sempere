@@ -2350,7 +2350,7 @@ on-device language model (`SystemLanguageModel.default`) and NaturalLanguage's s
 revision; never a server. They are off until `sempere settings set insights.enabled true`. Every device with the
 model makes summaries and keywords; one **work device** (`insights.workDevice`) also embeds every note, builds the map
 and titles voice notes. The first capable device to run `update` claims it when none is set, or when the work device
-has not been seen for 14 days. Every command takes `--json`, the access options and `--no-cache`.
+has not been seen for 14 days or left the device list (only a device with the embedder holds the role). Every command takes `--json`, the access options and `--no-cache`.
 
 - `update` does this device's work now (the scheduling policy of the design's §3.7): generate each eligible note
   (text unchanged for 10 minutes, `--force`: now and again) that no device has a current summary of; on the work

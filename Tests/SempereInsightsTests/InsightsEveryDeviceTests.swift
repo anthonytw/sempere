@@ -134,6 +134,20 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
                                            capabilities: .init(model: nil, embedRevision: nil, powerWindow: true), pinKey: nil, now: now,
                                            workDeviceMissing: true, deviceRecordChanged: false).contains(.claimWorkDevice),
                        "a device that can do none of the work does not claim it")
+        // A device with the model but no embedder at the pin never takes the map and titles role, missing holder or none.
+        let modelOnly = PolicyCapabilities(model: .init(model: "m", os: "27.2", prompt: 2), embedRevision: nil, powerWindow: true)
+        XCTAssertFalse(InsightsPolicy.plan(notes: [], snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: modelOnly,
+                                           pinKey: nil, now: now, workDeviceMissing: true, deviceRecordChanged: false).contains(.claimWorkDevice))
+        XCTAssertFalse(InsightsPolicy.plan(notes: [], snapshot: InsightsSnapshot(), me: me, settings: InsightsSettings(enabled: true),
+                                           capabilities: modelOnly, pinKey: nil, now: now, deviceRecordChanged: false).contains(.claimWorkDevice))
+    }
+
+    func testAWorkDeviceNoLongerListedIsMissingAtOnce() {
+        let w = DeviceID("22222222")!
+        let settings = InsightsSettings(enabled: true, workDevice: w, workDeviceSetAt: Int64(now.timeIntervalSince1970 * 1000))
+        XCTAssertFalse(WorkDeviceStatus(settings: settings, snapshot: InsightsSnapshot(), listed: [w], language: "en", now: now).notSeen)
+        XCTAssertTrue(WorkDeviceStatus(settings: settings, snapshot: InsightsSnapshot(), listed: [], language: "en", now: now).notSeen,
+                      "removed from the list: missing the same day it was designated")
     }
 
     // MARK: Two updaters on one vault
@@ -250,6 +264,26 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         XCTAssertTrue(late.mapBuilt)
     }
 
+    func testAModelOnlyDeviceNeverTakesOverAMissingWorkDevice() async throws {
+        try note("Springs", Self.physics[0])
+        try setWorkDevice(meA)
+        _ = try await run(a, model: model())
+        let late = try await run(b, model: model(), embedder: nil, at: now.addingTimeInterval(15 * 86_400)) { $0.force = true }
+        XCTAssertFalse(late.claimedWorkDevice)
+        XCTAssertEqual(InsightsSettings.read(a).workDevice, meA)
+        XCTAssertEqual(late.generated.count, 1, "it still summarizes")
+        XCTAssertFalse(late.mapBuilt)
+    }
+
+    func testARemovedWorkDeviceIsTakenOverAtOnce() async throws {
+        try note("Springs", Self.physics[0])
+        try setWorkDevice(DeviceID("0000beef")!)   // not in the device list
+        let r = try await run(b, model: model())
+        XCTAssertTrue(r.claimedWorkDevice)
+        XCTAssertEqual(InsightsSettings.read(a).workDevice, meB)
+        XCTAssertTrue(r.mapBuilt)
+    }
+
     // MARK: Process Now
 
     func testAForcedPassSkipsTheSettleTimeAndEarlierBackOff() async throws {
@@ -318,7 +352,24 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         r.cancelled = true
         XCTAssertNil(InsightsPassOutcome.of([r], availability: .available), "cut off: says nothing")
         r.cancelled = false
+        r.waitingOpen = 0; r.waitingToSettle = 0
+        r.failures = ["notebook:Kitchen": "nothing survived the fact check"]
+        XCTAssertEqual(InsightsPassOutcome.of([r], availability: .available), .nothingToDo, "a topic's failure is no note's")
+        let note = UUID().uuidString.lowercased()
+        r.failures[note] = "boom"
+        XCTAssertEqual(InsightsPassOutcome.of([r], availability: .available), .failed(count: 1, reason: "boom"))
         r.topics = ["tag:x"]
         XCTAssertNil(InsightsPassOutcome.of([r], availability: .available))
+    }
+
+    func testTheMemosReasonIsCappedInBytes() {
+        var memo = InsightsFailureMemo()
+        let id = UUID()
+        let long = String(repeating: "é", count: 200)   // two bytes each
+        memo.record(note: id, hash: "h", identity: GenerationIdentity(model: "m", os: "1", prompt: 2),
+                    error: InsightsProviderError.failed(long), now: now)
+        let reason = try? XCTUnwrap(memo.reason(note: id))
+        XCTAssertLessThanOrEqual(reason?.utf8.count ?? 999, 120)
+        XCTAssertGreaterThan(reason?.utf8.count ?? 0, 100)
     }
 }

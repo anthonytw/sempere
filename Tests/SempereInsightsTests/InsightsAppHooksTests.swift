@@ -70,7 +70,7 @@ extension InsightsUpdaterTests {
         try note("A", Self.physics[0])
         try enable()
         try InsightsSettingsWrite.setWorkDevice(DeviceID("0000beef"), vault: vault, now: now)
-        let ipad = try await run { $0.deviceType = .ipad }
+        let ipad = try await run(embedder: nil) { $0.deviceType = .ipad }
         XCTAssertEqual(ipad.generated.count, 1)
         XCTAssertEqual(ipad.embedded, [])
         XCTAssertFalse(ipad.mapBuilt)

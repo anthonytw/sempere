@@ -43,7 +43,7 @@ enum InsightsText {
         case .failed(let count, let reason):
             return String(localized: "\(count) notes could not be summarized: \(reason)", comment: "Note Insights pass outcome; %@ is the first error")
         case .backedOff(let count, let reason?):
-            return String(localized: "\(count) notes are waiting after an earlier failure: \(reason)",
+            return String(localized: "\(count) notes are waiting after an earlier failure: \(reason). Process Now tries them again.",
                           comment: "Note Insights pass outcome; %@ is the first error")
         case .backedOff(let count, nil):
             return String(localized: "\(count) notes are waiting after an earlier failure. Process Now tries them again.",
@@ -55,6 +55,13 @@ enum InsightsText {
             return String(localized: "\(count) notes are open in an editor and are processed once closed.", comment: "Note Insights pass outcome")
         case .nothingToDo:
             return String(localized: "Every note with text has a summary.", comment: "Note Insights pass outcome")
+        case .readOnly:
+            return String(localized: "This vault is read-only here, so this device cannot process notes.", comment: "Note Insights pass outcome")
+        case .notListed:
+            return String(localized: "This device is not in the vault's device list, so it cannot process notes.",
+                          comment: "Note Insights pass outcome")
+        case .cannotWrite(let why):
+            return String(localized: "This device cannot process notes now: \(why)", comment: "Note Insights pass outcome; %@ is the reason")
         }
     }
 
@@ -63,9 +70,9 @@ enum InsightsText {
         switch MapCompatibility(rawValue: raw) {
         case .workDevice?: return String(localized: "This device builds the map and names voice notes.", comment: "Note Insights map status")
         case .compatible?: return String(localized: "Compatible: this device places its new notes in the map at once.", comment: "Note Insights map status")
-        case .incompatible?: return String(localized: "This device's numbers differ from the work device's, so it builds its own map.",
+        case .incompatible?: return String(localized: "This device's numbers differ from the map and titles device's, so it builds its own map.",
                                            comment: "Note Insights map status")
-        case .vectorReader?: return String(localized: "This device reads the shared map; its new notes join it once the work device processes them.",
+        case .vectorReader?: return String(localized: "This device reads the shared map; its new notes join it once the map and titles device processes them.",
                                            comment: "Note Insights map status")
         case .noMap?, nil: return String(localized: "No map yet.", comment: "Note Insights map status")
         }
@@ -175,20 +182,22 @@ struct InsightsSettingsSection: View {
             } else {
                 ProgressView()
             }
-            if model.insightsBusy {
+            if state.isWorking {
                 Label("Processing notes on this device…", systemImage: "gearshape.2").foregroundStyle(.secondary)
+            } else if model.insightsBusy {
+                Label("Making a topic summary…", systemImage: "text.quote").foregroundStyle(.secondary)
             }
             if model.insightsHasRole {
                 Button("Process Now", systemImage: "play.circle") { model.requestInsightsPass(force: true) }
                     .disabled(model.insightsBusy || !writable)
-                    .help("Make this device's summaries, keywords and related notes now, without waiting for it to charge")
+                    .help("Process notes on this device now, without waiting for it to charge")
             }
-            if !state.capability.generates {
-                // Said beside the button and the counts: this device adds related notes and the map at most.
-                Text(InsightsText.modelReason(state.capability.model)).font(.footnote).foregroundStyle(.secondary)
-            } else if let outcome = state.passOutcome, !model.insightsBusy {
+            if let outcome = state.passOutcome, !model.insightsBusy {
                 Text(InsightsText.outcome(outcome)).font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("insights.passOutcome")
+            } else if !state.capability.generates {
+                // Said beside the button and the counts: this device adds related notes and the map at most.
+                Text(InsightsText.modelReason(state.capability.model)).font(.footnote).foregroundStyle(.secondary)
             }
             NavigationLink {
                 InsightsMapScreen { model.selectedNoteID = $0 }
@@ -235,7 +244,7 @@ struct InsightsSettingsSection: View {
             if let s = state.status, s.workDevice != nil {
                 LabeledContent("Last seen") { Text(InsightsText.lastSeen(s.workDeviceLastSeen)) }
                 if s.workDeviceNotSeen {
-                    Label("This device has not been seen for 14 days. The next device that can do the work takes over by itself.",
+                    Label("The map and titles device has not been seen for 14 days. The next device that can do the work takes over by itself.",
                           systemImage: "exclamationmark.triangle")
                         .font(.footnote)
                 }
@@ -325,10 +334,10 @@ struct InsightsSettingsSection: View {
 
     private func pinMessage(_ move: InsightsSettingsWrite.PinMove) -> String {
         let names = Dictionary((state.status?.devices ?? []).map { ($0.device, InsightsText.deviceName($0)) }, uniquingKeysWith: { a, _ in a })
-        var parts = [String(localized: "The work device embeds every note again (a few minutes for hundreds of notes).")]
+        var parts = [String(localized: "The map and titles device embeds every note again (a few minutes for hundreds of notes).")]
         if !move.leftOut.isEmpty {
             let left = move.leftOut.map { names[$0.rawValue] ?? $0.rawValue }.joined(separator: ", ")
-            parts.append(String(localized: "\(left) cannot use it: they stop placing new notes until the work device processes them.",
+            parts.append(String(localized: "\(left) cannot use it: they stop placing new notes until the map and titles device processes them.",
                                 comment: "%@ is a list of device names"))
         }
         return parts.joined(separator: " ")
