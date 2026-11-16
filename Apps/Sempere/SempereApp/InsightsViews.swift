@@ -126,6 +126,7 @@ struct AppleIntelligenceHelpButton: View {
         if availability == .notReady || availability == .disabled {
             Button("How to Fix", systemImage: "questionmark.circle") { showing = true }
                 .font(.footnote)
+                .help("Show how to turn on Apple Intelligence and match its language to this device's")
                 .accessibilityIdentifier("insights.howToFix")
                 .sheet(isPresented: $showing) { AppleIntelligenceHelpSheet() }
         }

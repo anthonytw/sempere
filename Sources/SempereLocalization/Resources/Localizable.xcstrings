@@ -21331,6 +21331,19 @@
         }
       }
     },
+    "Show how to turn on Apple Intelligence and match its language to this device's" : {
+      "comment" : "Tooltip of How to Fix",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar cómo activar Apple Intelligence y hacer que su idioma coincida con el de este dispositivo"
+          }
+        }
+      }
+    },
     "Show in Finder" : {
       "comment" : "Button: opens a folder in the Finder (Mac)",
       "extractionState" : "manual",
