@@ -122,7 +122,7 @@ final class WatchAdmissionTests: VaultTestCase {
     /// to retry. A file that lies about its epoch as the current one is admitted but is not re-sealed (its tag does not
     /// verify under the claimed epoch's key).
     func testAnEpochThePhoneNeverHeldIsHeldAndALiarIsNotCaughtUp() throws {
-        let w = try EpochWorld(in: tmp, names: ["A", "P", "X"])
+        let w = try EpochWorld(in: tmp, names: ["A", "P", "X", "Y"])
         let profile1 = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
         var a = try w.open("A")
         try a.removeDevices([w["X"].id])
@@ -147,6 +147,14 @@ final class WatchAdmissionTests: VaultTestCase {
         XCTAssertEqual(r2.outcome, .placed(.vault))
         _ = try w.open("P").catchUp()
         XCTAssertThrowsError(try w.open("A").readCapture(id2), "a mislabelled old-epoch note is not caught up")
+        // Nor after a further epoch change, when its label has become an earlier epoch too (review of the 1.1.0 repair:
+        // catch-up's fallback tries only epochs after the labeled one).
+        a = try w.open("A")
+        try a.removeDevices([w["Y"].id])
+        let later = try w.open("P").catchUp()
+        XCTAssertFalse(later.reencrypted.contains("inbox/\(s2.name)"), "\(later)")
+        XCTAssertFalse(later.relabeled.contains("inbox/\(s2.name)"), "\(later)")
+        XCTAssertThrowsError(try w.open("A").readCapture(id2), "still not laundered")
     }
 
     /// 1.1.0's quick-capture refresh gave the stored profile the new epoch's key and recipient but kept the old epoch's number

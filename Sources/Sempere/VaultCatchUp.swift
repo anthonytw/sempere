@@ -122,8 +122,9 @@ extension Vault {
         let pinned = chain.map { TakeoverRule.PinnedEpoch(epochId: $0.epochId, recovery: $0.recovery) }
         let older = olderEpochs
         var keys: [Data: VaultEpochKey] = [:]
-        for o in older { keys[o.epochId] = o.key }
-        for (_, k) in try ledger.epochKeys() where keys[k.epochId] == nil { keys[k.epochId] = k }
+        var numbers: [Data: Int] = [:]   // each key's epoch number, from the chain or the ledger (never from a label)
+        for o in older { keys[o.epochId] = o.key; numbers[o.epochId] = o.epoch }
+        for (e, k) in try ledger.epochKeys() where keys[k.epochId] == nil { keys[k.epochId] = k; numbers[k.epochId] = e }
         let (liveEntries, stale) = ledgerLiveness(entries, now: now)
         var gone = stale
         report.dropped = stale.map(\.path)
@@ -140,10 +141,9 @@ extension Vault {
                 }
                 continue
             }
-            if Self.epochMutations.contains(.skipCatchUp) { continue }
             // Sealed under the current key already, under an earlier epoch's label: the entry is corrected, nothing is
             // re-sealed (a re-seal under the labeled key could only fail, every catch-up again).
-            if ownCaptureIsCurrent(e) {
+            if !Self.epochMutations.contains(.skipCatchUp), ownCaptureIsCurrent(e) {
                 do {
                     try recordWrite(path: e.path, sha256: e.sha256)
                     gone.append(e)
@@ -157,10 +157,16 @@ extension Vault {
                 report.problems[e.path] = "the key of the epoch it was written under is not known"
                 continue
             }
+            if Self.epochMutations.contains(.skipCatchUp) { continue }
             n += 1
             do {
-                let others = keys.values.filter { $0.epochId != key.epochId }.sorted { Hex.encode($0.epochId) < Hex.encode($1.epochId) }
-                report.reencrypted.append(try reencryptOwn(e, key: key, otherKeys: others, n: n))
+                // Only epochs AFTER the labeled one: 1.1.0's refresh labeled a capture with the epoch before its key, never
+                // after. A file sealed under an earlier epoch than it claims (a lost watch's copy of an old profile, labeled
+                // as the current epoch to be admitted) is never re-sealed, however many epochs later.
+                let labeled = numbers[key.epochId] ?? Int.max
+                let later = keys.values.filter { (numbers[$0.epochId] ?? Int.min) > labeled }
+                    .sorted { (numbers[$0.epochId] ?? 0) < (numbers[$1.epochId] ?? 0) }
+                report.reencrypted.append(try reencryptOwn(e, key: key, otherKeys: later, n: n))
                 gone.append(e)
             } catch VaultError.interrupted {
                 throw VaultError.interrupted
@@ -254,7 +260,7 @@ extension Vault {
 
     /// Re-encrypts this device's own file of `entry` (under `key`) under the current key; returns its path. An inbox file
     /// that does not open under `key` is tried under `otherKeys` (earlier epochs this device holds): its label may be wrong
-    /// (`reencryptOwnCapture`).
+    /// (`reencryptOwnCapture`); the caller passes only epochs after the labeled one.
     func reencryptOwn(_ entry: LedgerEntry, key: VaultEpochKey, otherKeys: [VaultEpochKey] = [], n: Int) throws -> String {
         let file = url.appendingPathComponent(entry.path)
         let parts = entry.path.split(separator: "/").map(String.init)
@@ -327,12 +333,17 @@ extension Vault {
     /// The entry's epoch is where to look first, not the last word: 1.1.0's quick-capture refresh gave a profile the new
     /// epoch's key and kept the old epoch's number and id, so its captures (the phone's and the Watch's) were recorded under
     /// an epoch they were not sealed under. A file that does not open as this device's capture under `key` is tried under
-    /// `otherKeys`, and re-sealed from the epoch it opens under.
+    /// `otherKeys` (epochs after the labeled one only: a label is never newer than its key), and re-sealed from the epoch it
+    /// opens under. The bytes must still be the ones the entry recorded.
     func reencryptOwnCapture(_ entry: LedgerEntry, file: URL, name: String, kind: CaptureFile.Kind, key labeled: VaultEpochKey,
                              otherKeys: [VaultEpochKey] = [], n: Int) throws -> String {
         guard let me = deviceEntry else { throw VaultError.removedFromVault("this device is not on the list") }
         let fingerprint = CaptureKey.fingerprint(of: me.key)
         let data = try FileIO.read(file, maxBytes: CaptureFile.maxSealedBytes(kind))
+        // The bytes the ledger recorded, not whatever is at the path now (the liveness pass hashed it a moment ago).
+        guard FileDigest.sha256(data) == entry.sha256 else {
+            throw VaultError.epochChangeRefused("\(entry.path) is not the file this device recorded")
+        }
         func open(_ k: VaultEpochKey) -> Data? {
             guard let identity = try? k.vaultIdentity(),
                   let p = try? AgeFile.decrypt(data, with: [NativeIdentity.mlkem768x25519(identity)]),

@@ -158,6 +158,42 @@ struct WatchReceiverTests {
         #expect(rig.receiver.admitReady().isEmpty, "nothing more")
     }
 
+    /// A lost watch's steps: the toggle off, and its notes then held as `suspended` (this phone removed meanwhile). When the
+    /// phone is listed again and the toggle comes back on, they are not placed by themselves: they arrived while the toggle
+    /// was off, which the sidecar records whatever they were held for, and Settings words them as such.
+    @Test func aNoteThatArrivedWhileTheToggleWasOffIsNeverAdmittedByItself() throws {
+        var rig = try Self.rig()
+        var suspended = rig.current.stored
+        suspended.suspended = true
+        try rig.profileStore.save(suspended)
+        rig.enabled = false
+        let lost = try Self.transfer(rig.current.stored.profile, in: rig)
+        #expect(try rig.receiver.receive(file: lost.file, metadata: lost.metadata)?.result.outcome == .held(.suspended))
+        let note = try #require(rig.receiver.heldNotes().first)
+        #expect(note.toggleWasOff == true && note.arrivedWhileOff)
+
+        try rig.profileStore.save(rig.current.stored)   // listed again
+        rig.enabled = true                              // and the toggle back on
+        #expect(rig.receiver.admitReady().isEmpty)
+        #expect(Self.inbox(rig.current.url).isEmpty)
+        #expect(rig.receiver.currentReason(note) == .linkOff)
+        #expect(rig.receiver.needsCheck(note))
+        #expect(rig.receiver.canAddNow(note), "the user may still add it")
+    }
+
+    /// A 1.1 sidecar has no `toggleWasOff`: it decodes, and its `linkOff` reason says the toggle was off.
+    @Test func aSidecarWithoutTheToggleFieldDecodes() throws {
+        let json = #"{"bytes":3,"epoch":1,"epochId":"\#(String(repeating: "ab", count: 32))","id":"\#(UUID().uuidString)","#
+            + #""reason":"linkOff","receivedAt":"2026-11-01T10:00:00Z","vault":"\#(UUID().uuidString)"}"#
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        let held = try d.decode(HeldCapture.self, from: Data(json.utf8))
+        #expect(held.toggleWasOff == nil)
+        #expect(held.arrivedWhileOff)
+        let suspended = try d.decode(HeldCapture.self, from: Data(json.replacingOccurrences(of: "linkOff", with: "suspended").utf8))
+        #expect(!suspended.arrivedWhileOff)
+    }
+
     @Test func anUnreachableCurrentVaultQueuesTheFileWithItsEpoch() throws {
         var rig = try Self.rig()
         rig.storeRoot = try QuickCaptureLogicTests.tempDir("not-the-store")

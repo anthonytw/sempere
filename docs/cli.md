@@ -2266,9 +2266,10 @@ adopts the captures as notes. `--json`: `keygen` gives `{identity, recipient}`; 
 is `placed`, `held`, `duplicate` or `refused`; `placement` is `vault`, `queued`, `otherVault` or `otherVaultQueued`; `reason` of a held file is
 `linkOff`, `oldEpoch`, `newerEpoch`, `unknownEpoch` or `unknownVault`).
 
-`held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, needsCheck, bytes, receivedAt}]`;
-`needsCheck` marks a note that arrived after Use on Apple Watch went off (`linkOff`) or under an earlier key (`oldEpoch`),
-what a lost watch sends: `held add --all` skips those, and they are added one at a time by id after a check). `held summary` gives the count per reason, the limits and the leftover files it removed (`--json`: `{counts: {reason: n}, orphansRemoved, limits: {files, bytes, unplaceableFiles, unplaceableBytes}}`); like `list` it first removes files with no record (and records with no file) that are more than 24 hours old, since a younger one may be a `receive` still writing it. `held add` is the
+`held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, needsCheck, toggleWasOff, bytes, receivedAt}]`;
+`needsCheck` marks a note that arrived after Use on Apple Watch went off (`toggleWasOff`, whatever its reason) or under an earlier
+key (`oldEpoch`), what a lost watch sends: `held add --all` skips those, judged again when it runs (a note held as `newerEpoch` is of
+an earlier key once this machine's epoch caught up), and they are added one at a time by id after a check). `held summary` gives the count per reason, the limits and the leftover files it removed (`--json`: `{counts: {reason: n}, orphansRemoved, limits: {files, bytes, unplaceableFiles, unplaceableBytes}}`); like `list` it first removes files with no record (and records with no file) that are more than 24 hours old, since a younger one may be a `receive` still writing it. `held add` is the
 decision to take a held note: it records it in this machine's ledger and places it in its vault's inbox as `receive` would
 (`--vault`, `--store`, `--queue` as there), and the next catch-up re-seals an older epoch's note under the current key
 (`--json`: `[{capture, outcome, placement, problem}]`, `outcome` `added`, `notHeld` (already taken by an earlier add: a no-op, not a failure) or `failed`; exit 1 if any failed). A note whose epoch

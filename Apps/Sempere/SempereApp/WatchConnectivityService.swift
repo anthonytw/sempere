@@ -23,12 +23,18 @@ final class WatchLinkStatus {
     private(set) var held: [HeldCapture] = []
     /// Which of them "Add to inbox" can take now (the admission check `addHeld` makes, not the stored reason).
     private(set) var addableIds: Set<UUID> = []
+    /// Why each is held now (`WatchReceiver.currentReason`, not the stored reason, which can be stale).
+    private(set) var reasons: [UUID: WatchHeldReason] = [:]
+    /// Which of them need the user's check before an Add (`WatchReceiver.needsCheck`).
+    private(set) var checkIds: Set<UUID> = []
     /// Notes with an add or a delete under way: their buttons stay off, so a second tap cannot start a second add.
     private(set) var busy = false
 
-    func setHeld(_ notes: [HeldCapture], addable: Set<UUID>) {
+    func setHeld(_ notes: [HeldCapture], addable: Set<UUID>, reasons: [UUID: WatchHeldReason], check: Set<UUID>) {
         held = notes
         addableIds = addable
+        self.reasons = reasons
+        checkIds = check
         revision += 1
     }
 
@@ -67,6 +73,8 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     private let sendLock = NSLock()
     private var receiver: WatchReceiver?
     private var profileStore: (any CaptureProfileStore)?
+    /// What admission depended on at the last `admitReadyHeldNotes` pass.
+    private var lastAdmitKey: String?
 
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
 
@@ -112,17 +120,34 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         Task.detached { [weak self] in
             let notes = receiver.heldNotes()
             let addable = Set(notes.filter { receiver.canAddNow($0) }.map(\.id))
-            await MainActor.run { self?.status.setHeld(notes, addable: addable) }
+            let reasons = Dictionary(uniqueKeysWithValues: notes.map { ($0.id, receiver.currentReason($0)) })
+            let check = Set(notes.filter { receiver.needsCheck($0) }.map(\.id))
+            await MainActor.run { self?.status.setHeld(notes, addable: addable, reasons: reasons, check: check) }
         }
     }
 
     /// Places, off the main actor, the held notes that would be admitted now (`WatchReceiver.admitReady`: a refresh to the
     /// vault's epoch, a lifted suspension), then re-reads the list. Notes held for the user's decision stay.
+    /// Runs only when what decides admission changed since the last pass (the profile's vault, epoch and suspension, and
+    /// the toggle): every activation calls `profileChanged`, and a pass reads every held note's vault folder.
     func admitReadyHeldNotes() {
-        guard let receiver = lock.withLock({ receiver }) else { return }
+        guard let receiver = lock.withLock({ receiver }), let store = lock.withLock({ profileStore }) else { return }
+        let provisioner = self.provisioner
         Task.detached { [weak self] in
+            guard let self else { return }
+            // Unreadable before the first unlock: nothing decided, tried at the next change.
+            let stored: StoredCaptureProfile?
+            do { stored = try store.load() } catch { return }
+            let key = [stored?.profile.vaultId.uuidString ?? "-", "\(stored?.profile.epoch ?? -1)", stored?.profile.epochId ?? "-",
+                       "\(stored?.suspended == true)", "\(provisioner.enabled)"].joined(separator: " ")
+            let changed = self.lock.withLock { () -> Bool in
+                guard self.lastAdmitKey != key else { return false }
+                self.lastAdmitKey = key
+                return true
+            }
+            guard changed else { return }
             _ = receiver.admitReady()
-            self?.refreshHeld()
+            self.refreshHeld()
         }
     }
 
@@ -133,7 +158,8 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         guard await MainActor.run(body: { status.begin() }) else { return false }
         let added = await Task.detached { () -> Bool in
             guard receiver.canAddNow(note) else { return false }
-            return (try? receiver.addHeld(note)) != nil
+            // nil: no longer held, because an earlier add (or `admitReady`) placed it: done, not a failure.
+            do { _ = try receiver.addHeld(note); return true } catch { return false }
         }.value
         await MainActor.run { status.end() }
         refreshHeld()

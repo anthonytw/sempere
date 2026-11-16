@@ -252,7 +252,7 @@ public struct WatchIntake: Sendable {
         // Step 3: admitted, or held.
         if let reason = try holdReason(sealed, vault: meta.vault, using: delivery) {
             guard let held else { return WatchIntakeResult(id: meta.id, outcome: .refused(.heldFull)) }
-            do { try held.hold(sealed, vault: meta.vault, reason: reason) } catch let e as WatchHeldError where e == .full || e == .fullUnplaceable {
+            do { try held.hold(sealed, vault: meta.vault, reason: reason, toggleOff: !delivery.linkEnabled) } catch let e as WatchHeldError where e == .full || e == .fullUnplaceable {
                 return WatchIntakeResult(id: meta.id, outcome: .refused(.heldFull))
             }
             try? received.insert(meta.id)
@@ -333,17 +333,19 @@ public struct WatchIntake: Sendable {
     }
 
     /// Places the held notes that would be admitted now, as if they had just arrived: their vault and epoch are the phone's
-    /// (`epochVerdict` nil) and "Use on Apple Watch" is on. Run after the stored profile changed (a refresh to a new epoch,
-    /// a suspension lifted, a vault set up), so notes held only because the phone was behind (`newerEpoch`, `suspended`,
-    /// `unknownVault`, `unknownEpoch`) are not left for the user to add one by one. Notes held for the user's decision stay
-    /// held whatever the verdict: `linkOff` and `oldEpoch` (`WatchHeldReason.needsCheck`: after a lost watch's steps, those
-    /// are what the lost watch sends). A note that cannot be placed now stays held (tried again at the next change).
-    /// Returns the ids placed.
+    /// (`epochVerdict` nil) and "Use on Apple Watch" is on. Run when what decides admission changed (the stored profile's
+    /// vault, epoch or suspension; the toggle). The notes it can take are few: `suspended` ones once the device is listed
+    /// again, `unknownVault` ones once that vault is on the phone. A `newerEpoch` note carries the label of the profile that
+    /// sealed it, an earlier epoch once the profile caught up, so it becomes `oldEpoch` and stays. Notes held for the user's
+    /// decision stay held whatever the verdict: those that arrived while the toggle was off (`arrivedWhileOff`) and
+    /// `oldEpoch` ones (after a lost watch's steps, what the lost watch sends). A note that cannot be placed now stays held
+    /// (tried again at the next change). Returns the ids placed.
     @discardableResult
     public func admitReady() -> [UUID] {
         guard let held, delivery.linkEnabled else { return [] }
         var placed: [UUID] = []
-        for item in held.list() where !item.needsCheck {
+        // Not `needsCheck(_:)`: a note that qualifies has no verdict, so only what it arrived as can rule it out.
+        for item in held.list() where !item.arrivedWhileOff && !item.reason.needsCheck {
             guard let epochId = Hex.decode(item.epochId) else { continue }
             let probe = SealedCapture(name: CaptureFile.name(item.id, .capture), data: Data(), epoch: item.epoch, epochId: epochId)
             do {
@@ -364,6 +366,22 @@ public struct WatchIntake: Sendable {
         }
         return placed
     }
+
+    /// Why `item` is held now, judged as `canAddNow` does (its stored reason can be stale: 1.1.0's `newerEpoch` notes are
+    /// of an earlier key once the profile is repaired): the vault and epoch verdict, else `linkOff` when it arrived while the
+    /// toggle was off or the toggle is off now, else the stored reason. The stored reason when the state cannot be read.
+    public func currentReason(_ item: HeldCapture) -> WatchHeldReason {
+        guard let epochId = Hex.decode(item.epochId) else { return item.reason }
+        let probe = SealedCapture(name: CaptureFile.name(item.id, .capture), data: Data(), epoch: item.epoch, epochId: epochId)
+        do {
+            if let verdict = try epochVerdict(probe, vault: item.vault) { return verdict }
+        } catch { return item.reason }
+        return item.arrivedWhileOff || !delivery.linkEnabled ? .linkOff : item.reason
+    }
+
+    /// Whether `item` needs the user's check before it is added (the warning, `held add --all` skipping it): it arrived
+    /// while the toggle was off, or it is of an earlier key now (`currentReason`).
+    public func needsCheck(_ item: HeldCapture) -> Bool { item.arrivedWhileOff || currentReason(item).needsCheck }
 
     /// What the phone sends at the watch's activation: the ids it holds.
     public func have() -> WatchAck { WatchAck(have: received.newest()) }

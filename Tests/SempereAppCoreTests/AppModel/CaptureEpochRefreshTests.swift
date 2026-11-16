@@ -117,8 +117,14 @@ extension AppModelSuites {
             // Its note is held; the owner adds it while the vault is closed.
             let (file, meta, sealed) = try transfer(bad.profile, in: rig)
             #expect(try receiver(rig).receive(file: file, metadata: meta)?.result.outcome == .held(.newerEpoch))
+            // A second one the owner leaves held.
+            let (fileB, metaB, sealedB) = try transfer(bad.profile, in: rig)
+            #expect(try receiver(rig).receive(file: fileB, metadata: metaB)?.result.outcome == .held(.newerEpoch))
+            let idB = try #require(CaptureFile.parse(name: sealedB.name)?.id)
+            #expect(!receiver(rig).needsCheck(try #require(receiver(rig).heldNotes().first { $0.id == idB })))
             model.close()
-            let held = try #require(receiver(rig).heldNotes().first)
+            let firstId = try #require(CaptureFile.parse(name: sealed.name)?.id)
+            let held = try #require(receiver(rig).heldNotes().first { $0.id == firstId })
             #expect(receiver(rig).canAddNow(held))
             #expect(try receiver(rig).addHeld(held) == .vault)
             #expect(InboxTests.inbox(rig.url) == [sealed.name])
@@ -138,6 +144,16 @@ extension AppModelSuites {
             #expect(model.inboxProblem == nil)
             let report = try #require(model.vault).catchUp()
             #expect(report.problems.isEmpty, "\(report.problems)")
+
+            // The one left held: stored as newerEpoch, judged now as of an earlier key, so Settings and `held add --all`
+            // treat it as one (the warning, Add Anyway, skipped by --all); it is not placed by itself.
+            let leftB = try #require(receiver(rig).heldNotes().first { $0.id == idB })
+            #expect(leftB.reason == .newerEpoch)
+            #expect(receiver(rig).currentReason(leftB) == .oldEpoch)
+            #expect(receiver(rig).needsCheck(leftB))
+            #expect(receiver(rig).admitReady().isEmpty)
+            #expect(try receiver(rig).addHeld(leftB) == .vault)
+            #expect(try await adopted(model, sealedB))
 
             // A note still on the watch, sealed with the bad profile, arrives after the repair: held as sealed under an
             // earlier key (the phone cannot tell it from one that was), and it can be added: the repair remembered the

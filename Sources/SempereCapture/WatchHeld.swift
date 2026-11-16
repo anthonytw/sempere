@@ -39,10 +39,24 @@ public struct HeldCapture: Codable, Equatable, Sendable {
     public var receivedAt: Date
     public var reason: WatchHeldReason
     public var bytes: Int
+    /// "Use on Apple Watch" was off when it arrived, whatever it was held for (the vault and epoch verdict comes first, so a
+    /// note can be held as `suspended` and have come while the toggle was off). Optional: a 1.1 sidecar has none, and its
+    /// `linkOff` reason says it (`arrivedWhileOff`).
+    public var toggleWasOff: Bool?
+
+    public init(id: UUID, vault: UUID, epoch: Int, epochId: String, receivedAt: Date, reason: WatchHeldReason, bytes: Int,
+                toggleWasOff: Bool? = nil) {
+        self.id = id; self.vault = vault; self.epoch = epoch; self.epochId = epochId; self.receivedAt = receivedAt
+        self.reason = reason; self.bytes = bytes; self.toggleWasOff = toggleWasOff
+    }
 
     public var canAdd: Bool { reason.canAdd }
-    /// `WatchHeldReason.needsCheck`.
-    public var needsCheck: Bool { reason.needsCheck }
+    /// `WatchHeldReason.needsCheck` of the stored reason, or it arrived while the toggle was off. The live judgment is
+    /// `WatchIntake.needsCheck(_:)`.
+    public var needsCheck: Bool { arrivedWhileOff || reason.needsCheck }
+    /// It arrived while "Use on Apple Watch" was off: after a lost watch's steps, what the lost watch sends. Never placed by
+    /// itself (`WatchIntake.admitReady`), and its Add carries the lost-watch caution.
+    public var arrivedWhileOff: Bool { toggleWasOff == true || reason == .linkOff }
 }
 
 public enum WatchHeldError: Error, Equatable, Sendable, CustomStringConvertible {
@@ -190,8 +204,9 @@ public final class WatchHeldStore: @unchecked Sendable {
         Dictionary(list().map { ($0.reason, 1) }, uniquingKeysWith: +)
     }
 
-    /// Keeps `sealed` (a file the intake checked), unless it is held already. Throws `.full` past the caps.
-    public func hold(_ sealed: SealedCapture, vault: UUID, reason: WatchHeldReason) throws {
+    /// Keeps `sealed` (a file the intake checked), unless it is held already. Throws `.full` past the caps. `toggleOff`: "Use
+    /// on Apple Watch" was off when it arrived (recorded whatever the reason).
+    public func hold(_ sealed: SealedCapture, vault: UUID, reason: WatchHeldReason, toggleOff: Bool = false) throws {
         try lock.withLock {
             guard let parsed = CaptureFile.parse(name: sealed.name), parsed.kind == .capture,
                   let epoch = sealed.epoch, let epochId = sealed.epochId else {
@@ -207,7 +222,7 @@ public final class WatchHeldStore: @unchecked Sendable {
                 throw WatchHeldError.fullUnplaceable
             }
             let held = HeldCapture(id: parsed.id, vault: vault, epoch: epoch, epochId: Hex.encode(epochId), receivedAt: now(),
-                                   reason: reason, bytes: sealed.data.count)
+                                   reason: reason, bytes: sealed.data.count, toggleWasOff: toggleOff || reason == .linkOff ? true : nil)
             let dir = folder(vault)
             try FileIO.createDirectory(dir)
             let e = JSONEncoder()
@@ -252,13 +267,17 @@ public final class WatchHeldStore: @unchecked Sendable {
         try takeLock.withLock {
             guard list().contains(where: { $0.id == held.id && $0.vault == held.vault }) else { return nil }
             let result = try body(try load(held))
-            delete(held)
+            remove(held)
             return result
         }
     }
 
-    /// Removes the file and its sidecar.
+    /// Removes the file and its sidecar, after any add of it under way (`take`): a Delete never races an Add of the same note.
     public func delete(_ held: HeldCapture) {
+        takeLock.withLock { remove(held) }
+    }
+
+    private func remove(_ held: HeldCapture) {
         lock.withLock {
             let dir = folder(held.vault)
             let name = CaptureFile.name(held.id, .capture)
