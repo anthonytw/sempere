@@ -30,7 +30,9 @@ enum InsightsText {
         switch a {
         case .available?: return String(localized: "Apple Intelligence is available on this device.")
         case .disabled?: return String(localized: "Turn on Apple Intelligence in Settings to make summaries on this device.")
-        case .notReady?: return String(localized: "Apple Intelligence is still getting ready on this device.")
+        // Apple says "not ready" both while the model downloads and, for ever, while the Siri language does not match the
+        // device's language and region exactly (es-ES and es-US differ): an app cannot tell which (1.2 owner report).
+        case .notReady?: return String(localized: "Apple Intelligence is not ready on this device. It may still be downloading, or its language does not match this device's language and region.")
         case .deviceNotEligible?: return String(localized: "This device cannot run Apple Intelligence: it shows the summaries other devices make.")
         case .unsupported?, nil: return String(localized: "Summaries cannot be made on this device: it shows the summaries other devices make.")
         }
@@ -111,6 +113,53 @@ enum InsightsText {
     }
 }
 
+// MARK: - How to Fix (Apple Intelligence)
+
+/// "How to Fix", beside a reason Apple Intelligence cannot make summaries here that the user can change: turned off, or not
+/// ready (which is also what a language mismatch looks like, and never ends by itself). A sheet of steps: iOS has no public
+/// link into those settings.
+struct AppleIntelligenceHelpButton: View {
+    let availability: ModelAvailability?
+    @State private var showing = false
+
+    var body: some View {
+        if availability == .notReady || availability == .disabled {
+            Button("How to Fix", systemImage: "questionmark.circle") { showing = true }
+                .font(.footnote)
+                .accessibilityIdentifier("insights.howToFix")
+                .sheet(isPresented: $showing) { AppleIntelligenceHelpSheet() }
+        }
+    }
+}
+
+struct AppleIntelligenceHelpSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    #if targetEnvironment(macCatalyst)
+                    Text("1. Open System Settings ▸ Apple Intelligence & Siri and turn on Apple Intelligence.")
+                    Text("2. Check its Language there, and the Mac's language in System Settings ▸ General ▸ Language & Region.")
+                    #else
+                    Text("1. Open Settings ▸ Apple Intelligence & Siri and turn on Apple Intelligence.")
+                    Text("2. Check its Language there, and the device's language in Settings ▸ General ▸ Language & Region.")
+                    #endif
+                    Text("3. Make them the same, including the region: Spanish (Spain) for both, not Spanish (Spain) and Spanish (United States).")
+                    Text("4. Leave the device on Wi-Fi and power for a while: the model downloads in the background.")
+                } footer: {
+                    Text("Apple reports \"not ready\" both while the model downloads and while the languages differ, so Sempere cannot tell which. Your notes can be in any language: the setting is the device's, not the notes'.")
+                }
+            }
+            .navigationTitle("Turn On Apple Intelligence")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+    }
+}
+
 // MARK: - Settings ▸ Note Insights
 
 /// Settings ▸ Note Insights: the vault's switch (off by default, D4), voice-note titles (D14), the work device (D13),
@@ -135,6 +184,7 @@ struct InsightsSettingsSection: View {
             Text(InsightsText.modelReason(state.capability.model))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            AppleIntelligenceHelpButton(availability: state.capability.model)
             if let problem = state.problem {
                 Label(InsightsText.problem(problem), systemImage: "exclamationmark.triangle").font(.footnote)
             }
@@ -199,6 +249,7 @@ struct InsightsSettingsSection: View {
                 // Said beside the button and the counts: this device adds related notes and the map at most.
                 Text(InsightsText.modelReason(state.capability.model)).font(.footnote).foregroundStyle(.secondary)
             }
+            if case .modelUnavailable? = state.passOutcome { AppleIntelligenceHelpButton(availability: state.capability.model) }
             NavigationLink {
                 InsightsMapScreen { model.selectedNoteID = $0 }
             } label: {
@@ -442,8 +493,28 @@ struct NoteInsightsSheet: View {
             if let made = madeLine(panel.shown) {
                 Text(made).font(.caption).foregroundStyle(.secondary)
             }
+            regenerateRow
         } header: {
             Text("Summary")
+        }
+    }
+
+    /// "Regenerate": this note's summary and keywords made again now on this device (a bad transcript fixed, a model that
+    /// did better since), when this device makes summaries; why not, when it cannot.
+    @ViewBuilder private var regenerateRow: some View {
+        if model.insights.capability.generates, model.insightsHasRole {
+            if model.noteInsightsPending(noteID) {
+                Label("Regenerating…", systemImage: "gearshape.2").foregroundStyle(.secondary)
+                    .accessibilityIdentifier("noteInsights.regenerating")
+            } else {
+                Button("Regenerate", systemImage: "arrow.clockwise") { model.regenerateNoteInsights(noteID) }
+                    .disabled(model.phase != .unlocked || model.isVaultReadOnly)
+                    .help("Make this note's summary and keywords again on this device")
+                    .accessibilityIdentifier("noteInsights.regenerate")
+            }
+        } else {
+            Text(InsightsText.modelReason(model.insights.capability.model)).font(.footnote).foregroundStyle(.secondary)
+            AppleIntelligenceHelpButton(availability: model.insights.capability.model)
         }
     }
 

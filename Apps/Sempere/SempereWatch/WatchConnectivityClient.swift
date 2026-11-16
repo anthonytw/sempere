@@ -29,13 +29,13 @@ final class WatchConnectivityClient: NSObject, WatchTransport {
 
     var isActivated: Bool { session?.activationState == .activated }
 
-    func requestProvisioning(recipient: String, seq: Int) -> Bool {
+    func requestProvisioning(recipient: String, seq: Int, holds: Bool) -> Bool {
         guard let session, session.activationState == .activated else { return false }
         // One request in flight: a launch does not queue another while the system still holds the last.
         let key = WatchProvisioning.requestKey
         guard !session.outstandingUserInfoTransfers.contains(where: { $0.userInfo[key] != nil }) else { return true }
         session.transferUserInfo(WatchProvisioning.dictionary(WatchProvisioning.Message.request(
-            recipient: recipient, version: WatchProfilePayload.currentVersion, seq: seq)))
+            recipient: recipient, version: WatchProfilePayload.currentVersion, seq: seq, holds: holds)))
         return true
     }
 

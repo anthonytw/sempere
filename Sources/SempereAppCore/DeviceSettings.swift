@@ -320,3 +320,21 @@ public enum RecognitionPreference {
         defaults.object(forKey: key) as? Bool ?? defaultValue
     }
 }
+
+/// When Note Insights processes a new quick voice note on this device (1.2 owner report: on an iPhone on battery, none
+/// was made until it charged). Per device: what a battery can spare is the device's own matter, so it is not synced.
+public enum VoiceNoteInsightsTiming: String, CaseIterable, Sendable {
+    /// As soon as it is in the vault (after its transcript), on battery too: one short note.
+    case rightAway
+    /// With the other notes, only while the device is plugged in (or "Process Now").
+    case whilePluggedIn
+
+    public static let key = "Sempere.voiceNoteInsightsTiming"
+    public static let defaultValue = VoiceNoteInsightsTiming.rightAway
+
+    public static func load(from defaults: any KeyValueStore) -> VoiceNoteInsightsTiming {
+        (defaults.object(forKey: key) as? String).flatMap(VoiceNoteInsightsTiming.init(rawValue:)) ?? defaultValue
+    }
+
+    public func save(to defaults: any KeyValueStore) { defaults.set(rawValue, forKey: Self.key) }
+}

@@ -218,6 +218,50 @@ struct WatchProvisionerTests {
         #expect(watch.payload != nil)
     }
 
+    /// A watch that holds a profile asks at every launch (`holds`): the phone that knows it and is not behind sends nothing;
+    /// a phone whose app was reinstalled (its state file gone: no recipient, counter -1) gives it the current profile, with a
+    /// counter above the watch's, so the watch stops sealing notes with a stale one (1.2 owner report).
+    @Test func aWatchThatHoldsAProfileIsGivenItAgainOnlyByAPhoneThatLostItsState() throws {
+        let r = try Self.rig()
+        var watch = WatchProfileState()
+        _ = try Self.apply(try r.provisioner.nextMessage(stored: r.stored), r, &watch)
+        _ = try Self.apply(try r.provisioner.nextMessage(stored: { var s = r.stored; s.profile.epoch += 1; return s }()), r, &watch)
+        let current = { var s = r.stored; s.profile.epoch += 1; return s }()
+        #expect(watch.seq == 1)
+        try r.provisioner.watchRequested(recipient: r.watch.recipient.string, seq: watch.seq, holds: true)
+        #expect(try r.provisioner.nextMessage(stored: current) == nil, "a launch of a watch that has the profile costs nothing")
+
+        // The phone app is reinstalled: a new, empty state file.
+        let fresh = WatchProvisioner(store: MemoryWatchLinkStore())
+        try fresh.setEnabled(true)
+        #expect(try fresh.nextMessage(stored: current) == nil, "no recipient yet")
+        try fresh.watchRequested(recipient: r.watch.recipient.string, seq: watch.seq, holds: true)
+        guard case .stored(let p) = try WatchProvisioning.apply(try #require(try fresh.nextMessage(stored: current)),
+                                                                 identity: r.watch, to: &watch) else {
+            Issue.record("the watch was not given the profile again"); return
+        }
+        #expect(p.seq == 2, "above the watch's counter, so it is not ignored")
+        #expect(p.profile == current.profile)
+        try fresh.watchRequested(recipient: r.watch.recipient.string, seq: watch.seq, holds: true)
+        #expect(try fresh.nextMessage(stored: current) == nil, "and not again at the next launch")
+
+        // A phone whose counter is behind the watch's (its state restored from an older backup) gives it again too.
+        let behind = WatchProvisioner(store: MemoryWatchLinkStore(WatchLinkState(enabled: true, recipient: r.watch.recipient.string,
+                                                                                    seq: 0, sent: "x")))
+        try behind.watchRequested(recipient: r.watch.recipient.string, seq: watch.seq, holds: true)
+        #expect(try behind.nextMessage(stored: current) != nil)
+    }
+
+    /// The request's `holds` crosses the property list, and an older watch's request (no key) reads as false.
+    @Test func theHoldsFlagRoundTrips() throws {
+        let watch = try NativeIdentity.generate(.postQuantum)
+        let held = WatchProvisioning.dictionary(WatchProvisioning.request(recipient: watch.recipient, seq: 3, holds: true))
+        guard case .request(_, _, 3, true)? = WatchProvisioning.message(held) else { Issue.record("holds lost"); return }
+        var old = held
+        old.removeValue(forKey: "holds")
+        guard case .request(_, _, 3, false)? = WatchProvisioning.message(old) else { Issue.record("an older request"); return }
+    }
+
     @Test func aNewWatchKeyIsUsedForTheNextProfile() throws {
         let r = try Self.rig()
         _ = try r.provisioner.nextMessage(stored: r.stored)
@@ -326,7 +370,7 @@ struct WatchProvisionerTests {
         #expect(try r.store.load().seq == 10)
         // Through the wire: the request carries it.
         let message = WatchProvisioning.request(recipient: r.watch.recipient, seq: 33)
-        guard case .request(_, _, let seq)? = WatchProvisioning.message(WatchProvisioning.dictionary(message)) else { Issue.record("no request"); return }
+        guard case .request(_, _, let seq, _)? = WatchProvisioning.message(WatchProvisioning.dictionary(message)) else { Issue.record("no request"); return }
         #expect(seq == 33)
     }
 }

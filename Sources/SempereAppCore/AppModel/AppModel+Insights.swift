@@ -105,6 +105,8 @@ public struct InsightsModelState: Equatable, Sendable {
     public var topicProblems: [String: InsightsTopicProblem] = [:]
     /// Bumped whenever the index changes: views showing insights read again.
     public var revision = 0
+    /// Notes queued for, or in, a pass of their own (a new voice note, a note's "Regenerate").
+    public var notesInProgress: Set<UUID> = []
 
     public init() {}
 }
@@ -178,6 +180,9 @@ final class InsightsRuntime {
     var model: (any ModelProvider)?
     var embedder: (any EmbeddingProvider)?
     var providersRead = false
+    /// Notes waiting for a pass of their own (a new voice note right away, a note's "Regenerate"), in order, with whether
+    /// it redoes current insights; started when the slot is free (`startDueNoteInsights`).
+    var dueNotes: [(note: UUID, redo: Bool)] = []
     /// The last insights search (`insightsSearchHits`), by what it answered.
     var search: (key: Int, hits: [InsightsReader.SearchHit])?
     nonisolated init() {}
@@ -255,6 +260,7 @@ extension AppModelCore {
         // The pass in either slot, foreground or the background task's (`runInsightsInBackground` waits on it).
         runtime.pass?.cancel(); runtime.pass = nil; runtime.slotIsRegeneration = false
         runtime.loop?.cancel(); runtime.loop = nil
+        runtime.dueNotes = []
         insightsIndex = InsightsIndex()
         insights = InsightsModelState()
     }
@@ -635,6 +641,46 @@ extension AppModelCore {
         startInsightsPass(batch: Self.insightsForegroundBatch, ignorePower: force, forced: force)
     }
 
+    /// A quick voice note was added to the open vault (and transcribed, when it is): with "Right away"
+    /// (`VoiceNoteInsightsTiming`) it is processed now, on battery too, without the 10-minute settle time.
+    func insightsForNewVoiceNote(_ note: UUID) {
+        guard insights.mode == .on, VoiceNoteInsightsTiming.load(from: services.settings) == .rightAway else { return }
+        requestNoteInsights(note, redo: false)
+    }
+
+    /// A note's "Regenerate" (its Note Insights): its summary and keywords made again now, whatever their state.
+    public func regenerateNoteInsights(_ note: UUID) {
+        requestNoteInsights(note, redo: true)
+    }
+
+    /// Whether `note` waits for, or has, a pass of its own (its "Regenerate" shows busy).
+    public func noteInsightsPending(_ note: UUID) -> Bool { insights.notesInProgress.contains(note) }
+
+    /// Queues a pass of `note` alone; it starts now when the slot is free, else when the running work ends.
+    func requestNoteInsights(_ note: UUID, redo: Bool) {
+        let runtime = insightsRuntime
+        if let i = runtime.dueNotes.firstIndex(where: { $0.note == note }) {
+            runtime.dueNotes[i].redo = runtime.dueNotes[i].redo || redo
+        } else {
+            runtime.dueNotes.append((note, redo))
+        }
+        insights.notesInProgress.insert(note)
+        startDueNoteInsights()
+    }
+
+    /// Starts the next queued note pass while the slot is free.
+    func startDueNoteInsights() {
+        let runtime = insightsRuntime
+        guard runtime.pass == nil, !runtime.dueNotes.isEmpty else { return }
+        let next = runtime.dueNotes.removeFirst()
+        occupyInsightsSlot(regeneration: false) { [weak self] in
+            let remains = await self?.runInsightsPass(batch: Self.insightsForegroundBatch, ignorePower: true, note: next.note,
+                                                      redo: next.redo).remains ?? false
+            if runtime.dueNotes.contains(where: { $0.note == next.note }) == false { self?.insights.notesInProgress.remove(next.note) }
+            return remains
+        }
+    }
+
     /// Puts a pass in the one slot; it clears the slot when it ends, only while the slot is still its own.
     @discardableResult
     func startInsightsPass(batch: Int, ignorePower: Bool, forced: Bool = false) -> Task<Bool, Never> {
@@ -649,9 +695,12 @@ extension AppModelCore {
         let runtime = insightsRuntime
         runtime.passID += 1
         let id = runtime.passID
-        let task = Task { @MainActor () -> Bool in
+        let task = Task { @MainActor [weak self] () -> Bool in
             let remains = await work()
-            if runtime.passID == id { runtime.pass = nil; runtime.slotIsRegeneration = false }
+            if runtime.passID == id {
+                runtime.pass = nil; runtime.slotIsRegeneration = false
+                self?.startDueNoteInsights()
+            }
             return remains
         }
         runtime.pass = task
@@ -712,7 +761,8 @@ extension AppModelCore {
     /// `forced` ("Process Now"): no settle time, and failures remembered before the pass do not hold notes back (what
     /// fails during it waits, so its next run does not ask again).
     @discardableResult
-    func runInsightsPass(batch: Int, ignorePower: Bool, forced: Bool = false) async -> (reports: [InsightsUpdateReport], remains: Bool) {
+    func runInsightsPass(batch: Int, ignorePower: Bool, forced: Bool = false, note: UUID? = nil,
+                         redo: Bool = false) async -> (reports: [InsightsUpdateReport], remains: Bool) {
         refreshInsightsCapability()
         // What the model was at the start: the outcome says why this pass made nothing, not what changed after it.
         let availability = insights.capability.model
@@ -760,9 +810,17 @@ extension AppModelCore {
             o.powerWindow = true
             o.deviceType = settingsDeviceType
             if forced { o.ignoreSettle = true; o.ignoreBackoffBefore = started }
+            // One note's own pass (a new voice note, "Regenerate"): no settle time and no topics; `redo` makes current
+            // insights again (`--force`, as `sempere insights update --note ID --force`).
+            if let note {
+                o.note = note
+                o.ignoreSettle = true
+                o.ignoreBackoffBefore = started
+                o.force = redo
+            }
             // Topic summaries (design §6 item 4, D8; Insights PR 3): due scopes at most once a day each, in the same power
             // window and batch as the notes, backed off in the failure memo when they fail.
-            o.topics = true
+            o.topics = note == nil
             let summaries = insightsSummaries
             let options = o
             let report: InsightsUpdateReport
@@ -790,6 +848,8 @@ extension AppModelCore {
             // Done when this run made nothing new (everything current, backed off or not allowed here). A topic that
             // failed is in the memo, so it is not asked again in the next run.
             if report.generated.isEmpty && report.topics.isEmpty { break }
+            // A redo makes the note's insights once: the next run would find them current only by not being forced.
+            if note != nil && redo { break }
         }
         if generation == gen {
             // Said only for a pass that ran to its end; one that failed (its problem shows), ran nothing or was cut off

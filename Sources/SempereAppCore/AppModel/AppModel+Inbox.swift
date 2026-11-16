@@ -315,7 +315,12 @@ extension AppModelCore {
                 // Captured without a transcript (no time left, or the model was missing): transcribe now.
                 if r.transcript == nil,
                    (try? storedQuickCaptureProfile())?.transcribe ?? TranscriptionSettings.isEnabled(services.settings) {
-                    Task { await self.transcribeStored(r, note: ids.note, meta: after?.meta) }
+                    Task {
+                        await self.transcribeStored(r, note: ids.note, meta: after?.meta)
+                        self.insightsForNewVoiceNote(ids.note)   // its summary from the transcript just made
+                    }
+                } else if r.transcript != nil {
+                    insightsForNewVoiceNote(ids.note)
                 }
             }
             if after?.recordings.isEmpty == false { capturesAdopted += 1 }

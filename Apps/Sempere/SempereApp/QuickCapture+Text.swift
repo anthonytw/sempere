@@ -1,4 +1,5 @@
 import Foundation
+import Sempere
 import SempereAppCore
 
 // The words of quick voice notes (`QuickCapture`, `QuickCaptureError`, `CaptureAssemblyError`, SempereAppCore), for the
@@ -47,11 +48,12 @@ extension QuickCapture {
                comment: "Added after the reason a voice note could not be saved")
     }
 
-    /// "Voice note 7 Oct 2026 at 14:32" in this device's language (the CLI
-    /// writes `CaptureWriter.defaultTitle`'s fixed form instead).
+    /// "Voice note 2026-10-07 14:32", the words in this device's language and the start in `CaptureWriter.defaultTitle`'s
+    /// fixed form, which Note Insights recognizes as the capture default (`VoiceNoteTitleState.isCaptureDefault`) and
+    /// replaces with a title from the transcript. Before 1.2 the start was localized too, and no automatic title took it.
     nonisolated static func title(_ started: Date) -> String {
-        String(localized: "Voice note \(started.formatted(date: .abbreviated, time: .shortened))",
-               comment: "Default title of a quick-capture voice note: its start date and time")
+        let stamp = String(CaptureWriter.defaultTitle(started).dropFirst("Voice note ".count))
+        return String(localized: "Voice note \(stamp)", comment: "Default title of a quick-capture voice note: its start date and time")
     }
 
     /// `error`, followed by `keptOnDevice` when the recording was kept.

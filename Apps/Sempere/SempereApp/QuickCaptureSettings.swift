@@ -23,6 +23,8 @@ struct QuickCaptureSettingsSection: View {
     @State private var problem: String?
     /// Bumped when the app becomes active again, so the permission notices re-check after a visit to the system Settings.
     @State private var activations = 0
+    /// When Note Insights processes a new voice note on this device (`VoiceNoteInsightsTiming`, not synced).
+    @AppStorage(VoiceNoteInsightsTiming.key) private var insightsTiming = VoiceNoteInsightsTiming.defaultValue.rawValue
 
     var body: some View {
         Section {
@@ -51,6 +53,14 @@ struct QuickCaptureSettingsSection: View {
                     update { $0.transcribe = on }
                 }))
                 .syncedSetting("quickCapture.transcribe")
+                if model.insights.mode == .on {
+                    // Both choices say when: one only would leave the other to be guessed (owner, 1.2).
+                    Picker("Insights for New Voice Notes", selection: $insightsTiming) {
+                        Text("Right away, even when not plugged in").tag(VoiceNoteInsightsTiming.rightAway.rawValue)
+                        Text("Only while plugged in").tag(VoiceNoteInsightsTiming.whilePluggedIn.rawValue)
+                    }
+                    .accessibilityIdentifier("quickCapture.insightsTiming")
+                }
             } else if let stored {
                 LabeledContent("Voice notes go to", value: stored.vaultName)
             }

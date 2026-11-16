@@ -31,7 +31,11 @@ notes for each note on your devices only, with Apple's on-device model, and stor
   notes to check it against, marked when those notes changed. They are made in the background at most once a day each,
   and Regenerate makes one now.
 - Every device with Apple Intelligence makes summaries (an iPhone or iPad while charging, or at once with Process Now,
-  which says why when there is nothing to make). One device also builds the map and names quick voice notes from their
+  which says why when there is nothing to make). A new quick voice note gets its summary as soon as it is transcribed,
+  also on battery, unless you choose "Only while plugged in" (Settings ▸ Quick Voice Notes). Regenerate in a note's
+  insights makes them again for that note.
+- When Apple Intelligence is not ready, Note Insights says it may still be downloading or that its language may not
+  match the device's language and region (they must match exactly, region included), and How to Fix lists the steps. One device also builds the map and names quick voice notes from their
   transcripts in a format you choose; another takes over if it is not seen for 14 days.
 - Turning it off deletes the insights on every device.
 - On the command line, `sempere insights` makes them (macOS 26 with Apple Intelligence), and reading them (`show`,
@@ -66,6 +70,8 @@ changed. `sempere store copy` does the same on the command line.
   themselves. Notes sent while Use on Apple Watch was off, or sealed before the vault's key changed, still wait for you,
   and Settings shows why each one is held now. Held Watch notes are kept only on this iPhone, and Settings says so.
 - A watch that asks for a profile while Use on Apple Watch is off (after Sempere was reinstalled on the iPhone) is cleared.
+- The watch checks with the iPhone at each launch, so after Sempere is reinstalled on the iPhone the watch gets the current
+  profile by itself instead of sending notes that are held (Reset on the watch was the way out).
 
 ### Fixed
 
@@ -76,6 +82,9 @@ changed. `sempere store copy` does the same on the command line.
   recorded in that state no longer make each write retry a catch-up that could not finish (`sempere vault catch-up`
   reports them as `relabeled`).
 - Turning Quick Voice Notes off and on again keeps your Transcribe Voice Notes choice.
+- Quick voice notes recorded on the iPhone or iPad (Lock Screen, Control Center, widgets, Siri) were never named from
+  their transcripts: their default title had the date in the device's language, which Note Insights did not recognize.
+  New ones are titled "Voice note 2026-11-16 14:32" (the words in your language), and the older ones are recognized too.
 - Sync: a revision this device wrote before 1.1.0 and left cut on a server that lists no file sizes is now found and
   replaced (one bounded check per revision, remembered in the sync state).
 - Sync: after a re-encryption, a sync no longer downloads every device's published summaries file again on every run,
