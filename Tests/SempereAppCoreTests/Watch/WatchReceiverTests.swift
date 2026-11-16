@@ -131,6 +131,69 @@ struct WatchReceiverTests {
         #expect(Self.inbox(rig.current.url) == [t.sealed.name])
     }
 
+    /// Held only because the phone was behind (here: suspended): once the profile catches up, `admitReady` places the note
+    /// as if it had just arrived. A note held for the user's decision (`linkOff`) stays, and nothing goes in while the
+    /// toggle is off.
+    @Test func notesHeldOnlyBecauseThePhoneWasBehindGoInOnceItCatchesUp() throws {
+        var rig = try Self.rig()
+        rig.enabled = false
+        let off = try Self.transfer(rig.current.stored.profile, in: rig)
+        #expect(try rig.receiver.receive(file: off.file, metadata: off.metadata)?.result.outcome == .held(.linkOff))
+        rig.enabled = true
+        var suspended = rig.current.stored
+        suspended.suspended = true
+        try rig.profileStore.save(suspended)
+        let behind = try Self.transfer(rig.current.stored.profile, in: rig)
+        #expect(try rig.receiver.receive(file: behind.file, metadata: behind.metadata)?.result.outcome == .held(.suspended))
+        #expect(rig.receiver.admitReady().isEmpty, "still suspended")
+
+        try rig.profileStore.save(rig.current.stored)   // listed again
+        var offNow = rig
+        offNow.enabled = false
+        #expect(offNow.receiver.admitReady().isEmpty, "not while Use on Apple Watch is off")
+        #expect(rig.receiver.admitReady() == [behind.meta.id])
+        #expect(Self.inbox(rig.current.url) == [behind.sealed.name])
+        #expect(try rig.ledgers.ledger(rig.current.stored.profile.vaultId).entries().map(\.path) == ["inbox/\(behind.sealed.name)"])
+        #expect(rig.receiver.heldNotes().map(\.id) == [off.meta.id], "the user decides on the linkOff note")
+        #expect(rig.receiver.admitReady().isEmpty, "nothing more")
+    }
+
+    /// A lost watch's steps: the toggle off, and its notes then held as `suspended` (this phone removed meanwhile). When the
+    /// phone is listed again and the toggle comes back on, they are not placed by themselves: they arrived while the toggle
+    /// was off, which the sidecar records whatever they were held for, and Settings words them as such.
+    @Test func aNoteThatArrivedWhileTheToggleWasOffIsNeverAdmittedByItself() throws {
+        var rig = try Self.rig()
+        var suspended = rig.current.stored
+        suspended.suspended = true
+        try rig.profileStore.save(suspended)
+        rig.enabled = false
+        let lost = try Self.transfer(rig.current.stored.profile, in: rig)
+        #expect(try rig.receiver.receive(file: lost.file, metadata: lost.metadata)?.result.outcome == .held(.suspended))
+        let note = try #require(rig.receiver.heldNotes().first)
+        #expect(note.toggleWasOff == true && note.arrivedWhileOff)
+
+        try rig.profileStore.save(rig.current.stored)   // listed again
+        rig.enabled = true                              // and the toggle back on
+        #expect(rig.receiver.admitReady().isEmpty)
+        #expect(Self.inbox(rig.current.url).isEmpty)
+        #expect(rig.receiver.currentReason(note) == .linkOff)
+        #expect(rig.receiver.needsCheck(note))
+        #expect(rig.receiver.canAddNow(note), "the user may still add it")
+    }
+
+    /// A 1.1 sidecar has no `toggleWasOff`: it decodes, and its `linkOff` reason says the toggle was off.
+    @Test func aSidecarWithoutTheToggleFieldDecodes() throws {
+        let json = #"{"bytes":3,"epoch":1,"epochId":"\#(String(repeating: "ab", count: 32))","id":"\#(UUID().uuidString)","#
+            + #""reason":"linkOff","receivedAt":"2026-11-01T10:00:00Z","vault":"\#(UUID().uuidString)"}"#
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        let held = try d.decode(HeldCapture.self, from: Data(json.utf8))
+        #expect(held.toggleWasOff == nil)
+        #expect(held.arrivedWhileOff)
+        let suspended = try d.decode(HeldCapture.self, from: Data(json.replacingOccurrences(of: "linkOff", with: "suspended").utf8))
+        #expect(!suspended.arrivedWhileOff)
+    }
+
     @Test func anUnreachableCurrentVaultQueuesTheFileWithItsEpoch() throws {
         var rig = try Self.rig()
         rig.storeRoot = try QuickCaptureLogicTests.tempDir("not-the-store")

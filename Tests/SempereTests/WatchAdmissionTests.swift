@@ -122,7 +122,7 @@ final class WatchAdmissionTests: VaultTestCase {
     /// to retry. A file that lies about its epoch as the current one is admitted but is not re-sealed (its tag does not
     /// verify under the claimed epoch's key).
     func testAnEpochThePhoneNeverHeldIsHeldAndALiarIsNotCaughtUp() throws {
-        let w = try EpochWorld(in: tmp, names: ["A", "P", "X"])
+        let w = try EpochWorld(in: tmp, names: ["A", "P", "X", "Y"])
         let profile1 = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
         var a = try w.open("A")
         try a.removeDevices([w["X"].id])
@@ -147,6 +147,100 @@ final class WatchAdmissionTests: VaultTestCase {
         XCTAssertEqual(r2.outcome, .placed(.vault))
         _ = try w.open("P").catchUp()
         XCTAssertThrowsError(try w.open("A").readCapture(id2), "a mislabelled old-epoch note is not caught up")
+        // Nor after a further epoch change, when its label has become an earlier epoch too (review of the 1.1.0 repair:
+        // catch-up's fallback tries only epochs after the labeled one).
+        a = try w.open("A")
+        try a.removeDevices([w["Y"].id])
+        let later = try w.open("P").catchUp()
+        XCTAssertFalse(later.reencrypted.contains("inbox/\(s2.name)"), "\(later)")
+        XCTAssertFalse(later.relabeled.contains("inbox/\(s2.name)"), "\(later)")
+        XCTAssertThrowsError(try w.open("A").readCapture(id2), "still not laundered")
+    }
+
+    /// 1.1.0's quick-capture refresh gave the stored profile the new epoch's key and recipient but kept the old epoch's number
+    /// and id. The phone's Lock Screen notes and the Watch's were then sealed under the current key and labeled with the epoch
+    /// before; the Watch's were held as "newer key", and an added one was recorded under the old label. Adoption reads such a
+    /// file (it is sealed under the current key); catch-up corrects its ledger entry instead of failing to re-seal it under
+    /// the labeled key on every write.
+    func testAStaleEpochLabelOnTheCurrentKeyIsAdoptedAndRelabeled() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "P", "X", "Y"])
+        let profile1 = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
+        var a = try w.open("A")
+        try a.removeDevices([w["X"].id])
+        var stale = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
+        XCTAssertEqual(stale.epoch, 2)
+        stale.epoch = profile1.epoch
+        stale.epochId = profile1.epochId   // what 1.1.0's refresh left
+        let phone = Phone(vault: try w.open("P"), ledger: w["P"].ledger, profile: stale)
+        let intake = intake(phone)
+
+        // A Watch note: held (the folder's epoch is above the label), added by the owner.
+        let watchId = UUID()
+        let watchNote = try CaptureWriter(profile: stale).seal(audio: audio, started: Date(), id: watchId)
+        XCTAssertEqual(try send(watchNote, vault: a.vaultId, intake: intake).outcome, .held(.newerEpoch))
+        let held = try XCTUnwrap(intake.held?.list().first)
+        XCTAssertEqual(try intake.addHeld(held), .vault)
+        // A Lock Screen note of the phone: recorded under the label, placed.
+        let lockId = UUID()
+        let writer = try CaptureWriter(profile: stale)
+        let lockNote = try writer.seal(audio: audio, started: Date(), id: lockId)
+        try writer.record(lockNote, in: w["P"].ledger)
+        try CaptureWriter.store(lockNote, in: phone.inbox)
+        XCTAssertEqual(Set(try w["P"].ledger.entries().filter { $0.path.hasPrefix("inbox/") }.map(\.epoch)), [1])
+
+        let report = try w.open("P").catchUp()
+        XCTAssertTrue(report.problems.isEmpty, "\(report.problems)")
+        XCTAssertEqual(Set(report.relabeled), ["inbox/\(watchNote.name)", "inbox/\(lockNote.name)"])
+        XCTAssertTrue(report.reencrypted.isEmpty, "nothing to re-seal")
+        XCTAssertEqual(Set(try w["P"].ledger.entries().filter { $0.path.hasPrefix("inbox/") }.map(\.epoch)), [2])
+        XCTAssertEqual(try w["P"].ledger.caughtUp(), try w.open("P").requireSecret().epochId, "caught up, nothing to retry")
+        XCTAssertTrue(try w.open("P").setAsideScan().isEmpty, "nothing set aside")
+        XCTAssertEqual(try w.open("A").readCapture(watchId).audio, audio)
+        XCTAssertEqual(try w.open("A").readCapture(lockId).audio, audio)
+
+        // Another epoch before adoption: the file is re-sealed from the epoch it opens under, not the one its entry named.
+        let laterId = UUID()
+        let later = try writer.seal(audio: audio, started: Date(), id: laterId)
+        try writer.record(later, in: w["P"].ledger)        // labeled epoch 1, sealed under epoch 2
+        try CaptureWriter.store(later, in: phone.inbox)
+        a = try w.open("A")
+        try a.removeDevices([w["Y"].id])                   // epoch 3
+        let third = try w.open("P").catchUp()
+        XCTAssertTrue(third.problems.isEmpty, "\(third.problems)")
+        XCTAssertEqual(third.reencrypted, ["inbox/\(later.name)"])
+        XCTAssertEqual(try w.open("A").readCapture(laterId).audio, audio, "re-sealed under epoch 3")
+    }
+
+    /// After a takeover from below the frontier, the ledger keeps the key of the epoch the takeover dropped, whose number
+    /// can be above an epoch on the chain. Catch-up's fallback goes by place on the verified chain, so a file sealed under
+    /// the dropped epoch's key and labeled with an earlier epoch is not re-sealed under the new one.
+    func testAFallbackNeverReachesAnEpochATakeoverDropped() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "P", "X", "T"])   // T stays pinned at epoch 1
+        let profile1 = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
+        var a = try w.open("A")
+        try a.removeDevices([w["X"].id])                                // epoch 2, which P follows
+        var dropped = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
+        XCTAssertEqual(dropped.epoch, 2)
+        dropped.epoch = profile1.epoch
+        dropped.epochId = profile1.epochId                               // sealed under epoch 2, labeled epoch 1
+        let id = UUID()
+        let writer = try CaptureWriter(profile: dropped)
+        let sealed = try writer.seal(audio: audio, started: Date(), id: id)
+        try writer.record(sealed, in: w["P"].ledger)
+        try CaptureWriter.store(sealed, in: try w.open("P").inboxURL)
+
+        // T, with the kit, takes over from its frontier (epoch 1): its epoch 2' drops epoch 2, and P follows it.
+        let (taken, _) = try Vault.takeover(at: w.url, device: w["T"].keys, recovery: w.recovery,
+                                            keep: [w["P"].fingerprint], trust: w["T"].trust, root: nil)
+        XCTAssertEqual(taken.manifest.epoch, 2)
+        let p = try w.open("P")
+        XCTAssertEqual(p.manifest.epochId, taken.manifest.epochId, "P follows the takeover")
+        XCTAssertTrue(try w["P"].ledger.epochKeys().contains { $0.epoch == 2 && $0.key.epochId != taken.manifest.epochId },
+                      "the dropped epoch's key is still in P's ledger, with the same number as the takeover's")
+        let report = try p.catchUp()
+        XCTAssertFalse(report.reencrypted.contains("inbox/\(sealed.name)"), "\(report)")
+        XCTAssertFalse(report.relabeled.contains("inbox/\(sealed.name)"), "\(report)")
+        XCTAssertThrowsError(try w.open("T").readCapture(id), "not laundered into the takeover's epoch")
     }
 
     /// Turning "Use on Apple Watch" off holds everything that arrives, whatever its epoch.

@@ -30,8 +30,9 @@ notes for each note on your devices only, with Apple's on-device model, and stor
 - Topic summaries: "Summary" on a notebook or tag with at least 3 summarized notes shows a generated paragraph and the
   notes to check it against, marked when those notes changed. They are made in the background at most once a day each,
   and Regenerate makes one now.
-- One work device does the processing (any device that can run the models; an iPhone or iPad while charging) and names
-  quick voice notes from their transcripts in a format you choose.
+- Every device with Apple Intelligence makes summaries (an iPhone or iPad while charging, or at once with Process Now,
+  which says why when there is nothing to make). One device also builds the map and names quick voice notes from their
+  transcripts in a format you choose; another takes over if it is not seen for 14 days.
 - Turning it off deletes the insights on every device.
 - On the command line, `sempere insights` makes them (macOS 26 with Apple Intelligence), and reading them (`show`,
   `related`, `search`, `status`, `map`, `topic --list`) works on Linux too. `sempere insights purge` turns it off and
@@ -61,9 +62,20 @@ changed. `sempere store copy` does the same on the command line.
   limits and what it removed (`held list --json` is unchanged).
 - Recordings the watch cannot place (another vault's, or one whose manifest names none) are no longer silent: the watch
   says "N recordings could not be placed", with Delete. Nothing is deleted by itself.
+- Notes held for a reason that has since cleared (the iPhone listed again, or the vault now on the iPhone) go in by
+  themselves. Notes sent while Use on Apple Watch was off, or sealed before the vault's key changed, still wait for you,
+  and Settings shows why each one is held now. Held Watch notes are kept only on this iPhone, and Settings says so.
+- A watch that asks for a profile while Use on Apple Watch is off (after Sempere was reinstalled on the iPhone) is cleared.
 
 ### Fixed
 
+- Apple Watch: after a device was removed (or the vault's key changed another way), every Watch note was held in
+  Settings ("The vault has a newer key than this device"), and reinstalling did not help. The quick voice notes profile
+  now takes the new key's epoch with the key; a device in that state is repaired at the next unlock, and the watch gets
+  the repaired profile. Notes already held for this reason can be added in Settings ▸ Quick Voice Notes. Voice notes
+  recorded in that state no longer make each write retry a catch-up that could not finish (`sempere vault catch-up`
+  reports them as `relabeled`).
+- Turning Quick Voice Notes off and on again keeps your Transcribe Voice Notes choice.
 - Sync: a revision this device wrote before 1.1.0 and left cut on a server that lists no file sizes is now found and
   replaced (one bounded check per revision, remembered in the sync state).
 - Sync: after a re-encryption, a sync no longer downloads every device's published summaries file again on every run,

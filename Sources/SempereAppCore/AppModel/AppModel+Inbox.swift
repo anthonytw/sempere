@@ -76,15 +76,18 @@ extension AppModelCore {
     /// Turns quick voice notes on for the open vault: voice notes then go to
     /// its inbox, adopted into `notebook`. Needs the vault unlocked (the
     /// capture key comes from its secret); afterwards capture needs nothing.
-    /// Without a `notebook`, voice notes go to "Inbox".
-    public func enableQuickCapture(notebook: String? = nil, transcribe: Bool = true) throws {
+    /// Without a `notebook`, voice notes go to "Inbox". Without `transcribe`, the choice this device had last (a profile
+    /// it holds, or the one it held when quick voice notes were turned off) is kept; on when there was none.
+    public func enableQuickCapture(notebook: String? = nil, transcribe: Bool? = nil) throws {
         guard let vault, vault.canRead, vaultURL != nil, phase == .unlocked else { throw ModelError.noVaultOpen }
         try requireWritableVault()
         let clock = try deviceClockForWriting()
         let profile = try vault.captureProfile(device: clock.device,
                                                notebook: notebook ?? CaptureProfile.defaultNotebook)
+        let held = (try? storedQuickCaptureProfile())??.transcribe
+        let keep = transcribe ?? held ?? services.settings.object(forKey: Self.lastTranscribeKey) as? Bool ?? true
         try quickCapture.store.save(StoredCaptureProfile(profile: profile, vaultName: vaultName ?? "Vault",
-                                                         transcribe: transcribe))
+                                                         transcribe: keep))
         // The widgets and the control stop showing "Set Up".
         quickCapture.publishStatus()
         quickCapture.profileChanged()
@@ -93,14 +96,20 @@ extension AppModelCore {
     /// Turns quick voice notes off on this device (what is in the inbox stays
     /// and is still adopted when the vault is unlocked).
     public func disableQuickCapture() throws {
+        // Its transcription choice outlives it: turning quick voice notes on again keeps it (`enableQuickCapture`).
+        if let stored = try? storedQuickCaptureProfile() { services.settings.set(stored.transcribe, forKey: Self.lastTranscribeKey) }
         try quickCapture.store.delete()
         quickCapture.publishStatus()
         quickCapture.profileChanged()
     }
 
+    /// This device's last "Transcribe Voice Notes" choice, kept while quick voice notes are off.
+    nonisolated static var lastTranscribeKey: String { "Sempere.quickCapture.lastTranscribe" }
+
     /// After an unlock or a key change: the stored profile of this vault gets
     /// the current recipients and this device's capture key (a removed key
-    /// rotates both), attributed to the key this device unlocked with
+    /// rotates both) with the epoch they belong to (its number and id),
+    /// attributed to the key this device unlocked with
     /// (format.md §11.1, security review 2026-10, C2).
     public func refreshQuickCaptureProfile() {
         syncQuickCaptureSuspension()
@@ -115,13 +124,33 @@ extension AppModelCore {
               stored.profile.vaultId == vault.vaultId, let device = DeviceID(stored.profile.device),
               let here = vaultURL, Self.isProfileFolder(stored.profile.vaultId, here, store: vaultStore),
               let fresh = try? vault.captureProfile(device: device, notebook: stored.profile.notebook) else { return }
-        guard stored.profile.recipients != fresh.recipients || stored.profile.key != fresh.key
-              || stored.profile.recipient != fresh.recipient else { return }
-        stored.profile.recipients = fresh.recipients
-        stored.profile.key = fresh.key
-        stored.profile.recipient = fresh.recipient
+        // Everything that comes from the epoch moves together: the key and the recipient with the epoch's number and id
+        // that label every capture sealed with them (its ledger entry, the watch's transfer metadata, the phone's
+        // admission of Watch notes). 1.1.0 refreshed the key alone, so after a device change captures sealed under the
+        // new key carried the old epoch, and every Watch note was held as "the vault has a newer key". A profile left in
+        // that state (the key current, the epoch stale) is repaired here at the next unlock, and the watch is given the
+        // corrected profile (`profileChanged`: the provisioner's fingerprint covers the epoch).
+        var updated = stored.profile
+        updated.recipients = fresh.recipients
+        updated.key = fresh.key
+        updated.recipient = fresh.recipient
+        updated.epoch = fresh.epoch
+        updated.epochId = fresh.epochId
+        guard updated != stored.profile else { return }
+        // The epoch the profile was made under stays one this device held, also after a reinstall emptied its ledger: notes
+        // still on the watch, sealed with the old profile, can then be added (held as of an earlier key, not delete only).
+        if updated.epochId != stored.profile.epochId, let old = Hex.decode(stored.profile.epochId) {
+            do { try vault.rememberCaptureEpoch(old) } catch {
+                services.perf.log(.error, "capture", "earlier capture epoch not remembered: \(LogSafe.describe(error))")
+            }
+        }
+        stored.profile = updated
         // Only the vault the profile was made for is refreshed (`isProfileFolder`).
-        try? quickCapture.store.save(stored)
+        do { try quickCapture.store.save(stored) } catch {
+            // Tried again at the next unlock or key change; until then captures keep the profile as it was.
+            services.perf.log(.error, "capture", "quick capture profile not saved: \(LogSafe.describe(error))")
+            return
+        }
         quickCapture.profileChanged()   // a new epoch's key reaches the watch
     }
 

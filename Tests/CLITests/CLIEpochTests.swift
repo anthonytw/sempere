@@ -62,6 +62,7 @@ final class CLIEpochTests: CLITestCase {
         XCTAssertEqual(try cli(["notes", "new", "After"] + v, env: machine("home")).status, 0)
         let catchUp = try cli(["vault", "catch-up", "--json"] + v, env: machine("home"))
         XCTAssertEqual(catchUp.status, 0, catchUp.err)
+        XCTAssertEqual((catchUp.json as? [String: Any])?["relabeled"] as? [String], [])
         let aside = try cli(["set-aside", "list", "--json"] + v, env: machine("home"))
         XCTAssertEqual(aside.status, 0, aside.err)
         XCTAssertEqual((aside.json as? [Any])?.count, 0)

@@ -20,12 +20,16 @@ public struct CatchUpReport: Hashable, Sendable {
     public var dropped: [String] = []
     /// Unaccepted files copied into the set-aside store.
     public var setAside: [String] = []
+    /// This device's inbox files already sealed under the current key whose ledger entry named an earlier epoch: only the
+    /// entry was replaced (1.1.0's quick-capture refresh kept the old epoch's label on the new key, see
+    /// `ownCaptureIsCurrent`).
+    public var relabeled: [String] = []
     /// Files that could not be caught up, with why; catch-up is tried again by the next writer.
     public var problems: [String: String] = [:]
 
     /// True when nothing happened.
     public var isEmpty: Bool {
-        reencrypted.isEmpty && pruned == 0 && dropped.isEmpty && setAside.isEmpty && problems.isEmpty
+        reencrypted.isEmpty && pruned == 0 && dropped.isEmpty && setAside.isEmpty && problems.isEmpty && relabeled.isEmpty
     }
 }
 
@@ -120,6 +124,10 @@ extension Vault {
         var keys: [Data: VaultEpochKey] = [:]
         for o in older { keys[o.epochId] = o.key }
         for (_, k) in try ledger.epochKeys() where keys[k.epochId] == nil { keys[k.epochId] = k }
+        // Each epoch's place on the verified chain (never its number: after a takeover from below the frontier, a dropped
+        // epoch can carry a higher number than an epoch on the chain).
+        var position: [Data: Int] = [:]
+        for (i, id) in chainIds.enumerated() where position[id] == nil { position[id] = i }
         let (liveEntries, stale) = ledgerLiveness(entries, now: now)
         var gone = stale
         report.dropped = stale.map(\.path)
@@ -136,6 +144,18 @@ extension Vault {
                 }
                 continue
             }
+            // Sealed under the current key already, under an earlier epoch's label: the entry is corrected, nothing is
+            // re-sealed (a re-seal under the labeled key could only fail, every catch-up again).
+            if !Self.epochMutations.contains(.skipCatchUp), ownCaptureIsCurrent(e) {
+                do {
+                    try recordWrite(path: e.path, sha256: e.sha256)
+                    gone.append(e)
+                    report.relabeled.append(e.path)
+                } catch {
+                    report.problems[e.path] = "\(error)"
+                }
+                continue
+            }
             guard let key = keys[ref.epochId] else {
                 report.problems[e.path] = "the key of the epoch it was written under is not known"
                 continue
@@ -143,7 +163,15 @@ extension Vault {
             if Self.epochMutations.contains(.skipCatchUp) { continue }
             n += 1
             do {
-                report.reencrypted.append(try reencryptOwn(e, key: key, n: n))
+                // Only epochs AFTER the labeled one on the verified chain: 1.1.0's refresh labeled a capture with the epoch
+                // before its key, never after. A file sealed under an earlier epoch than it claims (a lost watch's copy of an
+                // old profile, labeled as the current epoch to be admitted) is never re-sealed, however many epochs later;
+                // nor one under an epoch a takeover dropped, and a label off the chain gets no fallback at all.
+                let later = position[key.epochId].map { labeled in
+                    keys.values.compactMap { k in position[k.epochId].flatMap { $0 > labeled ? ($0, k) : nil } }
+                        .sorted { $0.0 < $1.0 }.map(\.1)
+                } ?? []
+                report.reencrypted.append(try reencryptOwn(e, key: key, otherKeys: later, n: n))
                 gone.append(e)
             } catch VaultError.interrupted {
                 throw VaultError.interrupted
@@ -235,8 +263,10 @@ extension Vault {
     /// How many appends between two routine prunes.
     static let ledgerPruneEvery = 512
 
-    /// Re-encrypts this device's own file of `entry` (under `key`) under the current key; returns its path.
-    func reencryptOwn(_ entry: LedgerEntry, key: VaultEpochKey, n: Int) throws -> String {
+    /// Re-encrypts this device's own file of `entry` (under `key`) under the current key; returns its path. An inbox file
+    /// that does not open under `key` is tried under `otherKeys` (earlier epochs this device holds): its label may be wrong
+    /// (`reencryptOwnCapture`); the caller passes only epochs after the labeled one.
+    func reencryptOwn(_ entry: LedgerEntry, key: VaultEpochKey, otherKeys: [VaultEpochKey] = [], n: Int) throws -> String {
         let file = url.appendingPathComponent(entry.path)
         let parts = entry.path.split(separator: "/").map(String.init)
         if parts.count == 4, parts[0] == Self.notesName, parts[2] == Self.attachmentsName, let note = UUID(uuidString: parts[1]) {
@@ -255,7 +285,8 @@ extension Vault {
             return made.first.map { Self.blobPath(note, $0) } ?? Self.blobPath(note, target.lastPathComponent)
         }
         if parts.count == 2, parts[0] == CaptureFile.folderName, let parsed = CaptureFile.parse(name: parts[1]) {
-            return try reencryptOwnCapture(entry, file: file, name: parts[1], kind: parsed.kind, key: key, n: n)
+            return try reencryptOwnCapture(entry, file: file, name: parts[1], kind: parsed.kind, key: key, otherKeys: otherKeys,
+                                           n: n)
         }
         guard let (scope, name) = Self.framing(entry.path) else {
             throw VaultError.epochChangeRefused("\(entry.path): this version catches up revisions, blobs, notebook records, "
@@ -303,15 +334,35 @@ extension Vault {
     /// design §5.7) under the current key: the same JSON line and payload, tagged with this device's capture
     /// key of the current epoch and encrypted to the current vault identity, verified before anything is
     /// replaced, the old bytes set aside first.
-    func reencryptOwnCapture(_ entry: LedgerEntry, file: URL, name: String, kind: CaptureFile.Kind, key: VaultEpochKey,
-                             n: Int) throws -> String {
+    ///
+    /// The entry's epoch is where to look first, not the last word: 1.1.0's quick-capture refresh gave a profile the new
+    /// epoch's key and kept the old epoch's number and id, so its captures (the phone's and the Watch's) were recorded under
+    /// an epoch they were not sealed under. A file that does not open as this device's capture under `key` is tried under
+    /// `otherKeys` (epochs after the labeled one only: a label is never newer than its key), and re-sealed from the epoch it
+    /// opens under. The bytes must still be the ones the entry recorded.
+    func reencryptOwnCapture(_ entry: LedgerEntry, file: URL, name: String, kind: CaptureFile.Kind, key labeled: VaultEpochKey,
+                             otherKeys: [VaultEpochKey] = [], n: Int) throws -> String {
         guard let me = deviceEntry else { throw VaultError.removedFromVault("this device is not on the list") }
         let fingerprint = CaptureKey.fingerprint(of: me.key)
         let data = try FileIO.read(file, maxBytes: CaptureFile.maxSealedBytes(kind))
-        let plain: Data
-        do { plain = try AgeFile.decrypt(data, with: [NativeIdentity.mlkem768x25519(try key.vaultIdentity())]) } catch {
-            throw VaultError.epochChangeRefused("\(entry.path) does not decrypt under the key it was written under")
+        // The bytes the ledger recorded, not whatever is at the path now (the liveness pass hashed it a moment ago).
+        guard FileDigest.sha256(data) == entry.sha256 else {
+            throw VaultError.epochChangeRefused("\(entry.path) is not the file this device recorded")
         }
+        func open(_ k: VaultEpochKey) -> Data? {
+            guard let identity = try? k.vaultIdentity(),
+                  let p = try? AgeFile.decrypt(data, with: [NativeIdentity.mlkem768x25519(identity)]),
+                  (try? CaptureFile.unframe(p, filename: name, key: CaptureKey.derive(from: k, device: fingerprint))) != nil
+            else { return nil }
+            return p
+        }
+        guard let found = ([labeled] + otherKeys).lazy.compactMap({ k in open(k).map { ($0, k) } }).first else {
+            let decrypts = (try? AgeFile.decrypt(data, with: [NativeIdentity.mlkem768x25519(try labeled.vaultIdentity())])) != nil
+            throw VaultError.epochChangeRefused(decrypts
+                ? "\(entry.path) is not this device's capture under the key it was written under"
+                : "\(entry.path) does not decrypt under the key it was written under")
+        }
+        let (plain, key) = found
         let current = try requireSecret()
         let newKey = CaptureKey.derive(from: current, device: fingerprint)
         guard let retagged = CaptureFile.retag(plain, filename: name, verifiedBy: CaptureKey.derive(from: key, device: fingerprint),
@@ -348,6 +399,20 @@ extension Vault {
         placed = true
         try faults.check(.catchUpPlaced(n))
         return entry.path
+    }
+
+    /// Whether `entry` names this device's own inbox file sealed under the current key already (it opens under the vault
+    /// identity and its tag verifies under this device's current capture key), whatever epoch the entry names. 1.1.0 recorded
+    /// such files under the epoch before (`reencryptOwnCapture`).
+    func ownCaptureIsCurrent(_ entry: LedgerEntry) -> Bool {
+        let parts = entry.path.split(separator: "/").map(String.init)
+        guard parts.count == 2, parts[0] == CaptureFile.folderName, let kind = CaptureFile.parse(name: parts[1])?.kind,
+              let me = deviceEntry, let secret else { return false }
+        let file = url.appendingPathComponent(entry.path)
+        guard let data = try? FileIO.read(file, maxBytes: CaptureFile.maxSealedBytes(kind)), FileDigest.sha256(data) == entry.sha256,
+              let plain = try? AgeFile.decrypt(data, with: identities) else { return false }
+        let key = CaptureKey.derive(from: secret, device: CaptureKey.fingerprint(of: me.key))
+        return (try? CaptureFile.unframe(plain, filename: parts[1], key: key)) != nil
     }
 
     /// Copies every file of the working copy that the acceptance rule sets aside into the set-aside store

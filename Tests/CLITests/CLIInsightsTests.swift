@@ -158,6 +158,28 @@ final class CLIInsightsTests: CLITestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
     }
 
+    /// Every device with the model makes summaries (D13 for 1.2): `insights update` on a machine that is not the work
+    /// device generates, without vectors or a map, and `insights.compute` is no setting any more.
+    func testUpdateOnADeviceThatIsNotTheWorkDevice() throws {
+        let (args, vault) = try setUpVault()
+        XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + args).status, 0)
+        let compute = try cli(["settings", "set", "insights.compute", "auto"] + args)
+        XCTAssertNotEqual(compute.status, 0, "an unknown key")
+        XCTAssertEqual(try cli(["settings", "set", "insights.workDevice", "0000beef"] + args).status, 0)
+        // Without the embedder: it cannot take over 0000beef (unlisted, so missing at once), it only summarizes.
+        let up = json(try cli(["insights", "update", "--json"] + args,
+                              env: fake.merging(["SEMPERE_INSIGHTS_FAKE_EMBEDDER": "off"]) { $1 }))
+        XCTAssertEqual((up["generated"] as? [String])?.count, 6)
+        XCTAssertEqual((up["embedded"] as? [String])?.count, 0)
+        XCTAssertEqual(up["mapBuilt"] as? Bool, false)
+        XCTAssertEqual(up["claimedWorkDevice"] as? Bool, false)
+        let status = json(try cli(["insights", "status", "--json"] + args, env: fake))
+        XCTAssertEqual(status["processed"] as? Int, 6)
+        XCTAssertEqual(status["workDevice"] as? String, "0000beef")
+        let me = try XCTUnwrap(vault.writerDevice)
+        XCTAssertNil(InsightsStore(vault: vault).snapshot().map(of: me))
+    }
+
     func testExitCodes() throws {
         let (args, _) = try setUpVault()
         XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + args).status, 0)

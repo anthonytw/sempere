@@ -68,7 +68,7 @@ public enum SettingsSyncBridge {
     /// file by the insights code itself (docs/design/1.2-note-insights.md §3.7), never stored on the device.
     public static let modelKeys: Set<String> = ["quickCapture.notebook", "quickCapture.transcribe", "backup.reminderDays",
                                                 "handwriting.recognize", "search.transcripts", "appearance.icon",
-                                                "insights.enabled", "insights.compute", "insights.workDevice",
+                                                "insights.enabled", "insights.workDevice",
                                                 "insights.embeddingRevision", "insights.voiceNoteTitle"]
 
     /// This device's effective value of every setting a device of `type` uses,

@@ -6,7 +6,7 @@ import Sempere
 //  2. an id already received, or already in the inbox, is not placed again, but is acknowledged;
 //  3. the file is admitted or held (§3.4 "Admission"): a file gets a ledger entry only while "Use on Apple Watch" is on and
 //     its epoch is the one this device holds for its vault; anything else is kept phone-locally (`WatchHeldStore`) until the
-//     user adds or deletes it;
+//     user adds or deletes it, or (held only because the phone was behind) the profile catches up (`admitReady`);
 //  4. an admitted file is delivered by `meta.vault`, never into the current vault's inbox unless that is its vault;
 //  5. the id joins the received set and is acknowledged.
 // The platform part is `WatchDelivery`: the app's adapter over `CaptureDelivery`, the CLI's over the vault's ledger and
@@ -252,7 +252,7 @@ public struct WatchIntake: Sendable {
         // Step 3: admitted, or held.
         if let reason = try holdReason(sealed, vault: meta.vault, using: delivery) {
             guard let held else { return WatchIntakeResult(id: meta.id, outcome: .refused(.heldFull)) }
-            do { try held.hold(sealed, vault: meta.vault, reason: reason) } catch let e as WatchHeldError where e == .full || e == .fullUnplaceable {
+            do { try held.hold(sealed, vault: meta.vault, reason: reason, toggleOff: !delivery.linkEnabled) } catch let e as WatchHeldError where e == .full || e == .fullUnplaceable {
                 return WatchIntakeResult(id: meta.id, outcome: .refused(.heldFull))
             }
             try? received.insert(meta.id)
@@ -306,11 +306,37 @@ public struct WatchIntake: Sendable {
     /// Whether "Add to inbox" can take `item` now: the admission check `addHeld` makes, with the toggle treated as on. The
     /// stored reason can be stale (an epoch or vault this device never held since), so counts and `--all` ask this, not
     /// `item.canAdd`.
-    public func canAddNow(_ item: HeldCapture) -> Bool {
-        // From the sidecar alone (epoch and epoch id): the sealed file, up to 500 MB held, is not read for a count.
-        guard item.canAdd, held != nil, let epochId = Hex.decode(item.epochId) else { return false }
+    public func canAddNow(_ item: HeldCapture) -> Bool { judge(item).canAdd }
+
+    /// How a held note stands now, from one vault and epoch verdict (`canAddNow`, `currentReason` and `needsCheck` are its
+    /// parts; a list asks this once per note).
+    public struct HeldJudgment: Equatable, Sendable {
+        /// "Add to inbox" can take it now (`canAddNow`).
+        public var canAdd: Bool
+        /// Why it is held now (`currentReason`).
+        public var reason: WatchHeldReason
+        /// Its Add needs the user's check (`needsCheck`).
+        public var needsCheck: Bool
+    }
+
+    /// `item` judged now, from the sidecar alone (epoch and epoch id: the sealed file, up to 500 MB held, is not read) and one
+    /// reading of the profile. When the state cannot be read: the stored reason, and an Add allowed to try (and fail loudly).
+    public func judge(_ item: HeldCapture) -> HeldJudgment {
+        let stored = HeldJudgment(canAdd: item.canAdd && held != nil, reason: item.reason, needsCheck: item.needsCheck)
+        guard let epochId = Hex.decode(item.epochId) else {
+            return HeldJudgment(canAdd: false, reason: item.reason, needsCheck: item.needsCheck)
+        }
         let probe = SealedCapture(name: CaptureFile.name(item.id, .capture), data: Data(), epoch: item.epoch, epochId: epochId)
-        do { return try epochVerdict(probe, vault: item.vault)?.canAdd ?? true } catch { return true }   // unreadable state: let the add try, and fail loudly
+        let verdict: WatchHeldReason?
+        let linkEnabled: Bool
+        do {
+            let delivery = try self.delivery.snapshot()
+            verdict = try epochVerdict(probe, vault: item.vault, using: delivery)
+            linkEnabled = delivery.linkEnabled
+        } catch { return stored }
+        let reason = verdict ?? (item.arrivedWhileOff || !linkEnabled ? .linkOff : item.reason)
+        return HeldJudgment(canAdd: stored.canAdd && (verdict?.canAdd ?? true), reason: reason,
+                            needsCheck: item.arrivedWhileOff || reason.needsCheck)
     }
 
     /// "Add to inbox": the user's decision to take a held file. It runs the normal record-and-place path, and catch-up then
@@ -331,6 +357,50 @@ public struct WatchIntake: Sendable {
             return try place(sealed, vault: item.vault, using: delivery)
         }
     }
+
+    /// Places the held notes that would be admitted now, as if they had just arrived: their vault and epoch are the phone's
+    /// (`epochVerdict` nil) and "Use on Apple Watch" is on. Run when what decides admission changed (the stored profile's
+    /// vault, epoch or suspension; the toggle). The notes it can take are few: `suspended` ones once the device is listed
+    /// again, `unknownVault` ones once that vault is on the phone. A `newerEpoch` note carries the label of the profile that
+    /// sealed it, an earlier epoch once the profile caught up, so it becomes `oldEpoch` and stays. Notes held for the user's
+    /// decision stay held whatever the verdict: those that arrived while the toggle was off (`arrivedWhileOff`) and
+    /// `oldEpoch` ones (after a lost watch's steps, what the lost watch sends). A note that cannot be placed now stays held
+    /// (tried again at the next change). Returns the ids placed.
+    @discardableResult
+    public func admitReady() -> [UUID] {
+        guard let held, delivery.linkEnabled else { return [] }
+        var placed: [UUID] = []
+        // Not `needsCheck(_:)`: a note that qualifies has no verdict, so only what it arrived as can rule it out.
+        for item in held.list() where !item.arrivedWhileOff && !item.reason.needsCheck {
+            guard let epochId = Hex.decode(item.epochId) else { continue }
+            let probe = SealedCapture(name: CaptureFile.name(item.id, .capture), data: Data(), epoch: item.epoch, epochId: epochId)
+            do {
+                // From the sidecar first (the sealed file, up to 500 MB held, is read only for one that qualifies).
+                guard try epochVerdict(probe, vault: item.vault) == nil else { continue }
+                let result = try held.take(item) { sealed -> WatchPlacement in
+                    // Judged again against one reading of the profile, as `receive` does: the profile may have changed since.
+                    let delivery = try self.delivery.snapshot()
+                    guard delivery.linkEnabled, try epochVerdict(sealed, vault: item.vault, using: delivery) == nil else {
+                        throw WatchHeldError.unreadable("no longer admitted")
+                    }
+                    return try place(sealed, vault: item.vault, using: delivery)
+                }
+                if result != nil { placed.append(item.id) }
+            } catch {
+                continue
+            }
+        }
+        return placed
+    }
+
+    /// Why `item` is held now, judged as `canAddNow` does (its stored reason can be stale: 1.1.0's `newerEpoch` notes are
+    /// of an earlier key once the profile is repaired): the vault and epoch verdict, else `linkOff` when it arrived while the
+    /// toggle was off or the toggle is off now, else the stored reason. The stored reason when the state cannot be read.
+    public func currentReason(_ item: HeldCapture) -> WatchHeldReason { judge(item).reason }
+
+    /// Whether `item` needs the user's check before it is added (the warning, `held add --all` skipping it): it arrived
+    /// while the toggle was off, or it is of an earlier key now (`currentReason`).
+    public func needsCheck(_ item: HeldCapture) -> Bool { judge(item).needsCheck }
 
     /// What the phone sends at the watch's activation: the ids it holds.
     public func have() -> WatchAck { WatchAck(have: received.newest()) }

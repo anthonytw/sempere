@@ -443,6 +443,8 @@ struct HeldRow: Encodable {
     var canAdd: Bool
     /// Arrived after the toggle went off or under an earlier key (`WatchHeldReason.needsCheck`): check before adding.
     var needsCheck: Bool
+    /// Use on Apple Watch was off when it arrived (`HeldCapture.arrivedWhileOff`).
+    var toggleWasOff: Bool
     var bytes: Int
     var receivedAt: String
 
@@ -453,6 +455,7 @@ struct HeldRow: Encodable {
         reason = h.reason.rawValue
         canAdd = h.canAdd
         needsCheck = h.needsCheck
+        toggleWasOff = h.arrivedWhileOff
         bytes = h.bytes
         receivedAt = RFC3339.string(from: h.receivedAt) ?? ""
     }
@@ -567,7 +570,7 @@ struct InboxWatchHeldAdd: ParsableCommand {
             if all {
                 let everything = held.list()
                 let addable = everything.filter(intake.canAddNow)
-                targets = addable.filter { !$0.needsCheck }
+                targets = addable.filter { !intake.needsCheck($0) }   // judged now, not by the stored reason
                 if addable.count < everything.count {
                     printStderr("\(everything.count - addable.count) held note(s) cannot be added now (see `held list`); skipped")
                 }

@@ -46,6 +46,9 @@ struct WatchSettingsSection: View {
                     let addable = link.addableIds.count
                     Text("\(held.count) Watch notes held (sent while Use on Apple Watch was off or after the key changed)")
                         .font(.footnote).foregroundStyle(.orange)
+                    // The watch dropped its copy once the phone acknowledged it (docs/design/1.1-watch.md §3.6).
+                    Text("Held Watch notes are kept only on this iPhone, not on the watch or in the vault: deleting Sempere deletes them.")
+                        .font(.footnote).foregroundStyle(.secondary)
                     if WatchHeldStore.isFull(held) {
                         Text("The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some")
                             .font(.footnote).foregroundStyle(.orange)
@@ -62,16 +65,17 @@ struct WatchSettingsSection: View {
                     // steps, so nothing is added in bulk, and those that came after the toggle went off or under an earlier
                     // key are offered for Delete first.
                     ForEach(held.prefix(Self.listed), id: \.id) { note in
+                        let check = link.checkIds.contains(note.id)
                         HStack(alignment: .firstTextBaseline) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(note.receivedAt.formatted(date: .abbreviated, time: .shortened))
-                                Text(Self.reasonText(note.reason)).foregroundStyle(note.needsCheck ? .orange : .secondary)
+                                Text(Self.reasonText(link.reasons[note.id] ?? note.reason)).foregroundStyle(check ? .orange : .secondary)
                                 Text(ByteCountFormatter.string(fromByteCount: Int64(note.bytes), countStyle: .file))
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
                             if link.addableIds.contains(note.id) {
-                                Button(note.needsCheck ? "Add Anyway…" : "Add…") { confirmingAdd = note }
+                                Button(check ? "Add Anyway…" : "Add…") { confirmingAdd = note }
                                     .disabled(link.busy)
                                     .help("Add this note to the vault's inbox, as yours")
                             }
@@ -96,14 +100,14 @@ struct WatchSettingsSection: View {
                         .confirmationDialog("Add this Watch note to the inbox?", isPresented: Binding(
                             get: { confirmingAdd != nil }, set: { if !$0 { confirmingAdd = nil } }), titleVisibility: .visible,
                             presenting: confirmingAdd) { note in
-                            Button(note.needsCheck ? "Add Anyway" : "Add") {
+                            Button(link.checkIds.contains(note.id) ? "Add Anyway" : "Add") {
                                 Task {
                                     let added = await service.addHeldNote(note)
                                     problem = added ? nil : String(localized: "The note could not be added now; try again when the vault can be written.")
                                 }
                             }
                         } message: { note in
-                            Text(Self.addWarning(note))
+                            Text(Self.addWarning(note, reason: link.reasons[note.id] ?? note.reason))
                         }
                 }
                 if let problem { Text(problem).font(.footnote).foregroundStyle(.orange) }
@@ -120,7 +124,7 @@ struct WatchSettingsSection: View {
     static func reasonText(_ reason: WatchHeldReason) -> String {
         switch reason {
         case .linkOff: return String(localized: "Sent while Use on Apple Watch was off")
-        case .oldEpoch: return String(localized: "Sealed under an earlier key")
+        case .oldEpoch: return String(localized: "Sealed under the vault's earlier key (it changed since)")
         case .newerEpoch: return String(localized: "The vault has a newer key than this device")
         case .suspended: return String(localized: "This device was removed from the vault's device list")
         case .unknownEpoch: return String(localized: "Sealed with a key this device never held")
@@ -129,9 +133,19 @@ struct WatchSettingsSection: View {
     }
 
     /// What the confirmation of an Add says.
-    static func addWarning(_ note: HeldCapture) -> String {
-        if note.needsCheck {
-            return String(localized: "This note came after Use on Apple Watch was turned off, or under an earlier key. If you lost a watch, it may be one the lost watch recorded: add it only if you recorded it yourself. It becomes a note in your vault.")
+    /// `reason` is the one it is held for now (`WatchReceiver.currentReason`). A note that arrived while the toggle was off
+    /// carries the lost-watch caution whatever its reason.
+    static func addWarning(_ note: HeldCapture, reason: WatchHeldReason) -> String {
+        if note.arrivedWhileOff || reason == .linkOff {
+            return String(localized: "This note came after Use on Apple Watch was turned off. If you lost a watch, it may be one the lost watch recorded: add it only if you recorded it yourself. It becomes a note in your vault.")
+        }
+        switch reason {
+        case .oldEpoch:
+            // Usually the vault's key changed (a device removed, the key replaced) while the note was on its way; a lost watch
+            // also sends notes under the key it had, so the caution stays, second.
+            return String(localized: "This note was sealed under the vault's earlier key. That is expected when the key changed (a device was removed or the key replaced) while the note was on its way. If you lost a watch, add it only if you recorded it yourself. It becomes a note in your vault.")
+        default:
+            break
         }
         return String(localized: "It becomes a note in your vault, as one you recorded.")
     }

@@ -64,17 +64,17 @@ extension InsightsUpdaterTests {
         XCTAssertNil(InsightsStore(vault: vault).snapshot().notes[id]?[vault.writerDevice!]?.titleOp, "no titleOp for a title not written")
     }
 
-    /// `insights.compute` auto in a device type's block makes a device that is not the work device generate, when the
-    /// run says which type it is (review of #52: the app's switch did nothing).
-    func testATypeBlocksComputeAutoGenerates() async throws {
+    /// A device that is not the work device generates whatever its type (D13 for 1.2: every device with the model makes
+    /// summaries; `insights.compute` is gone), and never embeds.
+    func testADeviceThatIsNotTheWorkDeviceGenerates() async throws {
         try note("A", Self.physics[0])
         try enable()
         try InsightsSettingsWrite.setWorkDevice(DeviceID("0000beef"), vault: vault, now: now)
-        try InsightsSettingsWrite.setCompute(auto: true, type: .ipad, vault: vault, now: now)
-        let top = try await run { $0.deviceType = nil }
-        XCTAssertEqual(top.generated, [], "the top level says never")
-        let ipad = try await run { $0.deviceType = .ipad }
+        let ipad = try await run(embedder: nil) { $0.deviceType = .ipad }
         XCTAssertEqual(ipad.generated.count, 1)
+        XCTAssertEqual(ipad.embedded, [])
+        XCTAssertFalse(ipad.mapBuilt)
+        XCTAssertNil(SharedSettingsCatalog.spec(named: "insights.compute"), "the setting is gone")
     }
 
     /// A cancelled run stops between notes, saves what it made, backs nothing off and runs nothing after the notes
@@ -139,9 +139,6 @@ extension InsightsUpdaterTests {
         XCTAssertEqual(InsightsSettings.read(vault).voiceNoteTitle, "{slug} ({date})", "a refused format writes nothing")
         try InsightsSettingsWrite.setVoiceNoteTitle(nil, vault: vault, now: now)
         XCTAssertEqual(InsightsSettings.read(vault).voiceNoteTitle, VoiceNoteTitleFormat.defaultFormat)
-        try InsightsSettingsWrite.setCompute(auto: true, type: .iphone, vault: vault, now: now)
-        XCTAssertTrue(InsightsSettings.read(vault, type: .iphone).computeAuto)
-        XCTAssertFalse(InsightsSettings.read(vault, type: .mac).computeAuto, "a type block only")
         try InsightsSettingsWrite.setWorkDevice(nil, vault: vault, now: now)
         XCTAssertNil(InsightsSettings.read(vault).workDevice)
         // Off: the explicit false, and this copy's files go.

@@ -42,7 +42,8 @@ public struct InsightsServices: Sendable {
     public static let none = InsightsServices(model: { nil }, embedder: { nil }, powerWindow: { true })
 }
 
-/// What this device can do (from its providers, read when a vault unlocks).
+/// What this device can do (from its providers: read when a vault unlocks, when Settings shows Note Insights and at the
+/// start of every pass, since Apple Intelligence can be turned on or finish getting ready at any time).
 public struct InsightsCapability: Equatable, Sendable {
     /// Apple's on-device model, or why not (nil: no provider in this build or OS).
     public var model: ModelAvailability?
@@ -53,8 +54,9 @@ public struct InsightsCapability: Equatable, Sendable {
 
     /// Summaries, keywords and titles can be made here.
     public var generates: Bool { model?.isAvailable == true }
-    /// The device can hold the work device (D13): embeds, so related notes and the map at least.
-    public var canWork: Bool { generates || embedder }
+    /// The device can hold the work device, the map and titles device (D13): it embeds. Making summaries alone is not
+    /// enough (vectors and the map need the embedder; `WorkDeviceStatus.capable` lists only devices with the pin).
+    public var canWork: Bool { embedder }
 }
 
 /// Why Note Insights could not do something (worded by the app).
@@ -79,7 +81,7 @@ public enum InsightsTopicProblem: Equatable, Sendable {
 
 /// What Settings and the note views read (observed: `AppModel.insights`).
 public struct InsightsModelState: Equatable, Sendable {
-    /// The vault's insights settings as this device reads them (its type block for `compute`).
+    /// The vault's insights settings as this device reads them.
     public var settings = InsightsSettings()
     /// On, off (explicitly) or unset (format.md §16.6).
     public var mode: Vault.InsightsMode = .unset
@@ -92,6 +94,8 @@ public struct InsightsModelState: Equatable, Sendable {
     /// When the last pass on this device ended, and what it did.
     public var lastPass: Date?
     public var lastReport: InsightsUpdateReport?
+    /// Why the last pass on this device made nothing (shown under "Process Now"); nil when it made something or none ran.
+    public var passOutcome: InsightsPassOutcome?
     public var problem: InsightsProblem?
     /// The offer card was answered (or dismissed) for this vault on this device.
     public var offerAnswered = false
@@ -220,7 +224,7 @@ extension AppModelCore {
             runtime.providersRead = true
         }
         insights = InsightsModelState()
-        insights.capability = InsightsCapability(model: runtime.model?.availability, embedder: runtime.embedder != nil)
+        refreshInsightsCapability()
         insights.offerAnswered = services.settings.bool(forKey: Self.insightsOfferKey(vault.vaultId))
         let gen = generation
         runtime.start?.cancel()
@@ -230,6 +234,17 @@ extension AppModelCore {
             await self.refreshInsights()
             self.startInsightsLoop()
         }
+    }
+
+    /// Reads this device's capability again from its providers (Settings appearing, each pass's start): Apple
+    /// Intelligence turned on, or done getting ready, since the vault was unlocked. A provider missing at unlock is asked
+    /// for again.
+    public func refreshInsightsCapability() {
+        let runtime = insightsRuntime
+        if runtime.model == nil { runtime.model = insightsServices.model() }
+        if runtime.embedder == nil { runtime.embedder = insightsServices.embedder() }
+        let capability = InsightsCapability(model: runtime.model?.availability, embedder: runtime.embedder != nil)
+        if insights.capability != capability { insights.capability = capability }
     }
 
     /// The vault closed (or locked): every pass and refresh stops, the index goes.
@@ -538,9 +553,10 @@ extension AppModelCore {
         if device == vault?.writerDevice { requestInsightsPass(force: false) }
     }
 
-    /// "Use This Device" (D13: the user designates; no automatic takeover).
+    /// "Use This Device" (D13: the user designates; a device also takes the role by itself once the work device has not
+    /// been seen for 14 days, in its next pass).
     public func claimInsightsWorkDevice() async {
-        guard let me = vault?.writerDevice else { return }
+        guard let me = vault?.writerDevice, insights.capability.canWork else { return }
         await setInsightsWorkDevice(me)
     }
 
@@ -550,13 +566,6 @@ extension AppModelCore {
         if let format, VoiceNoteTitleFormat.check(format) != nil { return false }
         await writeInsightsSettings { vault in try InsightsSettingsWrite.setVoiceNoteTitle(format, vault: vault) }
         return true
-    }
-
-    /// `insights.compute` for this kind of device: `auto` lets it process too when it is not the work device.
-    public func setInsightsComputeHere(_ on: Bool) async {
-        let type = settingsDeviceType
-        await writeInsightsSettings { vault in try InsightsSettingsWrite.setCompute(auto: on, type: type, vault: vault) }
-        if on { requestInsightsPass(force: false) }
     }
 
     /// What "Use the newer embedding model" would do (D12), for its confirmation; nil without an offer.
@@ -606,26 +615,31 @@ extension AppModelCore {
 
     // MARK: Passes
 
-    /// This device has work it may do (D13): the work device, a device allowed to compute too, or a capable one that
-    /// would claim a role nobody holds.
+    /// This device has work it may do (D13): it can make summaries (every such device does), or it embeds and holds the
+    /// work device, would claim a role nobody holds, or would take over a work device not seen for 14 days.
     public var insightsHasRole: Bool {
         let s = insights.settings
-        guard insights.mode == .on, insights.capability.canWork else { return false }
-        if s.workDevice == nil || s.computeAuto { return true }
-        return s.workDevice == vault?.writerDevice
+        guard insights.mode == .on else { return false }
+        if insights.capability.generates { return true }
+        guard insights.capability.canWork else { return false }
+        return s.workDevice == nil || s.workDevice == vault?.writerDevice || insights.status?.workDeviceNotSeen == true
     }
 
-    /// Starts a pass now unless one runs (`force`: Settings' "Process Now", which does not wait for a power window).
+    /// The one insights slot is taken (a pass, or a topic's "Regenerate"): "Process Now" would start nothing.
+    public var insightsBusy: Bool { insights.isWorking || !insights.regeneratingTopics.isEmpty }
+
+    /// Starts a pass now unless one runs (`force`: Settings' "Process Now", which does not wait for a power window or the
+    /// settle time, and asks again for notes that failed before; open notes still wait).
     public func requestInsightsPass(force: Bool) {
         guard insightsRuntime.pass == nil else { return }
-        startInsightsPass(batch: Self.insightsForegroundBatch, ignorePower: force)
+        startInsightsPass(batch: Self.insightsForegroundBatch, ignorePower: force, forced: force)
     }
 
     /// Puts a pass in the one slot; it clears the slot when it ends, only while the slot is still its own.
     @discardableResult
-    func startInsightsPass(batch: Int, ignorePower: Bool) -> Task<Bool, Never> {
+    func startInsightsPass(batch: Int, ignorePower: Bool, forced: Bool = false) -> Task<Bool, Never> {
         occupyInsightsSlot(regeneration: false) { [weak self] in
-            await self?.runInsightsPass(batch: batch, ignorePower: ignorePower).remains ?? false
+            await self?.runInsightsPass(batch: batch, ignorePower: ignorePower, forced: forced).remains ?? false
         }
     }
 
@@ -693,19 +707,42 @@ extension AppModelCore {
     }
 
     /// Runs updater passes of `batch` generations each until nothing is left, the task is cancelled, the power window
-    /// closes or the vault changes. Returns the reports.
+    /// closes or the vault changes. Returns the reports, and publishes why the pass made nothing (`passOutcome`).
     /// `remains`: the pass stopped with work left (cancelled, the power window closed, or a run still generating).
+    /// `forced` ("Process Now"): no settle time, and failures remembered before the pass do not hold notes back (what
+    /// fails during it waits, so its next run does not ask again).
     @discardableResult
-    func runInsightsPass(batch: Int, ignorePower: Bool) async -> (reports: [InsightsUpdateReport], remains: Bool) {
-        guard let vault, phase == .unlocked, insights.mode == .on, !isVaultReadOnly, insightsHasRole, !isChangingKeys else { return ([], false) }
+    func runInsightsPass(batch: Int, ignorePower: Bool, forced: Bool = false) async -> (reports: [InsightsUpdateReport], remains: Bool) {
+        refreshInsightsCapability()
+        // What the model was at the start: the outcome says why this pass made nothing, not what changed after it.
+        let availability = insights.capability.model
+        guard let vault, phase == .unlocked, insights.mode == .on, insightsHasRole, !isChangingKeys else {
+            insights.passOutcome = nil
+            return ([], false)
+        }
+        // A forced pass ("Process Now") that cannot start says why; any other clears what an earlier one said.
+        guard !isVaultReadOnly else {
+            insights.passOutcome = forced ? .readOnly : nil
+            return ([], false)
+        }
         let gen = generation
         let runtime = insightsRuntime
         // A device of the vault's list, writing with the model's one clock.
-        guard vault.writerDevice != nil, let clock = try? deviceClockForWriting() else { return ([], false) }
+        guard vault.writerDevice != nil else {
+            insights.passOutcome = forced ? .notListed : nil
+            return ([], false)
+        }
+        let clock: DeviceClock
+        do { clock = try deviceClockForWriting() } catch {
+            insights.passOutcome = forced ? .cannotWrite(services.describeError(error)) : nil
+            return ([], false)
+        }
         insights.isWorking = true
         defer { insights.isWorking = false; insights.lastPass = Date() }
         var reports: [InsightsUpdateReport] = []
         var remains = false
+        var failed = false
+        let started = insightsNow()
         var updater = InsightsUpdater(vault: vault, model: runtime.model, embedder: runtime.embedder, deviceState: deviceStateURL,
                                       app: services.appName)
         updater.titleWriter = { [self] id, build, now in try await self.writeInsightsTitle(id, build, wall: now) }
@@ -721,7 +758,8 @@ extension AppModelCore {
             o.failureMemo = insightsFailureMemoURL
             o.platform = insightsServices.platform
             o.powerWindow = true
-            o.deviceType = settingsDeviceType   // `insights.compute` of this kind of device (D13)
+            o.deviceType = settingsDeviceType
+            if forced { o.ignoreSettle = true; o.ignoreBackoffBefore = started }
             // Topic summaries (design §6 item 4, D8; Insights PR 3): due scopes at most once a day each, in the same power
             // window and batch as the notes, backed off in the failure memo when they fail.
             o.topics = true
@@ -738,6 +776,7 @@ extension AppModelCore {
             } catch {
                 if error is CancellationError || Task.isCancelled { remains = true; break }
                 insights.problem = .failed(services.describeError(error))
+                failed = true
                 break
             }
             guard generation == gen else { break }
@@ -752,7 +791,12 @@ extension AppModelCore {
             // failed is in the memo, so it is not asked again in the next run.
             if report.generated.isEmpty && report.topics.isEmpty { break }
         }
-        if generation == gen { await refreshInsights() }
+        if generation == gen {
+            // Said only for a pass that ran to its end; one that failed (its problem shows), ran nothing or was cut off
+            // clears what an earlier pass said.
+            insights.passOutcome = !reports.isEmpty && !remains && !failed ? InsightsPassOutcome.of(reports, availability: availability) : nil
+            await refreshInsights()
+        }
         return (reports, remains)
     }
 

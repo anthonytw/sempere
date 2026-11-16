@@ -579,8 +579,12 @@ sempere vault reencrypt --status [--json]
   every other unsealed file under an earlier key into the set-aside store. The
   first write after this machine verifies a new epoch does it by itself; the
   command reports. Exit 1 when a file could not be caught up (tried again by
-  the next writer). `--json`: `reencrypted`, `pruned`, `sealedKept`, `dropped`,
-  `setAside`, `problems`.
+  the next writer). An inbox file of this machine's that its ledger records under an
+  earlier epoch but that is sealed under the current key already (1.1.0's quick-capture
+  profile refresh kept the old epoch's label on the new key) only gets its entry
+  corrected (`relabeled`); one that opens under another earlier key than its entry names
+  is re-sealed from that one. `--json`: `reencrypted`, `pruned`, `sealedKept`, `dropped`,
+  `setAside`, `problems`, `relabeled`.
 - `index` writes `sempere-index.json` at the vault root (or `--out PATH`;
   `--out -` prints it): every note id and its revision file names, the
   listing the web viewer reads on a static server that cannot list folders
@@ -2262,9 +2266,10 @@ adopts the captures as notes. `--json`: `keygen` gives `{identity, recipient}`; 
 is `placed`, `held`, `duplicate` or `refused`; `placement` is `vault`, `queued`, `otherVault` or `otherVaultQueued`; `reason` of a held file is
 `linkOff`, `oldEpoch`, `newerEpoch`, `unknownEpoch` or `unknownVault`).
 
-`held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, needsCheck, bytes, receivedAt}]`;
-`needsCheck` marks a note that arrived after Use on Apple Watch went off (`linkOff`) or under an earlier key (`oldEpoch`),
-what a lost watch sends: `held add --all` skips those, and they are added one at a time by id after a check). `held summary` gives the count per reason, the limits and the leftover files it removed (`--json`: `{counts: {reason: n}, orphansRemoved, limits: {files, bytes, unplaceableFiles, unplaceableBytes}}`); like `list` it first removes files with no record (and records with no file) that are more than 24 hours old, since a younger one may be a `receive` still writing it. `held add` is the
+`held list` shows what `receive` kept (`--json`: `[{capture, vault, epoch, reason, canAdd, needsCheck, toggleWasOff, bytes, receivedAt}]`;
+`needsCheck` marks a note that arrived after Use on Apple Watch went off (`toggleWasOff`, whatever its reason) or under an earlier
+key (`oldEpoch`), what a lost watch sends: `held add --all` skips those, judged again when it runs (a note held as `newerEpoch` is of
+an earlier key once this machine's epoch caught up), and they are added one at a time by id after a check). `held summary` gives the count per reason, the limits and the leftover files it removed (`--json`: `{counts: {reason: n}, orphansRemoved, limits: {files, bytes, unplaceableFiles, unplaceableBytes}}`); like `list` it first removes files with no record (and records with no file) that are more than 24 hours old, since a younger one may be a `receive` still writing it. `held add` is the
 decision to take a held note: it records it in this machine's ledger and places it in its vault's inbox as `receive` would
 (`--vault`, `--store`, `--queue` as there), and the next catch-up re-seals an older epoch's note under the current key
 (`--json`: `[{capture, outcome, placement, problem}]`, `outcome` `added`, `notHeld` (already taken by an earlier add: a no-op, not a failure) or `failed`; exit 1 if any failed). A note whose epoch
@@ -2347,18 +2352,21 @@ sempere insights purge
 Summaries, keywords and concepts per note, related notes, a map of the notes, notebook and tag summaries and
 voice-note titles, made on the vault's devices only (`format.md` §16, `docs/design/1.2-note-insights.md`): Apple's
 on-device language model (`SystemLanguageModel.default`) and NaturalLanguage's sentence embedding at a pinned
-revision; never a server. They are off until `sempere settings set insights.enabled true`. One **work device**
-(`insights.workDevice`) generates, embeds every note and builds the map; the first capable device to run `update`
-claims it when none is set, and the role never moves by itself. Every command takes `--json`, the access options and
-`--no-cache`.
+revision; never a server. They are off until `sempere settings set insights.enabled true`. Every device with the
+model makes summaries and keywords; one **work device** (`insights.workDevice`) also embeds every note, builds the map
+and titles voice notes. The first capable device to run `update` claims it when none is set, or when the work device
+has not been seen for 14 days or left the device list (only a device with the embedder holds the role). Every command takes `--json`, the access options and `--no-cache`.
 
-- `update` does this device's work now (the scheduling policy of the design's §3.7): on the work device, generate and
-  embed each eligible note (text unchanged for 10 minutes, `--force`: now and again), tombstone deleted notes, title
+- `update` does this device's work now (the scheduling policy of the design's §3.7): generate each eligible note
+  (text unchanged for 10 minutes, `--force`: now and again) that no device has a current summary of; on the work
+  device also embed each eligible note, tombstone deleted notes, title
   voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when more than
   10% changed or weekly (the first build pins the embedding revision, the lowest every recently seen device supports),
   write this device's record and the notebook and tag summaries that are due (each at most once a day; one whose
-  model call failed or left nothing after the fact check waits a day, 30 days when refused, in the same memo). A device that is not the work device
-  generates only with `insights.compute` `auto`, and never embeds into the vault. A note whose generation failed is
+  model call failed or left nothing after the fact check waits a day, 30 days when refused, in the same memo; skipped
+  while the latest from any device is current). A device that is not the work device never embeds into the vault. The
+  JSON report counts what waits: `backedOff` (with `backedOffReason`, the first error), `waitingToSettle` and
+  `waitingOpen`. A note whose generation failed is
   not asked again for a day, or for 30 days when the model refused it, unless its text or the model changes or with
   `--force` (this machine's memo, sealed under the vault's key, `$XDG_STATE_HOME/sempere/insights/<vault id>-failures`, deleted when Note Insights is turned off on this machine (`insights purge`, `settings set insights.enabled false`), or at the next `insights update` after it is turned off elsewhere). `--limit` caps model calls;
   `--embeddings-only` skips the model; `--dry-run` writes nothing. It needs Apple Intelligence (macOS 26): elsewhere,
@@ -2387,7 +2395,7 @@ claims it when none is set, and the role never moves by itself. Every command ta
   replaced; a rename from another device that lost to this device's title is restored), with `--format` or the
   vault's format; it uses a stored slug, else asks the model (exit 3 without one).
 - `work-device` shows the work device and the capable devices; `ID` sets it, `--claim` takes it for this device
-  (needs the embedder).
+  (needs the embedder). A work device not seen for 14 days is taken over by the next capable device's `update`.
 - `purge` turns Note Insights off (`insights.enabled false`) and deletes every insights file here; the next sync
   deletes them on the targets, and every device deletes its own.
 
