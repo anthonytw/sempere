@@ -76,15 +76,18 @@ extension AppModelCore {
     /// Turns quick voice notes on for the open vault: voice notes then go to
     /// its inbox, adopted into `notebook`. Needs the vault unlocked (the
     /// capture key comes from its secret); afterwards capture needs nothing.
-    /// Without a `notebook`, voice notes go to "Inbox".
-    public func enableQuickCapture(notebook: String? = nil, transcribe: Bool = true) throws {
+    /// Without a `notebook`, voice notes go to "Inbox". Without `transcribe`, the choice this device had last (a profile
+    /// it holds, or the one it held when quick voice notes were turned off) is kept; on when there was none.
+    public func enableQuickCapture(notebook: String? = nil, transcribe: Bool? = nil) throws {
         guard let vault, vault.canRead, vaultURL != nil, phase == .unlocked else { throw ModelError.noVaultOpen }
         try requireWritableVault()
         let clock = try deviceClockForWriting()
         let profile = try vault.captureProfile(device: clock.device,
                                                notebook: notebook ?? CaptureProfile.defaultNotebook)
+        let held = (try? storedQuickCaptureProfile())??.transcribe
+        let keep = transcribe ?? held ?? services.settings.object(forKey: Self.lastTranscribeKey) as? Bool ?? true
         try quickCapture.store.save(StoredCaptureProfile(profile: profile, vaultName: vaultName ?? "Vault",
-                                                         transcribe: transcribe))
+                                                         transcribe: keep))
         // The widgets and the control stop showing "Set Up".
         quickCapture.publishStatus()
         quickCapture.profileChanged()
@@ -93,10 +96,15 @@ extension AppModelCore {
     /// Turns quick voice notes off on this device (what is in the inbox stays
     /// and is still adopted when the vault is unlocked).
     public func disableQuickCapture() throws {
+        // Its transcription choice outlives it: turning quick voice notes on again keeps it (`enableQuickCapture`).
+        if let stored = try? storedQuickCaptureProfile() { services.settings.set(stored.transcribe, forKey: Self.lastTranscribeKey) }
         try quickCapture.store.delete()
         quickCapture.publishStatus()
         quickCapture.profileChanged()
     }
+
+    /// This device's last "Transcribe Voice Notes" choice, kept while quick voice notes are off.
+    nonisolated static var lastTranscribeKey: String { "Sempere.quickCapture.lastTranscribe" }
 
     /// After an unlock or a key change: the stored profile of this vault gets
     /// the current recipients and this device's capture key (a removed key

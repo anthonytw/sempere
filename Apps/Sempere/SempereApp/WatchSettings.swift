@@ -46,6 +46,9 @@ struct WatchSettingsSection: View {
                     let addable = link.addableIds.count
                     Text("\(held.count) Watch notes held (sent while Use on Apple Watch was off or after the key changed)")
                         .font(.footnote).foregroundStyle(.orange)
+                    // The watch dropped its copy once the phone acknowledged it (docs/design/1.1-watch.md §3.6).
+                    Text("Held Watch notes are kept only on this iPhone, not on the watch or in the vault: deleting Sempere deletes them.")
+                        .font(.footnote).foregroundStyle(.secondary)
                     if WatchHeldStore.isFull(held) {
                         Text("The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some")
                             .font(.footnote).foregroundStyle(.orange)
@@ -120,7 +123,7 @@ struct WatchSettingsSection: View {
     static func reasonText(_ reason: WatchHeldReason) -> String {
         switch reason {
         case .linkOff: return String(localized: "Sent while Use on Apple Watch was off")
-        case .oldEpoch: return String(localized: "Sealed under an earlier key")
+        case .oldEpoch: return String(localized: "Sealed under the vault's earlier key (it changed since)")
         case .newerEpoch: return String(localized: "The vault has a newer key than this device")
         case .suspended: return String(localized: "This device was removed from the vault's device list")
         case .unknownEpoch: return String(localized: "Sealed with a key this device never held")
@@ -130,8 +133,15 @@ struct WatchSettingsSection: View {
 
     /// What the confirmation of an Add says.
     static func addWarning(_ note: HeldCapture) -> String {
-        if note.needsCheck {
-            return String(localized: "This note came after Use on Apple Watch was turned off, or under an earlier key. If you lost a watch, it may be one the lost watch recorded: add it only if you recorded it yourself. It becomes a note in your vault.")
+        switch note.reason {
+        case .oldEpoch:
+            // Usually the vault's key changed (a device removed, the key replaced) while the note was on its way; a lost watch
+            // also sends notes under the key it had, so the caution stays, second.
+            return String(localized: "This note was sealed under the vault's earlier key. That is expected when the key changed (a device was removed or the key replaced) while the note was on its way. If you lost a watch, add it only if you recorded it yourself. It becomes a note in your vault.")
+        case .linkOff:
+            return String(localized: "This note came after Use on Apple Watch was turned off. If you lost a watch, it may be one the lost watch recorded: add it only if you recorded it yourself. It becomes a note in your vault.")
+        default:
+            break
         }
         return String(localized: "It becomes a note in your vault, as one you recorded.")
     }

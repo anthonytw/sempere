@@ -85,8 +85,11 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
             self.receiver = receiver
             self.profileStore = quickCapture.store
         }
-        quickCapture.profileChanged = { [weak self] in self?.provisionIfNeeded() }
-        refreshHeld()
+        quickCapture.profileChanged = { [weak self] in
+            self?.provisionIfNeeded()
+            self?.admitReadyHeldNotes()   // notes held only because this phone was behind go in now
+        }
+        admitReadyHeldNotes()
         guard let session else { return }
         session.delegate = self
         session.activate()
@@ -110,6 +113,16 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
             let notes = receiver.heldNotes()
             let addable = Set(notes.filter { receiver.canAddNow($0) }.map(\.id))
             await MainActor.run { self?.status.setHeld(notes, addable: addable) }
+        }
+    }
+
+    /// Places, off the main actor, the held notes that would be admitted now (`WatchReceiver.admitReady`: a refresh to the
+    /// vault's epoch, a lifted suspension), then re-reads the list. Notes held for the user's decision stay.
+    func admitReadyHeldNotes() {
+        guard let receiver = lock.withLock({ receiver }) else { return }
+        Task.detached { [weak self] in
+            _ = receiver.admitReady()
+            self?.refreshHeld()
         }
     }
 

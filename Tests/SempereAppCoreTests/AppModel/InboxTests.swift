@@ -141,6 +141,28 @@ extension AppModelSuites {
             #expect(try qc.store.load() == nil)
         }
 
+        /// Turning Quick Voice Notes off and on again (Settings passes only the notebook) keeps "Transcribe Voice Notes" as
+        /// it was, instead of turning it back on.
+        @Test func turningQuickVoiceNotesOnAgainKeepsTheTranscribeChoice() async throws {
+            let (source, key) = try await ModelFixture.vault()
+            let url = try Self.intoStore(source)
+            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            model.vaultStore = Self.store(of: url)
+            try await model.openVault(at: url)
+            try await model.unlock(identityText: try await ModelFixture.keyText(key))
+            defer { model.close() }
+            try model.enableQuickCapture(notebook: "Voice")
+            #expect(try model.quickCapture.store.load()?.transcribe == true, "on when there was no choice yet")
+            try model.enableQuickCapture(notebook: "Voice", transcribe: false)
+            try model.enableQuickCapture(notebook: "Voice")
+            #expect(try model.quickCapture.store.load()?.transcribe == false, "a profile held: its choice")
+            try model.disableQuickCapture()
+            try model.enableQuickCapture(notebook: "Voice")
+            #expect(try model.quickCapture.store.load()?.transcribe == false, "kept while it was off")
+            try model.enableQuickCapture(notebook: "Voice", transcribe: true)
+            #expect(try model.quickCapture.store.load()?.transcribe == true, "an explicit choice wins")
+        }
+
         /// TestFlight build 10: a voice note recorded or synced while the vault is open appeared only after the
         /// vault was closed and opened again. A delivery into the open vault's inbox (or a sync run that
         /// reports inbox files) adopts it at once, also while an earlier adoption is still running.

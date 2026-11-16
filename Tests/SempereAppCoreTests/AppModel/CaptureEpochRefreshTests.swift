@@ -145,6 +145,7 @@ extension AppModelSuites {
             let (file2, meta2, sealed2) = try transfer(bad.profile, in: rig)
             #expect(try receiver(rig).receive(file: file2, metadata: meta2)?.result.outcome == .held(.oldEpoch))
             let held2 = try #require(receiver(rig).heldNotes().first)
+            #expect(receiver(rig).admitReady().isEmpty, "an earlier key's note waits for the user, also after a profile change")
             #expect(try receiver(rig).addHeld(held2) == .vault)
             #expect(try await adopted(model, sealed2))
             #expect(try #require(model.vault).catchUp().problems.isEmpty)

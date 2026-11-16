@@ -172,6 +172,10 @@ public struct WatchReceiver: Sendable {
     /// Whether "Add to inbox" can take `item` now (the same check `addHeld` makes).
     public func canAddNow(_ item: HeldCapture) -> Bool { intake.canAddNow(item) }
 
+    /// Places the held notes that would be admitted now (`WatchIntake.admitReady`): after the stored profile changed.
+    @discardableResult
+    public func admitReady() -> [UUID] { intake.admitReady() }
+
     /// "Delete".
     public func deleteHeld(_ item: HeldCapture) { intake.held?.delete(item) }
 

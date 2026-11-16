@@ -176,8 +176,11 @@ public final class WatchProvisioner: @unchecked Sendable {
         }
         try update {
             if (0...Int(Int32.max)).contains(watchSeq) { $0.seq = max($0.seq, watchSeq) }
-            // Turned off: the recipient is not kept (a cleared watch asks again by itself, which must not bring it back).
-            guard $0.enabled else { return }
+            // Turned off: the recipient is not kept (a cleared watch asks again by itself, which must not bring it back), and
+            // the answer is a clear. A watch that asks may hold a profile this phone no longer knows it gave (the phone's
+            // state was lost: a reinstall), and would go on recording notes that are only held here. A watch that holds
+            // nothing ignores the clear and does not ask again, so this does not loop.
+            guard $0.enabled else { $0.mayHoldProfile = true; return }
             $0.recipient = r.string
             $0.sent = nil
         }

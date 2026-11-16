@@ -10537,6 +10537,19 @@
         }
       }
     },
+    "Held Watch notes are kept only on this iPhone, not on the watch or in the vault: deleting Sempere deletes them." : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Apple Watch, under the count of held Watch notes.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notas del Watch retenidas se guardan solo en este iPhone, no en el reloj ni en la bóveda: si eliminas Sempere, se eliminan."
+          }
+        }
+      }
+    },
     "Held by History" : {
       "comment" : "Settings ▸ Storage: attachments only older versions of notes show",
       "extractionState" : "manual",
@@ -19950,14 +19963,15 @@
         }
       }
     },
-    "Sealed under an earlier key" : {
+    "Sealed under the vault's earlier key (it changed since)" : {
+      "comment" : "Why a Watch note is held: the vault's key changed after it was recorded.",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sellada con una clave anterior"
+            "value" : "Sellada con la clave anterior de la bóveda (ha cambiado desde entonces)"
           }
         }
       }
@@ -26098,14 +26112,15 @@
         }
       }
     },
-    "This note came after Use on Apple Watch was turned off, or under an earlier key. If you lost a watch, it may be one the lost watch recorded: add it only if you recorded it yourself. It becomes a note in your vault." : {
+    "This note came after Use on Apple Watch was turned off. If you lost a watch, it may be one the lost watch recorded: add it only if you recorded it yourself. It becomes a note in your vault." : {
+      "comment" : "Confirmation before adding a Watch note that arrived after Use on Apple Watch was turned off.",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta nota llegó después de desactivar Usar en el Apple Watch, o con una clave anterior. Si perdiste un reloj, puede que la grabara el reloj perdido: añádela solo si la grabaste tú. Se convierte en una nota de tu bóveda."
+            "value" : "Esta nota llegó después de desactivar Usar en el Apple Watch. Si perdiste un reloj, puede que la grabara el reloj perdido: añádela solo si la grabaste tú. Se convierte en una nota de tu bóveda."
           }
         }
       }
@@ -26239,6 +26254,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta nota alcanzó el límite de 60 minutos."
+          }
+        }
+      }
+    },
+    "This note was sealed under the vault's earlier key. That is expected when the key changed (a device was removed or the key replaced) while the note was on its way. If you lost a watch, add it only if you recorded it yourself. It becomes a note in your vault." : {
+      "comment" : "Confirmation before adding a Watch note held because it was sealed under an earlier key.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta nota se selló con la clave anterior de la bóveda. Es lo esperado si la clave cambió (se quitó un dispositivo o se reemplazó la clave) mientras la nota estaba en camino. Si perdiste un reloj, añádela solo si la grabaste tú. Se convierte en una nota de tu bóveda."
           }
         }
       }

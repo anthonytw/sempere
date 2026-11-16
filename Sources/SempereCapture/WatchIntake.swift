@@ -6,7 +6,7 @@ import Sempere
 //  2. an id already received, or already in the inbox, is not placed again, but is acknowledged;
 //  3. the file is admitted or held (§3.4 "Admission"): a file gets a ledger entry only while "Use on Apple Watch" is on and
 //     its epoch is the one this device holds for its vault; anything else is kept phone-locally (`WatchHeldStore`) until the
-//     user adds or deletes it;
+//     user adds or deletes it, or (held only because the phone was behind) the profile catches up (`admitReady`);
 //  4. an admitted file is delivered by `meta.vault`, never into the current vault's inbox unless that is its vault;
 //  5. the id joins the received set and is acknowledged.
 // The platform part is `WatchDelivery`: the app's adapter over `CaptureDelivery`, the CLI's over the vault's ledger and
@@ -330,6 +330,39 @@ public struct WatchIntake: Sendable {
             }
             return try place(sealed, vault: item.vault, using: delivery)
         }
+    }
+
+    /// Places the held notes that would be admitted now, as if they had just arrived: their vault and epoch are the phone's
+    /// (`epochVerdict` nil) and "Use on Apple Watch" is on. Run after the stored profile changed (a refresh to a new epoch,
+    /// a suspension lifted, a vault set up), so notes held only because the phone was behind (`newerEpoch`, `suspended`,
+    /// `unknownVault`, `unknownEpoch`) are not left for the user to add one by one. Notes held for the user's decision stay
+    /// held whatever the verdict: `linkOff` and `oldEpoch` (`WatchHeldReason.needsCheck`: after a lost watch's steps, those
+    /// are what the lost watch sends). A note that cannot be placed now stays held (tried again at the next change).
+    /// Returns the ids placed.
+    @discardableResult
+    public func admitReady() -> [UUID] {
+        guard let held, delivery.linkEnabled else { return [] }
+        var placed: [UUID] = []
+        for item in held.list() where !item.needsCheck {
+            guard let epochId = Hex.decode(item.epochId) else { continue }
+            let probe = SealedCapture(name: CaptureFile.name(item.id, .capture), data: Data(), epoch: item.epoch, epochId: epochId)
+            do {
+                // From the sidecar first (the sealed file, up to 500 MB held, is read only for one that qualifies).
+                guard try epochVerdict(probe, vault: item.vault) == nil else { continue }
+                let result = try held.take(item) { sealed -> WatchPlacement in
+                    // Judged again against one reading of the profile, as `receive` does: the profile may have changed since.
+                    let delivery = try self.delivery.snapshot()
+                    guard delivery.linkEnabled, try epochVerdict(sealed, vault: item.vault, using: delivery) == nil else {
+                        throw WatchHeldError.unreadable("no longer admitted")
+                    }
+                    return try place(sealed, vault: item.vault, using: delivery)
+                }
+                if result != nil { placed.append(item.id) }
+            } catch {
+                continue
+            }
+        }
+        return placed
     }
 
     /// What the phone sends at the watch's activation: the ids it holds.

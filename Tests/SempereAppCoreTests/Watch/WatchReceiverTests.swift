@@ -131,6 +131,33 @@ struct WatchReceiverTests {
         #expect(Self.inbox(rig.current.url) == [t.sealed.name])
     }
 
+    /// Held only because the phone was behind (here: suspended): once the profile catches up, `admitReady` places the note
+    /// as if it had just arrived. A note held for the user's decision (`linkOff`) stays, and nothing goes in while the
+    /// toggle is off.
+    @Test func notesHeldOnlyBecauseThePhoneWasBehindGoInOnceItCatchesUp() throws {
+        var rig = try Self.rig()
+        rig.enabled = false
+        let off = try Self.transfer(rig.current.stored.profile, in: rig)
+        #expect(try rig.receiver.receive(file: off.file, metadata: off.metadata)?.result.outcome == .held(.linkOff))
+        rig.enabled = true
+        var suspended = rig.current.stored
+        suspended.suspended = true
+        try rig.profileStore.save(suspended)
+        let behind = try Self.transfer(rig.current.stored.profile, in: rig)
+        #expect(try rig.receiver.receive(file: behind.file, metadata: behind.metadata)?.result.outcome == .held(.suspended))
+        #expect(rig.receiver.admitReady().isEmpty, "still suspended")
+
+        try rig.profileStore.save(rig.current.stored)   // listed again
+        var offNow = rig
+        offNow.enabled = false
+        #expect(offNow.receiver.admitReady().isEmpty, "not while Use on Apple Watch is off")
+        #expect(rig.receiver.admitReady() == [behind.meta.id])
+        #expect(Self.inbox(rig.current.url) == [behind.sealed.name])
+        #expect(try rig.ledgers.ledger(rig.current.stored.profile.vaultId).entries().map(\.path) == ["inbox/\(behind.sealed.name)"])
+        #expect(rig.receiver.heldNotes().map(\.id) == [off.meta.id], "the user decides on the linkOff note")
+        #expect(rig.receiver.admitReady().isEmpty, "nothing more")
+    }
+
     @Test func anUnreachableCurrentVaultQueuesTheFileWithItsEpoch() throws {
         var rig = try Self.rig()
         rig.storeRoot = try QuickCaptureLogicTests.tempDir("not-the-store")

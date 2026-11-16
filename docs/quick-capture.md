@@ -442,7 +442,7 @@ Apple Watch** turned on, which Settings shows only when a paired watch has the a
   confirmation; it runs the normal path: catch-up then re-seals an older epoch's note under the current key), **Delete**, and
   **Delete All**. A note that came while Use on Apple Watch was off, or under an earlier key (after a lost watch's steps, what the
   lost watch sends), is offered for Delete first: adding it is **Add Anyway…**, with a warning, and `held add --all` skips it. A note sealed under an epoch the phone never held, or for a vault
-  it does not hold, can only be deleted. A watch that was offline across an epoch change has its notes held until you add them.
+  it does not hold, can only be deleted. A watch that was offline across an epoch change has its notes held until you add them. Notes held only because the phone was behind (its profile of an earlier epoch, or suspended) go in by themselves once its profile catches up. Held notes are kept only on the phone: deleting the app deletes them.
   The CLI has `sempere inbox watch held list|add|delete`. WatchConnectivity can reach the phone through Apple's cloud relay, not
   only within Bluetooth range, so a lost watch needs the steps above, not distance.
 - **A recording and a clear.** The watch keeps the profile a recording started with until the note is sealed (in memory, and in

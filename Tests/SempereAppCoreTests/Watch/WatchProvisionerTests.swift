@@ -34,6 +34,8 @@ struct WatchProvisionerTests {
 
     @Test func nothingIsSentWhileTheToggleIsOffOrTheWatchHasNotAsked() throws {
         let off = try Self.rig(enabled: false)
+        // The watch asked while off: never a profile; the answer is a clear (`aRequestWhileOffIsAnsweredWithAClear`).
+        guard case .clear? = try off.provisioner.nextMessage(stored: off.stored) else { Issue.record("not a clear"); return }
         #expect(try off.provisioner.nextMessage(stored: off.stored) == nil)
         #expect(off.provisioner.status(stored: off.stored) == .off)
         let silent = try Self.rig(requested: false)
@@ -282,6 +284,34 @@ struct WatchProvisionerTests {
         try Data(#"{"seq": 41, "enabled": true}"#.utf8).write(to: url)
         let s = try FileWatchLinkStore(url: url).load()
         #expect(s.seq == 41 && s.enabled && s.recipient == nil && s.sent == nil)
+    }
+
+    /// A reinstalled phone starts with the toggle off and no memory of what it gave the watch, which still holds a profile
+    /// and goes on recording notes the phone can only hold. Its request is answered with a clear; a watch that holds
+    /// nothing ignores it, so nothing loops.
+    @Test func aRequestWhileOffIsAnsweredWithAClear() throws {
+        // The watch was provisioned (seq 3), then the phone's state was lost.
+        let old = try Self.rig()
+        var watch = WatchProfileState()
+        old.store.setSeq(2)
+        _ = try Self.apply(try old.provisioner.nextMessage(stored: old.stored), old, &watch)
+        #expect(watch.payload != nil && watch.seq == 3)
+        let fresh = WatchProvisioner(store: MemoryWatchLinkStore())
+        let r = Rig(stored: old.stored, watch: old.watch, store: MemoryWatchLinkStore(), provisioner: fresh)
+        #expect(try fresh.nextMessage(stored: r.stored) == nil, "nothing known to clear before the watch asks")
+
+        try fresh.watchRequested(recipient: r.watch.recipient.string, seq: watch.seq)
+        #expect(fresh.state.recipient == nil, "off: the request is not kept")
+        #expect(try Self.apply(try fresh.nextMessage(stored: r.stored), r, &watch) == .cleared)
+        #expect(watch.payload == nil)
+        #expect(try fresh.nextMessage(stored: r.stored) == nil, "cleared once")
+        // The cleared watch asks again by itself: one more clear, which it ignores, and it does not ask again.
+        try fresh.watchRequested(recipient: r.watch.recipient.string, seq: watch.seq)
+        #expect(try Self.apply(try fresh.nextMessage(stored: r.stored), r, &watch) == .ignored)
+        #expect(try fresh.nextMessage(stored: r.stored) == nil)
+        // Quick voice notes off altogether answers the same way.
+        try fresh.watchRequested(recipient: r.watch.recipient.string, seq: watch.seq)
+        guard case .clear? = try fresh.nextMessage(stored: nil) else { Issue.record("no clear"); return }
     }
 
     @Test func theWatchsCounterIsAFloorForThePhones() throws {
