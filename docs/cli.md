@@ -2352,18 +2352,21 @@ sempere insights purge
 Summaries, keywords and concepts per note, related notes, a map of the notes, notebook and tag summaries and
 voice-note titles, made on the vault's devices only (`format.md` §16, `docs/design/1.2-note-insights.md`): Apple's
 on-device language model (`SystemLanguageModel.default`) and NaturalLanguage's sentence embedding at a pinned
-revision; never a server. They are off until `sempere settings set insights.enabled true`. One **work device**
-(`insights.workDevice`) generates, embeds every note and builds the map; the first capable device to run `update`
-claims it when none is set, and the role never moves by itself. Every command takes `--json`, the access options and
-`--no-cache`.
+revision; never a server. They are off until `sempere settings set insights.enabled true`. Every device with the
+model makes summaries and keywords; one **work device** (`insights.workDevice`) also embeds every note, builds the map
+and titles voice notes. The first capable device to run `update` claims it when none is set, or when the work device
+has not been seen for 14 days or left the device list (only a device with the embedder holds the role). Every command takes `--json`, the access options and `--no-cache`.
 
-- `update` does this device's work now (the scheduling policy of the design's §3.7): on the work device, generate and
-  embed each eligible note (text unchanged for 10 minutes, `--force`: now and again), tombstone deleted notes, title
+- `update` does this device's work now (the scheduling policy of the design's §3.7): generate each eligible note
+  (text unchanged for 10 minutes, `--force`: now and again) that no device has a current summary of; on the work
+  device also embed each eligible note, tombstone deleted notes, title
   voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when more than
   10% changed or weekly (the first build pins the embedding revision, the lowest every recently seen device supports),
   write this device's record and the notebook and tag summaries that are due (each at most once a day; one whose
-  model call failed or left nothing after the fact check waits a day, 30 days when refused, in the same memo). A device that is not the work device
-  generates only with `insights.compute` `auto`, and never embeds into the vault. A note whose generation failed is
+  model call failed or left nothing after the fact check waits a day, 30 days when refused, in the same memo; skipped
+  while the latest from any device is current). A device that is not the work device never embeds into the vault. The
+  JSON report counts what waits: `backedOff` (with `backedOffReason`, the first error), `waitingToSettle` and
+  `waitingOpen`. A note whose generation failed is
   not asked again for a day, or for 30 days when the model refused it, unless its text or the model changes or with
   `--force` (this machine's memo, sealed under the vault's key, `$XDG_STATE_HOME/sempere/insights/<vault id>-failures`, deleted when Note Insights is turned off on this machine (`insights purge`, `settings set insights.enabled false`), or at the next `insights update` after it is turned off elsewhere). `--limit` caps model calls;
   `--embeddings-only` skips the model; `--dry-run` writes nothing. It needs Apple Intelligence (macOS 26): elsewhere,
@@ -2392,7 +2395,7 @@ claims it when none is set, and the role never moves by itself. Every command ta
   replaced; a rename from another device that lost to this device's title is restored), with `--format` or the
   vault's format; it uses a stored slug, else asks the model (exit 3 without one).
 - `work-device` shows the work device and the capable devices; `ID` sets it, `--claim` takes it for this device
-  (needs the embedder).
+  (needs the embedder). A work device not seen for 14 days is taken over by the next capable device's `update`.
 - `purge` turns Note Insights off (`insights.enabled false`) and deletes every insights file here; the next sync
   deletes them on the targets, and every device deletes its own.
 

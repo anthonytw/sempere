@@ -16,8 +16,9 @@ struct InsightsCommand: ParsableCommand {
         discussion: """
             Insights are made on the vault's devices only (Apple's on-device model and language framework; never a \
             server) and stored encrypted in the vault's insights/ folder (format.md §16). Turn them on with \
-            'sempere settings set insights.enabled true'. One work device (insights.workDevice) makes the summaries, \
-            embeds every note and builds the map; 'insights work-device' shows or sets it. update, topic --generate, \
+            'sempere settings set insights.enabled true'. Every device with the model makes summaries and keywords; one \
+            work device (insights.workDevice) embeds every note, builds the map and titles voice notes; 'insights \
+            work-device' shows or sets it. update, topic --generate, \
             map --rebuild and work-device --claim need macOS 26 (exit 3 elsewhere, or without Apple Intelligence); \
             show, related, search, status, map and title read what is there on any system.
             """,
@@ -74,11 +75,12 @@ struct InsightsUpdate: ParsableCommand {
         commandName: "update",
         abstract: "Make this device's insights now: summaries, keywords, vectors, the map, titles, topics.",
         discussion: """
-            Does what the scheduling policy gives this device (design §3.7): the work device generates and embeds every \
-            eligible note (text unchanged for 10 minutes; --force: now), rebuilds the map when more than 10% changed \
-            or weekly, and titles voice notes whose title is still the capture default (insights.voiceNoteTitle). A \
-            device that is not the work device generates only with insights.compute auto. The first capable device \
-            to run it claims the work device when none is set. Needs Apple Intelligence (macOS 26), else exit 3 and \
+            Does what the scheduling policy gives this device (design §3.7): every device with the model summarizes \
+            each eligible note (text unchanged for 10 minutes; --force: now) that no device has a current summary of, \
+            and makes the topic summaries due; the work device also embeds every note, rebuilds the map when more than \
+            10% changed or weekly, and titles voice notes whose title is still the capture default \
+            (insights.voiceNoteTitle). The first capable device to run it claims the work device when none is set, or \
+            when the work device has not been seen for 14 days. Needs Apple Intelligence (macOS 26), else exit 3 and \
             nothing is written; --embeddings-only needs only the embedder.
             """
     )
@@ -108,7 +110,7 @@ struct InsightsUpdate: ParsableCommand {
         o.force = force; o.limit = limit; o.embeddingsOnly = embeddingsOnly; o.dryRun = dryRun
         o.failureMemo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
         #if os(macOS)
-        o.deviceType = .mac   // `insights.compute` of the Mac's block (D13); elsewhere the top level only
+        o.deviceType = .mac   // the settings as a Mac reads them; elsewhere the top level only
         o.powerWindow = ProcessInfo.processInfo.thermalState != .serious && ProcessInfo.processInfo.thermalState != .critical
         #endif
         let updater = InsightsUpdater(vault: vault, model: embeddingsOnly ? nil : p.model, embedder: p.embedder,
@@ -499,11 +501,11 @@ struct InsightsTitle: ParsableCommand {
 struct InsightsWorkDevice: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "work-device",
-        abstract: "Show or set the work device (D13): the one device that makes summaries, embeds every note and builds the map.",
+        abstract: "Show or set the work device (D13): the one device that embeds every note, builds the map and titles voice notes.",
         discussion: """
             Without arguments it shows the work device, when it was last seen and which devices can hold the role. \
             ID (8 hex digits, sempere devices) sets it; --claim takes it for this device (needs the embedder, macOS 26). \
-            The role never moves by itself, even when the work device has not been seen for 14 days.
+            When the work device has not been seen for 14 days, the next capable device to run an update claims the role.
             """)
 
     @Argument(help: ArgumentHelp("The device id to make the work device.", valueName: "id")) var id: String?
@@ -551,7 +553,7 @@ struct InsightsWorkDevice: ParsableCommand {
         if output.json { return try output.emitJSON(out) }
         if let d = out.workDevice {
             print("work device: \(out.name ?? d) (\(d)), last seen \(out.lastSeen == nil ? "- (nothing written yet)" : InsightsCLI.ms(out.lastSeen))"
-                  + (out.notSeenFor14Days ? "; not seen for 14 days: summaries pause until it returns or another device is set" : ""))
+                  + (out.notSeenFor14Days ? "; not seen for 14 days: the next capable device to update takes the role" : ""))
         } else { print("work device: none") }
         if !out.capable.isEmpty { print("capable: " + out.capable.map { "\(reader.deviceNames[$0] ?? $0) (\($0))" }.joined(separator: ", ")) }
     }

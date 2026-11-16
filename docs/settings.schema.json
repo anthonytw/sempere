@@ -143,14 +143,6 @@
             0
           ]
         },
-        "insights.compute" : {
-          "default" : "never",
-          "description" : "Note Insights work on a device that is not the work device (auto: it computes too).",
-          "enum" : [
-            "auto",
-            "never"
-          ]
-        },
         "insights.embeddingRevision" : {
           "additionalProperties" : {
             "maximum" : 1000000,
@@ -181,7 +173,7 @@
         },
         "insights.workDevice" : {
           "default" : null,
-          "description" : "The device that makes summaries, embeds every note and builds the map (null: none yet).",
+          "description" : "The device that embeds every note, builds the map and titles voice notes (null: none yet).",
           "oneOf" : [
             {
               "type" : "null"

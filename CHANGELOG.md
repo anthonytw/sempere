@@ -30,8 +30,9 @@ notes for each note on your devices only, with Apple's on-device model, and stor
 - Topic summaries: "Summary" on a notebook or tag with at least 3 summarized notes shows a generated paragraph and the
   notes to check it against, marked when those notes changed. They are made in the background at most once a day each,
   and Regenerate makes one now.
-- One work device does the processing (any device that can run the models; an iPhone or iPad while charging) and names
-  quick voice notes from their transcripts in a format you choose.
+- Every device with Apple Intelligence makes summaries (an iPhone or iPad while charging, or at once with Process Now,
+  which says why when there is nothing to make). One device also builds the map and names quick voice notes from their
+  transcripts in a format you choose; another takes over if it is not seen for 14 days.
 - Turning it off deletes the insights on every device.
 - On the command line, `sempere insights` makes them (macOS 26 with Apple Intelligence), and reading them (`show`,
   `related`, `search`, `status`, `map`, `topic --list`) works on Linux too. `sempere insights purge` turns it off and

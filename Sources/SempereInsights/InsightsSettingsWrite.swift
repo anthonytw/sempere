@@ -3,7 +3,7 @@ import Sempere
 
 // MARK: - Changing the vault's insights settings (docs/design/1.2-note-insights.md §3.7, §3.8, D12-D14)
 //
-// The one place that writes the five `insights.*` keys of `settings.age`, for Settings ▸ Note Insights and the CLI
+// The one place that writes the four `insights.*` keys of `settings.age`, for Settings ▸ Note Insights and the CLI
 // (`insights purge`, `insights work-device`, `insights map --pin`, `settings set`'s validation is the catalog's). Every
 // write takes the vault's write lock (`updateSharedSettingsUnderWriteLock`), so the caller must not hold it.
 
@@ -35,11 +35,6 @@ public enum InsightsSettingsWrite {
         let f = format ?? VoiceNoteTitleFormat.defaultFormat
         if let why = VoiceNoteTitleFormat.check(f) { throw InsightsSettingsError.invalidFormat(why) }
         try write(vault, InsightsSettings.keys.voiceNoteTitle, .string(f), now: now)
-    }
-
-    /// `insights.compute` for devices of `type` (D13: `auto` lets a device that is not the work device process too).
-    public static func setCompute(auto: Bool, type: SettingsDeviceType, vault: Vault, now: Date = Date()) throws {
-        try write(vault, InsightsSettings.keys.compute, .string(auto ? "auto" : "never"), block: type, now: now)
     }
 
     /// What moving the pinned embedding revision would do (D12): the devices it leaves out (they become vector

@@ -60,7 +60,7 @@ struct TopicSummaryContent: View {
                     .foregroundStyle(topic.stale ? .secondary : .primary)
                     .textSelection(.enabled)
             } else {
-                Text("No summary yet: the work device makes one in the background, at most once a day.")
+                Text("No summary yet: a device with Apple Intelligence makes one in the background, at most once a day.")
                     .foregroundStyle(.secondary)
             }
             if topic.stale {

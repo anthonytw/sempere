@@ -3,7 +3,7 @@ import Sempere
 
 // MARK: - The shared vectors and map (docs/design/1.2-note-insights.md §3.8, D12, D13, D15, D20)
 //
-// One work device (`insights.workDevice`, D13) embeds every note at the pinned revision (`insights.embeddingRevision`,
+// Every device with the model makes summaries and keywords (D13); one work device (`insights.workDevice`) embeds every note at the pinned revision (`insights.embeddingRevision`,
 // by default the lowest every recently seen device supports, moved only by hand, D12) and builds the map. Devices
 // check its canaries: compatible ones use its vectors and place their own new notes locally; incompatible ones build a
 // local set and map of their own, never mixed; a device without the pinned revision is a vector reader.
@@ -15,8 +15,6 @@ public struct InsightsSettings: Hashable, Sendable {
     /// True when the file holds an explicit `false` for `insights.enabled` (turned off): only then do devices delete
     /// `insights/` (format.md §16.6). Unset is not off: nothing is synced, nothing deleted.
     public var explicitlyOff: Bool
-    /// `insights.compute` for this device's type: `auto` lets a device that is not the work device compute too.
-    public var computeAuto: Bool
     public var workDevice: DeviceID?
     /// When `insights.workDevice` was last written (Unix ms, its slot's `modified`): the floor of the work device's
     /// "last seen", so a device designated but never running shows "not seen" 14 days after the designation.
@@ -25,13 +23,13 @@ public struct InsightsSettings: Hashable, Sendable {
     public var pins: [String: Int]
     public var voiceNoteTitle: String
 
-    public init(enabled: Bool = false, explicitlyOff: Bool = false, computeAuto: Bool = false, workDevice: DeviceID? = nil,
+    public init(enabled: Bool = false, explicitlyOff: Bool = false, workDevice: DeviceID? = nil,
                 pins: [String: Int] = [:], voiceNoteTitle: String = VoiceNoteTitleFormat.defaultFormat, workDeviceSetAt: Int64? = nil) {
-        self.enabled = enabled; self.explicitlyOff = explicitlyOff; self.computeAuto = computeAuto; self.workDevice = workDevice
+        self.enabled = enabled; self.explicitlyOff = explicitlyOff; self.workDevice = workDevice
         self.pins = pins; self.voiceNoteTitle = voiceNoteTitle; self.workDeviceSetAt = workDeviceSetAt
     }
 
-    public static let keys = (enabled: "insights.enabled", compute: "insights.compute", workDevice: "insights.workDevice",
+    public static let keys = (enabled: "insights.enabled", workDevice: "insights.workDevice",
                               pin: "insights.embeddingRevision", voiceNoteTitle: "insights.voiceNoteTitle")
 
     /// The settings of `file` (nil: none) for a device of `type` (nil: the CLI, top level only).
@@ -44,7 +42,6 @@ public struct InsightsSettings: Hashable, Sendable {
         // Vault-wide: the top level only (a type block does not turn the feature on for one kind of device).
         if case .bool(let b)? = s.value(SettingSlotKey(Self.keys.enabled)) { enabled = b } else { enabled = false }
         if case .bool(false)? = s.value(SettingSlotKey(Self.keys.enabled)) { explicitlyOff = true } else { explicitlyOff = false }
-        if case .string(let c)? = value(Self.keys.compute) { computeAuto = c == "auto" } else { computeAuto = false }
         if case .string(let d)? = value(Self.keys.workDevice) { workDevice = DeviceID(d) } else { workDevice = nil }
         workDeviceSetAt = s.slots[SettingSlotKey(Self.keys.workDevice)]?.meta?.modified
         var pins: [String: Int] = [:]
@@ -151,7 +148,8 @@ public struct WorkDeviceStatus: Hashable, Sendable {
     public var workDevice: DeviceID?
     /// Its latest `written` among its files, nil when it has none.
     public var lastSeen: Date?
-    /// It wrote nothing for 14 days (status offers "Use this device"; never taken over by itself).
+    /// It wrote nothing for 14 days, or it is no longer in the device list: the next capable device to run a pass claims the role (`InsightsPolicy.plan`'s
+    /// `workDeviceMissing`, through the same settings merge as a first claim), and status offers "Use This Device".
     public var notSeen: Bool
     /// Devices whose records say they can hold the role (they support the pin, or any revision when unset), sorted.
     public var capable: [DeviceID]
@@ -169,7 +167,9 @@ public struct WorkDeviceStatus: Hashable, Sendable {
         // yet: a fresh claim is not missing (D16: it read "not seen for 14 days"; status says "nothing written yet"),
         // but a designated device that never runs is, 14 days on.
         let since = [latest, settings.workDevice == nil ? nil : settings.workDeviceSetAt].compactMap { $0 }.max()
-        notSeen = since.map { now.timeIntervalSince1970 - Double($0) / 1000 > Self.notSeenAfter } ?? false
+        // A work device no longer in the device list is missing at once (it can write nothing any more).
+        let removed = settings.workDevice.map { !listed.contains($0) } ?? false
+        notSeen = removed || (since.map { now.timeIntervalSince1970 - Double($0) / 1000 > Self.notSeenAfter } ?? false)
         let pin = settings.pins[language]
         capable = snapshot.devices.filter { d, r in
             listed.contains(d) && !(r.supported[language] ?? []).isEmpty && (pin.map { (r.supported[language] ?? []).contains($0) } ?? true)

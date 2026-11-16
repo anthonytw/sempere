@@ -325,7 +325,9 @@ final class InsightsUpdaterTests: TempDirTestCase {
         try vault.updateSharedSettings { s in
             try s.write(SharedSettingsCatalog.spec(named: "insights.workDevice")!, .string("0000beef"), block: nil, type: nil, now: now)
         }
-        let r = try await run { $0.force = true }
+        // Without the embedder it cannot take over the (unlisted, so missing) work device; it summarizes, never titles.
+        let r = try await run(embedder: nil) { $0.force = true }
+        XCTAssertFalse(r.generated.isEmpty, "a device that is not the work device still summarizes")
         XCTAssertEqual(r.titled, [])
         XCTAssertEqual(try title(id), "Voice note 2026-09-21 10:46")
     }
