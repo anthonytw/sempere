@@ -161,6 +161,28 @@ extension AppModelSuites {
             #expect(model.insights.lastReport?.generated == [fresh.uuidString.lowercased()], "made again although current")
         }
 
+        /// One slot, one pass (review of #63): cancelling the running pass leaves the slot empty, without starting the
+        /// queued note's pass behind the canceller's back, and the queued Regenerate is still done afterwards.
+        @Test func cancellingThePassDoesNotStartAQueuedNotesPass() async throws {
+            let power = Power()
+            power.on = false
+            let model = try await model(power: power)
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            for (i, t) in Self.physics.enumerated() { try await note(model, "P\(i)", t) }
+            let target = try await note(model, "Target", Self.bread[0])
+            model.requestInsightsPass(force: true)
+            #expect(model.insightsRuntime.pass != nil)
+            model.regenerateNoteInsights(target)
+            #expect(model.noteInsightsPending(target), "queued behind the running pass")
+            await model.cancelInsightsPass()
+            #expect(model.insightsRuntime.pass == nil, "nothing started behind the canceller")
+            #expect(model.noteInsightsPending(target), "the Regenerate is still owed")
+            model.startDueNoteInsights()
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil && !model.noteInsightsPending(target) })
+            #expect(model.insightsPanel(for: target)?.shown?.summary?.isEmpty == false)
+        }
+
         /// Every device with the model makes summaries (the owner's iPhone: "Process Now" did nothing, "0 of 10"), never
         /// the vectors, the map or titles, which stay with the work device. Without the embedder it never takes that role,
         /// not even from a work device that is missing (here: not in the device list).

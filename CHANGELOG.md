@@ -70,8 +70,9 @@ changed. `sempere store copy` does the same on the command line.
   themselves. Notes sent while Use on Apple Watch was off, or sealed before the vault's key changed, still wait for you,
   and Settings shows why each one is held now. Held Watch notes are kept only on this iPhone, and Settings says so.
 - A watch that asks for a profile while Use on Apple Watch is off (after Sempere was reinstalled on the iPhone) is cleared.
-- The watch checks with the iPhone at each launch, so after Sempere is reinstalled on the iPhone the watch gets the current
-  profile by itself instead of sending notes that are held (Reset on the watch was the way out).
+- The watch checks with the iPhone at each launch, so after Sempere is reinstalled on the iPhone and Use on Apple Watch is
+  turned on again, the watch gets the current profile by itself instead of sending notes that are held (Reset on the
+  watch was the way out).
 
 ### Fixed
 

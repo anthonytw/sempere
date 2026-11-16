@@ -644,7 +644,8 @@ extension AppModelCore {
     /// A quick voice note was added to the open vault (and transcribed, when it is): with "Right away"
     /// (`VoiceNoteInsightsTiming`) it is processed now, on battery too, without the 10-minute settle time.
     func insightsForNewVoiceNote(_ note: UUID) {
-        guard insights.mode == .on, VoiceNoteInsightsTiming.load(from: services.settings) == .rightAway else { return }
+        guard insights.mode == .on, insights.capability.generates, insightsHasRole,
+              VoiceNoteInsightsTiming.load(from: services.settings) == .rightAway else { return }
         requestNoteInsights(note, redo: false)
     }
 
@@ -676,6 +677,11 @@ extension AppModelCore {
         occupyInsightsSlot(regeneration: false) { [weak self] in
             let remains = await self?.runInsightsPass(batch: Self.insightsForegroundBatch, ignorePower: true, note: next.note,
                                                       redo: next.redo).remains ?? false
+            // Cut off (backgrounded, a topic's Regenerate, the background task): asked again at the next free slot, so a
+            // Regenerate is not dropped. A lock empties the queue (`stopInsights`).
+            if remains, Task.isCancelled, self?.insights.mode == .on, !runtime.dueNotes.contains(where: { $0.note == next.note }) {
+                runtime.dueNotes.insert(next, at: 0)
+            }
             if runtime.dueNotes.contains(where: { $0.note == next.note }) == false { self?.insights.notesInProgress.remove(next.note) }
             return remains
         }
@@ -699,7 +705,9 @@ extension AppModelCore {
             let remains = await work()
             if runtime.passID == id {
                 runtime.pass = nil; runtime.slotIsRegeneration = false
-                self?.startDueNoteInsights()
+                // Not from a cancelled task (whoever cancelled it takes the slot next: the background task, a topic's
+                // Regenerate, a lock) nor in the background (the processing task does the work there): one slot, one pass.
+                if !Task.isCancelled, self?.services.lifecycle.isInBackground == false { self?.startDueNoteInsights() }
             }
             return remains
         }
@@ -710,9 +718,12 @@ extension AppModelCore {
 
     /// Stops the running pass, if any, and waits until it has ended.
     func cancelInsightsPass() async {
-        guard let running = insightsRuntime.pass else { return }
-        running.cancel()
-        _ = await running.value
+        // Until the slot is empty: a pass that ends may have started a queued note's pass (`startDueNoteInsights`).
+        while let running = insightsRuntime.pass {
+            running.cancel()
+            _ = await running.value
+            if insightsRuntime.pass == running { break }
+        }
     }
 
     /// The foreground's look for work: now, then every `insightsLoopInterval`, while the vault stays open.

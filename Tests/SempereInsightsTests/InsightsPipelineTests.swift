@@ -686,7 +686,7 @@ final class InsightsPipelineTests: XCTestCase {
                       "Voice note 17 Nov 2026 at 01:02", "Voice note 16.11.2026, 20.32"] {
             XCTAssertTrue(VoiceNoteTitleState.isLocalizedCaptureDefault(title, started: started), title)
         }
-        for title in ["Nota de voz 16 nov 2026, 14:35", "Lab results 2025 at 2:32", "Groceries"] {
+        for title in ["Nota de voz 16 nov 2026, 14:35", "Lab results 2025 at 2:32", "Groceries", "Call w/ Ana, Nov 16 2026 9:32"] {
             XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault(title, started: started), title)
         }
         XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault("Voice note Nov 16, 2026 at 2:32 PM",
