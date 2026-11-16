@@ -674,12 +674,14 @@ extension AppModelCore {
         let runtime = insightsRuntime
         guard runtime.pass == nil, !runtime.dueNotes.isEmpty else { return }
         let next = runtime.dueNotes.removeFirst()
+        let gen = generation
         occupyInsightsSlot(regeneration: false) { [weak self] in
             let remains = await self?.runInsightsPass(batch: Self.insightsForegroundBatch, ignorePower: true, note: next.note,
                                                       redo: next.redo).remains ?? false
             // Cut off (backgrounded, a topic's Regenerate, the background task): asked again at the next free slot, so a
             // Regenerate is not dropped. A lock empties the queue (`stopInsights`).
-            if remains, Task.isCancelled, self?.insights.mode == .on, !runtime.dueNotes.contains(where: { $0.note == next.note }) {
+            if remains, Task.isCancelled, self?.generation == gen, self?.insights.mode == .on,
+               !runtime.dueNotes.contains(where: { $0.note == next.note }) {
                 runtime.dueNotes.insert(next, at: 0)
             }
             if runtime.dueNotes.contains(where: { $0.note == next.note }) == false { self?.insights.notesInProgress.remove(next.note) }

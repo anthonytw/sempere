@@ -23,6 +23,7 @@ extension AppModelCore {
         endTargetsBackgroundTime()
         syncCoordinator.setInBackground(false)
         syncCoordinator.demandAll()   // every synced vault runs when the app comes back
+        startDueNoteInsights()   // a voice note or a Regenerate cut off in the background (review of #63)
     }
 
     /// Asks for a background refresh while any vault has a sync target (every vault and target, design
