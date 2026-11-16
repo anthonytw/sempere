@@ -1574,6 +1574,153 @@
         }
       }
     },
+    "%lld notes are open in an editor and are processed once closed." : {
+      "comment" : "Note Insights pass outcome",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note is open in an editor and is processed once closed."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes are open in an editor and are processed once closed."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas están abiertas en un editor y se procesan al cerrarlas."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota está abierta en un editor y se procesa al cerrarla."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas están abiertas en un editor y se procesan al cerrarlas."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld notes are waiting after an earlier failure. Process Now tries them again." : {
+      "comment" : "Note Insights pass outcome",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note is waiting after an earlier failure. Process Now tries it again."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes are waiting after an earlier failure. Process Now tries them again."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas esperan tras un fallo anterior. Procesar ahora las intenta de nuevo."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota espera tras un fallo anterior. Procesar ahora la intenta de nuevo."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas esperan tras un fallo anterior. Procesar ahora las intenta de nuevo."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld notes are waiting after an earlier failure: %@" : {
+      "comment" : "Note Insights pass outcome; %@ is the first error",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note is waiting after an earlier failure: %@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes are waiting after an earlier failure: %@"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas esperan tras un fallo anterior: %@"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota espera tras un fallo anterior: %@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas esperan tras un fallo anterior: %@"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld notes copied" : {
       "comment" : "Make a Copy result: a number of notes",
       "extractionState" : "manual",
@@ -1665,6 +1812,55 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld notas no se pudieron copiar y no están en la copia"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld notes could not be summarized: %@" : {
+      "comment" : "Note Insights pass outcome; %@ is the first error",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note could not be summarized: %@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes could not be summarized: %@"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "No se pudieron resumir %lld de notas: %@"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "No se pudo resumir %lld nota: %@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "No se pudieron resumir %lld notas: %@"
                 }
               }
             }
@@ -2057,6 +2253,55 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld notas omitidas (ya estaban en la bóveda o eran copias de notas importadas de otro archivo)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld notes were edited in the last 10 minutes. Process Now does them at once." : {
+      "comment" : "Note Insights pass outcome",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note was edited in the last 10 minutes. Process Now does it at once."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes were edited in the last 10 minutes. Process Now does them at once."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas se editaron en los últimos 10 minutos. Procesar ahora las procesa al momento."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota se editó en los últimos 10 minutos. Procesar ahora la procesa al momento."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas se editaron en los últimos 10 minutos. Procesar ahora las procesa al momento."
                 }
               }
             }
@@ -4493,18 +4738,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Permite el micrófono para Sempere en Ajustes ▸ Privacidad y seguridad ▸ Micrófono en tu reloj."
-          }
-        }
-      }
-    },
-    "Also Process on This Kind of Device" : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Procesar también en este tipo de dispositivo"
           }
         }
       }
@@ -9064,6 +9297,19 @@
         }
       }
     },
+    "Every device with Apple Intelligence makes summaries and keywords: an iPhone or iPad while charging, or right away with Process Now. One device also builds the map of related notes and names voice notes; the others show what it made." : {
+      "comment" : "Note Insights: footer of the map and titles device section",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada dispositivo con Apple Intelligence crea resúmenes y palabras clave: un iPhone o iPad mientras se carga, o al momento con Procesar ahora. Un dispositivo además crea el mapa de notas relacionadas y pone nombre a las notas de voz; los demás muestran lo que ha creado."
+          }
+        }
+      }
+    },
     "Every file in the vault is encrypted again under a new key, with a new recovery kit. Once it finishes, the old kit and the keys of removed devices open nothing, not even what was written before. Every sync target must be reachable to start; this device carries it through, and the other devices follow when they sync." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -9084,6 +9330,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todas las notas se han descifrado y comprobado con la clave de esta bóveda."
+          }
+        }
+      }
+    },
+    "Every note with text has a summary." : {
+      "comment" : "Note Insights pass outcome",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas las notas con texto tienen resumen."
           }
         }
       }
@@ -12723,14 +12982,15 @@
         }
       }
     },
-    "Make this device the one that makes summaries and builds the map" : {
+    "Make this device the one that builds the map and names voice notes" : {
+      "comment" : "Tooltip of Use This Device in Note Insights",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hacer que este dispositivo haga los resúmenes y cree el mapa"
+            "value" : "Hacer que este dispositivo cree el mapa y ponga nombre a las notas de voz"
           }
         }
       }
@@ -12820,6 +13080,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mapa"
+          }
+        }
+      }
+    },
+    "Map and Titles Device" : {
+      "comment" : "Note Insights: the device that builds the map of related notes and names voice notes",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivo del mapa y títulos"
           }
         }
       }
@@ -14030,15 +14303,15 @@
         }
       }
     },
-    "No summary yet: the work device makes one in the background, at most once a day." : {
-      "comment" : "Topic summary of a notebook or tag",
+    "No summary yet: a device with Apple Intelligence makes one in the background, at most once a day." : {
+      "comment" : "Topic summary not made yet",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aún no hay resumen: el dispositivo de trabajo crea uno en segundo plano, como mucho una vez al día."
+            "value" : "Aún no hay resumen: un dispositivo con Apple Intelligence crea uno en segundo plano, como mucho una vez al día."
           }
         }
       }
@@ -15201,18 +15474,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Una imagen PNG por página."
-          }
-        }
-      }
-    },
-    "One device makes the summaries, keywords and voice-note titles, and builds the map of related notes; the others show what it made. Any device that can run the models can do the work. On an iPhone or iPad it works while charging." : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un dispositivo hace los resúmenes, las palabras clave y los títulos de las notas de voz, y crea el mapa de notas relacionadas; los demás muestran lo que hizo. Cualquier dispositivo que pueda usar los modelos puede hacer el trabajo. En un iPhone o iPad trabaja mientras se carga."
           }
         }
       }
@@ -24879,18 +25140,6 @@
         }
       }
     },
-    "The work device has not been seen for 14 days. Summaries pause until it returns or another device does the work." : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se ha visto el dispositivo de trabajo en 14 días. Los resúmenes se detienen hasta que vuelva o hasta que otro dispositivo haga el trabajo."
-          }
-        }
-      }
-    },
     "The “public key” line does not belong to the secret key: this is not one key file." : {
       "comment" : "age-keygen output whose public key comment names another key",
       "extractionState" : "manual",
@@ -25383,6 +25632,19 @@
         }
       }
     },
+    "This device builds the map and names voice notes." : {
+      "comment" : "Note Insights map status",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo crea el mapa y pone nombre a las notas de voz."
+          }
+        }
+      }
+    },
     "This device cannot run Apple Intelligence: it shows the summaries other devices make." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -25491,6 +25753,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo aún no tiene registro de los dispositivos de la bóveda ni nada con lo que comprobar la lista."
+          }
+        }
+      }
+    },
+    "This device has not been seen for 14 days. The next device that can do the work takes over by itself." : {
+      "comment" : "Note Insights: the map and titles device is missing",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha visto este dispositivo en 14 días. El próximo dispositivo que pueda hacer el trabajo lo asume por sí solo."
           }
         }
       }
@@ -26081,19 +26356,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este es el único dispositivo de la bóveda."
-          }
-        }
-      }
-    },
-    "This is the work device." : {
-      "comment" : "Note Insights map status",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este es el dispositivo de trabajo."
           }
         }
       }
@@ -28583,18 +28845,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sin ella, la bóveda sigue en solo lectura aquí; unirse desde el dispositivo que gestiona los dispositivos, o tomar el control con el kit de recuperación, también permite escribir desde este dispositivo."
-          }
-        }
-      }
-    },
-    "Work Device" : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dispositivo de trabajo"
           }
         }
       }

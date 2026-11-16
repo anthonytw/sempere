@@ -595,16 +595,13 @@ final class InsightsPipelineTests: XCTestCase {
                                          pinKey: key, now: now, backoff: [notes[0].id: now.addingTimeInterval(60)], deviceRecordChanged: false)
         XCTAssertFalse(backed.contains(.generate(notes[0].id)))
         XCTAssertTrue(backed.contains(.embed(notes[0].id)), "a back-off holds the model back, never the embedding")
-        // Another device is the work device: nothing unless compute auto, and never embedding.
+        // Another device is the work device: it generates (every device with the model does), never embeds or maps.
         settings.workDevice = DeviceID("22222222")!
         let other = InsightsPolicy.plan(notes: notes, snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: caps,
                                         pinKey: key, now: now, deviceRecordChanged: false)
-        XCTAssertFalse(other.contains { if case .generate = $0 { return true }; if case .embed = $0 { return true }; return false })
-        settings.computeAuto = true
-        let auto = InsightsPolicy.plan(notes: notes, snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: caps,
-                                       pinKey: key, now: now, deviceRecordChanged: false)
-        XCTAssertTrue(auto.contains(.generate(notes[0].id)))
-        XCTAssertFalse(auto.contains { if case .embed = $0 { return true } else { return false } })
+        XCTAssertTrue(other.contains(.generate(notes[0].id)))
+        XCTAssertFalse(other.contains { if case .embed = $0 { return true } else { return false } })
+        XCTAssertFalse(other.contains(.rebuildMap))
         // Stale after a prompt bump: a current gen of prompt 1 is redone by a reader at prompt 2.
         settings = InsightsSettings(enabled: true, workDevice: me)
         var snap = InsightsSnapshot()
@@ -625,7 +622,7 @@ final class InsightsPipelineTests: XCTestCase {
                                            pinKey: key, now: now, deviceRecordChanged: false).first, .claimWorkDevice)
     }
 
-    func testTheWorkDeviceIsNeverTakenOverByItself() {
+    func testAWorkDeviceNotSeenFor14DaysIsTakenOver() {
         let now = Date(timeIntervalSince1970: 1_790_000_000)
         let w = DeviceID("22222222")!
         var snap = InsightsSnapshot()
@@ -634,7 +631,7 @@ final class InsightsPipelineTests: XCTestCase {
         let status = WorkDeviceStatus(settings: InsightsSettings(enabled: true, workDevice: w), snapshot: snap, listed: [w],
                                       language: "en", now: now)
         XCTAssertTrue(status.notSeen)
-        XCTAssertEqual(status.workDevice, w, "the role stays; status only offers a move")
+        XCTAssertEqual(status.workDevice, w, "the status itself moves nothing; the next capable pass claims it")
         // Just designated, nothing written yet: not missing (D16: a fresh claim read "not seen for 14 days").
         let fresh = WorkDeviceStatus(settings: InsightsSettings(enabled: true, workDevice: w), snapshot: InsightsSnapshot(),
                                      listed: [w], language: "en", now: now)
@@ -651,11 +648,16 @@ final class InsightsPipelineTests: XCTestCase {
         XCTAssertNil(later.lastSeen, "still nothing written")
         // A designation newer than its files restarts the clock.
         XCTAssertFalse(WorkDeviceStatus(settings: designated, snapshot: snap, listed: [w], language: "en", now: now).notSeen)
-        let plan = InsightsPolicy.plan(notes: notesFor(now), snapshot: snap, me: DeviceID("11111111")!,
-                                       settings: InsightsSettings(enabled: true, workDevice: w),
-                                       capabilities: .init(model: .init(model: "m", os: "1", prompt: 1), embedRevision: 1, powerWindow: true),
-                                       pinKey: .init(model: "nl-sentence", lang: "en", rev: 1, input: 1), now: now, deviceRecordChanged: false)
-        XCTAssertFalse(plan.contains(.claimWorkDevice))
+        func plan(missing: Bool) -> [WorkItem] {
+            InsightsPolicy.plan(notes: notesFor(now), snapshot: snap, me: DeviceID("11111111")!,
+                                settings: InsightsSettings(enabled: true, workDevice: w),
+                                capabilities: .init(model: .init(model: "m", os: "1", prompt: 1), embedRevision: 1, powerWindow: true),
+                                pinKey: .init(model: "nl-sentence", lang: "en", rev: 1, input: 1), now: now, workDeviceMissing: missing,
+                                deviceRecordChanged: false)
+        }
+        XCTAssertFalse(plan(missing: false).contains(.claimWorkDevice), "only a work device not seen for 14 days is taken over")
+        XCTAssertTrue(plan(missing: true).contains(.claimWorkDevice))
+        XCTAssertTrue(plan(missing: true).contains(.rebuildMap), "the claimer maps in the same pass")
     }
 
     func testVoiceNoteTitleFormat() {

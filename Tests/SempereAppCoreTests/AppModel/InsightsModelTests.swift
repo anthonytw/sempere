@@ -41,13 +41,13 @@ extension AppModelSuites {
 
         /// A note with recognized text, written two hours ago (insights wait until a note has settled, design §3.7).
         @discardableResult
-        func note(_ model: AppModel, _ title: String, _ text: String) async throws -> UUID {
+        func note(_ model: AppModel, _ title: String, _ text: String, age: TimeInterval = 7200) async throws -> UUID {
             let id = UUID(), page = UUID()
             var ops = NoteOps.newNote(title: title, paper: .ruled, notebook: nil, pageId: page)
             ops.append(.setPageRecognition(pageId: page, recognition: Recognition(engine: "test", text: text)))
             let built = ops
             try await model.commit(ids: [id], creating: [id]) { vault, clock, verifier in
-                _ = try await NoteWriter.append(built, to: id, vault: vault, clock: clock, wall: Date().addingTimeInterval(-7200),
+                _ = try await NoteWriter.append(built, to: id, vault: vault, clock: clock, wall: Date().addingTimeInterval(-age),
                                                 verify: verifier(id))
             }
             return id
@@ -135,7 +135,9 @@ extension AppModelSuites {
             #expect(!(await model.runInsightsPass(batch: 4, ignorePower: false)).reports.isEmpty)
         }
 
-        @Test func aDeviceThatIsNotTheWorkDeviceDoesNothing() async throws {
+        /// Every device with the model makes summaries (the owner's iPhone: "Process Now" did nothing, "0 of 10"), never
+        /// the vectors, the map or titles, which stay with the work device.
+        @Test func aDeviceThatIsNotTheWorkDeviceGeneratesButNeverMaps() async throws {
             let power = Power()
             power.on = false   // no automatic pass: this device has made nothing when the work device moves away
             let model = try await model(power: power)
@@ -144,15 +146,114 @@ extension AppModelSuites {
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
             await model.setInsightsWorkDevice(DeviceID("0000beef"))
             #expect(model.insights.settings.workDevice == DeviceID("0000beef"))
-            #expect(!model.insightsHasRole)
-            #expect(await model.runInsightsPass(batch: 4, ignorePower: true).reports.isEmpty)
-            await model.setInsightsComputeHere(true)
-            #expect(model.insightsHasRole, "insights.compute auto for this kind of device")
-            // ...and the pass really generates: the updater reads this device type's block too (review of #52).
-            let pass = await model.runInsightsPass(batch: 4, ignorePower: true)
-            #expect(pass.reports.contains { !$0.generated.isEmpty }, "a type block's compute auto generates")
+            #expect(model.insightsHasRole, "it can make summaries")
+            let pass = await model.runInsightsPass(batch: 4, ignorePower: true, forced: true)
+            #expect(pass.reports.contains { !$0.generated.isEmpty })
+            #expect(pass.reports.allSatisfy { $0.embedded.isEmpty && !$0.mapBuilt && !$0.claimedWorkDevice })
+            #expect(model.insights.status?.processed == 1)
             await model.claimInsightsWorkDevice()
             #expect(model.insights.settings.workDevice == model.vault?.writerDevice)
+        }
+
+        /// A model whose availability the test changes (Apple Intelligence turned on after the unlock).
+        final class Switchable: ModelProvider, @unchecked Sendable {
+            let inner = FakeModelProvider()
+            var available: ModelAvailability
+            init(_ a: ModelAvailability) { available = a }
+            var identity: GenerationIdentity { inner.identity }
+            var availability: ModelAvailability { available }
+            var contextTokens: Int { 8192 }
+            func supports(language: String?) -> Bool { true }
+            func extract(_ text: String, language: String?) async throws -> ModelExtraction {
+                guard available.isAvailable else { throw InsightsProviderError.unavailable(available) }
+                return try await inner.extract(text, language: language)
+            }
+            func merge(_ parts: [ModelExtraction], language: String?) async throws -> ModelExtraction { try await inner.merge(parts, language: language) }
+            func summarize(topic: String, summaries: [String], language: String?) async throws -> String {
+                try await inner.summarize(topic: topic, summaries: summaries, language: language)
+            }
+            func title(transcript: String, language: String?) async throws -> String { try await inner.title(transcript: transcript, language: language) }
+        }
+
+        @Test func whoHasARole() async throws {
+            let power = Power()
+            power.on = false
+            let provider = Switchable(.disabled)
+            let model = try await model(power: power, model: provider)
+            #expect(!model.insightsHasRole, "off")
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            // Embeds only: the work device, or a role nobody holds.
+            #expect(!model.insights.capability.generates)
+            await model.setInsightsWorkDevice(nil)
+            #expect(model.insightsHasRole, "would claim an empty role")
+            await model.setInsightsWorkDevice(DeviceID("0000beef"))
+            #expect(!model.insightsHasRole, "embeds only, and another device holds the role")
+            await model.claimInsightsWorkDevice()
+            #expect(model.insightsHasRole, "the work device")
+            // Apple Intelligence turned on since the unlock: read again, it has a role whoever holds the work device.
+            await model.setInsightsWorkDevice(DeviceID("0000beef"))
+            provider.available = .available
+            #expect(!model.insights.capability.generates, "read at unlock")
+            model.refreshInsightsCapability()
+            #expect(model.insights.capability.generates)
+            #expect(model.insightsHasRole)
+        }
+
+        /// "Process Now" never ends silently: no settle time, no earlier back-off, open notes still wait, and a pass that
+        /// makes nothing says why (`passOutcome`).
+        @Test func processNowSkipsTheSettleTimeAndTheBackOffAndSaysWhy() async throws {
+            let power = Power()
+            power.on = false
+            let model = try await model(power: power)
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            await model.setInsightsWorkDevice(DeviceID("0000beef"))
+            let fresh = try await note(model, "Fresh", Self.physics[0], age: 30)
+            let failed = try await note(model, "Failed", Self.bread[0])
+            #expect(await TS.waitUntil { [fresh, failed].allSatisfy { id in model.notes.contains { $0.id == id } } })
+            // A failure remembered from an earlier pass.
+            let vault = try #require(model.vault)
+            let memoURL = try #require(model.insightsFailureMemoURL)
+            let input = try #require(InsightsNotes.inputs(vault, summaries: model.insightsSummaries).first { $0.id == failed })
+            var memo = InsightsFailureMemo()
+            memo.record(note: failed, hash: input.hash, identity: FakeModelProvider().identity,
+                        error: InsightsProviderError.failed("the model said no"), now: Date().addingTimeInterval(-60))
+            try memo.save(to: memoURL, vault: vault)
+            // A pass of the loop: both wait, and it says so.
+            let plain = await model.runInsightsPass(batch: 4, ignorePower: true)
+            #expect(plain.reports.allSatisfy { $0.generated.isEmpty })
+            #expect(model.insights.passOutcome == .backedOff(count: 1, reason: "the model failed: the model said no"))
+            // Process Now: both are made.
+            let forced = await model.runInsightsPass(batch: 4, ignorePower: true, forced: true)
+            #expect(Set(forced.reports.flatMap(\.generated)) == Set([fresh, failed].map { $0.uuidString.lowercased() }))
+            #expect(model.insights.passOutcome == nil, "it made something")
+            // Nothing left: it says so instead of ending silently.
+            model.requestInsightsPass(force: true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil && model.insights.passOutcome != nil })
+            #expect(model.insights.passOutcome == .nothingToDo)
+        }
+
+        @Test func processNowOnADeviceThatCannotSummarizeSaysSo() async throws {
+            let power = Power()
+            power.on = false
+            let model = try await model(power: power, model: Switchable(.disabled))
+            try await note(model, "A", Self.physics[0])
+            await model.setInsightsEnabled(true)
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
+            await model.claimInsightsWorkDevice()
+            let pass = await model.runInsightsPass(batch: 4, ignorePower: true, forced: true)
+            #expect(!pass.reports.isEmpty)
+            #expect(pass.reports.contains { !$0.embedded.isEmpty }, "it still embeds")
+            #expect(model.insights.passOutcome == .modelUnavailable(.disabled))
+        }
+
+        /// A topic's "Regenerate" holds the slot: Settings shows it busy, so "Process Now" is not pressed for nothing.
+        @Test func aRegenerationMakesTheSlotBusy() async throws {
+            let model = try await model()
+            #expect(!model.insightsBusy)
+            model.insights.regeneratingTopics.insert("tag:x")
+            #expect(model.insightsBusy)
         }
 
         @Test func theTitleFormatIsValidated() async throws {

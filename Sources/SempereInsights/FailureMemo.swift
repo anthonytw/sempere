@@ -23,7 +23,12 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
         /// Seconds since 1970 of the latest failure.
         public var at: Double
         public var count: Int
+        /// Why it first failed (the error's words, at most `maxReason` characters), so a later pass can say why the note
+        /// waits ("Process Now"'s outcome); nil in an entry of an earlier build.
+        public var reason: String?
     }
+
+    static let maxReason = 300
 
     /// A refusal is asked again after this long; any other failure after `failedFor`.
     public static let refusedFor: TimeInterval = 30 * 24 * 3600
@@ -120,11 +125,15 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
         var refused = false
         if case InsightsProviderError.refused = error { refused = true }
         let previous = notes[id].flatMap { $0.hash == hash && $0.identity == key ? $0 : nil }
-        notes[id] = Entry(hash: hash, identity: key, refused: refused, at: now.timeIntervalSince1970, count: (previous?.count ?? 0) + 1)
+        notes[id] = Entry(hash: hash, identity: key, refused: refused, at: now.timeIntervalSince1970, count: (previous?.count ?? 0) + 1,
+                          reason: previous?.reason ?? String(String(describing: error).prefix(Self.maxReason)))
         if notes.count > Self.maxEntries, let oldest = notes.min(by: { ($0.value.at, $0.key) < ($1.value.at, $1.key) })?.key {
             notes[oldest] = nil
         }
     }
+
+    /// Why `note` first failed, when the memo has it.
+    public func reason(note: UUID) -> String? { notes[note.uuidString.lowercased()]?.reason }
 
     /// Forgets `note` (it was generated).
     public mutating func clear(note: UUID) { notes[note.uuidString.lowercased()] = nil }
@@ -136,8 +145,9 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
         var refused = false
         if let error, case InsightsProviderError.refused = error { refused = true }
         let previous = topics[scope].flatMap { $0.hash == membersHash && $0.identity == key ? $0 : nil }
+        let why = error.map { String(String(describing: $0).prefix(Self.maxReason)) } ?? "nothing survived the fact check"
         topics[scope] = Entry(hash: membersHash, identity: key, refused: refused, at: now.timeIntervalSince1970,
-                              count: (previous?.count ?? 0) + 1)
+                              count: (previous?.count ?? 0) + 1, reason: previous?.reason ?? why)
         if topics.count > Self.maxEntries, let oldest = topics.min(by: { ($0.value.at, $0.key) < ($1.value.at, $1.key) })?.key {
             topics[oldest] = nil
         }
@@ -147,18 +157,23 @@ public struct InsightsFailureMemo: Codable, Hashable, Sendable {
     public mutating func clearTopic(_ scope: String) { topics[scope] = nil }
 
     /// Until when the topic `scope` waits, for a failure over these same members with this same model; nil: not backed off.
-    public func topicBackoff(_ scope: String, membersHash: String, identity: GenerationIdentity) -> Date? {
+    /// A failure recorded before `ignoringBefore` does not count ("Process Now" asks again; what fails during its pass
+    /// waits).
+    public func topicBackoff(_ scope: String, membersHash: String, identity: GenerationIdentity, ignoringBefore: Date? = nil) -> Date? {
         guard let e = topics[scope], e.hash == membersHash, e.identity == Self.key(identity) else { return nil }
+        if let floor = ignoringBefore, e.at < floor.timeIntervalSince1970 { return nil }
         return Date(timeIntervalSince1970: e.at + (e.refused ? Self.refusedFor : Self.failedFor))
     }
 
     /// The policy's back-off (`InsightsPolicy.plan(backoff:)`): until when each of `notes` (id and current hash) waits,
-    /// for the failures of this same text with this same model.
-    public func backoff(notes current: [(id: UUID, hash: String)], identity: GenerationIdentity) -> [UUID: Date] {
+    /// for the failures of this same text with this same model. A failure recorded before `ignoringBefore` does not count.
+    public func backoff(notes current: [(id: UUID, hash: String)], identity: GenerationIdentity,
+                        ignoringBefore: Date? = nil) -> [UUID: Date] {
         let key = Self.key(identity)
         var out: [UUID: Date] = [:]
         for n in current {
             guard let e = notes[n.id.uuidString.lowercased()], e.hash == n.hash, e.identity == key else { continue }
+            if let floor = ignoringBefore, e.at < floor.timeIntervalSince1970 { continue }
             out[n.id] = Date(timeIntervalSince1970: e.at + (e.refused ? Self.refusedFor : Self.failedFor))
         }
         return out

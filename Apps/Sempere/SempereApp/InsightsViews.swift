@@ -36,10 +36,32 @@ enum InsightsText {
         }
     }
 
+    /// Why the last pass on this device made nothing (`InsightsPassOutcome`), under "Process Now".
+    static func outcome(_ o: InsightsPassOutcome) -> String {
+        switch o {
+        case .modelUnavailable(let a): return modelReason(a)
+        case .failed(let count, let reason):
+            return String(localized: "\(count) notes could not be summarized: \(reason)", comment: "Note Insights pass outcome; %@ is the first error")
+        case .backedOff(let count, let reason?):
+            return String(localized: "\(count) notes are waiting after an earlier failure: \(reason)",
+                          comment: "Note Insights pass outcome; %@ is the first error")
+        case .backedOff(let count, nil):
+            return String(localized: "\(count) notes are waiting after an earlier failure. Process Now tries them again.",
+                          comment: "Note Insights pass outcome")
+        case .waitingToSettle(let count):
+            return String(localized: "\(count) notes were edited in the last 10 minutes. Process Now does them at once.",
+                          comment: "Note Insights pass outcome")
+        case .noteOpen(let count):
+            return String(localized: "\(count) notes are open in an editor and are processed once closed.", comment: "Note Insights pass outcome")
+        case .nothingToDo:
+            return String(localized: "Every note with text has a summary.", comment: "Note Insights pass outcome")
+        }
+    }
+
     /// How this device stands to the work device's map (`MapCompatibility.rawValue`).
     static func compatibility(_ raw: String) -> String {
         switch MapCompatibility(rawValue: raw) {
-        case .workDevice?: return String(localized: "This is the work device.", comment: "Note Insights map status")
+        case .workDevice?: return String(localized: "This device builds the map and names voice notes.", comment: "Note Insights map status")
         case .compatible?: return String(localized: "Compatible: this device places its new notes in the map at once.", comment: "Note Insights map status")
         case .incompatible?: return String(localized: "This device's numbers differ from the work device's, so it builds its own map.",
                                            comment: "Note Insights map status")
@@ -153,13 +175,20 @@ struct InsightsSettingsSection: View {
             } else {
                 ProgressView()
             }
-            if state.isWorking {
+            if model.insightsBusy {
                 Label("Processing notes on this device…", systemImage: "gearshape.2").foregroundStyle(.secondary)
             }
             if model.insightsHasRole {
                 Button("Process Now", systemImage: "play.circle") { model.requestInsightsPass(force: true) }
-                    .disabled(state.isWorking || !writable)
+                    .disabled(model.insightsBusy || !writable)
                     .help("Make this device's summaries, keywords and related notes now, without waiting for it to charge")
+            }
+            if !state.capability.generates {
+                // Said beside the button and the counts: this device adds related notes and the map at most.
+                Text(InsightsText.modelReason(state.capability.model)).font(.footnote).foregroundStyle(.secondary)
+            } else if let outcome = state.passOutcome, !model.insightsBusy {
+                Text(InsightsText.outcome(outcome)).font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("insights.passOutcome")
             }
             NavigationLink {
                 InsightsMapScreen { model.selectedNoteID = $0 }
@@ -175,6 +204,7 @@ struct InsightsSettingsSection: View {
             }
             .accessibilityIdentifier("insights.topicsLink")
         }
+        .onAppear { model.refreshInsightsCapability() }
     }
 
     // MARK: Work device (D13)
@@ -188,7 +218,7 @@ struct InsightsSettingsSection: View {
     @ViewBuilder private var workDeviceSection: some View {
         Section {
             let devices = capableDevices
-            Picker("Work Device", selection: Binding(get: { state.settings.workDevice?.rawValue ?? "" }, set: { raw in
+            Picker("Map and Titles Device", selection: Binding(get: { state.settings.workDevice?.rawValue ?? "" }, set: { raw in
                 Task { await model.setInsightsWorkDevice(DeviceID(raw)) }
             })) {
                 if state.settings.workDevice == nil { Text("None yet").tag("") }
@@ -205,7 +235,7 @@ struct InsightsSettingsSection: View {
             if let s = state.status, s.workDevice != nil {
                 LabeledContent("Last seen") { Text(InsightsText.lastSeen(s.workDeviceLastSeen)) }
                 if s.workDeviceNotSeen {
-                    Label("The work device has not been seen for 14 days. Summaries pause until it returns or another device does the work.",
+                    Label("This device has not been seen for 14 days. The next device that can do the work takes over by itself.",
                           systemImage: "exclamationmark.triangle")
                         .font(.footnote)
                 }
@@ -213,17 +243,12 @@ struct InsightsSettingsSection: View {
             if state.settings.workDevice != model.vault?.writerDevice, state.capability.canWork {
                 Button("Use This Device", systemImage: "iphone.and.arrow.forward") { Task { await model.claimInsightsWorkDevice() } }
                     .disabled(!writable)
-                    .help("Make this device the one that makes summaries and builds the map")
-                Toggle("Also Process on This Kind of Device", isOn: Binding(get: { state.settings.computeAuto }, set: { on in
-                    Task { await model.setInsightsComputeHere(on) }
-                }))
-                .disabled(!writable)
-                .vaultSetting("insights.compute")
+                    .help("Make this device the one that builds the map and names voice notes")
             }
         } header: {
-            Text("Work Device")
+            Text("Map and Titles Device")
         } footer: {
-            Text("One device makes the summaries, keywords and voice-note titles, and builds the map of related notes; the others show what it made. Any device that can run the models can do the work. On an iPhone or iPad it works while charging.")
+            Text("Every device with Apple Intelligence makes summaries and keywords: an iPhone or iPad while charging, or right away with Process Now. One device also builds the map of related notes and names voice notes; the others show what it made.")
         }
     }
 

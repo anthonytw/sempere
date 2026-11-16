@@ -4,8 +4,9 @@ import Sempere
 // MARK: - The updater (docs/design/1.2-note-insights.md §3.7, §3.8, §4, D13-D15; `sempere insights update`)
 //
 // One pass over a vault for this device: delete its own files under an earlier key (written again below) and what
-// removed devices left, claim the work device when none is set, then per note (in the policy's order) generate, embed,
-// tombstone and title, then rebuild the map, write this device's record and the topic summaries due. Every write goes through
+// removed devices left, claim the work device when none is set (or it was not seen for 14 days), then per note (in the
+// policy's order) generate (every device with the model), embed and title (the work device), tombstone, then rebuild the
+// map, write this device's record and the topic summaries due. Every write goes through
 // `InsightsStore` (and voice-note titles through `Vault.apply`), so a read-only vault refuses them all. The app (PR 2)
 // and the CLI call it alike.
 
@@ -77,7 +78,13 @@ public enum InsightsNotes {
 
 public struct InsightsUpdateOptions: Sendable {
     public var note: UUID?
+    /// Regenerate current notes too, past the settle time, open notes and the back-off (`--force`).
     public var force = false
+    /// Skip the 10-minute settle time only ("Process Now"): open notes still wait, current ones are not redone.
+    public var ignoreSettle = false
+    /// Failures in the memo recorded before this moment do not hold notes or topics back ("Process Now": the start of its
+    /// pass, so what fails during the pass waits instead of being asked again in its next run).
+    public var ignoreBackoffBefore: Date?
     public var limit: Int?
     public var embeddingsOnly = false
     public var dryRun = false
@@ -93,7 +100,7 @@ public struct InsightsUpdateOptions: Sendable {
     /// Notes open in an editor on this device: not eligible while open (design §3.7, `PolicyNote.open`), and never
     /// retitled while open.
     public var openNotes: Set<UUID> = []
-    /// This device's settings type (`insights.compute` lives in any type block, D13): nil reads the top level only.
+    /// This device's settings type (the settings are read as this kind of device reads them): nil reads the top level only.
     public var deviceType: SettingsDeviceType?
     public init() {}
 }
@@ -117,11 +124,50 @@ public struct InsightsUpdateReport: Hashable, Sendable, Codable {
     public var failures: [String: String] = [:]
     /// Why nothing was generated or embedded (`model unavailable: …`), when so.
     public var notes: [String] = []
+    /// Notes this device would summarize now but for a failure remembered in the memo (`InsightsFailureMemo`), and why the
+    /// first of them failed.
+    public var backedOff = 0
+    public var backedOffReason: String?
+    /// Notes this device would summarize but for the 10-minute settle time, or being open in an editor here.
+    public var waitingToSettle = 0
+    public var waitingOpen = 0
     public var dryRun = false
     /// The run was cancelled (the app's background time ran out): what was made so far is saved, nothing after the
     /// notes ran (titles, the map, the record, topics).
     public var cancelled = false
     public init() {}
+}
+
+/// Why a pass made nothing (no summary, no topic), from its reports: what Settings shows under "Process Now" instead of
+/// ending silently. Worded by the app.
+public enum InsightsPassOutcome: Hashable, Sendable {
+    /// This device cannot make summaries (Apple Intelligence off, not ready, not eligible, no model here).
+    case modelUnavailable(ModelAvailability?)
+    /// Generations failed: how many, and the first one's error.
+    case failed(count: Int, reason: String)
+    /// Notes wait after failing earlier (the memo's back-off), and why the first of them failed.
+    case backedOff(count: Int, reason: String?)
+    /// Notes edited in the last 10 minutes wait to settle.
+    case waitingToSettle(Int)
+    /// Notes wait because they are open in an editor here.
+    case noteOpen(Int)
+    /// Every note with text is summarized (here or on another device).
+    case nothingToDo
+
+    /// The outcome of a pass of `reports` on a device whose model is `availability` (nil: no model provider); nil when the
+    /// pass made something, was cut off, or ran no update.
+    public static func of(_ reports: [InsightsUpdateReport], availability: ModelAvailability?) -> InsightsPassOutcome? {
+        guard let last = reports.last, !last.cancelled else { return nil }
+        if reports.contains(where: { !$0.generated.isEmpty || !$0.topics.isEmpty }) { return nil }
+        if availability?.isAvailable != true { return .modelUnavailable(availability) }
+        var failures: [String: String] = [:]
+        for r in reports { failures.merge(r.failures) { a, _ in a } }
+        if let first = failures.keys.sorted().first, let why = failures[first] { return .failed(count: failures.count, reason: why) }
+        if last.backedOff > 0 { return .backedOff(count: last.backedOff, reason: last.backedOffReason) }
+        if last.waitingToSettle > 0 { return .waitingToSettle(last.waitingToSettle) }
+        if last.waitingOpen > 0 { return .noteOpen(last.waitingOpen) }
+        return .nothingToDo
+    }
 }
 
 public enum InsightsUpdateError: Error, Hashable, Sendable, CustomStringConvertible {
@@ -192,6 +238,9 @@ public struct InsightsUpdater: Sendable {
         var supported = embedder?.supported(languages.isEmpty ? [main] : languages) ?? [:]
         if supported.isEmpty, let embedder { supported = embedder.supported([main]) }
         let ownRecord = makeRecord(me: me, supported: supported, settings: settings, snapshot: snapshot, o: o)
+        // The work device not seen for 14 days: a capable device claims the role (self-healing, D13).
+        let workDeviceMissing = settings.workDevice != nil && settings.workDevice != me
+            && WorkDeviceStatus(settings: settings, snapshot: snapshot, listed: listed, language: main, now: o.now).notSeen
         var records = EmbeddingPin.recent(snapshot.devices, listed: listed, now: o.now)
         records[me] = ownRecord
         func pinRevision(_ lang: String) -> Int? { settings.pins[lang] ?? EmbeddingPin.lowestCommon(records, language: lang) }
@@ -206,19 +255,26 @@ public struct InsightsUpdater: Sendable {
                        hasText: !$0.text.isEmpty)
         }
         var memo = o.failureMemo.map { InsightsFailureMemo.load(from: $0, vault: vault) } ?? InsightsFailureMemo()
-        let backoff = usable.map { m in memo.backoff(notes: selected.map { ($0.id, $0.hash) }, identity: m.identity) } ?? [:]
-        let backedOff = o.force ? 0 : backoff.values.filter { $0 > o.now }.count
-        if backedOff > 0 { report.notes.append("\(backedOff) notes backed off (failed earlier; --force to retry)") }
-        var plan = InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps,
-                                       pinKey: pinKey, now: o.now, force: o.force, backoff: backoff, deviceRecordChanged: changedRecord)
+        let backoff = usable.map { m in
+            memo.backoff(notes: selected.map { ($0.id, $0.hash) }, identity: m.identity, ignoringBefore: o.ignoreBackoffBefore)
+        } ?? [:]
+        func makePlan(missing: Bool) -> [WorkItem] {
+            InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps, pinKey: pinKey,
+                                now: o.now, force: o.force, ignoreSettle: o.ignoreSettle, backoff: backoff, workDeviceMissing: missing,
+                                deviceRecordChanged: changedRecord)
+        }
+        var plan = makePlan(missing: workDeviceMissing)
         if o.rebuildMap, pinKey != nil, !plan.contains(.rebuildMap) { plan.append(.rebuildMap) }
-        // Claim the role (D13: the first capable device to turn insights on), through the settings merge.
+        // Claim the role (D13: the first capable device to turn insights on, or any capable one once the work device has
+        // not been seen for 14 days), through the settings merge.
         if plan.contains(.claimWorkDevice) {
             report.claimedWorkDevice = true
+            let replaces = workDeviceMissing ? settings.workDevice?.rawValue : nil
             if !o.dryRun {
                 try vault.updateSharedSettingsUnderWriteLock { s in
                     guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.workDevice) else { return }
-                    if case .string = s.resolve(spec, for: nil).value { return }   // claimed meanwhile
+                    // Claimed (or designated) meanwhile: only an empty role, or the missing device's, is taken.
+                    if case .string(let current) = s.resolve(spec, for: nil).value, current != replaces { return }
                     try s.write(spec, .string(me.rawValue), block: nil, type: nil, now: o.now)
                 }
                 settings = InsightsSettings.read(vault, type: o.deviceType)
@@ -227,9 +283,30 @@ public struct InsightsUpdater: Sendable {
             }
             if settings.workDevice != me {
                 // Another device's claim won the merge: plan again as a device that is not the work device.
-                plan = InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps,
-                                           pinKey: pinKey, now: o.now, force: o.force, backoff: backoff, deviceRecordChanged: changedRecord)
+                report.claimedWorkDevice = false
+                plan = makePlan(missing: false)
             }
+        }
+        // What waits, and why ("Process Now"'s outcome): the notes a plan with no settle time, no open notes and no
+        // back-off would summarize that this one does not.
+        if usable != nil, !o.force {
+            var free = policyNotes
+            for i in free.indices { free[i].open = false }
+            let unheld = InsightsPolicy.plan(notes: free, snapshot: snapshot, me: me, settings: settings, capabilities: caps, pinKey: pinKey,
+                                             now: o.now, ignoreSettle: true, deviceRecordChanged: false)
+            let planned = Set(plan.compactMap { if case .generate(let id) = $0 { return id } else { return nil } })
+            let open = Set(policyNotes.filter(\.open).map(\.id))
+            for case .generate(let id) in unheld where !planned.contains(id) {
+                if let until = backoff[id], until > o.now {
+                    report.backedOff += 1
+                    if report.backedOffReason == nil { report.backedOffReason = memo.reason(note: id) }
+                } else if open.contains(id) {
+                    report.waitingOpen += 1
+                } else {
+                    report.waitingToSettle += 1
+                }
+            }
+            if report.backedOff > 0 { report.notes.append("\(report.backedOff) notes backed off (failed earlier; --force to retry)") }
         }
         // A device that no longer holds the role says so with a tombstone map (no key): readers take the map and
         // vectors only from the work device anyway, and a tombstone keeps a bridging device from bringing it back.
@@ -353,7 +430,8 @@ public struct InsightsUpdater: Sendable {
                 try store.write(.device(record), now: o.now)
             }
         }
-        if o.topics, !o.embeddingsOnly, let model = usable, settings.workDevice == me || settings.computeAuto {
+        // Topic summaries: on any device with the model (D13), judged against the latest from every device.
+        if o.topics, !o.embeddingsOnly, o.powerWindow, let model = usable {
             report.topics = try await updateTopics(store: store, snapshot: snapshot, inputs: inputs, model: model, merger: merger,
                                                    me: me, o: o, limit: o.limit.map { max(0, $0 - generations) }, report: &report)
         }
@@ -527,7 +605,7 @@ public struct InsightsUpdater: Sendable {
                       merger: TypoMerger, me: DeviceID, o: InsightsUpdateOptions, limit: Int?,
                       report: inout InsightsUpdateReport) async throws -> [String] {
         let scopes = TopicScopes.members(inputs: inputs, snapshot: snapshot)
-        let stored = snapshot.topics[me]?.topics ?? []
+        let own = snapshot.topics[me]?.topics ?? []
         var memo = o.failureMemo.map { InsightsFailureMemo.load(from: $0, vault: vault) } ?? InsightsFailureMemo()
         var memoChanged = false
         defer { if memoChanged, !o.dryRun, let url = o.failureMemo { try? memo.save(to: url, vault: vault) } }
@@ -537,10 +615,12 @@ public struct InsightsUpdater: Sendable {
             if let limit, attempts >= limit { break }
             if Task.isCancelled { report.cancelled = true; break }
             let name = TopicScopes.name(scope)
-            let old = stored.first { $0.scope == scope }
-            guard TopicSummaries.isDue(members: members, stored: old, reader: model.identity, now: o.now) else { continue }
+            let latest = TopicSummaries.latest(scope, snapshot: snapshot)?.topic
+            guard TopicSummaries.isDue(members: members, stored: latest, own: own.first { $0.scope == scope }, reader: model.identity,
+                                       now: o.now) else { continue }
             let digest = TopicSummaries.membersHash(members)
-            if !o.force, let until = memo.topicBackoff(name, membersHash: digest, identity: model.identity), until > o.now { continue }
+            if !o.force, let until = memo.topicBackoff(name, membersHash: digest, identity: model.identity,
+                                                       ignoringBefore: o.ignoreBackoffBefore), until > o.now { continue }
             attempts += 1
             if o.dryRun { made.append(name); continue }
             do {

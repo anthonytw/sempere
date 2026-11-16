@@ -134,11 +134,17 @@ public enum TopicSummaries {
     public static func membersHash(_ members: [Member]) -> String { MapBuilder.digest(members.map { ($0.note, $0.hash) }) }
 
     /// True when `scope` needs a summary now: enough members, and none stored for these members, or one made with an
-    /// older model, and the last one at least a day old.
-    public static func isDue(members: [Member], stored: InsightsTopicsFile.Topic?, reader: GenerationIdentity, now: Date) -> Bool {
+    /// older model, and the last one at least a day old. `stored` is the latest from any device (`latest`), since every
+    /// device with the model may make topics (D13); `own`, this device's, also counts as current for it, so two devices
+    /// on different OS majors do not take turns remaking the same scope every day.
+    public static func isDue(members: [Member], stored: InsightsTopicsFile.Topic?, own: InsightsTopicsFile.Topic? = nil,
+                             reader: GenerationIdentity, now: Date) -> Bool {
         guard members.count >= minMembers else { return false }
         guard let stored else { return true }
-        if stored.membersHash == membersHash(members), stored.gen.identity.isCurrent(for: reader) { return false }
+        let digest = membersHash(members)
+        for t in [stored, own].compactMap({ $0 }) where t.membersHash == digest && t.gen.identity.isCurrent(for: reader) {
+            return false
+        }
         return now.timeIntervalSince1970 - Double(stored.gen.at) / 1000 >= minInterval
     }
 
@@ -265,16 +271,23 @@ public enum InsightsPolicy {
         }
     }
 
-    /// The work for this device, in order. `force` ignores the settle time and regenerates stale and current alike.
+    /// The work for this device, in order. `force` ignores the settle time and regenerates stale and current alike;
+    /// `ignoreSettle` only skips the settle time ("Process Now": open notes still wait, current ones are not redone).
+    /// Every device with the model generates (D13: summaries are per device files, and a note current on another device
+    /// is skipped); embedding, the map (and the updater's voice-note titles) stay with the work device, which a capable
+    /// device claims when none is set or when it is `workDeviceMissing` (not seen for 14 days, `WorkDeviceStatus`).
     public static func plan(notes: [PolicyNote], snapshot: InsightsSnapshot, me: DeviceID, settings: InsightsSettings,
                             capabilities c: PolicyCapabilities, pinKey: EmbeddingKey?, now: Date, force: Bool = false,
-                            backoff: [UUID: Date] = [:], deviceRecordChanged: Bool) -> [WorkItem] {
+                            ignoreSettle: Bool = false, backoff: [UUID: Date] = [:], workDeviceMissing: Bool = false,
+                            deviceRecordChanged: Bool) -> [WorkItem] {
         guard settings.enabled else { return [] }
         var out: [WorkItem] = []
         let isWork = settings.workDevice == me
-        if settings.workDevice == nil, c.embedRevision != nil || c.model != nil { out.append(.claimWorkDevice) }
-        let willHold = isWork || (settings.workDevice == nil && (c.embedRevision != nil || c.model != nil))
-        let generates = c.powerWindow && c.model != nil && (willHold || settings.computeAuto)
+        let capable = c.embedRevision != nil || c.model != nil
+        let vacant = settings.workDevice == nil || (workDeviceMissing && !isWork)
+        if vacant, capable { out.append(.claimWorkDevice) }
+        let willHold = isWork || (vacant && capable)
+        let generates = c.powerWindow && c.model != nil
         let embeds = willHold && c.embedRevision != nil && pinKey != nil
         let record = snapshot.devices[me]
         if record == nil || deviceRecordChanged
@@ -288,7 +301,7 @@ public enum InsightsPolicy {
                 continue
             }
             guard n.hasText else { continue }
-            let eligible = force || (!n.open && (n.modified.map { now.timeIntervalSince($0) >= settle } ?? true))
+            let eligible = force || (!n.open && (ignoreSettle || (n.modified.map { now.timeIntervalSince($0) >= settle } ?? true)))
             guard eligible else { continue }
             // A back-off (a failed generation, `InsightsFailureMemo`) holds the model back, never the embedding.
             let backedOff = backoff[n.id].map { $0 > now && !force } ?? false
