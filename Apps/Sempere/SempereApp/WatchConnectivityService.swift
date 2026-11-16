@@ -75,6 +75,8 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     private var profileStore: (any CaptureProfileStore)?
     /// What admission depended on at the last `admitReadyHeldNotes` pass.
     private var lastAdmitKey: String?
+    /// The in-app vault store (the vaults this phone holds), for `admitReadyHeldNotes`.
+    private var vaultStore: VaultStore?
 
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
 
@@ -92,6 +94,7 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         lock.withLock {
             self.receiver = receiver
             self.profileStore = quickCapture.store
+            self.vaultStore = quickCapture.vaultStore
         }
         quickCapture.profileChanged = { [weak self] in
             self?.provisionIfNeeded()
@@ -119,27 +122,33 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         guard let receiver = lock.withLock({ receiver }) else { return }
         Task.detached { [weak self] in
             let notes = receiver.heldNotes()
-            let addable = Set(notes.filter { receiver.canAddNow($0) }.map(\.id))
-            let reasons = Dictionary(uniqueKeysWithValues: notes.map { ($0.id, receiver.currentReason($0)) })
-            let check = Set(notes.filter { receiver.needsCheck($0) }.map(\.id))
+            // One verdict per note (each reads the profile and the vault folder's epoch).
+            let judged = notes.map { ($0.id, receiver.judge($0)) }
+            let addable = Set(judged.filter { $0.1.canAdd }.map(\.0))
+            let reasons = Dictionary(uniqueKeysWithValues: judged.map { ($0.0, $0.1.reason) })
+            let check = Set(judged.filter { $0.1.needsCheck }.map(\.0))
             await MainActor.run { self?.status.setHeld(notes, addable: addable, reasons: reasons, check: check) }
         }
     }
 
     /// Places, off the main actor, the held notes that would be admitted now (`WatchReceiver.admitReady`: a refresh to the
     /// vault's epoch, a lifted suspension), then re-reads the list. Notes held for the user's decision stay.
-    /// Runs only when what decides admission changed since the last pass (the profile's vault, epoch and suspension, and
-    /// the toggle): every activation calls `profileChanged`, and a pass reads every held note's vault folder.
+    /// Runs only when what decides admission changed since the last pass (the profile's vault, epoch and suspension, the
+    /// toggle, and the vaults on this phone: an `unknownVault` note goes in at the first activation after its vault was
+    /// added): every activation calls `profileChanged`, and a pass reads every held note's vault folder.
     func admitReadyHeldNotes() {
         guard let receiver = lock.withLock({ receiver }), let store = lock.withLock({ profileStore }) else { return }
+        let vaults = lock.withLock { vaultStore }
         let provisioner = self.provisioner
         Task.detached { [weak self] in
             guard let self else { return }
             // Unreadable before the first unlock: nothing decided, tried at the next change.
             let stored: StoredCaptureProfile?
             do { stored = try store.load() } catch { return }
+            guard !receiver.heldNotes().isEmpty else { return }
+            let here = (vaults?.list().map { $0.vaultId.uuidString } ?? []).sorted().joined(separator: ",")
             let key = [stored?.profile.vaultId.uuidString ?? "-", "\(stored?.profile.epoch ?? -1)", stored?.profile.epochId ?? "-",
-                       "\(stored?.suspended == true)", "\(provisioner.enabled)"].joined(separator: " ")
+                       "\(stored?.suspended == true)", "\(provisioner.enabled)", here].joined(separator: " ")
             let changed = self.lock.withLock { () -> Bool in
                 guard self.lastAdmitKey != key else { return false }
                 self.lastAdmitKey = key

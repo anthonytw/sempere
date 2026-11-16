@@ -122,9 +122,12 @@ extension Vault {
         let pinned = chain.map { TakeoverRule.PinnedEpoch(epochId: $0.epochId, recovery: $0.recovery) }
         let older = olderEpochs
         var keys: [Data: VaultEpochKey] = [:]
-        var numbers: [Data: Int] = [:]   // each key's epoch number, from the chain or the ledger (never from a label)
-        for o in older { keys[o.epochId] = o.key; numbers[o.epochId] = o.epoch }
-        for (e, k) in try ledger.epochKeys() where keys[k.epochId] == nil { keys[k.epochId] = k; numbers[k.epochId] = e }
+        for o in older { keys[o.epochId] = o.key }
+        for (_, k) in try ledger.epochKeys() where keys[k.epochId] == nil { keys[k.epochId] = k }
+        // Each epoch's place on the verified chain (never its number: after a takeover from below the frontier, a dropped
+        // epoch can carry a higher number than an epoch on the chain).
+        var position: [Data: Int] = [:]
+        for (i, id) in chainIds.enumerated() where position[id] == nil { position[id] = i }
         let (liveEntries, stale) = ledgerLiveness(entries, now: now)
         var gone = stale
         report.dropped = stale.map(\.path)
@@ -160,12 +163,14 @@ extension Vault {
             if Self.epochMutations.contains(.skipCatchUp) { continue }
             n += 1
             do {
-                // Only epochs AFTER the labeled one: 1.1.0's refresh labeled a capture with the epoch before its key, never
-                // after. A file sealed under an earlier epoch than it claims (a lost watch's copy of an old profile, labeled
-                // as the current epoch to be admitted) is never re-sealed, however many epochs later.
-                let labeled = numbers[key.epochId] ?? Int.max
-                let later = keys.values.filter { (numbers[$0.epochId] ?? Int.min) > labeled }
-                    .sorted { (numbers[$0.epochId] ?? 0) < (numbers[$1.epochId] ?? 0) }
+                // Only epochs AFTER the labeled one on the verified chain: 1.1.0's refresh labeled a capture with the epoch
+                // before its key, never after. A file sealed under an earlier epoch than it claims (a lost watch's copy of an
+                // old profile, labeled as the current epoch to be admitted) is never re-sealed, however many epochs later;
+                // nor one under an epoch a takeover dropped, and a label off the chain gets no fallback at all.
+                let later = position[key.epochId].map { labeled in
+                    keys.values.compactMap { k in position[k.epochId].flatMap { $0 > labeled ? ($0, k) : nil } }
+                        .sorted { $0.0 < $1.0 }.map(\.1)
+                } ?? []
                 report.reencrypted.append(try reencryptOwn(e, key: key, otherKeys: later, n: n))
                 gone.append(e)
             } catch VaultError.interrupted {

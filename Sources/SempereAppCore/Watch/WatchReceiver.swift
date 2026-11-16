@@ -172,7 +172,10 @@ public struct WatchReceiver: Sendable {
     /// Whether "Add to inbox" can take `item` now (the same check `addHeld` makes).
     public func canAddNow(_ item: HeldCapture) -> Bool { intake.canAddNow(item) }
 
-    /// Why `item` is held now (`WatchIntake.currentReason`): what Settings shows.
+    /// How `item` stands now, from one verdict (`WatchIntake.judge`): what Settings shows.
+    public func judge(_ item: HeldCapture) -> WatchIntake.HeldJudgment { intake.judge(item) }
+
+    /// Why `item` is held now (`WatchIntake.currentReason`).
     public func currentReason(_ item: HeldCapture) -> WatchHeldReason { intake.currentReason(item) }
 
     /// Whether `item`'s Add needs the user's check (`WatchIntake.needsCheck`).

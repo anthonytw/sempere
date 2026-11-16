@@ -211,6 +211,38 @@ final class WatchAdmissionTests: VaultTestCase {
         XCTAssertEqual(try w.open("A").readCapture(laterId).audio, audio, "re-sealed under epoch 3")
     }
 
+    /// After a takeover from below the frontier, the ledger keeps the key of the epoch the takeover dropped, whose number
+    /// can be above an epoch on the chain. Catch-up's fallback goes by place on the verified chain, so a file sealed under
+    /// the dropped epoch's key and labeled with an earlier epoch is not re-sealed under the new one.
+    func testAFallbackNeverReachesAnEpochATakeoverDropped() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "P", "X", "T"])   // T stays pinned at epoch 1
+        let profile1 = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
+        var a = try w.open("A")
+        try a.removeDevices([w["X"].id])                                // epoch 2, which P follows
+        var dropped = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
+        XCTAssertEqual(dropped.epoch, 2)
+        dropped.epoch = profile1.epoch
+        dropped.epochId = profile1.epochId                               // sealed under epoch 2, labeled epoch 1
+        let id = UUID()
+        let writer = try CaptureWriter(profile: dropped)
+        let sealed = try writer.seal(audio: audio, started: Date(), id: id)
+        try writer.record(sealed, in: w["P"].ledger)
+        try CaptureWriter.store(sealed, in: try w.open("P").inboxURL)
+
+        // T, with the kit, takes over from its frontier (epoch 1): its epoch 2' drops epoch 2, and P follows it.
+        let (taken, _) = try Vault.takeover(at: w.url, device: w["T"].keys, recovery: w.recovery,
+                                            keep: [w["P"].fingerprint], trust: w["T"].trust, root: nil)
+        XCTAssertEqual(taken.manifest.epoch, 2)
+        let p = try w.open("P")
+        XCTAssertEqual(p.manifest.epochId, taken.manifest.epochId, "P follows the takeover")
+        XCTAssertTrue(try w["P"].ledger.epochKeys().contains { $0.epoch == 2 && $0.key.epochId != taken.manifest.epochId },
+                      "the dropped epoch's key is still in P's ledger, with the same number as the takeover's")
+        let report = try p.catchUp()
+        XCTAssertFalse(report.reencrypted.contains("inbox/\(sealed.name)"), "\(report)")
+        XCTAssertFalse(report.relabeled.contains("inbox/\(sealed.name)"), "\(report)")
+        XCTAssertThrowsError(try w.open("T").readCapture(id), "not laundered into the takeover's epoch")
+    }
+
     /// Turning "Use on Apple Watch" off holds everything that arrives, whatever its epoch.
     func testTheToggleOffHoldsEvenTheCurrentEpoch() throws {
         let w = try EpochWorld(in: tmp, names: ["A", "P"])

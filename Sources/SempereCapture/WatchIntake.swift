@@ -306,11 +306,37 @@ public struct WatchIntake: Sendable {
     /// Whether "Add to inbox" can take `item` now: the admission check `addHeld` makes, with the toggle treated as on. The
     /// stored reason can be stale (an epoch or vault this device never held since), so counts and `--all` ask this, not
     /// `item.canAdd`.
-    public func canAddNow(_ item: HeldCapture) -> Bool {
-        // From the sidecar alone (epoch and epoch id): the sealed file, up to 500 MB held, is not read for a count.
-        guard item.canAdd, held != nil, let epochId = Hex.decode(item.epochId) else { return false }
+    public func canAddNow(_ item: HeldCapture) -> Bool { judge(item).canAdd }
+
+    /// How a held note stands now, from one vault and epoch verdict (`canAddNow`, `currentReason` and `needsCheck` are its
+    /// parts; a list asks this once per note).
+    public struct HeldJudgment: Equatable, Sendable {
+        /// "Add to inbox" can take it now (`canAddNow`).
+        public var canAdd: Bool
+        /// Why it is held now (`currentReason`).
+        public var reason: WatchHeldReason
+        /// Its Add needs the user's check (`needsCheck`).
+        public var needsCheck: Bool
+    }
+
+    /// `item` judged now, from the sidecar alone (epoch and epoch id: the sealed file, up to 500 MB held, is not read) and one
+    /// reading of the profile. When the state cannot be read: the stored reason, and an Add allowed to try (and fail loudly).
+    public func judge(_ item: HeldCapture) -> HeldJudgment {
+        let stored = HeldJudgment(canAdd: item.canAdd && held != nil, reason: item.reason, needsCheck: item.needsCheck)
+        guard let epochId = Hex.decode(item.epochId) else {
+            return HeldJudgment(canAdd: false, reason: item.reason, needsCheck: item.needsCheck)
+        }
         let probe = SealedCapture(name: CaptureFile.name(item.id, .capture), data: Data(), epoch: item.epoch, epochId: epochId)
-        do { return try epochVerdict(probe, vault: item.vault)?.canAdd ?? true } catch { return true }   // unreadable state: let the add try, and fail loudly
+        let verdict: WatchHeldReason?
+        let linkEnabled: Bool
+        do {
+            let delivery = try self.delivery.snapshot()
+            verdict = try epochVerdict(probe, vault: item.vault, using: delivery)
+            linkEnabled = delivery.linkEnabled
+        } catch { return stored }
+        let reason = verdict ?? (item.arrivedWhileOff || !linkEnabled ? .linkOff : item.reason)
+        return HeldJudgment(canAdd: stored.canAdd && (verdict?.canAdd ?? true), reason: reason,
+                            needsCheck: item.arrivedWhileOff || reason.needsCheck)
     }
 
     /// "Add to inbox": the user's decision to take a held file. It runs the normal record-and-place path, and catch-up then
@@ -370,18 +396,11 @@ public struct WatchIntake: Sendable {
     /// Why `item` is held now, judged as `canAddNow` does (its stored reason can be stale: 1.1.0's `newerEpoch` notes are
     /// of an earlier key once the profile is repaired): the vault and epoch verdict, else `linkOff` when it arrived while the
     /// toggle was off or the toggle is off now, else the stored reason. The stored reason when the state cannot be read.
-    public func currentReason(_ item: HeldCapture) -> WatchHeldReason {
-        guard let epochId = Hex.decode(item.epochId) else { return item.reason }
-        let probe = SealedCapture(name: CaptureFile.name(item.id, .capture), data: Data(), epoch: item.epoch, epochId: epochId)
-        do {
-            if let verdict = try epochVerdict(probe, vault: item.vault) { return verdict }
-        } catch { return item.reason }
-        return item.arrivedWhileOff || !delivery.linkEnabled ? .linkOff : item.reason
-    }
+    public func currentReason(_ item: HeldCapture) -> WatchHeldReason { judge(item).reason }
 
     /// Whether `item` needs the user's check before it is added (the warning, `held add --all` skipping it): it arrived
     /// while the toggle was off, or it is of an earlier key now (`currentReason`).
-    public func needsCheck(_ item: HeldCapture) -> Bool { item.arrivedWhileOff || currentReason(item).needsCheck }
+    public func needsCheck(_ item: HeldCapture) -> Bool { judge(item).needsCheck }
 
     /// What the phone sends at the watch's activation: the ids it holds.
     public func have() -> WatchAck { WatchAck(have: received.newest()) }
