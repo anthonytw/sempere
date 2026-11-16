@@ -165,6 +165,20 @@ extension Vault {
                               epoch: manifest.epoch, epochId: secret.epochId)
     }
 
+    /// Remembers in this device's write ledger the key of earlier epoch `epochId` of this vault (one its chain holds) that
+    /// this device's capture profile was made under, so Watch notes sealed with that profile are judged as of an earlier
+    /// epoch this device held (`oldEpoch`: they can be added, and catch-up re-seals them), not as of one it never held
+    /// (delete only). A reinstall loses the ledger that remembered it while the profile, in the Keychain, survives; and
+    /// 1.1.0 kept a refreshed profile's old epoch label, so its notes may name that epoch. Returns whether a key was
+    /// remembered (false without a ledger, or for an epoch the chain does not hold).
+    @discardableResult
+    public func rememberCaptureEpoch(_ epochId: Data) throws -> Bool {
+        guard let ledger, case .device = openedWith, epochId != secret?.epochId,
+              let older = olderEpochs.first(where: { $0.epochId == epochId }) else { return false }
+        try ledger.rememberKey(epoch: older.epoch, key: older.key)
+        return true
+    }
+
     /// The capture keys a reader tries (format.md §11.2), in one streamed pass: the device capture key
     /// of every listed device under the epoch's key (security review 2026-10, C3). A device no longer
     /// listed has no key here: its captures never verify.

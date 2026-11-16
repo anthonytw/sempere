@@ -579,8 +579,12 @@ sempere vault reencrypt --status [--json]
   every other unsealed file under an earlier key into the set-aside store. The
   first write after this machine verifies a new epoch does it by itself; the
   command reports. Exit 1 when a file could not be caught up (tried again by
-  the next writer). `--json`: `reencrypted`, `pruned`, `sealedKept`, `dropped`,
-  `setAside`, `problems`.
+  the next writer). An inbox file of this machine's that its ledger records under an
+  earlier epoch but that is sealed under the current key already (1.1.0's quick-capture
+  profile refresh kept the old epoch's label on the new key) only gets its entry
+  corrected (`relabeled`); one that opens under another earlier key than its entry names
+  is re-sealed from that one. `--json`: `reencrypted`, `pruned`, `sealedKept`, `dropped`,
+  `setAside`, `problems`, `relabeled`.
 - `index` writes `sempere-index.json` at the vault root (or `--out PATH`;
   `--out -` prints it): every note id and its revision file names, the
   listing the web viewer reads on a static server that cannot list folders

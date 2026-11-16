@@ -505,13 +505,14 @@ struct VaultCatchUp: ParsableCommand {
         if output.json {
             struct Out: Encodable {
                 var reencrypted: [String]; var pruned: Int; var sealedKept: Int; var dropped: [String]; var setAside: [String]
-                var problems: [String: String]
+                var problems: [String: String]; var relabeled: [String]
             }
             try output.emitJSON(Out(reencrypted: r.reencrypted, pruned: r.pruned, sealedKept: r.sealedKept, dropped: r.dropped,
-                                    setAside: r.setAside, problems: r.problems))
+                                    setAside: r.setAside, problems: r.problems, relabeled: r.relabeled))
         } else {
             output.info("Re-encrypted \(r.reencrypted.count) file(s); \(r.setAside.count) set aside; "
-                + "\(r.pruned) ledger entr\(r.pruned == 1 ? "y" : "ies") pruned.")
+                + "\(r.pruned) ledger entr\(r.pruned == 1 ? "y" : "ies") pruned"
+                + (r.relabeled.isEmpty ? "." : "; \(r.relabeled.count) inbox file(s) already under the current key relabeled."))
             for (path, why) in r.problems.sorted(by: { $0.key < $1.key }) { printStderr("sempere: \(path): \(why)") }
         }
         if !r.problems.isEmpty { throw CLIError.failure("\(r.problems.count) file(s) could not be caught up; try again") }
