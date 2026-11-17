@@ -3491,6 +3491,84 @@
         }
       }
     },
+    "1. Open Settings ▸ Apple Intelligence & Siri and turn on Apple Intelligence." : {
+      "comment" : "iPhone/iPad step; use the iOS names of the settings",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Abre Ajustes ▸ Apple Intelligence y Siri y activa Apple Intelligence."
+          }
+        }
+      }
+    },
+    "1. Open System Settings ▸ Apple Intelligence & Siri and turn on Apple Intelligence." : {
+      "comment" : "Mac step; use the macOS names of the settings",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Abre Ajustes del Sistema ▸ Apple Intelligence y Siri y activa Apple Intelligence."
+          }
+        }
+      }
+    },
+    "2. Check its Language there, and the Mac's language in System Settings ▸ General ▸ Language & Region." : {
+      "comment" : "Mac step; use the macOS names of the settings",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. Comprueba allí su idioma, y el idioma del Mac en Ajustes del Sistema ▸ General ▸ Idioma y región."
+          }
+        }
+      }
+    },
+    "2. Check its Language there, and the device's language in Settings ▸ General ▸ Language & Region." : {
+      "comment" : "iPhone/iPad step; use the iOS names of the settings",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. Comprueba allí su idioma, y el idioma del dispositivo en Ajustes ▸ General ▸ Idioma y región."
+          }
+        }
+      }
+    },
+    "3. Make them the same, including the region: Spanish (Spain) for both, not Spanish (Spain) and Spanish (United States)." : {
+      "comment" : "Step: the two languages must match exactly",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3. Haz que coincidan, también la región: Español (España) en ambos, no Español (España) y Español (Estados Unidos)."
+          }
+        }
+      }
+    },
+    "4. Leave the device on Wi-Fi and power for a while: the model downloads in the background." : {
+      "comment" : "Step: let the model download",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "4. Deja el dispositivo con Wi-Fi y conectado a la corriente un rato: el modelo se descarga en segundo plano."
+          }
+        }
+      }
+    },
     "A Markdown file with the recognized handwriting, page by page." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
@@ -5046,14 +5124,15 @@
         }
       }
     },
-    "Apple Intelligence is still getting ready on this device." : {
+    "Apple Intelligence is not ready on this device. It may still be downloading, or its language does not match this device's language and region." : {
+      "comment" : "Note Insights: why this device makes no summaries (Apple's model is not ready)",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple Intelligence aún se está preparando en este dispositivo."
+            "value" : "Apple Intelligence no está lista en este dispositivo. Puede que aún se esté descargando, o que su idioma no coincida con el idioma y la región de este dispositivo."
           }
         }
       }
@@ -5067,6 +5146,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apple Watch"
+          }
+        }
+      }
+    },
+    "Apple reports \"not ready\" both while the model downloads and while the languages differ, so Sempere cannot tell which. Your notes can be in any language: the setting is the device's, not the notes'." : {
+      "comment" : "Footer of the steps to turn on Apple Intelligence",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple indica «no está lista» tanto mientras se descarga el modelo como cuando los idiomas no coinciden, así que Sempere no puede saber cuál es el caso. Tus notas pueden estar en cualquier idioma: el ajuste es del dispositivo, no de las notas."
           }
         }
       }
@@ -10939,6 +11031,19 @@
         }
       }
     },
+    "How to Fix" : {
+      "comment" : "Button: opens steps to turn on Apple Intelligence",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo solucionarlo"
+          }
+        }
+      }
+    },
     "How to make iCloud Drive appear in the folder picker" : {
       "comment" : "Help tag of “Don’t see iCloud Drive?”",
       "extractionState" : "manual",
@@ -11680,6 +11785,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Insertar ▸ Ecuación a partir de escritura a mano lee como LaTeX la tinta que rodeas, con un modelo que se ejecuta en este dispositivo: ninguna tinta sale de él. El modelo solo se descarga cuando lo pides, se comprueba con su huella publicada y se guarda en este dispositivo."
+          }
+        }
+      }
+    },
+    "Insights for New Voice Notes" : {
+      "comment" : "Settings ▸ Quick Voice Notes: when Note Insights processes a new voice note",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ideas de notas para notas de voz nuevas"
           }
         }
       }
@@ -13004,6 +13122,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hacer que este dispositivo cree el mapa y ponga nombre a las notas de voz"
+          }
+        }
+      }
+    },
+    "Make this note's summary and keywords again on this device" : {
+      "comment" : "Tooltip of a note's Regenerate",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a crear el resumen y las palabras clave de esta nota en este dispositivo"
           }
         }
       }
@@ -15627,6 +15758,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Solo el dispositivo que gestiona los dispositivos puede hacerlo."
+          }
+        }
+      }
+    },
+    "Only while plugged in" : {
+      "comment" : "Choice: process new voice notes only while the device charges",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo mientras esté enchufado"
           }
         }
       }
@@ -18661,6 +18805,19 @@
         }
       }
     },
+    "Regenerating…" : {
+      "comment" : "Note Insights: this note's summary is being made again",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regenerando…"
+          }
+        }
+      }
+    },
     "Related Notes" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -19648,6 +19805,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las revisiones eliminadas al compactar no son puntos de restauración y no aparecen. Las versiones que dependen de ellas aparecen atenuadas y no se pueden mostrar ni restaurar."
+          }
+        }
+      }
+    },
+    "Right away, even when not plugged in" : {
+      "comment" : "Choice: process a new voice note at once, on battery too",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al momento, aunque no esté enchufado"
           }
         }
       }
@@ -21157,6 +21327,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar transcripción"
+          }
+        }
+      }
+    },
+    "Show how to turn on Apple Intelligence and match its language to this device's" : {
+      "comment" : "Tooltip of How to Fix",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar cómo activar Apple Intelligence y hacer que su idioma coincida con el de este dispositivo"
           }
         }
       }
@@ -27366,6 +27549,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Activar"
+          }
+        }
+      }
+    },
+    "Turn On Apple Intelligence" : {
+      "comment" : "Title of the sheet with steps to turn on Apple Intelligence",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar Apple Intelligence"
           }
         }
       }

@@ -74,6 +74,21 @@ final class WatchModelTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(r.transport.requests.first).hasPrefix("age1pq1"), "its own post-quantum key")
     }
 
+    /// A watch with a profile asks too, once per launch and saying it holds one, so a phone whose app was reinstalled gives
+    /// it the current profile (the phone ignores it otherwise).
+    func testAWatchWithAProfileAsksOncePerLaunchSayingItHoldsOne() async throws {
+        let r = try rig()
+        await r.model.activate()
+        r.model.receive(try provisioning(r, seq: 3))
+        XCTAssertEqual(r.transport.requestHolds, [false])
+        await r.model.activate()
+        XCTAssertEqual(r.transport.requests.count, 1, "not again in the same launch")
+        let again = WatchModelTests.makeModel(secrets: r.secrets, support: r.support)
+        await again.model.activate()
+        XCTAssertEqual(again.transport.requestHolds, [true])
+        XCTAssertEqual(again.transport.requestSeqs, [3], "with its counter, the phone's floor")
+    }
+
     /// A cold launch asks before the session is activated: that request is not lost, and an unsent file is not "failed".
     func testARequestBeforeTheSessionIsActivatedIsMadeOnceItIs() async throws {
         let r = try rig()

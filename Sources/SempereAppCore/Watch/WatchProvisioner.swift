@@ -165,24 +165,29 @@ public final class WatchProvisioner: @unchecked Sendable {
 
     // MARK: The watch's request
 
-    /// The watch asked (`transferUserInfo`): remember its recipient and give it the profile again, whether or not it holds
-    /// it (a reset or a reinstalled watch app has none and a new key). A request that is not a post-quantum age recipient is
+    /// The watch asked (`transferUserInfo`): remember its recipient and give it the profile again when it holds none (a reset
+    /// or a reinstalled watch app has none and a new key). A watch that holds one (`holds`) asks at every launch: it is given
+    /// the profile again only when this phone did not know its recipient or its counter was behind the watch's, which is
+    /// what a reinstalled phone app looks like (its state file is gone, and the watch would otherwise keep sealing notes with
+    /// whatever profile it had, held here as of an earlier key). A request that is not a post-quantum age recipient is
     /// refused. The request is not authenticated beyond WatchConnectivity's own pairing (docs/security.md).
     /// `seq` is the counter the watch holds: the phone's counter is raised to at least it, so a lost or damaged state file can
     /// never make the phone send a payload the watch would ignore.
-    public func watchRequested(recipient: String, seq watchSeq: Int = -1) throws {
+    public func watchRequested(recipient: String, seq watchSeq: Int = -1, holds: Bool = false) throws {
         guard recipient.count <= 4096, let r = try? NativeRecipient(string: recipient), r.isPostQuantum else {
             throw WatchProvisionerError.badRecipient
         }
         try update {
-            if (0...Int(Int32.max)).contains(watchSeq) { $0.seq = max($0.seq, watchSeq) }
+            let behind = (0...Int(Int32.max)).contains(watchSeq) && watchSeq > $0.seq
+            if behind { $0.seq = watchSeq }
             // Turned off: the recipient is not kept (a cleared watch asks again by itself, which must not bring it back), and
             // the answer is a clear. A watch that asks may hold a profile this phone no longer knows it gave (the phone's
             // state was lost: a reinstall), and would go on recording notes that are only held here. A watch that holds
             // nothing ignores the clear and does not ask again, so this does not loop.
             guard $0.enabled else { $0.mayHoldProfile = true; return }
+            let known = $0.recipient == r.string
             $0.recipient = r.string
-            $0.sent = nil
+            if !holds || !known || behind { $0.sent = nil }
         }
     }
 

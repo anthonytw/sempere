@@ -80,7 +80,7 @@ enum WatchDebugLaunch {
 final class DebugWatchTransport: WatchTransport {
     func activate() {}
     var isActivated: Bool { true }
-    func requestProvisioning(recipient: String, seq: Int) -> Bool { true }
+    func requestProvisioning(recipient: String, seq: Int, holds: Bool) -> Bool { true }
     func transfer(file: URL, meta: WatchTransferMeta) -> Bool { true }
     var pendingTransfers: Set<UUID> { [] }
 }

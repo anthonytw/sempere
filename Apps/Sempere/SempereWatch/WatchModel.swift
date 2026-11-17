@@ -18,7 +18,8 @@ protocol WatchTransport: AnyObject {
     var isActivated: Bool { get }
     /// Asks the phone for the profile (`transferUserInfo`, queued; wakes the phone app in the background), with the counter
     /// the watch holds. False when it could not be queued (the session is not activated yet): the caller asks again.
-    func requestProvisioning(recipient: String, seq: Int) -> Bool
+    /// `holds`: the watch holds a profile and asks only so a phone that lost its state gives it the current one.
+    func requestProvisioning(recipient: String, seq: Int, holds: Bool) -> Bool
     /// Hands a sealed outbox file over (`transferFile`); false when it could not be queued.
     func transfer(file: URL, meta: WatchTransferMeta) -> Bool
     /// Ids whose file transfer the system still holds (so a launch does not queue them twice).
@@ -34,12 +35,14 @@ final class NoWatchTransport: WatchTransport {
     /// A session that is not activated yet queues nothing (tests set it false, then true).
     var activated = true
     private(set) var requestSeqs: [Int] = []
+    private(set) var requestHolds: [Bool] = []
     var isActivated: Bool { activated }
     func activate() {}
-    func requestProvisioning(recipient: String, seq: Int) -> Bool {
+    func requestProvisioning(recipient: String, seq: Int, holds: Bool) -> Bool {
         guard activated else { return false }
         requests.append(recipient)
         requestSeqs.append(seq)
+        requestHolds.append(holds)
         return true
     }
     func transfer(file: URL, meta: WatchTransferMeta) -> Bool {
@@ -364,12 +367,13 @@ final class WatchModel {
         return id
     }
 
-    /// With no profile the watch asks the phone, once per launch (and again after a Reset).
-    /// `requested` is set only when the request was queued: the first one on a cold launch comes before the session is
-    /// activated, and `activated()` asks again.
+    /// The watch asks the phone once per launch (and again after a Reset or a clear): for a profile when it has none, and
+    /// with `holds` when it has one, so a phone that lost what it gave this watch (its app reinstalled) gives it the current
+    /// profile instead of holding every note as of an earlier key. `requested` is set only when the request was queued: the
+    /// first one on a cold launch comes before the session is activated, and `activated()` asks again.
     func requestProvisioningIfNeeded() {
-        guard !isSetUp, !requested, let identity = try? identityForRequests() else { return }
-        requested = env.transport.requestProvisioning(recipient: identity.recipient.string, seq: state.seq)
+        guard !requested, let identity = try? identityForRequests() else { return }
+        requested = env.transport.requestProvisioning(recipient: identity.recipient.string, seq: state.seq, holds: isSetUp)
     }
 
     /// A message from the paired iPhone, from the session delegate's callbacks only (never a file, a URL or anything else:

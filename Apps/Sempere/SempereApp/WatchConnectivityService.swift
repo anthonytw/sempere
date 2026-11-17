@@ -249,9 +249,9 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
     /// The watch's request for a profile (`transferUserInfo`). Taken only from this callback: WatchConnectivity says it is
     /// the paired watch; the recipient in it is public (docs/security.md: no sender authentication beyond that).
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        guard case .request(let recipient, _, let seq)? = WatchProvisioning.message(userInfo) else { return }
+        guard case .request(let recipient, _, let seq, let holds)? = WatchProvisioning.message(userInfo) else { return }
         // The watch's own counter is a floor for the phone's: a counter lost on the phone can never make the watch ignore it.
-        do { try provisioner.watchRequested(recipient: recipient, seq: seq) } catch { return }
+        do { try provisioner.watchRequested(recipient: recipient, seq: seq, holds: holds) } catch { return }
         provisionIfNeeded()
     }
 

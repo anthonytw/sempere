@@ -676,6 +676,25 @@ final class InsightsPipelineTests: XCTestCase {
         XCTAssertEqual(u.date, "2026-09-21"); XCTAssertEqual(u.time, "14.13")
     }
 
+    /// 1.1's app titled quick voice notes with the start in the device's language ("Nota de voz 16 nov 2026, 14:32"), which
+    /// ends in no `YYYY-MM-DD HH:mm`: those notes are still the capture default, so Note Insights titles them (1.2 owner
+    /// report); 1.2's app uses the fixed stamp. A rename that names another time is not taken for one.
+    func testThe11AppsLocalizedDefaultTitleIsTheCaptureDefault() {
+        // 2026-11-16 19:32 UTC: 14:32 in New York, 20:32 in Madrid, 01:02 on the 17th in Kolkata.
+        let started = Date(timeIntervalSince1970: 1_794_857_520)
+        for title in ["Nota de voz 16 nov 2026, 14:32", "Voice note Nov 16, 2026 at 2:32 PM", "Nota de voz 16 nov 2026, 20:32",
+                      "Voice note 17 Nov 2026 at 01:02", "Voice note 16.11.2026, 20.32"] {
+            XCTAssertTrue(VoiceNoteTitleState.isLocalizedCaptureDefault(title, started: started), title)
+        }
+        for title in ["Nota de voz 16 nov 2026, 14:35", "Lab results 2025 at 2:32", "Groceries", "Call w/ Ana, Nov 16 2026 9:32"] {
+            XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault(title, started: started), title)
+        }
+        XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault("Voice note Nov 16, 2026 at 2:32 PM",
+                                                                     started: started.addingTimeInterval(400 * 86_400)), "another year")
+        XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault("Nota de voz 16 nov 2026, 14:32", started: nil))
+        XCTAssertTrue(VoiceNoteTitleState.isCaptureDefault("Nota de voz 2026-11-16 14:32"), "1.2's app title, in Spanish")
+    }
+
     func testEmbeddingInputCleaning() {
         XCTAssertEqual(EmbeddingInput.clean("- first point\n* second point\n1. third point\nx = 2y + 3\n\\frac{a}{b}\nplain text"),
                        "first point second point third point plain text")

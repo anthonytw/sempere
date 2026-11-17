@@ -156,10 +156,12 @@ public struct WatchProfileState: Codable, Equatable, Sendable {
 
 /// The messages of provisioning, as WatchConnectivity's property-list dictionaries carry them.
 public enum WatchProvisioning {
-    /// Watch to phone: "here is my recipient, provision me" (`transferUserInfo`).
+    /// Watch to phone: "here is my recipient, provision me" (`transferUserInfo`). `holds`: the watch holds a profile and asks
+    /// only so that a phone that lost what it gave the watch (a reinstall: no recipient, a counter behind the watch's) gives it
+    /// the current one; a phone that knows this watch and is not behind answers nothing. Absent (an older watch): false.
     /// Phone to watch: the profile, encrypted (`updateApplicationContext`), or a clear (carries nothing secret).
     public enum Message: Equatable, Sendable {
-        case request(recipient: String, version: Int, seq: Int = -1)
+        case request(recipient: String, version: Int, seq: Int = -1, holds: Bool = false)
         case profile(Data)
         case clear(seq: Int)
     }
@@ -180,9 +182,10 @@ public enum WatchProvisioning {
     static let profileKey = "profile"
     static let clearKey = "clear"
     static let seqKey = "seq"
+    static let holdsKey = "holds"
 
-    public static func request(recipient: NativeRecipient, seq: Int = -1) -> Message {
-        .request(recipient: recipient.string, version: WatchProfilePayload.currentVersion, seq: seq)
+    public static func request(recipient: NativeRecipient, seq: Int = -1, holds: Bool = false) -> Message {
+        .request(recipient: recipient.string, version: WatchProfilePayload.currentVersion, seq: seq, holds: holds)
     }
 
     /// The message that gives `profile` to the watch whose provisioning key is `recipient`.
@@ -193,7 +196,10 @@ public enum WatchProvisioning {
 
     public static func dictionary(_ message: Message) -> [String: Any] {
         switch message {
-        case .request(let recipient, let version, let seq): return [requestKey: recipient, versionKey: version, seqKey: seq]
+        case .request(let recipient, let version, let seq, let holds):
+            var d: [String: Any] = [requestKey: recipient, versionKey: version, seqKey: seq]
+            if holds { d[holdsKey] = true }
+            return d
         case .profile(let data): return [profileKey: data]
         case .clear(let seq): return [clearKey: seq]
         }
@@ -202,7 +208,8 @@ public enum WatchProvisioning {
     /// The message a dictionary holds; nil for any other (WatchConnectivity carries other messages on the same channel).
     public static func message(_ dictionary: [String: Any]) -> Message? {
         if let recipient = dictionary[requestKey] as? String, recipient.count <= 4096 {
-            return .request(recipient: recipient, version: dictionary[versionKey] as? Int ?? 0, seq: dictionary[seqKey] as? Int ?? -1)
+            return .request(recipient: recipient, version: dictionary[versionKey] as? Int ?? 0, seq: dictionary[seqKey] as? Int ?? -1,
+                            holds: dictionary[holdsKey] as? Bool ?? false)
         }
         if let data = dictionary[profileKey] as? Data { return .profile(data) }
         if let seq = dictionary[clearKey] as? Int { return .clear(seq: seq) }

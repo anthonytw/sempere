@@ -169,7 +169,36 @@ public struct VoiceNoteTitleState: Hashable, Sendable {
     /// (two sets of the same default title).
     public var isStillDefault: Bool {
         guard let first = defaultTitle, let current else { return false }
-        return current.title == first.title && Self.isCaptureDefault(current.title)
+        return current.title == first.title
+            && (Self.isCaptureDefault(current.title) || Self.isLocalizedCaptureDefault(current.title, started: started))
+    }
+
+    /// True when `title` has the shape of the default title the app gave quick voice notes before 1.2: "Voice note" (in a
+    /// language of the app) and the
+    /// start in the capturing device's language (`started.formatted(date: .abbreviated, time: .shortened)`, e.g.
+    /// "Nota de voz 16 nov 2026, 14:32"), which ends in no `YYYY-MM-DD HH:mm`. The capture keeps no time zone, so it is
+    /// judged by what every such form holds: the start's year (any zone) and its minute after a `:` or `.`, near the end.
+    /// "Voice note" in each language the app was localized in before 1.2, lowercased.
+    static let localizedPrefixes = ["voice note ", "nota de voz "]
+
+    public static func isLocalizedCaptureDefault(_ title: String, started: Date?) -> Bool {
+        guard let started else { return false }
+        let t = title.trimmingCharacters(in: .whitespaces)
+        // Only the words the app wrote (its localizations: English, Spanish), so a rename that happens to hold the year
+        // and minute (thinning can make a user's rename the first title, `isStillDefault`) is never taken for one.
+        guard t.count <= 80, localizedPrefixes.contains(where: { t.lowercased().hasPrefix($0) }) else { return false }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC") ?? cal.timeZone
+        // Every zone is within 14 hours of UTC; most zones' offsets are whole or half hours, a few are 45 minutes.
+        let years = Set([-14.0, 0, 14].map { cal.component(.year, from: started.addingTimeInterval($0 * 3600)) })
+        guard years.contains(where: { t.contains(String($0)) }) else { return false }
+        let minute = cal.component(.minute, from: started)
+        let minutes = Set([minute, (minute + 30) % 60, (minute + 15) % 60, (minute + 45) % 60])
+        let tail = String(t.suffix(24))
+        return minutes.contains { m in
+            let mm = String(format: "%02d", m)
+            return tail.contains(":" + mm) || tail.contains("." + mm) || tail.contains("h" + mm)
+        }
     }
 
     /// `applied` as this device's own title op: nil unless its stamp names `writer` (the device id this device's
