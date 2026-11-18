@@ -76,6 +76,26 @@ struct NoteListView: View {
         .toolbar {
             if model.isSelectingNotes {
                 ToolbarItem(placement: secondary) { ExportMenu(ids: model.exportTargetIDs) }
+                // Bulk actions on the ticked notes (`BulkNoteSheets`); a read-only vault allows none.
+                ToolbarItem(placement: secondary) {
+                    Button("Move To…", systemImage: "folder") { ui.bulkNoteAction = .move(model.bulkTargetIDs(for: .move)) }
+                        .disabled(!model.bulkActions.contains(.move))
+                        .help("Move the selected notes to a notebook")
+                        .accessibilityIdentifier("bulk.move")
+                }
+                ToolbarItem(placement: secondary) {
+                    Button("Delete", systemImage: "trash") { ui.bulkNoteAction = .delete(model.bulkTargetIDs(for: .delete)) }
+                        .disabled(!model.bulkActions.contains(.delete))
+                        .help("Move the selected notes to Recently Deleted")
+                        .accessibilityIdentifier("bulk.delete")
+                }
+                if model.bulkActions.contains(.restore) {
+                    ToolbarItem(placement: secondary) {
+                        Button("Restore", systemImage: "arrow.uturn.backward") { ui.bulkNoteAction = .restore(model.bulkTargetIDs(for: .restore)) }
+                            .help("Bring the selected notes back from Recently Deleted")
+                            .accessibilityIdentifier("bulk.restore")
+                    }
+                }
             }
             ToolbarItem(placement: secondary) {
                 Button(model.isSelectingNotes ? "Done" : "Select") { setSelecting(!model.isSelectingNotes) }
@@ -264,6 +284,11 @@ struct NoteListView: View {
         model.multiSelection = on ? Set(model.selectedNoteID.map { [$0] } ?? []) : []
     }
 
+    /// The row is one of several ticked notes: its context menu's Move, Delete and Restore act on all of them.
+    private func inTickedGroup(_ note: NoteSummary) -> Bool {
+        model.isSelectingNotes && model.multiSelection.contains(note.id) && model.multiSelection.count > 1
+    }
+
     /// The notes a context-menu export acts on: the ticked ones when `note` is among them.
     private func exportIDs(for note: NoteSummary) -> [UUID] {
         model.isSelectingNotes && model.multiSelection.contains(note.id) ? model.exportTargetIDs : [note.id]
@@ -303,7 +328,11 @@ struct NoteListView: View {
     // help-lint: titled
     private func actions(for note: NoteSummary) -> some View {
         if note.deleted {
-            Button("Restore", systemImage: "arrow.uturn.backward") { run { try await model.restoreNote(note.id) } }
+            Button("Restore", systemImage: "arrow.uturn.backward") {
+                if inTickedGroup(note) { ui.bulkNoteAction = .restore(model.bulkTargetIDs(for: .restore)) }
+                else { run { try await model.restoreNote(note.id) } }
+            }
+            .disabled(inTickedGroup(note) && !model.bulkActions.contains(.restore))
             ExportMenu(ids: exportIDs(for: note))
         } else {
             if Platform.isMac, let value = model.noteWindowValue(for: note.id) {
@@ -326,14 +355,20 @@ struct NoteListView: View {
                     }
                 }
             }
-            Button("Move to Notebook…", systemImage: "book.closed") { movingNote = MovingNote(note: note) }
+            Button("Move to Notebook…", systemImage: "book.closed") {
+                if inTickedGroup(note) { ui.bulkNoteAction = .move(model.bulkTargetIDs(for: .move)) }
+                else { movingNote = MovingNote(note: note) }
+            }
+            .disabled(inTickedGroup(note) && !model.bulkActions.contains(.move))
             if model.insights.mode == .on {
                 Button("Note Insights…", systemImage: "sparkles") { ui.insightsNoteID = note.id }
             }
             ExportMenu(ids: exportIDs(for: note))
             Button("Move to Recently Deleted", systemImage: "trash", role: .destructive) {
-                run { try await model.deleteNote(note.id) }
+                if inTickedGroup(note) { ui.bulkNoteAction = .delete(model.bulkTargetIDs(for: .delete)) }
+                else { run { try await model.deleteNote(note.id) } }
             }
+            .disabled(inTickedGroup(note) && !model.bulkActions.contains(.delete))
         }
     }
 }

@@ -97,6 +97,36 @@ final class NoteEditOpsTests: VaultTestCase {
         XCTAssertTrue(s.deleted)
     }
 
+    func testSetDeletedWritesOneDeltaPerChangedNote() throws {
+        let vault = try makeVault(pqIdentity())
+        let a = UUID(), b = UUID(), c = UUID()
+        for (id, title) in [(a, "A"), (b, "B"), (c, "C")] {
+            try vault.apply(NoteOps.newNote(title: title), to: id, deviceState: stateURL, app: "test")
+        }
+        try vault.apply([.deleteNote], to: c, deviceState: stateURL, app: "test")
+
+        // c is deleted already (left alone); a repeated id counts once, and only its first entry has a revision.
+        let r = try vault.setDeleted([a, b, c, a], true, deviceState: stateURL, app: "test")
+        XCTAssertEqual(r.map(\.id), [a, b, c, a])
+        XCTAssertEqual(r.map { $0.revision != nil }, [true, true, false, false])
+        XCTAssertEqual(try [a, b, c].map { try vault.revisionNames(of: $0).count }, [2, 2, 2])
+        XCTAssertTrue(try [a, b, c].allSatisfy { try vault.summary(of: $0).deleted })
+        XCTAssertTrue(try vault.setDeleted([a, b], true, deviceState: stateURL, app: "test").allSatisfy { $0.revision == nil })
+
+        let back = try vault.setDeleted([a, b, c], false, deviceState: stateURL, app: "test")
+        XCTAssertEqual(back.map { $0.revision != nil }, [true, true, true])
+        XCTAssertFalse(try [a, b, c].contains { try vault.summary(of: $0).deleted })
+    }
+
+    func testSetDeletedWritesNothingWhenALaterNoteCannotBeRead() throws {
+        let vault = try makeVault(pqIdentity())
+        let a = UUID()
+        try vault.apply(NoteOps.newNote(title: "A"), to: a, deviceState: stateURL, app: "test")
+        XCTAssertThrowsError(try vault.setDeleted([a, UUID()], true, deviceState: stateURL, app: "test")) { _ in }
+        XCTAssertFalse(try vault.summary(of: a).deleted)
+        XCTAssertEqual(try vault.revisionNames(of: a).count, 1)
+    }
+
     func testApplyBuildingRefusesANoteWithAnUnreadableRevision() throws {
         let vault = try makeVault(pqIdentity())
         let id = UUID()

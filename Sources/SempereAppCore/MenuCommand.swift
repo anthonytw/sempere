@@ -266,6 +266,9 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         /// ⌘⌫ there means "delete to the start of the line", and a menu key
         /// equivalent would win over it on the Mac.
         public var editingText = false
+        /// While the note list is in select mode, what the ticked notes allow (`AppModel.bulkActions`): Move to
+        /// Recently Deleted and Restore Note then act on the ticked notes. Nil when not selecting.
+        public var bulkSelection: BulkNoteActions?
 
         /// A context; every field defaults to nothing shown.
         public init(window: Window = .library, vault: Vault = .none, hasNote: Bool = false,
@@ -330,8 +333,12 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         case .versionHistory: return unlocked && context.hasNote
         // Needs no vault: the capture profile is all a voice note needs (it opens the setup when missing).
         case .toggleVoiceNote: return context.voiceNote != .busy
-        case .deleteNote: return unlocked && context.hasNote && !context.noteDeleted && !context.editingText
-        case .restoreNote: return unlocked && context.hasNote && context.noteDeleted
+        case .deleteNote:
+            if let bulk = context.bulkSelection { return unlocked && bulk.contains(.delete) && !context.editingText }
+            return unlocked && context.hasNote && !context.noteDeleted && !context.editingText
+        case .restoreNote:
+            if let bulk = context.bulkSelection { return unlocked && bulk.contains(.restore) }
+            return unlocked && context.hasNote && context.noteDeleted
         // The importers and their sheets are per window (`WindowSheets`): any window with a vault.
         case .importPDF: return unlocked && !context.vaultReadOnly && context.window != .other
         case .importFromApp: return BuiltInImporters.primary != nil && unlocked && !context.vaultReadOnly && context.window != .other
