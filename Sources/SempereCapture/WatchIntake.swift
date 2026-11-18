@@ -253,8 +253,14 @@ public struct WatchIntake: Sendable {
         let delivery = try self.delivery.snapshot()
         // Step 2. A note this phone holds is held still (not a duplicate: a duplicate is acknowledged and the watch would drop
         // the copy of a note whose only other copy is here).
-        if let item = self.held?.list().first(where: { $0.id == meta.id && $0.vault == meta.vault }) {
+        let listed = self.held?.listChecked()
+        if let item = listed?.items.first(where: { $0.id == meta.id && $0.vault == meta.vault }) {
             return WatchIntakeResult(id: meta.id, outcome: .held(item.reason))
+        }
+        // A held list that could not be fully read may hold this note: not a duplicate then (the watch would drop its copy);
+        // nothing is acknowledged, and the watch sends it again.
+        if listed?.complete == false, received.contains(meta.id) {
+            throw WatchHeldError.unreadable("the held notes could not be read")
         }
         if received.contains(meta.id) || delivery.inboxHolds(id: meta.id, vault: meta.vault) {
             try? received.insert(meta.id)

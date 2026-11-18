@@ -182,6 +182,20 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         XCTAssertEqual(built.built?.notes, 3)
     }
 
+    /// A device that turns incompatible has its record say so after its very next pass (not up to a day later), so readers
+    /// stop counting its vectors at once.
+    func testADeviceThatTurnsIncompatibleRewritesItsRecordAtOnce() async throws {
+        try note("P0", Self.physics[0]); try note("P1", Self.physics[1]); try note("P2", Self.physics[2])
+        _ = try await run(a, model: nil)
+        _ = try await run(b, model: nil, at: now.addingTimeInterval(60))
+        XCTAssertEqual(InsightsStore(vault: a).snapshot().devices[meB]?.compatibility, "compatible")
+        // B's embedder drifts; the pass is well inside the daily record interval.
+        _ = try await run(b, model: nil, embedder: FakeEmbeddingProvider(perturbation: 0.05), at: now.addingTimeInterval(120))
+        let snap = InsightsStore(vault: a).snapshot()
+        XCTAssertEqual(snap.devices[meB]?.compatibility, "incompatible")
+        XCTAssertTrue(snap.incompatibleDevices.contains(meB))
+    }
+
     /// A map at another language's key does not make a device at the pinned key see "no map" (it would rebuild every pass).
     func testBestMapByKeyIgnoresAMapOfAnotherKey() {
         var snap = InsightsSnapshot()

@@ -251,7 +251,8 @@ public struct InsightsUpdater: Sendable {
         let pinKey = canEmbed.flatMap { r in embedder?.key(language: main, revision: r) }
         let standing = canEmbed == nil ? MapCompatibility.vectorReader
             : mapStanding(snapshot: snapshot, me: me, records: records, settings: settings, language: main, key: pinKey)
-        let changedRecord = snapshot.devices[me].map { !Self.sameRecord($0, ownRecord) } ?? true
+        // A change of standing is a change of record at once (D21): readers exclude an incompatible device's vectors by its record.
+        let changedRecord = snapshot.devices[me].map { !Self.sameRecord($0, ownRecord) || $0.compatibility != standing.rawValue } ?? true
         let caps = PolicyCapabilities(model: o.embeddingsOnly ? nil : usable?.identity, embedRevision: canEmbed, powerWindow: o.powerWindow)
         let selected = o.note.map { id in inputs.filter { $0.id == id } } ?? inputs
         let policyNotes = selected.map {
@@ -397,8 +398,12 @@ public struct InsightsUpdater: Sendable {
             if !o.dryRun {
                 var record = ownRecord
                 record.canaries = canaryVectors(supported: supported, pin: pin, language: main)
-                let comp = InsightsReader(vault: vault, snapshot: snapshot, settings: InsightsSettings.read(vault, type: o.deviceType))
-                    .compatibility(me: me, embedder: embedder, language: main)
+                // A map built in this pass makes this device its builder (compatible); otherwise the standing the pass acted on,
+                // which can say `incompatible` where the reader's own answer is `noMap` (no map yet).
+                let comp = report.mapBuilt
+                    ? InsightsReader(vault: vault, snapshot: snapshot, settings: InsightsSettings.read(vault, type: o.deviceType))
+                        .compatibility(me: me, embedder: embedder, language: main)
+                    : standing
                 record.compatibility = comp.rawValue
                 record.against = snapshot.bestMap(rev: pin, language: main)?.map.written
                 try store.write(.device(record), now: o.now)
