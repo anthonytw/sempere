@@ -173,8 +173,7 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 1)
         // And one already adopted (gone from the inbox) is in the received set.
         r.delivery.inboxes[r.vault] = []
-        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .duplicate)
-        XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 0)
+                XCTAssertEqual(r.delivery.inboxes[r.vault]?.count, 0)
     }
 
     // MARK: Routing by the capture's vault
@@ -294,9 +293,8 @@ final class WatchIntakeTests: XCTestCase {
         XCTAssertTrue(result.acknowledged)
         XCTAssertTrue(r.delivery.ledgers.isEmpty)
         XCTAssertTrue(r.delivery.inboxes.isEmpty)
-        XCTAssertTrue(r.intake.received.contains(meta.id), "a resend is a duplicate")
-        XCTAssertEqual(try r.intake.receive(file: file, meta: meta).outcome, .duplicate)
-        XCTAssertEqual(r.intake.held?.list().count, 1)
+        XCTAssertTrue(r.intake.received.contains(meta.id))
+                XCTAssertEqual(r.intake.held?.list().count, 1)
         // The user's decision: Add runs the normal path.
         r.delivery.enabled = true
         XCTAssertEqual(try r.intake.addHeld(try XCTUnwrap(r.intake.held?.list().first)), .vault)

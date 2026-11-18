@@ -3,6 +3,8 @@ import Sempere
 
 // The watch's queue of sealed captures (docs/design/1.1-watch.md §3.3, §3.6): `<id>.capture.age` files and an index
 // (`outbox.json`). Only ciphertext and ids. The rules:
+//  - A note the phone only HOLDS (not in a vault yet) is kept too (`State.held`) until the phone releases it: deleting the
+//    phone's app must not lose it (docs/design/1.1-watch.md §3.6, 1.3).
 //  - No ack, no delete, ever: a transfer error keeps the file, and a file with no ack for 24 hours is sent again.
 //  - A recording that has been sealed is never refused or dropped for lack of room: the caps only keep a NEW recording from
 //    starting (`canStartRecording`); `add` never throws for size.
@@ -31,6 +33,9 @@ public final class WatchOutbox: @unchecked Sendable {
         case sealed
         /// Handed to WatchConnectivity; waiting for the phone's ack.
         case transferring
+        /// The phone holds it without a vault (an old key, not yet added): the file stays here, counted against the caps,
+        /// until the phone releases it (its ack) or stops listing it (its app was reinstalled: the file is sent again).
+        case held
         /// The phone has it: the file is gone, the entry stays a while so a repeated ack is a no-op.
         case acked
     }
@@ -156,6 +161,8 @@ public final class WatchOutbox: @unchecked Sendable {
     /// The notes the phone has not acknowledged.
     public var unsent: [Entry] { all.filter { $0.state != .acked } }
     public var unsentCount: Int { lock.withLock { entries.values.filter { $0.state != .acked }.count } }
+    /// The notes still on their way to the phone: `unsentCount` without those the phone holds for the user (`State.held`).
+    public var awaitingPhoneCount: Int { lock.withLock { entries.values.filter { $0.state != .acked && $0.state != .held }.count } }
 
     /// Bytes of the sealed files still held.
     public var heldBytes: Int {
@@ -220,7 +227,7 @@ public final class WatchOutbox: @unchecked Sendable {
             switch e.state {
             case .sealed: return launch || (e.nextAttempt ?? .distantPast) <= t
             case .transferring: return (e.lastSent ?? .distantPast).addingTimeInterval(limits.resendAfter) <= t
-            case .acked: return false
+            case .acked, .held: return false
             }
         }
     }
@@ -274,6 +281,52 @@ public final class WatchOutbox: @unchecked Sendable {
         try save()
         for id in removed { removeFiles(id) }
         return removed
+    }
+
+    /// The phone holds these without a vault (`WatchAck.held`): the files stay, and are not sent again. Unknown and acked ids do
+    /// nothing. Returns the ids that changed.
+    @discardableResult
+    public func markHeld(_ ids: [UUID]) throws -> [UUID] {
+        var changed: [UUID] = []
+        lock.withLock {
+            for id in ids {
+                guard var e = entries[id], e.state != .acked, e.state != .held else { continue }
+                e.state = .held
+                e.nextAttempt = nil
+                entries[id] = e
+                changed.append(id)
+            }
+        }
+        if !changed.isEmpty { try save() }
+        return changed
+    }
+
+    /// The phone listed everything it holds (`WatchAck.heldAll`): a note this outbox thinks the phone holds that the list lacks
+    /// was lost there (a reinstall, a restore), so it is sent again. Returns the ids made sendable.
+    @discardableResult
+    public func reconcileHeld(phoneHolds: Set<UUID>) throws -> [UUID] {
+        var changed: [UUID] = []
+        lock.withLock {
+            for (id, var e) in entries where e.state == .held && !phoneHolds.contains(id) {
+                e.state = .sealed
+                e.nextAttempt = nil
+                entries[id] = e
+                changed.append(id)
+            }
+        }
+        if !changed.isEmpty { try save() }
+        return changed
+    }
+
+    /// Applies the phone's message: drops what it released or has (`ids`: the acked ids win over a held mark), keeps what it
+    /// holds, and re-arms what it no longer lists. Returns the ids to send again.
+    @discardableResult
+    public func apply(_ ack: WatchAck) throws -> [UUID] {
+        try acknowledge(ack.ids)
+        try markHeld(ack.held)
+        guard ack.heldAll else { return [] }
+        // An id acked in the same message is not "lost".
+        return try reconcileHeld(phoneHolds: Set(ack.held))
     }
 
     public func acknowledge(_ ack: WatchAck) throws -> [UUID] { try acknowledge(ack.ids) }

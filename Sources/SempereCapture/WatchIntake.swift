@@ -72,7 +72,14 @@ public struct WatchIntakeResult: Equatable, Sendable {
         self.outcome = outcome
     }
 
-    /// Whether the watch may drop its copy: the file is in the vault or its queue.
+    /// Held on the phone, in no vault: the watch keeps its copy (`WatchAck.held`).
+    public var isHeld: Bool {
+        if case .held = outcome { return true }
+        return false
+    }
+
+    /// Whether the phone has dealt with the file: it is in the vault or its queue, or held here (the watch drops its copy only
+    /// when `isHeld` is false; a held note is released later).
     public var acknowledged: Bool {
         switch outcome {
         case .placed, .held, .duplicate: return true
@@ -244,7 +251,11 @@ public struct WatchIntake: Sendable {
         }
         // One reading of the profile for the whole receive: the verdict and the delivery see the same vault and epoch.
         let delivery = try self.delivery.snapshot()
-        // Step 2.
+        // Step 2. A note this phone holds is held still (not a duplicate: a duplicate is acknowledged and the watch would drop
+        // the copy of a note whose only other copy is here).
+        if let item = self.held?.list().first(where: { $0.id == meta.id && $0.vault == meta.vault }) {
+            return WatchIntakeResult(id: meta.id, outcome: .held(item.reason))
+        }
         if received.contains(meta.id) || delivery.inboxHolds(id: meta.id, vault: meta.vault) {
             try? received.insert(meta.id)
             return WatchIntakeResult(id: meta.id, outcome: .duplicate)
@@ -402,8 +413,13 @@ public struct WatchIntake: Sendable {
     /// while the toggle was off, or it is of an earlier key now (`currentReason`).
     public func needsCheck(_ item: HeldCapture) -> Bool { judge(item).needsCheck }
 
-    /// What the phone sends at the watch's activation: the ids it holds.
-    public func have() -> WatchAck { WatchAck(have: received.newest()) }
+    /// What the phone sends at the watch's activation: the ids it has dealt with (`have`, without the held ones: the watch must
+    /// keep those) and the ids it holds (`held`, with `heldAll`: a watch that kept a note not listed sends it again).
+    public func have() -> WatchAck {
+        let heldIDs = Set((held?.list() ?? []).map(\.id))
+        let have = received.newest().filter { !heldIDs.contains($0) }
+        return WatchAck(have: have, held: heldIDs.sorted { $0.uuidString < $1.uuidString }, heldAll: held != nil)
+    }
 }
 
 /// Appends a ledger entry for a capture sealed under its own epoch (`CaptureWriter.record` needs a profile only as a
