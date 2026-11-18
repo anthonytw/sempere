@@ -79,8 +79,8 @@ struct SidebarView: View {
             // An outline row's tap only folds it on an iPhone's stack, and on an iPad a top-level
             // row with sub-notebooks is a header whose tap only folds it (1.2.0 owner report);
             // neither selects it, so a notebook holding sub-notebooks could not open its own
-            // notes. The iPhone and the iPad draw the tree themselves: a tap on a row opens its notebook, the chevron at its end
-            // folds or unfolds its sub-notebooks (`PhoneNotebookRows`).
+            // notes. The iPhone and the iPad draw the tree themselves: a tap on a row opens its
+            // notebook, the chevron at its end folds or unfolds its sub-notebooks (`PhoneNotebookRows`).
             ForEach(PhoneNotebookRows.rows(nodes, unfolded: unfolded)) { row in
                 decorated(phoneNotebookRow(row, inbox: row.node.path == inbox), row.node)
             }
@@ -112,8 +112,8 @@ struct SidebarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel(row.unfolded ? String(localized: "Fold \(name)", comment: "Sidebar on an iPhone: hide a notebook's sub-notebooks (the notebook's name)")
-                                                 : String(localized: "Unfold \(name)", comment: "Sidebar on an iPhone: show a notebook's sub-notebooks (the notebook's name)"))
+                .accessibilityLabel(row.unfolded ? String(localized: "Fold \(name)", comment: "Sidebar on an iPhone or iPad: hide a notebook's sub-notebooks (the notebook's name)")
+                                                 : String(localized: "Unfold \(name)", comment: "Sidebar on an iPhone or iPad: show a notebook's sub-notebooks (the notebook's name)"))
                 .accessibilityIdentifier("sidebar-fold-\(row.node.path)")
                 .help(row.unfolded ? "Hide the sub-notebooks" : "Show the sub-notebooks")
             }
