@@ -88,7 +88,10 @@ cli_version() {
   echo "ok    Version.swift = $version"
 }
 changelog() {
-  local f; f=$(mktemp); git show "$remote/main:CHANGELOG.md" > "$f"   # main's: the date lands after approval, so the tagged commit may be undated
+  # main's CHANGELOG (the date lands after approval, so the tagged commit may be undated); an embargoed fix is not on
+  # main yet, so it carries its own
+  local f src="$remote/main"; [[ $mode == embargo ]] && src=$sha
+  f=$(mktemp); git show "$src:CHANGELOG.md" > "$f"
   if scripts/changelog-section.sh --file "$f" "$version" >/dev/null 2>"$f.err"; then
     echo "ok    CHANGELOG.md: $(grep -m1 "^## \[$version\]" "$f")"; rm -f "$f" "$f.err"
   else
