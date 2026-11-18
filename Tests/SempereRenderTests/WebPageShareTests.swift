@@ -304,8 +304,8 @@ final class WebPageShareTests: XCTestCase {
                                          pdfRasterizer: QuadrantRasterizer()).file
         let template = Self.template
         let size = template.text.utf8.count - ShareTemplate.placeholder.utf8.count + WebPageShare.armoredSize(payloadBytes: planned.payload.count)
-        // The payload is random only in shareId (same length) and the scrypt salt; gzip is deterministic.
-        XCTAssertEqual(file.count, size)
+        // The payload differs only in the random shareId, whose digits compress a few bytes differently.
+        XCTAssertEqual(Double(file.count), Double(size), accuracy: 16)
     }
 
     func testPicturesShrinkToFitTheBudgetAndAnImpossibleNoteFailsWithTheBreakdown() throws {
@@ -327,7 +327,7 @@ final class WebPageShareTests: XCTestCase {
             XCTAssertGreaterThan(sections.images, 0)
             XCTAssertGreaterThan(sections.ink, 0)
             XCTAssertEqual(sections.template, Self.templateHTML.utf8.count - ShareTemplate.placeholder.utf8.count)
-            XCTAssertTrue((error as CustomStringConvertible).description.contains("pictures"))
+            XCTAssertTrue((error as? WebShareError)?.description.contains("pictures") == true)
         }
     }
 
