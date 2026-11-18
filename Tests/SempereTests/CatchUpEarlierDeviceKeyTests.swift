@@ -88,6 +88,24 @@ final class CatchUpEarlierDeviceKeyTests: VaultTestCase {
         XCTAssertTrue(second.unreadable.isEmpty && second.problems.isEmpty, "\(second)")
     }
 
+    /// The app builds its capture profile with its state file's random device id, not the manifest's: such a capture under
+    /// an earlier key is still re-sealed after the device rejoins.
+    func testAnAppProfileWithAStateFileDeviceIdIsResealed() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "P"])
+        let stateId = DeviceID.random()
+        XCTAssertNotEqual(stateId, try XCTUnwrap(w.open("P").writerDevice))
+        let writer = try CaptureWriter(profile: try w.open("P").captureProfile(device: stateId))
+        let note = try writer.seal(audio: audio, started: Date(), id: UUID())
+        var a = try w.open("A")
+        try a.removeDevices([w["P"].id])
+        try writer.record(note, in: w["P"].ledger)
+        try CaptureWriter.store(note, in: w.url.appendingPathComponent("inbox", isDirectory: true))
+        let (p2, _) = try rejoin(w, as: "P2")
+        let report = try open(w, p2).catchUp()
+        XCTAssertEqual(report.reencrypted, ["inbox/\(note.name)"], "\(report)")
+        XCTAssertTrue(report.unreadable.isEmpty)
+    }
+
     /// A capture sealed under a removed OTHER device's key sits in this device's ledger (a Watch capture of another phone's
     /// profile): it is not this device's, so it is never re-sealed as the current key's; it is reported unreadable and kept.
     func testAFileSealedUnderAnotherRemovedDevicesKeyIsNotResealed() throws {
@@ -112,7 +130,8 @@ final class CatchUpEarlierDeviceKeyTests: VaultTestCase {
     /// A file sealed under this device's earlier key whose line names a device id this device never had is not re-sealed.
     func testAnEarlierKeyCaptureNamingAnotherDeviceIsNotResealed() throws {
         let w = try EpochWorld(in: tmp, names: ["A", "P"])
-        let profile = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
+        var profile = try w.open("P").captureProfile(device: DeviceID("0e0e0e0e")!)
+        profile.device = "0c0c0c0c"   // a device id this device never recorded (a forged or foreign line)
         let writer = try CaptureWriter(profile: profile)
         let note = try writer.seal(audio: audio, started: Date(), id: UUID())
         var a = try w.open("A")

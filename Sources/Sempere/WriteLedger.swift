@@ -64,7 +64,7 @@ public protocol WriteLedgerStore: Sendable {
     /// Records that this device caught up to `epochId`.
     func setCaughtUp(_ epochId: Data) throws
     /// Remembers a device key this device held (the fingerprint of its `age1pq1…` key, `CaptureKey.fingerprint(of:)`) and the
-    /// device id the vault listed it under; once per key. Device-local and never synced: catch-up re-seals this device's own
+    /// device id the vault listed it under; once per (key, id) pair: a key may be recorded under several ids (the vault's manifest id and the id an app's capture profile names, which is its state file's). Device-local and never synced: catch-up re-seals this device's own
     /// captures that were sealed under one of these earlier keys (`Vault.catchUp`), and only those. A ledger that keeps none
     /// (the default) leaves such files unreadable, which set-aside keeps.
     func rememberDeviceKey(fingerprint: String, device: String?) throws
@@ -137,7 +137,7 @@ public final class MemoryWriteLedger: WriteLedgerStore, @unchecked Sendable {
     public func rememberDeviceKey(fingerprint: String, device: String?) throws {
         lock.lock(); defer { lock.unlock() }
         if let unreadable { throw VaultError.ledgerUnreadable(unreadable) }
-        if !deviceKeyList.contains(where: { $0.fingerprint == fingerprint }) { deviceKeyList.append((fingerprint, device)) }
+        if !deviceKeyList.contains(where: { $0.fingerprint == fingerprint && $0.device == device }) { deviceKeyList.append((fingerprint, device)) }
     }
 
     public func deviceKeys() throws -> [(fingerprint: String, device: String?)] {
@@ -466,10 +466,10 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
     }
 
     public func rememberDeviceKey(fingerprint: String, device: String?) throws {
-        if try readState().deviceKeys?.contains(where: { $0.fingerprint == fingerprint }) == true { return }
+        if try readState().deviceKeys?.contains(where: { $0.fingerprint == fingerprint && $0.device == device }) == true { return }
         try updateState { s in
             var list = s.deviceKeys ?? []
-            if !list.contains(where: { $0.fingerprint == fingerprint }) { list.append(.init(fingerprint: fingerprint, device: device)) }
+            if !list.contains(where: { $0.fingerprint == fingerprint && $0.device == device }) { list.append(.init(fingerprint: fingerprint, device: device)) }
             s.deviceKeys = list
         }
     }

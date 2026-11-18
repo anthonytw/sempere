@@ -434,9 +434,12 @@ extension Vault {
     /// Remembers in this device's ledger the device key this vault was opened as (and the id it is listed under), so a file
     /// sealed under it can still be caught up after the device is removed and joins again with a new key. Called where the
     /// vault's epoch key is remembered and when a capture profile is made; idempotent, never throws to its caller.
-    func rememberOwnDeviceKey() {
+    func rememberOwnDeviceKey(profileDevice: String? = nil) {
         guard let ledger, let entry = deviceEntry else { return }
-        try? ledger.rememberDeviceKey(fingerprint: CaptureKey.fingerprint(of: entry.key), device: entry.id)
+        let fp = CaptureKey.fingerprint(of: entry.key)
+        try? ledger.rememberDeviceKey(fingerprint: fp, device: entry.id)
+        // The app names its state file's id in the capture profile (not the manifest's): a capture line carries that one.
+        if let profileDevice { try? ledger.rememberDeviceKey(fingerprint: fp, device: profileDevice) }
     }
 
     /// The device keys this device held before the current one, from its own device-local record (`rememberOwnDeviceKey`),
@@ -447,10 +450,13 @@ extension Vault {
     func ownEarlierDeviceKeys() -> (fingerprints: [String], devices: Set<String>) {
         guard let recorded = try? ledger?.deviceKeys() else { return ([], []) }
         let current = deviceEntry.map { CaptureKey.fingerprint(of: $0.key) }
-        let earlier = recorded.filter { $0.fingerprint != current }.reversed().prefix(Self.maxEarlierDevices)
-        var devices = Set(earlier.compactMap(\.device))
+        var seen = Set<String>()
+        let earlier = recorded.map(\.fingerprint).filter { $0 != current }.reversed().filter { seen.insert($0).inserted }
+            .prefix(Self.maxEarlierDevices)
+        // Every id this device recorded under any of its keys (its manifest ids and the ids its capture profiles named).
+        var devices = Set(recorded.compactMap(\.device))
         if let me = deviceEntry?.id { devices.insert(me) }
-        return (earlier.map(\.fingerprint), devices)
+        return (Array(earlier), devices)
     }
 
     static let maxEarlierDevices = 32

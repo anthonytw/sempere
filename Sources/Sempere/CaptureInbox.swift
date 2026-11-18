@@ -159,7 +159,7 @@ extension Vault {
         // The ledger keeps the key of every epoch this device may write under, a profile's included: its captures
         // are caught up even if a takeover drops that epoch before this device writes anything else under it.
         try ledger?.rememberKey(epoch: manifest.epoch, key: secret)
-        rememberOwnDeviceKey()
+        if key == nil || key == deviceEntry?.key { rememberOwnDeviceKey(profileDevice: device.rawValue) }
         return CaptureProfile(vaultId: vaultId, recipients: [try vaultRecipient().string],
                               key: CaptureKey.derive(from: secret, device: fingerprint).bytes,
                               device: device.rawValue, notebook: nb, recipient: fingerprint,
