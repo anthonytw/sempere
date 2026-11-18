@@ -415,10 +415,22 @@ public struct WatchIntake: Sendable {
 
     /// What the phone sends at the watch's activation: the ids it has dealt with (`have`, without the held ones: the watch must
     /// keep those) and the ids it holds (`held`, with `heldAll`: a watch that kept a note not listed sends it again).
-    public func have() -> WatchAck {
-        let heldIDs = Set((held?.list() ?? []).map(\.id))
-        let have = received.newest().filter { !heldIDs.contains($0) }
-        return WatchAck(have: have, held: heldIDs.sorted { $0.uuidString < $1.uuidString }, heldAll: held != nil)
+    ///
+    /// The received set is read BEFORE the held list: `receive` holds a file and then records it as received, so an id in
+    /// the received set read first is in the held list read after it (read the other way round, a note received in between
+    /// would be in `have` but not `held`, and the watch would drop its only copy).
+    ///
+    /// - Parameter protectedDataAvailable: false when the phone's protected data is locked (before the first unlock):
+    ///   the held store may be unreadable. The list is then not complete: `heldAll` is not claimed, and `have` is empty,
+    ///   because a held note the list misses must not be named in `have` (the watch drops those). The same goes for any
+    ///   read error in the held store (`WatchHeldStore.listChecked`). The watch only keeps more files for longer.
+    public func have(protectedDataAvailable: Bool = true) -> WatchAck {
+        let received = received.newest()
+        let listed = held?.listChecked()
+        let complete = protectedDataAvailable && (listed?.complete ?? true)
+        let heldIDs = Set((listed?.items ?? []).map(\.id))
+        let have = complete ? received.filter { !heldIDs.contains($0) } : []
+        return WatchAck(have: have, held: heldIDs.sorted { $0.uuidString < $1.uuidString }, heldAll: held != nil && complete)
     }
 }
 

@@ -34,7 +34,8 @@ final class CatchUpEarlierDeviceKeyTests: VaultTestCase {
     /// the new device, and adoption reads them; the next catch-up has nothing left to retry.
     func testCapturesOfAnEarlierDeviceKeyAreResealed() throws {
         let w = try EpochWorld(in: tmp, names: ["A", "P"])
-        let profile = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
+        let opened = try w.open("P")
+        let profile = try opened.captureProfile(device: try XCTUnwrap(opened.writerDevice))
         let writer = try CaptureWriter(profile: profile)
         let id = UUID()
         let note = try writer.seal(audio: audio, started: Date(), id: id)
@@ -85,6 +86,66 @@ final class CatchUpEarlierDeviceKeyTests: VaultTestCase {
         XCTAssertEqual(try w["P"].ledger.caughtUp(), try w.open("P").requireSecret().epochId)
         let second = try w.open("P").catchUp()
         XCTAssertTrue(second.unreadable.isEmpty && second.problems.isEmpty, "\(second)")
+    }
+
+    /// A capture sealed under a removed OTHER device's key sits in this device's ledger (a Watch capture of another phone's
+    /// profile): it is not this device's, so it is never re-sealed as the current key's; it is reported unreadable and kept.
+    func testAFileSealedUnderAnotherRemovedDevicesKeyIsNotResealed() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "P", "X"])
+        let xv = try w.open("X")
+        let writer = try CaptureWriter(profile: try xv.captureProfile(device: try XCTUnwrap(xv.writerDevice)))
+        let id = UUID()
+        let note = try writer.seal(audio: audio, started: Date(), id: id)
+        _ = try w.open("P")   // P is opened (and remembers its own key) while listed
+        var a = try w.open("A")
+        try a.removeDevices([w["X"].id])
+        try writer.record(note, in: w["P"].ledger)
+        try CaptureWriter.store(note, in: w.url.appendingPathComponent("inbox", isDirectory: true))
+        let path = "inbox/\(note.name)"
+        let report = try w.open("P").catchUp()
+        XCTAssertEqual(report.reencrypted.filter { $0 == path }, [], "\(report)")
+        XCTAssertEqual(report.unreadable, [path], "\(report)")
+        let bytes = try Data(contentsOf: w.url.appendingPathComponent(path))
+        XCTAssertEqual(bytes, note.data, "left as it is")
+    }
+
+    /// A file sealed under this device's earlier key whose line names a device id this device never had is not re-sealed.
+    func testAnEarlierKeyCaptureNamingAnotherDeviceIsNotResealed() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "P"])
+        let profile = try w.open("P").captureProfile(device: DeviceID("0c0c0c0c")!)
+        let writer = try CaptureWriter(profile: profile)
+        let note = try writer.seal(audio: audio, started: Date(), id: UUID())
+        var a = try w.open("A")
+        try a.removeDevices([w["P"].id])
+        try writer.record(note, in: w["P"].ledger)
+        try CaptureWriter.store(note, in: w.url.appendingPathComponent("inbox", isDirectory: true))
+        let (p2, _) = try rejoin(w, as: "P2")
+        let report = try open(w, p2).catchUp()
+        XCTAssertEqual(report.unreadable, ["inbox/\(note.name)"], "\(report)")
+        XCTAssertTrue(report.reencrypted.isEmpty)
+    }
+
+    /// Without the device-local record (a reinstall lost it) an earlier key's files are not caught up: they stay in the inbox.
+    func testWithoutTheLocalRecordAnEarlierKeysFilesStayUnreadable() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "P"])
+        let opened = try w.open("P")
+        let writer = try CaptureWriter(profile: try opened.captureProfile(device: try XCTUnwrap(opened.writerDevice)))
+        let note = try writer.seal(audio: audio, started: Date(), id: UUID())
+        var a = try w.open("A")
+        try a.removeDevices([w["P"].id])
+        // The ledger of a fresh install: the entry is known (kept) but no device key was recorded.
+        let fresh = MemoryWriteLedger()
+        try writer.record(note, in: fresh)
+        try CaptureWriter.store(note, in: w.url.appendingPathComponent("inbox", isDirectory: true))
+        let p2 = EpochDevice("P2", root: tmp)
+        try a.approveDevice(p2.keys.joinRequest(vaultId: a.vaultId, name: "P2", kind: "cli"))
+        var v = try Vault.open(at: w.url, identities: [p2.identity], signing: TestVaults.signing(p2.identity), trust: p2.trust,
+                               root: w.root, ledger: fresh, setAside: p2.setAside)
+        try v.confirmJoin(words: try XCTUnwrap(v.expectedReplyWords()))
+        let report = try Vault.open(at: w.url, identities: [p2.identity], signing: TestVaults.signing(p2.identity), trust: p2.trust,
+                                    root: w.root, ledger: fresh, setAside: p2.setAside).catchUp()
+        XCTAssertEqual(report.unreadable, ["inbox/\(note.name)"], "\(report)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: w.url.appendingPathComponent("inbox/\(note.name)").path))
     }
 
     /// The retag that renames a recipient needs the old one exactly once in the line, and leaves the payload alone.

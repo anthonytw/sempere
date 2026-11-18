@@ -133,7 +133,7 @@ extension Vault {
         // epoch can carry a higher number than an epoch on the chain).
         var position: [Data: Int] = [:]
         for (i, id) in chainIds.enumerated() where position[id] == nil { position[id] = i }
-        let earlierDevices = earlierDeviceFingerprints()
+        let earlierDevices = ownEarlierDeviceKeys()
         let (liveEntries, stale) = ledgerLiveness(entries, now: now)
         var gone = stale
         report.dropped = stale.map(\.path)
@@ -177,7 +177,8 @@ extension Vault {
                     keys.values.compactMap { k in position[k.epochId].flatMap { $0 > labeled ? ($0, k) : nil } }
                         .sorted { $0.0 < $1.0 }.map(\.1)
                 } ?? []
-                report.reencrypted.append(try reencryptOwn(e, key: key, otherKeys: later, earlierDevices: earlierDevices, n: n))
+                report.reencrypted.append(try reencryptOwn(e, key: key, otherKeys: later, earlierDevices: earlierDevices.fingerprints,
+                                                   ownDevices: earlierDevices.devices, n: n))
                 gone.append(e)
             } catch CaptureCatchUpError.unreadable {
                 // The bytes are the ones recorded and open under no key this device ever held: retrying cannot change that.
@@ -277,7 +278,7 @@ extension Vault {
     /// that does not open under `key` is tried under `otherKeys` (earlier epochs this device holds): its label may be wrong
     /// (`reencryptOwnCapture`); the caller passes only epochs after the labeled one.
     func reencryptOwn(_ entry: LedgerEntry, key: VaultEpochKey, otherKeys: [VaultEpochKey] = [], earlierDevices: [String] = [],
-                      n: Int) throws -> String {
+                      ownDevices: Set<String> = [], n: Int) throws -> String {
         let file = url.appendingPathComponent(entry.path)
         let parts = entry.path.split(separator: "/").map(String.init)
         if parts.count == 4, parts[0] == Self.notesName, parts[2] == Self.attachmentsName, let note = UUID(uuidString: parts[1]) {
@@ -297,7 +298,7 @@ extension Vault {
         }
         if parts.count == 2, parts[0] == CaptureFile.folderName, let parsed = CaptureFile.parse(name: parts[1]) {
             return try reencryptOwnCapture(entry, file: file, name: parts[1], kind: parsed.kind, key: key, otherKeys: otherKeys,
-                                           earlierDevices: earlierDevices, n: n)
+                                           earlierDevices: earlierDevices, ownDevices: ownDevices, n: n)
         }
         guard let (scope, name) = Self.framing(entry.path) else {
             throw VaultError.epochChangeRefused("\(entry.path): this version catches up revisions, blobs, notebook records, "
@@ -352,7 +353,8 @@ extension Vault {
     /// `otherKeys` (epochs after the labeled one only: a label is never newer than its key), and re-sealed from the epoch it
     /// opens under. The bytes must still be the ones the entry recorded.
     func reencryptOwnCapture(_ entry: LedgerEntry, file: URL, name: String, kind: CaptureFile.Kind, key labeled: VaultEpochKey,
-                             otherKeys: [VaultEpochKey] = [], earlierDevices: [String] = [], n: Int) throws -> String {
+                             otherKeys: [VaultEpochKey] = [], earlierDevices: [String] = [],
+                             ownDevices: Set<String> = [], n: Int) throws -> String {
         guard let me = deviceEntry else { throw VaultError.removedFromVault("this device is not on the list") }
         let fingerprint = CaptureKey.fingerprint(of: me.key)
         let data = try FileIO.read(file, maxBytes: CaptureFile.maxSealedBytes(kind))
@@ -366,8 +368,19 @@ extension Vault {
         func open(_ k: VaultEpochKey) -> (plain: Data, fingerprint: String)? {
             guard let identity = try? k.vaultIdentity(),
                   let p = try? AgeFile.decrypt(data, with: [NativeIdentity.mlkem768x25519(identity)]) else { return nil }
-            for fp in [fingerprint] + earlierDevices
-            where (try? CaptureFile.unframe(p, filename: name, key: CaptureKey.derive(from: k, device: fp))) != nil {
+            // A capture's line names the device key that sealed it: only that one is verified (one HMAC over the payload, not
+            // one per key). A transcript names none, so it tries each (a transcript is small).
+            let claimed: Set<String>? = kind == .capture && p.count > CaptureFile.headerSize
+                ? CaptureFile.claimedDevices(in: p[(p.startIndex + CaptureFile.headerSize)...]) : nil
+            for fp in [fingerprint] + earlierDevices where claimed?.contains(fp) ?? true {
+                guard (try? CaptureFile.unframe(p, filename: name, key: CaptureKey.derive(from: k, device: fp))) != nil else { continue }
+                // Sealed under an earlier key of this device: its line must also name a device id this device held (where it
+                // names one), so another phone's capture is never taken for this device's.
+                if fp != fingerprint, kind == .capture, let line = try? CaptureFile.unframe(p, filename: name,
+                                                                key: CaptureKey.derive(from: k, device: fp)).line,
+                   let said = (try? JSONDecoder().decode(DeviceClaim.self, from: line))?.device, !ownDevices.contains(said) {
+                    continue
+                }
                 return (p, fp)
             }
             return nil
@@ -418,19 +431,26 @@ extension Vault {
         return entry.path
     }
 
-    /// The capture-key fingerprints of this device's earlier device keys: every device key on the verified chain (an epoch's
-    /// author, an addition) that the current list no longer has, since the ledger holds only this device's own writes, so a
-    /// file in it that opens under a removed device's key is this device's, sealed before it was removed and joined again.
-    /// At most `maxEarlierDevices`, newest first.
-    func earlierDeviceFingerprints() -> [String] {
-        let listed = Set(manifest.devices.map(\.key))
-        var seen = Set<String>(), out: [String] = []
-        for e in (verifiedChain?.entries ?? []).reversed() {
-            for key in [e.author.key] + e.additions.map(\.claim.key) where !listed.contains(key) && seen.insert(key).inserted {
-                out.append(CaptureKey.fingerprint(of: key))
-            }
-        }
-        return Array(out.prefix(Self.maxEarlierDevices))
+    /// Remembers in this device's ledger the device key this vault was opened as (and the id it is listed under), so a file
+    /// sealed under it can still be caught up after the device is removed and joins again with a new key. Called where the
+    /// vault's epoch key is remembered and when a capture profile is made; idempotent, never throws to its caller.
+    func rememberOwnDeviceKey() {
+        guard let ledger, let entry = deviceEntry else { return }
+        try? ledger.rememberDeviceKey(fingerprint: CaptureKey.fingerprint(of: entry.key), device: entry.id)
+    }
+
+    /// The device keys this device held before the current one, from its own device-local record (`rememberOwnDeviceKey`),
+    /// never from the chain: a removed OTHER device's key on the chain is not this device's, and a capture sealed under it
+    /// must not be re-sealed as this device's. At most `maxEarlierDevices`, newest first: an older key past the cap is not
+    /// tried, and its files stay unreadable (reported, kept in the inbox and the set-aside store, never deleted). A device
+    /// whose record was lost (a reinstall) or never made (a key replaced before this version) has none: the same.
+    func ownEarlierDeviceKeys() -> (fingerprints: [String], devices: Set<String>) {
+        guard let recorded = try? ledger?.deviceKeys() else { return ([], []) }
+        let current = deviceEntry.map { CaptureKey.fingerprint(of: $0.key) }
+        let earlier = recorded.filter { $0.fingerprint != current }.reversed().prefix(Self.maxEarlierDevices)
+        var devices = Set(earlier.compactMap(\.device))
+        if let me = deviceEntry?.id { devices.insert(me) }
+        return (earlier.map(\.fingerprint), devices)
     }
 
     static let maxEarlierDevices = 32
@@ -512,4 +532,9 @@ extension Vault {
 /// A capture file of this device's own that no key it ever held opens (`reencryptOwnCapture`): final for these bytes.
 enum CaptureCatchUpError: Error, Equatable {
     case unreadable(String)
+}
+
+/// The `device` of a capture's JSON line (`CaptureManifest.device`), read alone.
+private struct DeviceClaim: Decodable {
+    var device: String?
 }

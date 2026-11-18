@@ -320,6 +320,7 @@ extension Vault {
             try? ledger.rememberKey(epoch: manifest.epoch, key: secret)
             ledgerMemo.keyRemembered(secret.epochId)
         }
+        rememberOwnDeviceKey()
     }
 
     /// Pins `pinnable` (design §5.6 rule 3): the verified chain up to the parent of a takeover signed by a

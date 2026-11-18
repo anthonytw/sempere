@@ -219,7 +219,8 @@ public struct WatchReceiver: Sendable {
     public func released(_ ids: [UUID]) -> WatchAck { WatchAck(acked: ids) }
 
     /// What the phone holds, for the watch's activation (`WatchAck.have`).
-    public func have() -> WatchAck { intake.have() }
+    /// `protectedDataAvailable`: false before the first unlock (the app's `isProtectedDataAvailable`); the list is then incomplete.
+    public func have(protectedDataAvailable: Bool = true) -> WatchAck { intake.have(protectedDataAvailable: protectedDataAvailable) }
 
     /// Removes what an earlier run left in the quarantine (a crash between the copy and the delivery): the watch has had no
     /// ack for it, and sends it again.

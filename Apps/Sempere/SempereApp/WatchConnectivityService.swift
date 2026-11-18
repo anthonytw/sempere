@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import Sempere
 import SempereAppCore
+import UIKit
 @preconcurrency import WatchConnectivity
 
 // The iPhone's end of WatchConnectivity (docs/design/1.1-watch.md §3.4, §3.6): the "Use on Apple Watch" provisioning
@@ -246,10 +247,14 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         // reinstalled) sends it again. Always sent: an empty list is what tells the watch the phone lost them. An earlier
         // such message still queued is out of date: cancelled, so the queue never grows.
         if let receiver = lock.withLock({ receiver }) {
-            let have = receiver.have()
-            if !have.isEmpty {
-                for transfer in session.outstandingUserInfoTransfers where transfer.userInfo["heldAll"] != nil { transfer.cancel() }
-                session.transferUserInfo(have.dictionary)
+            // The held store may be unreadable before the first unlock (`isProtectedDataAvailable` is main-thread): the list is
+            // then not claimed to be complete.
+            Task { @MainActor in
+                let have = receiver.have(protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable)
+                if !have.isEmpty {
+                    for transfer in session.outstandingUserInfoTransfers where transfer.userInfo["heldAll"] != nil { transfer.cancel() }
+                    session.transferUserInfo(have.dictionary)
+                }
             }
         }
     }

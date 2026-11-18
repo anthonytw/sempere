@@ -136,4 +136,101 @@ extension WatchIntakeTests {
         let intake = WatchIntake(received: WatchReceivedSet(url: nil), delivery: d, held: nil)
         XCTAssertFalse(intake.have().heldAll)
     }
+
+    /// A sidecar that cannot be READ is no evidence its note is gone: the old capture file is not swept as an orphan, and the
+    /// list is not complete. One that reads but does not decode is junk, swept once old, and does not make the list incomplete.
+    func testAnUnreadableSidecarIsNotSweptAndTheListIsIncomplete() throws {
+        let r = try rig()
+        r.delivery.enabled = false
+        let (file, meta, _) = try transfer(r)
+        XCTAssertTrue(try r.intake.receive(file: file, meta: meta).isHeld)
+        let store = try XCTUnwrap(r.intake.held)
+        let item = try XCTUnwrap(store.list().first)
+        let dir = store.root.appendingPathComponent(item.vault.uuidString.lowercased(), isDirectory: true)
+        let capture = dir.appendingPathComponent(CaptureFile.name(item.id, .capture))
+        let sidecar = dir.appendingPathComponent(capture.lastPathComponent + ".held.json")
+        // The sidecar becomes unreadable (a directory in its place stands for an I/O error, which also fails as root).
+        let saved = try Data(contentsOf: sidecar)
+        try FileManager.default.removeItem(at: sidecar)
+        try FileManager.default.createDirectory(at: sidecar, withIntermediateDirectories: true)
+        // Two days later: both files are past the orphan age.
+        let later = WatchHeldStore(root: store.root, now: { Date().addingTimeInterval(2 * 24 * 3600) })
+        let checked = later.listChecked()
+        XCTAssertFalse(checked.complete)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: capture.path), "not swept: only a failed read")
+        XCTAssertEqual(later.takeOrphansRemoved(), 0)
+        // The sidecar reads again: listed, complete.
+        try FileManager.default.removeItem(at: sidecar)
+        try saved.write(to: sidecar)
+        XCTAssertEqual(later.listChecked().items.map(\.id), [item.id])
+        XCTAssertTrue(later.listChecked().complete)
+        // Junk that reads but does not decode is swept once old, and the list stays complete.
+        try Data("not json".utf8).write(to: sidecar)
+        let junk = later.listChecked()
+        XCTAssertTrue(junk.complete)
+        XCTAssertEqual(junk.items, [])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: capture.path))
+    }
+
+    /// An incomplete held list (a read error, or protected data not available before the first unlock) is not sent as
+    /// complete and names nothing in `have`: a held note the list missed would otherwise be dropped from the watch.
+    func testAnIncompleteHeldListIsNotClaimedCompleteAndHasNoHave() throws {
+        let r = try rig()
+        let (okFile, okMeta, _) = try transfer(r)
+        XCTAssertEqual(try r.intake.receive(file: okFile, meta: okMeta).outcome, .placed(.vault))
+        XCTAssertEqual(r.intake.have().have, [okMeta.id])
+        XCTAssertTrue(r.intake.have().heldAll)
+        // Locked: nothing is claimed.
+        let locked = r.intake.have(protectedDataAvailable: false)
+        XCTAssertFalse(locked.heldAll)
+        XCTAssertEqual(locked.have, [])
+        // A read error in the held store: the same.
+        r.delivery.enabled = false
+        let (file, meta, _) = try transfer(r)
+        XCTAssertTrue(try r.intake.receive(file: file, meta: meta).isHeld)
+        let store = try XCTUnwrap(r.intake.held)
+        let item = try XCTUnwrap(store.list().first)
+        let sidecar = store.root.appendingPathComponent(item.vault.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent(CaptureFile.name(item.id, .capture) + ".held.json")
+        let saved = try Data(contentsOf: sidecar)
+        try FileManager.default.removeItem(at: sidecar)
+        try FileManager.default.createDirectory(at: sidecar, withIntermediateDirectories: true)
+        let broken = r.intake.have()
+        XCTAssertFalse(broken.heldAll)
+        XCTAssertEqual(broken.have, [], "the held note is received too: it must not be named")
+        try FileManager.default.removeItem(at: sidecar)
+        try saved.write(to: sidecar)
+        XCTAssertTrue(r.intake.have().heldAll)
+    }
+
+    /// A note being received while the watch's activation is answered is never in `have` unless it is also in `held`
+    /// (`receive` holds, then records; `have` reads the received set first, then the held list).
+    func testAnActivationRacingAReceiveNeverNamesAHeldNoteInHave() throws {
+        let r = try rig()
+        r.delivery.enabled = false
+        var files: [(URL, WatchTransferMeta)] = []
+        for _ in 0..<25 { let (f, m, _) = try transfer(r); files.append((f, m)) }
+        let ids = Set(files.map(\.1.id))
+        final class Flags: @unchecked Sendable {
+            let lock = NSLock()
+            var finished = false
+            var bad: [UUID] = []
+        }
+        let flags = Flags()
+        let intake = r.intake
+        let reader = Thread {
+            while true {
+                let stop = flags.lock.withLock { flags.finished }
+                let ack = intake.have()
+                let held = Set(ack.held)
+                for id in ack.have where !held.contains(id) && ids.contains(id) { flags.lock.withLock { flags.bad.append(id) } }
+                if stop { break }
+            }
+        }
+        reader.start()
+        for (f, m) in files { XCTAssertTrue(try r.intake.receive(file: f, meta: m).isHeld) }
+        flags.lock.withLock { flags.finished = true }
+        while !reader.isFinished { usleep(1000) }
+        XCTAssertEqual(flags.lock.withLock { flags.bad }, [], "a held note named in `have` is dropped by the watch")
+    }
 }

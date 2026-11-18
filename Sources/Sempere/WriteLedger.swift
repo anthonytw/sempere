@@ -63,6 +63,13 @@ public protocol WriteLedgerStore: Sendable {
     func caughtUp() throws -> Data?
     /// Records that this device caught up to `epochId`.
     func setCaughtUp(_ epochId: Data) throws
+    /// Remembers a device key this device held (the fingerprint of its `age1pq1…` key, `CaptureKey.fingerprint(of:)`) and the
+    /// device id the vault listed it under; once per key. Device-local and never synced: catch-up re-seals this device's own
+    /// captures that were sealed under one of these earlier keys (`Vault.catchUp`), and only those. A ledger that keeps none
+    /// (the default) leaves such files unreadable, which set-aside keeps.
+    func rememberDeviceKey(fingerprint: String, device: String?) throws
+    /// The device keys remembered, oldest first.
+    func deviceKeys() throws -> [(fingerprint: String, device: String?)]
     /// Records it only when no entry of another epoch than `epochId` was appended beyond `known` (the entries the
     /// catch-up read when it started); returns whether it did (review R1: a capture recorded while a catch-up
     /// runs must not be hidden by the mark that catch-up sets at its end). Implementations make it atomic with
@@ -71,6 +78,8 @@ public protocol WriteLedgerStore: Sendable {
 }
 
 extension WriteLedgerStore {
+    public func rememberDeviceKey(fingerprint: String, device: String?) throws {}
+    public func deviceKeys() throws -> [(fingerprint: String, device: String?)] { [] }
     public func setCaughtUp(_ epochId: Data, unlessAppendedBeyond known: Set<LedgerEntry>) throws -> Bool {
         let hex = Hex.encode(epochId)
         guard !(try entries()).contains(where: { $0.epochId != hex && !known.contains($0) }) else { return false }
@@ -85,6 +94,7 @@ public final class MemoryWriteLedger: WriteLedgerStore, @unchecked Sendable {
     private var list: [LedgerEntry] = []
     private var keys: [Data: (Int, VaultEpochKey)] = [:]
     private var caught: Data?
+    private var deviceKeyList: [(fingerprint: String, device: String?)] = []
     private var unreadable: String?
     /// Test hook: the next append fails (a full disk).
     public var failNextAppend = false
@@ -122,6 +132,18 @@ public final class MemoryWriteLedger: WriteLedgerStore, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         if let unreadable { throw VaultError.ledgerUnreadable(unreadable) }
         return keys.values.map { (epoch: $0.0, key: $0.1) }.sorted { $0.epoch < $1.epoch }
+    }
+
+    public func rememberDeviceKey(fingerprint: String, device: String?) throws {
+        lock.lock(); defer { lock.unlock() }
+        if let unreadable { throw VaultError.ledgerUnreadable(unreadable) }
+        if !deviceKeyList.contains(where: { $0.fingerprint == fingerprint }) { deviceKeyList.append((fingerprint, device)) }
+    }
+
+    public func deviceKeys() throws -> [(fingerprint: String, device: String?)] {
+        lock.lock(); defer { lock.unlock() }
+        if let unreadable { throw VaultError.ledgerUnreadable(unreadable) }
+        return deviceKeyList
     }
 
     public func caughtUp() throws -> Data? {
@@ -399,6 +421,9 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
     private struct State: Codable {
         struct Key: Codable { var epoch: Int; var key: String }
         var keys: [Key] = []
+        struct DeviceKey: Codable { var fingerprint: String; var device: String? }
+        /// The device keys this device held (absent in a state an earlier version wrote).
+        var deviceKeys: [DeviceKey]?
         var caughtUp: String?
         /// The sequence number of the last record appended.
         var seq: Int?
@@ -438,6 +463,19 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
 
     public func epochKeys() throws -> [(epoch: Int, key: VaultEpochKey)] {
         try readState().keys.compactMap { k in Hex.decode(k.key).flatMap { try? VaultEpochKey(bytes: $0) }.map { (k.epoch, $0) } }
+    }
+
+    public func rememberDeviceKey(fingerprint: String, device: String?) throws {
+        if try readState().deviceKeys?.contains(where: { $0.fingerprint == fingerprint }) == true { return }
+        try updateState { s in
+            var list = s.deviceKeys ?? []
+            if !list.contains(where: { $0.fingerprint == fingerprint }) { list.append(.init(fingerprint: fingerprint, device: device)) }
+            s.deviceKeys = list
+        }
+    }
+
+    public func deviceKeys() throws -> [(fingerprint: String, device: String?)] {
+        (try readState().deviceKeys ?? []).map { ($0.fingerprint, $0.device) }
     }
 
     public func caughtUp() throws -> Data? { try readState().caughtUp.flatMap { Hex.decode($0) } }

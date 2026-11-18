@@ -4264,7 +4264,7 @@ A file's tag (or a blob's name) is checked under the key it decrypted with befor
 
 **The write ledger** (design §5.4): device-local, never in the vault, per vault. One entry per file the
 device writes (`path`, `sha256`, `epoch`, `epochId`, `time`), appended durably **before** the file is
-placed; it also keeps the key of every epoch the device wrote under, and the epoch it last caught up to.
+placed; it also keeps the key of every epoch the device wrote under, the epoch it last caught up to, and the device keys it held (the fingerprint of each key and the device id it was listed under, remembered while the device is listed; an optional `deviceKeys` member of `state`).
 An entry lives until the record whose parent is its epoch seals its path with its digest and that seal
 is final (§15.9: a kit replacement pinned at or above the sealer), or until its file is re-encrypted
 under a later epoch (the new file gets an entry), or until it is superseded or stale. Per path, the
@@ -4294,7 +4294,8 @@ is written under its new name and the old name stays), the copy is decrypted and
 the old bytes are set aside, the new entry is recorded, and only then the copy replaces the file. An
 inbox file (§11) is re-sealed the same way: its plaintext's tag is checked under the device's own
 capture key of the epoch it was written under, re-tagged under the device's capture key of the current
-epoch (the JSON line and payload unchanged), and the result encrypted to the current `v_e`. A capturing
+epoch (the JSON line and payload unchanged), and the result encrypted to the current `v_e`. A file sealed under an earlier
+device key of this device (it was removed and joined again) is re-sealed too, but only under a key the device's own record holds (at most 32, newest first; never a removed other device's key on the chain), and only when the line's `device` (if it has one) is an id the device held: the line names the sealing key (`recipient`), so one HMAC is checked, and the recipient is renamed to the current key's. A file no held key opens is reported `unreadable` once and left in the inbox (and set aside), never deleted; a device whose record is lost (a reinstall) or was never made leaves such files unreadable. A capturing
 device records each inbox file in the ledger before placing it, under the epoch of the profile that
 sealed it (a profile records `epoch` and `epochId`; a capture queued outside the vault keeps its own, never
 the profile current when it is moved in, review M4; the CLI's `inbox capture` records when the device key
