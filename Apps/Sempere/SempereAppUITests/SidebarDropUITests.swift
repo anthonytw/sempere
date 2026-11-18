@@ -153,6 +153,31 @@ final class SidebarDropUITests: XCTestCase {
         require(sidebarRow(app, child), "sidebar row \(child)", in: app)
     }
 
+    /// iPad (1.2.0, owner report): a tap on a top-level notebook that holds sub-notebooks selects it
+    /// instead of only folding it (the system outline made such a row a header); its chevron still folds.
+    @MainActor
+    func testTappingANotebookWithSubNotebooksOpensIt() throws {
+        #if targetEnvironment(macCatalyst)
+        throw XCTSkip("the Mac keeps the system outline, whose row click selects")
+        #else
+        let app = launch()
+        defer { app.terminate() }
+        require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
+        showSidebar(app)
+        let work = sidebarRow(app, "Work")
+        require(work, "sidebar row Work", in: app)
+        let cell = sidebarCell(app, "Work")
+        XCTAssertFalse(sidebarRow(app, "Work/Atlas").exists, "folded at first: Atlas is not listed")
+        // On the label, well short of the chevron at the row's end.
+        cell.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+        let selected = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: cell)
+        wait(for: [selected], timeout: 10)
+        XCTAssertFalse(sidebarRow(app, "Work/Atlas").exists, "the tap opened Work without unfolding it")
+        expand(app, "Work", showing: "Work/Atlas")
+        XCTAssertTrue(cell.isSelected, "the chevron unfolded Work and left it selected")
+        #endif
+    }
+
     /// A notebook inside another, dragged onto All Notes, goes to the top level with its notes
     /// (TestFlight 1.0.0 on the iPad: notebooks could not be un-nested by dragging).
     @MainActor

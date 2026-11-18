@@ -1,9 +1,10 @@
 import Foundation
 import Sempere
 
-/// The sidebar's notebook rows on an iPhone: the tree flattened in order with each row's depth, the
-/// sub-notebooks of an unfolded notebook only (folding, as the iPad's outline does; its rows' taps only fold
-/// on a phone's stack, so the phone draws the rows itself, with a chevron of their own).
+/// The sidebar's notebook rows on an iPhone and an iPad: the tree flattened in order with each row's depth,
+/// the sub-notebooks of an unfolded notebook only (folding, as the Mac's outline does). An outline row's tap
+/// only folds it on a phone's stack, and on an iPad a top-level row with sub-notebooks is a header whose tap
+/// only folds it, so both draw the rows themselves, with a chevron of their own.
 public enum PhoneNotebookRows {
     public struct Row: Identifiable {
         public let node: NotebookNode
