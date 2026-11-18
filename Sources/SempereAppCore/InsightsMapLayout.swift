@@ -3,7 +3,7 @@ import SempereInsights
 
 // MARK: - The mind map's geometry (docs/design/1.2-note-insights.md §6 item 5, §3.8; Insights PR 3)
 //
-// What the app's map view draws, computed once per index refresh and never per frame: the notes of the work device's map
+// What the app's map view draws, computed once per index refresh and never per frame: the notes of the shared map
 // (plus the notes this device placed itself) in a unit square, the two levels of cluster regions with their labels, the
 // related graph's edges as index pairs, and a grid for hit-testing and culling, so a frame with thousands of notes
 // touches only what is on screen. Level of detail (`MapDetail`) is a pure function of the zoom, so the view draws one
@@ -47,7 +47,7 @@ public struct InsightsMapLayout: Sendable, Equatable {
     /// Each node's neighbors by the edges (indices into `nodes`), so a frame draws the edges of what is on screen and
     /// the selected note's without walking every edge.
     public var neighbors: [[Int32]]
-    /// `shared` (the work device's map, maybe with notes placed here) or `local` (this device's own map: the banner).
+    /// `shared` (the shared map, maybe with notes placed here) or `local` (this device's own map: the banner).
     public var basis: String
     /// Notes of each node index by id.
     public var index: [UUID: Int]

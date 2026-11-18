@@ -202,8 +202,6 @@ public enum SharedSettingsCatalog {
               "File a note dragged out of the note list becomes"),
         .init("insights.enabled", .bool, default: .bool(false),
               "Note Insights: summaries, keywords, related notes and a map, made on the vault's devices (vault-wide)"),
-        .init("insights.workDevice", .deviceIdOrNull, default: .null,
-              "The device that embeds every note, builds the map and titles voice notes (null: none yet)"),
         .init("insights.embeddingRevision", .revisionPins, default: .object([:]),
               "The pinned sentence-embedding revision per language (empty: set by the first map build)"),
         .init("insights.voiceNoteTitle", .voiceTitleFormat, default: .string(VoiceNoteTitleFormat.defaultFormat),

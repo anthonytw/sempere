@@ -694,7 +694,7 @@ public struct FactCheck: Sendable {
 // MARK: Embedding input (D11)
 
 /// The text an embedding is made from (D11, `key.input` 1): the note text with list markers, bullets and equation
-/// lines stripped, white space collapsed. A change here bumps `revision` (a new embedding: the work device re-embeds).
+/// lines stripped, white space collapsed. A change here bumps `revision` (a new embedding: a device re-embeds).
 public enum EmbeddingInput {
     public static let revision = 1
 

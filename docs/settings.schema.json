@@ -171,19 +171,6 @@
           "minLength" : 1,
           "type" : "string"
         },
-        "insights.workDevice" : {
-          "default" : null,
-          "description" : "The device that embeds every note, builds the map and titles voice notes (null: none yet).",
-          "oneOf" : [
-            {
-              "type" : "null"
-            },
-            {
-              "pattern" : "^[0-9a-f]{8}$",
-              "type" : "string"
-            }
-          ]
-        },
         "math.recognize" : {
           "default" : false,
           "description" : "Convert handwriting to math.",

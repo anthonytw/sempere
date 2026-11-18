@@ -22,6 +22,8 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
         public var overflowAbove: Int?
         /// Languages it does not support (BCP 47 primary tags).
         public var unsupportedLanguages: Set<String> = []
+        /// How many words of the transcript a title takes (a test makes two devices disagree by giving them different counts).
+        public var titleWords = 4
         public var identity = GenerationIdentity(model: "fake-model", os: "1.0", prompt: InsightsGenerator.promptRevision)
         public init() {}
     }
@@ -80,7 +82,8 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
 
     public func title(transcript: String, language: String?) async throws -> String {
         try begin("title", tokens: InsightsChunker.tokens(transcript))
-        return InsightsWords.words(transcript).filter { !InsightsStoplist.generic.contains($0) }.prefix(4)
+        let n = lock.withLock { script.titleWords }
+        return InsightsWords.words(transcript).filter { !InsightsStoplist.generic.contains($0) }.prefix(n)
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
     }
 

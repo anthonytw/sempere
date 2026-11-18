@@ -54,8 +54,8 @@ public struct InsightsCapability: Equatable, Sendable {
 
     /// Summaries, keywords and titles can be made here.
     public var generates: Bool { model?.isAvailable == true }
-    /// The device can hold the work device, the map and titles device (D13): it embeds. Making summaries alone is not
-    /// enough (vectors and the map need the embedder; `WorkDeviceStatus.capable` lists only devices with the pin).
+    /// The device can embed and build the map (D21): vectors and the map need the embedder (a device that only makes
+    /// summaries does the rest of the work).
     public var canWork: Bool { embedder }
 }
 
@@ -87,7 +87,7 @@ public struct InsightsModelState: Equatable, Sendable {
     public var mode: Vault.InsightsMode = .unset
     /// This device's capability.
     public var capability = InsightsCapability()
-    /// Processed counts, devices, the work device and the map (`InsightsReader.status`); nil until read.
+    /// Processed counts, devices and the map (`InsightsReader.status`); nil until read.
     public var status: InsightsReader.Status?
     /// A pass is running on this device.
     public var isWorking = false
@@ -135,7 +135,7 @@ public struct InsightsCluster: Identifiable, Hashable, Sendable {
     public var label: [String]
     /// Its notes, by title.
     public var members: [UUID]
-    /// Members placed on this device (not in the work device's map yet).
+    /// Members placed on this device (not in the shared map yet).
     public var placed: Set<UUID>
 }
 
@@ -541,8 +541,7 @@ extension AppModelCore {
 
     // MARK: Settings
 
-    /// Settings' switch (D4): on writes `insights.enabled` true (the first capable device then claims the work device
-    /// in its first pass); off writes the explicit false that deletes `insights/` everywhere, and deletes this copy's.
+    /// Settings' switch (D4): on writes `insights.enabled` true (any capable device then does the work in its next pass); off writes the explicit false that deletes `insights/` everywhere, and deletes this copy's.
     public func setInsightsEnabled(_ on: Bool) async {
         // Off: every pass (foreground or the background task's) stops and has ended before the false is written and the
         // files are deleted, so none writes a sidecar after the purge.
@@ -551,19 +550,6 @@ extension AppModelCore {
         if !on, let id = vault?.vaultId { forgetInsightsFailures(vaultId: id) }
         answerInsightsOffer()
         if on { requestInsightsPass(force: false) }
-    }
-
-    /// Designates the work device (D13; nil clears it).
-    public func setInsightsWorkDevice(_ device: DeviceID?) async {
-        await writeInsightsSettings { vault in try InsightsSettingsWrite.setWorkDevice(device, vault: vault) }
-        if device == vault?.writerDevice { requestInsightsPass(force: false) }
-    }
-
-    /// "Use This Device" (D13: the user designates; a device also takes the role by itself once the work device has not
-    /// been seen for 14 days, in its next pass).
-    public func claimInsightsWorkDevice() async {
-        guard let me = vault?.writerDevice, insights.capability.canWork else { return }
-        await setInsightsWorkDevice(me)
     }
 
     /// The voice-note title format (D14); nil resets it. Returns false when the format is refused.
@@ -621,14 +607,9 @@ extension AppModelCore {
 
     // MARK: Passes
 
-    /// This device has work it may do (D13): it can make summaries (every such device does), or it embeds and holds the
-    /// work device, would claim a role nobody holds, or would take over a work device not seen for 14 days.
+    /// This device has work it may do (D21: any capable device does): it can make summaries or it embeds.
     public var insightsHasRole: Bool {
-        let s = insights.settings
-        guard insights.mode == .on else { return false }
-        if insights.capability.generates { return true }
-        guard insights.capability.canWork else { return false }
-        return s.workDevice == nil || s.workDevice == vault?.writerDevice || insights.status?.workDeviceNotSeen == true
+        insights.mode == .on && (insights.capability.generates || insights.capability.canWork)
     }
 
     /// The one insights slot is taken (a pass, or a topic's "Regenerate"): "Process Now" would start nothing.

@@ -6,8 +6,8 @@ import VaultTestSupport
 import XCTest
 @testable import SempereInsights
 
-/// The updater end to end on a real vault with the fake providers (docs/design/1.2-note-insights.md §3.7, §3.8, D13,
-/// D14): enabling, the work-device claim through the settings merge, sidecars with `gen` and `emb`, the pin set by the
+/// The updater end to end on a real vault with the fake providers (docs/design/1.2-note-insights.md §3.7, §3.8, D14,
+/// D21): enabling, sidecars with `gen` and `emb`, the pin set by the
 /// first map build, device records, deletion tombstones, transcripts in `text/1`, voice-note titles (applied only to the
 /// capture default, never over a user's rename, restoring a concurrent rename that lost), and readers on top.
 final class InsightsUpdaterTests: TempDirTestCase {
@@ -76,8 +76,6 @@ final class InsightsUpdaterTests: TempDirTestCase {
         try enable()
         let r = try await run()
         let me = try XCTUnwrap(vault.writerDevice)
-        XCTAssertTrue(r.claimedWorkDevice)
-        XCTAssertEqual(InsightsSettings.read(vault).workDevice, me, "claimed through the settings")
         XCTAssertEqual(r.generated.count, 6)
         XCTAssertEqual(r.embedded.count, 6)
         XCTAssertTrue(r.mapBuilt)
@@ -109,7 +107,7 @@ final class InsightsUpdaterTests: TempDirTestCase {
         XCTAssertFalse(reader.search("resonance", inputs: ins).isEmpty)
         let status = reader.status(inputs: ins, me: me, embedder: FakeEmbeddingProvider(), now: now)
         XCTAssertEqual(status.processed, 6)
-        XCTAssertEqual(status.compatibility, "workDevice")
+        XCTAssertEqual(status.compatibility, "compatible", "the device that built the map holds its vectors")
         XCTAssertEqual(status.pin, 1)
         let map = reader.mapView(inputs: ins, me: me, embedder: nil)
         XCTAssertEqual(map.nodes.count, 6)
@@ -246,7 +244,7 @@ final class InsightsUpdaterTests: TempDirTestCase {
         XCTAssertEqual(try title(id), "My lab")
     }
 
-    /// A rename made on another device before it saw the automatic title, with a lower clock: the work device's title
+    /// A rename made on another device before it saw the automatic title, with a lower clock: the automatic title
     /// wins the register, so it writes the user's title back (D14 review fix).
     func testAConcurrentRenameWithALowerClockEndsWithTheUsersTitle() async throws {
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
@@ -318,18 +316,15 @@ final class InsightsUpdaterTests: TempDirTestCase {
         XCTAssertEqual(try title(id), auto)
     }
 
-    /// Review of #50, M1: only the work device sets titles.
-    func testOnlyTheWorkDeviceTitles() async throws {
+    /// D21 (this replaced review of #50, M1, where only the work device titled): a device without the embedder titles a
+    /// voice note too; nothing designates who may.
+    func testADeviceWithoutTheEmbedderTitles() async throws {
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
         try enable()
-        try vault.updateSharedSettings { s in
-            try s.write(SharedSettingsCatalog.spec(named: "insights.workDevice")!, .string("0000beef"), block: nil, type: nil, now: now)
-        }
-        // Without the embedder it cannot take over the (unlisted, so missing) work device; it summarizes, never titles.
         let r = try await run(embedder: nil) { $0.force = true }
-        XCTAssertFalse(r.generated.isEmpty, "a device that is not the work device still summarizes")
-        XCTAssertEqual(r.titled, [])
-        XCTAssertEqual(try title(id), "Voice note 2026-09-21 10:46")
+        XCTAssertFalse(r.generated.isEmpty)
+        XCTAssertEqual(r.titled, [id.uuidString.lowercased()])
+        XCTAssertEqual(try title(id), "2026-09-21 10.46 Spring Lab Results Show")
     }
 
     /// Review of #50, M2: a planted `titleOp` (a stamp of another device's rename) is not this device's: it never makes

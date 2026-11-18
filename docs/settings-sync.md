@@ -258,7 +258,6 @@ set` sets them too. Their rows have no settings-sync badge (`.vaultSetting`, nev
 | Key | Setting | Values | Default |
 | --- | --- | --- | --- |
 | `insights.enabled` | Note Insights (vault-wide; read at the top level only) | `true`, `false` (an explicit `false` deletes `insights/` on every device; unset is not off) | `false` |
-| `insights.workDevice` | Note Insights ▸ Map and Titles Device | a device id (8 hex digits), or `null` | `null` |
 | `insights.embeddingRevision` | Note Insights ▸ Embedding Model (the pinned revision per language) | an object of language to revision, `{"en": 1}` | `{}` (set by the first map build) |
 | `insights.voiceNoteTitle` | Note Insights ▸ Voice Note Titles | text with the tokens `{date}`, `{time}`, `{slug}` | `{date} {time} {slug}` |
 

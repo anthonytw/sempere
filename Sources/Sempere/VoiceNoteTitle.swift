@@ -2,11 +2,11 @@ import Foundation
 
 // MARK: - Voice-note titles (docs/design/1.2-note-insights.md D14; format.md §16.2 `titleOp`)
 //
-// After adoption, once a voice note's transcript is summarized, the work device sets its title from the shared format
+// After adoption, once a voice note's transcript is summarized, any device with a summary sets its title from the shared format
 // `insights.voiceNoteTitle`, only while the title is still the capture default: the title register has not been set
 // since adoption (or was last set by this device's own automatic title). A user's rename always wins and is never
-// overwritten. The check is local, so a rename made on another device that has not synced yet must not lose: the work
-// device records the stamp of the revision it wrote (`titleOp`), and when it later sees a title set by another device
+// overwritten. The check is local, so a rename made on another device that has not synced yet must not lose: the device
+// that titled the note records the stamp of the revision it wrote (`titleOp`), and when it later sees a title set by another device
 // after the adoption and before that stamp (so not causally after it) while its own title still wins, it writes the
 // user's value again.
 
@@ -211,14 +211,18 @@ public struct VoiceNoteTitleState: Hashable, Sendable {
     }
 
     /// - Parameter writer: the device id this device's revisions carry (its state file's), which `titleOp` must name.
-    public func decide(applied: InsightsNoteFile.TitleOp?, proposed: String?, writer: DeviceID?) -> Decision {
+    /// - Parameter automatic: the stamps of every device's recorded `titleOp` of this note (`InsightsSnapshot.automaticTitleStamps`):
+    ///   a title set by another device's automatic title (two devices titled one note before they synced, D21) is never
+    ///   taken for a user's rename, so the last writer's title stays and no device flips it.
+    public func decide(applied: InsightsNoteFile.TitleOp?, proposed: String?, writer: DeviceID?, automatic: Set<Stamp> = []) -> Decision {
         guard isVoiceNote, let first = defaultTitle, let current else { return .keep }
         if let mine = ownTitleOp(applied, writer: writer), current.stamp == mine {
             // This device's own title wins: a title another device set after the adoption and before it was not seen
             // when it was written (not causally after it), so the user's value comes back. Another adoption's default
             // title, or an automatic title equal to this one, is never taken for a rename.
             if let lost = sets.last(where: { $0.stamp > first.stamp && $0.stamp < mine && $0.stamp.device != mine.device
-                                             && !Self.isCaptureDefault($0.title) && $0.title != applied?.title }) {
+                                             && !Self.isCaptureDefault($0.title) && $0.title != applied?.title
+                                             && !automatic.contains($0.stamp) }) {
                 return .restore(lost.title)
             }
             return .keep

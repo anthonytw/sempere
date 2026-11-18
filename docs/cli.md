@@ -2345,26 +2345,27 @@ sempere insights status
 sempere insights topic   --notebook P | --tag T [--generate] | --list
 sempere insights map     [--format json|svg] [--rebuild] [--pin REV [--yes]]
 sempere insights title   NOTE [--format F] [--dry-run]
-sempere insights work-device [ID | --claim]
 sempere insights purge
 ```
 
 Summaries, keywords and concepts per note, related notes, a map of the notes, notebook and tag summaries and
 voice-note titles, made on the vault's devices only (`format.md` §16, `docs/design/1.2-note-insights.md`): Apple's
 on-device language model (`SystemLanguageModel.default`) and NaturalLanguage's sentence embedding at a pinned
-revision; never a server. They are off until `sempere settings set insights.enabled true`. Every device with the
-model makes summaries and keywords; one **work device** (`insights.workDevice`) also embeds every note, builds the map
-and titles voice notes. The first capable device to run `update` claims it when none is set, or when the work device
-has not been seen for 14 days or left the device list (only a device with the embedder holds the role). Every command takes `--json`, the access options and `--no-cache`.
+revision; never a server. They are off until `sempere settings set insights.enabled true`. Any capable
+device does the work (no device is designated; `insights.workDevice` of 1.2.0 is not a setting any more and an old
+file's value is ignored): a device with the model makes the summaries and keywords no device has, one that supports the
+pinned revision embeds the notes no device has a vector of and rebuilds the map, and any device titles voice notes.
+Every command takes `--json`, the access options and `--no-cache`.
 
 - `update` does this device's work now (the scheduling policy of the design's §3.7): generate each eligible note
-  (text unchanged for 10 minutes, `--force`: now and again) that no device has a current summary of; on the work
-  device also embed each eligible note, tombstone deleted notes, title
-  voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when more than
-  10% changed or weekly (the first build pins the embedding revision, the lowest every recently seen device supports),
+  (text unchanged for 10 minutes, `--force`: now and again) that no device has a current summary of; on a device that
+  supports the pin also embed each eligible note no device has a current vector of (`--force`: again), tombstone deleted
+  notes, title voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when
+  more than 10% changed since the best map of any device, or weekly (the build is deterministic: devices that rebuild
+  at once write the same map; the first build pins the embedding revision, the lowest every recently seen device supports),
   write this device's record and the notebook and tag summaries that are due (each at most once a day; one whose
   model call failed or left nothing after the fact check waits a day, 30 days when refused, in the same memo; skipped
-  while the latest from any device is current). A device that is not the work device never embeds into the vault. The
+  while the latest from any device is current). The
   JSON report counts what waits: `backedOff` (with `backedOffReason`, the first error), `waitingToSettle` and
   `waitingOpen`. A note whose generation failed is
   not asked again for a day, or for 30 days when the model refused it, unless its text or the model changes or with
@@ -2374,39 +2375,37 @@ has not been seen for 14 days or left the device list (only a device with the em
   and writes nothing; `--embeddings-only` needs only the embedder. Off: exit 1.
 - `show` prints a note's summary, keywords, concepts, which device made them and when, and whether they are
   `current`, `stale` (an older text or model), `missing` or `deleted`.
-- `related` lists related notes with their score and why (shared keywords, or "similar wording"): from the work
-  device's vectors when this device passes the map's canaries (notes not embedded yet are embedded here and marked
+- `related` lists related notes with their score and why (shared keywords, or "similar wording"): from the
+  vault's synced vectors when this device passes the map's canaries (notes not embedded yet are embedded here and marked
   placed, never written), a local set when it fails them, the shared set as it is on a device without the pinned
   revision (a vector reader) and on Linux, keyword overlap alone without vectors.
 - `search` finds notes whose keywords, concepts or summary hold every word of the query ("matched in summary").
-- `status`: processed, stale and missing notes; the work device and when it was last seen ("not seen for 14 days"
-  offers `work-device --claim`; one that has written nothing yet shows "nothing written yet"); the pinned revision and an upgrade offer with the devices it would leave out; the map;
-  per device its files, model availability, embedding revisions and compatibility.
+- `status`: processed, stale and missing notes; the devices that can embed and build the map (`capableDevices`); the
+  pinned revision and an upgrade offer with the devices it would leave out; the map and the device that built it; per
+  device its files, whether the generation model is available, its embedding revisions, whether it supports the pin,
+  compatibility and when it was last seen (capability from its record, never a role).
 - `topic` shows a notebook's or tag's generated summary (the latest any device made), whether it is stale (its
   summarized members changed since) and its members, the sources to check it against; `--generate` makes it now
   (needs the model; exit 1 with fewer than 3 summarized members or when nothing survives the fact check). `--list`
   lists every notebook and tag with at least 3 summarized notes and the state of its summary (what the app's Topic
   Summaries list shows).
 - `map` prints the map as JSON (nodes with positions and clusters, clusters with labels) or SVG. `--rebuild` (needs
-  the embedder) rebuilds it on the work device, or shows one built here elsewhere. `--pin REV` moves the pinned
-  revision: it lists the devices left out (they become vector readers) and needs `--yes`; if the work device lacks
-  `REV`, the role moves to a device that has it.
+  the embedder) embeds what is missing and rebuilds it on this device. `--pin REV` moves the pinned
+  revision: it lists the devices left out (they become vector readers) and needs `--yes`.
 - `title` titles a voice note from its insights while its title is still the capture default (a user's title is never
   replaced; a rename from another device that lost to this device's title is restored), with `--format` or the
   vault's format; it uses a stored slug, else asks the model (exit 3 without one).
-- `work-device` shows the work device and the capable devices; `ID` sets it, `--claim` takes it for this device
-  (needs the embedder). A work device not seen for 14 days is taken over by the next capable device's `update`.
 - `purge` turns Note Insights off (`insights.enabled false`) and deletes every insights file here; the next sync
   deletes them on the targets, and every device deletes its own.
 
-Linux runs everything but `update`, `topic --generate`, `map --rebuild` and `work-device --claim` (exit 3, "needs
+Linux runs everything but `update`, `topic --generate` and `map --rebuild` (exit 3, "needs
 macOS 26"); `map --pin` works there (it only writes the setting). Writes are refused like every write (exit 6, 7).
-`--json`: `update` gives `{device, claimedWorkDevice, generated, embedded, tombstoned, dropped, titled,
+`--json`: `update` gives `{device, generated, embedded, tombstoned, dropped, titled,
 restoredTitles, removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
 `{note, title, state, summary, keywords: [{t, w}], concepts, device, deviceName, written, model, os, prompt, dropped,
 slug, embedded, embeddingKey}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
 keywordOverlap, why, shared, placed}]}`; `search` gives `[{note, title, field, matched, stale}]`; `topic` gives `{scope, members, summary, generated, stale, device,
-at}` (`--list`: an array of those); `status`, `map`, `title`, `work-device` and `purge` give their fields as named in the text output.
+at}` (`--list`: an array of those); `status`, `map`, `title` and `purge` give their fields as named in the text output.
 
 ### Export
 
