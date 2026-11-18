@@ -4,7 +4,7 @@ import Sempere
 // MARK: - Reading insights (docs/design/1.2-note-insights.md §3.8, §6, §7; `sempere insights show|related|search|status|map`)
 //
 // What every device shows from the vault's files: a note's best `gen`, the related notes from the compatible vector set
-// (the work device's vectors whose key equals its map's, plus notes this device places itself when it is compatible
+// (the vectors whose key equals the best map's, from any device, plus notes this device places itself when it is compatible
 // and has an embedder; keyword overlap alone without vectors), insights search, the per-device status and the map.
 
 public struct InsightsReader: Sendable {
@@ -53,7 +53,7 @@ public struct InsightsReader: Sendable {
         let best = snapshot.bestGen(for: note.id, hash: note.hash)
         let staleModel = best.map { b in reader.map { !b.gen.identity.isCurrent(for: $0) } ?? false } ?? false
         let state = note.deleted ? "deleted" : best == nil ? "missing" : (best?.current == true && !staleModel ? "current" : "stale")
-        let emb = settings.workDevice.flatMap { snapshot.emb(for: note.id, from: $0) }
+        let emb = snapshot.emb(for: note.id, key: snapshot.bestMap(rev: nil)?.map.key, hash: note.hash)?.emb
         return Shown(note: note.id.uuidString.lowercased(), title: note.title, state: state, summary: best?.gen.summary,
                      keywords: best?.gen.keywords ?? [], concepts: best?.gen.concepts ?? [], device: best?.device.rawValue,
                      deviceName: best.flatMap { deviceNames[$0.device.rawValue] },
@@ -64,10 +64,15 @@ public struct InsightsReader: Sendable {
 
     // MARK: Compatibility
 
-    /// How this device stands to the work device's map (design §3.8).
+    /// The map this device shows (D21: the best of any device's, `InsightsSnapshot.bestMap`), at the pinned revision of
+    /// `language` when one is.
+    func sharedMap(language: String) -> (map: InsightsMapFile, device: DeviceID)? { snapshot.bestMap(rev: settings.pins[language]) }
+
+    /// How this device stands to the shared map (design §3.8).
     public func compatibility(me: DeviceID?, embedder: (any EmbeddingProvider)?, language: String) -> MapCompatibility {
-        guard let w = settings.workDevice, let map = snapshot.map(of: w), let key = map.key else { return .noMap }
-        if me == w { return .workDevice }
+        guard let (map, builder) = sharedMap(language: language), let key = map.key else { return .noMap }
+        // The device that built the map holds the vectors it was built from.
+        if let me, me == builder { return .compatible }
         guard let embedder, embedder.supportedRevisions(language: key.lang).contains(key.rev) else { return .vectorReader }
         let mine = embedder.key(language: key.lang, revision: key.rev)
         guard let dim = map.dim, let theirs = map.canaries?.vectors(dimension: dim),
@@ -85,7 +90,7 @@ public struct InsightsReader: Sendable {
         public var keywordOverlap: Double
         public var why: String
         public var shared: [String]
-        /// The note's vector was made on this device (placed), not by the work device.
+        /// The note's vector was made on this device (placed), not taken from the vault.
         public var placed: Bool
     }
 
@@ -109,18 +114,16 @@ public struct InsightsReader: Sendable {
         let live = inputs.filter { !$0.deleted && !$0.text.isEmpty }
         switch comp {
         case .noMap:
-            // No map yet: the work device's vectors at the pin, if any; nothing placed.
-            if let w = settings.workDevice {
-                let pinRev = settings.pins[language]
-                for n in live {
-                    if let e = snapshot.emb(for: n.id, from: w), e.hash == n.hash, pinRev.map({ $0 == e.key.rev }) ?? true,
-                       let v = e.vector { vectors[n.id] = v }
-                }
-            }
-        case .workDevice, .compatible, .vectorReader:
-            guard let w = settings.workDevice, let key = snapshot.map(of: w)?.key else { break }
+            // No map yet: any device's vectors at the pin, if any; nothing placed.
+            let pinRev = settings.pins[language]
             for n in live {
-                if let e = snapshot.emb(for: n.id, from: w), e.key == key, let v = e.vector { vectors[n.id] = v }
+                if let hit = snapshot.emb(for: n.id, key: nil, hash: n.hash), hit.emb.hash == n.hash,
+                   pinRev.map({ $0 == hit.emb.key.rev }) ?? true, let v = hit.emb.vector { vectors[n.id] = v }
+            }
+        case .compatible, .vectorReader:
+            guard let key = sharedMap(language: language)?.map.key else { break }
+            for n in live {
+                if let e = snapshot.emb(for: n.id, key: key, hash: n.hash)?.emb, let v = e.vector { vectors[n.id] = v }
             }
             if comp == .compatible, let embedder {
                 for n in live where vectors[n.id] == nil {
@@ -131,7 +134,7 @@ public struct InsightsReader: Sendable {
             }
         case .incompatible:
             // One local set, never mixed with the shared one.
-            if let embedder, let w = settings.workDevice, let key = snapshot.map(of: w)?.key {
+            if let embedder, let key = sharedMap(language: language)?.map.key {
                 for n in live {
                     if let v = try? EmbeddingInput.vector(n.text, language: key.lang, revision: key.rev, provider: embedder) {
                         vectors[n.id] = v; placed.insert(n.id)
@@ -265,7 +268,6 @@ public struct InsightsReader: Sendable {
         public var supported: [String: [Int]]?
         public var supportsPin: Bool?
         public var compatibility: String?
-        public var isWorkDevice: Bool
     }
 
     public struct Status: Hashable, Sendable, Codable {
@@ -274,10 +276,7 @@ public struct InsightsReader: Sendable {
         public var processed: Int
         public var stale: Int
         public var missing: Int
-        public var workDevice: String?
-        public var workDeviceName: String?
-        public var workDeviceNotSeen: Bool
-        public var workDeviceLastSeen: Date?
+        /// Devices that can embed and build the map (they support the pin), sorted.
         public var capableDevices: [String]
         public var language: String
         public var pin: Int?
@@ -307,7 +306,6 @@ public struct InsightsReader: Sendable {
             if b.current { processed += 1 } else { stale += 1 }
         }
         let listed = Set(vault.manifest.devices.compactMap { $0.id.flatMap(DeviceID.init) })
-        let work = WorkDeviceStatus(settings: settings, snapshot: snapshot, listed: listed, language: language, now: now)
         let recent = EmbeddingPin.recent(snapshot.devices, listed: listed, now: now)
         let pin = settings.pins[language]
         let offer = pin.flatMap { EmbeddingPin.upgradeOffer(recent, language: language, pin: $0) }
@@ -332,17 +330,17 @@ public struct InsightsReader: Sendable {
                                 os: r?.os, platform: r?.platform, modelAvailable: r?.model.available, modelReason: r?.model.reason,
                                 model: r?.model.identity.map { "\($0.model) \($0.os) p\($0.prompt)" }, supported: r?.supported,
                                 supportsPin: pin.map { p in r.map { ($0.supported[language] ?? []).contains(p) } ?? false },
-                                compatibility: d == settings.workDevice ? MapCompatibility.workDevice.rawValue : r?.compatibility,
-                                isWorkDevice: d == settings.workDevice)
+                                compatibility: r?.compatibility == "workDevice" ? MapCompatibility.compatible.rawValue : r?.compatibility)
         }
-        let mapStatus = settings.workDevice.flatMap { w in snapshot.map(of: w).map { m in
-            MapStatus(device: w.rawValue, written: Date(timeIntervalSince1970: Double(m.written) / 1000), key: m.key?.description ?? "",
+        let mapStatus = sharedMap(language: language).map { best in
+            let m = best.map
+            return MapStatus(device: best.device.rawValue, written: Date(timeIntervalSince1970: Double(m.written) / 1000), key: m.key?.description ?? "",
                       notes: m.built?.notes ?? m.layout.count, clusters: m.clusters.filter { $0.level == 0 }.count)
-        } }
+        }
         return Status(enabled: settings.enabled, notes: live.count, processed: processed, stale: stale,
-                      missing: live.count - processed - stale, workDevice: settings.workDevice?.rawValue,
-                      workDeviceName: settings.workDevice.flatMap { names[$0.rawValue] }, workDeviceNotSeen: work.notSeen,
-                      workDeviceLastSeen: work.lastSeen, capableDevices: work.capable.map(\.rawValue), language: language, pin: pin,
+                      missing: live.count - processed - stale,
+                      capableDevices: CapableDevices.list(snapshot: snapshot, listed: listed, language: language, pin: pin).map(\.rawValue),
+                      language: language, pin: pin,
                       upgradeOffer: offer, leftOutByUpgrade: offer.map { EmbeddingPin.leftOut(recent, language: language, revision: $0).map(\.rawValue) } ?? [],
                       map: mapStatus, thisDevice: me?.rawValue,
                       compatibility: compatibility(me: me, embedder: embedder, language: language).rawValue, devices: devices,
@@ -374,14 +372,14 @@ public struct InsightsReader: Sendable {
         public var clusters: [Cluster]
     }
 
-    /// The map as this device shows it: the work device's clusters and positions, plus notes it places itself
+    /// The map as this device shows it: the best map's clusters and positions, plus notes it places itself
     /// (compatible) or its own local map (incompatible, `local`), or nothing (no map).
     public func mapView(inputs: [InsightsNoteInput], me: DeviceID?, embedder: (any EmbeddingProvider)?,
                         set given: VectorSet? = nil) -> MapView {
         let language = InsightsUpdater.mainLanguage(inputs)
         let titles = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0.title) })
         let live = Set(inputs.filter { !$0.deleted }.map(\.id))
-        guard let w = settings.workDevice, let map = snapshot.map(of: w) else {
+        guard let (map, builder) = sharedMap(language: language) else {
             return MapView(device: nil, key: nil, basis: "none", nodes: [], clusters: [])
         }
         let set = given ?? vectorSet(inputs: inputs, me: me, embedder: embedder, language: language)
@@ -397,7 +395,7 @@ public struct InsightsReader: Sendable {
                 }
             }
             let built = MapBuilder.build(rel, corpus: InsightsCorpus(rel.map(\.tokens)))
-            source = InsightsMapFile(device: w, written: map.written, key: key, dim: rel.first?.vector?.count, canaries: nil,
+            source = InsightsMapFile(device: builder, written: map.written, key: key, dim: rel.first?.vector?.count, canaries: nil,
                                      mean: built.mean, clusters: built.clusters.map {
                                          .init(id: $0.id, parent: $0.parent, level: $0.level, label: $0.label, centroid: $0.centroid,
                                                members: $0.members)
@@ -422,7 +420,7 @@ public struct InsightsReader: Sendable {
             MapView.Cluster(id: $0.id, parent: $0.parent, level: $0.level, label: $0.label,
                             members: $0.members.filter { UUID(uuidString: $0).map(live.contains) ?? false }.count)
         }
-        return MapView(device: w.rawValue, key: map.key?.description, basis: basis, nodes: nodes, clusters: clusters)
+        return MapView(device: builder.rawValue, key: map.key?.description, basis: basis, nodes: nodes, clusters: clusters)
     }
 
     /// The map as SVG: one circle per note (dashed when placed on this device), colored by cluster, cluster labels at

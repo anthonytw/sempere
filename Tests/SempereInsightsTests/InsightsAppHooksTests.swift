@@ -64,17 +64,43 @@ extension InsightsUpdaterTests {
         XCTAssertNil(InsightsStore(vault: vault).snapshot().notes[id]?[vault.writerDevice!]?.titleOp, "no titleOp for a title not written")
     }
 
-    /// A device that is not the work device generates whatever its type (D13 for 1.2: every device with the model makes
-    /// summaries; `insights.compute` is gone), and never embeds.
-    func testADeviceThatIsNotTheWorkDeviceGenerates() async throws {
+    /// A device generates whatever its type (D21: every capable device does the work; `insights.compute` and
+    /// `insights.workDevice` are gone), and one without the embedder never embeds.
+    func testADeviceWithoutTheEmbedderGeneratesWhateverItsType() async throws {
         try note("A", Self.physics[0])
         try enable()
-        try InsightsSettingsWrite.setWorkDevice(DeviceID("0000beef"), vault: vault, now: now)
         let ipad = try await run(embedder: nil) { $0.deviceType = .ipad }
         XCTAssertEqual(ipad.generated.count, 1)
         XCTAssertEqual(ipad.embedded, [])
         XCTAssertFalse(ipad.mapBuilt)
         XCTAssertNil(SharedSettingsCatalog.spec(named: "insights.compute"), "the setting is gone")
+        XCTAssertNil(SharedSettingsCatalog.spec(named: "insights.workDevice"), "the setting is gone")
+    }
+
+    /// A 1.2.0 settings file still holds `insights.workDevice`: it is kept in the file, ignored, and nothing fails or
+    /// changes because of it.
+    func testA120SettingsFileWithAWorkDeviceStaysReadable() async throws {
+        try note("A", Self.physics[0])
+        try enable()
+        try vault.updateSharedSettings { s in
+            try s.set(SettingSlotKey("insights.workDevice"), to: .string("0000beef"), type: nil, now: now)
+        }
+        XCTAssertTrue(InsightsSettings.read(vault).enabled)
+        XCTAssertEqual(try vault.readSharedSettings()?.value(SettingSlotKey("insights.workDevice")), .string("0000beef"), "kept")
+        let r = try await run()
+        XCTAssertEqual(r.generated.count, 1, "a designation of an unlisted device holds nothing back")
+        XCTAssertEqual(r.embedded.count, 1)
+        XCTAssertTrue(r.mapBuilt)
+        XCTAssertEqual(try vault.readSharedSettings()?.value(SettingSlotKey("insights.workDevice")), .string("0000beef"), "still kept")
+        // A 1.2.0 device record says `workDevice` for itself: shown as compatible.
+        let me = try XCTUnwrap(vault.writerDevice)
+        let store = InsightsStore(vault: vault)
+        var record = try XCTUnwrap(store.snapshot().devices[me])
+        record.compatibility = "workDevice"
+        try store.write(.device(record), now: now)
+        let others = DeviceID("0000beef")!
+        let status = InsightsReader(vault: vault).status(inputs: try inputs(), me: others, embedder: nil, now: now)
+        XCTAssertEqual(status.devices.first { $0.device == me.rawValue }?.compatibility, "compatible")
     }
 
     /// A cancelled run stops between notes, saves what it made, backs nothing off and runs nothing after the notes
@@ -131,16 +157,12 @@ extension InsightsUpdaterTests {
         try InsightsSettingsWrite.setEnabled(true, vault: vault, now: now)
         XCTAssertTrue(InsightsSettings.read(vault).enabled)
         XCTAssertEqual(vault.insightsMode(), .on)
-        try InsightsSettingsWrite.setWorkDevice(me, vault: vault, now: now)
-        XCTAssertEqual(InsightsSettings.read(vault).workDevice, me)
         try InsightsSettingsWrite.setVoiceNoteTitle("{slug} ({date})", vault: vault, now: now)
         XCTAssertEqual(InsightsSettings.read(vault).voiceNoteTitle, "{slug} ({date})")
         XCTAssertThrowsError(try InsightsSettingsWrite.setVoiceNoteTitle("{nope}", vault: vault, now: now))
         XCTAssertEqual(InsightsSettings.read(vault).voiceNoteTitle, "{slug} ({date})", "a refused format writes nothing")
         try InsightsSettingsWrite.setVoiceNoteTitle(nil, vault: vault, now: now)
         XCTAssertEqual(InsightsSettings.read(vault).voiceNoteTitle, VoiceNoteTitleFormat.defaultFormat)
-        try InsightsSettingsWrite.setWorkDevice(nil, vault: vault, now: now)
-        XCTAssertNil(InsightsSettings.read(vault).workDevice)
         // Off: the explicit false, and this copy's files go.
         try note("A", Self.physics[0])
         try InsightsStore(vault: vault).write(.note(InsightsNoteFile(noteId: UUID(), device: me, written: 0)), now: now)
@@ -155,16 +177,12 @@ extension InsightsUpdaterTests {
         _ = try await run(embedder: FakeEmbeddingProvider(revisions: [1, 2])) { $0.embeddingsOnly = true }
         let settings = InsightsSettings.read(vault)
         let me = try XCTUnwrap(vault.writerDevice)
-        XCTAssertEqual(settings.workDevice, me)
         let snapshot = InsightsStore(vault: vault).snapshot()
         let away = InsightsSettingsWrite.planPinMove(to: 3, language: "en", vault: vault, snapshot: snapshot, settings: settings, now: now)
         XCTAssertEqual(away.leftOut, [me])
-        XCTAssertTrue(away.movesWorkDevice)
-        XCTAssertNil(away.workDevice, "no recently seen device supports 3")
         let move = InsightsSettingsWrite.planPinMove(to: 2, language: "en", vault: vault, snapshot: snapshot, settings: settings, now: now)
         XCTAssertEqual(move.revision, 2)
         XCTAssertEqual(move.leftOut, [], "this device supports revision 2")
-        XCTAssertFalse(move.movesWorkDevice)
         try InsightsSettingsWrite.apply(move, vault: vault, now: now)
         XCTAssertEqual(InsightsSettings.read(vault).pins["en"], 2)
     }

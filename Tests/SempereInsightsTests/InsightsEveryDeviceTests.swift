@@ -6,10 +6,11 @@ import VaultTestSupport
 import XCTest
 @testable import SempereInsights
 
-/// Every device with Apple's model makes summaries and keywords (D13 as changed for 1.2: the owner's iPhone pressed
-/// "Process Now" and got "0 of 10"); embeddings, the map and voice-note titles stay with the work device. Two devices
-/// of one vault, A (home) and B, each with its own updater: per-device files, `currentElsewhere`, OS majors, topics, the
-/// self-healing claim of a work device not seen for 14 days, and what a pass that makes nothing says (`InsightsPassOutcome`).
+/// Any capable device does Insights work (D21, which replaced D13's designated work device): a device with the model
+/// makes the summaries and keywords no device has, one that supports the pin embeds the vectors no device has and rebuilds
+/// the map, any titles voice notes. Two devices of one vault, A (home) and B, each with its own updater: per-device
+/// files, skipping what exists, a deterministic map, settled races, OS majors, topics, and what a pass that makes nothing
+/// says (`InsightsPassOutcome`).
 final class InsightsEveryDeviceTests: TempDirTestCase {
     var a: Vault!
     var b: Vault!
@@ -47,8 +48,6 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
 
     func inputs() throws -> [InsightsNoteInput] { InsightsNotes.inputs(a, summaries: try a.summaries()) }
 
-    func setWorkDevice(_ d: DeviceID?) throws { try InsightsSettingsWrite.setWorkDevice(d, vault: a, now: now) }
-
     func model(os: String = "27.2") -> FakeModelProvider {
         var s = FakeModelProvider.Script()
         s.identity = GenerationIdentity(model: "fake-model", os: os, prompt: InsightsGenerator.promptRevision)
@@ -75,36 +74,52 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
     func generates(_ plan: [WorkItem]) -> [UUID] { plan.compactMap { if case .generate(let id) = $0 { return id } else { return nil } } }
     func embeds(_ plan: [WorkItem]) -> Bool { plan.contains { if case .embed = $0 { return true } else { return false } } }
 
-    func testANonWorkDeviceWithTheModelGeneratesButNeverEmbedsOrMaps() {
-        let me = DeviceID("11111111")!, work = DeviceID("22222222")!
+    func testAnyCapableDeviceGeneratesEmbedsAndMapsWhatNoDeviceHas() {
+        let me = DeviceID("11111111")!, other = DeviceID("22222222")!
         let note = PolicyNote(id: UUID(), hash: String(repeating: "a", count: 32), modified: now.addingTimeInterval(-3600), deleted: false,
                               hasText: true)
-        let settings = InsightsSettings(enabled: true, workDevice: work)
+        let settings = InsightsSettings(enabled: true)
         let key = EmbeddingKey(model: "nl-sentence", lang: "en", rev: 1, input: 1)
         let model = GenerationIdentity(model: "m", os: "27.2", prompt: 2)
         let plan = InsightsPolicy.plan(notes: [note], snapshot: InsightsSnapshot(), me: me, settings: settings,
                                        capabilities: .init(model: model, embedRevision: 1, powerWindow: true), pinKey: key, now: now,
                                        deviceRecordChanged: false)
         XCTAssertEqual(generates(plan), [note.id])
-        XCTAssertFalse(embeds(plan))
-        XCTAssertFalse(plan.contains(.rebuildMap))
-        XCTAssertFalse(plan.contains(.claimWorkDevice))
-        // Embed-only (no model) and not the work device: nothing to do but its record.
+        XCTAssertTrue(embeds(plan), "no role to hold: any device that supports the pin embeds")
+        XCTAssertTrue(plan.contains(.rebuildMap))
+        // Embed-only (no model): embeds and maps, never generates.
         let embedOnly = InsightsPolicy.plan(notes: [note], snapshot: InsightsSnapshot(), me: me, settings: settings,
                                             capabilities: .init(model: nil, embedRevision: 1, powerWindow: true), pinKey: key, now: now,
                                             deviceRecordChanged: false)
-        XCTAssertEqual(embedOnly.filter { $0 != .writeDeviceRecord }, [])
+        XCTAssertEqual(generates(embedOnly), [])
+        XCTAssertTrue(embeds(embedOnly))
+        // Model only (no embedder at the pin): generates, never embeds or maps.
+        let modelOnly = InsightsPolicy.plan(notes: [note], snapshot: InsightsSnapshot(), me: me, settings: settings,
+                                            capabilities: .init(model: model, embedRevision: nil, powerWindow: true), pinKey: nil, now: now,
+                                            deviceRecordChanged: false)
+        XCTAssertEqual(generates(modelOnly), [note.id])
+        XCTAssertFalse(embeds(modelOnly))
+        XCTAssertFalse(modelOnly.contains(.rebuildMap))
         // Off power: nothing generated.
         XCTAssertEqual(generates(InsightsPolicy.plan(notes: [note], snapshot: InsightsSnapshot(), me: me, settings: settings,
                                                      capabilities: .init(model: model, embedRevision: nil, powerWindow: false), pinKey: nil,
                                                      now: now, deviceRecordChanged: false)), [])
-        // A note current on another device is not generated again.
+        // A note whose summary and vector exist on another device is neither generated nor embedded again.
         var snap = InsightsSnapshot()
         let gen = InsightsNoteFile.Gen(hash: note.hash, identity: model, summary: "s", keywords: [], concepts: [], dropped: 0)
-        snap.notes[note.id] = [work: InsightsNoteFile(noteId: note.id, device: work, written: 1, gen: gen)]
-        XCTAssertEqual(generates(InsightsPolicy.plan(notes: [note], snapshot: snap, me: me, settings: settings,
-                                                     capabilities: .init(model: model, embedRevision: nil, powerWindow: true), pinKey: nil,
-                                                     now: now, deviceRecordChanged: false)), [])
+        let emb = InsightsNoteFile.Emb(hash: note.hash, key: key, vector: [0.5, 0.5])
+        snap.notes[note.id] = [other: InsightsNoteFile(noteId: note.id, device: other, written: 1, gen: gen, emb: emb)]
+        let skipped = InsightsPolicy.plan(notes: [note], snapshot: snap, me: me, settings: settings,
+                                          capabilities: .init(model: model, embedRevision: 1, powerWindow: true), pinKey: key, now: now,
+                                          deviceRecordChanged: false)
+        XCTAssertEqual(generates(skipped), [])
+        XCTAssertFalse(embeds(skipped))
+        // `force` redoes both.
+        let forced = InsightsPolicy.plan(notes: [note], snapshot: snap, me: me, settings: settings,
+                                         capabilities: .init(model: model, embedRevision: 1, powerWindow: true), pinKey: key, now: now,
+                                         force: true, deviceRecordChanged: false)
+        XCTAssertEqual(generates(forced), [note.id])
+        XCTAssertTrue(embeds(forced))
     }
 
     func testIgnoreSettleSkipsTheSettleTimeButNotOpenNotes() {
@@ -113,7 +128,7 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
                                hasText: true)
         var open = fresh; open.id = UUID(); open.open = true
         let caps = PolicyCapabilities(model: .init(model: "m", os: "27.2", prompt: 2), embedRevision: nil, powerWindow: true)
-        let settings = InsightsSettings(enabled: true, workDevice: DeviceID("22222222")!)
+        let settings = InsightsSettings(enabled: true)
         XCTAssertEqual(generates(InsightsPolicy.plan(notes: [fresh, open], snapshot: InsightsSnapshot(), me: me, settings: settings,
                                                      capabilities: caps, pinKey: nil, now: now, deviceRecordChanged: false)), [])
         XCTAssertEqual(generates(InsightsPolicy.plan(notes: [fresh, open], snapshot: InsightsSnapshot(), me: me, settings: settings,
@@ -121,40 +136,10 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
                                                      deviceRecordChanged: false)), [fresh.id])
     }
 
-    func testAMissingWorkDeviceIsClaimed() {
-        let me = DeviceID("11111111")!, work = DeviceID("22222222")!
-        let settings = InsightsSettings(enabled: true, workDevice: work)
-        let caps = PolicyCapabilities(model: nil, embedRevision: 1, powerWindow: true)
-        let key = EmbeddingKey(model: "nl-sentence", lang: "en", rev: 1, input: 1)
-        XCTAssertFalse(InsightsPolicy.plan(notes: [], snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: caps,
-                                           pinKey: key, now: now, deviceRecordChanged: false).contains(.claimWorkDevice))
-        XCTAssertTrue(InsightsPolicy.plan(notes: [], snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: caps,
-                                          pinKey: key, now: now, workDeviceMissing: true, deviceRecordChanged: false).contains(.claimWorkDevice))
-        XCTAssertFalse(InsightsPolicy.plan(notes: [], snapshot: InsightsSnapshot(), me: me, settings: settings,
-                                           capabilities: .init(model: nil, embedRevision: nil, powerWindow: true), pinKey: nil, now: now,
-                                           workDeviceMissing: true, deviceRecordChanged: false).contains(.claimWorkDevice),
-                       "a device that can do none of the work does not claim it")
-        // A device with the model but no embedder at the pin never takes the map and titles role, missing holder or none.
-        let modelOnly = PolicyCapabilities(model: .init(model: "m", os: "27.2", prompt: 2), embedRevision: nil, powerWindow: true)
-        XCTAssertFalse(InsightsPolicy.plan(notes: [], snapshot: InsightsSnapshot(), me: me, settings: settings, capabilities: modelOnly,
-                                           pinKey: nil, now: now, workDeviceMissing: true, deviceRecordChanged: false).contains(.claimWorkDevice))
-        XCTAssertFalse(InsightsPolicy.plan(notes: [], snapshot: InsightsSnapshot(), me: me, settings: InsightsSettings(enabled: true),
-                                           capabilities: modelOnly, pinKey: nil, now: now, deviceRecordChanged: false).contains(.claimWorkDevice))
-    }
-
-    func testAWorkDeviceNoLongerListedIsMissingAtOnce() {
-        let w = DeviceID("22222222")!
-        let settings = InsightsSettings(enabled: true, workDevice: w, workDeviceSetAt: Int64(now.timeIntervalSince1970 * 1000))
-        XCTAssertFalse(WorkDeviceStatus(settings: settings, snapshot: InsightsSnapshot(), listed: [w], language: "en", now: now).notSeen)
-        XCTAssertTrue(WorkDeviceStatus(settings: settings, snapshot: InsightsSnapshot(), listed: [], language: "en", now: now).notSeen,
-                      "removed from the list: missing the same day it was designated")
-    }
-
     // MARK: Two updaters on one vault
 
     func testTwoDevicesGenerateTheSameNoteAndEachKeepsItsFile() async throws {
         let id = try note("Springs", Self.physics[0])
-        try setWorkDevice(meA)
         // B works on its own copy of the vault (the sync delay: neither has seen the other's file yet).
         let copy = tmp.appendingPathComponent("B.sempere")
         try FileManager.default.copyItem(at: a.url, to: copy)
@@ -167,8 +152,8 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
                                              app: "test/1").run(o, notes: ins)
         XCTAssertEqual(repA.generated, [id.uuidString.lowercased()])
         XCTAssertEqual(repB.generated, [id.uuidString.lowercased()])
-        XCTAssertTrue(repB.embedded.isEmpty, "B is not the work device: no vectors")
-        XCTAssertFalse(repB.mapBuilt)
+        XCTAssertEqual(repA.embedded, [id.uuidString.lowercased()])
+        XCTAssertEqual(repB.embedded, [id.uuidString.lowercased()], "B has not seen A's vector: it makes the same one")
         // B's files arrive (a sync places them as they are).
         for name in InsightsStore.names(in: bCopy.insightsURL) where name.fileName.contains(meB.rawValue) {
             let to = a.insightsURL.appendingPathComponent(name.fileName)
@@ -178,7 +163,7 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         let snap = InsightsStore(vault: a).snapshot()
         XCTAssertNotNil(snap.notes[id]?[meA]?.gen, "A's file survives")
         XCTAssertNotNil(snap.notes[id]?[meB]?.gen, "B's file survives")
-        XCTAssertNil(snap.notes[id]?[meB]?.emb)
+        XCTAssertEqual(snap.notes[id]?[meA]?.emb, snap.notes[id]?[meB]?.emb, "bit-identical vectors on every device")
         let status = InsightsReader(vault: a).status(inputs: try inputs(), me: meA, embedder: nil, now: now)
         XCTAssertEqual(status.processed, 1, "counted once")
         XCTAssertEqual(status.notes, 1)
@@ -186,38 +171,41 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
 
     func testOnceAnotherDevicesSummaryIsVisibleNoneIsMade() async throws {
         let id = try note("Springs", Self.physics[0])
-        try setWorkDevice(meA)
         let first = try await run(a, model: model())
         XCTAssertEqual(first.generated, [id.uuidString.lowercased()])
         let second = try await run(b, model: model())
         XCTAssertEqual(second.generated, [], "current on A")
         XCTAssertEqual(second.embedded, [])
+        XCTAssertFalse(second.mapBuilt, "A's map is current")
         XCTAssertNil(InsightsStore(vault: a).snapshot().notes[id]?[meB]?.gen)
     }
 
-    func testANonWorkDeviceGeneratesWithoutAMapAndWorkDeviceThingsStayPut() async throws {
+    func testASecondDeviceDoesNotRedoWhatTheFirstDid() async throws {
         for (i, t) in Self.physics.enumerated() { try note("P\(i)", t, notebook: "Physics") }
-        try setWorkDevice(meA)
         let r = try await run(b, model: model())
         XCTAssertEqual(r.generated.count, 3)
-        XCTAssertEqual(r.embedded, [])
-        XCTAssertFalse(r.mapBuilt)
-        XCTAssertFalse(r.claimedWorkDevice)
-        XCTAssertEqual(r.pinSet, [:])
+        XCTAssertEqual(r.embedded.count, 3, "any device with the embedder embeds")
+        XCTAssertTrue(r.mapBuilt)
+        XCTAssertEqual(r.pinSet, ["en": 1])
         XCTAssertEqual(r.topics, ["notebook:Physics"], "any device with the model makes topics")
-        XCTAssertEqual(InsightsSettings.read(a).workDevice, meA)
-        XCTAssertNil(InsightsStore(vault: a).snapshot().map(of: meB))
-        // A, the work device, embeds and maps but makes no summary again, and no topic while B's is current.
+        XCTAssertNotNil(InsightsStore(vault: a).snapshot().map(of: meB))
+        // A makes nothing again: summaries, vectors and the map of B are current, and so is B's topic.
         let w = try await run(a, model: model())
         XCTAssertEqual(w.generated, [])
-        XCTAssertEqual(w.embedded.count, 3)
-        XCTAssertTrue(w.mapBuilt)
+        XCTAssertEqual(w.embedded, [])
+        XCTAssertFalse(w.mapBuilt)
         XCTAssertEqual(w.topics, [], "B's topic is current")
+        let reader = InsightsReader(vault: a)
+        XCTAssertEqual(reader.snapshot.bestMap()?.device, meB)
+        let ins = try inputs()
+        let status = reader.status(inputs: ins, me: meA, embedder: FakeEmbeddingProvider(), now: now)
+        XCTAssertEqual(status.map?.device, meB.rawValue)
+        XCTAssertEqual(status.compatibility, "compatible", "A reads B's map; no role either way")
+        XCTAssertEqual(reader.related(try XCTUnwrap(ins.first), inputs: ins, me: meA, embedder: FakeEmbeddingProvider()).basis, "vectors")
     }
 
     func testMixedOSMajorsRegenerateOnceThenStop() async throws {
         let id = try note("Springs", Self.physics[0])
-        try setWorkDevice(meA)
         let a1 = try await run(a, model: model(os: "27.2"))
         XCTAssertEqual(a1.generated, [id.uuidString.lowercased()])
         let b1 = try await run(b, model: model(os: "28.0"))
@@ -233,7 +221,6 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
 
     func testTopicsAreJudgedAgainstEveryDevicesLatest() async throws {
         for (i, t) in Self.bread.enumerated() { try note("B\(i)", t, notebook: "Kitchen") }
-        try setWorkDevice(meA)
         let ra = try await run(a, model: model())
         XCTAssertEqual(ra.topics, ["notebook:Kitchen"])
         let rb = try await run(b, model: model(), at: now.addingTimeInterval(2 * 86_400))
@@ -246,42 +233,164 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         XCTAssertEqual(again.topics, [], "A's own topic is still current for A")
     }
 
-    // MARK: Self-healing
+    // MARK: Races settle (D21)
 
-    func testACapableDeviceTakesOverAWorkDeviceNotSeenFor14Days() async throws {
-        try note("Springs", Self.physics[0])
-        try setWorkDevice(meA)
-        _ = try await run(a, model: model())
-        // Thirteen days on: A is still the work device.
-        let early = try await run(b, model: model(), at: now.addingTimeInterval(13 * 86_400))
-        XCTAssertFalse(early.claimedWorkDevice)
-        XCTAssertEqual(InsightsSettings.read(a).workDevice, meA)
-        // Fifteen days on: B claims it through the settings merge, and embeds and maps in that pass.
-        let late = try await run(b, model: model(), at: now.addingTimeInterval(15 * 86_400))
-        XCTAssertTrue(late.claimedWorkDevice)
-        XCTAssertEqual(InsightsSettings.read(a).workDevice, meB)
-        XCTAssertEqual(late.embedded.count, 1)
-        XCTAssertTrue(late.mapBuilt)
+    /// Copies every insights file and note revision `from` has and `to` lacks (a sync that delivers all of them).
+    func deliver(from: Vault, to: Vault) throws {
+        let fm = FileManager.default
+        func copy(_ src: URL, _ dst: URL, replace: Bool) throws {
+            try fm.createDirectory(at: dst, withIntermediateDirectories: true)
+            for name in (try? fm.contentsOfDirectory(atPath: src.path)) ?? [] where !name.hasPrefix(".") {
+                var isDir: ObjCBool = false
+                _ = fm.fileExists(atPath: src.appendingPathComponent(name).path, isDirectory: &isDir)
+                if isDir.boolValue { continue }
+                let target = dst.appendingPathComponent(name)
+                // Insights files are replaced whole by their writer; revisions are write-once.
+                if fm.fileExists(atPath: target.path) { if !replace { continue }; try fm.removeItem(at: target) }
+                try fm.copyItem(at: src.appendingPathComponent(name), to: target)
+            }
+        }
+        try copy(from.insightsURL, to.insightsURL, replace: true)
+        let notes = from.url.appendingPathComponent("notes")
+        for id in (try? fm.contentsOfDirectory(atPath: notes.path)) ?? [] where !id.hasPrefix(".") {
+            try copy(notes.appendingPathComponent(id), to.url.appendingPathComponent("notes/\(id)"), replace: false)
+        }
     }
 
-    func testAModelOnlyDeviceNeverTakesOverAMissingWorkDevice() async throws {
-        try note("Springs", Self.physics[0])
-        try setWorkDevice(meA)
-        _ = try await run(a, model: model())
-        let late = try await run(b, model: model(), embedder: nil, at: now.addingTimeInterval(15 * 86_400)) { $0.force = true }
-        XCTAssertFalse(late.claimedWorkDevice)
-        XCTAssertEqual(InsightsSettings.read(a).workDevice, meA)
-        XCTAssertEqual(late.generated.count, 1, "it still summarizes")
-        XCTAssertFalse(late.mapBuilt)
+    /// Two devices that rebuild the map at once from the same vectors, summaries and previous map write the same map
+    /// (apart from who and when), so which one readers take changes nothing they show.
+    func testConcurrentMapRebuildsAreIdenticalAndEveryReaderPicksTheSameOne() async throws {
+        for (i, t) in (Self.physics + Self.bread).enumerated() { try note("N\(i)", t, notebook: i < 3 ? "Physics" : "Kitchen") }
+        let copy = tmp.appendingPathComponent("B.sempere")
+        try FileManager.default.copyItem(at: a.url, to: copy)
+        let bCopy = try TestVaults.open(at: copy, identity: ib)
+        let ins = try inputs()
+        var o = InsightsUpdateOptions(); o.now = now; o.platform = .init(platform: "ios", os: "27.2")
+        let repA = try await InsightsUpdater(vault: a, model: model(), embedder: FakeEmbeddingProvider(), deviceState: stateA,
+                                             app: "test/1").run(o, notes: ins)
+        o.now = now.addingTimeInterval(5)   // B's clock differs: the map content must not
+        let repB = try await InsightsUpdater(vault: bCopy, model: model(), embedder: FakeEmbeddingProvider(), deviceState: stateB,
+                                             app: "test/1").run(o, notes: ins)
+        XCTAssertTrue(repA.mapBuilt)
+        XCTAssertTrue(repB.mapBuilt)
+        let mapA = try XCTUnwrap(InsightsStore(vault: a).snapshot().maps[meA])
+        let mapB = try XCTUnwrap(InsightsStore(vault: bCopy).snapshot().maps[meB])
+        func content(_ m: InsightsMapFile) -> InsightsMapFile {
+            var c = m; c.device = "00000000"; c.written = 0
+            return c
+        }
+        XCTAssertEqual(content(mapA), content(mapB), "same inputs, same map")
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        XCTAssertEqual(try encoder.encode(content(mapA)), try encoder.encode(content(mapB)), "byte for byte")
+        // Both maps reach both devices: every reader takes the same one, and nobody rebuilds.
+        try deliver(from: bCopy, to: a)
+        try deliver(from: a, to: bCopy)
+        let pickA = InsightsStore(vault: a).snapshot().bestMap()
+        let pickB = InsightsStore(vault: bCopy).snapshot().bestMap()
+        XCTAssertEqual(pickA?.device, pickB?.device)
+        XCTAssertEqual(pickA?.device, meB, "the later written wins")
+        let showA = InsightsReader(vault: a).mapView(inputs: try inputs(), me: meA, embedder: FakeEmbeddingProvider())
+        let showB = InsightsReader(vault: bCopy).mapView(inputs: try inputs(), me: meB, embedder: FakeEmbeddingProvider())
+        XCTAssertEqual(showA.nodes, showB.nodes)
+        XCTAssertEqual(showA.clusters, showB.clusters)
+        o.now = now.addingTimeInterval(3600)
+        let againA = try await InsightsUpdater(vault: a, model: model(), embedder: FakeEmbeddingProvider(), deviceState: stateA,
+                                               app: "test/1").run(o, notes: ins)
+        XCTAssertFalse(againA.mapBuilt)
+        XCTAssertEqual(againA.generated, [])
+        XCTAssertEqual(againA.embedded, [])
     }
 
-    func testARemovedWorkDeviceIsTakenOverAtOnce() async throws {
-        try note("Springs", Self.physics[0])
-        try setWorkDevice(DeviceID("0000beef")!)   // not in the device list
-        let r = try await run(b, model: model())
-        XCTAssertTrue(r.claimedWorkDevice)
-        XCTAssertEqual(InsightsSettings.read(a).workDevice, meB)
-        XCTAssertTrue(r.mapBuilt)
+    /// Two devices that summarize one note before they see each other's file: every reader takes the same one by the
+    /// fixed order (later `written`, then device id), and neither device summarizes again.
+    func testARaceOnASummarySettlesTheSameOnEveryReader() async throws {
+        let id = try note("Springs", Self.physics[0])
+        let copy = tmp.appendingPathComponent("B.sempere")
+        try FileManager.default.copyItem(at: a.url, to: copy)
+        let bCopy = try TestVaults.open(at: copy, identity: ib)
+        let ins = try inputs()
+        var o = InsightsUpdateOptions(); o.now = now; o.platform = .init(platform: "ios", os: "27.2")
+        _ = try await InsightsUpdater(vault: a, model: model(), embedder: nil, deviceState: stateA, app: "test/1").run(o, notes: ins)
+        _ = try await InsightsUpdater(vault: bCopy, model: model(), embedder: nil, deviceState: stateB, app: "test/1").run(o, notes: ins)
+        try deliver(from: bCopy, to: a)
+        try deliver(from: a, to: bCopy)
+        let hash = try XCTUnwrap(ins.first { $0.id == id }?.hash)
+        let bestA = try XCTUnwrap(InsightsStore(vault: a).snapshot().bestGen(for: id, hash: hash, now: now))
+        let bestB = try XCTUnwrap(InsightsStore(vault: bCopy).snapshot().bestGen(for: id, hash: hash, now: now))
+        XCTAssertEqual(bestA.device, bestB.device)
+        XCTAssertTrue(bestA.current)
+        for round in 1...2 {
+            o.now = now.addingTimeInterval(Double(round) * 3600)
+            let ra = try await InsightsUpdater(vault: a, model: model(), embedder: nil, deviceState: stateA, app: "test/1").run(o, notes: ins)
+            let rb = try await InsightsUpdater(vault: bCopy, model: model(), embedder: nil, deviceState: stateB, app: "test/1").run(o, notes: ins)
+            XCTAssertEqual(ra.generated + rb.generated, [], "settled: nobody summarizes again")
+            XCTAssertEqual(InsightsStore(vault: a).snapshot().bestGen(for: id, hash: hash, now: now)?.device, bestA.device, "never flips")
+        }
+    }
+
+    // MARK: Voice-note titles (D21)
+
+    func capture(transcript text: String) throws -> UUID {
+        let w = try CaptureWriter(profile: try a.captureProfile(device: meA))
+        let id = UUID()
+        let audio = Data((0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 7) })
+        let started = Date(timeIntervalSince1970: 1_789_990_000)
+        try CaptureWriter.store(try w.seal(audio: audio, started: started, title: "Voice note 2026-09-21 10:46", id: id), in: a.inboxURL)
+        let t = TranscriptBuilder.transcript(recording: CaptureAdoption.ids(for: id).recording, engine: "e", language: "en-US",
+                                             created: started, segments: [.init(start: 0, end: 4, text: text)])
+        try CaptureWriter.store(try w.seal(transcript: t, capture: id, audio: BlobRef(content: audio, type: "audio/mp4")), in: a.inboxURL)
+        XCTAssertNil(try a.adoptCapture(id, deviceState: stateA, app: "test/1", now: now).error)
+        return CaptureAdoption.ids(for: id).note
+    }
+
+    func title(_ id: UUID, in vault: Vault) throws -> String { try vault.reconstruct(noteId: id).meta.title }
+
+    /// A device without the embedder titles a voice note: no role to hold.
+    func testAnyDeviceTitlesAVoiceNoteOnceAndTheOtherLeavesItAlone() async throws {
+        let base = Date()   // the adoption's revision is stamped with the real clock: titles must come after it
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        let first = try await run(b, model: model(), embedder: nil, at: base.addingTimeInterval(60)) { $0.force = true }
+        XCTAssertEqual(first.titled, [id.uuidString.lowercased()])
+        let titled = try title(id, in: a)
+        XCTAssertEqual(titled, "2026-09-21 10.46 Spring Lab Results Show")
+        let second = try await run(a, model: model()) { $0.force = true }
+        XCTAssertEqual(second.titled + second.restoredTitles, [], "applied at most once: no longer the capture default")
+        XCTAssertEqual(try title(id, in: a), titled)
+    }
+
+    /// Two devices title one voice note before they see each other's title (their summaries differ): the register's last
+    /// writer stays, and neither device takes the other's automatic title for a user's rename and flips it.
+    func testTwoDevicesTitlingOneNoteSettleOnTheLastWriter() async throws {
+        let base = Date()   // the adoption's revision is stamped with the real clock: titles must come after it
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        let copy = tmp.appendingPathComponent("B.sempere")
+        try FileManager.default.copyItem(at: a.url, to: copy)
+        let bCopy = try TestVaults.open(at: copy, identity: ib)
+        var wordsA = FakeModelProvider.Script(); wordsA.titleWords = 4
+        var wordsB = FakeModelProvider.Script(); wordsB.titleWords = 3
+        var o = InsightsUpdateOptions(); o.now = base; o.platform = .init(platform: "ios", os: "27.2"); o.force = true
+        let ins = try inputs()
+        let ra = try await InsightsUpdater(vault: a, model: FakeModelProvider(wordsA), embedder: nil, deviceState: stateA, app: "test/1")
+            .run(o, notes: ins)
+        o.now = base.addingTimeInterval(10)
+        let rb = try await InsightsUpdater(vault: bCopy, model: FakeModelProvider(wordsB), embedder: nil, deviceState: stateB, app: "test/1")
+            .run(o, notes: ins)
+        XCTAssertEqual(ra.titled, [id.uuidString.lowercased()])
+        XCTAssertEqual(rb.titled, [id.uuidString.lowercased()])
+        XCTAssertNotEqual(try title(id, in: a), try title(id, in: bCopy), "each saw only its own title")
+        try deliver(from: bCopy, to: a)
+        try deliver(from: a, to: bCopy)
+        let settled = try title(id, in: a)
+        XCTAssertEqual(try title(id, in: bCopy), settled, "one register, one winner on every reader")
+        for round in 1...2 {
+            o.now = base.addingTimeInterval(Double(round) * 3600)
+            let xa = try await InsightsUpdater(vault: a, model: FakeModelProvider(wordsA), embedder: nil, deviceState: stateA,
+                                               app: "test/1").run(o, notes: ins)
+            let xb = try await InsightsUpdater(vault: bCopy, model: FakeModelProvider(wordsB), embedder: nil, deviceState: stateB,
+                                               app: "test/1").run(o, notes: ins)
+            XCTAssertEqual(xa.titled + xa.restoredTitles + xb.titled + xb.restoredTitles, [], "no flip-flop")
+            XCTAssertEqual(try title(id, in: a), settled)
+        }
     }
 
     // MARK: Process Now
@@ -289,7 +398,6 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
     func testAForcedPassSkipsTheSettleTimeAndEarlierBackOff() async throws {
         let fresh = try note("Fresh", Self.physics[0], modified: now.addingTimeInterval(-60))
         let failed = try note("Failed", Self.bread[0])
-        try setWorkDevice(meA)
         let memoURL = try TestTemp.directory("forced-memo").appendingPathComponent("failures")
         var memo = InsightsFailureMemo()
         let m = model()
@@ -319,7 +427,6 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
 
     func testAFailureDuringTheForcedPassWaitsAndIsReported() async throws {
         try note("Springs", Self.physics[0])
-        try setWorkDevice(meA)
         let memoURL = try TestTemp.directory("forced-fail").appendingPathComponent("failures")
         var s = FakeModelProvider.Script(); s.failures = 100
         let failing = FakeModelProvider(s)
