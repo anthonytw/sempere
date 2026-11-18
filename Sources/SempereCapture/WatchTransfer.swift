@@ -109,22 +109,32 @@ public enum WatchTransferError: Error, Equatable, Sendable, CustomStringConverti
     }
 }
 
-/// The phone's answer: `acked` ids are in the vault (or its queue), so the watch may delete its copies; `have` is what the
-/// phone holds, sent at activation so a watch that lost its ack state (a reinstall, a restore) can drop what is there.
-/// Both go by `transferUserInfo`, which survives either side being away.
+/// The phone's answer: `acked` ids are in a vault (or its queue), or were released (a held note added or deleted), so the
+/// watch may delete its copies; `have` is what the phone received and no longer needs from the watch, sent at activation so a
+/// watch that lost its ack state (a reinstall, a restore) can drop what is there. `held` ids are on the phone but in no
+/// vault (not admitted: an old key, the toggle off): the watch KEEPS those files, because deleting the phone's app would lose
+/// the only copy, until a later `acked` releases them. `heldAll` says `held` is everything the phone holds, so a watch that
+/// kept a note the phone no longer lists (its app was reinstalled) sends it again.
+/// All go by `transferUserInfo`, which survives either side being away. A 1.2.x watch reads `acked` and `have` and ignores
+/// the rest (it then keeps a held note's file, which is safe, and drops it at the release, which arrives as `acked`); a 1.2.x
+/// phone acknowledges a held note as `acked` (a 1.3 watch drops it, as 1.2 did).
 public struct WatchAck: Equatable, Sendable {
     /// The most ids one message carries (and one decode accepts).
     public static let maxIDs = 2_000
 
     public var acked: [UUID]
     public var have: [UUID]
+    public var held: [UUID]
+    public var heldAll: Bool
 
-    public init(acked: [UUID] = [], have: [UUID] = []) {
+    public init(acked: [UUID] = [], have: [UUID] = [], held: [UUID] = [], heldAll: Bool = false) {
         self.acked = acked
         self.have = have
+        self.held = held
+        self.heldAll = heldAll
     }
 
-    public var isEmpty: Bool { acked.isEmpty && have.isEmpty }
+    public var isEmpty: Bool { acked.isEmpty && have.isEmpty && held.isEmpty && !heldAll }
 
     /// The ids the watch may drop: `acked` and `have` together.
     public var ids: [UUID] { acked + have }
@@ -133,6 +143,9 @@ public struct WatchAck: Equatable, Sendable {
         var d: [String: Any] = [:]
         if !acked.isEmpty { d["acked"] = acked.prefix(Self.maxIDs).map { $0.uuidString.lowercased() } }
         if !have.isEmpty { d["have"] = have.prefix(Self.maxIDs).map { $0.uuidString.lowercased() } }
+        if !held.isEmpty { d["held"] = held.prefix(Self.maxIDs).map { $0.uuidString.lowercased() } }
+        // A list cut at `maxIDs` is not everything the phone holds.
+        if heldAll && held.count <= Self.maxIDs { d["heldAll"] = true }
         return d
     }
 
@@ -141,8 +154,9 @@ public struct WatchAck: Equatable, Sendable {
         func ids(_ key: String) -> [UUID]? {
             (d[key] as? [String]).map { Array($0.prefix(Self.maxIDs)).compactMap { UUID(uuidString: $0) } }
         }
-        let acked = ids("acked"), have = ids("have")
-        guard acked != nil || have != nil else { return nil }
-        self.init(acked: acked ?? [], have: have ?? [])
+        let acked = ids("acked"), have = ids("have"), held = ids("held")
+        let heldAll = d["heldAll"] as? Bool ?? false
+        guard acked != nil || have != nil || held != nil || heldAll else { return nil }
+        self.init(acked: acked ?? [], have: have ?? [], held: held ?? [], heldAll: heldAll)
     }
 }

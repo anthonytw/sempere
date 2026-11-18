@@ -361,7 +361,7 @@ struct InboxWatchReceive: ParsableCommand {
             let file = dir.appendingPathComponent(meta.name)
             do {
                 let r = try intake.receive(file: file, meta: meta)
-                if r.acknowledged { acked.append(r.id) }
+                if r.acknowledged && !r.isHeld { acked.append(r.id) }
                 switch r.outcome {
                 case .placed(let p): results.append(FileResult(capture: meta.id.uuidString.lowercased(), outcome: "placed",
                                                                placement: Self.name(p), reason: nil, problem: nil))
@@ -380,13 +380,17 @@ struct InboxWatchReceive: ParsableCommand {
                                           problem: CLIError.from(error).message))
             }
         }
-        let ackFile = WatchAck(acked: acked, have: intake.have().have)
+        let haveNow = intake.have()
+        let ackFile = WatchAck(acked: acked, have: haveNow.have, held: haveNow.held, heldAll: haveNow.heldAll)
         let ackURL = ack.map { URL(fileURLWithPath: $0) } ?? dir.appendingPathComponent("ack.json")
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys]
-        struct AckFile: Encodable { var acked: [String]; var have: [String] }
+        // `held` and `heldAll` are what a 1.3 watch keeps files for; an older reader ignores them.
+        struct AckFile: Encodable { var acked: [String]; var have: [String]; var held: [String]; var heldAll: Bool }
         try writePrivateFile(try enc.encode(AckFile(acked: ackFile.acked.map { $0.uuidString.lowercased() },
-                                                    have: ackFile.have.map { $0.uuidString.lowercased() })), to: ackURL)
+                                                    have: ackFile.have.map { $0.uuidString.lowercased() },
+                                                    held: ackFile.held.map { $0.uuidString.lowercased() },
+                                                    heldAll: ackFile.heldAll)), to: ackURL)
         if output.json {
             struct Out: Encodable { var files: [FileResult]; var acked: [String]; var ack: String }
             try output.emitJSON(Out(files: results, acked: acked.map { $0.uuidString.lowercased() }, ack: ackURL.path))

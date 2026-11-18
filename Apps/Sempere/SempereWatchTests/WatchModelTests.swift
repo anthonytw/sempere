@@ -289,6 +289,38 @@ final class WatchModelTests: XCTestCase {
         XCTAssertEqual(r.model.screen, .ready)
     }
 
+    /// A note the phone only holds (an old key, not in a vault) stays on the watch, uncounted as "unsent", until the phone
+    /// releases it; a phone that lost it (its app was reinstalled) lists nothing and the watch sends the note again.
+    func testAHeldNoteStaysUntilReleasedAndIsSentAgainAfterAPhoneReinstall() async throws {
+        let r = try rig()
+        await r.model.activate()
+        r.model.receive(try provisioning(r, seq: 0))
+        await r.model.record()
+        await r.model.stop()
+        guard case .saved(let note) = r.model.screen else { return XCTFail("\(r.model.screen)") }
+        XCTAssertEqual(r.transport.sent.map(\.id), [note.id])
+        r.model.transferFinished(id: note.id, failed: false)
+        // The phone holds it: the file stays, and it is not "unsent".
+        r.model.receive(ack: WatchAck(held: [note.id]))
+        XCTAssertEqual(r.model.outbox.entry(note.id)?.state, .held)
+        XCTAssertEqual(r.model.unsent, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: r.model.outbox.fileURL(note.id).path))
+        // An activation list that still has it changes nothing; the phone's `have` (without it) never drops it.
+        r.model.receive(ack: WatchAck(have: [UUID()], held: [note.id], heldAll: true))
+        XCTAssertEqual(r.transport.sent.count, 1)
+        XCTAssertEqual(r.model.outbox.entry(note.id)?.state, .held)
+        // The phone's app was reinstalled: its complete list is empty, so the note goes again.
+        r.model.receive(ack: WatchAck(heldAll: true))
+        XCTAssertEqual(r.transport.sent.map(\.id), [note.id, note.id], "sent again")
+        XCTAssertEqual(r.model.outbox.entry(note.id)?.state, .transferring)
+        // Held once more, then released by the phone (added or deleted): the file goes.
+        r.model.receive(ack: WatchAck(held: [note.id]))
+        r.model.receive(ack: WatchAck(acked: [note.id]))
+        XCTAssertEqual(r.model.outbox.entry(note.id)?.state, .acked)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: r.model.outbox.fileURL(note.id).path))
+        XCTAssertEqual(r.model.unsent, 0)
+    }
+
     func testAFailedTransferKeepsTheFileAndALaunchRetriesIt() async throws {
         let r = try rig()
         await r.model.activate()
