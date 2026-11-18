@@ -330,12 +330,16 @@ out (the same bytes `sempere export` writes) and `TreeExporter` (in
 | PNG pages | `<stem>-p001.png`, ... (`-p001-2.png`, ... for the further images of a pageless page) | a folder per note |
 | Text (Markdown) | `<stem>.md` leading with the recognized text; with the PDF (optional, off) or page PNGs, a folder with them and `README.md` | `Sempere Export/`, mirroring the notebook tree |
 | Media | a folder `<stem>/` with the note's recordings, transcripts, clips, images and PDFs and `media.json` ("Media export" below) | a folder per note; notes without media are counted, not written |
+| Web Page (Encrypted) | `Shared note.html` (never named for the title): one encrypted page that opens in any browser, made by `WebPageShare` as `sempere share` does ([web-viewer.md](web-viewer.md) "Share files") | not offered: one note |
 
 `<stem>` is `ExportName.stem` (sanitized title and the first 8 characters of the
 note id). Options: paper background (on), PNG resolution (72, 144, 216, 300
 dpi), merged PDF, and for text the PDF (off) and page images. The text export
 is disabled when no selected note has recognized handwriting, the media
-export when none has a recording, video, image or PDF. HTML is the
+export when none has a recording, video, image or PDF, the web page when more than one note is chosen. The page's sheet
+shows a generated passphrase (seven words) with Copy (this device's pasteboard only, gone after two minutes) and "Use my own", "Include recordings"
+and "Include recognized text"; after Create it shows the size line and the passphrase until the sheet closes, and the app
+keeps neither. Plain HTML is the
 CLI's only (`sempere export --format html`). A one-off share writes no export
 manifest.
 

@@ -2791,6 +2791,38 @@ alone (its files count as unchanged and survive `--clean`), so a second run of a
 vault takes a listing, not a render. Notes are read one at a time as they are rendered. (A
 skipped note reports no placeholder warnings; they were printed when it was rendered.)
 
+### Share
+
+```
+sempere share (ID|TITLE) --out PATH (--passphrase-file FILE | --share-passphrase-env VAR | --generate-passphrase)
+              [--audio] [--no-text] [--tags] [--notebook-path] [--dates] [--max-size MB] [--image-quality low|normal|high]
+              [--pdf-renderer auto|poppler|none] [--pdf-timeout SECONDS] [--vault V] [--json]
+sempere share --verify FILE.html [--json]
+```
+
+One note as a single encrypted HTML file with the web viewer built in ([web-viewer.md](web-viewer.md) "Share files", design
+[design/1.3-share.md](design/1.3-share.md)): the recipient opens it in any browser and types the passphrase; nothing is uploaded and no
+server of ours is involved. The note is flattened to its current state (no history, other notes or keys), encrypted with age and one
+scrypt recipient (2^18). Works on Linux and with a read-only vault (nothing is written to the vault).
+
+- `--out` is the file, or a folder (the file is then `Shared note.html` in it); never over an existing file. The name and the page's
+  `<title>` never carry the note's title.
+- The passphrase is never an argument (it would show in `ps`): `--passphrase-file FILE` (`-` for standard input; one trailing
+  newline is dropped), `--share-passphrase-env VAR` (named so as not to clash with the vault's own `--passphrase-env`), or
+  `--generate-passphrase` (seven random words, printed once: as `passphrase` in the JSON, or as a `Passphrase:` line on standard
+  error). Exactly one of the three.
+- Left out unless asked: tags (`--tags`), the notebook path (`--notebook-path`), the creation date (`--dates`), recordings and their
+  transcripts (`--audio`). Recognized text is in unless `--no-text`.
+- Pictures are re-encoded (at most 2048 px, JPEG, metadata removed), PDF pages become pictures (Poppler's `pdftoppm`, as for `export`;
+  without it they are left out with a warning), videos are never included (the poster frame is shown). `--image-quality` picks how hard.
+- The file is at most `--max-size` MB (default 20, at most 200). A note that cannot fit fails (exit 1) with the breakdown (ink and text,
+  pictures, audio, viewer) and writes nothing; pictures shrink first, and a recording that does not fit is skipped with a warning.
+- `--verify FILE.html` checks that the file's script, style and Content-Security-Policy are exactly this release's (the file with its data
+  block taken out equals the shipped template) and reports the scrypt work factor and the script's hash; it never decrypts and needs no
+  vault. Exit 1 when the file is not one this release made.
+- `--json`: `{file, bytes, pages, sections: {ink, images, audio, template}, scryptLog2N, scriptSha256, skipped: [...], passphrase?}`;
+  for `--verify`: `{file, ok, bytes, matchesTemplate, policyMatches, scriptSha256, styleSha256, scryptLog2N, problems}`.
+
 ### Recover
 
 ```

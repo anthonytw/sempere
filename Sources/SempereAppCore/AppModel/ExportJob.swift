@@ -50,10 +50,13 @@ public final class ExportJob {
         /// Media export: files left out (not downloaded, unreadable transcript)
         /// or written with their metadata, one line each.
         public var warnings: [String] = []
+        /// Web page: where the file's bytes went, for the size line.
+        public var webShareSections: WebShareSections?
 
         init(items: [URL], failures: [String], exported: Int, recordingsAttached: Int = 0,
                     recordingsOmitted: Int = 0, videosAttached: Int = 0, mediaFiles: Int = 0, withoutMedia: Int = 0,
-                    warnings: [String] = []) {
+                    warnings: [String] = [], webShareSections: WebShareSections? = nil) {
+            self.webShareSections = webShareSections
             self.items = items
             self.failures = failures
             self.exported = exported
@@ -114,7 +117,8 @@ public final class ExportJob {
                                          recordingsOmitted: result.recordingsOmitted,
                                          videosAttached: result.videosAttached, mediaFiles: result.mediaFiles,
                                          withoutMedia: result.withoutMedia,
-                                         warnings: options.format == .media ? result.warnings : []))
+                                         warnings: options.format == .media || options.format == .webPage ? result.warnings : [],
+                                         webShareSections: result.webShareSections))
             } catch is CancellationError {
             } catch {
                 next = .failed(.error(model.services.describeError(error)))

@@ -258,7 +258,12 @@ function toHex(b: Uint8Array): string {
  * and kept until the note is closed. A failure is not kept, so a later
  * request (another Play) tries again.
  */
-export class NoteBlobs {
+/** What the note view and the panels need of a note's attachments: the verified content of a reference. */
+export interface BlobReader {
+  get(ref: BlobRef, maxBytes?: number): Promise<Blob>;
+}
+
+export class NoteBlobs implements BlobReader {
   private readonly cache = new Map<string, Promise<Blob>>();
 
   constructor(private readonly source: VaultSource, private readonly vault: UnlockedVault, readonly noteId: string) {}

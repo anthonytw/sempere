@@ -9,7 +9,7 @@ import { type CapturedBy, capturedBy } from "../format/captured.ts";
 import type { JSONObject } from "../format/json.ts";
 import { parseRFC3339 } from "../format/rfc3339.ts";
 import { type Transcript, decodeTranscript, maxTranscriptBytes } from "../format/transcript.ts";
-import { type NoteBlobs, asBlobRef, essence } from "../vault/blobs.ts";
+import { type BlobReader, asBlobRef, essence } from "../vault/blobs.ts";
 import { blobProblem } from "./errors.ts";
 import { formatDate, h } from "./dom.ts";
 
@@ -53,7 +53,7 @@ export class RecordingsPanel {
    * - Parameter recipients: the vault's device entries (key and name), to say which device captured a voice note
    *   (format.md §8.3.1 `captured`); without them a capture's line stays empty.
    */
-  constructor(recordings: JSONObject[], private readonly blobs?: NoteBlobs,
+  constructor(recordings: JSONObject[], private readonly blobs?: BlobReader,
               private readonly recipients?: readonly { key: string; label: string }[]) {
     this.root = h("details", { class: "recordings" },
       h("summary", { text: tn("{count} recordings", recordings.length) }),

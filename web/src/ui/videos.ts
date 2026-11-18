@@ -7,7 +7,7 @@
 import { t, tn } from "../i18n/index.ts";
 import type { NoteState } from "../format/model.ts";
 import { cmpItems } from "../format/registers.ts";
-import { type BlobRef, type NoteBlobs, asBlobRef, essence } from "../vault/blobs.ts";
+import { type BlobRef, type BlobReader, asBlobRef, essence } from "../vault/blobs.ts";
 import { blobProblem } from "./errors.ts";
 import { h } from "./dom.ts";
 import { formatDuration } from "./recordings.ts";
@@ -61,7 +61,7 @@ export class VideosPanel {
   private destroyed = false;
   private readonly entries: VideoEntry[];
 
-  constructor(state: NoteState, private readonly blobs?: NoteBlobs) {
+  constructor(state: NoteState, private readonly blobs?: BlobReader) {
     this.entries = videoEntries(state);
     const rows = this.entries.map((v, i) => h("li", { class: "recording" },
       h("div", { class: "rec-head" },

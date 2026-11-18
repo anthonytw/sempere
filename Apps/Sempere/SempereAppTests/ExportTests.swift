@@ -19,16 +19,48 @@ struct ExportTests {
         try await model.exportNotes(ids, options: options, into: dir) { _ in }
     }
 
-    /// PDF, PNG, text and media; HTML stays in the CLI only.
+    /// PDF, PNG, text, media and the encrypted web page; plain HTML stays in the CLI only.
     @Test func commandsCoverTheAppFormatsOnce() {
-        #expect(ExportCommand.allCases.map(\.format) == [.pdf, .png, .markdown, .media])
+        #expect(ExportCommand.allCases.map(\.format) == [.pdf, .png, .markdown, .media, .webPage])
         #expect(!ExportCommand.formats.contains(.html))
         #expect(ExportCommand.markdown.title == "Text (Markdown)…")
         #expect(ShareFormat.markdown.title == "Text (Markdown)")
-        #expect(Set(ExportCommand.allCases.map(\.title)).count == 4)
-        #expect(Set(ExportCommand.allCases.map(\.systemImage)).count == 4)
+        #expect(Set(ExportCommand.allCases.map(\.title)).count == 5)
+        #expect(Set(ExportCommand.allCases.map(\.systemImage)).count == 5)
+        #expect(ExportCommand.webPage.title == "Web Page (Encrypted)…")
+        #expect(ShareFormat.webPage.localizedTitle == "Web Page (Encrypted)")
         #expect(ShareFormat.media.localizedTitle == "Media")
         #expect(ShareOptions(format: .markdown).markdownPDF == false, "the PDF is opt-in")
+    }
+
+    /// File ▸ Export ▸ Web Page (Encrypted)…: one note at a time, so it is disabled for a selection of several.
+    @Test func theWebPageEntryIsForOneNote() async throws {
+        let model = try await BrowserTests.unlockedFixtureModel()
+        defer { model.close() }
+        #expect(model.canExport(.webPage, ids: [Self.lecture]))
+        let all = model.notes.map(\.id)
+        #expect(all.count > 1)
+        #expect(!model.canExport(.webPage, ids: all), "several notes: the entry is disabled")
+        model.requestExport(.webPage, ids: all)
+        #expect(model.exportRequest == nil)
+        model.requestExport(.webPage, ids: [Self.lecture])
+        #expect(model.exportRequest?.format == .webPage)
+    }
+
+    /// The passphrase's rules in the sheet: a warning (never a refusal) under 12 characters or four words; a copy
+    /// lasts two minutes; the size line names every part.
+    @Test func theWebPageSheetsPassphraseAndSizeLine() {
+        #expect(ExportSheet.isShort("short"))
+        #expect(ExportSheet.isShort("three words only here-now"))
+        #expect(!ExportSheet.isShort(GeneratedPassphrase.make()))
+        #expect(!ExportSheet.isShort(""), "nothing typed yet: no warning")
+        #expect(ExportSheet.passphraseLifetime == 120)
+        let line = ExportSheet.sizeLine(WebShareSections(ink: 900_000, images: 2_600_000, audio: 0, template: 700_000))
+        #expect(line.contains("ink") && line.contains("pictures") && line.contains("viewer"), Comment(rawValue: line))
+        var options = ShareOptions(format: .webPage)
+        options.webShare.includeAudio = true
+        #expect(ExportSheet.recordingsNote(options, count: 0).isEmpty)
+        #expect(!ExportSheet.recordingsNote(options, count: 2).isEmpty)
     }
 
     @Test func exportSheetDescribesTheShape() {

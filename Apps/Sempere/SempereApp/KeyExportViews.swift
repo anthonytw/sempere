@@ -158,13 +158,14 @@ enum SecretPasteboard {
     /// Marker types of nspasteboard.org: the item is a secret and short-lived, so clipboard history tools leave it out.
     static let markers = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"]
 
-    @MainActor static func copy(_ text: String) {
+    /// - Parameter lifetime: how long the item stays; a share's passphrase passes two minutes.
+    @MainActor static func copy(_ text: String, lifetime: TimeInterval = SecretPasteboard.lifetime) {
         var item: [String: Any] = [UTType.plainText.identifier: text]
         for marker in markers + [ownMarker] { item[marker] = Data([0]) }
         UIPasteboard.general.setItems([item], options: [.localOnly: true,
                                                         .expirationDate: Date().addingTimeInterval(lifetime)])
         #if targetEnvironment(macCatalyst)
-        expireItself(afterChangeCount: UIPasteboard.general.changeCount)
+        expireItself(afterChangeCount: UIPasteboard.general.changeCount, after: lifetime)
         #endif
     }
 
@@ -182,7 +183,7 @@ enum SecretPasteboard {
     @MainActor private static var pending: (changeCount: Int, quit: NSObjectProtocol)?
 
     /// Clears the pasteboard after `lifetime`, and at quit, if nothing else was copied since this item.
-    @MainActor private static func expireItself(afterChangeCount count: Int) {
+    @MainActor private static func expireItself(afterChangeCount count: Int, after lifetime: TimeInterval) {
         if let old = pending { NotificationCenter.default.removeObserver(old.quit) }
         let quit = NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil,
                                                           queue: .main) { _ in

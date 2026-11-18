@@ -158,6 +158,12 @@ sent back, with the device list, is encrypted to the new device's key
   a vault opens by itself on the device that holds its key, unless you set it to
   ask for Face ID or Touch ID (Settings ▸ Sync & Devices). A vault handed to the
   app from another app or AirDrop asks before it closes the open one.
+- **A shared web page.** File ▸ Export ▸ Web Page (Encrypted)… and `sempere share` make one note into a file that is encrypted
+  with a passphrase (age, scrypt) and opens in any browser. It is outside the vault: whoever has the file and the passphrase reads
+  that note, and the file cannot be taken back. The app keeps neither the passphrase nor a record of what was shared. The page is
+  its own code, so a person who can change the file in transit can change that code to capture the passphrase when it is typed:
+  send the file and the passphrase by different ways, and `sempere share --verify` checks a file against a release
+  ([web-viewer.md](web-viewer.md) "Share files").
 - **Plaintext the app keeps on the device for speed or safety:** attachments
   opened for display, a recording until it is saved into the note, a voice note
   until it is sealed, and files staged for an export or a drag; on a Mac, the

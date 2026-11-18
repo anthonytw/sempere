@@ -21,7 +21,7 @@ import { expandMarkdown } from "../render/markdown.ts";
 import { RenderLimits, pointCount } from "../render/primitives.ts";
 import { meanScale, transformOf } from "../render/stroke.ts";
 import { type Measure, fontStacks } from "../render/text.ts";
-import { BlobError, type NoteBlobs } from "../vault/blobs.ts";
+import { BlobError, type BlobReader } from "../vault/blobs.ts";
 import { type BlobKind, blobProblem } from "./errors.ts";
 import { h, s, svgTree } from "./dom.ts";
 import { NotePDFs, maxPDFBytes } from "./pdf.ts";
@@ -206,7 +206,7 @@ export class NoteView {
    * `playVideo` is called with a video item's id when it is tapped (§8.2.7),
    * `playAudio` with the recording id of an audio item (§8.2.9).
    */
-  constructor(private readonly state: NoteState, private readonly blobs?: NoteBlobs,
+  constructor(private readonly state: NoteState, private readonly blobs?: BlobReader,
     private readonly playVideo?: (itemId: string) => void, private readonly playAudio?: (recordingId: string) => void) {
     this.content = h("div", { class: "pages" });
     this.viewport = h("div", { class: "viewport", attrs: { tabindex: "0", role: "region", "aria-label": t("Note pages") } }, this.content);
