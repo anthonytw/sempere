@@ -125,6 +125,8 @@ struct RootView: View {
             pickVault()
         }
         .openedVaultAlert($openedVaultToConfirm)
+        .spotlightActivity()
+        .noteLinkProblemAlert()
         .onOpenURL { url in
             switch VoiceNoteLink.route(url) {
             case .link(let link):

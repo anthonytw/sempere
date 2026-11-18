@@ -109,6 +109,8 @@ public struct AppModelServices {
     /// Note Insights' providers and power state (`AppModel+Insights`): the app's Apple providers; headless, none.
     /// Copied into the model at init (`insightsServices`).
     public var insights: InsightsServices = .none
+    /// Core Spotlight (`CoreSpotlightIndex` in the app, docs/design/1.3-spotlight.md); headless, none.
+    public var spotlightIndex: any SpotlightIndexing = NoSpotlightIndex()
 
     public init(perf: any PerfSink, settings: any KeyValueStore, bookmarks: any FolderBookmarks,
                 platform: any PlatformServices, webdavRemote: any WebDAVRemote, webdavPasswords: any WebDAVPasswordStore,

@@ -209,6 +209,9 @@ public final class VaultLibrary {
 
     static let maxRecents = 10
 
+    /// Called after a vault was removed from this device (`removeStored`): the app removes its Spotlight items.
+    @ObservationIgnored public var vaultRemoved: (@MainActor (UUID) async -> Void)?
+
     public var recents: [RecentVault] = []
     let storeURL: URL
     /// Where every vault this device creates or copies in lives (docs/design/device-first-sync.md §2):
@@ -421,6 +424,8 @@ extension VaultLibrary {
             recents.removeAll { gone.contains($0.id) }
             save()
         }
+        // Spotlight: the vault's items and its switch go with it (docs/design/1.3-spotlight.md §3.4).
+        await vaultRemoved?(entry.vaultId)
     }
 
     /// The store's vaults, the most recently opened first, then the others by name.

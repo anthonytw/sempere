@@ -97,6 +97,7 @@ struct NoteWindowView: View {
             }
         }
         .openedVaultAlert($openedVaultToConfirm)
+        .spotlightActivity()
         .task(id: LoadKey(ready: ready, epoch: model.keyEpoch)) { await load() }
         .task {
             // Restored without the library window: bring it up to open and unlock the vault.

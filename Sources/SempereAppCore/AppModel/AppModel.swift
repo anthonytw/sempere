@@ -118,6 +118,7 @@ public final class AppModelCore<Host: AppModelHost> {
             listVersion &+= 1
             updateSearch(changed: listChangeIDs)
             insightsNotesChanged()
+            spotlightNotesChanged()
         }
     }
     /// While `applyListChanges` assigns `notes`: the ids it may have changed, so
@@ -286,6 +287,24 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored let insightsRuntime = InsightsRuntime()
     /// The providers and power state of Note Insights (`services.insights`; tests set their own).
     @ObservationIgnored public var insightsServices: InsightsServices
+    /// Opt-in Spotlight indexing (`AppModel+Spotlight`, docs/design/1.3-spotlight.md): the per-device records and the
+    /// index (`services.spotlightIndex`).
+    @ObservationIgnored public let spotlight: SpotlightManager
+    @ObservationIgnored let spotlightRuntime = SpotlightRuntime()
+    /// The open vault's Spotlight switches on this device.
+    public internal(set) var spotlightMode: SpotlightMode = .off
+    /// Why the app turned the open vault's Spotlight switch off (shown once; `dismissSpotlightNotice`).
+    public var spotlightNotice: SpotlightNotice?
+    /// Notes left out of Spotlight by the 50,000-note cap.
+    public internal(set) var spotlightOmitted = 0
+    /// "Untitled note" and the date style of Spotlight results: the app sets localized ones.
+    @ObservationIgnored public var spotlightUntitled = "Untitled note"
+    @ObservationIgnored public var spotlightDateText: @Sendable (Date) -> String = SpotlightPlanner.isoDay
+    /// A note to open once its vault is open, unlocked and listed (`open(_:)`).
+    public internal(set) var pendingNoteLink: NoteLink?
+    @ObservationIgnored var pendingNoteLinkSince = Date.distantPast
+    /// A link that could not be followed (the app words it and shows it once).
+    public var noteLinkProblem: NoteLinkProblem?
     /// What is being dragged inside the app (set when a drag starts, `beginDrag`), so the
     /// sidebar can tell whether a row would accept it while the drag is still over it.
     public var draggedPayload: DragPayload?
@@ -758,6 +777,7 @@ public final class AppModelCore<Host: AppModelHost> {
         backgroundTasks = services.backgroundTasks
         syncScheduler = services.syncScheduler
         insightsServices = services.insights
+        spotlight = SpotlightManager(index: services.spotlightIndex, defaults: services.settings)
         backupStore = BackupStore(defaults: services.settings)
         releasesLocksInBackground = !services.platform.isMac
         searchTranscripts = TranscriptSearchPreference.isOn(services.settings)
@@ -975,8 +995,10 @@ public final class AppModelCore<Host: AppModelHost> {
     /// views open their notes again (`keyEpoch`).
     func adoptReopened(_ next: Vault) {
         guard phase == .unlocked, next.vaultId == vault?.vaultId else { return }
+        let before = vault.map(SpotlightKeys.init)
         vault = next
         listAlert = ListAlert(vault: next)
+        spotlightVaultReopened(before: before)
         // The quick-capture profile follows the list's capture keys; takeovers and the device state; settings sync.
         refreshQuickCaptureProfile()
         Task {
@@ -996,6 +1018,7 @@ public final class AppModelCore<Host: AppModelHost> {
         syncCoordinator.openVaultUnlocked()
         await webdavUnlocked()   // a partial copy's rows come from the server's summaries: before the listing
         loadActivity()
+        spotlightUnlocked()
         startLoadingNotes(reportErrors: !awaitNotes)
         if awaitNotes { try await notesLoaded() }
         // The quick-capture profile, the inbox, takeovers and the device state, the backup reminder, settings sync.
@@ -1237,6 +1260,7 @@ public final class AppModelCore<Host: AppModelHost> {
         // adoption or import still running is canceled below.
         stopSettingsSync()
         stopInsights()
+        spotlightClosed()
         draggedPayload = nil
         dropTarget = nil
         landedDrop = nil
