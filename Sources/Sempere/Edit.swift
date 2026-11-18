@@ -220,6 +220,32 @@ extension Vault {
         return ids.map { ($0, written[$0]) }
     }
 
+    /// Moves every note of `ids` to Recently Deleted (`deleted` true: one `deleteNote` delta each) or brings it back
+    /// (`deleted` false: one `restoreNote` delta), as this device, in one batch like `moveNotes`: every note is loaded
+    /// and reconstructed strictly first, so a note that cannot be read stops the call before anything is written (a
+    /// write that fails partway (I/O) leaves the notes before it changed: run it again, notes already there are
+    /// skipped). Returns the revision written for each id of `ids`, nil for a note that already was that way (and for
+    /// a repeated id after its first).
+    ///
+    /// - Throws: `VaultError.locked`, `VaultError.revision` and what `apply` throws.
+    public func setDeleted(_ ids: [UUID], _ deleted: Bool, deviceState: URL, app: String,
+                           wall: Date = Date()) throws -> [(id: UUID, revision: Revision?)] {
+        guard canRead else { throw VaultError.locked }
+        var changing = Set<UUID>()
+        for id in ids where !changing.contains(id) {
+            let state = try reconstruct(try loadNote(id, detail: .withoutStrokePoints))
+            let ops = deleted ? NoteOps.delete(state) : NoteOps.undelete(state)
+            if !ops.isEmpty { changing.insert(id) }
+        }
+        var written: [UUID: Revision] = [:]
+        for id in ids where changing.contains(id) && written[id] == nil {
+            written[id] = try apply(to: id, deviceState: deviceState, app: app, wall: wall) {
+                deleted ? NoteOps.delete($0) : NoteOps.undelete($0)
+            }
+        }
+        return ids.map { id in (id, written.removeValue(forKey: id)) }
+    }
+
     /// This device's id in the vault, the first 8 hex digits of its fingerprint (format.md §15.4;
     /// key-hierarchy design §3): it names its published summaries file and sync state. Nil unless the vault
     /// was opened as a listed device. Revision names keep the machine's state-file id (`writeDelta`).

@@ -331,46 +331,87 @@ struct NotesMove: ParsableCommand {
     }
 }
 
+/// What `notes delete` / `notes undelete --json` print for several notes (one note prints `EditJSON`).
+struct DeleteJSON: Encodable {
+    /// One entry per distinct note given, in order: the note as it is after, whether it was written, the delta.
+    var notes: [EditJSON]
+}
+
+/// Deletes or restores one or several notes: one note is the single-note edit; several are resolved first and
+/// written as one batch (`Vault.setDeleted`).
+private func setDeleted(_ queries: [String], _ deleted: Bool, access: AccessOptions, output: OutputOptions) throws {
+    let vault = try access.openVault(.required)
+    let ids = try queries.map { try vault.resolveNote($0) }
+    if ids.count == 1 {
+        let r = try editNote(vault, ids[0], building: deleted ? NoteOps.delete : NoteOps.undelete)
+        try reportEdit(vault, ids[0], r, output: output, done: deleted ? "Deleted" : "Restored",
+                       unchanged: deleted ? "The note is already deleted." : "The note is not deleted.")
+        return
+    }
+    let results = try vault.setDeleted(ids, deleted, deviceState: DeviceState.defaultURL(), app: appName)
+    var seen = Set<UUID>()
+    let distinct = results.filter { seen.insert($0.id).inserted }
+    if output.json {
+        try output.emitJSON(DeleteJSON(notes: try distinct.map {
+            EditJSON(note: NoteJSON(try vault.summary(of: $0.id)), changed: $0.revision != nil, file: $0.revision?.name.filename)
+        }))
+        return
+    }
+    let changed = distinct.filter { $0.revision != nil }.count
+    let rest = distinct.count - changed
+    if changed == 0 {
+        output.info(deleted ? "The notes are already deleted." : "None of the notes is deleted.")
+    } else {
+        output.info("\(deleted ? "Deleted" : "Restored") \(changed) note\(changed == 1 ? "" : "s")"
+                    + (rest > 0 ? " (\(rest) \(deleted ? "already deleted" : "not deleted"))" : ""))
+    }
+}
+
 struct NotesDelete: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "delete",
-        abstract: "Move a note to Recently Deleted (one deleteNote delta).",
-        discussion: "Nothing is removed from disk: `notes undelete` brings the note back."
+        abstract: "Move one or several notes to Recently Deleted (one deleteNote delta each).",
+        discussion: """
+            Nothing is removed from disk: `notes undelete` brings the notes back. Every note is resolved and \
+            read before anything is written: when one does not resolve, or cannot be read, nothing is deleted. \
+            A note that already is deleted is left alone.
+            """
     )
 
-    @Argument(help: ArgumentHelp("Note id or title.", valueName: "id|title"))
-    var note: String
+    @Argument(help: ArgumentHelp("Note ids or titles.", valueName: "id|title..."))
+    var notes: [String] = []
 
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
 
-    func run() throws {
-        let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
-        let r = try editNote(vault, id, building: NoteOps.delete)
-        try reportEdit(vault, id, r, output: output, done: "Deleted", unchanged: "The note is already deleted.")
+    func validate() throws {
+        if notes.isEmpty { throw ValidationError("give at least one note") }
     }
+
+    func run() throws { try setDeleted(notes, true, access: access, output: output) }
 }
 
 struct NotesUndelete: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "undelete",
-        abstract: "Bring a deleted note back (one restoreNote delta).",
-        discussion: "To roll a note back to an earlier revision, use `notes restore --to`."
+        abstract: "Bring one or several deleted notes back (one restoreNote delta each).",
+        discussion: """
+            To roll a note back to an earlier revision, use `notes restore --to`. Several notes are resolved and \
+            read first and written as one batch, as with `notes delete`.
+            """
     )
 
-    @Argument(help: ArgumentHelp("Note id or title.", valueName: "id|title"))
-    var note: String
+    @Argument(help: ArgumentHelp("Note ids or titles.", valueName: "id|title..."))
+    var notes: [String] = []
 
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
 
-    func run() throws {
-        let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
-        let r = try editNote(vault, id, building: NoteOps.undelete)
-        try reportEdit(vault, id, r, output: output, done: "Restored", unchanged: "The note is not deleted.")
+    func validate() throws {
+        if notes.isEmpty { throw ValidationError("give at least one note") }
     }
+
+    func run() throws { try setDeleted(notes, false, access: access, output: output) }
 }
 
 // MARK: - notes tag

@@ -55,6 +55,12 @@ public enum LibraryCommands {
         case .editTags: ui.tagsNoteID = selected
         case .saveVersion: ui.saveVersionNoteID = selected
         case .versionHistory: ui.historyNoteID = selected
+        case .deleteNote where model.isSelectingNotes:
+            let ids = model.bulkTargetIDs(for: .delete)
+            if !ids.isEmpty { ui.bulkNoteAction = .delete(ids) }
+        case .restoreNote where model.isSelectingNotes:
+            let ids = model.bulkTargetIDs(for: .restore)
+            if !ids.isEmpty { ui.bulkNoteAction = .restore(ids) }
         case .deleteNote:
             if let selected { Task { await model.report { try await model.deleteNote(selected) } } }
         case .restoreNote:

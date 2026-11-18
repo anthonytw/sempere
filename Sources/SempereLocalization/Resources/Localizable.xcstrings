@@ -5824,6 +5824,19 @@
         }
       }
     },
+    "Bring the selected notes back from Recently Deleted" : {
+      "comment" : "Help tag of the Restore button in select mode",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recuperar las notas seleccionadas de Eliminadas recientemente"
+          }
+        }
+      }
+    },
     "Bring to Front" : {
       "comment" : "Undo action name (Edit ▸ Undo …) or item menu command",
       "extractionState" : "manual",
@@ -8036,6 +8049,55 @@
         }
       }
     },
+    "Delete %lld Notes?" : {
+      "comment" : "Confirmation title: move this many selected notes to Recently Deleted",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Note?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Notes?"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "¿Eliminar %lld de notas?"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "¿Eliminar %lld nota?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "¿Eliminar %lld notas?"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Delete All" : {
       "comment" : "Settings ▸ Apple Watch: delete every held note",
       "extractionState" : "manual",
@@ -8075,6 +8137,19 @@
         }
       }
     },
+    "Delete Note" : {
+      "comment" : "Undo action name: one note moved to Recently Deleted",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar nota"
+          }
+        }
+      }
+    },
     "Delete Notebook" : {
       "comment" : "Notebook row menu and confirmation button: delete an empty notebook",
       "extractionState" : "manual",
@@ -8084,6 +8159,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eliminar cuaderno"
+          }
+        }
+      }
+    },
+    "Delete Notes" : {
+      "comment" : "Undo action name: several notes moved to Recently Deleted",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar notas"
           }
         }
       }
@@ -13592,6 +13680,19 @@
         }
       }
     },
+    "Move To…" : {
+      "comment" : "Select mode: button and sheet title that move the selected notes to a notebook",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover a…"
+          }
+        }
+      }
+    },
     "Move into this notebook" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -13601,6 +13702,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mover dentro de este cuaderno"
+          }
+        }
+      }
+    },
+    "Move the selected notes to Recently Deleted" : {
+      "comment" : "Help tag of the Delete button in select mode",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover las notas seleccionadas a Eliminadas recientemente"
+          }
+        }
+      }
+    },
+    "Move the selected notes to a notebook" : {
+      "comment" : "Help tag of the Move To button in select mode",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover las notas seleccionadas a un cuaderno"
           }
         }
       }
@@ -19618,6 +19745,19 @@
         }
       }
     },
+    "Restore Notes" : {
+      "comment" : "Undo action name: several notes brought back from Recently Deleted",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurar notas"
+          }
+        }
+      }
+    },
     "Restore This Version" : {
       "comment" : "Button",
       "extractionState" : "manual",
@@ -25485,6 +25625,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pueden venir de un dispositivo quitado. Conserva solo lo que reconozcas. Se añaden con la clave actual de la bóveda."
+          }
+        }
+      }
+    },
+    "They move to Recently Deleted, where they can be restored." : {
+      "comment" : "Confirmation message under Delete N Notes?",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se mueven a Eliminadas recientemente, donde se pueden restaurar."
           }
         }
       }

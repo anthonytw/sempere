@@ -16,7 +16,7 @@ struct WindowSheets: ViewModifier {
 
     // Two halves: as one chain the body is past what the type checker solves in time.
     func body(content: Content) -> some View {
-        noteDialogs(importsAndPrompts(content))
+        noteDialogs(importsAndPrompts(content)).modifier(BulkNoteSheets(ui: ui))
     }
 
     private func importsAndPrompts(_ content: Content) -> some View {

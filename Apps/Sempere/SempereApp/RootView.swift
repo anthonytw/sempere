@@ -357,6 +357,7 @@ struct RootView: View {
         EditorCommands.fill(&context, from: shown)
         let exportIDs = model.exportTargetIDs
         WindowCommands.fill(&context, model: model, exportIDs: exportIDs)
+        context.bulkSelection = model.isSelectingNotes ? model.bulkActions : nil
         context.paletteCompact = paletteCompact
         context.noteMode = ui.noteMode
         context.pageStripVisible = pageStripVisible

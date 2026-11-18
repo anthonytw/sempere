@@ -1342,8 +1342,8 @@ sempere notes language ID|TITLE [TAG | --none]
 sempere notes markers ID|TITLE behind|above
 sempere notes favorite ID|TITLE [--off]
 sempere notes search QUERY [--notebook PATH] [--tag T] [--deleted] [--no-cache]
-sempere notes delete ID|TITLE
-sempere notes undelete ID|TITLE
+sempere notes delete ID|TITLE...
+sempere notes undelete ID|TITLE...
 sempere notes history ID|TITLE [--sessions]
 sempere notes restore ID|TITLE --to REVISION [--dry-run]
 sempere notes checkpoint ID|TITLE [--name TEXT]
@@ -1534,7 +1534,7 @@ absent).
   `favorite`), or with `--off` takes the mark off; one delta, nothing written
   when the note already is that way. `list --favorites` lists the marked
   notes. The app's Favorites list and the web viewer's show them.
-- `delete` moves the note to Recently Deleted; `undelete` brings it back.
+- `delete` moves one or several notes to Recently Deleted; `undelete` brings them back. Several notes are resolved and read first (one that does not resolve or cannot be read stops the call before anything is written), then one `deleteNote` / `restoreNote` delta each is written (`Vault.setDeleted`); a note already that way is left alone. `--json` prints `{"notes": [...]}` like `notes move`.
   (`restore` is a different thing: it rolls a note back to an earlier
   revision.)
 
