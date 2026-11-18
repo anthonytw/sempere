@@ -51,7 +51,7 @@ struct ExportTests {
     /// lasts two minutes; the size line names every part.
     @Test func theWebPageSheetsPassphraseAndSizeLine() {
         #expect(ExportSheet.isShort("short"))
-        #expect(ExportSheet.isShort("three words only here-now"))
+        #expect(ExportSheet.isShort("three words-only"))
         #expect(!ExportSheet.isShort(GeneratedPassphrase.make()))
         #expect(!ExportSheet.isShort(""), "nothing typed yet: no warning")
         #expect(ExportSheet.passphraseLifetime == 120)
