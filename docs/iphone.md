@@ -14,11 +14,13 @@ device needs it.
 column at a time:
 
 1. the vault (`SidebarView`: All Notes, notebooks, tags, Recently Deleted; the close-vault and
-   key buttons). Notebooks fold as on the iPad: a notebook with sub-notebooks has a chevron at the end
+   key buttons). Notebooks fold as on the iPad (the same rows): a notebook with sub-notebooks has a chevron at the end
    of its row that folds or unfolds them (folded at first), and a tap on the row opens the notebook.
-   The phone draws these rows itself (`PhoneNotebookRows`): an outline row's tap only folds it on the
-   phone's stack and never selects it, so a notebook holding sub-notebooks could not be opened
-   (PR #27 listed the whole tree unfolded for that). A notebook chosen elsewhere is listed, its parents
+   The phone and the iPad draw these rows themselves (`PhoneNotebookRows`): an outline row's tap only
+   folds it on the phone's stack, and on the iPad a top-level row with sub-notebooks is a header whose
+   tap only folds it; neither selects it, so a notebook holding sub-notebooks could not be opened
+   (PR #27 listed the whole tree unfolded for that; the iPad followed in 1.2.0's owner report). Only
+   the Mac keeps the system outline. A notebook chosen elsewhere is listed, its parents
    unfolded,
 2. the note list (`NoteListView`, search field with scopes; New Note stays in the bar, Select, Sort
    and Handwriting move into the overflow menu),
