@@ -294,7 +294,9 @@ struct WatchReceiverTests {
         let t = try Self.transfer(rig.current.stored.profile, in: rig)
         let receipt = try #require(try rig.receiver.receive(file: t.file, metadata: t.metadata))
         #expect(receipt.result.outcome == .held(.linkOff))
-        #expect(rig.receiver.ack([receipt]).acked == [t.meta.id], "acknowledged: the watch drops its copy")
+        // 1.3: a held note is answered `held`, never `acked`: the watch keeps its copy until the phone releases the note.
+        #expect(rig.receiver.ack([receipt]).acked.isEmpty)
+        #expect(rig.receiver.ack([receipt]).held == [t.meta.id])
         #expect(Self.inbox(rig.current.url).isEmpty)
         #expect(try rig.ledgers.ledger(rig.current.stored.profile.vaultId).entries().isEmpty)
         let note = try #require(rig.receiver.heldNotes().first)

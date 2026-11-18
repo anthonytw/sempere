@@ -158,13 +158,15 @@ final class CLIInsightsTests: CLITestCase {
     }
 
     /// Any capable device does the work (D21): `insights update` on a machine without the embedder summarizes and makes no
-    /// vectors or map, `insights.compute` and `insights.workDevice` are no settings any more, and a machine that has the
+    /// vectors or map, `insights.compute` is no setting any more and `insights.workDevice` is deprecated (accepted, ignored), and a machine that has the
     /// embedder then embeds and builds the map without claiming anything.
     func testUpdateOnADeviceWithoutTheEmbedder() throws {
         let (args, vault) = try setUpVault()
         XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + args).status, 0)
         XCTAssertNotEqual(try cli(["settings", "set", "insights.compute", "auto"] + args).status, 0, "an unknown key")
-        XCTAssertNotEqual(try cli(["settings", "set", "insights.workDevice", "0000beef"] + args).status, 0, "an unknown key")
+        // A shipped key stays in the registry: still accepted (and ignored), resettable, never listed.
+        XCTAssertEqual(try cli(["settings", "set", "insights.workDevice", "0000beef"] + args).status, 0, "deprecated, still accepted")
+        XCTAssertEqual(try cli(["settings", "reset", "insights.workDevice"] + args).status, 0)
         let up = json(try cli(["insights", "update", "--json"] + args,
                               env: fake.merging(["SEMPERE_INSIGHTS_FAKE_EMBEDDER": "off"]) { $1 }))
         XCTAssertEqual((up["generated"] as? [String])?.count, 6)

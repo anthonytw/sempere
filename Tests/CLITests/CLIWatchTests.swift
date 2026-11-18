@@ -167,7 +167,10 @@ final class CLIWatchTests: CLITestCase {
         let file = try XCTUnwrap((r["files"] as? [[String: Any]])?.first)
         XCTAssertEqual(file["outcome"] as? String, "held")
         XCTAssertEqual(file["reason"] as? String, "unknownVault")
-        XCTAssertEqual(r["acked"] as? [String], [capture])
+        // 1.3: held, not acked: the watch keeps its copy until the note is added or deleted here.
+        XCTAssertEqual(r["acked"] as? [String], [])
+        let ackFile = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(r["ack"] as? String)))) as? [String: Any])
+        XCTAssertEqual(ackFile["held"] as? [String], [capture])
         let inboxA = a.vault.url.appendingPathComponent("inbox").path
         XCTAssertEqual(((try? FileManager.default.contentsOfDirectory(atPath: inboxA)) ?? []).filter { $0.hasSuffix(".capture.age") }, [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: path("q")), "not queued")

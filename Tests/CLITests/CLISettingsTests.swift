@@ -18,7 +18,7 @@ final class CLISettingsTests: CLITestCase {
         XCTAssertEqual(listing["schemaVersion"] as? Int, 1)
         XCTAssertEqual(listing["minReaderVersion"] as? Int, 1)
         let rows = try XCTUnwrap(listing["settings"] as? [[String: Any]])
-        XCTAssertEqual(rows.count, SharedSettingsCatalog.specs.count)
+        XCTAssertEqual(rows.count, SharedSettingsCatalog.specs.filter { !$0.deprecated }.count, "deprecated keys are not listed")
         XCTAssertTrue(rows.allSatisfy { $0["source"] as? String == "default" })
         XCTAssertFalse(list.out.contains("$meta"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: v.vault.sharedSettingsURL.path), "reading writes nothing")
