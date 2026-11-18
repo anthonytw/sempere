@@ -75,6 +75,30 @@ struct DragAndDropTests {
         #expect(await TS.waitUntil { notebook() == "Research/Lab" })
     }
 
+    /// Undo of a drop registers a redo (the pair goes back and forth), not a second undo.
+    @Test func aDropCanBeUndoneAndRedone() async throws {
+        let (model, ids) = try await NotebookTreeFixture.model()
+        defer { model.close() }
+        let lab = try #require(ids["Lab"])
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        func notebook() -> String? { model.notes.first { $0.id == lab }?.notebook }
+        undo.beginUndoGrouping()
+        await model.move(.notes([lab]), to: .notebook("School"), undoManager: undo)
+        undo.endUndoGrouping()
+        #expect(notebook() == "School")
+        undo.undo()
+        #expect(undo.canRedo, "the redo is registered inside the undo, not from the task that runs later")
+        #expect(!undo.canUndo)
+        #expect(await TS.waitUntil { notebook() == "Research/Lab" })
+        #expect(undo.canRedo)
+        undo.redo()
+        #expect(undo.canUndo)
+        #expect(await TS.waitUntil { notebook() == "School" })
+        undo.undo()
+        #expect(await TS.waitUntil { notebook() == "Research/Lab" })
+    }
+
     /// The model is shared by every window on a Mac: a drop's undo goes to the
     /// window it happened in, never to another window's undo manager.
     @Test func theUndoStepIsNamedForWhatMoved() {
