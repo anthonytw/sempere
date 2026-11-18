@@ -129,7 +129,8 @@ struct SettingsList: ParsableCommand {
             others = s.slots.keys.sorted()
                 .filter { $0.block != nil || SharedSettingsCatalog.spec(named: $0.key) == nil }
                 .map { Raw(key: $0.key, block: $0.block, value: s.slots[$0]?.value,
-                           known: SharedSettingsCatalog.spec(named: $0.key) != nil) }
+                           known: SharedSettingsCatalog.spec(named: $0.key) != nil
+                               || SharedSettingsCatalog.family(of: $0.key) != nil) }
         }
         if output.json {
             try output.emitJSON(Listing(schemaVersion: s.schemaVersion, minReaderVersion: s.minReaderVersion,

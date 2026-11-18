@@ -246,6 +246,8 @@ which devices use it. Any key may also appear in a type block.
 | `backup.reminderDays` | Backups ▸ Remind Me (once the device has a backup folder) | 0 (off), 1, 3, 7, 14, 30 | 0 |
 | `appearance.theme` | General ▸ Appearance (System, Light, Dark) | `system`, `light`, `dark` | `system` |
 | `appearance.notePages` | General ▸ Appearance ▸ Note Pages (dark: on screen only) | `light`, `dark`, `matchApp` | `light` |
+| `palette.tool.<uuid>` | Writing ▸ Saved Tools, and the palette's Saved group: one saved tool (name, ink, `#RRGGBB`, width, opacity, `at`) | an object (`docs/design/1.3-custom-tools.md` §3.1) | none |
+| `palette.toolOrder` | Writing ▸ Saved Tools (the order) | an array of at most 64 tool ids | none (listed ids first, then by `at`) |
 
 Recognition and transcription still run on each device: one without the language model
 does what it can.
@@ -335,6 +337,9 @@ same rules); `sempere settings validate` reports every problem.
    values stored on the device (nothing resets), and shows a banner: "Settings sync is
    paused: this vault's settings need a newer Sempere. Update the app to resume." Once
    updated, the next pass resumes. The CLI refuses with exit 7.
+   **Key families** (1.3: `palette.tool.<uuid>`, `palette.toolOrder`) are additive too: the registry snapshot
+   lists them under `families`, they are never in a type block (kept there, not shown), a preset whose `ink` a reader does
+   not know is hidden and kept, and an older reader keeps every `palette.tool.*` slot verbatim (rule 5).
 5. **An older but compatible reader** (its version ≥ `$minReaderVersion`) saving a newer
    file keeps every unknown key, type block, `$` member and `$meta` entry verbatim, and
    both version numbers.
@@ -382,6 +387,8 @@ sempere settings schema
   `$meta`, in a private temporary file it deletes afterwards. On save it validates the
   result, refuses an invalid file without writing anything, and records each changed key
   in `$meta` before re-encrypting.
+- The palette's saved tools are keys of the file too (`palette.tool.<uuid>`, `palette.toolOrder`): `sempere tools`
+  edits them (`docs/cli.md`); `settings list` does not list them and `settings validate` checks them.
 - A file whose `$minReaderVersion` is newer than the CLI is refused (exit 7), never
   rewritten.
 - `validate` checks the file against the schema: unknown keys and blocks are

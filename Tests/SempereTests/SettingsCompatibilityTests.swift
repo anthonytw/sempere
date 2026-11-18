@@ -50,6 +50,14 @@ final class SettingsCompatibilityTests: VaultTestCase {
                        "registry-v\(SharedSettingsMigrations.current).json must list this version's keys")
     }
 
+    /// The snapshot also names the key families (`palette.tool.<uuid>`, `palette.toolOrder`): added in 1.3, additively.
+    func testTheCurrentRegistrysFamiliesAreInItsSnapshot() throws {
+        let url = Self.fixtures.appendingPathComponent("registry-v\(SharedSettingsMigrations.current).json")
+        let o = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        XCTAssertEqual(Set(o["families"] as? [String] ?? []), Set(SharedSettingsCatalog.families.map(\.prefix)),
+                       "list this version's key families in the registry snapshot")
+    }
+
     func testAFixtureForEveryVersionValidAtItsVersion() throws {
         for n in 1...SharedSettingsMigrations.current {
             let url = Self.fixtures.appendingPathComponent("v\(n).json")
