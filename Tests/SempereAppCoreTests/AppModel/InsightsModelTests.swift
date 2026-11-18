@@ -339,13 +339,17 @@ extension AppModelSuites {
         @Test func refreshesRunOneAtATime() async throws {
             let model = try await model()
             await model.setInsightsEnabled(true)
+            // Since D21 every capable device has a role, so turning Insights on starts a pass, which schedules
+            // refreshes of its own: let it end first, or one of those can be running when `refreshing` is read.
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
             let before = model.insightsRuntime.refreshDone
             async let a: Void = model.refreshInsights()
             async let b: Void = model.refreshInsights()
             async let c: Void = model.refreshInsights()
             _ = await (a, b, c)
-            #expect(model.insightsRuntime.refreshing == nil)
             #expect(model.insightsRuntime.refreshDone >= before + 3, "every request answered")
+            // A refresh the pass scheduled may still start after ours; the slot always empties again.
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { model.insightsRuntime.refreshing == nil })
         }
 
         /// The background task: the pass is in the model's one slot (so closing the vault cancels it), and work left
