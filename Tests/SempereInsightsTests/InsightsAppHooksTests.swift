@@ -64,8 +64,8 @@ extension InsightsUpdaterTests {
         XCTAssertNil(InsightsStore(vault: vault).snapshot().notes[id]?[vault.writerDevice!]?.titleOp, "no titleOp for a title not written")
     }
 
-    /// A device generates whatever its type (D21: every capable device does the work; `insights.compute` and
-    /// `insights.workDevice` are gone), and one without the embedder never embeds.
+    /// A device generates whatever its type (D21: every capable device does the work; `insights.compute` is gone and
+    /// `insights.workDevice` is deprecated: accepted, ignored, hidden), and one without the embedder never embeds.
     func testADeviceWithoutTheEmbedderGeneratesWhateverItsType() async throws {
         try note("A", Self.physics[0])
         try enable()
@@ -74,7 +74,10 @@ extension InsightsUpdaterTests {
         XCTAssertEqual(ipad.embedded, [])
         XCTAssertFalse(ipad.mapBuilt)
         XCTAssertNil(SharedSettingsCatalog.spec(named: "insights.compute"), "the setting is gone")
-        XCTAssertNil(SharedSettingsCatalog.spec(named: "insights.workDevice"), "the setting is gone")
+        let old = try XCTUnwrap(SharedSettingsCatalog.spec(named: "insights.workDevice"), "a shipped key stays in the registry")
+        XCTAssertTrue(old.deprecated)
+        XCTAssertNotNil(old.validated(.string("0000beef")), "still accepted")
+        XCTAssertNotNil(old.validated(.null), "and resettable")
     }
 
     /// A 1.2.0 settings file still holds `insights.workDevice`: it is kept in the file, ignored, and nothing fails or

@@ -37,9 +37,13 @@ public struct SharedSettingSpec: Sendable {
     public let defaultValue: JSONValue
     /// One line for `settings list` and the schema (English).
     public let summary: String
+    /// A key a shipped version wrote that no logic reads any more (docs/settings-sync.md §6.2 rule 1: a registry never
+    /// loses a key): still accepted, validated and resettable, never shown in a Settings screen, `settings list` or the docs.
+    public let deprecated: Bool
     public init(_ name: String, types: [SettingsDeviceType]? = nil, _ kind: Kind, default defaultValue: JSONValue,
-                _ summary: String) {
+                _ summary: String, deprecated: Bool = false) {
         self.name = name; self.types = types; self.kind = kind; self.defaultValue = defaultValue; self.summary = summary
+        self.deprecated = deprecated
     }
 
     /// Whether a device of `type` uses it.
@@ -202,6 +206,8 @@ public enum SharedSettingsCatalog {
               "File a note dragged out of the note list becomes"),
         .init("insights.enabled", .bool, default: .bool(false),
               "Note Insights: summaries, keywords, related notes and a map, made on the vault's devices (vault-wide)"),
+        .init("insights.workDevice", .deviceIdOrNull, default: .null,
+              "Deprecated since 1.3 (any capable device does the work, D21): kept and ignored", deprecated: true),
         .init("insights.embeddingRevision", .revisionPins, default: .object([:]),
               "The pinned sentence-embedding revision per language (empty: set by the first map build)"),
         .init("insights.voiceNoteTitle", .voiceTitleFormat, default: .string(VoiceNoteTitleFormat.defaultFormat),

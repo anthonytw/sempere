@@ -4620,8 +4620,9 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   embeds the notes no device has a vector of at the map's `key`, and rebuilds the map when it is due (more than 10% of
   the notes changed since the best map, or weekly, or there is none). Embeddings are bit-identical across devices at one
   key and the map build is deterministic (§16.3), so devices that do the same work at once write the same content and
-  converge. Any device may set a voice-note title (§16.8). A 1.2.0 settings file may still hold `insights.workDevice`:
-  it is not a setting any more, readers keep and ignore it.
+  converge, where the devices' canaries agree: a device whose canaries disagree with the map's keeps its vectors local and writes
+  no shared vector or map, and readers ignore the vectors of a device whose record says `incompatible` (design D21). Any device may set a voice-note title (§16.8). A 1.2.0 settings file may still hold `insights.workDevice`:
+  it is deprecated (not read, not shown), readers keep and ignore it.
 - **The pin.** `insights.embeddingRevision` (per language, `{"en": 1}`) names the sentence-embedding revision. Unset,
   the first map build sets it to the lowest revision every recently seen device supports. It never moves by itself;
   moving it (up or down) is a confirmed choice that lists the devices that do not support the new revision (they become

@@ -278,11 +278,13 @@ public enum InsightsPolicy {
     /// devices by a fixed order (`InsightsSnapshot.bestGen`, `bestMap`). Power only decides when, never who.
     public static func plan(notes: [PolicyNote], snapshot: InsightsSnapshot, me: DeviceID, settings: InsightsSettings,
                             capabilities c: PolicyCapabilities, pinKey: EmbeddingKey?, now: Date, force: Bool = false,
-                            ignoreSettle: Bool = false, backoff: [UUID: Date] = [:], deviceRecordChanged: Bool) -> [WorkItem] {
+                            ignoreSettle: Bool = false, backoff: [UUID: Date] = [:], deviceRecordChanged: Bool,
+                            standing: MapCompatibility = .compatible) -> [WorkItem] {
         guard settings.enabled else { return [] }
         var out: [WorkItem] = []
         let generates = c.powerWindow && c.model != nil
-        let embeds = c.embedRevision != nil && pinKey != nil
+        // An incompatible device keeps its vectors local (D21): it neither writes shared vectors nor the map.
+        let embeds = c.embedRevision != nil && pinKey != nil && standing.mayWriteShared
         let record = snapshot.devices[me]
         if record == nil || deviceRecordChanged
             || record.map({ now.timeIntervalSince1970 - Double($0.written) / 1000 >= recordEvery }) == true {
@@ -316,8 +318,7 @@ public enum InsightsPolicy {
             }
         }
         if embeds, let key = pinKey {
-            let best = snapshot.bestMap(rev: key.rev)
-            let map = best.flatMap { $0.map.key == key ? $0.map : nil }
+            let map = snapshot.bestMap(key: key)?.map
             let embedded = notes.filter { !$0.deleted && snapshot.emb(for: $0.id, key: key, hash: nil) != nil }
             let changed = embedded.filter { e in
                 guard let map else { return true }

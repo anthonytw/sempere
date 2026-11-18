@@ -17,6 +17,7 @@
     "insights.embeddingRevision",
     "insights.enabled",
     "insights.voiceNoteTitle",
+    "insights.workDevice",
     "math.recognize",
     "mouse.smoothing",
     "newNote.titleFormat",

@@ -2352,8 +2352,8 @@ Summaries, keywords and concepts per note, related notes, a map of the notes, no
 voice-note titles, made on the vault's devices only (`format.md` §16, `docs/design/1.2-note-insights.md`): Apple's
 on-device language model (`SystemLanguageModel.default`) and NaturalLanguage's sentence embedding at a pinned
 revision; never a server. They are off until `sempere settings set insights.enabled true`. Any capable
-device does the work (no device is designated; `insights.workDevice` of 1.2.0 is not a setting any more and an old
-file's value is ignored): a device with the model makes the summaries and keywords no device has, one that supports the
+device does the work (no device is designated; `insights.workDevice` of 1.2.0 is deprecated: an old
+file's value is accepted and ignored): a device with the model makes the summaries and keywords no device has, one that supports the
 pinned revision embeds the notes no device has a vector of and rebuilds the map, and any device titles voice notes.
 Every command takes `--json`, the access options and `--no-cache`.
 

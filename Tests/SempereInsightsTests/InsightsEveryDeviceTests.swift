@@ -122,6 +122,92 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         XCTAssertTrue(embeds(forced))
     }
 
+    // MARK: The canary gate (D21)
+
+    /// An incompatible device neither embeds nor maps, and its vectors never suppress a compatible device's embedding.
+    func testAnIncompatibleDeviceWritesNothingSharedAndDoesNotSuppressOthers() {
+        let me = DeviceID("11111111")!, bad = DeviceID("22222222")!
+        let note = PolicyNote(id: UUID(), hash: String(repeating: "a", count: 32), modified: now.addingTimeInterval(-3600), deleted: false,
+                              hasText: true)
+        let settings = InsightsSettings(enabled: true)
+        let key = EmbeddingKey(model: "nl-sentence", lang: "en", rev: 1, input: 1)
+        let caps = PolicyCapabilities(model: nil, embedRevision: 1, powerWindow: true)
+        let incompatiblePlan = InsightsPolicy.plan(notes: [note], snapshot: InsightsSnapshot(), me: me, settings: settings,
+                                                   capabilities: caps, pinKey: key, now: now, deviceRecordChanged: false,
+                                                   standing: .incompatible)
+        XCTAssertFalse(embeds(incompatiblePlan))
+        XCTAssertFalse(incompatiblePlan.contains(.rebuildMap))
+        for standing in [MapCompatibility.compatible, .noMap] {
+            XCTAssertTrue(embeds(InsightsPolicy.plan(notes: [note], snapshot: InsightsSnapshot(), me: me, settings: settings,
+                                                     capabilities: caps, pinKey: key, now: now, deviceRecordChanged: false,
+                                                     standing: standing)))
+        }
+        // `bad`'s record says incompatible and its file holds a vector: it does not count as one.
+        var snap = InsightsSnapshot()
+        let record = InsightsDeviceRecord(device: bad, written: Int64(now.timeIntervalSince1970 * 1000), os: "27.2", platform: "ios",
+                                          model: .init(available: false, reason: nil, identity: nil), supported: ["en": [1]],
+                                          canaries: [], compatibility: "incompatible", against: nil)
+        snap.devices[bad] = record
+        snap.notes[note.id] = [bad: InsightsNoteFile(noteId: note.id, device: bad, written: 1,
+                                                     emb: .init(hash: note.hash, key: key, vector: [0.5, 0.5]))]
+        XCTAssertFalse(snap.hasCurrentEmb(for: note.id, hash: note.hash, key: key))
+        XCTAssertNil(snap.emb(for: note.id, key: key, hash: note.hash))
+        XCTAssertNotNil(snap.emb(for: note.id, from: bad), "its own file is still its own")
+        XCTAssertTrue(embeds(InsightsPolicy.plan(notes: [note], snapshot: snap, me: me, settings: settings, capabilities: caps,
+                                                 pinKey: key, now: now, deviceRecordChanged: false)),
+                      "a compatible device embeds although the incompatible one holds a vector")
+        // Once the device is compatible its vector counts.
+        snap.devices[bad]?.compatibility = "compatible"
+        XCTAssertTrue(snap.hasCurrentEmb(for: note.id, hash: note.hash, key: key))
+    }
+
+    /// End to end: a device whose embedder drifts is incompatible with A's map, writes no vector and builds no map, and
+    /// A's map holds only A's vectors.
+    func testADriftingDeviceKeepsItsVectorsLocal() async throws {
+        let id1 = try note("P0", Self.physics[0]), id2 = try note("P1", Self.physics[1]), id3 = try note("P2", Self.physics[2])
+        _ = try await run(a, model: nil)
+        let drift = FakeEmbeddingProvider(perturbation: 0.05)
+        let later = now.addingTimeInterval(3600)
+        let rb = try await run(b, model: nil, embedder: drift, at: later) { $0.force = false }
+        XCTAssertEqual(rb.embedded, [])
+        XCTAssertFalse(rb.mapBuilt)
+        let snap = InsightsStore(vault: a).snapshot()
+        XCTAssertEqual(snap.devices[meB]?.compatibility, "incompatible")
+        for id in [id1, id2, id3] {
+            XCTAssertNil(snap.notes[id]?[meB]?.emb, "no shared vector from the incompatible device")
+            XCTAssertNotNil(snap.notes[id]?[meA]?.emb)
+        }
+        XCTAssertNil(snap.map(of: meB))
+        let built = try XCTUnwrap(snap.map(of: meA))
+        XCTAssertEqual(built.built?.notes, 3)
+    }
+
+    /// A map at another language's key does not make a device at the pinned key see "no map" (it would rebuild every pass).
+    func testBestMapByKeyIgnoresAMapOfAnotherKey() {
+        var snap = InsightsSnapshot()
+        let en = EmbeddingKey(model: "nl-sentence", lang: "en", rev: 1, input: 1)
+        let es = EmbeddingKey(model: "nl-sentence", lang: "es", rev: 1, input: 1)
+        let other = DeviceID("22222222")!
+        snap.maps[other] = InsightsMapFile(device: other, written: 5, key: es, dim: 2, canaries: nil, mean: [0, 0], clusters: [],
+                                           layout: [:], built: nil)
+        XCTAssertNil(snap.bestMap(key: en), "no map at the key")
+        XCTAssertEqual(snap.bestMap(rev: 1)?.device, other, "readers fall back by revision")
+        XCTAssertEqual(snap.bestMap(rev: 1, language: "en")?.device, other, "and then to any map")
+        let me = DeviceID("11111111")!
+        snap.maps[me] = InsightsMapFile(device: me, written: 1, key: en, dim: 2, canaries: nil, mean: [0, 0], clusters: [],
+                                        layout: [:], built: nil)
+        XCTAssertEqual(snap.bestMap(rev: 1, language: "en")?.device, me, "the language's map first, though older")
+        XCTAssertEqual(snap.bestMap(key: en)?.device, me)
+        let note = PolicyNote(id: UUID(), hash: String(repeating: "a", count: 32), modified: now.addingTimeInterval(-3600), deleted: false,
+                              hasText: true)
+        snap.notes[note.id] = [me: InsightsNoteFile(noteId: note.id, device: me, written: 1,
+                                                    emb: .init(hash: note.hash, key: en, vector: [0.5, 0.5]))]
+        let plan = InsightsPolicy.plan(notes: [note], snapshot: snap, me: me, settings: InsightsSettings(enabled: true),
+                                       capabilities: .init(model: nil, embedRevision: 1, powerWindow: true), pinKey: en, now: now,
+                                       deviceRecordChanged: false)
+        XCTAssertTrue(plan.contains(.rebuildMap), "a new note is not in the map at this key")
+    }
+
     func testIgnoreSettleSkipsTheSettleTimeButNotOpenNotes() {
         let me = DeviceID("11111111")!
         let fresh = PolicyNote(id: UUID(), hash: String(repeating: "a", count: 32), modified: now.addingTimeInterval(-60), deleted: false,

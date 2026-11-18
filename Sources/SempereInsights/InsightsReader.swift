@@ -66,7 +66,7 @@ public struct InsightsReader: Sendable {
 
     /// The map this device shows (D21: the best of any device's, `InsightsSnapshot.bestMap`), at the pinned revision of
     /// `language` when one is.
-    func sharedMap(language: String) -> (map: InsightsMapFile, device: DeviceID)? { snapshot.bestMap(rev: settings.pins[language]) }
+    func sharedMap(language: String) -> (map: InsightsMapFile, device: DeviceID)? { snapshot.bestMap(rev: settings.pins[language], language: language) }
 
     /// How this device stands to the shared map (design §3.8).
     public func compatibility(me: DeviceID?, embedder: (any EmbeddingProvider)?, language: String) -> MapCompatibility {

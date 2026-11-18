@@ -100,6 +100,10 @@ public enum MapCompatibility: String, Hashable, Sendable, Codable {
     case vectorReader
     /// There is no map yet.
     case noMap
+
+    /// Whether a device in this standing writes to the shared set (D21): vectors and the map are written only by devices
+    /// the canaries accept (the map's builder is one) or, with no map yet, by devices not contradicted by the others' canaries.
+    public var mayWriteShared: Bool { self == .compatible || self == .noMap }
 }
 
 public enum EmbeddingPin {

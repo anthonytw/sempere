@@ -249,6 +249,8 @@ public struct InsightsUpdater: Sendable {
         let pin = pinRevision(main)
         let canEmbed = pin.flatMap { p in supported[main]?.contains(p) == true ? p : nil }
         let pinKey = canEmbed.flatMap { r in embedder?.key(language: main, revision: r) }
+        let standing = canEmbed == nil ? MapCompatibility.vectorReader
+            : mapStanding(snapshot: snapshot, me: me, records: records, settings: settings, language: main, key: pinKey)
         let changedRecord = snapshot.devices[me].map { !Self.sameRecord($0, ownRecord) } ?? true
         let caps = PolicyCapabilities(model: o.embeddingsOnly ? nil : usable?.identity, embedRevision: canEmbed, powerWindow: o.powerWindow)
         let selected = o.note.map { id in inputs.filter { $0.id == id } } ?? inputs
@@ -262,15 +264,15 @@ public struct InsightsUpdater: Sendable {
         } ?? [:]
         var plan = InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps,
                                        pinKey: pinKey, now: o.now, force: o.force, ignoreSettle: o.ignoreSettle, backoff: backoff,
-                                       deviceRecordChanged: changedRecord)
-        if o.rebuildMap, pinKey != nil, !plan.contains(.rebuildMap) { plan.append(.rebuildMap) }
+                                       deviceRecordChanged: changedRecord, standing: standing)
+        if o.rebuildMap, pinKey != nil, standing.mayWriteShared, !plan.contains(.rebuildMap) { plan.append(.rebuildMap) }
         // What waits, and why ("Process Now"'s outcome): the notes a plan with no settle time, no open notes and no
         // back-off would summarize that this one does not.
         if usable != nil, !o.force {
             var free = policyNotes
             for i in free.indices { free[i].open = false }
             let unheld = InsightsPolicy.plan(notes: free, snapshot: snapshot, me: me, settings: settings, capabilities: caps, pinKey: pinKey,
-                                             now: o.now, ignoreSettle: true, deviceRecordChanged: false)
+                                             now: o.now, ignoreSettle: true, deviceRecordChanged: false, standing: standing)
             let planned = Set(plan.compactMap { if case .generate(let id) = $0 { return id } else { return nil } })
             let open = Set(policyNotes.filter(\.open).map(\.id))
             for case .generate(let id) in unheld where !planned.contains(id) {
@@ -384,7 +386,7 @@ public struct InsightsUpdater: Sendable {
         if plan.contains(.rebuildMap), let key = pinKey {
             report.mapBuilt = true
             if !o.dryRun {
-                let map = Self.buildMap(snapshot: snapshot, me: me, key: key, inputs: inputs, previous: snapshot.bestMap(rev: key.rev)?.map,
+                let map = Self.buildMap(snapshot: snapshot, me: me, key: key, inputs: inputs, previous: snapshot.bestMap(key: key)?.map,
                                         canaries: try? embedder.flatMap { try Canaries.vectors($0, language: main, revision: key.rev) })
                 if let map { try store.write(.map(map), now: o.now) }
                 snapshot = store.snapshot()
@@ -398,7 +400,7 @@ public struct InsightsUpdater: Sendable {
                 let comp = InsightsReader(vault: vault, snapshot: snapshot, settings: InsightsSettings.read(vault, type: o.deviceType))
                     .compatibility(me: me, embedder: embedder, language: main)
                 record.compatibility = comp.rawValue
-                record.against = snapshot.bestMap(rev: pin)?.map.written
+                record.against = snapshot.bestMap(rev: pin, language: main)?.map.written
                 try store.write(.device(record), now: o.now)
             }
         }
@@ -562,6 +564,25 @@ public struct InsightsUpdater: Sendable {
                                            identity: availability.isAvailable ? model?.identity : nil)
         return InsightsDeviceRecord(device: me, written: 0, os: o.platform.os, platform: o.platform.platform, model: m,
                                     supported: supported, canaries: [], compatibility: nil, against: nil)
+    }
+
+    /// This device's standing toward the shared map before it writes anything (D21): `compatible`, `noMap` or
+    /// `incompatible`/`vectorReader` (the last two write nothing shared). With no map yet, the canaries in the device
+    /// records decide: the capable device with the lowest id that has canaries at `key` is the reference (a device that is
+    /// not it writes only when its canaries agree with the reference's), so devices that disagree do not both start a set.
+    func mapStanding(snapshot: InsightsSnapshot, me: DeviceID, records: [DeviceID: InsightsDeviceRecord],
+                     settings: InsightsSettings, language: String, key: EmbeddingKey?) -> MapCompatibility {
+        let reader = InsightsReader(vault: vault, snapshot: snapshot, settings: settings)
+        let comp = reader.compatibility(me: me, embedder: embedder, language: language)
+        guard comp == .noMap, let key, let embedder else { return comp }
+        guard let mine = try? Canaries.vectors(embedder, language: key.lang, revision: key.rev) else { return .incompatible }
+        let others = records.filter { $0.key != me }.compactMap { d, r -> (DeviceID, [[Float]], EmbeddingKey)? in
+            guard let c = r.canaries.first(where: { $0.key == key && $0.canaries.set == Canaries.set }),
+                  let v = c.canaries.vectors(dimension: c.dim) else { return nil }
+            return (d, v, c.key)
+        }.sorted { $0.0.rawValue < $1.0.rawValue }
+        guard let reference = others.first, reference.0.rawValue < me.rawValue else { return .noMap }
+        return Canaries.compatible(mine: mine, myKey: key, theirs: reference.1, theirKey: reference.2) ? .noMap : .incompatible
     }
 
     func canaryVectors(supported: [String: [Int]], pin: Int?, language: String) -> [InsightsDeviceRecord.CanaryVectors] {
