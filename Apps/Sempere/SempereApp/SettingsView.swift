@@ -154,6 +154,7 @@ struct SettingsGroupPage: View {
             }
         case .writing:
             EditorSettingsSection()
+            SavedToolsSettingsSection()
             NewNoteSettingsSection().id(model.settingsAppliedRevision)
             HandwritingSettingsSection()
             MathRecognitionSettingsSection()

@@ -1,6 +1,19 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    " Copy" : {
+      "comment" : "Saved tools: appended to a duplicated tool's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " copia"
+          }
+        }
+      }
+    },
     "%@ (%@)" : {
       "comment" : "A device and what it can do",
       "extractionState" : "manual",
@@ -4200,6 +4213,19 @@
         }
       }
     },
+    "Actions for %@" : {
+      "comment" : "Accessibility label of a saved tool's menu button (its name)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acciones de %@"
+          }
+        }
+      }
+    },
     "Actions for “%@”" : {
       "comment" : "Devices: accessibility label of a device's actions button; the value is a device name",
       "extractionState" : "manual",
@@ -8213,6 +8239,18 @@
         }
       }
     },
+    "Delete this saved tool?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar esta herramienta guardada?"
+          }
+        }
+      }
+    },
     "Delete “%@” from this device?" : {
       "comment" : "%@ is the vault's name",
       "extractionState" : "manual",
@@ -9095,6 +9133,18 @@
         }
       }
     },
+    "Edit Saved Tool" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar herramienta guardada"
+          }
+        }
+      }
+    },
     "Edit Tags…" : {
       "comment" : "Note menu: edit the note's tags",
       "extractionState" : "manual",
@@ -9134,6 +9184,18 @@
         }
       }
     },
+    "Edit, duplicate, move or delete this saved tool" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar, duplicar, mover o eliminar esta herramienta guardada"
+          }
+        }
+      }
+    },
     "Editing session, %@, %@" : {
       "comment" : "Accessibility label of an editing session row: its time range, then its device and number of saves",
       "extractionState" : "manual",
@@ -9156,6 +9218,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Editor"
+          }
+        }
+      }
+    },
+    "Edit…" : {
+      "comment" : "Saved tools: context menu",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar…"
           }
         }
       }
@@ -10038,6 +10113,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fino"
+          }
+        }
+      }
+    },
+    "Fine red pen" : {
+      "comment" : "Saved tool editor: example name in the empty name field",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bolígrafo rojo fino"
           }
         }
       }
@@ -11660,6 +11748,19 @@
         }
       }
     },
+    "Ink" : {
+      "comment" : "Saved tool editor: the kind of ink",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tinta"
+          }
+        }
+      }
+    },
     "Ink Wind" : {
       "comment" : "App icon name",
       "extractionState" : "manual",
@@ -13204,6 +13305,19 @@
         }
       }
     },
+    "Manage Saved Tools…" : {
+      "comment" : "Tools menu: open Settings for the saved tools",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestionar herramientas guardadas…"
+          }
+        }
+      }
+    },
     "Manages devices" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -13540,6 +13654,19 @@
         }
       }
     },
+    "Move Left" : {
+      "comment" : "Saved tools: context menu",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover a la izquierda"
+          }
+        }
+      }
+    },
     "Move Note" : {
       "comment" : "Undo action name: one note moved to a notebook",
       "extractionState" : "manual",
@@ -13588,6 +13715,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mover notas"
+          }
+        }
+      }
+    },
+    "Move Right" : {
+      "comment" : "Saved tools: context menu",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover a la derecha"
           }
         }
       }
@@ -14407,6 +14547,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aún no ha llegado ninguna petición con estas palabras. Comprueba las palabras en el dispositivo nuevo. Su petición llega por el destino de sincronización de la bóveda, e iCloud Drive puede tardar un minuto o dos en entregarla: deja esto abierto y Sempere la aprobará cuando llegue."
+          }
+        }
+      }
+    },
+    "No saved tools yet. Set up a pen or highlighter in the palette, then save it here or with + in the palette." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay herramientas guardadas. Configura un bolígrafo o un marcador en la paleta y guárdalo aquí o con + en la paleta."
+          }
+        }
+      }
+    },
+    "No saved tools yet. Set up a pen or highlighter, then save it here." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay herramientas guardadas. Configura un bolígrafo o un marcador y guárdalo aquí."
           }
         }
       }
@@ -19440,6 +19604,18 @@
         }
       }
     },
+    "Replace the Vault's Saved Tools with This Device's" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazar las herramientas guardadas de la bóveda por las de este dispositivo"
+          }
+        }
+      }
+    },
     "Replace the Vault's Settings with This Device's" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -20040,6 +20216,31 @@
         }
       }
     },
+    "Save Current Tool as Preset…" : {
+      "comment" : "Tools menu: save the pen or highlighter setup as a saved tool",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar herramienta actual como preajuste…"
+          }
+        }
+      }
+    },
+    "Save Current Tool…" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar herramienta actual…"
+          }
+        }
+      }
+    },
     "Save Files copies them as they are, encrypted. Opening them takes the recovery kit and the vault.json file and epochs folder from another copy of the vault (with sempere or stock age). Export makes PDFs or images of the notes. The notes stay readable here." : {
       "comment" : "Unlisted screen footer: what Save Files and Export do; vault.json and epochs are file names, not translated",
       "extractionState" : "manual",
@@ -20087,6 +20288,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar kit de recuperación como PDF…"
+          }
+        }
+      }
+    },
+    "Save Tool" : {
+      "comment" : "Saved tool editor title; palette + button",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar herramienta"
           }
         }
       }
@@ -20139,6 +20353,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar el nombre nuevo"
+          }
+        }
+      }
+    },
+    "Save this tool" : {
+      "comment" : "Saved tool editor: tooltip of Save",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar esta herramienta"
           }
         }
       }
@@ -20231,6 +20458,32 @@
         }
       }
     },
+    "Saved Tool %lld" : {
+      "comment" : "Tools menu: the nth saved tool, when its name is not known",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herramienta guardada %lld"
+          }
+        }
+      }
+    },
+    "Saved Tools" : {
+      "comment" : "Tools menu submenu, palette button, alert title and Settings section: the palette's saved tools",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herramientas guardadas"
+          }
+        }
+      }
+    },
     "Saved Version" : {
       "comment" : "History: title of a saved version without a name",
       "extractionState" : "manual",
@@ -20292,6 +20545,80 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En la bandeja de entrada"
+          }
+        }
+      }
+    },
+    "Saved tool: %@, %@, %@, %@" : {
+      "comment" : "Palette: a saved tool's accessibility label (name, ink, width, color)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herramienta guardada: %1$@, %2$@, %3$@, %4$@"
+          }
+        }
+      }
+    },
+    "Saved tools are paused until the vault's device list is checked." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las herramientas guardadas están en pausa hasta que se compruebe la lista de dispositivos de la bóveda."
+          }
+        }
+      }
+    },
+    "Saved tools are paused: this vault is read-only on this device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las herramientas guardadas están en pausa: esta bóveda es de solo lectura en este dispositivo."
+          }
+        }
+      }
+    },
+    "Saved tools are paused: this vault's settings need a newer Sempere. Update the app to resume." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las herramientas guardadas están en pausa: los ajustes de esta bóveda necesitan una versión más reciente de Sempere. Actualiza la app para reanudarlas."
+          }
+        }
+      }
+    },
+    "Saved tools are pen and highlighter setups in the palette. With Sync Settings with This Vault on, they are the vault's and follow you to your other devices; otherwise they stay on this device. At most 64." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las herramientas guardadas son configuraciones de bolígrafo y marcador de la paleta. Con Sincronizar ajustes con esta bóveda activado, son de la bóveda y te siguen a tus otros dispositivos; si no, se quedan en este dispositivo. Máximo 64."
+          }
+        }
+      }
+    },
+    "Saved tools could not be saved: %@" : {
+      "comment" : "Saved tools; the error text follows (English)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron guardar las herramientas: %@"
           }
         }
       }
@@ -23803,6 +24130,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ese texto no contiene ningún archivo de clave de dispositivo ni ninguna identidad AGE-SECRET-KEY-PQ-1…."
+          }
+        }
+      }
+    },
+    "That tool cannot be saved: check its name, width and opacity." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede guardar esa herramienta: revisa su nombre, grosor y opacidad."
           }
         }
       }
@@ -29241,6 +29580,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Amarillo"
+          }
+        }
+      }
+    },
+    "You can save up to 64 tools. Delete one to save another." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puedes guardar hasta 64 herramientas. Elimina una para guardar otra."
           }
         }
       }

@@ -123,6 +123,7 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | Tools | Annotate, Hand (the top bar's mode buttons; "Back to Reading" while that mode is on) | ⇧⌘P, ⌥⌘7 |
 | Tools | Pen, Marker, Pencil, Eraser, Lasso (switch to Annotate) | ⌥⌘1 … ⌥⌘5 |
 | Tools | Text (the toolbar's toggle; switches to Annotate) | ⌥⌘6 |
+| Tools ▸ Saved Tools | the first nine saved tools (⌃⌘1 … ⌃⌘9); Save Current Tool as Preset…; Manage Saved Tools… (Settings) | ⌃⌘1 … ⌃⌘9 |
 | Tools | Smaller / Larger Object Eraser (steps through the presets) | ⌥⌘[, ⌥⌘] |
 | Tools | Ruler (straight lines with a mouse) | ⌥⌘R |
 | Tools | Use Compact / Full Palette | ⌥⇧⌘P |

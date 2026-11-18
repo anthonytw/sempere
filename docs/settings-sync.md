@@ -435,6 +435,13 @@ sempere settings schema
 - Rows of settings get a context menu (Only on This Device, Only on iPads, Use Synced
   Value, Use on All Devices) and, when overridden or type-specific, a badge (`.help` on
   the Mac). Spanish strings for every new string.
+- Saved tools (`palette.tool.<uuid>`, `palette.toolOrder`; `docs/design/1.3-custom-tools.md` §3.3) are a family of
+  keys, not rows: with the switch on the palette shows the open vault's and saves to its file (`AppModel+SavedTools`,
+  under the vault's write lock); off, the device's own list (`Sempere.savedTools`). Turning sync on counts the family as one
+  setting: a vault with no saved tool slot (not even a deleted one) takes this device's list, a vault with some keeps them
+  and Settings ▸ Writing ▸ Saved Tools offers "Replace the Vault's Saved Tools with This Device's". There is no "Only on
+  This Device" for the family. Read-only and untrusted vaults can still use the tools; saving is paused with the
+  standard message.
 - The logic is in `Sources/Sempere` (`SharedSettings`, `SharedSettingsCatalog`,
   `SharedSettingsMigrations`, `SettingsSyncState`: merge, resolution, first enable,
   overrides, passes), tested on Linux. The app maps keys to its `UserDefaults` values

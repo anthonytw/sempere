@@ -27,6 +27,12 @@ struct DrawingPaletteView: View {
     @Environment(\.colorScheme) private var colorScheme
     /// The system color picker, as a sheet of the palette (iPad, iPhone).
     @State private var pickingColor = false
+    @AppModelEnvironment private var model
+    /// The saved tools' editor, a delete being asked for, the compact bar's list, and what a refused change says.
+    @State private var editorTarget: SavedToolEditorTarget?
+    @State private var deletingSaved: SavedTool?
+    @State private var savedListShown = false
+    @State private var savedMessage: String?
 
     var body: some View {
         Group {
@@ -53,6 +59,63 @@ struct DrawingPaletteView: View {
                 .presentationDetents([.medium, .large])
             }
         }
+        .sheet(item: $editorTarget) { target in
+            SavedToolEditor(target: target, actions: savedActions) { editorTarget = nil }
+        }
+        .confirmationDialog("Delete this saved tool?", isPresented: Binding(get: { deletingSaved != nil },
+                                                                        set: { if !$0 { deletingSaved = nil } }),
+                            titleVisibility: .visible, presenting: deletingSaved) { tool in
+            Button("Delete", role: .destructive) { savedActions.perform(.remove(tool.id)) }
+        }
+        .alert("Saved Tools", isPresented: Binding(get: { savedMessage != nil }, set: { if !$0 { savedMessage = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(verbatim: savedMessage ?? "")
+        }
+        // Tools > Save Current Tool as Preset... (the Mac menu) asks the palette, which opens the editor once it shows.
+        .onChange(of: toolbox.savePresetRequests) { openRequestedEditor() }
+        .onAppear { openRequestedEditor() }
+    }
+
+    // MARK: Saved tools
+
+    private var savedActions: SavedToolActions {
+        SavedToolActions(model: model, toolbox: toolbox, editor: editor, report: { savedMessage = $0 })
+    }
+
+    private func openRequestedEditor() {
+        guard toolbox.takeSavePresetRequest() else { return }
+        if state.tool.isInk { editorTarget = SavedToolEditorTarget(existing: nil) }
+    }
+
+    /// The compact bar's button for the saved tools: a list in a popover (a sheet on an iPhone).
+    private var savedToolsButton: some View {
+        PaletteButton(title: "Saved Tools", systemImage: "star.square", help: "Pick or manage the saved tools",
+                      selected: model.savedTools.tools.contains { state.isActive($0) }) {
+            savedListShown.toggle()
+        }
+        .accessibilityIdentifier("palette.savedToolsButton")
+        .overlay(alignment: .topTrailing) {
+            if !model.savedTools.isEmpty {
+                Text(verbatim: "\(model.savedTools.tools.count)").font(.system(size: 9, weight: .semibold)).monospacedDigit()
+                    .padding(.horizontal, 3).background(.tint, in: Capsule()).foregroundStyle(.white)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
+        .popover(isPresented: $savedListShown) {
+            NavigationStack {
+                SavedToolsList(actions: savedActions, onPick: { savedListShown = false }, editing: $editorTarget,
+                               deleting: $deletingSaved)
+                    .navigationTitle("Saved Tools")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        if !model.savedTools.isEmpty { ToolbarItem(placement: .primaryAction) { EditButton() } }
+                    }
+            }
+            .frame(minWidth: 300, minHeight: 320)
+            .presentationCompactAdaptation(.sheet)
+            .presentationDetents([.medium, .large])
+        }
     }
 
     // MARK: The bars
@@ -60,6 +123,9 @@ struct DrawingPaletteView: View {
     private func fullBar(inline: Bool) -> some View {
         HStack(spacing: 4) {
             ForEach(DrawingToolState.fullTools, id: \.self) { toolButton($0) }
+            separator
+            SavedToolsGroup(tools: model.savedTools.tools, state: state, actions: savedActions, shown: { shown($0) },
+                            editing: $editorTarget, deleting: $deletingSaved)
             if inline {
                 if state.tool != .lasso {
                     separator
@@ -81,6 +147,7 @@ struct DrawingPaletteView: View {
     private var compactBar: some View {
         HStack(spacing: 4) {
             ForEach(DrawingToolState.compactTools(selected: state.tool), id: \.self) { toolButton($0) }
+            savedToolsButton
             if state.tool != .lasso {
                 separator
                 choicesButton
@@ -493,7 +560,7 @@ struct DrawingPaletteView: View {
 
 /// One of the palette's icon buttons: big enough for a finger, a hover effect for the pointer, lit when
 /// selected; an ink's button shows its color under the icon.
-private struct PaletteButton: View {
+struct PaletteButton: View {
     let title: String
     let systemImage: String
     let help: String

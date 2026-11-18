@@ -6,7 +6,7 @@ import Foundation
 // app's palette and `sempere tools` both go through it.
 
 /// A saved tool: one palette entry.
-public struct SavedTool: Hashable, Sendable {
+public struct SavedTool: Hashable, Sendable, Identifiable {
     /// Most presets (live ones; an existing file with more shows the first `maxTools` by order).
     public static let maxTools = 64
     /// Longest name, in characters, after trimming.

@@ -18,6 +18,31 @@ struct DrawingToolboxTests {
         return d
     }
 
+    /// A saved tool (docs/design/1.3-custom-tools.md): picking it gives PencilKit the preset's ink, color, width and
+    /// opacity, remembered like any change; the palette's request to save the current tool is taken once.
+    @Test func aSavedToolBecomesTheCurrentTool() throws {
+        let defaults = Self.scratchDefaults()
+        let toolbox = DrawingToolbox(defaults: defaults)
+        let saved = SavedTool(name: "Yellow marker", ink: .marker, color: Sempere.Color(r: 255, g: 204, b: 0), width: 14,
+                              opacity: 0.4, at: 1)
+        toolbox.apply(saved)
+        #expect(toolbox.state.tool == .marker)
+        #expect(toolbox.state.isActive(saved))
+        let ink = try #require(toolbox.pkTool as? PKInkingTool)
+        #expect(InkTool(ink.inkType) == .marker)
+        #expect(abs(Double(ink.width) - 14) < 0.01)
+        let drawn = Sempere.Color(ink.color)
+        #expect(abs(Int(drawn.g) - 204) <= 1 && abs(Int(drawn.a) - 102) <= 1, "the opacity is the alpha")
+        #expect(DrawingToolbox(defaults: defaults).state.isActive(saved), "remembered")
+        toolbox.setWidth(20)
+        #expect(!toolbox.state.isActive(saved), "adjusting the width deselects it")
+
+        #expect(!toolbox.takeSavePresetRequest())
+        toolbox.requestSavePreset()
+        #expect(toolbox.takeSavePresetRequest())
+        #expect(!toolbox.takeSavePresetRequest(), "taken once")
+    }
+
     @Test func eachToolBecomesItsPencilKitTool() throws {
         let toolbox = DrawingToolbox(defaults: Self.scratchDefaults())
         for tool in DrawingTool.allCases where tool.isInk {

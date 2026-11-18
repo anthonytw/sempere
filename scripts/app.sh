@@ -137,7 +137,7 @@ ui_mac=(MacWindowUITests MacItemUITests SidebarDropUITests MacFocusUITests QuitP
         MacImportUITests MacExportUITests MacRealMouseUITests FolderPickerUITests MacNoteModeUITests NoteToolbarUITests
         VaultStoreUITests CopyKeyExpiryMacUITests)
 ui_mac_smoke=(LaunchSmokeUITests)
-ui_ipad=(SidebarDropUITests PadFocusUITests SearchHighlightUITests PaletteButtonUITests IPadCanvasUITests
+ui_ipad=(SidebarDropUITests PadFocusUITests SearchHighlightUITests PaletteButtonUITests SavedToolsUITests IPadCanvasUITests
          LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote
          LaunchSmokeUITests/testFreshLaunchDoubleColumn LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour
          NewVaultSheetUITests MacImportUITests MacExportUITests FolderPickerUITests PhoneCanvasModeUITests
