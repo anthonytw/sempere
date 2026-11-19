@@ -74,8 +74,9 @@ elif [[ $version == *-* ]]; then echo "warn  ${line#FAIL  } (a prerelease only w
 else echo "$line"; die "$tag has not passed its release checks"; fi
 v=$(git show "$sha:Sources/SempereCLI/Version.swift" | sed -n 's/^let sempereVersion = "\(.*\)"$/\1/p')
 [[ $v == "$version" ]] || die "Version.swift at $tag says '$v'"
-f=$(mktemp); git show "$sha:CHANGELOG.md" > "$f"
-scripts/changelog-section.sh --file "$f" "$version" > "$out/notes.md" || die "CHANGELOG.md at $tag has no finished section for $version"
+# The notes come from main's CHANGELOG: the date goes in after Apple approves, so the tagged commit may still be undated.
+f=$(mktemp); git show "$remote/main:CHANGELOG.md" > "$f"
+scripts/changelog-section.sh --file "$f" "$version" > "$out/notes.md" || die "CHANGELOG.md on $remote/main has no finished section for $version"
 rm -f "$f"
 # The standard footer: the signing keys' fingerprints, derived from packaging/allowed_signers (equal to main's, checked above),
 # to compare with SECURITY.md and the website's security page (a key change changes all three; docs/design/1.2-audit-followups.md

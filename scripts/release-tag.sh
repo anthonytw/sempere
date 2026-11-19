@@ -24,7 +24,8 @@
 # maintainer would sign the tag on the fix commit themselves, for example from a `git bundle` of it.
 #
 # The checks, run before anything is published: the commit is on
-# origin/main, Version.swift there says VERSION, CHANGELOG.md there has a dated section for VERSION with no
+# origin/main, Version.swift there says VERSION, CHANGELOG.md on origin/main (not at the commit: the date goes in after
+# Apple approves, so the released commit itself may still say TODO(user)) has a dated section for VERSION with no
 # TODO(user) (scripts/changelog-section.sh), and the commit passed the release sweep (`just ci-release`): itself, or
 # a swept ancestor with only release-neutral changes since (scripts/release-sweep-check.sh; a prerelease only warns). The tag is signed with your git signing key (`git tag -s`).
 set -euo pipefail
@@ -87,7 +88,10 @@ cli_version() {
   echo "ok    Version.swift = $version"
 }
 changelog() {
-  local f; f=$(mktemp); git show "$sha:CHANGELOG.md" > "$f"
+  # main's CHANGELOG (the date lands after approval, so the tagged commit may be undated); an embargoed fix is not on
+  # main yet, so it carries its own
+  local f src="$remote/main"; [[ $mode == embargo ]] && src=$sha
+  f=$(mktemp); git show "$src:CHANGELOG.md" > "$f"
   if scripts/changelog-section.sh --file "$f" "$version" >/dev/null 2>"$f.err"; then
     echo "ok    CHANGELOG.md: $(grep -m1 "^## \[$version\]" "$f")"; rm -f "$f" "$f.err"
   else
