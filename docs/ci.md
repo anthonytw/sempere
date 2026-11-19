@@ -125,7 +125,7 @@ step passed; `scripts/forge.sh`), and something enforces each one. The gate's ow
 | PR gate (GitHub: the checks above; here: its local twin, optional) | `scripts/local-ci.sh` | the tooltip lint (`scripts/check-help.py`), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run), Mac Catalyst unit tests (`scripts/app.sh test-mac`, the pseudo-language layout check `PseudoLanguageLayoutTests` among them), package tests (`swift build --build-tests && swift test --parallel`), then in Docker the Linux package tests (offline, portability, removable importers: `scripts/ci-linux.sh docker test`) and the WebDAV tests (`docker webdav`), each skipping targets whose hash already passed | `local/app-tests` (with `--status`) | nothing: GitHub's checks gate merging |
 | Author's targeted tests | whatever the change calls for | e.g. `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacItemUITests` | the PR's `## Tests run` section | review (the PR template has the section) |
 | Pre-TestFlight | `scripts/local-ci.sh --testflight` | the gate, then the dense-note performance suite (`test-mac-perf`, [Performance tests](#performance-tests)), the Mac unit tests with no network ([Offline mode](#offline-mode)), the Mac launch smoke tests (`test-mac-smoke`) and every Mac UI test (`test-mac-ui`) | `local/testflight-suite` | `scripts/testflight.sh` (`just testflight`) checks it on the commit it builds (`local/release-sweep` also counts) |
-| Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, with the iPad unit suite (`test`), the iPhone suites (`test-phone`) and the pseudo-language UI test on the iPad (`pseudo`) before the Mac UI tests, then the iPad UI tests (`test-ui`) and the iPhone canvas UI tests (`test-phone-ui`: tap selects, hold menu, finger draws, reading mode) | `local/release-sweep` | the App Store submission; then the release checks (`release-tag.sh`, `release-build.sh`): a `vX.Y.Z` tag needs it on the commit or on a swept ancestor with only release-neutral changes since (`scripts/release-sweep-check.sh`; a `-rc` prerelease only warns) |
+| Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, with the iPad unit suite (`test`) and the iPhone suites (`test-phone`) run side by side (step `sim-unit`: one `build-sim-unit`, then `test-without-building` on two simulators with result bundles `build/local-ci/ipad.xcresult` and `iphone.xcresult`; `SEMPERE_SIM_UNIT=serial` runs them in turn) and the pseudo-language UI test on the iPad (`pseudo`) before the Mac UI tests, then the iPad UI tests (`test-ui`) and the iPhone canvas UI tests (`test-phone-ui`: tap selects, hold menu, finger draws, reading mode) | `local/release-sweep` | the App Store submission; then the release checks (`release-tag.sh`, `release-build.sh`): a `vX.Y.Z` tag needs it on the commit or on a swept ancestor with only release-neutral changes since (`scripts/release-sweep-check.sh`; a `-rc` prerelease only warns) |
 | CLI-only release | `scripts/local-ci.sh --cli` | the package tests on the Mac, then in Docker the Linux tests (`scripts/ci-linux.sh test`), the WebDAV integration tests (`webdav`) and the static release build (`static`) | `local/cli-suite` | the release checks for a tag whose `Version.swift` differs from the app's `MARKETING_VERSION` |
 
 - **The gate never needs the screen** and runs no simulator, so it can run on a Mac someone is
@@ -318,9 +318,8 @@ then say so.
   hash already passed, logging the hash and the commit that passed it (`ci-hash: SKIP ...`). The records are
   files in `~/.cache/sempere-ci-pass` on a Mac (the Docker jobs mount it; on GitHub, `actions/cache`, above), keyed by job, target and hash, not by commit: a pass
   recorded on a pull request's head is honored by any later commit with the same hashes, so the push to `main` of a squash
-  whose files the pull request already passed runs nothing. There is no weekly or post-merge full run; only the release
-  modes force one. `SEMPERE_CI_FORCE_ALL=1` runs everything; `--testflight`,
-  `--release` and `--cli` set it. `scripts/ci-targets.json` classifies targets as logic or OS-dependent (the Mac gate
+  whose files the pull request already passed runs nothing. There is no weekly or post-merge full run; `--cli` and `--force-all`
+  force one (`SEMPERE_CI_FORCE_ALL=1` runs everything; `--testflight` and `--release` skip passed targets like the gate, since 2026-11-19). `scripts/ci-targets.json` classifies targets as logic or OS-dependent (the Mac gate
   skips the logic ones with `SEMPERE_CI_MAC_PACKAGE=os-dependent`; off for now).
 - **The static (musl) Linux release build** is `scripts/ci-linux.sh static`; `release-build.sh` builds both
   architectures from the tag.
@@ -465,6 +464,21 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
   run and removes both afterwards, so its SDK is downloaded and checked against its checksum each time and
   nothing a test job wrote can reach a release binary. If a Linux build fails in a way a clean build would
   not, `docker volume rm` the volume and re-run.
+
+## Cleaning up after a run
+
+`scripts/app.sh` and `scripts/local-ci.sh` leave the Mac as they found it (EXIT traps, so a failed step, `set -e`, SIGINT and
+SIGTERM count too; the measured reason is the owner's "choppy laptop" report of 2026-11-16, `data/TODO.md`):
+
+- **Simulators.** A simulator that was not booted when `app.sh` first needed it is shut down when it ends (`track_simulator`); one that was
+  already booted is left alone. The watch runs (`test-watch*`, `test-quarantine`) also shut down the iPhone that boots with the watch. Before this,
+  only CI shut simulators down and a local run left them booted. `SEMPERE_APP_NO_CLEANUP=1` skips all of this, to inspect a failed run.
+- **Mac Catalyst processes.** A test host or app running from this checkout's `Build/Products/*-maccatalyst/` that was not there at the start and outlives its
+  `xcodebuild` is sent SIGTERM by PID. Never by name pattern, never another checkout's.
+- **Temp folders.** The run's `TMPDIR` goes (`run-tmp.sh`), and `local-ci.sh` stops its step's process tree and its Docker lane's containers (by label).
+- **Tests.** An open AAC `AVAudioFile` writer or an unreleased `AVAudioPlayer` holds a client of `coreaudiod`: tests that write audio close the file
+  (`SilenceCapture`, `TestAudio.write`) and stop a player they only open; a `Heartbeat` (the 2 ms main-actor poll of the benchmarks) cancels itself when it is
+  released, so a benchmark that throws leaves no poll running.
 
 ## Temp-folder guard
 

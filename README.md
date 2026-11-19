@@ -44,7 +44,8 @@ The CLI bundles the Noto fonts (SIL Open Font License 1.1,
 ## Build
 
 The Swift package (everything under `Sources/`) builds and tests on macOS and Linux
-with Swift 6.0 or newer:
+with Swift 6.0 or newer (swift-crypto 5.x needs Swift 6.2; older toolchains resolve a 4.x release, see
+[docs/post-quantum.md](docs/post-quantum.md)):
 
 ```bash
 swift build

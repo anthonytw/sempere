@@ -63,6 +63,17 @@ enum InsightsCLI {
         return n
     }
 
+    /// The options of an update on this machine: its failure memo and the settings of a Mac (the top level elsewhere).
+    static func updateOptions(for vault: Vault) -> InsightsUpdateOptions {
+        var o = InsightsUpdateOptions()
+        o.failureMemo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
+        #if os(macOS)
+        o.deviceType = .mac   // the settings as a Mac reads them; elsewhere the top level only
+        o.powerWindow = ProcessInfo.processInfo.thermalState != .serious && ProcessInfo.processInfo.thermalState != .critical
+        #endif
+        return o
+    }
+
     static func shortId(_ id: String) -> String { String(id.prefix(8)) }
 
     static func ms(_ d: Date?) -> String { d.map(Format.local) ?? "-" }
@@ -78,8 +89,9 @@ struct InsightsUpdate: ParsableCommand {
             Does what the scheduling policy gives this device (design §3.7): a device with the model \
             summarizes each eligible note (text unchanged for 10 minutes; --force: now) that no device has a current \
             summary of, and makes the topic summaries due; one that embeds at the pinned revision embeds each note no \
-            device has a current vector of and rebuilds the map when more than 10% changed or weekly; any device titles \
-            voice notes whose title is still the capture default (insights.voiceNoteTitle). Needs Apple Intelligence (macOS 26), else exit 3 and \
+            device has a current vector of and rebuilds the map when more than 10% changed or weekly; any device derives \
+            titles for voice notes whose own title is blank or a default (insights.voiceNoteTitle), in the insights.language setting's \
+            language when it names one. Needs Apple Intelligence (macOS 26), else exit 3 and \
             nothing is written; --embeddings-only needs only the embedder.
             """
     )
@@ -104,14 +116,9 @@ struct InsightsUpdate: ParsableCommand {
         let vault = try access.openVault(.required)
         if !dryRun { try vault.requireWritable() }
         let inputs = try InsightsCLI.inputs(vault, cache: cache)
-        var o = InsightsUpdateOptions()
+        var o = InsightsCLI.updateOptions(for: vault)
         if let note { o.note = try vault.resolveNote(note) }
         o.force = force; o.limit = limit; o.embeddingsOnly = embeddingsOnly; o.dryRun = dryRun
-        o.failureMemo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
-        #if os(macOS)
-        o.deviceType = .mac   // the settings as a Mac reads them; elsewhere the top level only
-        o.powerWindow = ProcessInfo.processInfo.thermalState != .serious && ProcessInfo.processInfo.thermalState != .critical
-        #endif
         let updater = InsightsUpdater(vault: vault, model: embeddingsOnly ? nil : p.model, embedder: p.embedder,
                                       deviceState: DeviceState.defaultURL(), app: appName)
         let options = o
@@ -124,7 +131,7 @@ struct InsightsUpdate: ParsableCommand {
         if output.json { return try output.emitJSON(report) }
         let verb = dryRun ? "would " : ""
         for (label, list) in [("generated", report.generated), ("embedded", report.embedded), ("tombstoned", report.tombstoned),
-                              ("dropped stale", report.dropped), ("titled", report.titled), ("restored title", report.restoredTitles)]
+                              ("dropped stale", report.dropped), ("titled", report.titled)]
         where !list.isEmpty {
             output.info("\(dryRun ? "would be " : "")\(label): \(list.count)  " + list.map(InsightsCLI.shortId).joined(separator: " "))
         }
@@ -311,7 +318,8 @@ struct InsightsTopic: ParsableCommand {
             guard notebook == nil, tag == nil, !generate else { throw CLIError.usage("--list takes no --notebook, --tag or --generate") }
             let vault = try access.openVault(.required)
             let inputs = try InsightsCLI.inputs(vault, cache: cache)
-            let all = TopicSummaries.shownAll(inputs: inputs, snapshot: InsightsStore(vault: vault).snapshot()).map(Out.init)
+            let all = TopicSummaries.shownAll(inputs: inputs, snapshot: InsightsStore(vault: vault).snapshot(),
+                                             language: InsightsSettings.read(vault).language).map(Out.init)
             if output.json { return try output.emitJSON(all) }
             if all.isEmpty { print("no notebook or tag has \(TopicSummaries.minMembers) summarized notes yet") }
             for t in all {
@@ -345,7 +353,7 @@ struct InsightsTopic: ParsableCommand {
             }
         } else {
             let snapshot = InsightsStore(vault: vault).snapshot()
-            let members = TopicScopes.members(inputs: inputs, snapshot: snapshot).first { $0.0 == scope }?.1 ?? []
+            let members = TopicScopes.members(inputs: inputs, snapshot: snapshot, language: InsightsSettings.read(vault).language).first { $0.0 == scope }?.1 ?? []
             shown = TopicSummaries.shown(scope, members: members, snapshot: snapshot)
         }
         let out = Out(shown)
@@ -423,12 +431,13 @@ struct InsightsMap: ParsableCommand {
 struct InsightsTitle: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "title",
-        abstract: "Title a voice note from its insights (D14), while its title is still the capture default.",
+        abstract: "Derive a voice note's title from its insights (D14); the note's own title is never changed.",
         discussion: """
             The title follows --format, else the vault's insights.voiceNoteTitle (default {date} {time} {slug}): \
             {date} YYYY-MM-DD and {time} HH.mm in the capture's time zone, {slug} the model's 2-6 word title, \
-            fact-checked against the transcript. A title the user set is never replaced; a rename made on another \
-            device that lost to this device's title is restored. Uses a stored slug; without one, makes it with \
+            fact-checked against the transcript. The title is kept in the note's insights file, not in the note: \
+            `notes list` and the app show it while the note has no title of its own (or a default one made before \
+            1.3). A title the user set is never replaced. Uses a stored slug; without one, makes it with \
             Apple's on-device model (exit 3 where there is none).
             """)
 
@@ -449,7 +458,8 @@ struct InsightsTitle: ParsableCommand {
         let n = try InsightsCLI.input(note, in: inputs, vault: vault)
         let fmt = format ?? InsightsSettings.read(vault).voiceNoteTitle
         let snapshot = InsightsStore(vault: vault).snapshot()
-        var slug = snapshot.bestGen(for: n.id, hash: n.hash).flatMap { $0.current ? $0.gen.slug : nil }
+        let language = InsightsSettings.read(vault).language
+        var slug = snapshot.bestGen(for: n.id, hash: n.hash, language: language).flatMap { $0.current ? $0.gen.slug : nil }
         if slug == nil, fmt.contains("{slug}"), !n.transcript.isEmpty {
             let p = InsightsCLI.providers()
             guard let model = p.model, model.availability.isAvailable else { throw InsightsCLI.unavailable(InsightsCLI.modelReason(p.model)) }
@@ -460,25 +470,14 @@ struct InsightsTitle: ParsableCommand {
             }
         }
         let updater = InsightsUpdater(vault: vault, model: nil, embedder: nil, deviceState: DeviceState.defaultURL(), app: appName)
-        let decision: VoiceNoteTitleState.Decision
-        let isVoice: Bool
-        if dryRun {
-            (decision, isVoice) = try updater.proposedTitle(n, format: fmt, slug: slug)
-        } else {
-            let p = try updater.proposedTitle(n, format: fmt, slug: slug)
-            isVoice = p.isVoice
-            decision = isVoice ? try updater.writeTitle(n, format: fmt, slug: slug) : .keep
-        }
-        let out: Out
-        switch decision {
-        case .apply(let t): out = Out(note: n.id.uuidString.lowercased(), action: "apply", title: t, dryRun: dryRun)
-        case .restore(let t): out = Out(note: n.id.uuidString.lowercased(), action: "restore", title: t, dryRun: dryRun)
-        case .keep: out = Out(note: n.id.uuidString.lowercased(), action: isVoice ? "keep" : "notVoiceNote", title: nil, dryRun: dryRun)
-        }
+        let isVoice = try vault.reconstruct(try vault.loadNote(n.id)).recordings.contains { $0.captured != nil }
+        let title = isVoice ? (dryRun ? try updater.proposedTitle(n, format: fmt, slug: slug, language: language)
+                                      : try updater.writeTitle(n, format: fmt, slug: slug, language: language)) : nil
+        let id = n.id.uuidString.lowercased()
+        let out = Out(note: id, action: title != nil ? "apply" : (isVoice ? "keep" : "notVoiceNote"), title: title, dryRun: dryRun)
         if output.json { return try output.emitJSON(out) }
         switch out.action {
         case "apply": output.info("\(dryRun ? "would title" : "titled") \(InsightsCLI.shortId(out.note)): \(out.title ?? "")")
-        case "restore": output.info("\(dryRun ? "would restore" : "restored") the user's title: \(out.title ?? "")")
         case "notVoiceNote": output.info("not a voice note: titles are only for quick voice notes")
         default: output.info("the title stays (\(n.title))")
         }

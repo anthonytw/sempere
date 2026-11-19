@@ -253,13 +253,18 @@ export function isDerivedRecognition(op: Op): boolean {
   return op.op === "setPageRecognition" || (op.op === "setMeta" && op.change.field === "recognized");
 }
 
+/** A derived op (format.md §5.5, §8.3.2): recognition, or the transcript of a recording (Swift `Op.isDerived`). */
+export function isDerived(op: Op): boolean {
+  return isDerivedRecognition(op) || (op.op === "setRecording" && op.field === "transcript");
+}
+
 /**
- * A delta that only records recognition: non-empty ops, all derived, not a saved version and
+ * A delta that only records derived data (recognition, transcripts): non-empty ops, all derived, not a saved version and
  * not newer content (Swift `Revision.isDerivedOnly`).
  */
 export function isDerivedOnly(r: Revision): boolean {
   return r.body.type === "delta" && r.body.ops.length > 0 && !r.newer && !r.checkpoint
-    && r.body.ops.every(isDerivedRecognition);
+    && r.body.ops.every(isDerived);
 }
 
 /** Unix milliseconds of an HLC string (its first 13 digits). */
@@ -269,7 +274,7 @@ function hlcMillis(hlc: string): number {
 
 /**
  * The greatest HLC of the state's stamps and origins, without recognition's (each page's
- * `recognitionClock`, the `recognized` register): Swift `NoteState.maxHLC(withRecognition: false)`.
+ * `recognitionClock`, the `recognized` register) and the recordings' `transcript` stamps: Swift `NoteState.maxHLC(withRecognition: false)`.
  */
 export function editHLC(s: NoteState): string {
   let m = zeroHLC;
@@ -281,8 +286,8 @@ export function editHLC(s: NoteState): string {
     const o = typeof v === "string" ? parseOrigin(v) : undefined;
     if (o && o.hlc > m) m = o.hlc;
   };
-  const clocks = (v: unknown): void => {
-    if (v && typeof v === "object" && !Array.isArray(v)) for (const c of Object.values(v)) stamp(c);
+  const clocks = (v: unknown, skip?: string): void => {
+    if (v && typeof v === "object" && !Array.isArray(v)) for (const [k, c] of Object.entries(v)) if (k !== skip) stamp(c);
   };
   for (const [field, c] of Object.entries(s.clocks ?? {})) if (field !== "recognized") stamp(c);
   for (const p of s.pages) {
@@ -290,7 +295,7 @@ export function editHLC(s: NoteState): string {
     for (const st of p.strokes) origin(st.origin);
     for (const i of p.items) { origin(i.origin); clocks(i.clocks); }
   }
-  for (const r of s.recordings) { origin(r.origin); clocks(r.clocks); }
+  for (const r of s.recordings) { origin(r.origin); clocks(r.clocks, "transcript"); }
   for (const i of s.tagSet.instances) if (i.origin.hlc > m) m = i.origin.hlc;
   for (const r of s.tagSet.removed) if (r.origin.hlc > m) m = r.origin.hlc;
   for (const l of s.tombstones?.lineage ?? []) origin(`${l.by}-0`);

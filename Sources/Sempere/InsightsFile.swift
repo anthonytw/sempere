@@ -211,11 +211,15 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
         public var dropped: Int
         /// A voice note's suggested title (D14), fact-checked; only on voice notes.
         public var slug: String?
+        /// The language `summary` and `slug` are written in when the vault's insight language is fixed
+        /// (`insights.language`, 1.3); absent: the note's own.
+        public var outLang: String?
 
         public init(hash: String, identity: GenerationIdentity, summary: String?, keywords: [InsightsKeyword],
-                    concepts: [String], dropped: Int, slug: String? = nil) {
+                    concepts: [String], dropped: Int, slug: String? = nil, outLang: String? = nil) {
             self.hash = hash; model = identity.model; os = identity.os; prompt = identity.prompt
             self.summary = summary; self.keywords = keywords; self.concepts = concepts; self.dropped = dropped; self.slug = slug
+            self.outLang = outLang
         }
 
         public var identity: GenerationIdentity { GenerationIdentity(model: model, os: os, prompt: prompt) }
@@ -236,12 +240,21 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
         public var vector: [Float]? { Float16Codec.decode(v, count: dim) }
     }
 
-    /// The voice-note title this device applied (D14): the stamp of the revision that set it and the title.
-    public struct TitleOp: Hashable, Sendable, Codable {
-        /// `"<hlc>-<device>"` of the revision holding the op (a `Stamp`).
-        public var stamp: String
-        public var title: String
-        public init(stamp: String, title: String) { self.stamp = stamp; self.title = title }
+    /// The title this device derived for a voice note (format.md §16.2, §16.8): rendered from `insights.voiceNoteTitle`, the
+    /// capture's date and time and the generated slug, for the note text whose hash is `hash`. It is never written to the
+    /// note: readers show it while the note's own title is blank or a default.
+    public struct GeneratedTitle: Hashable, Sendable, Codable {
+        /// 32 hex digits: the insight-text hash the title was made for (the `gen` it came from).
+        public var hash: String
+        public var text: String
+        /// Unix milliseconds when this device derived it: fixed when made, so a rewrite of the file for another reason (a new
+        /// `gen`) never reorders two devices' titles.
+        public var at: Int64
+        /// The insight language the title was derived for (`Gen.outLang` of the slug it came from); absent: the note's own.
+        public var lang: String?
+        public init(hash: String, text: String, at: Int64, lang: String? = nil) {
+            self.hash = hash; self.text = text; self.at = at; self.lang = lang
+        }
     }
 
     public var format: String
@@ -252,17 +265,18 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
     public var lang: String?
     public var gen: Gen?
     public var emb: Emb?
-    public var titleOp: TitleOp?
+    public var title: GeneratedTitle?
 
     public init(noteId: UUID, device: DeviceID, written: Int64, lang: String? = nil, gen: Gen? = nil, emb: Emb? = nil,
-                titleOp: TitleOp? = nil) {
+                title: GeneratedTitle? = nil) {
         format = InsightsFileKind.note.format; self.noteId = noteId.uuidString.lowercased(); self.device = device.rawValue
         self.written = written; hashBasis = InsightsText.hashBasis; self.lang = lang; self.gen = gen; self.emb = emb
-        self.titleOp = titleOp
+        self.title = title
     }
 
-    /// No `gen` and no `emb`: the device removed what it had for the note (format.md §16.6).
-    public var isTombstone: Bool { gen == nil && emb == nil }
+    /// No `gen`, no `emb` and no `title`: the device removed what it had for the note (format.md §16.6). A file holding
+    /// only a derived title still says something.
+    public var isTombstone: Bool { gen == nil && emb == nil && title == nil }
 
     func check() throws {
         try InsightsValidate.short(hashBasis, "hashBasis")
@@ -279,6 +293,7 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
             }
             for c in g.concepts { try InsightsValidate.text(c, max: InsightsLimits.maxTerm, "concept") }
             if let slug = g.slug { try InsightsValidate.text(slug, max: InsightsLimits.maxTitle, "slug") }
+            if let l = g.outLang { try InsightsValidate.short(l, "outLang") }
         }
         if let e = emb {
             try InsightsValidate.hash(e.hash)
@@ -287,9 +302,11 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
                 throw InsightsFileError.invalid("emb vector")
             }
         }
-        if let t = titleOp {
-            guard Stamp(t.stamp) != nil else { throw InsightsFileError.invalid("titleOp stamp") }
-            try InsightsValidate.text(t.title, max: InsightsLimits.maxTitle, "titleOp title")
+        if let t = title {
+            try InsightsValidate.hash(t.hash)
+            try InsightsValidate.text(t.text, max: InsightsLimits.maxTitle, "title")
+            guard (1...(1 << 53) - 1).contains(t.at) else { throw InsightsFileError.invalid("title at") }
+            if let l = t.lang { try InsightsValidate.short(l, "title lang") }
         }
     }
 }
@@ -490,8 +507,11 @@ public struct InsightsTopicsFile: Hashable, Sendable, Codable {
         /// Unix milliseconds.
         public var at: Int64
         public var summary: String
-        public init(identity: GenerationIdentity, at: Int64, summary: String) {
+        /// The language `summary` is written in when the vault's `insights.language` names one (1.3); absent: the notes' own.
+        public var outLang: String?
+        public init(identity: GenerationIdentity, at: Int64, summary: String, outLang: String? = nil) {
             model = identity.model; os = identity.os; prompt = identity.prompt; self.at = at; self.summary = summary
+            self.outLang = outLang
         }
         public var identity: GenerationIdentity { GenerationIdentity(model: model, os: os, prompt: prompt) }
     }

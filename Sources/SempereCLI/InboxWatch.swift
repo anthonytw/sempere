@@ -127,7 +127,7 @@ struct InboxWatchSeal: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("The outbox folder (created).", valueName: "dir"))
     var outbox: String
 
-    @Option(name: .long, help: ArgumentHelp("The note's title (default: Watch voice note <date> <time>).", valueName: "title"))
+    @Option(name: .long, help: ArgumentHelp("The note's title (default: none; the note shows a Watch voice note default).", valueName: "title"))
     var title: String?
 
     @Option(name: .long, help: ArgumentHelp("When the first sample was recorded (RFC 3339).", valueName: "time"))
@@ -177,7 +177,7 @@ struct InboxWatchSeal: ParsableCommand {
         }
         let id = UUID()
         let sealed = try CaptureWriter(profile: opened.profile)
-            .seal(audio: mp4, type: "audio/mp4", started: when, info: info, title: title ?? WatchRecorder.title(when), id: id)
+            .seal(audio: mp4, type: "audio/mp4", started: when, info: info, title: title, source: "watch", id: id)
         let box: WatchOutbox
         do { box = try WatchOutbox(directory: URL(fileURLWithPath: outbox, isDirectory: true)) } catch {
             throw CLIError.failure("\(error)")

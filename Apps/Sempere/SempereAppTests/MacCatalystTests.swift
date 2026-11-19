@@ -290,6 +290,8 @@ struct MacMenuBarTests {
         #expect(open.title == "Open Vault…" && open.input == "o" && open.modifierFlags == .command)
         #expect(open.propertyList as? String == MenuCommand.openVault.rawValue)
         #expect(MacMenus.nativeItem(.find).input == "f")
+        let ask = MacMenus.nativeItem(.askYourNotes)
+        #expect(ask.input == "f" && ask.modifierFlags == [.command, .alternate], "⌥⌘F: UIKit's Find and Replace, replaced")
         // The host app's scene connects after launch, later when the app starts in the
         // background (a Mac in use): wait for it rather than read it once.
         var found: UIWindowScene?
@@ -310,7 +312,8 @@ struct MacMenuBarTests {
         window.sempereMenuCommand(open)
         #expect(ran == [.openVault], "Open Vault… runs in a library window")
         window.sempereMenuCommand(MacMenus.nativeItem(.find))
-        #expect(ran == [.openVault], "Find Notes needs an unlocked vault")
+        window.sempereMenuCommand(MacMenus.nativeItem(.askYourNotes))
+        #expect(ran == [.openVault], "Find Notes and Ask Your Notes… need an unlocked vault")
         context.window = .note
         context.vault = .unlocked
         MenuRouting.shared.set(CommandRouter(context: context, perform: { ran.append($0) }), for: scene)
@@ -327,7 +330,7 @@ struct MacMenuBarTests {
         let tree = SempereAppDelegate.lastTree.joined(separator: "\n")
         // Every app menu: a group refused for a taken shortcut would be missing as a whole.
         for title in ["New Note…", "Open Note in New Window", "New Vault…", "Open Vault…", "Close Vault", "Reload Vault",
-                      "Find Notes", "Rename Note…", "Pen", "Zoom In", "Library", "Vault Keys", "Settings…"] {
+                      "Find Notes", "Ask Your Notes…", "Rename Note…", "Pen", "Zoom In", "Library", "Vault Keys", "Settings…"] {
             #expect(tree.contains("|\(title)"), "\(title) is in the menu bar:\n\(tree)")
         }
         for action in ["requestNewScene:", "|open:", "|find:", "duplicate:", "export:"] {

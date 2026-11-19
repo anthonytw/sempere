@@ -403,13 +403,6 @@ public final class WatchRecorder {
 
     // MARK: Sealing
 
-    /// "Watch voice note 2026-11-09 14:32" (vault text stays English, CLAUDE.md "Localization").
-    public nonisolated static func title(_ started: Date, timeZone: TimeZone = .current) -> String {
-        let base = CaptureWriter.defaultTitle(started, timeZone: timeZone)
-        let prefix = "Voice note "
-        return "Watch voice note " + (base.hasPrefix(prefix) ? String(base.dropFirst(prefix.count)) : base)
-    }
-
     private func seal(folder: URL, id: UUID, listed: [URL], finished: Int?, started: Date, profile: WatchProfilePayload,
                       reachedLimit: Bool, recovered: Bool) throws -> WatchSavedNote {
         let files = CaptureSegments.files(listed: listed, in: folder)
@@ -438,7 +431,7 @@ public final class WatchRecorder {
             let (mp4, i) = try ADTSToMP4.remux(segments.compactMap { data[$0] }, tail: .dropPartial)
             info = i
             sealed = try CaptureWriter(profile: profile.profile).seal(audio: mp4, type: "audio/mp4", started: started,
-                                                                     info: i.audioInfo, title: Self.title(started, timeZone: timeZone),
+                                                                     info: i.audioInfo, source: "watch", timeZone: timeZone,
                                                                      id: id)
             try outbox.add(sealed, vault: profile.profile.vaultId)
         } catch {

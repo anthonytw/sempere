@@ -1217,7 +1217,7 @@ revisions still sync, and readers draw a placeholder for it meanwhile
   most the local file's size, charged to the run's download budget and capped at a sixteenth of `SyncLimits.maxDownloadBytes`
   per run (a vault with many is checked over several runs). A strict prefix is replaced as above; a complete copy, or any other
   copy (reported as left alone), is recorded in the target's sync state (`sizelessChecked`: the local size and a digest of the
-  listing entry, at most 4096 entries; a vault with more says so in `skipped`) and not read again until either changes. Other
+  listing entry, at most 4096 entries; a vault with more says so in `skipped`) and not read again until the size changes (a complete copy is never read again however its tag or date churns; any other copy is read again when the listing entry changes). Other
   devices' revisions and later ones are never read for this.
   Every other write-once file goes the same way, through one helper (`SyncEngine.placeWriteOnce`): notebook
   records (`notebooks/`), join requests (`joins/`) and passphrase copies (`keys/`), each to a temporary name in its

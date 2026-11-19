@@ -136,8 +136,6 @@ public final class QuickCapture {
     @ObservationIgnored var files: any FileCoordinating
     /// The start diagnostics' log lines.
     @ObservationIgnored var perf: any PerfSink
-    /// The default title of a voice note (the app: in the device's language); nil: `CaptureWriter.defaultTitle`.
-    @ObservationIgnored public var noteTitle: (@Sendable (Date) -> String)?
     /// The time now (tests set their own, with a recording that reads it too).
     @ObservationIgnored var now: @MainActor () -> Date = { Date() }
     /// Waits (the banner's time, the Live Activity's heartbeat); tests set their own.
@@ -674,10 +672,9 @@ public final class QuickCapture {
             }
             let out = folder.appendingPathComponent("capture.m4a")
             try await audioFiles.merge(audio, into: out)
-            let title = noteTitle?(started)
             let (sealed, audioRef) = try await Task.detached(priority: .userInitiated) { () throws -> (SealedCapture, BlobRef) in
                 let audio = try BoundedRead.contents(of: out, maxBytes: CaptureFile.maxBytes - (1 << 20))
-                return (try writer.seal(audio: audio, started: started, info: try? AudioProbe.probe(audio), title: title, id: id),
+                return (try writer.seal(audio: audio, started: started, info: try? AudioProbe.probe(audio), source: "phone", id: id),
                         BlobRef(content: audio, type: "audio/mp4"))
             }.value
             let delivery = try deliver(sealed, stored)

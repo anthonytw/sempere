@@ -46,5 +46,5 @@ Interface text only: note content, the CLI's messages and the on-disk format are
 ## Building from source
 
 The source is public so you can read it, audit it and build it yourself. Swift 6.0 or newer (CI uses
-6.4); `Sources/` builds on Linux and macOS. `swift build --build-tests && swift test`; the app needs
+6.4; swift-crypto 5.x needs 6.2, and older toolchains resolve a 4.x release); `Sources/` builds on Linux and macOS. `swift build --build-tests && swift test`; the app needs
 Xcode 27 or newer. `CLAUDE.md` lists the commands and the repository's rules.

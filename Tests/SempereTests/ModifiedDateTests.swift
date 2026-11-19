@@ -38,6 +38,41 @@ final class ModifiedDateTests: VaultTestCase {
         XCTAssertEqual(ModifiedDate.of(edits(&log) + [alone, both]), wallAt(baseMillis + 10))
     }
 
+    private let rec = UUID(uuidString: "7e57c0de-0000-4000-8000-0000000000b1")!
+    private func addRecording() -> Op {
+        .addRecording(Recording(id: rec, blob: BlobRef(content: Data("audio".utf8), type: "audio/mp4"), started: wallAt(baseMillis)))
+    }
+    private func transcript(_ text: String) -> Op {
+        .setRecording(recordingId: rec, change: .transcript(BlobRef(content: Data(text.utf8), type: BlobRef.transcriptType)))
+    }
+
+    /// 1.3: a transcript (adoption, after a recording, `sempere transcribe`) is derived data like recognition.
+    func testATranscriptOnlyDeltaKeepsTheDate() {
+        var log = LogBuilder()
+        let added = log.delta(devA, 15, [addRecording()])
+        let t = log.delta(devB, 20, [transcript("hello")])
+        let again = log.delta(devB, 30, [transcript("hello again"), recognition("x")])
+        XCTAssertTrue(t.isDerivedOnly)
+        XCTAssertTrue(again.isDerivedOnly)
+        XCTAssertFalse(added.isDerivedOnly, "adding the recording is the user's edit")
+        XCTAssertEqual(ModifiedDate.of(edits(&log) + [added, t, again]), wallAt(baseMillis + 15))
+        // A user's edit in the same delta still counts, and so does retitling the recording.
+        let mixed = log.delta(devA, 40, [transcript("x"), .setMeta(.title("New"))])
+        XCTAssertFalse(mixed.isDerivedOnly)
+        let rename = log.delta(devA, 50, [.setRecording(recordingId: rec, change: .title("Lecture"))])
+        XCTAssertFalse(rename.isDerivedOnly)
+        XCTAssertEqual(ModifiedDate.of(edits(&log) + [added, t, rename]), wallAt(baseMillis + 50))
+    }
+
+    /// Compaction's snapshot leaves out the transcript's stamp too.
+    func testASnapshotLeavesOutTheTranscriptStamp() throws {
+        var log = LogBuilder()
+        let before = edits(&log) + [log.delta(devA, 15, [addRecording()]), log.delta(devB, 20, [transcript("hello")])]
+        let snap = try log.snapshot(devC, 86_400_000, from: before)
+        XCTAssertEqual(snap.modifiedDate, wallAt(baseMillis + 15), "the transcript's stamp is left out")
+        XCTAssertEqual(ModifiedDate.of([snap]), wallAt(baseMillis + 15))
+    }
+
     func testADeltaMixingAnEditWithRecognitionCounts() {
         var log = LogBuilder()
         let revs = edits(&log) + [log.delta(devA, 20, [.addStroke(page: page, stroke: stroke()), recognition("x")])]

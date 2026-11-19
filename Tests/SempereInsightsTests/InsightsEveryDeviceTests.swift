@@ -61,8 +61,7 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         let isA = vault.writerDevice == a.writerDevice
         o.platform = .init(platform: isA ? "mac" : "ios", os: "27.2")
         edit(&o)
-        var u = InsightsUpdater(vault: vault, model: model, embedder: embedder, deviceState: isA ? stateA : stateB, app: "test/1")
-        u.writerDevice = vault.writerDevice
+        let u = InsightsUpdater(vault: vault, model: model, embedder: embedder, deviceState: isA ? stateA : stateB, app: "test/1")
         return try await u.run(o, notes: try inputs())
     }
 
@@ -435,7 +434,7 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         let id = UUID()
         let audio = Data((0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 7) })
         let started = Date(timeIntervalSince1970: 1_789_990_000)
-        try CaptureWriter.store(try w.seal(audio: audio, started: started, title: "Voice note 2026-09-21 10:46", id: id), in: a.inboxURL)
+        try CaptureWriter.store(try w.seal(audio: audio, started: started, source: "phone", timeZone: TimeZone(identifier: "UTC")!, id: id), in: a.inboxURL)
         let t = TranscriptBuilder.transcript(recording: CaptureAdoption.ids(for: id).recording, engine: "e", language: "en-US",
                                              created: started, segments: [.init(start: 0, end: 4, text: text)])
         try CaptureWriter.store(try w.seal(transcript: t, capture: id, audio: BlobRef(content: audio, type: "audio/mp4")), in: a.inboxURL)
@@ -443,25 +442,39 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         return CaptureAdoption.ids(for: id).note
     }
 
+    /// The note's own title (blank for a 1.3 voice note) and the title Note Insights derived for it.
     func title(_ id: UUID, in vault: Vault) throws -> String { try vault.reconstruct(noteId: id).meta.title }
+    func derived(_ id: UUID, in vault: Vault) -> String? { InsightsStore(vault: vault).snapshot().bestTitle(for: id, hash: nil) }
 
-    /// A device without the embedder titles a voice note: no role to hold.
-    func testAnyDeviceTitlesAVoiceNoteOnceAndTheOtherLeavesItAlone() async throws {
-        let base = Date()   // the adoption's revision is stamped with the real clock: titles must come after it
+    /// A device without the embedder derives a voice note's title: no role to hold, and the note itself is never written.
+    func testAnyDeviceDerivesAVoiceNoteTitleOnceAndTheOtherLeavesItAlone() async throws {
+        let base = Date()
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
         let first = try await run(b, model: model(), embedder: nil, at: base.addingTimeInterval(60)) { $0.force = true }
         XCTAssertEqual(first.titled, [id.uuidString.lowercased()])
-        let titled = try title(id, in: a)
-        XCTAssertEqual(titled, "2026-09-21 10.46 Spring Lab Results Show")
+        XCTAssertEqual(try title(id, in: a), "", "the note keeps no title: 1.3 stores none")
+        let derivedTitle = try XCTUnwrap(derived(id, in: a))
+        XCTAssertEqual(derivedTitle, "2026-09-21 11.26 Spring Lab Results Show")
         let second = try await run(a, model: model()) { $0.force = true }
-        XCTAssertEqual(second.titled + second.restoredTitles, [], "applied at most once: no longer the capture default")
-        XCTAssertEqual(try title(id, in: a), titled)
+        XCTAssertEqual(second.titled, [], "derived at most once for one text")
+        XCTAssertEqual(derived(id, in: a), derivedTitle)
+        XCTAssertEqual(try title(id, in: a), "")
     }
 
-    /// Two devices title one voice note before they see each other's title (their summaries differ): the register's last
-    /// writer stays, and neither device takes the other's automatic title for a user's rename and flips it.
-    func testTwoDevicesTitlingOneNoteSettleOnTheLastWriter() async throws {
-        let base = Date()   // the adoption's revision is stamped with the real clock: titles must come after it
+    /// A title the user typed is never touched, and nothing is derived while it stands.
+    func testAUserTitleStandsAndGetsNoDerivedTitle() async throws {
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        _ = try a.apply(NoteOps.rename(to: "My lab", state: try a.reconstruct(noteId: id)), to: id, deviceState: stateA, app: "test/1")
+        let r = try await run(b, model: model(), embedder: nil, at: Date().addingTimeInterval(60)) { $0.force = true }
+        XCTAssertEqual(r.titled, [])
+        XCTAssertNil(derived(id, in: a))
+        XCTAssertEqual(try title(id, in: a), "My lab")
+    }
+
+    /// Two devices derive a title for one voice note before they see each other's (their summaries differ): each writes
+    /// its own file, readers take the later `written` (then the larger device id), and no device rewrites to flip it.
+    func testTwoDevicesDerivingOneTitleSettleOnOneWinner() async throws {
+        let base = Date()
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
         let copy = tmp.appendingPathComponent("B.sempere")
         try FileManager.default.copyItem(at: a.url, to: copy)
@@ -477,19 +490,71 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
             .run(o, notes: ins)
         XCTAssertEqual(ra.titled, [id.uuidString.lowercased()])
         XCTAssertEqual(rb.titled, [id.uuidString.lowercased()])
-        XCTAssertNotEqual(try title(id, in: a), try title(id, in: bCopy), "each saw only its own title")
+        XCTAssertNotEqual(derived(id, in: a), derived(id, in: bCopy), "each saw only its own title")
         try deliver(from: bCopy, to: a)
         try deliver(from: a, to: bCopy)
-        let settled = try title(id, in: a)
-        XCTAssertEqual(try title(id, in: bCopy), settled, "one register, one winner on every reader")
+        let settled = try XCTUnwrap(derived(id, in: a))
+        XCTAssertEqual(derived(id, in: bCopy), settled, "one winner on every reader")
         for round in 1...2 {
             o.now = base.addingTimeInterval(Double(round) * 3600)
             let xa = try await InsightsUpdater(vault: a, model: FakeModelProvider(wordsA), embedder: nil, deviceState: stateA,
                                                app: "test/1").run(o, notes: ins)
             let xb = try await InsightsUpdater(vault: bCopy, model: FakeModelProvider(wordsB), embedder: nil, deviceState: stateB,
                                                app: "test/1").run(o, notes: ins)
-            XCTAssertEqual(xa.titled + xa.restoredTitles + xb.titled + xb.restoredTitles, [], "no flip-flop")
-            XCTAssertEqual(try title(id, in: a), settled)
+            XCTAssertEqual(xa.titled + xb.titled, [], "no flip-flop")
+            XCTAssertEqual(derived(id, in: a), settled)
+        }
+    }
+
+    /// The insight language across two devices (format.md §16.2 `outLang`): A regenerates in Spanish; B, which has not seen
+    /// the setting yet, rewrites its file later with a `gen` in the note's own language. Spanish still wins on every reader
+    /// (a later `written` in the wrong language never hides it), the title still derives from the Spanish slug, and once B
+    /// has the setting it drops its own `gen` instead of keeping the old language.
+    func testAGenInTheInsightLanguageWinsOverALaterOneInAnother() async throws {
+        let base = Date()
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        let copy = tmp.appendingPathComponent("B.sempere")
+        try FileManager.default.copyItem(at: a.url, to: copy)
+        let bCopy = try TestVaults.open(at: copy, identity: ib)
+        try InsightsSettingsWrite.setLanguage("es", vault: a, now: base)
+        var o = InsightsUpdateOptions(); o.now = base; o.platform = .init(platform: "ios", os: "27.2"); o.force = true
+        let ins = try inputs()
+        let note = try XCTUnwrap(ins.first { $0.id == id })
+        let ra = try await InsightsUpdater(vault: a, model: model(), embedder: nil, deviceState: stateA, app: "test/1").run(o, notes: ins)
+        XCTAssertEqual(ra.generated, [id.uuidString.lowercased()])
+        o.now = base.addingTimeInterval(10)
+        _ = try await InsightsUpdater(vault: bCopy, model: model(), embedder: nil, deviceState: stateB, app: "test/1").run(o, notes: ins)
+        XCTAssertNil(InsightsStore(vault: bCopy).snapshot().notes[id]?[meB]?.gen?.outLang, "B wrote in the note's own language")
+        try deliver(from: bCopy, to: a)
+        let snapA = InsightsStore(vault: a).snapshot()
+        XCTAssertGreaterThan(try XCTUnwrap(snapA.notes[id]?[meB]).written, try XCTUnwrap(snapA.notes[id]?[meA]).written)
+        let best = try XCTUnwrap(snapA.bestGen(for: id, hash: note.hash, language: "es", now: base))
+        XCTAssertEqual(best.device, meA)
+        XCTAssertEqual(best.gen.outLang, "es")
+        XCTAssertTrue(best.current)
+        XCTAssertEqual(snapA.bestGen(for: id, hash: note.hash, language: nil, now: base)?.device, meB, "a reader of the note's own language")
+        XCTAssertEqual(InsightsReader(vault: a).show(note).summary, best.gen.summary, "the reader shows the Spanish summary")
+        // The title still derives from the Spanish slug.
+        let format = InsightsSettings.read(a).voiceNoteTitle
+        let updaterA = InsightsUpdater(vault: a, model: nil, embedder: nil, deviceState: stateA, app: "test/1")
+        let proposed = try XCTUnwrap(try updaterA.proposedTitle(note, format: format, slug: nil, language: "es"))
+        XCTAssertTrue(proposed.contains("[es] "), proposed)
+        XCTAssertTrue(try XCTUnwrap(snapA.bestTitle(for: id, hash: note.hash, language: "es")).contains("[es] "))
+        // A settles: nothing is made again because of B's file.
+        o.force = false; o.ignoreSettle = true; o.now = base.addingTimeInterval(3600)
+        let again = try await InsightsUpdater(vault: a, model: model(), embedder: nil, deviceState: stateA, app: "test/1").run(o, notes: ins)
+        XCTAssertEqual(again.generated + again.titled, [])
+        // B learns the setting and sees A's file: it drops its own `gen` rather than keep the old language.
+        try InsightsSettingsWrite.setLanguage("es", vault: bCopy, now: base.addingTimeInterval(3600))
+        try deliver(from: a, to: bCopy)
+        let rb = try await InsightsUpdater(vault: bCopy, model: model(), embedder: nil, deviceState: stateB, app: "test/1").run(o, notes: ins)
+        XCTAssertEqual(rb.generated, [], "a current Spanish gen exists elsewhere")
+        XCTAssertEqual(rb.dropped, [id.uuidString.lowercased()])
+        XCTAssertNil(InsightsStore(vault: bCopy).snapshot().notes[id]?[meB]?.gen)
+        try deliver(from: bCopy, to: a)
+        for v in [a!, bCopy] {
+            let pick = InsightsStore(vault: v).snapshot().bestGen(for: id, hash: note.hash, language: "es", now: base)
+            XCTAssertEqual(pick?.device, meA, "the same on every reader")
         }
     }
 

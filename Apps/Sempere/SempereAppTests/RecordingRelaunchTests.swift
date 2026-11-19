@@ -23,6 +23,7 @@ final class SilenceCapture: AudioCaptureBackend {
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frames))
         buffer.frameLength = frames   // zeroed: silence
         try file.write(from: buffer)
+        file.close()   // finalize the encoder now, not when ARC gets to it (an open AAC writer holds a coreaudiod client)
     }
 
     func activateSession(mixable: Bool) async throws {}

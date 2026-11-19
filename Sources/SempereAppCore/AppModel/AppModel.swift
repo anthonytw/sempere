@@ -287,6 +287,15 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored let insightsRuntime = InsightsRuntime()
     /// The providers and power state of Note Insights (`services.insights`; tests set their own).
     @ObservationIgnored public var insightsServices: InsightsServices
+    /// Ask your notes (`AppModel+Ask`, docs/design/1.3-ask.md): what the search field does (Search or Ask), the
+    /// question typed for Ask (never `searchText`, so Search and the recent searches never see it, D9) and the answer
+    /// on screen. All of it is memory: nothing is stored, and closing or locking the vault drops it.
+    public var askTarget = AskTarget.search
+    public var askQuestion = ""
+    public internal(set) var ask = AskModelState()
+    @ObservationIgnored var askTask: Task<Void, Never>?
+    /// Counts Asks: a result or a retrieval hand-over is taken only from the latest one (the field's text may change meanwhile).
+    @ObservationIgnored var askSerial = 0
     /// Opt-in Spotlight indexing (`AppModel+Spotlight`, docs/design/1.3-spotlight.md): the per-device records and the
     /// index (`services.spotlightIndex`).
     @ObservationIgnored public let spotlight: SpotlightManager
@@ -299,6 +308,8 @@ public final class AppModelCore<Host: AppModelHost> {
     public internal(set) var spotlightOmitted = 0
     /// "Untitled note" and the date style of Spotlight results: the app sets localized ones.
     @ObservationIgnored public var spotlightUntitled = "Untitled note"
+    /// The words of a voice note's default title ("Voice note", "Watch voice note"): the app sets localized ones.
+    @ObservationIgnored public var displayTitleWords = NoteDisplayTitle.Words.builtIn()
     @ObservationIgnored public var spotlightDateText: @Sendable (Date) -> String = SpotlightPlanner.isoDay
     /// A note to open once its vault is open, unlocked and listed (`open(_:)`).
     public internal(set) var pendingNoteLink: NoteLink?
@@ -851,7 +862,8 @@ public final class AppModelCore<Host: AppModelHost> {
         // Recently Recognized depends on the time too (`activityNow`), which no key holds: never cached.
         if sidebarSelection == .recentlyRecognized { return computeVisibleNotes() }
         let key = DerivedLists.VisibleKey(version: listVersion, selection: sidebarSelection, search: searchText,
-                                          sort: sortOrder, favoritesFirst: favoritesFirst)
+                                          sort: sortOrder, favoritesFirst: favoritesFirst,
+                                          titles: sortOrder.key == .title ? insights.revision : 0)
         if let v = derived.visible, v.key == key { return v.value }
         let value = computeVisibleNotes()
         derived.visible = (key, value)
@@ -862,7 +874,12 @@ public final class AppModelCore<Host: AppModelHost> {
         let inSelection = notesInSelection
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let matching = query.isEmpty ? inSelection : inSelection.filter { $0.title.localizedCaseInsensitiveContains(query) }
-        return Self.sorted(matching, by: sortOrder, favoritesFirst: favoritesFirst)
+        // By title: the title each row shows (`displayTitle`), as `notes list --sort title` sorts.
+        var titles: [UUID: String]?
+        if sortOrder.key == .title {
+            titles = Dictionary(matching.map { ($0.id, displayTitle($0)) }, uniquingKeysWith: { a, _ in a })
+        }
+        return Self.sorted(matching, by: sortOrder, favoritesFirst: favoritesFirst, titles: titles)
     }
 
     /// The notes the sidebar selection shows, before any search.
@@ -878,8 +895,12 @@ public final class AppModelCore<Host: AppModelHost> {
         }
     }
 
-    static func sorted(_ list: [NoteSummary], by order: NoteSort, favoritesFirst: Bool = false) -> [NoteSummary] {
-        NoteOrder(order.key, favoritesFirst: favoritesFirst).sorted(list)
+    /// `list` in `order`; under the title order by `titles` (the shown titles) when given, else the stored ones.
+    static func sorted(_ list: [NoteSummary], by order: NoteSort, favoritesFirst: Bool = false,
+                       titles: [UUID: String]? = nil) -> [NoteSummary] {
+        var resolve: (@Sendable (NoteSummary) -> String)?
+        if let titles { resolve = { note in titles[note.id] ?? note.title } }
+        return NoteOrder(order.key, favoritesFirst: favoritesFirst, title: resolve).sorted(list)
     }
 
     public var selectedNote: NoteSummary? {

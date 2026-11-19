@@ -191,6 +191,9 @@ final class Heartbeat {
     }
 
     func stop() { task?.cancel() }
+
+    /// A test that threw before `stop()` must not leave a 2 ms main-actor poll running for the rest of the run.
+    deinit { task?.cancel() }
 }
 
 /// Counts the revision files a vault (and every copy of it) decrypted (`Vault.revisionDecryptCount`), for the device

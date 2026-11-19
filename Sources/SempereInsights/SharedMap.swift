@@ -21,16 +21,20 @@ public struct InsightsSettings: Hashable, Sendable {
     /// Per language, the pinned revision.
     public var pins: [String: Int]
     public var voiceNoteTitle: String
+    /// `insights.language`: the language generated summaries and voice-note titles are written in; nil: the note's own
+    /// ("Same as note", the default).
+    public var language: String?
 
     public init(enabled: Bool = false, explicitlyOff: Bool = false,
-                pins: [String: Int] = [:], voiceNoteTitle: String = VoiceNoteTitleFormat.defaultFormat) {
+                pins: [String: Int] = [:], voiceNoteTitle: String = VoiceNoteTitleFormat.defaultFormat, language: String? = nil) {
         self.enabled = enabled; self.explicitlyOff = explicitlyOff
-        self.pins = pins; self.voiceNoteTitle = voiceNoteTitle
+        self.pins = pins; self.voiceNoteTitle = voiceNoteTitle; self.language = language
     }
 
     /// (1.2.0 files may still hold `insights.workDevice`; it is not a setting any more and is kept and ignored.)
     public static let keys = (enabled: "insights.enabled",
-                              pin: "insights.embeddingRevision", voiceNoteTitle: "insights.voiceNoteTitle")
+                              pin: "insights.embeddingRevision", voiceNoteTitle: "insights.voiceNoteTitle",
+                              language: "insights.language")
 
     /// The settings of `file` (nil: none) for a device of `type` (nil: the CLI, top level only).
     public init(_ file: SharedSettings?, type: SettingsDeviceType?) {
@@ -50,6 +54,10 @@ public struct InsightsSettings: Hashable, Sendable {
         if case .string(let f)? = value(Self.keys.voiceNoteTitle), VoiceNoteTitleFormat.check(f) == nil {
             voiceNoteTitle = f
         } else { voiceNoteTitle = VoiceNoteTitleFormat.defaultFormat }
+        // Vault-wide like `enabled`: the top level only, so a block for one kind of device never makes it write another language
+        // than the others (they all write the same files).
+        if case .string(let l)? = s.value(SettingSlotKey(Self.keys.language)),
+           SharedSettingsCatalog.spec(named: Self.keys.language)?.validated(.string(l)) != nil { language = l } else { language = nil }
     }
 
     /// The vault's settings as this device reads them (nil file: defaults; an unreadable file: defaults).

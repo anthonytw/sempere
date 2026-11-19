@@ -28,7 +28,7 @@ struct NoteCanvasView: View {
                     EditorView(editor: editor)
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("noteEditor")
-                        .navigationTitle(NoteTitle.display(note.title))
+                        .navigationTitle(NoteTitle.display(model.displayTitle(note)))
                 } else if let failure = model.editorFailure, failure.id == note.id {
                     ContentUnavailableView {
                         Label("Could Not Open Note", systemImage: "exclamationmark.icloud")
@@ -60,14 +60,14 @@ struct NoteCanvasView: View {
                         startRename(note)
                     } label: {
                         HStack(spacing: 4) {
-                            Text(NoteTitle.display(note.title)).font(.headline).lineLimit(1)
+                            Text(NoteTitle.display(model.displayTitle(note))).font(.headline).lineLimit(1)
                             Image(systemName: "pencil").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in startRename(note) })
-                    .accessibilityLabel("Note title: \(NoteTitle.display(note.title))")
+                    .accessibilityLabel("Note title: \(NoteTitle.display(model.displayTitle(note)))")
                     .accessibilityHint("Renames the note")
                     .help("Rename the note (or press and hold)")
                 }

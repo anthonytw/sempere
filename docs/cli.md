@@ -1352,12 +1352,17 @@ sempere notes dedupe (ID|TITLE ... | --all) [--dry-run]
 ```
 
 `list` prints id, title, pages, strokes and last modified (the date of the last edit, format.md §12.2:
-recognition, from the app, `recognize` or an import, and compaction's snapshots do not move it); deleted notes are
+recognition, from the app, `recognize` or an import, a transcript (the app, `transcribe`, an adoption), and compaction's snapshots do not move it); deleted notes are
 hidden unless `--deleted`, and `--favorites` lists only favorites. Notes are in
 title order (Finder order: `Note 2` before `Note 10`) unless `--sort modified`
 or `--sort created` (newest first, notes without the date last);
 `--favorites-first` puts the favorites ahead of the other notes, each group in
-that order. These are the app's note-list rules (`NoteOrder`). `--notebook` takes a notebook path and lists the
+that order. These are the app's note-list rules (`NoteOrder`). A quick voice note stores no title (1.3), so `list` and
+`show` print what the app shows (`NoteDisplayTitle`): the title Note Insights derived for the note's current text when
+there is one, else "Voice note <date and time in the capture's zone>" ("Watch voice note …" for the Apple Watch; always
+English, dates in `en_US_POSIX`, the same on every machine), only while the stored title is blank or a default stored
+before 1.3; a title anyone typed is shown as it is. `--json` keeps `title` as stored and adds `displayTitle`. The title
+order sorts by that shown title, as the app's list does. `sempere ask` names notes the same way. `--notebook` takes a notebook path and lists the
 notes in it or below it, comparing whole segments (`A/B` holds `A/B/C` but not
 `A/Bc`), as the app's sidebar does; `--tag` ignores case. Notes are read in parallel without their stroke
 geometry, and the summaries are kept in an encrypted per-device cache
@@ -2115,7 +2120,9 @@ and changes nothing. `--json` gives `{note, page, pageId, strokes, engine, secon
 ```
 sempere transcribe (ID|TITLE [RECORDING...] | --all) [--language TAG] [--engine auto|speechtranscriber|sfspeech]
                    [--force] [--dry-run] [--no-download]
+sempere transcribe ID|TITLE [RECORDING...] --again [--language TAG] [--insights] [--dry-run]
 sempere transcribe --check [--language TAG]
+sempere transcribe --languages
 sempere transcribe --download-model [--language TAG]
 ```
 
@@ -2153,11 +2160,24 @@ Transcription ▸ Download Language Model button runs. It stands alone (`--check
 Speech framework or no such model. The SFSpeechRecognizer fallback has no
 downloadable model.
 
+`--again` is the app's "Transcribe Again" for one note (it needs a note, not `--all`): it
+replaces the transcripts of the note's recordings, the ones named or else all of them, whether or not they
+had one, in `--language` (else the note's language, else this machine's; the app's own Transcription language setting is not read here). A
+transcript is a register, so the replaced one stays in the note's history, as any earlier value of a field
+does, until compaction and `blobs gc` collect it (`format.md` §8.3.2). `--insights` (with `--again`, or any run for one
+note) then makes the note's Note Insights again from the new text, as `sempere insights update --note NOTE
+--force` does (summary, keywords, vector and a voice note's derived title; needs Note Insights on and the
+model, else the transcripts are replaced and the command exits 1 saying the insights were not made again;
+nothing is made again for a note that transcribed nothing). `--dry-run` lists what would be read and, with
+`--insights`, says the insights would be made again. `--languages` prints the languages the recognizers here
+support (BCP 47 tags, one per line; `--json` gives `{supported, languages}`; none without the Speech
+framework) and needs no vault: it is the list "Transcribe Again" offers.
+
 **macOS only.** The Linux build exits 1 with a message and changes nothing
-(`--dry-run` and `--check` still work). `--json` gives `{dryRun, notes: [{note,
+(`--dry-run`, `--check` and `--languages` still work). `--json` gives `{dryRun, notes: [{note,
 title, file, error, recordings: [{id, title, engine, language, segments, words,
-transcript, error}]}]}`; a recording that cannot be transcribed is reported
-and the exit code is 1.
+transcript, error}]}], insights}`; `insights` (only with `--insights`) is `{dryRun, redone, skipped, generated,
+titled, error}`; a recording that cannot be transcribed is reported and the exit code is 1.
 
 ### Quick capture inbox
 
@@ -2202,7 +2222,9 @@ in `vault.json`, or `from a device no longer in this vault (…)`).
 A capture sealed by a device that is no longer in the vault never verifies:
 it is reported and kept.
 `import` adopts each capture as a note in the capture's notebook ("Inbox"),
-titled from its date: the audio and transcript as blobs, then one delta as this
+with the title the capture was given by `--title` and otherwise none (from 1.3 a voice note stores no title: `notes list`,
+`notes show` and the app show a default from its source and language, "Voice note <date>", or the title Note Insights
+derived, `insights title`; a title typed later is the note's and always wins): the audio and transcript as blobs, then one delta as this
 machine (the note's page shows the recording's card, where its transcript reads, as a recording made
 in a note does) (the recording records who captured it, `captured`, `format.md`
 §8.3.1), then the inbox files are deleted. The note, page and recording ids
@@ -2414,7 +2436,8 @@ Every command takes `--json`, the access options and `--no-cache`.
 - `update` does this device's work now (the scheduling policy of the design's §3.7): generate each eligible note
   (text unchanged for 10 minutes, `--force`: now and again) that no device has a current summary of; on a device that
   supports the pin also embed each eligible note no device has a current vector of (`--force`: again), tombstone deleted
-  notes, title voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when
+  notes, derive titles for voice notes whose own title is blank or a default stored before 1.3 (`insights.voiceNoteTitle`;
+  kept in the note's insights file, never written to the note), rebuild the map when
   more than 10% changed since the best map of any device, or weekly (the build is deterministic: devices that rebuild
   at once write the same map; the first build pins the embedding revision, the lowest every recently seen device supports),
   write this device's record and the notebook and tag summaries that are due (each at most once a day; one whose
@@ -2446,20 +2469,68 @@ Every command takes `--json`, the access options and `--no-cache`.
 - `map` prints the map as JSON (nodes with positions and clusters, clusters with labels) or SVG. `--rebuild` (needs
   the embedder) embeds what is missing and rebuilds it on this device. `--pin REV` moves the pinned
   revision: it lists the devices left out (they become vector readers) and needs `--yes`.
-- `title` titles a voice note from its insights while its title is still the capture default (a user's title is never
-  replaced; a rename from another device that lost to this device's title is restored), with `--format` or the
-  vault's format; it uses a stored slug, else asks the model (exit 3 without one).
+- `title` derives a voice note's title from its insights while the note's own title is blank or a default stored before 1.3
+  (a user's title is never touched, and the derived title is never written into the note: it lives in this device's
+  insights file for the note, `format.md` §16.2 `title`, and `notes list`, `notes show` and the app show it in place of
+  a blank title), with `--format` or the vault's format; it uses a stored slug, else asks the model (exit 3 without one).
+- The language of generated summaries and voice-note titles is the shared setting `insights.language` (`sempere settings set
+  insights.language es`; `same` or `settings reset` for the default, the note's own language): a device with the model makes
+  each summary and title in the note's language, as before, then puts them into that language, and notes whose summary is in
+  another language are made again, a few per `update`, on every device. Keywords stay as the note has them.
 - `purge` turns Note Insights off (`insights.enabled false`) and deletes every insights file here; the next sync
   deletes them on the targets, and every device deletes its own.
 
 Linux runs everything but `update`, `topic --generate` and `map --rebuild` (exit 3, "needs
 macOS 26"); `map --pin` works there (it only writes the setting). Writes are refused like every write (exit 6, 7).
 `--json`: `update` gives `{device, generated, embedded, tombstoned, dropped, titled,
-restoredTitles, removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
+removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
 `{note, title, state, summary, keywords: [{t, w}], concepts, device, deviceName, written, model, os, prompt, dropped,
-slug, embedded, embeddingKey}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
+slug, embedded, embeddingKey, generatedTitle}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
 keywordOverlap, why, shared, placed}]}`; `search` gives `[{note, title, field, matched, stale}]`; `topic` gives `{scope, members, summary, generated, stale, device,
 at}` (`--list`: an array of those); `status`, `map`, `title` and `purge` give their fields as named in the text output.
+
+### Ask your notes
+
+```
+sempere ask QUESTION [--vault V] [--limit N] [--notebook PATH] [--tag T] [--since DATE] [--until DATE]
+                     [--lang BCP47] [--retrieve-only] [--require-model] [--explain] [--json]
+```
+
+A question in words, answered from your notes on this machine (`docs/design/1.3-ask.md`): vector matches from Note
+Insights (when this machine's embeddings match the vault's, as for `insights related`) and keyword matches (the question's
+content words, stemmed, over titles, tags, notebooks, insight keywords and text) are fused (reciprocal rank), the best
+passages of the best six notes are picked, and Apple's on-device model (macOS 26 with Apple Intelligence) writes at most five
+sentences from those passages only, each naming its sources. The answer is checked: a sentence with no source, an unknown
+source, a number or name its cited passages do not hold, or too few words in common with them is dropped, and with none left,
+or over 40% dropped, or the model saying the notes do not answer, there is no answer. Nothing leaves the machine and nothing
+is written: no question, answer or history is stored in the vault or anywhere else. Deleted notes and notes outside the
+filters are never candidates; `--since` and `--until` take `YYYY-MM-DD` (local) or RFC 3339 and compare the note's modified
+date. A question over 400 characters is cut (a notice says so).
+
+The first line of text output is the mode (`answer`, `retrieval` or `keyword`) and, when it is not `answer`, what is
+missing in parentheses ("Apple Intelligence is turned off", "I couldn't find that in your notes"). `answer`: the sentences,
+each followed by `[n]` for the notes it came from, then "Notes used" (title, notebook, pages, id) and "Other matching notes".
+`retrieval` (no model, or the model's answer failed or did not pass the check) and `keyword` (also no usable vectors: Note
+Insights off or not set up for the question's language, no embedder here, or embeddings that do not match the vault's) list
+"Best matches", each with why it matched (`your words`, `similar topic`) and its best passage. The mode ladder never ends in
+an error: the exit is 0 whatever the mode. On Linux there is no model and no embedder: `keyword` mode.
+
+- `--limit N` notes are listed (default 6); the model reads at most 6.
+- `--lang` is the question's language (default: detected on macOS, else the vault's main language). The embedder needs a
+  language the vault pins (`insights.embeddingRevision`); otherwise vector matching is skipped (a notice says so) and
+  generation still runs if the model supports the language.
+- `--retrieve-only` never calls the model. `--require-model` exits 3 with the reason when the model cannot run (the
+  insights convention); the two together are a usage error (2).
+- `--explain` adds each candidate's vector and keyword ranks and fused score, the passages sent with a token estimate, and
+  each dropped sentence with the reason.
+- `--json`: `{question, mode, lang, enough, dropped, answer: [{text, sources: [note id]}], notes: [{note, title, notebook,
+  modified, pages, why: ["keywords", "similar"], used, passages: [{page, text}]}], missing, missingKind, vectors, notices,
+  explain?}` (`missingKind`: `noModel`, `disabled`, `notReady`, `deviceNotEligible`, `unsupported`, `language`, `failed` or
+  `notFound`; `vectors`: `used`, or why not: `off`, `noEmbedder`, `language`, `noMap`, `incompatible`, `noVectors`,
+  `unembeddable`, `none`; both are additions to the design's shape). The
+  citations are note ids drawn by the program from validated source ids, never from the model's text.
+- A read-only vault works (nothing is written); a locked or incomplete vault gives the usual exit codes.
+
 
 ### Export
 

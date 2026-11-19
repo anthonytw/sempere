@@ -48,7 +48,7 @@ struct NoteWindowView: View {
             content
                 // The title only while the vault is unlocked: the system keeps window titles in its
                 // saved state (Mac), so a locked vault's windows show the generic one.
-                .navigationTitle((ready ? note : nil).map { NoteTitle.display($0.title) }
+                .navigationTitle((ready ? note : nil).map { NoteTitle.display(model.displayTitle($0)) }
                                  ?? String(localized: "Note", comment: "Window title while its note is not loaded"))
                 .toolbar {
                     // With the note open, its actions are the editor's toolbar (`NoteToolbar`, one order on every

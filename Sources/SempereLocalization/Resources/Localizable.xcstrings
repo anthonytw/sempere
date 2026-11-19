@@ -4970,6 +4970,19 @@
         }
       }
     },
+    "Also Redo Insights" : {
+      "comment" : "Transcribe Again menu: make the note's Note Insights again after transcribing",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rehacer también los análisis"
+          }
+        }
+      }
+    },
     "Also remove the devices “%@” added" : {
       "comment" : "Removal sheet; the value is a device name",
       "extractionState" : "manual",
@@ -5274,6 +5287,19 @@
         }
       }
     },
+    "Apple Intelligence is not available on %@." : {
+      "comment" : "Ask banner; the argument is “this iPad”, “this iPhone” or “this Mac”",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence no está disponible en %@."
+          }
+        }
+      }
+    },
     "Apple Intelligence is not available on this device." : {
       "comment" : "Topic summary: Regenerate on a device without the model",
       "extractionState" : "manual",
@@ -5287,6 +5313,19 @@
         }
       }
     },
+    "Apple Intelligence is not ready on %@." : {
+      "comment" : "Ask banner; the argument is “this iPad”, “this iPhone” or “this Mac”",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence no está listo en %@."
+          }
+        }
+      }
+    },
     "Apple Intelligence is not ready on this device. It may still be downloading, or its language does not match this device's language and region." : {
       "comment" : "Note Insights: why this device makes no summaries (Apple's model is not ready)",
       "extractionState" : "manual",
@@ -5296,6 +5335,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apple Intelligence no está lista en este dispositivo. Puede que aún se esté descargando, o que su idioma no coincida con el idioma y la región de este dispositivo."
+          }
+        }
+      }
+    },
+    "Apple Intelligence is off on %@." : {
+      "comment" : "Ask banner; the argument is “this iPad”, “this iPhone” or “this Mac”",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence está desactivado en %@."
           }
         }
       }
@@ -5397,6 +5449,58 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aprobar da al dispositivo nuevo la clave de la bóveda. Aprueba solo un dispositivo que tengas en la mano."
+          }
+        }
+      }
+    },
+    "Ask" : {
+      "comment" : "Segment under the search field: ask the notes a question",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preguntar"
+          }
+        }
+      }
+    },
+    "Ask Your Notes" : {
+      "comment" : "Title of the empty Ask screen",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pregunta a tus notas"
+          }
+        }
+      }
+    },
+    "Ask Your Notes…" : {
+      "comment" : "Edit menu: ask a question the notes answer, on this device",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preguntar a tus notas…"
+          }
+        }
+      }
+    },
+    "Ask a question about your notes" : {
+      "comment" : "Search field prompt in Ask mode",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz una pregunta sobre tus notas"
           }
         }
       }
@@ -5550,6 +5654,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Automática"
+          }
+        }
+      }
+    },
+    "Automatic (%@)" : {
+      "comment" : "Transcribe Again menu: the language is chosen for you; the value is its name, e.g. Spanish",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automática (%@)"
           }
         }
       }
@@ -5905,6 +6022,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se convierte en una nota nueva en «%@», con una página por cada página del PDF, para escribir encima. El PDF se guarda cifrado en la bóveda."
+          }
+        }
+      }
+    },
+    "Best Matches" : {
+      "comment" : "Ask: section of the best-matching notes when there is no written answer",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mejores coincidencias"
           }
         }
       }
@@ -10834,6 +10964,19 @@
         }
       }
     },
+    "Generated on this device from your notes" : {
+      "comment" : "Ask: label under a written answer",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generado en este dispositivo a partir de tus notas"
+          }
+        }
+      }
+    },
     "Getting the video…" : {
       "comment" : "Video player: downloading and decrypting the clip",
       "extractionState" : "manual",
@@ -11405,6 +11548,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Entendido"
+          }
+        }
+      }
+    },
+    "I couldn't find that in your notes." : {
+      "comment" : "Ask: nothing in the notes answers the question",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No he encontrado eso en tus notas."
           }
         }
       }
@@ -12188,6 +12344,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Insertar ▸ Ecuación a partir de escritura a mano lee como LaTeX la tinta que rodeas, con un modelo que se ejecuta en este dispositivo: ninguna tinta sale de él. El modelo solo se descarga cuando lo pides, se comprueba con su huella publicada y se guarda en este dispositivo."
+          }
+        }
+      }
+    },
+    "Insight Language" : {
+      "comment" : "Settings ▸ Note Insights: section header",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma de los análisis"
           }
         }
       }
@@ -13367,6 +13536,19 @@
         }
       }
     },
+    "Looking through your notes…" : {
+      "comment" : "Ask: while the notes are searched",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscando en tus notas…"
+          }
+        }
+      }
+    },
     "Lost or Stolen" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -13732,6 +13914,45 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Coincide en el resumen:"
+          }
+        }
+      }
+    },
+    "Matching by meaning needs Note Insights, which runs on your devices and keeps nothing outside your vault." : {
+      "comment" : "Ask: why Note Insights is offered",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar por significado necesita Ideas de notas, que funciona en tus dispositivos y no guarda nada fuera de tu bóveda."
+          }
+        }
+      }
+    },
+    "Matching by meaning was skipped, so only your words were matched." : {
+      "comment" : "Ask banner",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se omitió la búsqueda por significado, así que solo se buscaron tus palabras."
+          }
+        }
+      }
+    },
+    "Matching by meaning was skipped: Note Insights is not set up for the language of this question." : {
+      "comment" : "Ask banner",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se omitió la búsqueda por significado: Ideas de notas no está preparado para el idioma de esta pregunta."
           }
         }
       }
@@ -15334,6 +15555,19 @@
         }
       }
     },
+    "Note Insights is off, so only your words were matched." : {
+      "comment" : "Ask banner",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ideas de notas está desactivado, así que solo se buscaron tus palabras."
+          }
+        }
+      }
+    },
     "Note Insights writes a short summary and keywords for each note and finds related notes, on your devices only. About an hour of charging for 500 notes." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -15523,6 +15757,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se han podido mostrar las notas"
+          }
+        }
+      }
+    },
+    "Notes Used" : {
+      "comment" : "Ask: section of the notes the answer cites",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notas usadas"
           }
         }
       }
@@ -16836,6 +17083,19 @@
         }
       }
     },
+    "Opens the note" : {
+      "comment" : "Accessibility hint of an Ask result row",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre la nota"
+          }
+        }
+      }
+    },
     "Options" : {
       "comment" : "Export sheet: section header",
       "extractionState" : "manual",
@@ -16931,6 +17191,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Otros archivos"
+          }
+        }
+      }
+    },
+    "Other Matching Notes" : {
+      "comment" : "Ask: section of notes that matched but the answer does not cite",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otras notas coincidentes"
           }
         }
       }
@@ -17276,6 +17549,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Páginas"
+          }
+        }
+      }
+    },
+    "Pages %@" : {
+      "comment" : "Ask result row: the pages the passages come from, e.g. “Pages 3, 4”",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Páginas %@"
           }
         }
       }
@@ -18282,14 +18568,14 @@
         }
       }
     },
-    "Quick voice notes are named from their transcript while they keep the title they were recorded with. {date} and {time} are when the note was recorded, {slug} a few words from the model. A title you set yourself is never replaced." : {
+    "Quick voice notes without a title of their own are shown with one made from their transcript. {date} and {time} are when the note was recorded, {slug} a few words from the model. A title you set yourself is always the one shown, and the generated one is never written into the note." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las notas de voz rápidas se nombran a partir de su transcripción mientras conservan el título con el que se grabaron. {date} y {time} son el momento de la grabación, {slug} unas palabras del modelo. Un título que pongas tú nunca se reemplaza."
+            "value" : "Las notas de voz rápidas sin un título propio se muestran con uno hecho a partir de su transcripción. {date} y {time} son el momento de la grabación, {slug} unas palabras del modelo. Un título que pongas tú es siempre el que se muestra, y el generado nunca se escribe en la nota."
           }
         }
       }
@@ -18584,6 +18870,55 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Solo lectura: desbloqueada con la clave de recuperación, que lee pero nunca escribe. Para modificar esta bóveda en este dispositivo, ciérrala y vuelve a abrirla; luego elige Unir este dispositivo… (lo aprueba el dispositivo que gestiona los dispositivos) o Tomar el control con el kit…."
+          }
+        }
+      }
+    },
+    "Reading %lld notes" : {
+      "comment" : "Ask: while the model reads the notes it found",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Reading %lld note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Reading %lld notes"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Leyendo %lld de notas"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Leyendo %lld nota"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Leyendo %lld notas"
+                }
+              }
+            }
           }
         }
       }
@@ -20518,6 +20853,19 @@
         }
       }
     },
+    "Same as Note" : {
+      "comment" : "Settings ▸ Note Insights ▸ Insight Language: summaries and titles are written in the language of each note",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Igual que la nota"
+          }
+        }
+      }
+    },
     "Sample Rate" : {
       "comment" : "Settings ▸ Recording: audio sample rate picker",
       "extractionState" : "manual",
@@ -21166,6 +21514,19 @@
         }
       }
     },
+    "Search matches words; Ask answers a question from your notes, on this device" : {
+      "comment" : "Hover help of the Search | Ask control",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar encuentra palabras; Preguntar responde una pregunta con tus notas, en este dispositivo"
+          }
+        }
+      }
+    },
     "Search notes and handwriting" : {
       "comment" : "Placeholder of the note list's search field",
       "extractionState" : "manual",
@@ -21175,6 +21536,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buscar en notas y escritura a mano"
+          }
+        }
+      }
+    },
+    "Search or Ask" : {
+      "comment" : "Accessibility label of the segmented control under the search field",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar o preguntar"
           }
         }
       }
@@ -22216,6 +22590,19 @@
         }
       }
     },
+    "Similar topic" : {
+      "comment" : "Ask result row: the note matched by meaning",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tema parecido"
+          }
+        }
+      }
+    },
     "Since %@, this device has been waiting for a device change from the device that manages devices. Until it arrives, nothing new is uploaded." : {
       "comment" : "Banner: sync held back; the value is the date the wait began",
       "extractionState" : "manual",
@@ -22583,6 +22970,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ordenar las notas por fecha o título, con las favoritas arriba"
+          }
+        }
+      }
+    },
+    "Source %lld, %@" : {
+      "comment" : "Accessibility label of a citation chip: number and note title",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fuente %lld, %@"
+          }
+        }
+      }
+    },
+    "Source %lld, %@, page %lld" : {
+      "comment" : "Accessibility label of a citation chip: number, note title and page",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fuente %lld, %@, página %lld"
           }
         }
       }
@@ -23374,6 +23787,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Resumen"
+          }
+        }
+      }
+    },
+    "Summary and Title Language" : {
+      "comment" : "Settings ▸ Note Insights: picker label for the language of generated summaries and voice-note titles",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma de resúmenes y títulos"
           }
         }
       }
@@ -24729,6 +25155,19 @@
         }
       }
     },
+    "The answer could not be written. These are the best matches." : {
+      "comment" : "Ask banner: the model failed or took too long",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo redactar la respuesta. Estas son las mejores coincidencias."
+          }
+        }
+      }
+    },
     "The approval arrived from the device nearby." : {
       "comment" : "Join screen: the direct link",
       "extractionState" : "manual",
@@ -25291,6 +25730,19 @@
         }
       }
     },
+    "The language of generated summaries and voice-note titles. Same as Note writes each in the language of its note. Choosing a language makes them again in it, a few at a time, on every device of this vault; keywords stay as the note has them." : {
+      "comment" : "Settings ▸ Note Insights ▸ Insight Language footer",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El idioma de los resúmenes y de los títulos de notas de voz generados. «Igual que la nota» escribe cada uno en el idioma de su nota. Si eliges un idioma, se vuelven a generar en él, unos pocos cada vez, en todos los dispositivos de esta bóveda; las palabras clave se quedan como las tiene la nota."
+          }
+        }
+      }
+    },
     "The limit of held Watch notes is reached: the watch keeps further notes until you add or delete some" : {
       "comment" : "Settings: the held Watch notes store is full",
       "extractionState" : "manual",
@@ -25488,6 +25940,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La clave de recuperación antigua no se lee como una clave poscuántica."
+          }
+        }
+      }
+    },
+    "The on-device model does not support the language of this question." : {
+      "comment" : "Ask banner",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo del dispositivo no admite el idioma de esta pregunta."
           }
         }
       }
@@ -28262,7 +28727,7 @@
       }
     },
     "Transcribe Again" : {
-      "comment" : "Menu item: transcribe a recording again",
+      "comment" : "Menu item: transcribe a recording again, and the note's menu of languages to transcribe every recording again",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -28296,6 +28761,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Transcribir notas de voz"
+          }
+        }
+      }
+    },
+    "Transcribe every recording of this note again, in a language you choose" : {
+      "comment" : "Help tag of the Transcribe Again menu in the note's Recordings menu",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a transcribir todas las grabaciones de esta nota en el idioma que elijas"
           }
         }
       }
@@ -28462,6 +28940,19 @@
         }
       }
     },
+    "Turn on Note Insights for better matches" : {
+      "comment" : "Ask: one-time offer",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa Ideas de notas para obtener mejores coincidencias"
+          }
+        }
+      }
+    },
     "Turn on Quick Voice Notes first: the watch records with its profile." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -28496,6 +28987,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Escribe un patrón, p. ej. %@."
+          }
+        }
+      }
+    },
+    "Type a question and press Return. The answer is written on this device from your notes, and each sentence shows where it came from. Check the source." : {
+      "comment" : "Empty Ask screen: how Ask works",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribe una pregunta y pulsa Intro. La respuesta se redacta en este dispositivo a partir de tus notas, y cada frase indica de dónde procede. Comprueba la fuente."
           }
         }
       }
@@ -29611,7 +30115,7 @@
       }
     },
     "Voice note" : {
-      "comment" : "Live Activity label while a voice note records",
+      "comment" : "Live Activity label while a voice note records, and the first words of the default title of a quick voice note before its date",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -29619,19 +30123,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nota de voz"
-          }
-        }
-      }
-    },
-    "Voice note %@" : {
-      "comment" : "Default title of a quick-capture voice note: its start date and time",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nota de voz %@"
           }
         }
       }
@@ -29862,6 +30353,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avisos"
+          }
+        }
+      }
+    },
+    "Watch voice note" : {
+      "comment" : "First words of the default title of a voice note recorded on the Apple Watch, before its date",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz del reloj"
           }
         }
       }
@@ -30304,6 +30808,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tus notas se pueden seguir leyendo. No se escribe nada en esta bóveda hasta que se corrija la lista."
+          }
+        }
+      }
+    },
+    "Your words" : {
+      "comment" : "Ask result row: the note matched the words of the question",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus palabras"
           }
         }
       }

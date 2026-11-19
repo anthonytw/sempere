@@ -306,23 +306,6 @@ extension AppModelSuites {
             #expect(model.insights.settings.voiceNoteTitle == VoiceNoteTitleFormat.defaultFormat)
         }
 
-        /// Titles are written through the model's own clock (never a second clock on its state file), and the list
-        /// shows them at once.
-        @Test func titlesGoThroughTheModelsClock() async throws {
-            let model = try await model()
-            let id = try await note(model, "Voice note 2026-09-21 10:46", "Spring lab results.")
-            let name = try await model.writeInsightsTitle(id, { [.setMeta(.title("2026-09-21 10.46 Spring Lab"))] }, wall: Date())
-            #expect(name?.device == (try model.deviceClockForWriting()).device)
-            #expect(model.notes.first { $0.id == id }?.title == "2026-09-21 10.46 Spring Lab")
-            // The builder decides inside the edit gate: one that finds a rename made in between writes nothing.
-            #expect(try await model.writeInsightsTitle(id, { nil }, wall: Date()) == nil)
-            // A note open in an editor is never retitled.
-            model.selectedNoteID = id
-            await model.showSelectedNote()
-            #expect(try await model.writeInsightsTitle(id, { [.setMeta(.title("X"))] }, wall: Date()) == nil)
-            #expect(model.notes.first { $0.id == id }?.title == "2026-09-21 10.46 Spring Lab")
-        }
-
         /// Turning off stops a running pass and waits for it before the purge, so no sidecar is written after it.
         @Test func offWaitsForTheRunningPass() async throws {
             let model = try await model()

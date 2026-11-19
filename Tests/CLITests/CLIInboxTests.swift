@@ -76,6 +76,38 @@ final class CLIInboxTests: CLITestCase {
         XCTAssertEqual(shown.status, 0, shown.err)
     }
 
+    /// 1.3: a capture with no `--title` stores none; `notes list` and `notes show` show a default from its source, and a
+    /// title the user types afterwards wins (`displayTitle` in `--json`, `title` stays what is stored).
+    func testAVoiceNoteWithoutATitleShowsADefaultAndStoresNone() throws {
+        let (vault, identity, keyPath) = try makeVault()
+        let unlocked = ["--vault", vault.url.path, "--identity", keyPath]
+        XCTAssertEqual(try cli(["inbox", "enable", "--notebook", "Voice"] + unlocked).status, 0)
+        let captured = try json(try cli(["inbox", "capture", Self.tone, "--started", "2026-10-07T14:32:00Z", "--json"] + unlocked))
+        let note = try XCTUnwrap(captured["note"] as? String)
+        XCTAssertEqual(try cli(["inbox", "import", "--json"] + unlocked).status, 0)
+        let state = try Vault.open(at: vault.url, identities: [identity]).reconstruct(noteId: UUID(uuidString: note)!)
+        XCTAssertEqual(state.meta.title, "", "no title stored")
+        XCTAssertNotNil(state.recordings.first?.captureInfo?.tz)
+        let list = try XCTUnwrap(try cli(["notes", "list", "--json"] + unlocked).json as? [[String: Any]])
+        let row = try XCTUnwrap(list.first { $0["id"] as? String == note })
+        XCTAssertEqual(row["title"] as? String, "")
+        // English words and en_US_POSIX dates on every machine (the CLI's messages stay English), in the capture's zone.
+        let shown = try XCTUnwrap(row["displayTitle"] as? String)
+        XCTAssertTrue(shown.hasPrefix("Voice note Oct 7, 2026"), shown)
+        let table = try cli(["notes", "list"] + unlocked)
+        XCTAssertFalse(table.out.contains("(untitled)"), table.out)
+        // --sort title sorts by the shown title, as the app's list does: "Voice note" between "Apple" and "Zebra" (a blank
+        // stored title would sort first).
+        for title in ["Zebra", "Apple"] { XCTAssertEqual(try cli(["notes", "new", title] + unlocked).status, 0) }
+        let sorted = try XCTUnwrap(try cli(["notes", "list", "--sort", "title", "--json"] + unlocked).json as? [[String: Any]])
+        let order = sorted.compactMap { $0["displayTitle"] as? String }.map { String($0.prefix(10)) }
+            .filter { ["Apple", "Voice note", "Zebra"].contains($0) }
+        XCTAssertEqual(order, ["Apple", "Voice note", "Zebra"])
+        XCTAssertEqual(try cli(["notes", "rename", note, "Standup"] + unlocked).status, 0)
+        let renamed = try XCTUnwrap(try cli(["notes", "list", "--json"] + unlocked).json as? [[String: Any]])
+        XCTAssertEqual(renamed.first { $0["id"] as? String == note }?["displayTitle"] as? String, "Standup")
+    }
+
     func testCaptureNeedsAProfileAndForgeriesAreRefused() throws {
         let (vault, _, keyPath) = try makeVault()
         let locked = ["--vault", vault.url.path]

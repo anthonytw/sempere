@@ -46,11 +46,13 @@ public struct InsightsReader: Sendable {
         public var slug: String?
         public var embedded: Bool
         public var embeddingKey: String?
+        /// The title Note Insights derived for a voice note's current text (`InsightsNoteFile.title`); nil when none.
+        public var generatedTitle: String? = nil
     }
 
     /// The note's insights: `current` (its text's hash), `stale` (an older text or model), `missing` or `deleted`.
     public func show(_ note: InsightsNoteInput, reader: GenerationIdentity? = nil) -> Shown {
-        let best = snapshot.bestGen(for: note.id, hash: note.hash)
+        let best = snapshot.bestGen(for: note.id, hash: note.hash, language: settings.language)
         let staleModel = best.map { b in reader.map { !b.gen.identity.isCurrent(for: $0) } ?? false } ?? false
         let state = note.deleted ? "deleted" : best == nil ? "missing" : (best?.current == true && !staleModel ? "current" : "stale")
         let emb = snapshot.emb(for: note.id, key: snapshot.bestMap(rev: nil)?.map.key, hash: note.hash)?.emb
@@ -59,7 +61,8 @@ public struct InsightsReader: Sendable {
                      deviceName: best.flatMap { deviceNames[$0.device.rawValue] },
                      written: best.map { Date(timeIntervalSince1970: Double($0.written) / 1000) }, model: best?.gen.model,
                      os: best?.gen.os, prompt: best?.gen.prompt, dropped: best?.gen.dropped, slug: best?.gen.slug,
-                     embedded: emb?.hash == note.hash, embeddingKey: emb?.key.description)
+                     embedded: emb?.hash == note.hash, embeddingKey: emb?.key.description,
+                     generatedTitle: snapshot.bestTitle(for: note.id, hash: note.hash, language: settings.language))
     }
 
     // MARK: Compatibility
@@ -184,7 +187,7 @@ public struct InsightsReader: Sendable {
         let allHave = !set.vectors.isEmpty
             && inputs.allSatisfy { set.vectors[$0.id] != nil || EmbeddingInput.clean($0.text).isEmpty }
         let rel = inputs.map { n in
-            let gen = snapshot.bestGen(for: n.id, hash: n.hash)?.gen
+            let gen = snapshot.bestGen(for: n.id, hash: n.hash, language: settings.language)?.gen
             return RelatedInput(id: n.id, vector: allHave ? set.vectors[n.id] : nil, tokens: InsightsNotes.tokens(text: n.text, gen: gen),
                                 words: InsightsWords.count(n.text), terms: InsightsNotes.terms(gen: gen))
         }
@@ -302,7 +305,7 @@ public struct InsightsReader: Sendable {
         let live = inputs.filter { !$0.deleted && !$0.text.isEmpty }
         var processed = 0, stale = 0
         for n in live {
-            guard let b = snapshot.bestGen(for: n.id, hash: n.hash) else { continue }
+            guard let b = snapshot.bestGen(for: n.id, hash: n.hash, language: settings.language) else { continue }
             if b.current { processed += 1 } else { stale += 1 }
         }
         let listed = Set(vault.manifest.devices.compactMap { $0.id.flatMap(DeviceID.init) })
@@ -388,7 +391,7 @@ public struct InsightsReader: Sendable {
         if set.compatibility == .incompatible, let key = map.key {
             // A local map of this device's own vectors (never written; design §3.8).
             let rel = inputs.filter { live.contains($0.id) }.compactMap { n -> RelatedInput? in
-                let gen = snapshot.bestGen(for: n.id, hash: n.hash)?.gen
+                let gen = snapshot.bestGen(for: n.id, hash: n.hash, language: settings.language)?.gen
                 return set.vectors[n.id].map {
                     RelatedInput(id: n.id, vector: $0, tokens: InsightsNotes.tokens(text: n.text, gen: gen), words: 0,
                                  terms: InsightsNotes.terms(gen: gen))

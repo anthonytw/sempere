@@ -89,13 +89,16 @@ struct DerivedLists {
         var search: String
         var sort: NoteSort
         var favoritesFirst: Bool
+        /// Sorting by title sorts by display titles, which Note Insights' refreshes change (`insights.revision`; 0 otherwise).
+        var titles: Int
 
-        init(version: Int, selection: SidebarItem?, search: String, sort: NoteSort, favoritesFirst: Bool) {
+        init(version: Int, selection: SidebarItem?, search: String, sort: NoteSort, favoritesFirst: Bool, titles: Int = 0) {
             self.version = version
             self.selection = selection
             self.search = search
             self.sort = sort
             self.favoritesFirst = favoritesFirst
+            self.titles = titles
         }
     }
 
