@@ -1115,7 +1115,13 @@ a `setPageRecognition` the snapshot does not cover. `addPage` ignores any
 Writing recognition is not editing the note: a delta whose ops are all
 `setPageRecognition` or `setMeta` of `recognized` (§5.4) leaves the note's
 modified date where it was (§12.2), whichever device, app pass, vault-wide run
-or import wrote it.
+or import wrote it. From 1.3 the same holds for a recording's transcript (§8.3.2): a
+delta whose ops are all derived, that is, those two and `setRecording` of `transcript`
+(a transcript written when a voice note is adopted, after a recording, or by a
+re-transcription), leaves the date where it was, and so does a snapshot's own reading of
+the date (§12.2: the recording's `transcript` stamp is left out like recognition's). Other
+automatic writes to a note's own fields do not exist in this version: a voice note's generated title is
+kept outside the note (§16.8). A reader of 1.2 or earlier counts a transcript as an edit.
 
 Readers that index text for search use `text`; `words` lets a viewer
 highlight hits on the page. A recognizer reads a note whose `meta.lang` is
@@ -3374,13 +3380,13 @@ file = 534d505501a0a1a2a3a4a5a6a7a8a9aaabb466bcf027fe45b94f3fe195f6e0b57d9c6e
   revisions: `title`; `tags` (the current tags, §5.4.1); `notebook`, absent
   when the note has none; `favorite`; `deleted`; `created`; `modified`, the
   date of the note's last edit: the greatest of what each revision gives, where a delta
-  whose ops are all derived recognition (`setPageRecognition`, `setMeta` of `recognized`,
-  §5.5) gives nothing, a checkpoint (§5.8.1), an empty delta, a delta of newer
+  whose ops are all derived (`setPageRecognition`, `setMeta` of `recognized`, §5.5, and, from 1.3,
+  `setRecording` of `transcript`, §8.3.2) gives nothing, a checkpoint (§5.8.1), an empty delta, a delta of newer
   content (§7.4) or any other delta gives its `wall` (§5.1), a snapshot of newer
   content gives its `wall` (it may hold edits in fields the reader skipped), and any
   other snapshot gives the time of the newest edit it holds, which is the `hlc`
-  milliseconds of the greatest stamp or origin in its state other than recognition's
-  (each page's `recognitionClock` and the `recognized` clock) or the note's `created`
+  milliseconds of the greatest stamp or origin in its state other than recognition's and
+  transcripts' (each page's `recognitionClock`, the `recognized` clock and each recording's `transcript` clock) or the note's `created`
   if later, but never after the snapshot's own `wall` (compaction and thinning, §5.3,
   §5.8.4, write snapshots long after the edits they fold in); when no revision gives a
   date, the greatest `wall` of all of them. Once compaction has folded the deltas in,

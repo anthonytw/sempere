@@ -170,8 +170,8 @@ extension NoteState {
     var maxHLC: HLC { maxHLC(withRecognition: true) }
 
     /// `maxHLC`, or without `withRecognition` leaving out the stamps of derived
-    /// recognition (each page's `recognitionClock` and the `recognized` register,
-    /// format.md §5.5): the newest time an edit the state holds was written
+    /// data (each page's `recognitionClock`, the `recognized` register, format.md §5.5, and the recordings'
+    /// `transcript` stamps, §8.3.2): the newest time an edit the state holds was written
     /// (`ModifiedDate`).
     func maxHLC(withRecognition: Bool) -> HLC {
         var m = HLC.zero
@@ -184,7 +184,7 @@ extension NoteState {
             for s in p.strokes { origin(s.origin) }
             for i in p.items { origin(i.origin); for c in (i.clocks ?? [:]).values { stamp(c) } }
         }
-        for r in recordings { origin(r.origin); for c in (r.clocks ?? [:]).values { stamp(c) } }
+        for r in recordings { origin(r.origin); for (f, c) in r.clocks ?? [:] where withRecognition || f != "transcript" { stamp(c) } }
         for i in tagSet.instances where i.origin.hlc > m { m = i.origin.hlc }
         for r in tagSet.removed where r.origin.hlc > m { m = r.origin.hlc }
         for l in tombstones?.lineage ?? [] { if let g = ReplacementGroup(l.by), g.hlc > m { m = g.hlc } }

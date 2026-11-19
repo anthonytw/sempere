@@ -1352,7 +1352,7 @@ sempere notes dedupe (ID|TITLE ... | --all) [--dry-run]
 ```
 
 `list` prints id, title, pages, strokes and last modified (the date of the last edit, format.md §12.2:
-recognition, from the app, `recognize` or an import, and compaction's snapshots do not move it); deleted notes are
+recognition, from the app, `recognize` or an import, a transcript (the app, `transcribe`, an adoption), and compaction's snapshots do not move it); deleted notes are
 hidden unless `--deleted`, and `--favorites` lists only favorites. Notes are in
 title order (Finder order: `Note 2` before `Note 10`) unless `--sort modified`
 or `--sort created` (newest first, notes without the date last);
