@@ -186,3 +186,39 @@ extension NoteDisplayTitleTests {
         XCTAssertThrowsError(try NoteSummary.find("voice note x", in: [voice, named]))
     }
 }
+
+/// What a web page share shows as a voice note's title (docs/design/1.3-share.md): the capture's date and time only when
+/// the share includes dates.
+extension NoteDisplayTitleTests {
+    func share(stored: String = "", origin: VoiceOrigin?, generated: String? = nil,
+               format: String = VoiceNoteTitleFormat.defaultFormat, dates: Bool) -> String {
+        NoteDisplayTitle.shareTitle(stored: stored, origin: origin, generated: generated, format: format, includeDates: dates,
+                                    locale: english)
+    }
+
+    func testAShareWithDatesShowsTheShownTitle() {
+        XCTAssertEqual(share(origin: origin(), dates: true),
+                       NoteDisplayTitle.resolve(stored: "", origin: origin(), generated: nil, locale: english))
+        XCTAssertEqual(share(origin: origin(), generated: "2026-11-16 14.32 Lab", dates: true), "2026-11-16 14.32 Lab")
+        XCTAssertEqual(share(stored: "Voice note 2026-11-16 14:32", origin: origin(), dates: true), "Voice note 2026-11-16 14:32")
+    }
+
+    func testAShareWithoutDatesLeavesTheCaptureTimeOut() {
+        XCTAssertEqual(share(origin: origin(), dates: false), "Voice note")
+        XCTAssertEqual(share(origin: origin("watch"), dates: false), "Watch voice note")
+        XCTAssertEqual(NoteDisplayTitle.shareTitle(stored: "", origin: origin(), generated: nil, format: "{slug}", includeDates: false,
+                                                   locale: spanish), "Nota de voz", "the localized bare words")
+        XCTAssertEqual(share(stored: "Voice note 2026-11-16 14:32", origin: origin(), dates: false), "Voice note",
+                       "a default stored before 1.3 holds the capture time too")
+        // A derived title: kept when its format has no date or time, else the bare words.
+        XCTAssertEqual(share(origin: origin(), generated: "2026-11-16 14.32 Lab", dates: false), "Voice note")
+        XCTAssertEqual(share(origin: origin(), generated: "Lab (14.32)", format: "{slug} ({time})", dates: false), "Voice note")
+        XCTAssertEqual(share(origin: origin(), generated: "Lab", format: "{slug}", dates: false), "Lab")
+        XCTAssertEqual(share(origin: origin(), generated: "2026-11-16 Lab", format: "{slug}", dates: false), "Voice note",
+                       "a fallback title of another format that holds the capture's date")
+        // A title the user entered, and a note that is no voice note, are kept.
+        XCTAssertEqual(share(stored: "Lab 2026-10-01 09:00", origin: origin(), generated: "x", dates: false), "Lab 2026-10-01 09:00")
+        XCTAssertEqual(share(stored: "Physics", origin: nil, dates: false), "Physics")
+        XCTAssertEqual(share(stored: "", origin: nil, dates: false), "")
+    }
+}

@@ -876,6 +876,14 @@ extension AppModelCore {
         return note.displayTitle(generated: insightsIndex.shown[note.id]?.generatedTitle, words: displayTitleWords)
     }
 
+    /// The title a web page share of `note` shows (`NoteDisplayTitle.shareTitle`): `displayTitle(note)`, without the capture's
+    /// date or time unless the share includes dates.
+    func shareTitle(_ note: NoteSummary, includeDates: Bool, vault: Vault) -> String {
+        note.shareTitle(generated: insightsIndex.shown[note.id]?.generatedTitle,
+                        format: InsightsSettings.read(vault, type: settingsDeviceType).voiceNoteTitle,
+                        includeDates: includeDates, words: displayTitleWords)
+    }
+
     /// True when `displayTitle(note)` is the made-up default ("Voice note <date>"), not a title the user or Insights gave.
     public func showsDefaultTitle(_ note: NoteSummary) -> Bool {
         note.showsDefaultTitle(generated: insightsIndex.shown[note.id]?.generatedTitle)

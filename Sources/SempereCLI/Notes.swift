@@ -92,6 +92,12 @@ enum NoteTitles {
         note.displayTitle(generated: generated, words: words, locale: locale)
     }
 
+    /// The title `sempere share` puts in the page (`NoteDisplayTitle.shareTitle`): no capture time unless `includeDates`.
+    static func share(_ note: NoteSummary, includeDates: Bool, in vault: Vault) -> String {
+        note.shareTitle(generated: generated(for: [note], in: vault)[note.id], format: InsightsSettings.read(vault).voiceNoteTitle,
+                        includeDates: includeDates, words: words, locale: locale)
+    }
+
     /// Every note's shown title, with the generated titles looked up once.
     static func display(_ notes: [NoteSummary], in vault: Vault) -> [UUID: String] {
         let generated = generated(for: notes, in: vault)

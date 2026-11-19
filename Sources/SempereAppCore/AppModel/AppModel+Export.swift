@@ -130,8 +130,10 @@ extension AppModelCore {
                 let item = try await loadNoteForExport(id, vault: vault, withSummary: true)
                 try ensureCurrent(gen)
                 if let summary = item.summary {
-                    // A voice note with no title of its own is named and headed by the title the list shows for it.
-                    let shown = displayTitle(summary)
+                    // A voice note with no title of its own is named and headed by the title the list shows for it; a web
+                    // page share leaves the capture's date and time out of it unless it includes dates.
+                    let shown = options.format == .webPage
+                        ? shareTitle(summary, includeDates: options.webShare.includeDates, vault: vault) : displayTitle(summary)
                     loaded.append((summary.showing(title: shown), item.state.showing(title: shown)))
                 }
             } catch is CancellationError {

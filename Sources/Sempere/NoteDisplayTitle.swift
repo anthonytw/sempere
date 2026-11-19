@@ -140,6 +140,22 @@ public enum NoteDisplayTitle {
         return stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// The title a share shows (an encrypted web page, docs/design/1.3-share.md): `resolve`'s title, except that one which
+    /// tells when the note was captured is left out of a share without dates. A voice note's default ("Voice note
+    /// <date time>", or one that 1.0 through 1.2 stored) and a derived title whose format has `{date}` or `{time}` (or
+    /// whose text holds the capture's date or time, for a title of another format) then become the bare words ("Voice
+    /// note", "Watch voice note"). A title the user entered is kept as it is.
+    public static func shareTitle(stored: String, origin: VoiceOrigin?, generated: String?, format: String,
+                                  includeDates: Bool, words: Words? = nil, locale: Locale = .current) -> String {
+        let shown = resolve(stored: stored, origin: origin, generated: generated, words: words, locale: locale)
+        guard !includeDates, let origin, isStoredDefault(stored, origin: origin) else { return shown }
+        let bare = (words ?? .builtIn(locale: locale)).prefix(origin.source)
+        guard let g = generated?.trimmingCharacters(in: .whitespacesAndNewlines), !g.isEmpty else { return bare }
+        if format.contains("{date}") || format.contains("{time}") { return bare }
+        let capture = VoiceNoteTitleFormat.captureDateAndTime(origin: origin, storedTitle: stored, started: origin.started)
+        return g.contains(capture.date) || g.contains(capture.time) ? bare : g
+    }
+
     // MARK: Shapes of the titles older versions stored
 
     /// True when `title` has the shape of a capture's default title: it ends with the capture's local
@@ -204,6 +220,13 @@ extension NoteSummary {
     /// True when `displayTitle` is the made-up default (`NoteDisplayTitle.showsDefault`).
     public func showsDefaultTitle(generated: String? = nil) -> Bool {
         NoteDisplayTitle.showsDefault(stored: title, origin: voice, generated: generated)
+    }
+
+    /// The title a share of this note shows (`NoteDisplayTitle.shareTitle`): `format` is `insights.voiceNoteTitle`.
+    public func shareTitle(generated: String? = nil, format: String, includeDates: Bool,
+                           words: NoteDisplayTitle.Words? = nil, locale: Locale = .current) -> String {
+        NoteDisplayTitle.shareTitle(stored: title, origin: voice, generated: generated, format: format,
+                                    includeDates: includeDates, words: words, locale: locale)
     }
 
     /// The title to show for this note (`NoteDisplayTitle.resolve`): `generated` is the title Note Insights derived for it.

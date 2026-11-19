@@ -2939,6 +2939,9 @@ scrypt recipient (2^18). Works on Linux and with a read-only vault (nothing is w
   error). Exactly one of the three.
 - Left out unless asked: tags (`--tags`), the notebook path (`--notebook-path`), the creation date (`--dates`), recordings and their
   transcripts (`--audio`). Recognized text is in unless `--no-text`.
+- The page shows the title `notes list` shows. For a voice note with no title of its own that is its derived title or "Voice note"
+  and the capture's date and time, but without `--dates` a title that tells the capture time (the default, or a derived title whose
+  format has `{date}` or `{time}`) becomes the bare words ("Voice note", "Watch voice note").
 - Pictures are re-encoded (at most 2048 px, JPEG, metadata removed), PDF pages become pictures (Poppler's `pdftoppm`, as for `export`;
   without it they are left out with a warning), videos are never included (the poster frame is shown). `--image-quality` picks how hard.
 - The file is at most `--max-size` MB (default 20, at most 200). A note that cannot fit fails (exit 1) with the breakdown (ink and text,
