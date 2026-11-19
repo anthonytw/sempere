@@ -1727,7 +1727,14 @@ syncs with both ways.
   and "Last sync" (offline audit P15); an upload error (a full iCloud storage) is a problem the bar shows. The
   unlisted screen counts them as on no target. A run is marked in flight before it starts; when the next run finds
   the mark (a run that threw or was killed before recording what it wrote), it looks at every file of the folder.
-  Past 20,000 paths the record is truncated, and the target then counts as holding none of this device's files. Closed vaults' periodic runs pause while the app is in the background (a voice note into
+  Past 20,000 paths the record is truncated, and the target then counts as holding none of this device's files.
+  The list holds every file the run's `FolderRemote` placed (`FolderRemote.WriteLog`: revisions, blobs, insights,
+  `settings.age`, device and epoch records, summaries, the web index), not only those the report calls uploaded. A file
+  written in the last 5 minutes that the provider answers nothing about yet (not ubiquitous so far) waits too, never
+  counts as uploaded. While files wait, the session asks the provider again between runs (after 15, 30, 60, 120 and
+  then every 300 seconds, the delays start over with each run), so the bar returns to "Synced" when iCloud is done,
+  not at the next run. A deletion the run passes on to the folder leaves no file to ask about and is not counted; what
+  other devices see is what iCloud has delivered, which the app cannot know. Closed vaults' periodic runs pause while the app is in the background (a voice note into
   one still uploads). Folder targets run 2 s after a write and every minute.
 - **Voice notes** go to the one vault their capture profile names: straight into its in-app inbox,
   found in the store by vault id whatever the profile's bookmark says, open or not; its targets upload

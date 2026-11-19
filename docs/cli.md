@@ -3339,6 +3339,15 @@ stall; such a file still keeps the exit code at 1 through `arriving`, so nothing
 is copied (exit 1). The provider's conflict versions of `vault.json` and `settings.age`
 are merged, or kept as conflict copies, and removed, so no version picker appears.
 
+In a provider's folder on a Mac (iCloud Drive), the files the run wrote are only on this machine until the provider
+has uploaded them. After a run that is not a `--dry-run`, `sync folder` asks the provider once (`ubiquitousItemIsUploaded`,
+`ubiquitousItemUploadingError`) and, when any are still waiting, prints `waiting: N files written here, not uploaded by the
+provider yet` on stderr (and `provider upload error: …` when iCloud reports one, such as a full storage), and the JSON report
+has `providerPending` (a count) and `providerError`; both are absent otherwise. The exit code is unchanged (the run itself
+succeeded); run `sync folder` again later to see the count fall. The CLI has no separate sync status command, and keeps
+no record between runs, so this is a look at the files of that run only (`store sync` does not report it yet). The app
+keeps the list and rechecks it (docs/io.md "Sync targets in the app").
+
 The folder is not trusted: symbolic links in it are never followed, FIFOs and names that are not vault
 files are not taken (listed as ignored with `-v`), reads are bounded. In a plain folder, conditional
 writes (`vault.json`, `settings.age`) take an advisory lock on `.sempere-lock` in `PATH`, so the CLI and

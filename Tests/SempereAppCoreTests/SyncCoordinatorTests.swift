@@ -612,6 +612,34 @@ struct SyncSessionTests {
         session.stop()
     }
 
+    /// Between runs the loop asks the provider again about the waiting files, with growing delays; the bar goes back to
+    /// synced once they are uploaded, and an upload error shows as a problem meanwhile.
+    @Test func waitingUploadsAreRecheckedBetweenRunsUntilDone() async throws {
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
+                                  run: { _ in SyncReport() }, countUnconfirmed: { 0 })
+        session.kind = .folder
+        session.uploadsViaICloud = true
+        session.tick = .milliseconds(5)
+        session.providerRecheckDelays = [0.01, 0.02]
+        let looks = Sync.Counter()
+        session.providerSummary = { ProviderUploads.Summary(count: 2) }
+        session.providerRecheck = {
+            switch looks.add(1) {
+            case 1: return ProviderUploads.Summary(count: 1, error: .failed(code: 4355, domain: NSCocoaErrorDomain, message: "full"))
+            case 2: return ProviderUploads.Summary(count: 1)
+            default: return ProviderUploads.Summary()
+            }
+        }
+        session.vaultUnlocked()
+        _ = await session.syncNow()
+        #expect(session.status.kind == .waitingForProvider(2))
+        session.start()
+        for _ in 0..<400 where session.status.kind != .synced { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(session.status.kind == .synced)
+        #expect(looks.add(0) == 3, "no more looks once nothing waits")
+        session.stop()
+    }
+
     @Test func aFolderInICloudNeverSaysSyncedWhileUploadsWait() async throws {
         let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
                                   run: { _ in SyncReport() }, countUnconfirmed: { 0 })

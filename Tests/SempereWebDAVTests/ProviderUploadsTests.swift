@@ -87,4 +87,39 @@ struct ProviderUploadsTests {
         #expect(ProviderUploads.state(isUploaded: false, isUploading: nil, error: nil, modified: old, now: now) == .waiting)
         #expect(ProviderUploads.state(isUploaded: true, isUploading: nil, error: nil, modified: fresh, now: now) == .uploaded)
     }
+
+    /// Owner 2026-11-19: a file just written into a provider's folder that the provider has not taken in yet answers nothing;
+    /// it waits (it used to count as uploaded and the bar said synced). An old one with no answer, or a gone one, drops.
+    @Test func aFreshFileWithNoProviderAnswerWaitsAndAnOldOneDoesNot() throws {
+        let dir = try TestTemp.directory("provider-state")
+        let folder = try TestTemp.directory("provider-folder")
+        try Data([1]).write(to: folder.appendingPathComponent("fresh.age"))
+        try Data([1]).write(to: folder.appendingPathComponent("old.age"))
+        let now = Date()
+        // Only the folder is the provider's; its files answer nothing.
+        let check: ProviderUploads.Check = { $0 == folder ? .uploaded : nil }
+        let later = now.addingTimeInterval(ProviderUploads.settleTime + 1)
+        #expect(ProviderUploads.update(folder: folder, stateDirectory: dir, written: ["fresh.age", "gone.age"], check: check,
+                                       now: now).count == 1)
+        #expect(ProviderUploads.pending(in: dir) == ["fresh.age"])
+        #expect(ProviderUploads.update(folder: folder, stateDirectory: dir, written: ["old.age"], check: check, now: later).count == 0)
+        // The CLI's one look, kept nowhere.
+        #expect(ProviderUploads.waiting(folder: folder, paths: ["fresh.age", "fresh.age", "gone.age"], check: check, now: now).count == 1)
+        #expect(ProviderUploads.waiting(folder: folder, paths: ["fresh.age"], check: { _ in nil }, now: now).count == 0, "not a provider's folder")
+        let full = ProviderUploads.State.failed(code: 640, domain: NSCocoaErrorDomain, message: "full")
+        #expect(ProviderUploads.waiting(folder: folder, paths: ["fresh.age"], check: { $0 == folder ? .uploaded : full }, now: now).error == full)
+    }
+
+    /// Every file a folder remote places is logged, so settings, records and summaries count as waiting too.
+    @Test func aFolderRemoteLogsTheFilesItPlaces() throws {
+        let folder = try TestTemp.directory("provider-folder")
+        let log = FolderRemote.WriteLog()
+        var remote = FolderRemote(root: folder)
+        remote.writeLog = log
+        try remote.createBase()
+        #expect(try remote.write(["settings.age"], .data(Data([1])), condition: .unconditional))
+        #expect(try remote.write(["a.age"], .data(Data([2])), condition: .create))
+        #expect(try !remote.write(["a.age"], .data(Data([3])), condition: .create), "a refused write is not logged")
+        #expect(log.paths == ["settings.age", "a.age"])
+    }
 }

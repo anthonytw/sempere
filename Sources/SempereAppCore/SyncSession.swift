@@ -135,6 +135,14 @@ public final class SyncSession {
     private(set) var providerError: ProviderUploads.State?
     /// Reads them off the main actor (folder targets; nil: none).
     @ObservationIgnored var providerSummary: (@Sendable () async -> ProviderUploads.Summary)?
+    /// Asks the provider again about the files still waiting, off the main actor, and returns what remains (nil: could not
+    /// look, try later). The loop calls it between runs while files wait, with growing delays (`providerRecheckDelays`),
+    /// so the bar leaves "waiting" when the provider is done, not at the next run.
+    @ObservationIgnored var providerRecheck: (@Sendable () async -> ProviderUploads.Summary?)?
+    /// The delays between those looks (the last repeats).
+    @ObservationIgnored var providerRecheckDelays: [TimeInterval] = [15, 30, 60, 120, 300]
+    @ObservationIgnored private var providerRecheckStep = 0
+    @ObservationIgnored private var providerRecheckDue: Date?
     /// The folder is in iCloud Drive (the wording names it).
     @ObservationIgnored var uploadsViaICloud = false
     /// A folder target's path as run errors may spell it (as stored, symbolic links resolved): a write refused there
@@ -216,6 +224,7 @@ public final class SyncSession {
                 if self.mayRunNow, self.schedule.isDue(now: self.now()) {
                     _ = await self.runOnce(interactive: self.mayMount(demanded: self.schedule.demanded))
                 }
+                if let due = self.providerRecheckDue, self.now() >= due, !self.isSyncing { await self.recheckProvider() }
                 guard !Task.isCancelled else { return }
                 let nap = Task { [delay = self.sleepDuration()] in _ = try? await Task.sleep(for: delay) }
                 self.sleeper = nap
@@ -237,9 +246,14 @@ public final class SyncSession {
     /// nothing may run (a wake ends it sooner).
     func sleepDuration() -> Duration {
         let floor = tick, ceiling = max(maxSleep ?? tick * 60, tick)
-        guard mayRunNow, let next = schedule.nextRun(now: now()) else { return ceiling }
-        let wait = Duration.milliseconds(Int64(max(0, next.timeIntervalSince(now())) * 1000))
-        return min(max(wait, floor), ceiling)
+        var wait = ceiling
+        if mayRunNow, let next = schedule.nextRun(now: now()) {
+            wait = min(max(.milliseconds(Int64(max(0, next.timeIntervalSince(now())) * 1000)), floor), ceiling)
+        }
+        if let due = providerRecheckDue {
+            wait = min(wait, max(.milliseconds(Int64(max(0, due.timeIntervalSince(now())) * 1000)), floor))
+        }
+        return wait
     }
 
     /// A demanded run (the unlock, the app becoming active, the network back) may mount a folder target's share, at
@@ -423,12 +437,37 @@ public final class SyncSession {
     private func recount() async {
         unconfirmed = await countUnconfirmed()
         if let countStaged { staged = await countStaged() }
-        if let providerSummary {
-            let summary = await providerSummary()
-            providerPending = summary.count
-            // Only an upload error is a problem (`.failed`).
-            if case .failed? = summary.error { providerError = summary.error } else { providerError = nil }
+        if let providerSummary { apply(await providerSummary()) }
+        planProviderRecheck(fresh: true)
+    }
+
+    private func apply(_ summary: ProviderUploads.Summary) {
+        providerPending = summary.count
+        // Only an upload error is a problem (`.failed`).
+        if case .failed? = summary.error { providerError = summary.error } else { providerError = nil }
+    }
+
+    /// While files wait for the provider (or it reports an error), looks at them again between runs, after growing delays;
+    /// a fresh count starts the delays over.
+    private func planProviderRecheck(fresh: Bool) {
+        guard providerRecheck != nil, providerPending > 0 || providerError != nil else {
+            providerRecheckDue = nil
+            providerRecheckStep = 0
+            return
         }
+        if fresh { providerRecheckStep = 0 }
+        let delays = providerRecheckDelays
+        guard !delays.isEmpty else { return }
+        providerRecheckDue = now().addingTimeInterval(delays[min(providerRecheckStep, delays.count - 1)])
+        providerRecheckStep += 1
+    }
+
+    /// One look at the waiting files (`providerRecheck`); the status follows.
+    func recheckProvider() async {
+        providerRecheckDue = nil
+        guard let providerRecheck else { return }
+        if let summary = await providerRecheck() { apply(summary) }
+        planProviderRecheck(fresh: false)
     }
 
     // MARK: - Status
