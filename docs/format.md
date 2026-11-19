@@ -33,7 +33,7 @@ Notes.sempere/
     <recordId>.notebook.age               optional notebook record: keeps empty notebooks (§14)
   insights/
     <noteId>.<device>.insights.age        optional note insights: summary, keywords, vector, written by <device> (§16)
-    map|device|topics.<device>.insights.age   the work device's map, each device's record and topic summaries (§16)
+    map|device|topics.<device>.insights.age   a map, each device's record and topic summaries (§16)
 ```
 
 Everything under `notes/` (revisions and `att/` blobs alike), `notebooks/` and `epochs/` is
@@ -4264,7 +4264,7 @@ A file's tag (or a blob's name) is checked under the key it decrypted with befor
 
 **The write ledger** (design §5.4): device-local, never in the vault, per vault. One entry per file the
 device writes (`path`, `sha256`, `epoch`, `epochId`, `time`), appended durably **before** the file is
-placed; it also keeps the key of every epoch the device wrote under, and the epoch it last caught up to.
+placed; it also keeps the key of every epoch the device wrote under, the epoch it last caught up to, and the device keys it held (the fingerprint of each key and the device id it was listed under, remembered while the device is listed; an optional `deviceKeys` member of `state`).
 An entry lives until the record whose parent is its epoch seals its path with its digest and that seal
 is final (§15.9: a kit replacement pinned at or above the sealer), or until its file is re-encrypted
 under a later epoch (the new file gets an entry), or until it is superseded or stale. Per path, the
@@ -4294,7 +4294,8 @@ is written under its new name and the old name stays), the copy is decrypted and
 the old bytes are set aside, the new entry is recorded, and only then the copy replaces the file. An
 inbox file (§11) is re-sealed the same way: its plaintext's tag is checked under the device's own
 capture key of the epoch it was written under, re-tagged under the device's capture key of the current
-epoch (the JSON line and payload unchanged), and the result encrypted to the current `v_e`. A capturing
+epoch (the JSON line and payload unchanged), and the result encrypted to the current `v_e`. A file sealed under an earlier
+device key of this device (it was removed and joined again) is re-sealed too, but only under a key the device's own record holds (at most 32, newest first; never a removed other device's key on the chain), and only when the line's `device` (if it has one) is an id the device held: the line names the sealing key (`recipient`), so one HMAC is checked, and the recipient is renamed to the current key's. A file no held key opens is reported `unreadable` once and left in the inbox (and set aside), never deleted; a device whose record is lost (a reinstall) or was never made leaves such files unreadable. A capturing
 device records each inbox file in the ledger before placing it, under the epoch of the profile that
 sealed it (a profile records `epoch` and `epochId`; a capture queued outside the vault keeps its own, never
 the profile current when it is moved in, review M4; the CLI's `inbox capture` records when the device key
@@ -4490,7 +4491,7 @@ never makes a vault unhealthy. Insights describe only a note's current text; no 
 
 ```
 insights/<noteId>.<device>.insights.age    one note's summary, keywords and concepts (gen) and/or vector (emb)
-insights/map.<device>.insights.age         the work device's map: key, canaries, clusters, layout (§16.3)
+insights/map.<device>.insights.age         a device's map: key, canaries, clusters, layout (§16.3)
 insights/device.<device>.insights.age      a device's record: OS, model, embedding revisions, canaries (§16.4)
 insights/topics.<device>.insights.age      a device's notebook and tag summaries (§16.5)
 ```
@@ -4559,15 +4560,16 @@ one a reader shows.
   (writers keep it to 4 sentences and 600 characters), `keywords` at most 32 (`t` at most 120 characters, `w` finite,
   0 … 1 000), `concepts` at most 16, `dropped` the summary sentences the writer's fact check dropped, `slug` a voice
   note's suggested title (§16.8).
-- `emb`: the work device's vector of the note (§16.5), little-endian IEEE 754 binary16, base64 (`f16le-base64`),
+- `emb`: this device's vector of the note (§16.5), little-endian IEEE 754 binary16, base64 (`f16le-base64`),
   `dim` values (1 … 4 096). `key`: model, language, pinned revision, and `input`, the writer's text-cleaning revision.
 - `titleOp`: the stamp (`<hlc>-<device>`, §5.1) of the revision in which this device set the note's title
   automatically, and that title (§16.8).
 - `gen` and `emb` both absent: a **tombstone** (§16.6).
 
 A reader takes a note's `gen` from the best file: one whose `gen.hash` equals the note's current hash, then the later
-`written`, then the larger device id; without one, the latest `gen` of any hash, shown as stale. It takes `emb` only
-from the work device's file.
+`written`, then the larger device id; without one, the latest `gen` of any hash, shown as stale. It takes `emb` from the
+file holding one at the map's `key` (any device's: the bytes are the same at one key), the one for the note's current
+`emb.hash` first, then by the same order of `written` and device id.
 
 ### 16.3 The map file
 
@@ -4582,10 +4584,14 @@ from the work device's file.
   "built": { "notes": 698, "hashes": "<SHA-256 hex over the sorted noteId:emb.hash lines>" } }
 ```
 
-Written by the work device last, after the vectors it was built from. Readers use only vectors whose `key` equals the
+Written by a device that has just embedded what was missing, after the vectors it was built from. Any device that supports
+the pinned revision may build it, and the build is deterministic: the same vectors, summaries and previous map give the
+same `mean`, `clusters`, `layout` and `built` on every device, so maps built at once differ only in `device`, `written`
+and the builder's `canaries`. A reader takes the map at the pinned revision with the later `written` (a copy more than 7
+days ahead is not ordered, as in §16.2), then the larger device id. Readers use only vectors whose `key` equals the
 map's. `mean` and `centroid`s are binary16 base64 of `dim` values; clusters form two levels (`level` 0 note clusters,
 `parent` naming their level-1 cluster), cluster `0` is "Other" (clusters under 3 notes); `layout` positions are finite
-and within ±10⁶. A map without `key` is a tombstone: the device no longer holds the role.
+and within ±10⁶. A map without `key` is a tombstone (1.2.0 wrote one when a device lost the work device role); readers ignore it.
 
 ### 16.4 Device records
 
@@ -4602,29 +4608,27 @@ and within ±10⁶. A map without `key` is a tombstone: the device no longer hol
 Every device with Note Insights on writes its record (at most daily, and when its OS, model or supported revisions
 change): whether the generation model is available (`reason` when not: `disabled`, `notReady`, `deviceNotEligible`,
 `unsupported`) and its identity, the sentence-embedding revisions it supports per language, its canary vectors, and its
-result against the map whose `written` is `against` (`compatible`, `incompatible`, `vectorReader`, `workDevice`,
-`noMap`). A record is **recently seen** when written within 30 days by a device the current list has.
+result against the map whose `written` is `against` (`compatible`, `incompatible`, `vectorReader`,
+`noMap`; 1.2.0 also wrote `workDevice`, which readers take as `compatible`). A record is **recently seen** when written within 30 days by a device the current list has.
 
-### 16.5 The work device, the pin and canaries
+### 16.5 Who does the work, the pin and canaries
 
 - **Who generates.** Every device where the generation model is available writes `gen` (summaries and keywords, §16.2)
   and topic summaries into its own files, for notes no device has a current `gen` of (readers take the best one,
   §16.2), and makes a topic summary only when the latest one from any device is not current for its members. Two
   devices may summarize the same note within a sync's delay; both files stay and are read as one.
-- **Work device.** The shared setting `insights.workDevice` (§13; `docs/settings-sync.md`) names the one device that
-  embeds every note, builds the map and sets voice-note titles (vectors are comparable only under one embedding key,
-  and a title is a delta to the note). Any device that supports the pinned embedding revision may hold it (a device
-  with only the generation model never does). Unset, the first capable device to run insights claims it by writing its
-  own id (§13.3's merge settles a race the same way everywhere). A work device that wrote nothing in `insights/` for 14
-  days (counted from its designation when that is later), or that is no longer in the device list, is taken over the
-  same way by the next capable device to run insights, which writes its own id
-  only while the setting still names the missing device. Other devices never embed into the vault.
+- **No designated device (1.3; 1.2.0 had a work device).** Any device that supports the pinned embedding revision
+  embeds the notes no device has a vector of at the map's `key`, and rebuilds the map when it is due (more than 10% of
+  the notes changed since the best map, or weekly, or there is none). Embeddings are bit-identical across devices at one
+  key and the map build is deterministic (§16.3), so devices that do the same work at once write the same content and
+  converge, where the devices' canaries agree: a device whose canaries disagree with the map's keeps its vectors local and writes
+  no shared vector or map, and readers ignore the vectors of a device whose record says `incompatible` (design D21). Any device may set a voice-note title (§16.8). A 1.2.0 settings file may still hold `insights.workDevice`:
+  it is deprecated (not read, not shown), readers keep and ignore it.
 - **The pin.** `insights.embeddingRevision` (per language, `{"en": 1}`) names the sentence-embedding revision. Unset,
   the first map build sets it to the lowest revision every recently seen device supports. It never moves by itself;
   moving it (up or down) is a confirmed choice that lists the devices that do not support the new revision (they become
-  **vector readers**: they read the shared vectors and map, make none and place nothing). If the work device lacks the
-  new revision the role moves to one that has it. The work device then re-embeds every note and rebuilds; readers
-  never mix keys.
+  **vector readers**: they read the shared vectors and map, make none and place nothing). A device that supports the new
+  revision then re-embeds every note and rebuilds; readers never mix keys.
 - **Canaries.** Set 1 is these 8 sentences, embedded after the `input` cleaning:
 
   1. The damping ratio decides whether a spring and mass system oscillates or settles slowly.
@@ -4637,8 +4641,8 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   8. Vectors in a basis span the space and are linearly independent.
 
   A device that supports the pin is **compatible** with the map when model, language, revision and `input` match and
-  every canary's cosine with the map's is at least 0.999: it uses the shared vectors and places notes the work device
-  has not embedded yet locally (never in the vault). An **incompatible** one builds a local vector set and map, never
+  every canary's cosine with the map's is at least 0.999: it uses the shared vectors and places notes no device
+  has embedded yet locally (never in the vault). An **incompatible** one builds a local vector set and map, never
   mixed with the shared one.
 
 ### 16.6 Deletion, new epochs and turning it off
@@ -4691,7 +4695,7 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   {"notebook": path} | {"tag": key}, "members": n, "membersHash": <SHA-256 hex over the sorted noteId:hash lines>,
   "gen": {model, os, prompt, at, summary} }`. A scope has at least 3 summarized notes; `at` is Unix milliseconds. Scope
   names stay inside the ciphertext. A summary is stale when the members' digest changed.
-- **Voice-note titles.** The work device sets a quick voice note's title (§11.3) from the shared format
+- **Voice-note titles.** Any device sets a quick voice note's title (§11.3) from the shared format
   `insights.voiceNoteTitle` (tokens `{date}` `YYYY-MM-DD` and `{time}` `HH.mm`, 24 hour, in the capture's time zone,
   read from the capture's default title, which a capture writes in its device's zone, and in UTC when the default
   title holds no `YYYY-MM-DD HH:mm`; and `{slug}`, the model's 2-6 word title checked against the transcript and cut at 60 characters), in one delta, only
@@ -4700,4 +4704,6 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   is a rename, is never retitled). It records the stamp of its revision in its note file's `titleOp`, and trusts a
   `titleOp` only when that stamp names the device's own revisions and the history holds it with that title. A title
   set by another device after the adoption and before that stamp (so not causally after it), other than a default
-  title or that same automatic title, lost only because the check was local: the work device writes that title again. Ordinary notes are never retitled; without a usable slug the title stays.
+  title, that same automatic title or an automatic title another device recorded in its own `titleOp` for this note (two
+  devices that title one note before they sync leave the register's last writer, and neither flips it), lost only because
+  the check was local: the device writes that title again. Ordinary notes are never retitled; without a usable slug the title stays.

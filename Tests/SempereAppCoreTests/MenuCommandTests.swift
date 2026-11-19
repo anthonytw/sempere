@@ -73,6 +73,22 @@ struct MenuCommandTests {
         #expect(MenuCommand.restoreNote.isEnabled(in: c))
     }
 
+    /// While the note list is selecting, Delete and Restore follow the ticked notes (`AppModel.bulkActions`), not the open note.
+    @Test func deleteAndRestoreFollowTheTickedNotesWhileSelecting() {
+        var c = MenuCommand.Context(window: .library, vault: .unlocked, hasNote: true)
+        c.bulkSelection = []
+        #expect(!MenuCommand.deleteNote.isEnabled(in: c), "nothing ticked, though a note is open")
+        c.bulkSelection = [.move, .delete]
+        #expect(MenuCommand.deleteNote.isEnabled(in: c))
+        #expect(!MenuCommand.restoreNote.isEnabled(in: c))
+        c.bulkSelection = [.restore]
+        #expect(!MenuCommand.deleteNote.isEnabled(in: c))
+        #expect(MenuCommand.restoreNote.isEnabled(in: c))
+        c.bulkSelection = [.move, .delete]
+        c.editingText = true
+        #expect(!MenuCommand.deleteNote.isEnabled(in: c), "⌘⌫ in a text field stays the field's")
+    }
+
     /// ⌘⌫ in the search field (or a rename or tag field) deletes text, never the note.
     @Test func deleteIsOffWhileATextFieldMayHaveFocus() {
         var c = MenuCommand.Context(window: .library, vault: .unlocked)

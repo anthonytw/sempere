@@ -4,9 +4,8 @@ import Sempere
 // MARK: - The updater (docs/design/1.2-note-insights.md §3.7, §3.8, §4, D13-D15; `sempere insights update`)
 //
 // One pass over a vault for this device: delete its own files under an earlier key (written again below) and what
-// removed devices left, claim the work device when none is set (or it was not seen for 14 days), then per note (in the
-// policy's order) generate (every device with the model), embed and title (the work device), tombstone, then rebuild the
-// map, write this device's record and the topic summaries due. Every write goes through
+// removed devices left, then per note (in the policy's order) generate and embed what no device has a current result for
+// (any capable device, D21), title voice notes, tombstone, then rebuild the map when it is due, write this device's record and the topic summaries due. Every write goes through
 // `InsightsStore` (and voice-note titles through `Vault.apply`), so a read-only vault refuses them all. The app (PR 2)
 // and the CLI call it alike.
 
@@ -108,7 +107,6 @@ public struct InsightsUpdateOptions: Sendable {
 /// What a pass did (or would do, `dryRun`).
 public struct InsightsUpdateReport: Hashable, Sendable, Codable {
     public var device: String = ""
-    public var claimedWorkDevice = false
     public var generated: [String] = []
     public var embedded: [String] = []
     public var tombstoned: [String] = []
@@ -245,16 +243,16 @@ public struct InsightsUpdater: Sendable {
         var supported = embedder?.supported(languages.isEmpty ? [main] : languages) ?? [:]
         if supported.isEmpty, let embedder { supported = embedder.supported([main]) }
         let ownRecord = makeRecord(me: me, supported: supported, settings: settings, snapshot: snapshot, o: o)
-        // The work device not seen for 14 days: a capable device claims the role (self-healing, D13).
-        let workDeviceMissing = settings.workDevice != nil && settings.workDevice != me
-            && WorkDeviceStatus(settings: settings, snapshot: snapshot, listed: listed, language: main, now: o.now).notSeen
         var records = EmbeddingPin.recent(snapshot.devices, listed: listed, now: o.now)
         records[me] = ownRecord
         func pinRevision(_ lang: String) -> Int? { settings.pins[lang] ?? EmbeddingPin.lowestCommon(records, language: lang) }
         let pin = pinRevision(main)
         let canEmbed = pin.flatMap { p in supported[main]?.contains(p) == true ? p : nil }
         let pinKey = canEmbed.flatMap { r in embedder?.key(language: main, revision: r) }
-        let changedRecord = snapshot.devices[me].map { !Self.sameRecord($0, ownRecord) } ?? true
+        let standing = canEmbed == nil ? MapCompatibility.vectorReader
+            : mapStanding(snapshot: snapshot, me: me, records: records, settings: settings, language: main, key: pinKey)
+        // A change of standing is a change of record at once (D21): readers exclude an incompatible device's vectors by its record.
+        let changedRecord = snapshot.devices[me].map { !Self.sameRecord($0, ownRecord) || $0.compatibility != standing.rawValue } ?? true
         let caps = PolicyCapabilities(model: o.embeddingsOnly ? nil : usable?.identity, embedRevision: canEmbed, powerWindow: o.powerWindow)
         let selected = o.note.map { id in inputs.filter { $0.id == id } } ?? inputs
         let policyNotes = selected.map {
@@ -265,42 +263,17 @@ public struct InsightsUpdater: Sendable {
         let backoff = usable.map { m in
             memo.backoff(notes: selected.map { ($0.id, $0.hash) }, identity: m.identity, ignoringBefore: o.ignoreBackoffBefore)
         } ?? [:]
-        func makePlan(missing: Bool) -> [WorkItem] {
-            InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps, pinKey: pinKey,
-                                now: o.now, force: o.force, ignoreSettle: o.ignoreSettle, backoff: backoff, workDeviceMissing: missing,
-                                deviceRecordChanged: changedRecord)
-        }
-        var plan = makePlan(missing: workDeviceMissing)
-        if o.rebuildMap, pinKey != nil, !plan.contains(.rebuildMap) { plan.append(.rebuildMap) }
-        // Claim the role (D13: the first capable device to turn insights on, or any capable one once the work device has
-        // not been seen for 14 days), through the settings merge.
-        if plan.contains(.claimWorkDevice) {
-            report.claimedWorkDevice = true
-            let replaces = workDeviceMissing ? settings.workDevice?.rawValue : nil
-            if !o.dryRun {
-                try vault.updateSharedSettingsUnderWriteLock { s in
-                    guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.workDevice) else { return }
-                    // Claimed (or designated) meanwhile: only an empty role, or the missing device's, is taken.
-                    if case .string(let current) = s.resolve(spec, for: nil).value, current != replaces { return }
-                    try s.write(spec, .string(me.rawValue), block: nil, type: nil, now: o.now)
-                }
-                settings = InsightsSettings.read(vault, type: o.deviceType)
-            } else {
-                settings.workDevice = me
-            }
-            if settings.workDevice != me {
-                // Another device's claim won the merge: plan again as a device that is not the work device.
-                report.claimedWorkDevice = false
-                plan = makePlan(missing: false)
-            }
-        }
+        var plan = InsightsPolicy.plan(notes: policyNotes, snapshot: snapshot, me: me, settings: settings, capabilities: caps,
+                                       pinKey: pinKey, now: o.now, force: o.force, ignoreSettle: o.ignoreSettle, backoff: backoff,
+                                       deviceRecordChanged: changedRecord, standing: standing)
+        if o.rebuildMap, pinKey != nil, standing.mayWriteShared, !plan.contains(.rebuildMap) { plan.append(.rebuildMap) }
         // What waits, and why ("Process Now"'s outcome): the notes a plan with no settle time, no open notes and no
         // back-off would summarize that this one does not.
         if usable != nil, !o.force {
             var free = policyNotes
             for i in free.indices { free[i].open = false }
             let unheld = InsightsPolicy.plan(notes: free, snapshot: snapshot, me: me, settings: settings, capabilities: caps, pinKey: pinKey,
-                                             now: o.now, ignoreSettle: true, deviceRecordChanged: false)
+                                             now: o.now, ignoreSettle: true, deviceRecordChanged: false, standing: standing)
             let planned = Set(plan.compactMap { if case .generate(let id) = $0 { return id } else { return nil } })
             let open = Set(policyNotes.filter(\.open).map(\.id))
             for case .generate(let id) in unheld where !planned.contains(id) {
@@ -314,12 +287,6 @@ public struct InsightsUpdater: Sendable {
                 }
             }
             if report.backedOff > 0 { report.notes.append("\(report.backedOff) notes backed off (failed earlier; --force to retry)") }
-        }
-        // A device that no longer holds the role says so with a tombstone map (no key): readers take the map and
-        // vectors only from the work device anyway, and a tombstone keeps a bridging device from bringing it back.
-        if settings.workDevice != me, let old = snapshot.maps[me], !old.isTombstone, !o.dryRun {
-            try store.write(.map(InsightsMapFile(device: me, written: 0, key: nil, dim: nil, canaries: nil, mean: nil, clusters: [],
-                                                 layout: [:], built: nil)), now: o.now)
         }
         let byId = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0) })
         let merger = InsightsNotes.merger(inputs)
@@ -367,7 +334,7 @@ public struct InsightsUpdater: Sendable {
                 var f = own(id); f.gen = nil
                 pending[id] = f
                 report.dropped.append(id.uuidString.lowercased())
-            case .claimWorkDevice, .rebuildMap, .writeDeviceRecord:
+            case .rebuildMap, .writeDeviceRecord:
                 continue
             }
         }
@@ -387,8 +354,9 @@ public struct InsightsUpdater: Sendable {
             return report
         }
         // Voice-note titles (D14): from any device's current `gen` slug, while the title is the capture default.
-        // Only the work device sets titles (format.md §16.8, D14; review of #50, M1); `insights title` stays manual anywhere.
-        if o.titles, !o.embeddingsOnly, settings.workDevice == me {
+        // Any device may set a title (D21), once per note: only while the title is still the capture default, from the best
+        // `gen`'s slug, so devices that race write the same title (format.md §16.8, D14); `insights title` stays manual.
+        if o.titles, !o.embeddingsOnly {
             for note in selected where !note.deleted && !note.transcript.isEmpty && !o.openNotes.contains(note.id) {
                 if Task.isCancelled { report.cancelled = true; return report }
                 guard let outcome = try await applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle,
@@ -419,7 +387,7 @@ public struct InsightsUpdater: Sendable {
         if plan.contains(.rebuildMap), let key = pinKey {
             report.mapBuilt = true
             if !o.dryRun {
-                let map = Self.buildMap(snapshot: snapshot, me: me, key: key, inputs: inputs, previous: snapshot.maps[me],
+                let map = Self.buildMap(snapshot: snapshot, me: me, key: key, inputs: inputs, previous: snapshot.bestMap(key: key)?.map,
                                         canaries: try? embedder.flatMap { try Canaries.vectors($0, language: main, revision: key.rev) })
                 if let map { try store.write(.map(map), now: o.now) }
                 snapshot = store.snapshot()
@@ -430,10 +398,14 @@ public struct InsightsUpdater: Sendable {
             if !o.dryRun {
                 var record = ownRecord
                 record.canaries = canaryVectors(supported: supported, pin: pin, language: main)
-                let comp = InsightsReader(vault: vault, snapshot: snapshot, settings: InsightsSettings.read(vault, type: o.deviceType))
-                    .compatibility(me: me, embedder: embedder, language: main)
+                // A map built in this pass makes this device its builder (compatible); otherwise the standing the pass acted on,
+                // which can say `incompatible` where the reader's own answer is `noMap` (no map yet).
+                let comp = report.mapBuilt
+                    ? InsightsReader(vault: vault, snapshot: snapshot, settings: InsightsSettings.read(vault, type: o.deviceType))
+                        .compatibility(me: me, embedder: embedder, language: main)
+                    : standing
                 record.compatibility = comp.rawValue
-                record.against = settings.workDevice.flatMap { snapshot.map(of: $0)?.written }
+                record.against = snapshot.bestMap(rev: pin, language: main)?.map.written
                 try store.write(.device(record), now: o.now)
             }
         }
@@ -463,13 +435,15 @@ public struct InsightsUpdater: Sendable {
                                                             started: titles.started ?? note.modified ?? now)
         let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
         let writer = revisionWriter
-        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: writer)
+        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: writer,
+                                     automatic: snapshot.automaticTitleStamps(for: note.id))
         switch decision {
         case .keep: return nil
         case .apply(let title):
             guard !dryRun else { return .apply }
             guard let stamp = try await rename(note.id, decision: decision, applied: ownFile?.titleOp, proposed: proposed,
-                                               writer: writer, now: now) else { return nil }
+                                               writer: writer, automatic: snapshot.automaticTitleStamps(for: note.id),
+                                               now: now) else { return nil }
             var f = ownFile ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
             f.titleOp = .init(stamp: stamp.description, title: title)
             try InsightsStore(vault: vault).write(.note(f), now: now)
@@ -477,7 +451,7 @@ public struct InsightsUpdater: Sendable {
         case .restore:
             guard !dryRun else { return .restore }
             guard try await rename(note.id, decision: decision, applied: ownFile?.titleOp, proposed: proposed, writer: writer,
-                                   now: now) != nil else { return nil }
+                                   automatic: snapshot.automaticTitleStamps(for: note.id), now: now) != nil else { return nil }
             return .restore
         }
     }
@@ -485,13 +459,13 @@ public struct InsightsUpdater: Sendable {
     /// One rename delta through `titleWriter`, else `Vault.apply` with `deviceState`; the stamp of the revision written,
     /// nil when the note as it is on disk at the moment of writing no longer gives `decision` (a rename in between wins).
     func rename(_ id: UUID, decision: VoiceNoteTitleState.Decision, applied: InsightsNoteFile.TitleOp?, proposed: String?,
-                writer: DeviceID?, now: Date) async throws -> Stamp? {
+                writer: DeviceID?, automatic: Set<Stamp> = [], now: Date) async throws -> Stamp? {
         let vault = self.vault
         let build: @Sendable () throws -> [Op]? = {
             let loaded = try vault.loadNote(id)
             let state = try vault.reconstruct(loaded)
             let again = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
-                .decide(applied: applied, proposed: proposed, writer: writer)
+                .decide(applied: applied, proposed: proposed, writer: writer, automatic: automatic)
             switch (again, decision) {
             case (.apply(let a), .apply(let b)) where a == b: return NoteOps.rename(to: a, state: state)
             case (.restore(let a), .restore(let b)) where a == b: return NoteOps.rename(to: a, state: state)
@@ -517,7 +491,8 @@ public struct InsightsUpdater: Sendable {
         let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
                                                             started: titles.started ?? note.modified ?? Date())
         let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        return (titles.decide(applied: me.flatMap { snapshot.notes[note.id]?[$0]?.titleOp }, proposed: proposed, writer: revisionWriter),
+        return (titles.decide(applied: me.flatMap { snapshot.notes[note.id]?[$0]?.titleOp }, proposed: proposed, writer: revisionWriter,
+                              automatic: snapshot.automaticTitleStamps(for: note.id)),
                 titles.isVoiceNote)
     }
 
@@ -532,7 +507,8 @@ public struct InsightsUpdater: Sendable {
                                                             started: titles.started ?? note.modified ?? now)
         let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
         let ownFile = snapshot.notes[note.id]?[me]
-        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: revisionWriter)
+        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: revisionWriter,
+                                     automatic: snapshot.automaticTitleStamps(for: note.id))
         switch decision {
         case .keep: break
         case .apply(let title):
@@ -548,7 +524,10 @@ public struct InsightsUpdater: Sendable {
 
     // MARK: Map, records, topics
 
-    /// The map of the work device's vectors at `key` (design §3.8): mean-centered clusters and layout, warm-started.
+    /// The map of the vault's vectors at `key` (design §3.8; any device's, D21): mean-centered clusters and layout,
+    /// warm-started from `previous`. Deterministic: the same vectors, summaries and `previous` give the same clusters,
+    /// labels and positions on every device, so devices that rebuild at once write the same map (only `device`,
+    /// `written` and the builder's canaries differ).
     public static func buildMap(snapshot: InsightsSnapshot, me: DeviceID, key: EmbeddingKey, inputs: [InsightsNoteInput],
                                 previous: InsightsMapFile?, canaries: [[Float]]?) -> InsightsMapFile? {
         let live = inputs.filter { !$0.deleted }
@@ -556,7 +535,7 @@ public struct InsightsUpdater: Sendable {
         var pairs: [(UUID, String)] = []
         var dim: Int?
         for n in live {
-            guard let e = snapshot.notes[n.id]?[me]?.emb, e.key == key, let v = e.vector else { continue }
+            guard let e = snapshot.emb(for: n.id, key: key, hash: n.hash)?.emb, let v = e.vector else { continue }
             dim = dim ?? v.count
             guard v.count == dim else { continue }
             let gen = snapshot.bestGen(for: n.id, hash: n.hash)?.gen
@@ -590,6 +569,25 @@ public struct InsightsUpdater: Sendable {
                                            identity: availability.isAvailable ? model?.identity : nil)
         return InsightsDeviceRecord(device: me, written: 0, os: o.platform.os, platform: o.platform.platform, model: m,
                                     supported: supported, canaries: [], compatibility: nil, against: nil)
+    }
+
+    /// This device's standing toward the shared map before it writes anything (D21): `compatible`, `noMap` or
+    /// `incompatible`/`vectorReader` (the last two write nothing shared). With no map yet, the canaries in the device
+    /// records decide: the capable device with the lowest id that has canaries at `key` is the reference (a device that is
+    /// not it writes only when its canaries agree with the reference's), so devices that disagree do not both start a set.
+    func mapStanding(snapshot: InsightsSnapshot, me: DeviceID, records: [DeviceID: InsightsDeviceRecord],
+                     settings: InsightsSettings, language: String, key: EmbeddingKey?) -> MapCompatibility {
+        let reader = InsightsReader(vault: vault, snapshot: snapshot, settings: settings)
+        let comp = reader.compatibility(me: me, embedder: embedder, language: language)
+        guard comp == .noMap, let key, let embedder else { return comp }
+        guard let mine = try? Canaries.vectors(embedder, language: key.lang, revision: key.rev) else { return .incompatible }
+        let others = records.filter { $0.key != me }.compactMap { d, r -> (DeviceID, [[Float]], EmbeddingKey)? in
+            guard let c = r.canaries.first(where: { $0.key == key && $0.canaries.set == Canaries.set }),
+                  let v = c.canaries.vectors(dimension: c.dim) else { return nil }
+            return (d, v, c.key)
+        }.sorted { $0.0.rawValue < $1.0.rawValue }
+        guard let reference = others.first, reference.0.rawValue < me.rawValue else { return .noMap }
+        return Canaries.compatible(mine: mine, myKey: key, theirs: reference.1, theirKey: reference.2) ? .noMap : .incompatible
     }
 
     func canaryVectors(supported: [String: [Int]], pin: Int?, language: String) -> [InsightsDeviceRecord.CanaryVectors] {

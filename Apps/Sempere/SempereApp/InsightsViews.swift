@@ -67,14 +67,13 @@ enum InsightsText {
         }
     }
 
-    /// How this device stands to the work device's map (`MapCompatibility.rawValue`).
+    /// How this device stands to the shared map (`MapCompatibility.rawValue`).
     static func compatibility(_ raw: String) -> String {
         switch MapCompatibility(rawValue: raw) {
-        case .workDevice?: return String(localized: "This device builds the map and names voice notes.", comment: "Note Insights map status")
         case .compatible?: return String(localized: "Compatible: this device places its new notes in the map at once.", comment: "Note Insights map status")
-        case .incompatible?: return String(localized: "This device's numbers differ from the map and titles device's, so it builds its own map.",
+        case .incompatible?: return String(localized: "This device's numbers differ from the shared map's, so it builds its own map.",
                                            comment: "Note Insights map status")
-        case .vectorReader?: return String(localized: "This device reads the shared map; its new notes join it once the map and titles device processes them.",
+        case .vectorReader?: return String(localized: "This device reads the shared map; its new notes join it once another device processes them.",
                                            comment: "Note Insights map status")
         case .noMap?, nil: return String(localized: "No map yet.", comment: "Note Insights map status")
         }
@@ -85,13 +84,21 @@ enum InsightsText {
         d.name ?? String(localized: "Device \(d.device)", comment: "%@ is a short device id")
     }
 
-    /// "related notes and map only" for a device that cannot make summaries (D13).
-    static func role(_ d: InsightsReader.DeviceStatus) -> String? {
-        d.modelAvailable == true ? nil : String(localized: "related notes and map only", comment: "Note Insights work device picker")
+    /// What a device can do (D15, D21): from its record, never a role.
+    static func capability(_ d: InsightsReader.DeviceStatus) -> String {
+        guard d.modelAvailable != nil else { return String(localized: "no record yet", comment: "Note Insights: a device that has not written its record") }
+        let summaries = d.modelAvailable == true
+        let embeds = d.supportsPin ?? (d.supported?.values.contains { !$0.isEmpty } ?? false)
+        switch (summaries, embeds) {
+        case (true, true): return String(localized: "summaries, related notes and map", comment: "Note Insights: what a device can do")
+        case (true, false): return String(localized: "summaries only", comment: "Note Insights: what a device can do")
+        case (false, true): return String(localized: "related notes and map only", comment: "Note Insights: what a device can do")
+        case (false, false): return String(localized: "nothing yet", comment: "Note Insights: a device that can do no insights work")
+        }
     }
 
     static func lastSeen(_ date: Date?) -> String {
-        guard let date else { return String(localized: "nothing written yet", comment: "Note Insights work device") }
+        guard let date else { return String(localized: "nothing written yet", comment: "Note Insights: a device that has written nothing") }
         return date.formatted(.relative(presentation: .named))
     }
 
@@ -163,8 +170,8 @@ struct AppleIntelligenceHelpSheet: View {
 
 // MARK: - Settings ▸ Note Insights
 
-/// Settings ▸ Note Insights: the vault's switch (off by default, D4), voice-note titles (D14), the work device (D13),
-/// the embedding model (D12), and what has been processed where (D15).
+/// Settings ▸ Note Insights: the vault's switch (off by default, D4), voice-note titles (D14), the devices and what each can
+/// do (D15, D21: no device is designated), the embedding model (D12), and what has been processed where.
 struct InsightsSettingsSection: View {
     @AppModelEnvironment private var model
     @State private var confirmingOff = false
@@ -202,7 +209,7 @@ struct InsightsSettingsSection: View {
         }
         if on {
             statusSection
-            workDeviceSection
+            devicesSection
             titleSection
             embeddingSection
         }
@@ -268,48 +275,26 @@ struct InsightsSettingsSection: View {
         .onAppear { model.refreshInsightsCapability() }
     }
 
-    // MARK: Work device (D13)
+    // MARK: Devices (D15, D21)
 
-    private var capableDevices: [InsightsReader.DeviceStatus] {
-        guard let s = state.status else { return [] }
-        let capable = Set(s.capableDevices)
-        return s.devices.filter { $0.listed && (capable.contains($0.device) || $0.isWorkDevice) }
-    }
-
-    @ViewBuilder private var workDeviceSection: some View {
-        Section {
-            let devices = capableDevices
-            Picker("Map and Titles Device", selection: Binding(get: { state.settings.workDevice?.rawValue ?? "" }, set: { raw in
-                Task { await model.setInsightsWorkDevice(DeviceID(raw)) }
-            })) {
-                if state.settings.workDevice == nil { Text("None yet").tag("") }
+    @ViewBuilder private var devicesSection: some View {
+        if let s = state.status {
+            let devices = s.devices.filter(\.listed)
+            Section {
                 ForEach(devices, id: \.device) { d in
-                    if let role = InsightsText.role(d) {
-                        Text("\(InsightsText.deviceName(d)) (\(role))", comment: "A device and what it can do").tag(d.device)
-                    } else {
-                        Text(InsightsText.deviceName(d)).tag(d.device)
+                    LabeledContent(InsightsText.deviceName(d)) {
+                        VStack(alignment: .trailing) {
+                            Text(InsightsText.capability(d))
+                            Text(InsightsText.lastSeen(d.lastSeen)).font(.footnote).foregroundStyle(.secondary)
+                        }
+                        .multilineTextAlignment(.trailing)
                     }
                 }
+            } header: {
+                Text("Devices")
+            } footer: {
+                Text("Every device with Apple Intelligence makes the summaries and keywords no device has made yet: an iPhone or iPad while charging, or right away with Process Now. Any device that can also builds the map of related notes and names voice notes.")
             }
-            .disabled(!writable || devices.isEmpty)
-            .vaultSetting("insights.workDevice")
-            if let s = state.status, s.workDevice != nil {
-                LabeledContent("Last seen") { Text(InsightsText.lastSeen(s.workDeviceLastSeen)) }
-                if s.workDeviceNotSeen {
-                    Label("The map and titles device has not been seen for 14 days. The next device that can do the work takes over by itself.",
-                          systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                }
-            }
-            if state.settings.workDevice != model.vault?.writerDevice, state.capability.canWork {
-                Button("Use This Device", systemImage: "iphone.and.arrow.forward") { Task { await model.claimInsightsWorkDevice() } }
-                    .disabled(!writable)
-                    .help("Make this device the one that builds the map and names voice notes")
-            }
-        } header: {
-            Text("Map and Titles Device")
-        } footer: {
-            Text("Every device with Apple Intelligence makes summaries and keywords: an iPhone or iPad while charging, or right away with Process Now. One device also builds the map of related notes and names voice notes; the others show what it made.")
         }
     }
 
@@ -386,10 +371,10 @@ struct InsightsSettingsSection: View {
 
     private func pinMessage(_ move: InsightsSettingsWrite.PinMove) -> String {
         let names = Dictionary((state.status?.devices ?? []).map { ($0.device, InsightsText.deviceName($0)) }, uniquingKeysWith: { a, _ in a })
-        var parts = [String(localized: "The map and titles device embeds every note again (a few minutes for hundreds of notes).")]
+        var parts = [String(localized: "Notes are embedded again (a few minutes for hundreds of notes).")]
         if !move.leftOut.isEmpty {
             let left = move.leftOut.map { names[$0.rawValue] ?? $0.rawValue }.joined(separator: ", ")
-            parts.append(String(localized: "\(left) cannot use it: they stop placing new notes until the map and titles device processes them.",
+            parts.append(String(localized: "\(left) cannot use it: they stop placing new notes until another device processes them.",
                                 comment: "%@ is a list of device names"))
         }
         return parts.joined(separator: " ")

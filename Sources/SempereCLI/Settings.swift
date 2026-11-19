@@ -118,7 +118,7 @@ struct SettingsList: ParsableCommand {
         let vault = try access.openVault(.required)
         let s = try SettingsText.read(vault)
         var rows: [Row] = []
-        for spec in SharedSettingsCatalog.specs(for: deviceType) {
+        for spec in SharedSettingsCatalog.specs(for: deviceType) where !spec.deprecated {
             let r = s.resolve(spec, for: deviceType)
             for w in r.warnings { printError("warning: \(w)") }
             rows.append(Row(key: spec.name, value: r.value, source: r.source.rawValue, defaultValue: spec.defaultValue,

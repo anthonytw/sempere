@@ -4,7 +4,7 @@ import Foundation
 // MARK: - Note insights files (format.md §16; docs/design/1.2-note-insights.md §3.2-§3.4, §11)
 //
 // `insights/` holds derived data, one writer per file: a note's summary, keywords and concepts (`gen`) and its vector
-// (`emb`) in `<noteId>.<device>.insights.age`, the work device's map in `map.<device>.insights.age`, every device's
+// (`emb`) in `<noteId>.<device>.insights.age`, a map in `map.<device>.insights.age`, every device's
 // record in `device.<device>.insights.age` and its notebook and tag summaries in `topics.<device>.insights.age`.
 // Each is an age file to the current epoch's `v_e` whose plaintext is the body framing of format.md §4 with the label
 // `insights` and the file name in the tag, so a file renamed onto another note or device fails. Readers take a file
@@ -319,7 +319,7 @@ public struct InsightsCanaries: Hashable, Sendable, Codable {
     }
 }
 
-/// The work device's map (`map.<device>.insights.age`, format.md §16.3).
+/// A device's map (`map.<device>.insights.age`, format.md §16.3).
 public struct InsightsMapFile: Hashable, Sendable, Codable {
     public struct Cluster: Hashable, Sendable, Codable {
         public var id: Int
@@ -442,7 +442,7 @@ public struct InsightsDeviceRecord: Hashable, Sendable, Codable {
     public var supported: [String: [Int]]
     /// Canary vectors at the revisions this device embeds (at the pin, when it supports it).
     public var canaries: [CanaryVectors]
-    /// `compatible`, `incompatible`, `vectorReader`, `workDevice` or `noMap`, against the map whose `written` is `against`.
+    /// `compatible`, `incompatible`, `vectorReader` or `noMap` (1.2.0 also wrote `workDevice`: read as compatible), against the map whose `written` is `against`.
     public var compatibility: String?
     public var against: Int64?
 

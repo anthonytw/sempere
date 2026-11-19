@@ -268,6 +268,37 @@ final class CLINoteEditTests: CLITestCase {
         XCTAssertNil(try note(try json(["notes", "show", b]))["notebook"] as? String)
     }
 
+    func testDeleteAndUndeleteSeveralNotes() throws {
+        func new(_ title: String) throws -> String {
+            try XCTUnwrap(try note(try json(["notes", "new", title]))["id"] as? String)
+        }
+        let a = try new("bulk-a"), b = try new("bulk-b"), c = try new("bulk-c")
+        _ = try json(["notes", "delete", c])
+        let before = try [a, b, c].map { try revisions($0).count }
+
+        // By id and by title; c is deleted already and is left alone.
+        let r = try cli(["notes", "delete", a, "bulk-b", c] + access)
+        XCTAssertEqual(r.status, 0, r.err)
+        XCTAssertTrue(r.out.contains("Deleted 2 notes (1 already deleted)"), r.out)
+        XCTAssertEqual(try [a, b, c].map { try revisions($0).count }, [before[0] + 1, before[1] + 1, before[2]])
+        let listed = try cli(["notes", "list", "--deleted", "-q"] + access)
+        for id in [a, b, c] { XCTAssertTrue(listed.out.contains(id), listed.out) }
+
+        let again = try json(["notes", "delete", a, b])
+        XCTAssertEqual((again["notes"] as? [[String: Any]])?.map { $0["changed"] as? Bool }, [false, false])
+
+        let back = try json(["notes", "undelete", a, b, b])
+        let entries = try XCTUnwrap(back["notes"] as? [[String: Any]])
+        XCTAssertEqual(entries.map { ($0["note"] as? [String: Any])?["id"] as? String }, [a, b])
+        XCTAssertEqual(entries.map { $0["changed"] as? Bool }, [true, true])
+
+        // Nothing is written when one does not resolve; no note at all is a usage error.
+        let beforeFail = try revisions(a)
+        XCTAssertNotEqual(try cli(["notes", "delete", a, "no such note anywhere"] + access).status, 0)
+        XCTAssertEqual(try revisions(a), beforeFail)
+        XCTAssertEqual(try cli(["notes", "delete"] + access).status, 2)
+    }
+
     func testMoveSeveralWritesNothingWhenALaterNoteCannotBeReconstructed() throws {
         func new(_ title: String) throws -> String {
             try XCTUnwrap(try note(try json(["notes", "new", title]))["id"] as? String)

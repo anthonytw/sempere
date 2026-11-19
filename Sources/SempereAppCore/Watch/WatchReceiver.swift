@@ -208,13 +208,19 @@ public struct WatchReceiver: Sendable {
         return WatchReceipt(result: try intake.receive(file: copy, meta: meta), meta: meta)
     }
 
-    /// The acknowledgement for what `receive` has done: the ids the watch may drop.
+    /// The acknowledgement for what `receive` has done: the ids the watch may drop (`acked`), and those the phone only holds
+    /// (`held`), whose files the watch keeps until they are released (`released`).
     public func ack(_ receipts: [WatchReceipt]) -> WatchAck {
-        WatchAck(acked: receipts.filter(\.result.acknowledged).map(\.result.id))
+        WatchAck(acked: receipts.filter { $0.result.acknowledged && !$0.result.isHeld }.map(\.result.id),
+                 held: receipts.filter(\.result.isHeld).map(\.result.id))
     }
 
+    /// Held notes left the phone's held store, added to a vault or deleted: the watch may drop its copies now.
+    public func released(_ ids: [UUID]) -> WatchAck { WatchAck(acked: ids) }
+
     /// What the phone holds, for the watch's activation (`WatchAck.have`).
-    public func have() -> WatchAck { intake.have() }
+    /// `protectedDataAvailable`: false before the first unlock (the app's `isProtectedDataAvailable`); the list is then incomplete.
+    public func have(protectedDataAvailable: Bool = true) -> WatchAck { intake.have(protectedDataAvailable: protectedDataAvailable) }
 
     /// Removes what an earlier run left in the quarantine (a crash between the copy and the delivery): the watch has had no
     /// ack for it, and sends it again.

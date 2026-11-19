@@ -258,9 +258,12 @@ set` sets them too. Their rows have no settings-sync badge (`.vaultSetting`, nev
 | Key | Setting | Values | Default |
 | --- | --- | --- | --- |
 | `insights.enabled` | Note Insights (vault-wide; read at the top level only) | `true`, `false` (an explicit `false` deletes `insights/` on every device; unset is not off) | `false` |
-| `insights.workDevice` | Note Insights ▸ Map and Titles Device | a device id (8 hex digits), or `null` | `null` |
 | `insights.embeddingRevision` | Note Insights ▸ Embedding Model (the pinned revision per language) | an object of language to revision, `{"en": 1}` | `{}` (set by the first map build) |
 | `insights.voiceNoteTitle` | Note Insights ▸ Voice Note Titles | text with the tokens `{date}`, `{time}`, `{slug}` | `{date} {time} {slug}` |
+
+Deprecated: `insights.workDevice` (1.2.0's designated work device; a device id or `null`). 1.3 does not read it (any capable
+device does the work, D21) and shows it nowhere: the registry keeps the key (§6.2 rule 1), so a file that holds it stays valid
+and `sempere settings set`/`reset` still accept it. It stays in the registry snapshot `registry-v1.json`.
 
 ### 5.2 Used by some device types
 

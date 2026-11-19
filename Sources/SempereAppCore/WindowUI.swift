@@ -28,6 +28,8 @@ public final class WindowUICore<Host: AppModelHost> {
     /// open vault stays open until the picked one is copied in (`copyIn`), so a cancel changes nothing.
     public var openVaultRequested = false
     public var searchPresented = false
+    /// Select mode's Move To… sheet or Delete confirmation (`WindowSheets`), opened from the toolbar, the context menu or the menu bar.
+    public var bulkNoteAction: BulkNoteRequest?
     /// A PDF being imported that needs its password (`PDFImportRequest`).
     public var pdfPassword: AppModelCore<Host>.PDFImportRequest?
     /// The file importer for a PDF to import as a new note.

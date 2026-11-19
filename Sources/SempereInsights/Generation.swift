@@ -237,7 +237,6 @@ public struct PolicyCapabilities: Hashable, Sendable {
 
 /// One unit of work, and why.
 public enum WorkItem: Hashable, Sendable {
-    case claimWorkDevice
     case generate(UUID)
     case embed(UUID)
     /// Replace this device's sidecar with a tombstone: the note was deleted.
@@ -273,25 +272,19 @@ public enum InsightsPolicy {
 
     /// The work for this device, in order. `force` ignores the settle time and regenerates stale and current alike;
     /// `ignoreSettle` only skips the settle time ("Process Now": open notes still wait, current ones are not redone).
-    /// Every device with the model generates (D13: summaries are per device files, and a note current on another device
-    /// is skipped); embedding, the map (and the updater's voice-note titles) stay with the work device, which a device
-    /// that embeds at the pin claims when none is set or when it is `workDeviceMissing` (not seen for 14 days, or no longer
-    /// listed: `WorkDeviceStatus`).
+    /// Any capable device does the work (D21): a note is generated when this device has the model and no device (this one
+    /// included) holds a current `gen` for it, embedded when this device supports the pin and no device holds a current
+    /// vector, and the map is rebuilt when it is due against the best map of any device. Readers settle a race between
+    /// devices by a fixed order (`InsightsSnapshot.bestGen`, `bestMap`). Power only decides when, never who.
     public static func plan(notes: [PolicyNote], snapshot: InsightsSnapshot, me: DeviceID, settings: InsightsSettings,
                             capabilities c: PolicyCapabilities, pinKey: EmbeddingKey?, now: Date, force: Bool = false,
-                            ignoreSettle: Bool = false, backoff: [UUID: Date] = [:], workDeviceMissing: Bool = false,
-                            deviceRecordChanged: Bool) -> [WorkItem] {
+                            ignoreSettle: Bool = false, backoff: [UUID: Date] = [:], deviceRecordChanged: Bool,
+                            standing: MapCompatibility = .compatible) -> [WorkItem] {
         guard settings.enabled else { return [] }
         var out: [WorkItem] = []
-        let isWork = settings.workDevice == me
-        // Holding the role means embedding at the pin (the map and titles device): a device that only generates never
-        // claims it, as `WorkDeviceStatus.capable` lists only devices that support the pin.
-        let capable = c.embedRevision != nil
-        let vacant = settings.workDevice == nil || (workDeviceMissing && !isWork)
-        if vacant, capable { out.append(.claimWorkDevice) }
-        let willHold = isWork || (vacant && capable)
         let generates = c.powerWindow && c.model != nil
-        let embeds = willHold && c.embedRevision != nil && pinKey != nil
+        // An incompatible device keeps its vectors local (D21): it neither writes shared vectors nor the map.
+        let embeds = c.embedRevision != nil && pinKey != nil && standing.mayWriteShared
         let record = snapshot.devices[me]
         if record == nil || deviceRecordChanged
             || record.map({ now.timeIntervalSince1970 - Double($0.written) / 1000 >= recordEvery }) == true {
@@ -320,19 +313,20 @@ public enum InsightsPolicy {
                 out.append(.dropStaleGen(n.id))
             }
             if embeds, let key = pinKey {
-                let current = mine?.emb.map { $0.hash == n.hash && $0.key == key } ?? false
-                if !current || force { out.append(.embed(n.id)) }
+                // Skipped when any device holds the vector (its bytes are the same on every device at one key).
+                if force || !snapshot.hasCurrentEmb(for: n.id, hash: n.hash, key: key) { out.append(.embed(n.id)) }
             }
         }
         if embeds, let key = pinKey {
-            let map = snapshot.maps[me]
-            let embedded = notes.filter { !$0.deleted && snapshot.notes[$0.id]?[me]?.emb.map { $0.key == key } == true }
+            let map = snapshot.bestMap(key: key)?.map
+            let embedded = notes.filter { !$0.deleted && snapshot.emb(for: $0.id, key: key, hash: nil) != nil }
             let changed = embedded.filter { e in
-                guard let map, !map.isTombstone else { return true }
-                return (snapshot.notes[e.id]?[me]?.written ?? 0) > map.written || map.positions[e.id] == nil
+                guard let map else { return true }
+                let written = snapshot.emb(for: e.id, key: key, hash: nil)?.written ?? 0
+                return written > map.written || map.positions[e.id] == nil
             }.count + (map.map { m in m.positions.keys.filter { id in !embedded.contains { $0.id == id } }.count } ?? 0)
             let due: Bool
-            if let map, !map.isTombstone, map.key == key {
+            if let map {
                 let base = max(1, map.built?.notes ?? 1)
                 due = Double(changed) > rebuildFraction * Double(base)
                     || (changed > 0 && now.timeIntervalSince1970 - Double(map.written) / 1000 >= rebuildEvery)

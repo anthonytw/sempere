@@ -5,7 +5,7 @@ import Sempere
 import XCTest
 
 /// `sempere insights` (docs/cli.md "Note insights") with the fake providers (`SEMPERE_INSIGHTS_FAKE=1`, debug builds):
-/// update, show, related, search, status, map (JSON and SVG), topic, title, work-device and purge, with --json; exit 3
+/// update, show, related, search, status, map (JSON and SVG), topic, title and purge, with --json; exit 3
 /// where the model work cannot run, 7 for a read-only open.
 final class CLIInsightsTests: CLITestCase {
     let fake = ["SEMPERE_INSIGHTS_FAKE": "1"]
@@ -39,7 +39,7 @@ final class CLIInsightsTests: CLITestCase {
     }
 
     func testUpdateAndTheReaders() throws {
-        let (args, _) = try setUpVault()
+        let (args, vault) = try setUpVault()
         // Off by default: nothing written.
         let off = try cli(["insights", "update"] + args, env: fake)
         XCTAssertEqual(off.status, 1)
@@ -53,7 +53,7 @@ final class CLIInsightsTests: CLITestCase {
         XCTAssertEqual((up["generated"] as? [String])?.count, 6)
         XCTAssertEqual((up["embedded"] as? [String])?.count, 6)
         XCTAssertEqual(up["mapBuilt"] as? Bool, true)
-        XCTAssertEqual(up["claimedWorkDevice"] as? Bool, true)
+        XCTAssertNil(up["claimedWorkDevice"], "no device is designated any more (D21)")
         // show
         let show = json(try cli(["insights", "show", "Springs 1", "--json"] + args, env: fake))
         XCTAssertEqual(show["state"] as? String, "current")
@@ -76,7 +76,13 @@ final class CLIInsightsTests: CLITestCase {
         let status = json(try cli(["insights", "status", "--json"] + args, env: fake))
         XCTAssertEqual(status["processed"] as? Int, 6)
         XCTAssertEqual(status["pin"] as? Int, 1)
-        XCTAssertEqual(status["compatibility"] as? String, "workDevice")
+        XCTAssertEqual(status["compatibility"] as? String, "compatible", "the device that built the map holds its vectors")
+        XCTAssertNil(status["workDevice"])
+        XCTAssertEqual(status["capableDevices"] as? [String], [try XCTUnwrap(vault.writerDevice).rawValue], "capability, not a role")
+        let me0 = try XCTUnwrap((status["devices"] as? [[String: Any]])?.first)
+        XCTAssertEqual(me0["modelAvailable"] as? Bool, true)
+        XCTAssertEqual(me0["supportsPin"] as? Bool, true)
+        XCTAssertNil(me0["isWorkDevice"])
         XCTAssertEqual((status["devices"] as? [[String: Any]])?.count, 1)
         XCTAssertEqual(try cli(["insights", "status"] + args, env: fake).status, 0)
         // map
@@ -109,17 +115,10 @@ final class CLIInsightsTests: CLITestCase {
         XCTAssertGreaterThanOrEqual((verify["insights"] as? [Any])?.count ?? 0, 8)
     }
 
-    func testWorkDevicePinAndPurge() throws {
+    func testPinAndPurge() throws {
         let (args, vault) = try setUpVault()
         XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + args).status, 0)
-        let none = json(try cli(["insights", "work-device", "--json"] + args, env: fake))
-        XCTAssertNil(none["workDevice"] as? String)
-        let me = try XCTUnwrap(vault.manifest.devices.first?.id)
-        let claimed = json(try cli(["insights", "work-device", "--claim", "--json"] + args, env: fake))
-        XCTAssertEqual(claimed["workDevice"] as? String, me)
-        XCTAssertEqual(try cli(["insights", "work-device", "00000000"] + args, env: fake).status, 1, "not a device of the vault")
-        XCTAssertEqual(try cli(["insights", "work-device", "nothex"] + args, env: fake).status, 2)
-        XCTAssertEqual(json(try cli(["insights", "work-device", me, "--json"] + args, env: fake))["changed"] as? Bool, true)
+        XCTAssertNotEqual(try cli(["insights", "work-device"] + args, env: fake).status, 0, "the command is gone (D21)")
         // --pin needs --yes.
         XCTAssertEqual(try cli(["insights", "map", "--pin", "2"] + args, env: fake).status, 2)
         let pinned = json(try cli(["insights", "map", "--pin", "2", "--yes", "--json"] + args, env: fake))
@@ -158,26 +157,30 @@ final class CLIInsightsTests: CLITestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
     }
 
-    /// Every device with the model makes summaries (D13 for 1.2): `insights update` on a machine that is not the work
-    /// device generates, without vectors or a map, and `insights.compute` is no setting any more.
-    func testUpdateOnADeviceThatIsNotTheWorkDevice() throws {
+    /// Any capable device does the work (D21): `insights update` on a machine without the embedder summarizes and makes no
+    /// vectors or map, `insights.compute` is no setting any more and `insights.workDevice` is deprecated (accepted, ignored), and a machine that has the
+    /// embedder then embeds and builds the map without claiming anything.
+    func testUpdateOnADeviceWithoutTheEmbedder() throws {
         let (args, vault) = try setUpVault()
         XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + args).status, 0)
-        let compute = try cli(["settings", "set", "insights.compute", "auto"] + args)
-        XCTAssertNotEqual(compute.status, 0, "an unknown key")
-        XCTAssertEqual(try cli(["settings", "set", "insights.workDevice", "0000beef"] + args).status, 0)
-        // Without the embedder: it cannot take over 0000beef (unlisted, so missing at once), it only summarizes.
+        XCTAssertNotEqual(try cli(["settings", "set", "insights.compute", "auto"] + args).status, 0, "an unknown key")
+        // A shipped key stays in the registry: still accepted (and ignored), resettable, never listed.
+        XCTAssertEqual(try cli(["settings", "set", "insights.workDevice", "0000beef"] + args).status, 0, "deprecated, still accepted")
+        XCTAssertEqual(try cli(["settings", "reset", "insights.workDevice"] + args).status, 0)
         let up = json(try cli(["insights", "update", "--json"] + args,
                               env: fake.merging(["SEMPERE_INSIGHTS_FAKE_EMBEDDER": "off"]) { $1 }))
         XCTAssertEqual((up["generated"] as? [String])?.count, 6)
         XCTAssertEqual((up["embedded"] as? [String])?.count, 0)
         XCTAssertEqual(up["mapBuilt"] as? Bool, false)
-        XCTAssertEqual(up["claimedWorkDevice"] as? Bool, false)
         let status = json(try cli(["insights", "status", "--json"] + args, env: fake))
         XCTAssertEqual(status["processed"] as? Int, 6)
-        XCTAssertEqual(status["workDevice"] as? String, "0000beef")
         let me = try XCTUnwrap(vault.writerDevice)
         XCTAssertNil(InsightsStore(vault: vault).snapshot().map(of: me))
+        let more = json(try cli(["insights", "update", "--json"] + args, env: fake))
+        XCTAssertEqual((more["generated"] as? [String])?.count, 0, "the summaries exist")
+        XCTAssertEqual((more["embedded"] as? [String])?.count, 6)
+        XCTAssertEqual(more["mapBuilt"] as? Bool, true)
+        XCTAssertNotNil(InsightsStore(vault: vault).snapshot().map(of: me))
     }
 
     func testExitCodes() throws {
@@ -190,13 +193,13 @@ final class CLIInsightsTests: CLITestCase {
         let noEmbedder = try cli(["insights", "update", "--embeddings-only"] + args,
                                  env: fake.merging(["SEMPERE_INSIGHTS_FAKE_EMBEDDER": "off"]) { $1 })
         XCTAssertEqual(noEmbedder.status, 3, noEmbedder.err)
-        XCTAssertEqual(try cli(["insights", "work-device", "--claim"] + args,
+        XCTAssertEqual(try cli(["insights", "map", "--rebuild"] + args,
                                env: fake.merging(["SEMPERE_INSIGHTS_FAKE_EMBEDDER": "off"]) { $1 }).status, 3)
         XCTAssertEqual(try cli(["insights", "topic", "--tag", "x", "--generate"] + args,
                                env: fake.merging(["SEMPERE_INSIGHTS_FAKE_MODEL": "off"]) { $1 }).status, 3)
         #if os(Linux)
         // Linux has neither framework (D18).
-        for cmd in [["update"], ["map", "--rebuild"], ["work-device", "--claim"], ["topic", "--tag", "x", "--generate"]] {
+        for cmd in [["update"], ["map", "--rebuild"], ["topic", "--tag", "x", "--generate"]] {
             let r = try cli(["insights"] + cmd + args)
             XCTAssertEqual(r.status, 3, "\(cmd): \(r.err)")
             XCTAssertTrue(r.err.contains("macOS 26"), r.err)

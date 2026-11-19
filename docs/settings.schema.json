@@ -173,7 +173,7 @@
         },
         "insights.workDevice" : {
           "default" : null,
-          "description" : "The device that embeds every note, builds the map and titles voice notes (null: none yet).",
+          "description" : "Deprecated since 1.3 (any capable device does the work, D21): kept and ignored.",
           "oneOf" : [
             {
               "type" : "null"

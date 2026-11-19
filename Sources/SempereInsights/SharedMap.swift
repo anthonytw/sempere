@@ -3,10 +3,13 @@ import Sempere
 
 // MARK: - The shared vectors and map (docs/design/1.2-note-insights.md §3.8, D12, D13, D15, D20)
 //
-// Every device with the model makes summaries and keywords (D13); one work device (`insights.workDevice`) embeds every note at the pinned revision (`insights.embeddingRevision`,
-// by default the lowest every recently seen device supports, moved only by hand, D12) and builds the map. Devices
-// check its canaries: compatible ones use its vectors and place their own new notes locally; incompatible ones build a
-// local set and map of their own, never mixed; a device without the pinned revision is a vector reader.
+// Every capable device does the work (D21 replaced D13's work device): a device with the model makes summaries and
+// keywords for notes no device has a current result for; a device that supports the pinned revision
+// (`insights.embeddingRevision`, by default the lowest every recently seen device supports, moved only by hand, D12)
+// embeds notes no device has a current vector for and rebuilds the map when it is due. Embeddings are bit-identical
+// across devices and the map build is deterministic, so concurrent rebuilds converge. Devices check the map's canaries:
+// compatible ones use its vectors and place their own new notes locally; incompatible ones build a local set and map of
+// their own, never mixed; a device without the pinned revision is a vector reader.
 
 /// The vault's insights settings (`settings.age`, format.md §13; docs/settings-sync.md §5).
 public struct InsightsSettings: Hashable, Sendable {
@@ -15,21 +18,18 @@ public struct InsightsSettings: Hashable, Sendable {
     /// True when the file holds an explicit `false` for `insights.enabled` (turned off): only then do devices delete
     /// `insights/` (format.md §16.6). Unset is not off: nothing is synced, nothing deleted.
     public var explicitlyOff: Bool
-    public var workDevice: DeviceID?
-    /// When `insights.workDevice` was last written (Unix ms, its slot's `modified`): the floor of the work device's
-    /// "last seen", so a device designated but never running shows "not seen" 14 days after the designation.
-    public var workDeviceSetAt: Int64?
     /// Per language, the pinned revision.
     public var pins: [String: Int]
     public var voiceNoteTitle: String
 
-    public init(enabled: Bool = false, explicitlyOff: Bool = false, workDevice: DeviceID? = nil,
-                pins: [String: Int] = [:], voiceNoteTitle: String = VoiceNoteTitleFormat.defaultFormat, workDeviceSetAt: Int64? = nil) {
-        self.enabled = enabled; self.explicitlyOff = explicitlyOff; self.workDevice = workDevice
-        self.pins = pins; self.voiceNoteTitle = voiceNoteTitle; self.workDeviceSetAt = workDeviceSetAt
+    public init(enabled: Bool = false, explicitlyOff: Bool = false,
+                pins: [String: Int] = [:], voiceNoteTitle: String = VoiceNoteTitleFormat.defaultFormat) {
+        self.enabled = enabled; self.explicitlyOff = explicitlyOff
+        self.pins = pins; self.voiceNoteTitle = voiceNoteTitle
     }
 
-    public static let keys = (enabled: "insights.enabled", workDevice: "insights.workDevice",
+    /// (1.2.0 files may still hold `insights.workDevice`; it is not a setting any more and is kept and ignored.)
+    public static let keys = (enabled: "insights.enabled",
                               pin: "insights.embeddingRevision", voiceNoteTitle: "insights.voiceNoteTitle")
 
     /// The settings of `file` (nil: none) for a device of `type` (nil: the CLI, top level only).
@@ -42,8 +42,6 @@ public struct InsightsSettings: Hashable, Sendable {
         // Vault-wide: the top level only (a type block does not turn the feature on for one kind of device).
         if case .bool(let b)? = s.value(SettingSlotKey(Self.keys.enabled)) { enabled = b } else { enabled = false }
         if case .bool(false)? = s.value(SettingSlotKey(Self.keys.enabled)) { explicitlyOff = true } else { explicitlyOff = false }
-        if case .string(let d)? = value(Self.keys.workDevice) { workDevice = DeviceID(d) } else { workDevice = nil }
-        workDeviceSetAt = s.slots[SettingSlotKey(Self.keys.workDevice)]?.meta?.modified
         var pins: [String: Int] = [:]
         if case .object(let o)? = value(Self.keys.pin) {
             for (k, v) in o { if case .number(let d) = v, d >= 1, d <= 1_000_000, d.rounded() == d { pins[k] = Int(d) } }
@@ -94,16 +92,18 @@ public enum Canaries {
 
 /// How this device stands to the shared map (design §3.8; `insights status`).
 public enum MapCompatibility: String, Hashable, Sendable, Codable {
-    /// Uses the work device's vectors and map, places its own new notes.
+    /// Uses the shared vectors and map, places its own new notes (the device that built the map is compatible with it).
     case compatible
     /// Supports the pin but fails the canaries: builds a local set and map.
     case incompatible
     /// Does not support the pin (or has no embedder): reads the shared vectors and map as they are.
     case vectorReader
-    /// This device is the work device.
-    case workDevice
     /// There is no map yet.
     case noMap
+
+    /// Whether a device in this standing writes to the shared set (D21): vectors and the map are written only by devices
+    /// the canaries accept (the map's builder is one) or, with no map yet, by devices not contradicted by the others' canaries.
+    public var mayWriteShared: Bool { self == .compatible || self == .noMap }
 }
 
 public enum EmbeddingPin {
@@ -140,38 +140,11 @@ public enum EmbeddingPin {
     }
 }
 
-/// The work device's standing (D13): who it is, whether it was seen lately, and who may hold the role.
-public struct WorkDeviceStatus: Hashable, Sendable {
-    /// The work device is "not seen" when it wrote nothing in `insights/` for 14 days.
-    public static let notSeenAfter: TimeInterval = 14 * 24 * 3600
-
-    public var workDevice: DeviceID?
-    /// Its latest `written` among its files, nil when it has none.
-    public var lastSeen: Date?
-    /// It wrote nothing for 14 days, or it is no longer in the device list: the next capable device to run a pass claims the role (`InsightsPolicy.plan`'s
-    /// `workDeviceMissing`, through the same settings merge as a first claim), and status offers "Use This Device".
-    public var notSeen: Bool
-    /// Devices whose records say they can hold the role (they support the pin, or any revision when unset), sorted.
-    public var capable: [DeviceID]
-
-    public init(settings: InsightsSettings, snapshot: InsightsSnapshot, listed: Set<DeviceID>, language: String, now: Date) {
-        workDevice = settings.workDevice
-        var latest: Int64?
-        if let w = settings.workDevice {
-            let mine = snapshot.notes.values.compactMap { $0[w]?.written } + [snapshot.maps[w]?.written, snapshot.devices[w]?.written,
-                                                                              snapshot.topics[w]?.written].compactMap { $0 }
-            latest = mine.max()
-        }
-        lastSeen = latest.map { Date(timeIntervalSince1970: Double($0) / 1000) }
-        // The 14 days run from its latest file, or from the designation when that is later or it has written nothing
-        // yet: a fresh claim is not missing (D16: it read "not seen for 14 days"; status says "nothing written yet"),
-        // but a designated device that never runs is, 14 days on.
-        let since = [latest, settings.workDevice == nil ? nil : settings.workDeviceSetAt].compactMap { $0 }.max()
-        // A work device no longer in the device list is missing at once (it can write nothing any more).
-        let removed = settings.workDevice.map { !listed.contains($0) } ?? false
-        notSeen = removed || (since.map { now.timeIntervalSince1970 - Double($0) / 1000 > Self.notSeenAfter } ?? false)
-        let pin = settings.pins[language]
-        capable = snapshot.devices.filter { d, r in
+/// Devices whose records say they can embed (D21: any of them may build the map).
+public enum CapableDevices {
+    /// Devices of the current list whose records say they support the pin (any revision when unset), sorted.
+    public static func list(snapshot: InsightsSnapshot, listed: Set<DeviceID>, language: String, pin: Int?) -> [DeviceID] {
+        snapshot.devices.filter { d, r in
             listed.contains(d) && !(r.supported[language] ?? []).isEmpty && (pin.map { (r.supported[language] ?? []).contains($0) } ?? true)
         }.map(\.key).sorted()
     }

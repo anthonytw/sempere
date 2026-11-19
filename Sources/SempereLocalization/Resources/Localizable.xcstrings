@@ -104,7 +104,7 @@
         }
       }
     },
-    "%@ cannot use it: they stop placing new notes until the map and titles device processes them." : {
+    "%@ cannot use it: they stop placing new notes until another device processes them." : {
       "comment" : "%@ is a list of device names",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -112,7 +112,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ no pueden usarlo: dejan de colocar notas nuevas hasta que el dispositivo del mapa y títulos las procese."
+            "value" : "%@ no pueden usarlo: dejan de colocar notas nuevas hasta que otro dispositivo las procese."
           }
         }
       }
@@ -5824,6 +5824,19 @@
         }
       }
     },
+    "Bring the selected notes back from Recently Deleted" : {
+      "comment" : "Help tag of the Restore button in select mode",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recuperar las notas seleccionadas de Eliminadas recientemente"
+          }
+        }
+      }
+    },
     "Bring to Front" : {
       "comment" : "Undo action name (Edit ▸ Undo …) or item menu command",
       "extractionState" : "manual",
@@ -8036,6 +8049,55 @@
         }
       }
     },
+    "Delete %lld Notes?" : {
+      "comment" : "Confirmation title: move this many selected notes to Recently Deleted",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Note?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Notes?"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "¿Eliminar %lld de notas?"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "¿Eliminar %lld nota?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "¿Eliminar %lld notas?"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Delete All" : {
       "comment" : "Settings ▸ Apple Watch: delete every held note",
       "extractionState" : "manual",
@@ -8075,6 +8137,19 @@
         }
       }
     },
+    "Delete Note" : {
+      "comment" : "Undo action name: one note moved to Recently Deleted",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar nota"
+          }
+        }
+      }
+    },
     "Delete Notebook" : {
       "comment" : "Notebook row menu and confirmation button: delete an empty notebook",
       "extractionState" : "manual",
@@ -8084,6 +8159,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eliminar cuaderno"
+          }
+        }
+      }
+    },
+    "Delete Notes" : {
+      "comment" : "Undo action name: several notes moved to Recently Deleted",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar notas"
           }
         }
       }
@@ -9389,15 +9477,15 @@
         }
       }
     },
-    "Every device with Apple Intelligence makes summaries and keywords: an iPhone or iPad while charging, or right away with Process Now. One device also builds the map of related notes and names voice notes; the others show what it made." : {
-      "comment" : "Note Insights: footer of the map and titles device section",
+    "Every device with Apple Intelligence makes the summaries and keywords no device has made yet: an iPhone or iPad while charging, or right away with Process Now. Any device that can also builds the map of related notes and names voice notes." : {
+      "comment" : "Note Insights: footer of the devices section",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cada dispositivo con Apple Intelligence crea resúmenes y palabras clave: un iPhone o iPad mientras se carga, o al momento con Procesar ahora. Un dispositivo además crea el mapa de notas relacionadas y pone nombre a las notas de voz; los demás muestran lo que ha creado."
+            "value" : "Cada dispositivo con Apple Intelligence crea los resúmenes y palabras clave que ningún dispositivo ha creado todavía: un iPhone o iPad mientras se carga, o de inmediato con Procesar ahora. Cualquier dispositivo que pueda también crea el mapa de notas relacionadas y pone nombre a las notas de voz."
           }
         }
       }
@@ -12582,18 +12670,6 @@
         }
       }
     },
-    "Last seen" : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Visto por última vez"
-          }
-        }
-      }
-    },
     "Last sync %@" : {
       "comment" : "The value is a relative date (“5 minutes ago”)",
       "extractionState" : "manual",
@@ -13113,19 +13189,6 @@
         }
       }
     },
-    "Make this device the one that builds the map and names voice notes" : {
-      "comment" : "Tooltip of Use This Device in Note Insights",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hacer que este dispositivo cree el mapa y ponga nombre a las notas de voz"
-          }
-        }
-      }
-    },
     "Make this note's summary and keywords again on this device" : {
       "comment" : "Tooltip of a note's Regenerate",
       "extractionState" : "manual",
@@ -13225,19 +13288,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mapa"
-          }
-        }
-      }
-    },
-    "Map and Titles Device" : {
-      "comment" : "Note Insights: the device that builds the map of related notes and names voice notes",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dispositivo del mapa y títulos"
           }
         }
       }
@@ -13592,6 +13642,19 @@
         }
       }
     },
+    "Move To…" : {
+      "comment" : "Select mode: button and sheet title that move the selected notes to a notebook",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover a…"
+          }
+        }
+      }
+    },
     "Move into this notebook" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -13601,6 +13664,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mover dentro de este cuaderno"
+          }
+        }
+      }
+    },
+    "Move the selected notes to Recently Deleted" : {
+      "comment" : "Help tag of the Delete button in select mode",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover las notas seleccionadas a Eliminadas recientemente"
+          }
+        }
+      }
+    },
+    "Move the selected notes to a notebook" : {
+      "comment" : "Help tag of the Move To button in select mode",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover las notas seleccionadas a un cuaderno"
           }
         }
       }
@@ -14273,7 +14362,7 @@
         }
       }
     },
-    "No groups yet: they appear once the map and titles device has built the map." : {
+    "No groups yet: they appear once a device has built the map." : {
       "comment" : "Empty list of groups of related notes",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -14281,7 +14370,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Todavía no hay grupos: aparecen cuando el dispositivo del mapa y títulos haya creado el mapa."
+            "value" : "Todavía no hay grupos: aparecen cuando un dispositivo haya creado el mapa."
           }
         }
       }
@@ -14556,19 +14645,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ninguno"
-          }
-        }
-      }
-    },
-    "None yet" : {
-      "comment" : "No work device chosen",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ninguno todavía"
           }
         }
       }
@@ -15093,6 +15169,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las notas aparecen aquí a medida que se leen."
+          }
+        }
+      }
+    },
+    "Notes are embedded again (a few minutes for hundreds of notes)." : {
+      "comment" : "Confirmation of a newer embedding model",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notas se vuelven a procesar (unos minutos para cientos de notas)."
           }
         }
       }
@@ -19614,6 +19703,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restaurar nota"
+          }
+        }
+      }
+    },
+    "Restore Notes" : {
+      "comment" : "Undo action name: several notes brought back from Recently Deleted",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurar notas"
           }
         }
       }
@@ -24470,33 +24572,7 @@
         }
       }
     },
-    "The map and titles device embeds every note again (a few minutes for hundreds of notes)." : {
-      "comment" : "Confirmation of a newer embedding model",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El dispositivo del mapa y títulos vuelve a procesar todas las notas (unos minutos para cientos de notas)."
-          }
-        }
-      }
-    },
-    "The map and titles device has not been seen for 14 days. The next device that can do the work takes over by itself." : {
-      "comment" : "Note Insights: the map and titles device is missing",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se ha visto el dispositivo del mapa y títulos en 14 días. El próximo dispositivo que pueda hacer el trabajo lo asume por sí solo."
-          }
-        }
-      }
-    },
-    "The map appears once the map and titles device has built it." : {
+    "The map appears once a device has built it." : {
       "comment" : "Empty map of related notes",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -24504,7 +24580,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El mapa aparece cuando el dispositivo del mapa y títulos lo ha creado."
+            "value" : "El mapa aparece cuando un dispositivo lo ha creado."
           }
         }
       }
@@ -25489,6 +25565,19 @@
         }
       }
     },
+    "They move to Recently Deleted, where they can be restored." : {
+      "comment" : "Confirmation message under Delete N Notes?",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se mueven a Eliminadas recientemente, donde se pueden restaurar."
+          }
+        }
+      }
+    },
     "They prove this is the vault that device approved, not a copy someone else made." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -25845,7 +25934,7 @@
         }
       }
     },
-    "This device builds its own map: its numbers differ from the map and titles device's. Groups and places may differ from other devices." : {
+    "This device builds its own map: its numbers differ from the shared map's. Groups and places may differ from other devices." : {
       "comment" : "Banner of the map of related notes on a device whose embeddings differ",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -25853,20 +25942,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este dispositivo crea su propio mapa: sus números difieren de los del dispositivo del mapa y títulos. Los grupos y las posiciones pueden diferir de los de otros dispositivos."
-          }
-        }
-      }
-    },
-    "This device builds the map and names voice notes." : {
-      "comment" : "Note Insights map status",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este dispositivo crea el mapa y pone nombre a las notas de voz."
+            "value" : "Este dispositivo crea su propio mapa: sus números difieren de los del mapa compartido. Los grupos y lugares pueden diferir de los de otros dispositivos."
           }
         }
       }
@@ -26236,7 +26312,7 @@
         }
       }
     },
-    "This device reads the shared map; its new notes join it once the map and titles device processes them." : {
+    "This device reads the shared map; its new notes join it once another device processes them." : {
       "comment" : "Note Insights map status",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -26244,7 +26320,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este dispositivo lee el mapa compartido; sus notas nuevas se suman cuando el dispositivo del mapa y títulos las procesa."
+            "value" : "Este dispositivo lee el mapa compartido; sus notas nuevas se suman cuando otro dispositivo las procesa."
           }
         }
       }
@@ -26410,7 +26486,7 @@
         }
       }
     },
-    "This device's numbers differ from the map and titles device's, so it builds its own map." : {
+    "This device's numbers differ from the shared map's, so it builds its own map." : {
       "comment" : "Note Insights map status",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -26418,7 +26494,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los números de este dispositivo difieren de los del dispositivo del mapa y títulos, así que crea su propio mapa."
+            "value" : "Los números de este dispositivo difieren de los del mapa compartido, así que crea su propio mapa."
           }
         }
       }
@@ -28305,18 +28381,6 @@
         }
       }
     },
-    "Use This Device" : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usar este dispositivo"
-          }
-        }
-      }
-    },
     "Use This Model" : {
       "comment" : "Settings ▸ Handwritten Math: choose the model that reads handwriting",
       "extractionState" : "manual",
@@ -29758,6 +29822,19 @@
         }
       }
     },
+    "no record yet" : {
+      "comment" : "Note Insights: a device that has not written its record",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aún sin registro"
+          }
+        }
+      }
+    },
     "not a PDF" : {
       "comment" : "Why a PDF cannot be added: lower case, no final period (shown inside a sentence)",
       "extractionState" : "manual",
@@ -29793,6 +29870,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "aún no ha escrito nada"
+          }
+        }
+      }
+    },
+    "nothing yet" : {
+      "comment" : "Note Insights: a device that can do no insights work",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nada todavía"
           }
         }
       }
@@ -29837,7 +29927,7 @@
       }
     },
     "related notes and map only" : {
-      "comment" : "Note Insights work device picker",
+      "comment" : "Note Insights: what a device can do",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -29858,6 +29948,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "redacción parecida"
+          }
+        }
+      }
+    },
+    "summaries only" : {
+      "comment" : "Note Insights: what a device can do",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "solo resúmenes"
+          }
+        }
+      }
+    },
+    "summaries, related notes and map" : {
+      "comment" : "Note Insights: what a device can do",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "resúmenes, notas relacionadas y mapa"
           }
         }
       }

@@ -146,13 +146,72 @@ public struct InsightsSnapshot: Sendable {
         return files.first.map { ($0.2, $0.0, $0.1, false) }
     }
 
-    /// The `emb` of `note` from the work device's file only (design §3.2).
+    /// The `emb` of `note` from `device`'s file only.
     public func emb(for note: UUID, from device: DeviceID) -> InsightsNoteFile.Emb? { notes[note]?[device]?.emb }
 
-    /// The work device's map, when it holds the role (not a tombstone).
+    /// The `emb` a reader uses for `note` (D21: any device may embed, and every device at one key makes the same bytes):
+    /// among the files holding one at `key` (any key when nil), the one for `hash` first, then the later `written`
+    /// (as `bestGen` orders it), then the device id, so every reader takes the same file.
+    public func emb(for note: UUID, key: EmbeddingKey?, hash: String?, now: Date = Date())
+        -> (emb: InsightsNoteFile.Emb, device: DeviceID, written: Int64)? {
+        func order(_ w: Int64) -> Int64 { InsightsCodec.isOrdered(w, now: now) ? w : -1 }
+        let skip = incompatibleDevices
+        let files = (notes[note] ?? [:]).compactMap { d, f in
+            f.emb.flatMap { e in !skip.contains(d) && (key.map { $0 == e.key } ?? true) ? (d, f.written, e) : nil }
+        }
+            .sorted { (order($0.1), $0.0.rawValue) > (order($1.1), $1.0.rawValue) }
+        let hit = hash.flatMap { h in files.first { $0.2.hash == h } } ?? files.first
+        return hit.map { ($0.2, $0.0, $0.1) }
+    }
+
+    /// The devices whose record says they fail the map's canaries (D21: their vectors are not the shared set's, so readers
+    /// and the policy ignore their `emb`; a device that wrote vectors before it was found incompatible is covered too).
+    public var incompatibleDevices: Set<DeviceID> {
+        Set(devices.filter { $0.value.compatibility == "incompatible" }.map(\.key))
+    }
+
+    /// Whether a device the canaries accept holds an `emb` of `note` for `hash` at `key`.
+    public func hasCurrentEmb(for note: UUID, hash: String, key: EmbeddingKey) -> Bool {
+        let skip = incompatibleDevices
+        return (notes[note] ?? [:]).contains { d, f in
+            !skip.contains(d) && (f.emb.map { $0.hash == hash && $0.key == key } ?? false)
+        }
+    }
+
+    /// `device`'s map, when it is one (not a tombstone).
     public func map(of device: DeviceID) -> InsightsMapFile? {
         guard let m = maps[device], !m.isTombstone else { return nil }
         return m
+    }
+
+    /// The map a reader shows (D21: any device may build it): of the maps at embedding revision `rev` (every map when
+    /// `rev` is nil or none is at it), the one with the later `written` (an unordered, far-future `written` after every
+    /// ordered one, as `bestGen`), then the device id. Concurrent builds from the same inputs are identical in content,
+    /// so which one wins changes nothing a reader sees.
+    /// Among the maps of one language the one at `language` is preferred (then `rev`), so a map of another language never
+    /// stands in for it while one at the right key exists.
+    public func bestMap(rev: Int? = nil, language: String? = nil, now: Date = Date()) -> (map: InsightsMapFile, device: DeviceID)? {
+        let all = maps.compactMap { d, m in m.isTombstone || m.key == nil ? nil : (d, m) }
+        let atLang = language.map { l in all.filter { $0.1.key?.lang == l } } ?? all
+        let langPool = atLang.isEmpty ? all : atLang
+        let atRev = rev.map { r in langPool.filter { $0.1.key?.rev == r } } ?? langPool
+        return Self.latest(atRev.isEmpty ? langPool : atRev, now: now)
+    }
+
+    /// The best map at exactly `key` (model, language, revision and input), nil when none is: what the policy compares
+    /// with, so a map of another key never makes this device see "no map" and rebuild on every pass.
+    public func bestMap(key: EmbeddingKey, now: Date = Date()) -> (map: InsightsMapFile, device: DeviceID)? {
+        Self.latest(maps.compactMap { d, m in m.isTombstone || m.key != key ? nil : (d, m) }, now: now)
+    }
+
+    private static func latest(_ pool: [(DeviceID, InsightsMapFile)], now: Date) -> (map: InsightsMapFile, device: DeviceID)? {
+        func order(_ w: Int64) -> Int64 { InsightsCodec.isOrdered(w, now: now) ? w : -1 }
+        return pool.sorted { (order($0.1.written), $0.0.rawValue) > (order($1.1.written), $1.0.rawValue) }.first.map { ($0.1, $0.0) }
+    }
+
+    /// The stamps of the `titleOp`s every device recorded for `note` (their automatic voice-note titles).
+    public func automaticTitleStamps(for note: UUID) -> Set<Stamp> {
+        Set((notes[note] ?? [:]).values.compactMap { $0.titleOp.flatMap { Stamp($0.stamp) } })
     }
 }
 

@@ -159,6 +159,7 @@ extension Vault {
         // The ledger keeps the key of every epoch this device may write under, a profile's included: its captures
         // are caught up even if a takeover drops that epoch before this device writes anything else under it.
         try ledger?.rememberKey(epoch: manifest.epoch, key: secret)
+        if key == nil || key == deviceEntry?.key { rememberOwnDeviceKey(profileDevice: device.rawValue) }
         return CaptureProfile(vaultId: vaultId, recipients: [try vaultRecipient().string],
                               key: CaptureKey.derive(from: secret, device: fingerprint).bytes,
                               device: device.rawValue, notebook: nb, recipient: fingerprint,
@@ -404,9 +405,29 @@ public enum CaptureFile {
     /// The plaintext of inbox file `filename` tagged under `key` instead: the
     /// same bytes after the tag, once the old tag verifies under `old`
     /// (format.md §11.1, a recipient change). Nil when it does not.
-    static func retag(_ plaintext: Data, filename: String, verifiedBy old: CaptureKey, to key: CaptureKey) -> Data? {
+    ///
+    /// `recipient` (a capture of a device key this device no longer has, `VaultCatchUp`) also rewrites the recipient the
+    /// JSON line names, `from` to `to` (64 lowercase hex digits each, so the length is the same): the reader tries the keys of
+    /// the devices a line claims, and attributes the note to the one whose tag verifies. Nil unless `from` occurs in the line
+    /// exactly once; the payload is never touched.
+    static func retag(_ plaintext: Data, filename: String, verifiedBy old: CaptureKey, to key: CaptureKey,
+                      recipient: (from: String, to: String)? = nil) -> Data? {
         guard (try? unframe(plaintext, filename: filename, key: old)) != nil else { return nil }
-        let rest = plaintext[(plaintext.startIndex + headerSize)...]
+        var rest = Data(plaintext[(plaintext.startIndex + headerSize)...])
+        if let recipient {
+            let from = Array(recipient.from.utf8), to = Array(recipient.to.utf8)
+            guard from.count == 64, to.count == 64, Hex.decode(recipient.from) != nil, Hex.decode(recipient.to) != nil,
+                  let nl = rest.prefix(maxLineBytes + 1).firstIndex(of: 0x0A) else { return nil }
+            var line = Array(rest[rest.startIndex..<nl])
+            var hits: [Int] = []
+            var i = 0
+            while i + from.count <= line.count {
+                if line[i..<i + from.count].elementsEqual(from) { hits.append(i); i += from.count } else { i += 1 }
+            }
+            guard hits.count == 1, let at = hits.first else { return nil }
+            line.replaceSubrange(at..<at + from.count, with: to)
+            rest = Data(line) + rest[nl...]
+        }
         var out = Data(magic)
         out.append(version)
         out.append(tag(key, filename: filename, rest: rest))

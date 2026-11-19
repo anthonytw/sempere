@@ -9,7 +9,7 @@ import Testing
 
 extension AppModelSuites {
     /// Note Insights on the model's side (`AppModel+Insights`, Insights PR 2) with the package's fake providers: the
-    /// offer, the switch (on claims the work device in the first pass, off deletes `insights/`), passes and their power
+    /// offer, the switch (off deletes `insights/`), passes and their power
     /// window, the index the note panel reads (summary, keywords, related notes, clusters), titles through the model's
     /// clock, and a sync arrival of insights files reading them again.
     @MainActor
@@ -88,7 +88,6 @@ extension AppModelSuites {
             // The pass `setInsightsEnabled` started, or one of our own.
             #expect(await TS.waitUntil(timeout: .seconds(30)) { !model.insights.isWorking && model.insightsRuntime.pass == nil })
             await model.runInsightsPass(batch: 10, ignorePower: true)
-            #expect(model.insights.settings.workDevice == model.vault?.writerDevice, "the first capable device claims the work device")
             let status = try #require(model.insights.status)
             #expect(status.processed >= ids.count)
             let panel = try #require(model.insightsPanel(for: ids[0]))
@@ -183,26 +182,20 @@ extension AppModelSuites {
             #expect(model.insightsPanel(for: target)?.shown?.summary?.isEmpty == false)
         }
 
-        /// Every device with the model makes summaries (the owner's iPhone: "Process Now" did nothing, "0 of 10"), never
-        /// the vectors, the map or titles, which stay with the work device. Without the embedder it never takes that role,
-        /// not even from a work device that is missing (here: not in the device list).
-        @Test func aDeviceThatIsNotTheWorkDeviceGeneratesButNeverMaps() async throws {
+        /// Every device with the model makes summaries (the owner's iPhone: "Process Now" did nothing, "0 of 10"); one without
+        /// the embedder makes no vectors or map (D21: any device that has it does, nobody is designated).
+        @Test func aDeviceWithoutTheEmbedderGeneratesButNeverMaps() async throws {
             let power = Power()
-            power.on = false   // no automatic pass: this device has made nothing when the work device moves away
+            power.on = false   // no automatic pass
             let model = try await model(power: power, embedder: false)
             try await note(model, "A", Self.physics[0])
             await model.setInsightsEnabled(true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
-            await model.setInsightsWorkDevice(DeviceID("0000beef"))
-            #expect(model.insights.settings.workDevice == DeviceID("0000beef"))
             #expect(model.insightsHasRole, "it can make summaries")
             let pass = await model.runInsightsPass(batch: 4, ignorePower: true, forced: true)
             #expect(pass.reports.contains { !$0.generated.isEmpty })
-            #expect(pass.reports.allSatisfy { $0.embedded.isEmpty && !$0.mapBuilt && !$0.claimedWorkDevice })
+            #expect(pass.reports.allSatisfy { $0.embedded.isEmpty && !$0.mapBuilt })
             #expect(model.insights.status?.processed == 1)
-            #expect(model.insights.settings.workDevice == DeviceID("0000beef"), "a device without the embedder takes no role")
-            await model.claimInsightsWorkDevice()
-            #expect(model.insights.settings.workDevice == DeviceID("0000beef"), "Use This Device needs the embedder")
         }
 
         /// A model whose availability the test changes (Apple Intelligence turned on after the unlock).
@@ -233,19 +226,11 @@ extension AppModelSuites {
             #expect(!model.insightsHasRole, "off")
             await model.setInsightsEnabled(true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
-            // Embeds only: the work device, a role nobody holds, or one whose holder is missing.
+            // Embeds only: any device that embeds has work (D21), with no role to claim.
             #expect(!model.insights.capability.generates)
-            await model.setInsightsWorkDevice(nil)
-            #expect(model.insightsHasRole, "would claim an empty role")
-            await model.setInsightsWorkDevice(DeviceID("0000beef"))
-            #expect(model.insights.status?.workDeviceNotSeen == true, "not in the device list: missing at once")
-            #expect(model.insightsHasRole, "would take over a missing work device")
-            model.insights.status?.workDeviceNotSeen = false   // as for a listed device seen lately
-            #expect(!model.insightsHasRole, "embeds only, and another device holds the role")
-            await model.claimInsightsWorkDevice()
-            #expect(model.insightsHasRole, "the work device")
-            // Apple Intelligence turned on since the unlock: read again, it has a role whoever holds the work device.
-            await model.setInsightsWorkDevice(DeviceID("0000beef"))
+            #expect(model.insights.capability.canWork)
+            #expect(model.insightsHasRole, "it embeds")
+            // Apple Intelligence turned on since the unlock: read again, it makes summaries too.
             provider.available = .available
             #expect(!model.insights.capability.generates, "read at unlock")
             model.refreshInsightsCapability()
@@ -261,7 +246,6 @@ extension AppModelSuites {
             let model = try await model(power: power, embedder: false)
             await model.setInsightsEnabled(true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
-            await model.setInsightsWorkDevice(DeviceID("0000beef"))
             let fresh = try await note(model, "Fresh", Self.physics[0], age: 30)
             let failed = try await note(model, "Failed", Self.bread[0])
             #expect(await TS.waitUntil { [fresh, failed].allSatisfy { id in model.notes.contains { $0.id == id } } })
@@ -297,7 +281,6 @@ extension AppModelSuites {
             try await note(model, "A", Self.physics[0])
             await model.setInsightsEnabled(true)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
-            await model.claimInsightsWorkDevice()
             let pass = await model.runInsightsPass(batch: 4, ignorePower: true, forced: true)
             #expect(!pass.reports.isEmpty)
             #expect(pass.reports.contains { !$0.embedded.isEmpty }, "it still embeds")
@@ -356,13 +339,17 @@ extension AppModelSuites {
         @Test func refreshesRunOneAtATime() async throws {
             let model = try await model()
             await model.setInsightsEnabled(true)
+            // Since D21 every capable device has a role, so turning Insights on starts a pass, which schedules
+            // refreshes of its own: let it end first, or one of those can be running when `refreshing` is read.
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { model.insightsRuntime.pass == nil })
             let before = model.insightsRuntime.refreshDone
             async let a: Void = model.refreshInsights()
             async let b: Void = model.refreshInsights()
             async let c: Void = model.refreshInsights()
             _ = await (a, b, c)
-            #expect(model.insightsRuntime.refreshing == nil)
             #expect(model.insightsRuntime.refreshDone >= before + 3, "every request answered")
+            // A refresh the pass scheduled may still start after ours; the slot always empties again.
+            #expect(await TS.waitUntil(timeout: .seconds(10)) { model.insightsRuntime.refreshing == nil })
         }
 
         /// The background task: the pass is in the model's one slot (so closing the vault cancels it), and work left

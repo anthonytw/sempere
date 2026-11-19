@@ -146,7 +146,7 @@ struct SidebarView: View {
                     Button("Export All Notes…", systemImage: ExportCommand.menuImage) {
                         model.requestBulkExport(.vault, window: ui?.id)
                     }
-                    // Note Insights' map (design §6 item 5), once the work device has built one.
+                    // Note Insights' map (design §6 item 5), once a device has built one.
                     if !model.insightsMap.isEmpty {
                         Button("Map of Related Notes", systemImage: "point.3.connected.trianglepath.dotted") {
                             ui?.insightsMapShown = true

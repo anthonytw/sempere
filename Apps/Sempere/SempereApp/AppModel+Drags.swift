@@ -25,11 +25,9 @@ extension AppModel {
         #if DEBUG
         DropTrace.note("landed target=\(target)")
         #endif
-        undoManager?.registerUndo(withTarget: self) { model in
-            Task { @MainActor in
-                await model.report { try await model.restoreNotebooks(record) }
-            }
-        }
-        undoManager?.setActionName(record.actionName)
+        // Redo makes the same drop again (`registerSteps`).
+        registerSteps(undoManager, name: record.actionName,
+                      backward: { try await $0.restoreNotebooks(record) },
+                      forward: { _ = await $0.move(payload, to: target) })
     }
 }

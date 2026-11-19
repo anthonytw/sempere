@@ -72,7 +72,14 @@ public struct WatchIntakeResult: Equatable, Sendable {
         self.outcome = outcome
     }
 
-    /// Whether the watch may drop its copy: the file is in the vault or its queue.
+    /// Held on the phone, in no vault: the watch keeps its copy (`WatchAck.held`).
+    public var isHeld: Bool {
+        if case .held = outcome { return true }
+        return false
+    }
+
+    /// Whether the phone has dealt with the file: it is in the vault or its queue, or held here (the watch drops its copy only
+    /// when `isHeld` is false; a held note is released later).
     public var acknowledged: Bool {
         switch outcome {
         case .placed, .held, .duplicate: return true
@@ -244,7 +251,17 @@ public struct WatchIntake: Sendable {
         }
         // One reading of the profile for the whole receive: the verdict and the delivery see the same vault and epoch.
         let delivery = try self.delivery.snapshot()
-        // Step 2.
+        // Step 2. A note this phone holds is held still (not a duplicate: a duplicate is acknowledged and the watch would drop
+        // the copy of a note whose only other copy is here).
+        let listed = self.held?.listChecked()
+        if let item = listed?.items.first(where: { $0.id == meta.id && $0.vault == meta.vault }) {
+            return WatchIntakeResult(id: meta.id, outcome: .held(item.reason))
+        }
+        // A held list that could not be fully read may hold this note: not a duplicate then (the watch would drop its copy);
+        // nothing is acknowledged, and the watch sends it again.
+        if listed?.complete == false, received.contains(meta.id) {
+            throw WatchHeldError.unreadable("the held notes could not be read")
+        }
         if received.contains(meta.id) || delivery.inboxHolds(id: meta.id, vault: meta.vault) {
             try? received.insert(meta.id)
             return WatchIntakeResult(id: meta.id, outcome: .duplicate)
@@ -402,8 +419,25 @@ public struct WatchIntake: Sendable {
     /// while the toggle was off, or it is of an earlier key now (`currentReason`).
     public func needsCheck(_ item: HeldCapture) -> Bool { judge(item).needsCheck }
 
-    /// What the phone sends at the watch's activation: the ids it holds.
-    public func have() -> WatchAck { WatchAck(have: received.newest()) }
+    /// What the phone sends at the watch's activation: the ids it has dealt with (`have`, without the held ones: the watch must
+    /// keep those) and the ids it holds (`held`, with `heldAll`: a watch that kept a note not listed sends it again).
+    ///
+    /// The received set is read BEFORE the held list: `receive` holds a file and then records it as received, so an id in
+    /// the received set read first is in the held list read after it (read the other way round, a note received in between
+    /// would be in `have` but not `held`, and the watch would drop its only copy).
+    ///
+    /// - Parameter protectedDataAvailable: false when the phone's protected data is locked (before the first unlock):
+    ///   the held store may be unreadable. The list is then not complete: `heldAll` is not claimed, and `have` is empty,
+    ///   because a held note the list misses must not be named in `have` (the watch drops those). The same goes for any
+    ///   read error in the held store (`WatchHeldStore.listChecked`). The watch only keeps more files for longer.
+    public func have(protectedDataAvailable: Bool = true) -> WatchAck {
+        let received = received.newest()
+        let listed = held?.listChecked()
+        let complete = protectedDataAvailable && (listed?.complete ?? true)
+        let heldIDs = Set((listed?.items ?? []).map(\.id))
+        let have = complete ? received.filter { !heldIDs.contains($0) } : []
+        return WatchAck(have: have, held: heldIDs.sorted { $0.uuidString < $1.uuidString }, heldAll: held != nil && complete)
+    }
 }
 
 /// Appends a ledger entry for a capture sealed under its own epoch (`CaptureWriter.record` needs a profile only as a

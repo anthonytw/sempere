@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import Sempere
 import SempereAppCore
+import UIKit
 @preconcurrency import WatchConnectivity
 
 // The iPhone's end of WatchConnectivity (docs/design/1.1-watch.md §3.4, §3.6): the "Use on Apple Watch" provisioning
@@ -155,7 +156,7 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
                 return true
             }
             guard changed else { return }
-            _ = receiver.admitReady()
+            self.sendReleased(receiver.admitReady())
             self.refreshHeld()
         }
     }
@@ -170,6 +171,7 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
             // nil: no longer held, because an earlier add (or `admitReady`) placed it: done, not a failure.
             do { _ = try receiver.addHeld(note); return true } catch { return false }
         }.value
+        if added { sendReleased([note.id]) }
         await MainActor.run { status.end() }
         refreshHeld()
         return added
@@ -181,6 +183,7 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         Task.detached { [weak self] in
             guard await MainActor.run(body: { self?.status.begin() ?? false }) else { return }
             receiver.deleteHeld(note)
+            self?.sendReleased([note.id])
             await MainActor.run { self?.status.end() }
             self?.refreshHeld()
         }
@@ -191,10 +194,22 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         guard let receiver = lock.withLock({ receiver }) else { return }
         Task.detached { [weak self] in
             guard await MainActor.run(body: { self?.status.begin() ?? false }) else { return }
-            for note in receiver.heldNotes() { receiver.deleteHeld(note) }
+            let notes = receiver.heldNotes()
+            for note in notes { receiver.deleteHeld(note) }
+            self?.sendReleased(notes.map(\.id))
             await MainActor.run { self?.status.end() }
             self?.refreshHeld()
         }
+    }
+
+    /// Held notes that left the held store (added to a vault, deleted): the watch kept its copies until now (`WatchAck.held`).
+    /// Sent as `acked`, which every watch version drops on. Queued, so it survives the watch being away; one the watch never
+    /// gets is repaired at the next activation (the watch re-sends a note the phone no longer lists as held, and the phone
+    /// acknowledges the repeat as a duplicate).
+    func sendReleased(_ ids: [UUID]) {
+        guard !ids.isEmpty, let session, session.activationState == .activated,
+              let receiver = lock.withLock({ receiver }) else { return }
+        session.transferUserInfo(receiver.released(ids).dictionary)
     }
 
     // MARK: Provisioning
@@ -227,10 +242,20 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
         guard activationState == .activated else { return }
         Task { @MainActor in self.status.update(from: session) }
         provisionIfNeeded()
-        // What the phone holds, so a watch that lost its acknowledgements (a reinstall, a restore) can drop those files.
+        // What the phone holds, so a watch that lost its acknowledgements (a reinstall, a restore) can drop those files, and
+        // the notes it holds in no vault (`held`, complete), so a watch that kept one this phone lost (its app was
+        // reinstalled) sends it again. Always sent: an empty list is what tells the watch the phone lost them. An earlier
+        // such message still queued is out of date: cancelled, so the queue never grows.
         if let receiver = lock.withLock({ receiver }) {
-            let have = receiver.have()
-            if !have.isEmpty { session.transferUserInfo(have.dictionary) }
+            // The held store may be unreadable before the first unlock (`isProtectedDataAvailable` is main-thread): the list is
+            // then not claimed to be complete.
+            Task { @MainActor in
+                let have = receiver.have(protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable)
+                if !have.isEmpty {
+                    for transfer in session.outstandingUserInfoTransfers where transfer.userInfo["heldAll"] != nil { transfer.cancel() }
+                    session.transferUserInfo(have.dictionary)
+                }
+            }
         }
     }
 
