@@ -18,8 +18,12 @@ public enum InsightsGenerator {
     /// typo merge applied to both sides), with `label` (the note's title, notebook and tags) and the model's own terms
     /// as context (D16). Keywords and concepts keep the model's spelling: on real notes the typo merge turned more
     /// correct words into other words (`patent` into `parent`) than it repaired misreadings (D16). A voice note (`transcript` given) also gets a fact-checked slug for its title.
+    /// With `outputLanguage` (the vault's `insights.language`) the summary and the slug are first made and fact-checked in
+    /// the note's own language, then put into that language (`ModelProvider.translate`: a failure fails the generation, so
+    /// a note is never left half in one language); the keywords and concepts stay as the note has them, which is what
+    /// search matches.
     public static func generate(text: String, hash: String, language: String?, model: any ModelProvider,
-                                merger: TypoMerger?, transcript: String? = nil,
+                                merger: TypoMerger?, transcript: String? = nil, outputLanguage: String? = nil,
                                 label: FactCheck.Context = FactCheck.Context()) async throws -> InsightsNoteFile.Gen {
         let extraction = try await extract(text, language: language, model: model)
         let keywords = TermNormalizer.keywords(extraction.keywords)
@@ -32,8 +36,17 @@ public enum InsightsGenerator {
            let raw = try? await model.title(transcript: String(transcript.prefix(4000)), language: language) {
             slug = Self.slug(raw, transcript: transcript, merger: merger)
         }
-        return InsightsNoteFile.Gen(hash: hash, identity: model.identity, summary: check.summary, keywords: keywords,
-                                    concepts: concepts, dropped: check.dropped, slug: slug)
+        var summary = check.summary
+        if let outputLanguage {
+            if let s = summary, !s.isEmpty { summary = try await model.translate(s, to: outputLanguage) }
+            if let g = slug {
+                // A title must stay short: a translation that grows past a title is not used (the title then has no slug).
+                let t = VoiceNoteTitleFormat.cleaned(try await model.translate(g, to: outputLanguage))
+                slug = (1...8).contains(InsightsWords.count(t)) ? t : nil
+            }
+        }
+        return InsightsNoteFile.Gen(hash: hash, identity: model.identity, summary: summary, keywords: keywords,
+                                    concepts: concepts, dropped: check.dropped, slug: slug, outLang: outputLanguage)
     }
 
     /// One extraction of `text`: a single call up to the chunk size, else per chunk plus a merge.
@@ -138,11 +151,11 @@ public enum TopicSummaries {
     /// device with the model may make topics (D13); `own`, this device's, also counts as current for it, so two devices
     /// on different OS majors do not take turns remaking the same scope every day.
     public static func isDue(members: [Member], stored: InsightsTopicsFile.Topic?, own: InsightsTopicsFile.Topic? = nil,
-                             reader: GenerationIdentity, now: Date) -> Bool {
+                             reader: GenerationIdentity, language: String? = nil, now: Date) -> Bool {
         guard members.count >= minMembers else { return false }
         guard let stored else { return true }
         let digest = membersHash(members)
-        for t in [stored, own].compactMap({ $0 }) where t.membersHash == digest && t.gen.identity.isCurrent(for: reader) {
+        for t in [stored, own].compactMap({ $0 }) where t.membersHash == digest && t.gen.outLang == language && t.gen.identity.isCurrent(for: reader) {
             return false
         }
         return now.timeIntervalSince1970 - Double(stored.gen.at) / 1000 >= minInterval
@@ -185,7 +198,7 @@ public enum TopicSummaries {
 
     /// The topic's paragraph from `members` with `model`, fact-checked; nil when nothing survives.
     public static func generate(name: String, members: [Member], language: String?, model: any ModelProvider,
-                                merger: TypoMerger?) async throws -> String? {
+                                merger: TypoMerger?, outputLanguage: String? = nil) async throws -> String? {
         let sorted = members.sorted { $0.note.uuidString < $1.note.uuidString }
         let summaries: [String]
         if sorted.count <= singleShot {
@@ -202,7 +215,10 @@ public enum TopicSummaries {
         }
         let paragraph = try await model.summarize(topic: name, summaries: summaries, language: language)
         let source = sorted.map { $0.summary + " " + $0.keywords.joined(separator: " ") }.joined(separator: "\n")
-        return FactCheck(source: source, merger: merger).check(paragraph, maxSentences: maxSentences, maxCharacters: 1200).summary
+        let checked = FactCheck(source: source, merger: merger).check(paragraph, maxSentences: maxSentences, maxCharacters: 1200).summary
+        // The insight language (`insights.language`): put into it after the fact check, as a note's summary is.
+        guard let outputLanguage, let checked, !checked.isEmpty else { return checked }
+        return try await model.translate(checked, to: outputLanguage)
     }
 }
 
@@ -303,10 +319,10 @@ public enum InsightsPolicy {
             let backedOff = backoff[n.id].map { $0 > now && !force } ?? false
             let others = (snapshot.notes[n.id] ?? [:]).filter { $0.key != me }
             let currentElsewhere = others.values.contains { f in
-                f.gen.map { $0.hash == n.hash && (c.model.map($0.identity.isCurrent(for:)) ?? true) } ?? false
+                f.gen.map { $0.hash == n.hash && $0.outLang == settings.language && (c.model.map($0.identity.isCurrent(for:)) ?? true) } ?? false
             }
             if generates, !backedOff, let model = c.model {
-                let ownCurrent = mine?.gen.map { $0.hash == n.hash && $0.identity.isCurrent(for: model) } ?? false
+                let ownCurrent = mine?.gen.map { $0.hash == n.hash && $0.outLang == settings.language && $0.identity.isCurrent(for: model) } ?? false
                 if force ? true : (!ownCurrent && !currentElsewhere) { out.append(.generate(n.id)) }
             }
             if let g = mine?.gen, g.hash != n.hash, currentElsewhere {

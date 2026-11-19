@@ -560,6 +560,17 @@ extension AppModelCore {
         return true
     }
 
+    /// The language of generated summaries and voice-note titles (`insights.language`); nil: the note's own. Returns false
+    /// when it is not a language tag. A change makes summaries and titles be made again in the new language, a few at a
+    /// time, on every device.
+    @discardableResult
+    public func setInsightsLanguage(_ tag: String?) async -> Bool {
+        if let tag, SharedSettingsCatalog.spec(named: InsightsSettings.keys.language)?.validated(.string(tag)) == nil { return false }
+        await writeInsightsSettings { vault in try InsightsSettingsWrite.setLanguage(tag, vault: vault) }
+        requestInsightsPass(force: false)
+        return true
+    }
+
     /// What "Use the newer embedding model" would do (D12), for its confirmation; nil without an offer.
     public func insightsPinMove() async -> InsightsSettingsWrite.PinMove? {
         guard let vault, let status = insights.status, let rev = status.upgradeOffer else { return nil }

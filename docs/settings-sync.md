@@ -261,7 +261,15 @@ set` sets them too. Their rows have no settings-sync badge (`.vaultSetting`, nev
 | --- | --- | --- | --- |
 | `insights.enabled` | Note Insights (vault-wide; read at the top level only) | `true`, `false` (an explicit `false` deletes `insights/` on every device; unset is not off) | `false` |
 | `insights.embeddingRevision` | Note Insights ▸ Embedding Model (the pinned revision per language) | an object of language to revision, `{"en": 1}` | `{}` (set by the first map build) |
+| `insights.language` | Note Insights ▸ Insight Language (the language of generated summaries and voice-note titles) | a BCP 47 language tag (`es`, `pt-BR`), or `null` (Same as Note: each in its own note's language) | `null` |
 | `insights.voiceNoteTitle` | Note Insights ▸ Voice Note Titles | text with the tokens `{date}`, `{time}`, `{slug}` | `{date} {time} {slug}` |
+
+`insights.language` is shared by the vault, not kept per device, because what it governs is shared: summaries and titles are
+files in `insights/` that every device reads, so two devices with different values would write the vault's summaries in two
+languages and keep replacing each other's; it is read at the top level only (a device-type block is accepted and ignored, as for
+`insights.enabled`). It is additive (registry-v1.json gains the key; `$schemaVersion` and
+`$minReaderVersion` stay 1). A reader of 1.2 ignores and keeps it. Changing it makes summaries and titles be made again, a few
+at a time, in the new language (`gen.outLang`, format.md §16.2).
 
 Deprecated: `insights.workDevice` (1.2.0's designated work device; a device id or `null`). 1.3 does not read it (any capable
 device does the work, D21) and shows it nowhere: the registry keeps the key (§6.2 rule 1), so a file that holds it stays valid

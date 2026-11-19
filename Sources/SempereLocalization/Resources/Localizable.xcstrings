@@ -12192,6 +12192,19 @@
         }
       }
     },
+    "Insight Language" : {
+      "comment" : "Settings ▸ Note Insights: section header",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma de los análisis"
+          }
+        }
+      }
+    },
     "Insights for New Voice Notes" : {
       "comment" : "Settings ▸ Quick Voice Notes: when Note Insights processes a new voice note",
       "extractionState" : "manual",
@@ -18282,14 +18295,14 @@
         }
       }
     },
-    "Quick voice notes are named from their transcript while they keep the title they were recorded with. {date} and {time} are when the note was recorded, {slug} a few words from the model. A title you set yourself is never replaced." : {
+    "Quick voice notes without a title of their own are shown with one made from their transcript. {date} and {time} are when the note was recorded, {slug} a few words from the model. A title you set yourself is always the one shown, and the generated one is never written into the note." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las notas de voz rápidas se nombran a partir de su transcripción mientras conservan el título con el que se grabaron. {date} y {time} son el momento de la grabación, {slug} unas palabras del modelo. Un título que pongas tú nunca se reemplaza."
+            "value" : "Las notas de voz rápidas sin un título propio se muestran con uno hecho a partir de su transcripción. {date} y {time} son el momento de la grabación, {slug} unas palabras del modelo. Un título que pongas tú es siempre el que se muestra, y el generado nunca se escribe en la nota."
           }
         }
       }
@@ -20514,6 +20527,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El del dispositivo"
+          }
+        }
+      }
+    },
+    "Same as Note" : {
+      "comment" : "Settings ▸ Note Insights ▸ Insight Language: summaries and titles are written in the language of each note",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Igual que la nota"
           }
         }
       }
@@ -23378,6 +23404,19 @@
         }
       }
     },
+    "Summary and Title Language" : {
+      "comment" : "Settings ▸ Note Insights: picker label for the language of generated summaries and voice-note titles",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma de resúmenes y títulos"
+          }
+        }
+      }
+    },
     "Summary area" : {
       "comment" : "Paper parameter",
       "extractionState" : "manual",
@@ -25287,6 +25326,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido descargar el modelo de idioma: %@"
+          }
+        }
+      }
+    },
+    "The language of generated summaries and voice-note titles. Same as Note writes each in the language of its note. Choosing a language makes them again in it, a few at a time, on every device of this vault; keywords stay as the note has them." : {
+      "comment" : "Settings ▸ Note Insights ▸ Insight Language footer",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El idioma de los resúmenes y de los títulos de notas de voz generados. «Igual que la nota» escribe cada uno en el idioma de su nota. Si eliges un idioma, se vuelven a generar en él, unos pocos cada vez, en todos los dispositivos de esta bóveda; las palabras clave se quedan como las tiene la nota."
           }
         }
       }

@@ -164,6 +164,20 @@
           "description" : "Note Insights: summaries, keywords, related notes and a map, made on the vault's devices (vault-wide).",
           "type" : "boolean"
         },
+        "insights.language" : {
+          "default" : null,
+          "description" : "Language of generated summaries and voice-note titles (null: the note's own).",
+          "oneOf" : [
+            {
+              "type" : "null"
+            },
+            {
+              "maxLength" : 35,
+              "pattern" : "^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8}){0,3}$",
+              "type" : "string"
+            }
+          ]
+        },
         "insights.voiceNoteTitle" : {
           "default" : "{date} {time} {slug}",
           "description" : "Title of a voice note once its transcript is summarized.",

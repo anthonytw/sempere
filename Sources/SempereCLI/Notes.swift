@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 
 struct NotesCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -66,8 +67,9 @@ enum NoteTitles {
         let wanted = notes.filter { !$0.deleted && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice) && $0.voice != nil }
         guard !wanted.isEmpty, FileManager.default.fileExists(atPath: vault.insightsURL.path) else { return [:] }
         let snapshot = InsightsStore(vault: vault).snapshot()
+        let language = InsightsSettings.read(vault).language
         var out: [UUID: String] = [:]
-        for n in wanted { if let t = snapshot.bestTitle(for: n.id, hash: nil) { out[n.id] = t } }
+        for n in wanted { if let t = snapshot.bestTitle(for: n.id, hash: nil, language: language) { out[n.id] = t } }
         return out
     }
 }

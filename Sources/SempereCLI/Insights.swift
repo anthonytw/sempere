@@ -78,8 +78,9 @@ struct InsightsUpdate: ParsableCommand {
             Does what the scheduling policy gives this device (design §3.7): a device with the model \
             summarizes each eligible note (text unchanged for 10 minutes; --force: now) that no device has a current \
             summary of, and makes the topic summaries due; one that embeds at the pinned revision embeds each note no \
-            device has a current vector of and rebuilds the map when more than 10% changed or weekly; any device titles \
-            voice notes whose title is still the capture default (insights.voiceNoteTitle). Needs Apple Intelligence (macOS 26), else exit 3 and \
+            device has a current vector of and rebuilds the map when more than 10% changed or weekly; any device derives \
+            titles for voice notes whose own title is blank or a default (insights.voiceNoteTitle), in the insights.language setting's \
+            language when it names one. Needs Apple Intelligence (macOS 26), else exit 3 and \
             nothing is written; --embeddings-only needs only the embedder.
             """
     )
@@ -462,8 +463,9 @@ struct InsightsTitle: ParsableCommand {
         }
         let updater = InsightsUpdater(vault: vault, model: nil, embedder: nil, deviceState: DeviceState.defaultURL(), app: appName)
         let isVoice = try vault.reconstruct(try vault.loadNote(n.id)).recordings.contains { $0.captured != nil }
-        let title = isVoice ? (dryRun ? try updater.proposedTitle(n, format: fmt, slug: slug)
-                                      : try updater.writeTitle(n, format: fmt, slug: slug)) : nil
+        let language = InsightsSettings.read(vault).language
+        let title = isVoice ? (dryRun ? try updater.proposedTitle(n, format: fmt, slug: slug, language: language)
+                                      : try updater.writeTitle(n, format: fmt, slug: slug, language: language)) : nil
         let id = n.id.uuidString.lowercased()
         let out = Out(note: id, action: title != nil ? "apply" : (isVoice ? "keep" : "notVoiceNote"), title: title, dryRun: dryRun)
         if output.json { return try output.emitJSON(out) }

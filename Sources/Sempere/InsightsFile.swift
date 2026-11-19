@@ -211,11 +211,15 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
         public var dropped: Int
         /// A voice note's suggested title (D14), fact-checked; only on voice notes.
         public var slug: String?
+        /// The language `summary` and `slug` are written in when the vault's insight language is fixed
+        /// (`insights.language`, 1.3); absent: the note's own.
+        public var outLang: String?
 
         public init(hash: String, identity: GenerationIdentity, summary: String?, keywords: [InsightsKeyword],
-                    concepts: [String], dropped: Int, slug: String? = nil) {
+                    concepts: [String], dropped: Int, slug: String? = nil, outLang: String? = nil) {
             self.hash = hash; model = identity.model; os = identity.os; prompt = identity.prompt
             self.summary = summary; self.keywords = keywords; self.concepts = concepts; self.dropped = dropped; self.slug = slug
+            self.outLang = outLang
         }
 
         public var identity: GenerationIdentity { GenerationIdentity(model: model, os: os, prompt: prompt) }
@@ -246,7 +250,11 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
         /// Unix milliseconds when this device derived it: fixed when made, so a rewrite of the file for another reason (a new
         /// `gen`) never reorders two devices' titles.
         public var at: Int64
-        public init(hash: String, text: String, at: Int64) { self.hash = hash; self.text = text; self.at = at }
+        /// The insight language the title was derived for (`Gen.outLang` of the slug it came from); absent: the note's own.
+        public var lang: String?
+        public init(hash: String, text: String, at: Int64, lang: String? = nil) {
+            self.hash = hash; self.text = text; self.at = at; self.lang = lang
+        }
     }
 
     public var format: String
@@ -284,6 +292,7 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
             }
             for c in g.concepts { try InsightsValidate.text(c, max: InsightsLimits.maxTerm, "concept") }
             if let slug = g.slug { try InsightsValidate.text(slug, max: InsightsLimits.maxTitle, "slug") }
+            if let l = g.outLang { try InsightsValidate.short(l, "outLang") }
         }
         if let e = emb {
             try InsightsValidate.hash(e.hash)
@@ -296,6 +305,7 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
             try InsightsValidate.hash(t.hash)
             try InsightsValidate.text(t.text, max: InsightsLimits.maxTitle, "title")
             guard (1...(1 << 53) - 1).contains(t.at) else { throw InsightsFileError.invalid("title at") }
+            if let l = t.lang { try InsightsValidate.short(l, "title lang") }
         }
     }
 }
@@ -496,8 +506,11 @@ public struct InsightsTopicsFile: Hashable, Sendable, Codable {
         /// Unix milliseconds.
         public var at: Int64
         public var summary: String
-        public init(identity: GenerationIdentity, at: Int64, summary: String) {
+        /// The language `summary` is written in when the vault's `insights.language` names one (1.3); absent: the notes' own.
+        public var outLang: String?
+        public init(identity: GenerationIdentity, at: Int64, summary: String, outLang: String? = nil) {
             model = identity.model; os = identity.os; prompt = identity.prompt; self.at = at; self.summary = summary
+            self.outLang = outLang
         }
         public var identity: GenerationIdentity { GenerationIdentity(model: model, os: os, prompt: prompt) }
     }

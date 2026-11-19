@@ -31,7 +31,7 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
     private let lock = NSLock()
     private var script: Script
     private var calls = 0
-    /// Every call made, in order: `extract`, `merge`, `summarize`, `title`.
+    /// Every call made, in order: `extract`, `merge`, `summarize`, `title`, `translate`.
     public private(set) var log: [String] = []
 
     public init(_ script: Script = Script()) { self.script = script }
@@ -85,6 +85,13 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
         let n = lock.withLock { script.titleWords }
         return InsightsWords.words(transcript).filter { !InsightsStoplist.generic.contains($0) }.prefix(n)
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+    }
+
+    /// A fake translation: the text tagged with the language (`[es] text`), unchanged when it already carries the tag.
+    public func translate(_ text: String, to language: String) async throws -> String {
+        try begin("translate", tokens: InsightsChunker.tokens(text))
+        let tag = "[\(InsightsLanguage.primary(language))] "
+        return text.hasPrefix(tag) ? text : tag + text
     }
 
     /// The `count` most frequent content words (at least 5 letters, not stop words), ties alphabetical.
@@ -153,6 +160,10 @@ public enum InsightsLanguage {
         let lower = p.lowercased()
         return (1...8).contains(lower.utf8.count) && lower.utf8.allSatisfy({ (0x61...0x7a).contains($0) }) ? lower : fallback
     }
+
+    /// The languages the settings picker offers for generated summaries and titles (the on-device model's, as listed by Apple);
+    /// the setting itself takes any language tag.
+    public static let choices = ["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh-Hans"]
 
     /// The language of a note: its `lang`, else the fallback.
     public static func of(_ lang: String?) -> String { lang.map(primary) ?? fallback }

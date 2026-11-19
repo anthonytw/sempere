@@ -288,6 +288,7 @@ public struct InsightsUpdater: Sendable {
                     let gen = try await InsightsGenerator.generate(text: note.text, hash: note.hash, language: note.language,
                                                                    model: model, merger: merger,
                                                                    transcript: isVoice ? note.transcript : nil,
+                                                                   outputLanguage: settings.language,
                                                                    label: FactCheck.Context(title: note.title, notebook: note.notebook,
                                                                                             tags: note.tags))
                     var f = own(id); f.gen = gen; f.lang = note.language
@@ -338,7 +339,8 @@ public struct InsightsUpdater: Sendable {
         if o.titles, !o.embeddingsOnly {
             for note in selected where !note.deleted && !note.transcript.isEmpty && !o.openNotes.contains(note.id) {
                 if Task.isCancelled { report.cancelled = true; return report }
-                if try applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle, dryRun: o.dryRun, now: o.now) {
+                if try applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle, language: settings.language,
+                                  dryRun: o.dryRun, now: o.now) {
                     report.titled.append(note.id.uuidString.lowercased())
                 }
             }
@@ -398,50 +400,55 @@ public struct InsightsUpdater: Sendable {
     /// `gen`'s slug and the capture's date and time, only while the note's own title is blank or a default. `slug` overrides
     /// the best current `gen`'s (the manual command).
     func derivedTitle(_ note: InsightsNoteInput, snapshot: InsightsSnapshot, format: String, slug override: String? = nil,
-                      now: Date) throws -> (title: String, hash: String)? {
+                      language: String?, now: Date) throws -> (title: String, hash: String)? {
         let loaded = try vault.loadNote(note.id)
         let state = try vault.reconstruct(loaded)
         guard let origin = VoiceOrigin(state: state), NoteDisplayTitle.isStoredDefault(state.meta.title, origin: origin) else {
             return nil
         }
-        let slug = override ?? snapshot.bestGen(for: note.id, hash: note.hash).flatMap { $0.current ? $0.gen.slug : nil }
+        // The slug of the best current `gen` (one written in the insight language now set, else it waits for the new one).
+        let slug = override ?? snapshot.bestGen(for: note.id, hash: note.hash)
+            .flatMap { $0.current && $0.gen.outLang == language ? $0.gen.slug : nil }
         let local = VoiceNoteTitleFormat.captureDateAndTime(origin: origin, storedTitle: state.meta.title, started: origin.started)
         guard let title = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug) else { return nil }
         return (title, note.hash)
     }
 
     /// Records this device's derived title of a voice note in its own note file; false when there is nothing to do.
-    func applyTitle(_ note: InsightsNoteInput, snapshot: InsightsSnapshot, me: DeviceID, format: String, dryRun: Bool,
-                    now: Date) throws -> Bool {
-        // Once per text: a title any device derived for this text stands, so devices that race (their slugs differ) leave
-        // one winner by the order of `written` and device id, and none rewrites its own to flip it.
-        guard snapshot.bestTitle(for: note.id, hash: note.hash) == nil,
-              let derived = try derivedTitle(note, snapshot: snapshot, format: format, now: now) else { return false }
+    func applyTitle(_ note: InsightsNoteInput, snapshot: InsightsSnapshot, me: DeviceID, format: String, language: String?,
+                    dryRun: Bool, now: Date) throws -> Bool {
+        // Once per text and insight language: a title any device derived for this text stands, so devices that race (their
+        // slugs differ) leave one winner by `at` and device id, and none rewrites its own to flip it.
+        guard !snapshot.hasTitle(for: note.id, hash: note.hash, language: language),
+              let derived = try derivedTitle(note, snapshot: snapshot, format: format, language: language, now: now) else { return false }
         guard !dryRun else { return true }
-        try writeTitle(note, derived, snapshot: snapshot, me: me, now: now)
+        try writeTitle(note, derived, language: language, snapshot: snapshot, me: me, now: now)
         return true
     }
 
-    func writeTitle(_ note: InsightsNoteInput, _ derived: (title: String, hash: String), snapshot: InsightsSnapshot, me: DeviceID,
-                    now: Date) throws {
+    func writeTitle(_ note: InsightsNoteInput, _ derived: (title: String, hash: String), language: String?,
+                    snapshot: InsightsSnapshot, me: DeviceID, now: Date) throws {
         var f = snapshot.notes[note.id]?[me] ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
-        f.title = .init(hash: derived.hash, text: derived.title, at: Int64(now.timeIntervalSince1970 * 1000))
+        f.title = .init(hash: derived.hash, text: derived.title, at: Int64(now.timeIntervalSince1970 * 1000), lang: language)
         try InsightsStore(vault: vault).write(.note(f), now: now)
     }
 
     /// The title `insights title` would derive for `note` (no write); nil when it keeps its title or has no voice recording.
-    public func proposedTitle(_ note: InsightsNoteInput, format: String, slug: String?) throws -> String? {
-        try derivedTitle(note, snapshot: InsightsStore(vault: vault).snapshot(), format: format, slug: slug, now: Date())?.title
+    public func proposedTitle(_ note: InsightsNoteInput, format: String, slug: String?, language: String? = nil) throws -> String? {
+        try derivedTitle(note, snapshot: InsightsStore(vault: vault).snapshot(), format: format, slug: slug, language: language,
+                         now: Date())?.title
     }
 
     /// Records the title of `insights title` (D14) with `format` and `slug` in this device's note file; returns it, nil
     /// when the note keeps its title.
-    public func writeTitle(_ note: InsightsNoteInput, format: String, slug: String?, now: Date = Date()) throws -> String? {
+    public func writeTitle(_ note: InsightsNoteInput, format: String, slug: String?, language: String? = nil,
+                           now: Date = Date()) throws -> String? {
         let store = InsightsStore(vault: vault)
         let me = try store.writer()
         let snapshot = store.snapshot()
-        guard let derived = try derivedTitle(note, snapshot: snapshot, format: format, slug: slug, now: now) else { return nil }
-        try writeTitle(note, derived, snapshot: snapshot, me: me, now: now)
+        guard let derived = try derivedTitle(note, snapshot: snapshot, format: format, slug: slug, language: language, now: now)
+        else { return nil }
+        try writeTitle(note, derived, language: language, snapshot: snapshot, me: me, now: now)
         return derived.title
     }
 
@@ -533,6 +540,7 @@ public struct InsightsUpdater: Sendable {
                       merger: TypoMerger, me: DeviceID, o: InsightsUpdateOptions, limit: Int?,
                       report: inout InsightsUpdateReport) async throws -> [String] {
         let scopes = TopicScopes.members(inputs: inputs, snapshot: snapshot)
+        let language = InsightsSettings.read(vault, type: o.deviceType).language
         let own = snapshot.topics[me]?.topics ?? []
         var memo = o.failureMemo.map { InsightsFailureMemo.load(from: $0, vault: vault) } ?? InsightsFailureMemo()
         var memoChanged = false
@@ -545,7 +553,7 @@ public struct InsightsUpdater: Sendable {
             let name = TopicScopes.name(scope)
             let latest = TopicSummaries.latest(scope, snapshot: snapshot)?.topic
             guard TopicSummaries.isDue(members: members, stored: latest, own: own.first { $0.scope == scope }, reader: model.identity,
-                                       now: o.now) else { continue }
+                                       language: language, now: o.now) else { continue }
             let digest = TopicSummaries.membersHash(members)
             if !o.force, let until = memo.topicBackoff(name, membersHash: digest, identity: model.identity,
                                                        ignoringBefore: o.ignoreBackoffBefore), until > o.now { continue }
@@ -553,7 +561,7 @@ public struct InsightsUpdater: Sendable {
             if o.dryRun { made.append(name); continue }
             do {
                 guard try await writeTopic(scope, members: members, inputs: inputs, model: model, merger: merger, store: store,
-                                           now: o.now) else {
+                                           language: language, now: o.now) else {
                     report.failures[name] = "nothing survived the fact check"
                     memo.recordTopic(name, membersHash: digest, identity: model.identity, error: nil, now: o.now)
                     memoChanged = true
@@ -574,13 +582,14 @@ public struct InsightsUpdater: Sendable {
     /// Makes `scope`'s summary from `members` and writes it into this device's topics file; false when nothing survived
     /// the fact check (nothing written).
     func writeTopic(_ scope: InsightsTopicsFile.Scope, members: [TopicSummaries.Member], inputs: [InsightsNoteInput],
-                    model: any ModelProvider, merger: TypoMerger, store: InsightsStore, now: Date) async throws -> Bool {
+                    model: any ModelProvider, merger: TypoMerger, store: InsightsStore, language: String?, now: Date) async throws -> Bool {
         let name = TopicScopes.name(scope)
         guard let text = try await TopicSummaries.generate(name: name, members: members, language: InsightsNotes.languageOf(members, inputs),
-                                                           model: model, merger: merger) else { return false }
+                                                           model: model, merger: merger, outputLanguage: language) else { return false }
         try Task.checkCancellation()
         let topic = InsightsTopicsFile.Topic(scope: scope, members: members.count, membersHash: TopicSummaries.membersHash(members),
-                                             gen: .init(identity: model.identity, at: InsightsCodec.nextWritten(after: nil, now: now), summary: text))
+                                             gen: .init(identity: model.identity, at: InsightsCodec.nextWritten(after: nil, now: now), summary: text,
+                                                       outLang: language))
         try store.updateOwnTopics(now: now) { topics in
             topics.removeAll { $0.scope == scope }
             topics.append(topic)
@@ -621,7 +630,7 @@ public struct InsightsUpdater: Sendable {
         let members = TopicScopes.members(inputs: inputs, snapshot: store.snapshot()).first { $0.0 == scope }?.1 ?? []
         guard members.count >= TopicSummaries.minMembers else { throw TopicError.tooFewMembers(members.count) }
         guard try await writeTopic(scope, members: members, inputs: inputs, model: model, merger: InsightsNotes.merger(inputs),
-                                   store: store, now: now) else { throw TopicError.factCheck }
+                                   store: store, language: InsightsSettings.read(vault).language, now: now) else { throw TopicError.factCheck }
         if let failureMemo {
             var memo = InsightsFailureMemo.load(from: failureMemo, vault: vault)
             let name = TopicScopes.name(scope)

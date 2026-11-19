@@ -4544,7 +4544,7 @@ one a reader shows.
   "lang": "en",
   "gen": {
     "hash": "9f2c4e1d7a0b3c58e6d1f4a2b7c90e13",
-    "model": "afm-ondevice", "os": "27.2", "prompt": 1,
+    "model": "afm-ondevice", "os": "27.2", "prompt": 1, "outLang": "es",
     "summary": "Free vibration of a damped spring-mass system ...",
     "keywords": [ { "t": "damping ratio", "w": 0.82 } ],
     "concepts": [ "critical damping", "logarithmic decrement" ],
@@ -4576,12 +4576,17 @@ one a reader shows.
   `prompt` equals its own and the `os` major matches, else stale and recomputed). `summary` at most 2 000 characters
   (writers keep it to 4 sentences and 600 characters), `keywords` at most 32 (`t` at most 120 characters, `w` finite,
   0 … 1 000), `concepts` at most 16, `dropped` the summary sentences the writer's fact check dropped, `slug` a voice
-  note's suggested title (§16.8).
+  note's suggested title (§16.8). `outLang` (optional, 1.3): the language `summary` and `slug` are written in when the vault's
+  shared setting `insights.language` (docs/settings-sync.md §5.1) names one: the writer made them in the note's own language
+  (the fact check needs the note's words), then put them into that language; keywords and concepts stay as the note has them.
+  A `gen` is current for a reader only when its `outLang` equals the reader's `insights.language` (absent equals null), so a
+  change of the setting makes summaries and titles be made again; the old ones stay shown until the new are there.
 - `emb`: this device's vector of the note (§16.5), little-endian IEEE 754 binary16, base64 (`f16le-base64`),
   `dim` values (1 … 4 096). `key`: model, language, pinned revision, and `input`, the writer's text-cleaning revision.
 - `title` (1.3): the title this device derived for a voice note (§16.8), rendered from `insights.voiceNoteTitle`, for the
   insight text whose hash is `hash`; `text` at most 200 characters; `at` Unix milliseconds, 1 … 2^53 − 1, when it was
-  derived (it does not change when the file is rewritten for another reason). It is never written into the note. A reader
+  derived (it does not change when the file is rewritten for another reason); `lang` (optional) the `outLang` of the slug it
+  was made from (absent: the note's own), and a reader prefers the title whose `lang` equals its `insights.language`. It is never written into the note. A reader
   takes a note's derived title from the file whose `title.hash` equals the note's current hash, the later `at`, then the
   larger device id; a title for another hash is not shown. 1.2 wrote `titleOp` here (the stamp of a rename it made to the
   note's own title); readers of 1.3 ignore it, and 1.2 readers ignore `title`.

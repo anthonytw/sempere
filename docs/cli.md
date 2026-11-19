@@ -2457,6 +2457,10 @@ Every command takes `--json`, the access options and `--no-cache`.
   (a user's title is never touched, and the derived title is never written into the note: it lives in this device's
   insights file for the note, `format.md` §16.2 `title`, and `notes list`, `notes show` and the app show it in place of
   a blank title), with `--format` or the vault's format; it uses a stored slug, else asks the model (exit 3 without one).
+- The language of generated summaries and voice-note titles is the shared setting `insights.language` (`sempere settings set
+  insights.language es`; `same` or `settings reset` for the default, the note's own language): a device with the model makes
+  each summary and title in the note's language, as before, then puts them into that language, and notes whose summary is in
+  another language are made again, a few per `update`, on every device. Keywords stay as the note has them.
 - `purge` turns Note Insights off (`insights.enabled false`) and deletes every insights file here; the next sync
   deletes them on the targets, and every device deletes its own.
 

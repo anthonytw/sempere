@@ -24,6 +24,8 @@ public struct SharedSettingSpec: Sendable {
         case deviceIdOrNull
         /// Per language (a BCP 47 primary tag), a pinned embedding revision: `{"en": 1}` (format.md §16.5).
         case revisionPins
+        /// A language tag for generated text (a BCP 47 tag such as `es` or `pt-BR`), or `null` for "the note's own".
+        case languageOrNull
         /// A voice-note title format: text with the tokens `{date}`, `{time}` and `{slug}` (D14).
         case voiceTitleFormat
     }
@@ -44,6 +46,20 @@ public struct SharedSettingSpec: Sendable {
                 _ summary: String, deprecated: Bool = false) {
         self.name = name; self.types = types; self.kind = kind; self.defaultValue = defaultValue; self.summary = summary
         self.deprecated = deprecated
+    }
+
+    /// A BCP 47 language tag as `Recording`/note languages are written (format.md §5.4 `lang`): 1 to 4 subtags of 1 to 8
+    /// ASCII letters or digits joined by `-`, the first letters only, at most 35 characters.
+    static func isLanguageTag(_ s: String) -> Bool {
+        guard s.utf8.count <= 35 else { return false }
+        let parts = s.split(separator: "-", omittingEmptySubsequences: false)
+        guard (1...4).contains(parts.count) else { return false }
+        for (i, p) in parts.enumerated() {
+            guard (1...8).contains(p.utf8.count),
+                  p.utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x41...0x5a).contains($0) || (0x61...0x7a).contains($0) }),
+                  i > 0 || p.utf8.allSatisfy({ !(0x30...0x39).contains($0) }) else { return false }
+        }
+        return true
     }
 
     /// Whether a device of `type` uses it.
@@ -94,6 +110,9 @@ public struct SharedSettingSpec: Sendable {
             }
         case .voiceTitleFormat:
             if case .string(let s) = value, VoiceNoteTitleFormat.check(s) == nil { return value }
+        case .languageOrNull:
+            if value == .null { return value }
+            if case .string(let s) = value, SharedSettingSpec.isLanguageTag(s) { return .string(s) }
         case .localeOrNull:
             if value == .null { return value }
             if case .string(let s) = value, (1...35).contains(s.utf8.count),
@@ -128,6 +147,8 @@ public struct SharedSettingSpec: Sendable {
                 return PaperKind(rawValue: t) == nil ? nil : validated(.object(["kind": .string(t)]))
             }
             return validated(v)
+        case .languageOrNull:
+            return ["null", "same", "note", "none"].contains(t.lowercased()) ? .null : validated(.string(t))
         case .localeOrNull:
             return ["null", "device", "none"].contains(t.lowercased()) ? .null : validated(.string(t))
         case .deviceIdOrNull:
@@ -150,6 +171,7 @@ public struct SharedSettingSpec: Sendable {
         case .notebook: return "a notebook path"
         case .paper: return "a paper kind (ruled, grid, …) or a paper JSON object (format.md §5.4.2)"
         case .localeOrNull: return "a locale identifier (es_ES), or null for the device's"
+        case .languageOrNull: return "a language tag (es, pt-BR), or null (same) for the note's own language"
         case .deviceIdOrNull: return "a device id (8 hex digits, sempere devices list), or null"
         case .revisionPins: return "a JSON object of language to embedding revision, e.g. {\"en\":1}"
         case .voiceTitleFormat: return "text with the tokens {date}, {time} and {slug}, e.g. {date} {time} {slug}"
@@ -236,6 +258,8 @@ public enum SharedSettingsCatalog {
               "Deprecated since 1.3 (any capable device does the work, D21): kept and ignored", deprecated: true),
         .init("insights.embeddingRevision", .revisionPins, default: .object([:]),
               "The pinned sentence-embedding revision per language (empty: set by the first map build)"),
+        .init("insights.language", .languageOrNull, default: .null,
+              "Language of generated summaries and voice-note titles (null: the note's own)"),
         .init("insights.voiceNoteTitle", .voiceTitleFormat, default: .string(VoiceNoteTitleFormat.defaultFormat),
               "Title of a voice note once its transcript is summarized"),
     ]
@@ -436,6 +460,10 @@ public enum SharedSettingsSchema {
         case .paper:
             o = ["type": .string("object"), "required": .array([.string("kind")]),
                  "properties": .object(["kind": .object(["type": .string("string")])])]
+        case .languageOrNull:
+            o = ["oneOf": .array([.object(["type": .string("null")]),
+                                  .object(["type": .string("string"), "pattern": .string("^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8}){0,3}$"),
+                                           "maxLength": .number(35)])])]
         case .localeOrNull:
             o = ["oneOf": .array([.object(["type": .string("null")]),
                                   .object(["type": .string("string"), "pattern": .string("^[A-Za-z][A-Za-z0-9_-]{0,34}$")])])]
