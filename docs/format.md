@@ -4730,8 +4730,10 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   `YYYY-MM-DD HH:mm` ending of a default title that a note of 1.0 through 1.2 stored, else UTC; and `{slug}`, the model's
   2-6 word title checked against the transcript and cut at 60 characters) and records it in its own note file's `title`
   (§16.2): once per text, only while the note's own title is blank or a default stored before 1.3 (a title ending in the
-  capture's `YYYY-MM-DD HH:mm`, or "Voice note"/"Nota de voz" and the start in the capturing device's language; a title
-  of anyone's choosing is never judged a default), and only when no file already holds a `title` for the note's current
+  capture's `YYYY-MM-DD HH:mm`: the recording's start exactly in `captureInfo.tz` when there is one, else in some zone
+  within 14 hours of UTC whose offset is a multiple of 15 minutes; or, ending in no such stamp, "Voice note"/"Nota de voz"
+  and the start in the capturing device's language; a title of anyone's choosing, "Lab 2026-10-01 09:00" for a note
+  captured at another time, is never judged a default), and only when no file already holds a `title` for the note's current
   hash, so devices that derive at once settle on the later `at` (then the larger device id) and none rewrites to flip it.
   Nothing is written to the note: readers show, in this order, the title the person typed; else (a voice note with a
   blank or default stored title) the derived title; else a default made at display time from the recording's

@@ -247,11 +247,11 @@ final class InsightsUpdaterTests: TempDirTestCase {
     /// date and time come from that stored title (the capture kept no zone then).
     func testAStoredDefaultTitleOfAnOlderNoteStillGetsADerivedTitle() async throws {
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.",
-                             storedTitle: "Voice note 2026-09-21 10:46")
+                             storedTitle: "Voice note 2026-09-21 11:26")
         try enable()
         let r = try await run { $0.force = true }
         XCTAssertEqual(r.titled, [id.uuidString.lowercased()])
-        XCTAssertEqual(try title(id), "Voice note 2026-09-21 10:46", "the stored title is not rewritten")
+        XCTAssertEqual(try title(id), "Voice note 2026-09-21 11:26", "the stored title is not rewritten")
         XCTAssertEqual(InsightsStore(vault: vault).snapshot().bestTitle(for: id, hash: nil), "2026-09-21 11.26 Spring Lab Results Show")
     }
 

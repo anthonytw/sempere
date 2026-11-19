@@ -63,12 +63,44 @@ public enum NoteDisplayTitle {
     }
 
     /// True when `stored` is no title the user chose: blank, or the default 1.0 through 1.2 stored for a voice note
-    /// (`CaptureWriter.defaultTitle`'s shape, the Watch's, the app's localized form of 1.1).
+    /// (`CaptureWriter.defaultTitle`'s shape, the Watch's, the app's localized form of 1.1). A title ending in a
+    /// `YYYY-MM-DD HH:mm` stamp is a default only when the stamp is the capture's start (`stampIsCapture`), so a rename
+    /// like "Lab 2026-10-01 09:00" stays the user's.
     public static func isStoredDefault(_ stored: String, origin: VoiceOrigin?) -> Bool {
         let t = stored.trimmingCharacters(in: .whitespacesAndNewlines)
         if t.isEmpty { return true }
         guard let origin else { return false }
-        return isCaptureDefault(t) || isLocalizedCaptureDefault(t, started: origin.started)
+        // A title ending in the stamp is judged by the stamp alone (1.1's localized form ends in none).
+        if isCaptureDefault(t) { return stampIsCapture(t, origin: origin) }
+        return isLocalizedCaptureDefault(t, started: origin.started)
+    }
+
+    /// True when the `YYYY-MM-DD HH:mm` that ends `title` is `origin.started` on the capturing device's clock: exactly in
+    /// `origin.tz` when the capture kept its zone, else in some zone within 14 hours of UTC whose offset is a multiple of
+    /// 15 minutes (the minute agrees modulo 15, as `isLocalizedCaptureDefault` judges).
+    static func stampIsCapture(_ title: String, origin: VoiceOrigin) -> Bool {
+        let scalars = Array(title.trimmingCharacters(in: .whitespaces).unicodeScalars)
+        guard scalars.count >= 16 else { return false }
+        func number(_ range: Range<Int>) -> Int? {
+            var u = String.UnicodeScalarView(); u.append(contentsOf: scalars[(scalars.count - 16 + range.lowerBound)..<(scalars.count - 16 + range.upperBound)])
+            return Int(String(u))
+        }
+        guard let year = number(0..<4), let month = number(5..<7), let day = number(8..<10), let hour = number(11..<13),
+              let minute = number(14..<16) else { return false }
+        var cal = Calendar(identifier: .gregorian)
+        if let tz = origin.tz, let zone = TimeZone(identifier: tz) {
+            cal.timeZone = zone
+            let c = cal.dateComponents([.year, .month, .day, .hour, .minute], from: origin.started)
+            return (c.year, c.month, c.day, c.hour, c.minute) == (year, month, day, hour, minute)
+        }
+        guard let utc = TimeZone(identifier: "UTC") else { return false }
+        cal.timeZone = utc
+        guard let stamp = cal.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute)) else {
+            return false
+        }
+        let startMinute = (origin.started.timeIntervalSince1970 / 60).rounded(.down) * 60
+        let offset = Int((stamp.timeIntervalSince1970 - startMinute).rounded())
+        return abs(offset) <= 14 * 3600 && offset % 900 == 0
     }
 
     /// The title to show: a title the user entered; else, for a voice note, `generated` (Note Insights' title), else the

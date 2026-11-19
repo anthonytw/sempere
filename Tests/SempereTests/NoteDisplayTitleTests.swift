@@ -46,6 +46,26 @@ final class NoteDisplayTitleTests: VaultTestCase {
         XCTAssertEqual(NoteDisplayTitle.resolve(stored: "", origin: nil, generated: g), "")
     }
 
+    /// A title ending in a date stamp is a stored default only when the stamp is the capture's start: exactly in the
+    /// capture's zone when it kept one, else in some zone within 14 hours whose minute agrees modulo 15.
+    func testADateStampedRenameStaysTheUsersTitle() {
+        let g = "Generated"
+        XCTAssertEqual(NoteDisplayTitle.resolve(stored: "Lab 2026-10-01 09:00", origin: origin(), generated: g), "Lab 2026-10-01 09:00")
+        XCTAssertFalse(NoteDisplayTitle.isStoredDefault("Lab 2026-10-01 09:00", origin: origin()))
+        XCTAssertFalse(NoteDisplayTitle.isStoredDefault("Lab 2026-10-01 09:00", origin: VoiceOrigin(started: started)))
+        // With the zone: only the capture's own clock.
+        XCTAssertTrue(NoteDisplayTitle.isStoredDefault("Voice note 2026-11-16 14:32", origin: origin()))
+        XCTAssertFalse(NoteDisplayTitle.isStoredDefault("Voice note 2026-11-16 19:32", origin: origin()), "UTC is not New York")
+        // Without one (a note adopted before 1.3): any zone, whole, half or quarter hours from UTC, within 14 hours.
+        let old = VoiceOrigin(started: started)
+        for stamp in ["2026-11-16 14:32", "2026-11-16 19:32", "2026-11-17 01:02", "2026-11-17 01:17", "2026-11-16 05:32", "2026-11-17 09:32"] {
+            XCTAssertTrue(NoteDisplayTitle.isStoredDefault("Voice note " + stamp, origin: old), stamp)
+        }
+        for stamp in ["2026-11-16 14:35", "2026-11-17 10:32", "2026-11-16 05:02", "2026-11-15 19:32"] {
+            XCTAssertFalse(NoteDisplayTitle.isStoredDefault("Voice note " + stamp, origin: old), stamp)
+        }
+    }
+
     func testCaptureInfoReadsMalformedValuesAsAbsent() throws {
         let good = try JSONDecoder().decode(CaptureInfo.self, from: Data(#"{"tz":"Europe/Madrid","source":"watch"}"#.utf8))
         XCTAssertEqual(good, CaptureInfo(tz: "Europe/Madrid", source: "watch"))
