@@ -205,13 +205,13 @@ struct MenuCommandTests {
         }
     }
 
-    /// ⌥⌘F: free today (⇧⌥⌘F is Bring Item to Front), in the Edit menu with Find, and not one of UIKit's own.
+    /// ⌥⌘F: free in the app's menu bar (⇧⌥⌘F is Bring Item to Front; UIKit's own ⌥⌘F, Find and Replace, is dropped), in the Edit menu with Find.
     @Test func askYourNotesIsOptionCommandFInTheEditMenu() throws {
         let shortcut = try #require(MenuCommand.askYourNotes.shortcut)
         #expect(shortcut == MenuCommand.Shortcut("f", [.command, .option]))
         #expect(MenuCommand.allCases.filter { $0.shortcut == shortcut } == [.askYourNotes])
         #expect(MenuCommand.bringItemToFront.shortcut != shortcut)
-        #expect(!MenuCommand.nativeOnMac.contains(.askYourNotes), "a SwiftUI command: UIKit has nothing on ⌥⌘F")
+        #expect(MenuCommand.nativeOnMac.contains(.askYourNotes), "UIKit's ⌥⌘F is Find and Replace: its item becomes this one (`MacMenus`)")
         #expect(MenuLayout.edit.flatMap { $0 }.contains(.askYourNotes))
         let none = MenuCommand.Context(window: .library, vault: .none)
         #expect(!MenuCommand.askYourNotes.isEnabled(in: none))

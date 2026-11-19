@@ -70,14 +70,14 @@ public enum MenuCommand: String, CaseIterable, Sendable {
     }
 
     /// Commands whose shortcut UIKit's own menu bar already uses on a Mac
-    /// (⌘O for "Open…", ⌘F for "Find…", ⌘, for the app menu's "Settings…").
+    /// (⌘O for "Open…", ⌘F for "Find…", ⌥⌘F for "Find and Replace…", ⌘, for the app menu's "Settings…").
     /// UIKit refuses a SwiftUI menu group holding such a shortcut, and with it
     /// every other command of the group (TestFlight build 6: the File and Edit
     /// commands were missing), so these are not SwiftUI commands: `MacMenus`
     /// turns UIKit's own items into them. UIKit's Settings… opened Catalyst's
     /// generated preferences pane (touch alternatives only), not the app's
     /// settings (TestFlight build 7).
-    public static let nativeOnMac: [MenuCommand] = [.openVault, .find, .showSettings]
+    public static let nativeOnMac: [MenuCommand] = [.openVault, .find, .askYourNotes, .showSettings]
     /// Commands that replace UIKit's own items without a shortcut: Sempere >
     /// About Sempere (UIKit's opens the standard about panel) and the Help menu
     /// (UIKit's "Sempere Help" has no help book to open). `MacMenus` builds them.
@@ -468,7 +468,7 @@ public enum MenuLayout {
     /// Help (`MacMenus`).
     public static let help: [[MenuCommand]] = [[.showTour, .showKeyNotice]]
     /// Edit > Find (the system's Undo and Redo stay where UIKit puts them).
-    public static let edit: [[MenuCommand]] = [[.find, .askYourNotes]]
+    static let edit: [[MenuCommand]] = [[.find, .askYourNotes]]
 
     /// Every command a menu shows, in order.
     public static var all: [MenuCommand] {
