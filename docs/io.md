@@ -395,7 +395,8 @@ sidebar's notebook, else the vault). iPad, iPhone and Mac share the sheet
   notes whose names would still clash in one folder (equal ignoring case and
   Unicode normalization, or equal to a sub-folder's name) take the full id,
   then `-2`, `-3`, ...; the note with the smaller id keeps the short name, so
-  a re-run names every note the same way (`BulkExportPlan.jobs`).
+  a re-run names every note the same way (`BulkExportPlan.jobs`). The title is the one the note is shown under, so a
+  voice note's derived title that arrives later acts like a rename of its export files.
 - **Destination.** A folder the user picks (the default on a Mac; on iPadOS
   any Files location): files are written in place, the picked folder's
   security scope held for the run. A folder inside the vault is refused. Or a
