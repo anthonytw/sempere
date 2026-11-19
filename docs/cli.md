@@ -1350,6 +1350,7 @@ sempere notes search QUERY [--notebook PATH] [--tag T] [--deleted] [--no-cache]
 sempere notes delete ID|TITLE...
 sempere notes undelete ID|TITLE...
 sempere notes history ID|TITLE [--sessions]
+sempere notes revisions ID|TITLE
 sempere notes restore ID|TITLE --to REVISION [--dry-run]
 sempere notes checkpoint ID|TITLE [--name TEXT]
 sempere notes layout ID|TITLE paged|pageless [--dry-run]
@@ -1412,6 +1413,19 @@ point is `complete: false` (shown as `(incomplete)`) when the note as of it can
 no longer be rebuilt: revisions before it were compacted away and no snapshot
 at or before it covers them, or one before it (or any snapshot) is unreadable. Unreadable
 revisions are not listed; a warning on stderr counts them.
+
+`revisions` is read-only diagnosis of a note's log (`RevisionLog`, format.md §5.3, §5.4): every revision that reads,
+oldest first by `(hlc, device, seq)`, with kind, wall time, device, app and revision name; for a delta its ops in order
+(`setMeta title`, `deleteNote`, `restoreNote`; runs of one op counted, `addStroke ×12`), for a snapshot the `deleted` flag
+it holds and the clock it records for it (`@own stamp` when it records none) and, positioned, its `asOf`. Unlike
+`history` it also lists positioned snapshots, and every listed revision that does not read here, with why
+(`not read: NAME: setAside|pending|newer|unreadable: …`: set aside under an earlier key, its epoch record not arrived,
+written by a newer version, or damaged). The first line says whether the note is deleted and which stamp and revision
+set that (`no revision here holds it` when only a snapshot's recorded clock still carries it, `never set`). `--json`
+emits `note`, `deleted`, `deletedClock`, `deletedBy`, `revisions` (each `revision`, `kind`, `hlc`, `device`, `seq`,
+`wall`, `app`, `session`, `checkpoint`, `asOf`, and `ops` for a delta or `included`, `deleted` and `deletedClock` for a
+snapshot), `failures` (each `revision`, `kind`, `error`) and `problem`: why the revisions that read do not merge (two different revisions with one device and `seq`, as two installs sharing one device state file write; the text output's `does not merge:` line), which the app lists as a live note with a problem. Run it on each device's copy of a note that came back
+after a delete, or went away, to see which device's revision decided it.
 
 `restore` is the CLI's revert (the app's Undo and Redo buttons undo the steps of the open session on one
 canvas and are not available here: a command is one delta, with no session stack). It makes the note look as it did at `REVISION` (the merge of every
