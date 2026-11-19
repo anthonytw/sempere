@@ -2520,6 +2520,9 @@ words under 0.5) or let search skip them. A transcript is derived data,
 replaced as a whole by `setRecording` of `transcript`, never merged. Readers
 that index text for search include it.
 
+A transcript the user supplies (a re-transcription, `sempere transcribe`, an import) is derived data too: like one the
+app makes, it leaves the note's modified date unchanged (§5.5, §12.2).
+
 #### 8.3.3 Ink and audio
 
 In plain words: while a recording is running, everything written or placed
@@ -4586,7 +4589,7 @@ one a reader shows.
 - `emb`: this device's vector of the note (§16.5), little-endian IEEE 754 binary16, base64 (`f16le-base64`),
   `dim` values (1 … 4 096). `key`: model, language, pinned revision, and `input`, the writer's text-cleaning revision.
 - `title` (1.3): the title this device derived for a voice note (§16.8), rendered from `insights.voiceNoteTitle`, for the
-  insight text whose hash is `hash`; `text` at most 200 characters; `at` Unix milliseconds, 1 … 2^53 − 1, when it was
+  insight text whose hash is `hash`; `text` at most 300 characters; `at` Unix milliseconds, 1 … 2^53 − 1, when it was
   derived (it does not change when the file is rewritten for another reason); `lang` (optional) the `outLang` of the slug it
   was made from (absent: the note's own), and a reader prefers the title whose `lang` equals its `insights.language`. It is never written into the note. A reader
   takes a note's derived title from the file whose `title.hash` equals the note's current hash, the later `at`, then the

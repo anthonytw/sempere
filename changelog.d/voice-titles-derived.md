@@ -5,4 +5,5 @@
   your language and the time zone it was recorded in, and Note Insights' generated title (from the transcript) is kept
   beside the note instead of replacing its title, so it follows the note's text and a title you type is always the one
   shown. Notes from earlier versions keep the titles they have, and still get a generated title while their title is
-  the default one.
+  the default one. Update every device that shares the vault to 1.3: a device still on 1.2 keeps writing generated
+  titles into notes and shows a blank title for new voice notes.
