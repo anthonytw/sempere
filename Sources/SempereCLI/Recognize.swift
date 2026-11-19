@@ -167,7 +167,7 @@ struct RecognizeCommand: ParsableCommand {
             ids = try vault.summaries(of: nil).filter { !$0.deleted }.map(\.id)
         } else {
             var seen = Set<UUID>()
-            ids = try notes.map { try vault.resolveNote($0) }.filter { seen.insert($0).inserted }
+            ids = try notes.map { try vault.resolveShownNote($0) }.filter { seen.insert($0).inserted }
         }
         let now = Date()
         let results = ids.map { RecognitionRun.run(note: $0, vault: vault, mode: mode, dryRun: dryRun, recordedAt: now) }

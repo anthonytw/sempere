@@ -72,12 +72,19 @@ enum NoteTitles {
         let wanted = notes.filter { !$0.deleted && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice) && $0.voice != nil }
         guard !wanted.isEmpty, FileManager.default.fileExists(atPath: vault.insightsURL.path) else { return [:] }
         let snapshot = InsightsStore(vault: vault).snapshot()
-        let language = InsightsSettings.read(vault).language
+        let settings = InsightsSettings.read(vault)
+        let language = settings.language
         var out: [UUID: String] = [:]
         for n in InsightsNotes.inputs(vault, summaries: wanted) {
-            if let t = snapshot.bestTitle(for: n.id, hash: n.hash, language: language) { out[n.id] = t }
+            if let t = snapshot.bestTitle(for: n.id, hash: n.hash, language: language, format: settings.voiceNoteTitle) { out[n.id] = t }
         }
         return out
+    }
+
+    /// The notes whose shown title is the made-up default, which Ask leaves out of its label words.
+    static func defaultTitled(_ notes: [NoteSummary], in vault: Vault) -> Set<UUID> {
+        let generated = generated(for: notes, in: vault)
+        return Set(notes.filter { $0.showsDefaultTitle(generated: generated[$0.id]) }.map(\.id))
     }
 
     /// What the CLI shows as `note`'s title (empty: no title and no voice note; callers say "(untitled)").
@@ -89,6 +96,13 @@ enum NoteTitles {
     static func display(_ notes: [NoteSummary], in vault: Vault) -> [UUID: String] {
         let generated = generated(for: notes, in: vault)
         return Dictionary(notes.map { ($0.id, display($0, generated: generated[$0.id])) }, uniquingKeysWith: { a, _ in a })
+    }
+}
+
+extension Vault {
+    /// `resolveNote` that also takes the title a voice note is shown with (its derived or default title, as `notes list` prints it).
+    func resolveShownNote(_ query: String) throws -> UUID {
+        try resolveNote(query) { candidates in NoteTitles.display(candidates, in: self) }
     }
 }
 
@@ -168,7 +182,7 @@ struct NotesShow: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         OpenedVaults.shared.markUnchanged(vault.url)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let loaded = try vault.loadNote(id, detail: .withoutStrokePoints)
         let summary = vault.summary(of: id, loaded: loaded)
         let history = loaded.history
@@ -331,7 +345,7 @@ struct NotesLayout: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let layout = self.layout
         func switched(_ state: NoteState) -> LayoutEdit {
             layout == .paged

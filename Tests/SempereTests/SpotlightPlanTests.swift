@@ -14,6 +14,17 @@ final class SpotlightPlanTests: XCTestCase {
         return s
     }
 
+    /// A voice note with no title of its own is donated under the title the list shows for it.
+    func testShownTitlesNameTheDonatedItems() throws {
+        let blank = note(""), plain = note("Lecture 4"), unlisted = note("")
+        let plan = SpotlightPlanner.plan(vaultId: vault, notes: [blank, plain, unlisted], options: SpotlightOptions(),
+                                         shownTitles: [blank.id: "Voice note Nov 16, 2026, 2:32 PM", plain.id: "Lecture 4"])
+        func title(_ n: NoteSummary) -> String? { plan.items.first { $0.noteId == n.id }?.title }
+        XCTAssertEqual(title(blank), "Voice note Nov 16, 2026, 2:32 PM")
+        XCTAssertEqual(title(plain), "Lecture 4")
+        XCTAssertEqual(title(unlisted), "Untitled note", "no shown title: the stored one, blank is Untitled")
+    }
+
     func testMetadataOnlyByDefault() throws {
         let n = note("Lecture 4", tags: ["physics", "exam"], notebook: "School/Physics", text: "secret handwriting")
         let plan = SpotlightPlanner.plan(vaultId: vault, notes: [n], options: SpotlightOptions())

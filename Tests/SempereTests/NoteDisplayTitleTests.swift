@@ -126,3 +126,63 @@ final class NoteDisplayTitleTests: VaultTestCase {
         XCTAssertNil(back.captureInfo, "values of another shape read as absent")
     }
 }
+
+/// The default title's formatters are made once per (locale, time zone) and used from any thread.
+extension NoteDisplayTitleTests {
+    func testDefaultTitlesAreStableAcrossLocalesZonesAndThreads() async {
+        let ny = origin("phone"), tokyo = VoiceOrigin(started: started, tz: "Asia/Tokyo", source: "phone")
+        let want = [NoteDisplayTitle.defaultTitle(for: ny, locale: english), NoteDisplayTitle.defaultTitle(for: tokyo, locale: english),
+                    NoteDisplayTitle.defaultTitle(for: ny, locale: spanish)]
+        XCTAssertEqual(Set(want).count, 3, "each (locale, zone) pair formats on its own: \(want)")
+        XCTAssertTrue(want[0].contains("2:32") && want[1].contains("4:32"), "\(want)")
+        let (e, s) = (english, spanish), (n, t, st) = (ny, tokyo, started)
+        await withTaskGroup(of: [String].self) { group in
+            for _ in 0..<8 {
+                group.addTask {
+                    (0..<50).flatMap { _ in
+                        [NoteDisplayTitle.defaultTitle(for: n, locale: e), NoteDisplayTitle.defaultTitle(for: t, locale: e),
+                         NoteDisplayTitle.defaultTitle(for: VoiceOrigin(started: st, tz: "America/New_York", source: "phone"), locale: s)]
+                    }
+                }
+            }
+            for await titles in group {
+                for (i, title) in titles.enumerated() { XCTAssertEqual(title, want[i % 3]) }
+            }
+        }
+    }
+
+    func testShowsDefaultOnlyForTheMadeUpTitle() {
+        XCTAssertTrue(NoteDisplayTitle.showsDefault(stored: "", origin: origin(), generated: nil))
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: "", origin: origin(), generated: "2026-11-16 14.32 Lab"), "a derived title")
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: "Lab", origin: origin(), generated: nil), "the user's title")
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: "", origin: nil, generated: nil), "no voice recording: Untitled")
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: "Voice note 2026-11-16 14:32", origin: origin(), generated: nil),
+                       "a stored default shows as stored, which is the title the note has")
+    }
+}
+
+/// What exports, Spotlight and `resolveNote` name a voice note by (format.md §16.8).
+extension NoteDisplayTitleTests {
+    func testShowingATitleNamesTheExportAndBlankChangesNothing() {
+        let id = UUID()
+        let s = NoteSummary(id: id, title: "", tags: [], notebook: nil, deleted: false, pages: 1, strokes: 0, modified: nil, problem: nil)
+        XCTAssertEqual(ExportName.stem(title: s.showing(title: "Voice note Nov 16").title, noteId: id), "Voice-note-Nov-16-\(id.uuidString.lowercased().prefix(8))")
+        XCTAssertEqual(s.showing(title: "").title, "")
+        XCTAssertEqual(s.showing(title: nil).title, "")
+        XCTAssertEqual(s.showing(title: "  ").title, "")
+    }
+
+    func testFindTakesTheShownTitleOnlyWhenNoStoredTitleMatches() throws {
+        let origin = VoiceOrigin(started: started, tz: "America/New_York", source: "phone")
+        func summary(_ title: String) -> NoteSummary {
+            var s = NoteSummary(id: UUID(), title: title, tags: [], notebook: nil, deleted: false, pages: 1, strokes: 0, modified: nil, problem: nil)
+            s.voice = origin
+            return s
+        }
+        let voice = summary(""), named = summary("Lab")
+        let shown: ([NoteSummary]) -> [UUID: String] = { notes in Dictionary(uniqueKeysWithValues: notes.map { ($0.id, "Voice note X") }) }
+        XCTAssertEqual(try NoteSummary.find("voice note x", in: [voice, named], shown: shown).id, voice.id)
+        XCTAssertEqual(try NoteSummary.find("Lab", in: [voice, named], shown: shown).id, named.id)
+        XCTAssertThrowsError(try NoteSummary.find("voice note x", in: [voice, named]))
+    }
+}

@@ -108,6 +108,35 @@ final class CLIInboxTests: CLITestCase {
         XCTAssertEqual(renamed.first { $0["id"] as? String == note }?["displayTitle"] as? String, "Standup")
     }
 
+    /// 1.3: where a voice note's stored title is blank, the title `notes list` shows also finds it by name and names its
+    /// export files and Spotlight donation; a stored title still wins.
+    func testAVoiceNoteIsFoundExportedAndDonatedUnderItsShownTitle() throws {
+        let (vault, _, keyPath) = try makeVault()
+        let unlocked = ["--vault", vault.url.path, "--identity", keyPath]
+        XCTAssertEqual(try cli(["inbox", "enable", "--notebook", "Voice"] + unlocked).status, 0)
+        let captured = try json(try cli(["inbox", "capture", Self.tone, "--started", "2026-10-07T14:32:00Z", "--json"] + unlocked))
+        let note = try XCTUnwrap(captured["note"] as? String)
+        XCTAssertEqual(try cli(["inbox", "import", "--json"] + unlocked).status, 0)
+        let list = try XCTUnwrap(try cli(["notes", "list", "--json"] + unlocked).json as? [[String: Any]])
+        let shown = try XCTUnwrap(list.first { $0["id"] as? String == note }?["displayTitle"] as? String)
+        XCTAssertTrue(shown.hasPrefix("Voice note Oct 7, 2026"), shown)
+        // By title (resolveNote).
+        let byTitle = try cli(["notes", "show", shown, "--json"] + unlocked)
+        XCTAssertEqual(byTitle.status, 0, byTitle.err)
+        XCTAssertEqual(((try json(byTitle))["note"] as? [String: Any])?["id"] as? String, note)
+        // Export file names and the page's heading.
+        let out = path("md")
+        let exported = try cli(["export", note, "--format", "markdown", "--out", out] + unlocked)
+        XCTAssertEqual(exported.status, 0, exported.err)
+        let files = (FileManager.default.enumerator(atPath: out)?.allObjects as? [String] ?? []).map { ($0 as NSString).lastPathComponent }
+        XCTAssertTrue(files.contains { $0.hasPrefix("Voice-note-Oct-7,-2026") }, "\(files)")
+        XCTAssertFalse(files.contains { $0.hasPrefix("untitled") }, "\(files)")
+        // Spotlight's plan.
+        let plan = try json(try cli(["spotlight", "plan", "--json"] + unlocked))
+        let items = try XCTUnwrap(plan["items"] as? [[String: Any]])
+        XCTAssertEqual(items.first { $0["note"] as? String == note }?["title"] as? String, shown)
+    }
+
     func testCaptureNeedsAProfileAndForgeriesAreRefused() throws {
         let (vault, _, keyPath) = try makeVault()
         let locked = ["--vault", vault.url.path]

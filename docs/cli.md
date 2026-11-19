@@ -1381,7 +1381,9 @@ blob, whether it has a transcript, id), and the revision history
 `video`, `audio` (recordings or audio cards) and `pdf`, in that order (the
 app's row icons). A note is named by its
 full id, an id prefix of 4 or more characters, or its exact title
-(case-insensitive); an ambiguous name is an error that lists the candidates.
+(case-insensitive); an ambiguous name is an error that lists the candidates. A voice note with no title of its own is
+also named by the title `notes list` shows for it (`displayTitle`: the one Note Insights derived, else "Voice note" and
+the date) when no stored title matches, and `export`, `share` and `spotlight plan` name it by that title too.
 
 `history` lists the note's restore points, one per readable revision, oldest
 first by `(hlc, device, seq)`: kind, wall time, device, app and revision name.

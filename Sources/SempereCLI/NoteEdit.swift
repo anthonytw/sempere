@@ -142,7 +142,7 @@ struct NotesRename: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { NoteOps.rename(to: title, state: $0) }
         try reportEdit(vault, id, r, output: output, done: "Renamed", unchanged: "The note already has that title.")
     }
@@ -181,7 +181,7 @@ struct NotesLanguage: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         guard tag != nil || none else {
             let s = try vault.summary(of: id)
             if output.json {
@@ -223,7 +223,7 @@ struct NotesMarkers: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { NoteOps.setMarkersBehindText(placement == .behind, state: $0) }
         try reportEdit(vault, id, r, output: output, done: "Markers drawn \(placement.rawValue) the items",
                        unchanged: "The note's markers are already drawn that way.")
@@ -252,7 +252,7 @@ struct NotesFavorite: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { NoteOps.setFavorite(!off, state: $0) }
         try reportEdit(vault, id, r, output: output, done: off ? "Removed from favorites" : "Marked as a favorite",
                        unchanged: off ? "The note is not a favorite." : "The note already is a favorite.")
@@ -300,7 +300,7 @@ struct NotesMove: ParsableCommand {
         let vault = try access.openVault(.required)
         let queries = none ? items : Array(items.dropLast())
         let target = none ? nil : NotebookPath.canonical(items.last)
-        let ids = try queries.map { try vault.resolveNote($0) }
+        let ids = try queries.map { try vault.resolveShownNote($0) }
         if ids.count == 1 {
             let r = try editNote(vault, ids[0]) { NoteOps.move(toNotebook: target, state: $0) }
             try reportEdit(vault, ids[0], r, output: output,
@@ -341,7 +341,7 @@ struct DeleteJSON: Encodable {
 /// written as one batch (`Vault.setDeleted`).
 private func setDeleted(_ queries: [String], _ deleted: Bool, access: AccessOptions, output: OutputOptions) throws {
     let vault = try access.openVault(.required)
-    let ids = try queries.map { try vault.resolveNote($0) }
+    let ids = try queries.map { try vault.resolveShownNote($0) }
     if ids.count == 1 {
         let r = try editNote(vault, ids[0], building: deleted ? NoteOps.delete : NoteOps.undelete)
         try reportEdit(vault, ids[0], r, output: output, done: deleted ? "Deleted" : "Restored",
@@ -450,7 +450,7 @@ struct NotesTag: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let adds = NoteOps.normalizedTags(add)
         let known = adds.isEmpty ? [] : NoteOps.vaultTags(try vault.summaries(of: nil, cache: cache.cache(for: vault)))
         let r = try editNote(vault, id) { state in
@@ -601,7 +601,7 @@ struct NotesPaper: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         var chosen: Paper?
         let r = try editNote(vault, id) { state in
             let scope: PaperScope
@@ -992,7 +992,7 @@ struct PagesList: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let state = try vault.reconstruct(try vault.loadNote(id, detail: .withoutStrokePoints))
         struct PageRow: Encodable {
             var page: Int; var id: String; var strokes: Int; var paper: Paper?; var recognized: Bool
@@ -1044,7 +1044,7 @@ struct PagesAdd: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
             let after = after ?? state.pages.count
@@ -1101,7 +1101,7 @@ struct PagesMove: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
             let moving = try pageNumbered(number, of: state)
@@ -1136,7 +1136,7 @@ struct PagesDelete: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
             let gone = try pageNumbered(number, of: state)
@@ -1165,7 +1165,7 @@ struct PagesDuplicate: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
             return NoteOps.duplicatePage(try pageNumbered(number, of: state).id, in: state.pages)?.ops ?? []

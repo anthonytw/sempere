@@ -74,7 +74,7 @@ struct RecordingsList: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let state = try vault.reconstruct(try vault.loadNote(id, detail: .withoutStrokePoints))
         let placed = AttachmentListing.items(state).filter { $0.item.kind == .audio }
         let rows = AttachmentListing.recordings(state).sorted(by: Recording.sortsBefore).map { r in
@@ -130,7 +130,7 @@ struct RecordingsPlace: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let before = try liveState(vault, id)
         let target = try resolveRecording(recording, in: before)
         var (n, placed) = try placement.place(target, in: before, recordings: before.recordings)
@@ -177,7 +177,7 @@ struct RecordingsRename: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let target = try resolveRecording(recording, in: try liveState(vault, id))
         let r = try editNote(vault, id) { state in
             try requireLive(state)
@@ -211,7 +211,7 @@ struct RecordingsDelete: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let target = try resolveRecording(recording, in: try liveState(vault, id))
         let r = try editNote(vault, id) { state in
             try requireLive(state)

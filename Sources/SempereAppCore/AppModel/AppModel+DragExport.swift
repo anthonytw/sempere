@@ -31,7 +31,8 @@ extension AppModelCore {
         try await downloadNote(noteID)
         try ensureCurrent(gen)
         return PreparedExport(vault: vault, noteID: noteID, folder: exportFolder, rendering: services.exportRendering,
-                              epoch: exportEpoch, generation: gen, startEpoch: exportEpoch.value)
+                              epoch: exportEpoch, generation: gen, startEpoch: exportEpoch.value,
+                              shownTitle: notes.first(where: { $0.id == noteID }).map { displayTitle($0) })
     }
 }
 
@@ -53,12 +54,14 @@ public struct PreparedExport: Sendable {
     /// The model's generation when prepared (`ensureCurrent`).
     let generation: Int
     let startEpoch: Int
+    /// The title the list shows for the note (a voice note's derived or default title): the file's name and heading.
+    var shownTitle: String?
 
     /// Renders the note as a PDF and writes `<folder>/<uuid>/<title>.pdf`. Blocking: call it off the main actor.
     /// Throws `CancellationError` once the vault that prepared it has closed.
     public func write() throws -> URL {
         guard epoch.value == startEpoch else { throw CancellationError() }
-        let rendered = try NotePDFExport.render(vault: vault, noteID: noteID, rendering: rendering)
+        let rendered = try NotePDFExport.render(vault: vault, noteID: noteID, rendering: rendering, shownTitle: shownTitle)
         guard epoch.value == startEpoch else { throw CancellationError() }
         NotePDFExport.purge(olderThan: 3600)   // folders of earlier runs that never closed a vault
         let url = try NotePDFExport.write(rendered, in: folder)
@@ -80,7 +83,8 @@ public struct PreparedExport: Sendable {
         let dir = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let url: URL
         do {
-            url = try NoteDragExport.write(vault: vault, noteID: noteID, format: format, into: dir, rendering: rendering)
+            url = try NoteDragExport.write(vault: vault, noteID: noteID, format: format, into: dir, rendering: rendering,
+                                           shownTitle: shownTitle)
         } catch {
             try? FileManager.default.removeItem(at: dir)
             throw error
@@ -108,10 +112,10 @@ extension NotePDFExport {
 
     /// The note's PDF, drawn with `rendering` (its blobs set to the note's). A note with unreadable revisions is
     /// refused rather than exported with pages missing (`DragExportError`).
-    static func render(vault: Vault, noteID: UUID, rendering: RenderOptions) throws -> Rendered {
+    static func render(vault: Vault, noteID: UUID, rendering: RenderOptions, shownTitle: String? = nil) throws -> Rendered {
         let loaded = try vault.loadNote(noteID)
         guard loaded.failures.isEmpty else { throw DragExportError.unreadableRevisions(loaded.failures.count) }
-        let state = try NoteReducer.reconstruct(loaded.revisions)
+        let state = try NoteReducer.reconstruct(loaded.revisions).showing(title: shownTitle)
         // PDF page backgrounds are copied from the note's attachments (docs/attachments.md §10); text boxes are laid
         // out by the services' shaper (CoreText in the app) as the canvas shows them.
         var options = rendering
@@ -142,11 +146,11 @@ enum NoteDragExport {
     /// Writes `noteID` as `format` (Markdown or HTML) into the new folder `dir`, drawn with `rendering`'s PDF
     /// rasterizer, shaper and image decoder, named as a dropped PDF is (`ExportFileName.base`), and returns the file.
     static func write(vault: Vault, noteID: UUID, format: DragExportFormat, into dir: URL,
-                             rendering: RenderOptions) throws -> URL {
+                             rendering: RenderOptions, shownTitle: String? = nil) throws -> URL {
         let loaded = try vault.loadNote(noteID)
         guard loaded.failures.isEmpty else { throw DragExportError.unreadableRevisions(loaded.failures.count) }
-        let state = try NoteReducer.reconstruct(loaded.revisions)
-        let summary = vault.summary(of: noteID, loaded: loaded)
+        let state = try NoteReducer.reconstruct(loaded.revisions).showing(title: shownTitle)
+        let summary = vault.summary(of: noteID, loaded: loaded).showing(title: shownTitle)
         let share: ShareFormat = format == .html ? .html : .markdown
         let result = try ShareExport.run([(summary, state)], options: ShareOptions(format: share), into: dir,
                                          vaultSource: "sempere:\(vault.vaultId.uuidString.lowercased())",

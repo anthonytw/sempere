@@ -221,6 +221,8 @@ extension AppModelCore {
                                        dateText: spotlightDateText)
         let snapshot = notes
         let waiting = pendingNoteIDs
+        // A voice note with no title of its own is donated under the title the list shows for it.
+        let shownTitles = Dictionary(snapshot.map { ($0.id, displayTitle($0)) }, uniquingKeysWith: { a, _ in a })
         // Transcripts are blobs: read only with Include Note Text, and only when search may use them (§3.2).
         var transcripts: [UUID: [String]] = [:]
         if mode.includesText, searchTranscripts, let reader = transcriptReader() {
@@ -236,7 +238,8 @@ extension AppModelCore {
             }
         }
         let plan = await Task.detached(priority: .utility) {
-            SpotlightPlanner.plan(vaultId: id, notes: snapshot, options: options, transcripts: transcripts, notDownloaded: waiting)
+            SpotlightPlanner.plan(vaultId: id, notes: snapshot, options: options, transcripts: transcripts, notDownloaded: waiting,
+                                  shownTitles: shownTitles)
         }.value
         guard canSend(gen, mode) else { return }
         spotlightOmitted = plan.omitted

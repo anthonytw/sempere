@@ -129,7 +129,11 @@ extension AppModelCore {
                 if unsaved.contains(id) { throw UnsavedChangesError() }
                 let item = try await loadNoteForExport(id, vault: vault, withSummary: true)
                 try ensureCurrent(gen)
-                if let summary = item.summary { loaded.append((summary, item.state)) }
+                if let summary = item.summary {
+                    // A voice note with no title of its own is named and headed by the title the list shows for it.
+                    let shown = displayTitle(summary)
+                    loaded.append((summary.showing(title: shown), item.state.showing(title: shown)))
+                }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {

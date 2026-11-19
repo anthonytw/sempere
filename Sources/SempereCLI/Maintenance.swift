@@ -73,7 +73,7 @@ struct CompactCommand: ParsableCommand {
         let vault = try access.openVault(.required)
         try vault.requireWritable()   // format.md §7.3: exit 7
         if note == nil { try vault.requireCompleteCopy() }
-        let ids = try note.map { [try vault.resolveNote($0)] } ?? vault.noteIDs()
+        let ids = try note.map { [try vault.resolveShownNote($0)] } ?? vault.noteIDs()
         let mode: CompactionMode
         var rule: ThinningRule?
         if thinAll {
@@ -197,7 +197,7 @@ struct SnapshotCommand: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let (snap, state) = try takeSnapshot(vault, loaded: try vault.loadNote(id))
         if output.json {
             struct Out: Encodable { var note: String; var file: String; var device: String }
