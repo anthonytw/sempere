@@ -193,7 +193,8 @@ development language and **Spanish (`es`) is complete**. Only the interface is t
 
 - **Vault data is shown as written**: note titles, notebook and tag names (the `/` hierarchy of
   §5.4), recording titles, transcripts and page text are never translated or altered. Only how the
-  viewer *displays* an empty title ("Untitled") is localized.
+  viewer *displays* an empty title ("Untitled", and a voice note's default "Voice note <date and time>",
+  `web/src/format/displaytitle.ts`) is localized.
 - **The language** is the first supported one of `navigator.languages`, in the user's order (`es-MX`
   is `es`; a browser that lists none gets English), or the choice made with the **Language** selector
   ("Automatic", "English", "Español", each language in its own name). It is on the open and unlock
@@ -324,6 +325,14 @@ takes seconds. Three things make a visit fast:
    (`--web-viewer` creates it on the server, with `sempere-index.json`;
    `docs/cli.md`). When a note is opened, the summary computed from its
    revisions replaces its entry.
+   A quick voice note with no title of its own is listed as the app lists it (`format.md` §12.2, 1.3): under the
+   title Note Insights derived when the entry carries one (`shown`, the title `sempere notes list` shows), else
+   under the default made from the entry's `voice` (the capture's start, zone and source) in the viewer's language
+   and the capture's zone ("Voice note Oct 7, 2026, 10:32 AM"), else under its stored title. The note's header
+   shows the same title (the row's `shown` is kept when the note is opened, while its stored title is unchanged).
+   The viewer never reads the insights files; the derived title is inside the sealed file, so the server sees no
+   title. Entries written before 1.3 carry neither member, and such a note shows "Untitled" until a writer of 1.3
+   rewrites the file (any unlocked `sempere` command or a sync does, `format.md` §12.4).
 2. **A cache of ciphertext.** Revisions and blobs fetched over HTTP are kept
    in IndexedDB (`web/src/vault/cache.ts`), keyed by the vault's URL and id,
    its **key state** (a hash of `vault.json`'s `epochId` and, while a
@@ -877,6 +886,10 @@ are missing: download the vault first.
   there is black (`smoke-attachments.mjs` checks that most of the render stays
   clear); an equation without a rendering, or whose rendering cannot be drawn, shows
   its LaTeX source in a monospace font. The viewer has no math typesetter.
+- **Voice-note titles** come from the published summaries only: a voice note that has no current entry (new or
+  changed since the file was written) is decrypted and listed under its default title ("Voice note <date and time>")
+  even when Note Insights derived one, until the file is rewritten. Search and the title sort use the stored title, as
+  `sempere search` does, so a derived title is not searchable here.
 - **Search** covers titles, tags, notebooks, recognized text, text boxes,
   equations' LaTeX source and PDF page text (`pageText`, format.md §8.2.6), as in the app; words are not
   highlighted on the page yet. A note with `markersBehindText` (§5.4) draws
@@ -1051,7 +1064,8 @@ Tests (`web/test/`, vitest, Node 22):
   goldens (`test/golden/*.summaries.json`, from `sempere vault summaries
   --plaintext`) equal to what the viewer computes from the revisions,
   tampered, foreign-key and wrong-vault files refused, malformed entries
-  dropped alone. The listing (`listing.test.ts`): summaries shown first,
+  dropped alone; a voice note's row from `shown`, from `voice` (in English and Spanish), from neither, and from an
+  entry written before 1.3, with malformed members dropped alone. The listing (`listing.test.ts`): summaries shown first,
   only stale notes decrypted, gone notes dropped, a second visit with the
   cache downloading nothing, eviction. The cache (`cache.test.ts`: LRU,
   write-once paths only, a failing cached file evicted and fetched again,

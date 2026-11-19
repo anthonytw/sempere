@@ -599,13 +599,17 @@ sempere vault reencrypt --status [--json]
   every revision (`docs/web-viewer.md` "Opening fast"). Per note: title, tags,
   notebook, favorite and deleted flags, created and modified dates, page count
   and each page's searchable text, with the revision file names it was made
-  from; notes with an unreadable revision get no entry. Sealed with AES-256-GCM
+  from; notes with an unreadable revision get no entry. A voice note whose stored
+  title is blank or a default also gets `voice` (capture start, zone and source)
+  and, once Note Insights derived a title for it, `shown`: the title `notes list`
+  shows, so the viewer lists it the same way (`format.md` §12.2). Sealed with AES-256-GCM
   under a key derived from the vault key, so it needs the key (exit 4
   without it) and only the vault's keys open it. Entries of an existing file
   whose notes did not change are reused (others go through the summary cache
   unless `--no-cache`), so a rerun reads only changed notes. Once it exists it
   is kept current: every command that unlocks the vault rewrites it when a
-  note changed (a failure is a warning); commands without the key leave it
+  note, or the title a voice note is shown under, changed (such notes' derived
+  titles are looked up again each time; a failure is a warning); commands without the key leave it
   alone, so it may lag until the next one. `--plaintext` writes the JSON
   content instead, in the clear (for checks and the web goldens); it needs
   `--out`, so it never lands at the vault's sealed path by default, and a
