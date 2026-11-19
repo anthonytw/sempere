@@ -103,7 +103,7 @@ struct SyncState: Codable, Equatable {
     var listingPass: ListingPass?
     /// Revisions this device wrote before 1.1.0 whose server copy was checked once for a cut upload because the listing gave no
     /// size (`SyncEngine.verifySizeless`, D-07), keyed like `files`, with the local file's size and a digest of the listing entry
-    /// when it was checked: read again only when either changes. Bounded (`SyncEngine.sizelessCheckedMax`). Nil: none.
+    /// when it was checked: read again only when the size changes, or the listing does for a copy that was not found complete. Bounded (`SyncEngine.sizelessCheckedMax`). Nil: none.
     var sizelessChecked: [String: SizelessCheck]?
     /// The time of this target's first run with the D-07 check (`SyncEngine.options.now`), never moved: only this device's
     /// revisions written before it are checked, since an older client may still have cut them. Nil until such a run.
@@ -112,6 +112,11 @@ struct SyncState: Codable, Equatable {
     struct SizelessCheck: Codable, Equatable {
         var size: Int
         var listing: String
+        /// True when the server's copy was read and is exactly the local file (or was replaced by it): a write-once
+        /// revision does not change afterwards, so a changed listing (a churning ETag or date) is no reason to read it
+        /// again (audit D-10). Nil or false (a copy left alone as different or longer, and records from before this
+        /// field): read again when the listing changes.
+        var complete: Bool?
     }
     /// Large blob uploads a connection window cut short (`LargeUploads.swift`, offline audit P3). Nil: none.
     var largeUploads: LargeUploadRecord?

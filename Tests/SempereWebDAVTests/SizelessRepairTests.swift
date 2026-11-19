@@ -14,9 +14,17 @@ final class SizelessRemote: SyncRemote, @unchecked Sendable {
     /// Reads of paths ending in `suffix`.
     func reads(of suffix: String) -> Int { lock.withLock { counts.filter { $0.key.hasSuffix(suffix) }.values.reduce(0, +) } }
 
+    /// When set, every listing gives a new ETag and modification date (a server that churns them).
+    private var churning = false
+    private var churn = 0
+    func churnListings() { lock.withLock { churning = true } }
+
     private func blind(_ e: RemoteEntry) -> RemoteEntry {
         var e = e
         e.size = nil
+        lock.withLock {
+            if churning { churn += 1; e.etag = "churn-\(churn)"; e.lastModified = "churn-\(churn)" }
+        }
         return e
     }
 
@@ -137,6 +145,31 @@ final class SizelessRepairTests: SyncTestCase {
         try syncOnce()
         try syncOnce()
         XCTAssertEqual(remote.reads(of: name(r)), before + 1)
+    }
+
+    /// D-10: a verified complete copy is not read again when the listing's tag or date changes; a copy left alone as
+    /// different is (the listing change may mean someone fixed it).
+    func testACompleteCopyIsNotReadAgainWhenTheListingChurns() throws {
+        let revs = try seeded([10])
+        let r = revs[1]
+        try syncOnce()
+        remote.churnListings()
+        let before = remote.reads(of: name(r))
+        try syncOnce()
+        try syncOnce()
+        XCTAssertEqual(remote.reads(of: name(r)), before)
+        XCTAssertTrue(try checked().values.allSatisfy { $0.complete == true })
+    }
+
+    func testACopyLeftAloneIsReadAgainWhenTheListingChanges() throws {
+        let revs = try seeded([10])
+        let r = revs[1]
+        store.putDirect(path(r), Data(repeating: 7, count: 40))
+        try syncOnce()
+        let before = remote.reads(of: name(r))
+        remote.churnListings()
+        try syncOnce()
+        XCTAssertGreaterThan(remote.reads(of: name(r)), before)
     }
 
     func testTheRunsReadCapStopsThePassAndALaterRunContinues() throws {
