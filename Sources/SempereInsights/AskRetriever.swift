@@ -30,8 +30,36 @@ public enum AskText {
         return InsightsWords.words(text).filter { isContent($0) && seen.insert($0).inserted }
     }
 
-    /// The form a word is compared by (`decided` and `deciding` agree; plural and singular agree).
-    public static func form(_ w: String) -> String { FactCheck.stem(TermNormalizer.singular(w)) }
+    /// The form a word is compared by (`decided` and `deciding` agree; plural and singular agree; accents are ignored, as
+    /// search ignores them).
+    public static func form(_ w: String) -> String {
+        FactCheck.stem(TermNormalizer.singular(w.folding(options: .diacriticInsensitive, locale: nil)))
+    }
+
+    /// The words of `text` (as character ranges) that match the question's content words, for bold in a passage: a word
+    /// matches when its form is one of the question's (`decided` and `deciding` agree; case and accents are ignored).
+    public static func matchRanges(in text: String, question: String) -> [Range<String.Index>] {
+        let wanted = forms(question)
+        guard !wanted.isEmpty else { return [] }
+        var out: [Range<String.Index>] = []
+        var start: String.Index?
+        func close(at end: String.Index) {
+            guard let s = start else { return }
+            start = nil
+            let word = text[s..<end]
+            if let w = InsightsWords.words(String(word)).first, wanted.contains(form(w)), isContent(w) { out.append(s..<end) }
+        }
+        var i = text.startIndex
+        while i < text.endIndex {
+            let c = text[i]
+            if c.isLetter || c.isNumber || ((c == "'" || c == "\u{2019}") && start != nil) {
+                if start == nil { start = i }
+            } else { close(at: i) }
+            i = text.index(after: i)
+        }
+        close(at: text.endIndex)
+        return out
+    }
 
     /// Normalized content forms of `text` (for overlap checks).
     public static func forms(_ text: String) -> Set<String> { Set(terms(text).map(form)) }

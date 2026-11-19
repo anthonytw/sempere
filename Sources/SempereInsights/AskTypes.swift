@@ -122,6 +122,8 @@ public struct AskAnswerSentence: Hashable, Sendable, Codable {
     public var text: String
     /// Note ids (lowercased), drawn by code from the validated source ids.
     public var sources: [String]
+
+    public init(text: String, sources: [String]) { self.text = text; self.sources = sources }
 }
 
 /// A note in the result.
@@ -137,6 +139,12 @@ public struct AskNoteResult: Hashable, Sendable, Codable {
     /// The answer cites this note (otherwise it is under "Other matching notes").
     public var used: Bool
     public var passages: [AskPassage]
+
+    public init(note: String, title: String, notebook: String?, modified: Date?, pages: [Int], why: [String], used: Bool,
+                passages: [AskPassage]) {
+        self.note = note; self.title = title; self.notebook = notebook; self.modified = modified; self.pages = pages
+        self.why = why; self.used = used; self.passages = passages
+    }
 }
 
 /// What `ask` returns, and the `--json` shape of `sempere ask` (design §3.5).
@@ -153,11 +161,26 @@ public struct AskResult: Hashable, Sendable, Codable {
     /// What is missing, in a line ("Apple Intelligence is turned off", "I couldn't find that in your notes"); nil when
     /// nothing is.
     public var missing: String?
+    /// The kind of `missing`, for the app to word and for scripts: `noModel`, `disabled`, `notReady`, `deviceNotEligible`,
+    /// `unsupported`, `language` (the model does not support the question's language), `failed` (the model call failed or
+    /// timed out) or `notFound` (no answer from the notes); nil when nothing is missing. Additive to the design's shape.
+    public var missingKind: String?
+    /// Whether vector matching ran (`used`) or why not (additive): `off` (Note Insights off), `noEmbedder`, `language`
+    /// (the question's language is not pinned), `noMap`, `incompatible`, `noVectors`, `unembeddable`, or `none` (no notes).
+    public var vectors: String
     /// What retrieval did not do (additive to the design's shape): "the question was cut to 400 characters", "vector
     /// matching was skipped: ...".
     public var notices: [String]
     /// Only with `--explain`.
     public var explain: AskExplain?
+
+    public init(question: String, mode: AskMode, lang: String, enough: Bool, dropped: Int, answer: [AskAnswerSentence],
+                notes: [AskNoteResult], missing: String?, missingKind: String?, vectors: String, notices: [String],
+                explain: AskExplain?) {
+        self.question = question; self.mode = mode; self.lang = lang; self.enough = enough; self.dropped = dropped
+        self.answer = answer; self.notes = notes; self.missing = missing; self.missingKind = missingKind
+        self.vectors = vectors; self.notices = notices; self.explain = explain
+    }
 }
 
 /// `--explain`: why these notes, what the model was sent and what the validator dropped (design §3.5).

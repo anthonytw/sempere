@@ -20,6 +20,9 @@ public struct AskOptions: Sendable {
     public var detectLanguage: (@Sendable (String) -> String?)?
     /// The model call's limit (design §4: 30 s, then `retrieval`).
     public var timeout: TimeInterval = 30
+    /// Called once with the retrieval's notes (mode `retrieval` or `keyword`) just before the model is asked, so a
+    /// screen can show them while the answer is written.
+    public var onRetrieved: (@Sendable (AskResult) -> Void)?
 
     public init() {}
 }
@@ -36,11 +39,11 @@ public struct AskEngine: Sendable {
         self.reader = reader; self.notes = notes; self.me = me; self.model = model; self.embedder = embedder
     }
 
-    /// Why this device cannot answer in `language` (nil: it can).
-    public func modelMissing(language: String) -> String? {
-        guard let model else { return "there is no on-device model here" }
-        if !model.availability.isAvailable { return model.availability.description }
-        if !model.supports(language: language) { return "the on-device model does not support \(language)" }
+    /// Why this device cannot answer in `language` (nil: it can): the kind (`AskResult.missingKind`) and the words.
+    public func modelMissing(language: String) -> (kind: String, why: String)? {
+        guard let model else { return ("noModel", "there is no on-device model here") }
+        if !model.availability.isAvailable { return (model.availability.reason ?? "unsupported", model.availability.description) }
+        if !model.supports(language: language) { return ("language", "the on-device model does not support \(language)") }
         return nil
     }
 
@@ -51,18 +54,18 @@ public struct AskEngine: Sendable {
         var key: EmbeddingKey
     }
 
-    /// The vector side of retrieval, or why it is skipped.
-    private func vectorSetup(question: String, language: String, allowed: Set<UUID>) -> (Vectors?, String?) {
-        guard reader.settings.enabled else { return (nil, "Note Insights is off, so only your words were matched") }
-        guard let embedder else { return (nil, "this device cannot embed, so only your words were matched") }
+    /// The vector side of retrieval, or why it is skipped (`AskResult.vectors` kind, and the words).
+    private func vectorSetup(question: String, language: String, allowed: Set<UUID>) -> (Vectors?, (kind: String, why: String)?) {
+        guard reader.settings.enabled else { return (nil, ("off", "Note Insights is off, so only your words were matched")) }
+        guard let embedder else { return (nil, ("noEmbedder", "this device cannot embed, so only your words were matched")) }
         guard reader.settings.pins[language] != nil else {
-            return (nil, "vector matching was skipped: this vault has no embeddings for \(language)")
+            return (nil, ("language", "vector matching was skipped: this vault has no embeddings for \(language)"))
         }
         guard let (map, _) = reader.sharedMap(language: language), let key = map.key, key.lang == language else {
-            return (nil, "vector matching was skipped: no embeddings map for \(language) yet")
+            return (nil, ("noMap", "vector matching was skipped: no embeddings map for \(language) yet"))
         }
         guard reader.compatibility(me: me, embedder: embedder, language: language) == .compatible else {
-            return (nil, "vector matching was skipped: this device's embeddings do not match the vault's")
+            return (nil, ("incompatible", "vector matching was skipped: this device's embeddings do not match the vault's"))
         }
         var vectors: [UUID: [Float]] = [:]
         for n in notes where allowed.contains(n.id) {
@@ -70,9 +73,9 @@ public struct AskEngine: Sendable {
                 vectors[n.id] = v
             }
         }
-        guard !vectors.isEmpty else { return (nil, "vector matching was skipped: no embeddings yet") }
+        guard !vectors.isEmpty else { return (nil, ("noVectors", "vector matching was skipped: no embeddings yet")) }
         guard let q = try? EmbeddingInput.vector(question, language: key.lang, revision: key.rev, provider: embedder) else {
-            return (nil, "vector matching was skipped: the question has no words to embed")
+            return (nil, ("unembeddable", "vector matching was skipped: the question has no words to embed"))
         }
         let mean = map.dim.flatMap { d in map.mean.flatMap { Float16Codec.decode($0, count: d) } }
         return (Vectors(question: q, vectors: vectors, mean: mean, key: key), nil)
@@ -100,11 +103,12 @@ public struct AskEngine: Sendable {
         let keyword = AskRetriever.keywordRanking(terms: terms, notes: pool, gens: gens)
         var vectorRank: [UUID] = []
         var setup: Vectors?
+        var vectorsKind = pool.isEmpty ? "none" : "used"
         if !pool.isEmpty {
             let (v, why) = vectorSetup(question: question, language: lang, allowed: Set(pool.map(\.id)))
             setup = v
             if let v { vectorRank = AskRetriever.vectorRanking(query: v.question, vectors: v.vectors, mean: v.mean) }
-            if let why { notices.append(why) }
+            if let why { notices.append(why.why); vectorsKind = why.kind }
         }
         let keep = max(AskRetriever.sourceCount, max(0, o.limit))
         let fused = AskRetriever.fuse(vector: vectorRank, keyword: keyword, modified: modified, allowed: Set(byId.keys), keep: keep)
@@ -143,14 +147,18 @@ public struct AskEngine: Sendable {
                       keywordRank: c.keywordRank, score: (c.score * 10_000).rounded() / 10_000)
             }, sent: [], evidenceTokens: 0, droppedSentences: [], noAnswer: nil)
         }
-        func fallback(missing: String?, dropped: Int = 0) -> AskResult {
+        func fallback(missing: String?, kind: String? = nil, dropped: Int = 0) -> AskResult {
             AskResult(question: question, mode: fallbackMode, lang: lang, enough: false, dropped: dropped, answer: [],
-                      notes: listed.map { result($0, used: false) }, missing: missing, notices: notices, explain: explain)
+                      notes: listed.map { result($0, used: false) }, missing: missing, missingKind: kind, vectors: vectorsKind,
+                      notices: notices, explain: explain)
         }
 
         if o.retrieveOnly { return fallback(missing: nil) }
-        if let why = modelMissing(language: lang) { return fallback(missing: why) }
-        guard let model else { return fallback(missing: "there is no on-device model here") }
+        if let m = modelMissing(language: lang) { return fallback(missing: m.why, kind: m.kind) }
+        guard let model else { return fallback(missing: "there is no on-device model here", kind: "noModel") }
+        // The notes are known now: the caller may show them while the model reads them.
+        o.onRetrieved?(fallback(missing: nil))
+        if Task.isCancelled { return fallback(missing: nil) }
 
         // Sources: the best notes with their passages and (current) summaries as headers.
         var sources: [AskSource] = []
@@ -162,7 +170,7 @@ public struct AskEngine: Sendable {
             sources.append(AskSource(id: "", note: note.id, title: note.input.title, summary: summary, passages: ps.map(\.passage)))
             scores.append(ps.map(\.score))
         }
-        guard !sources.isEmpty else { return fallback(missing: "I couldn't find that in your notes") }
+        guard !sources.isEmpty else { return fallback(missing: "I couldn't find that in your notes", kind: "notFound") }
         var fit = AskRetriever.fit(sources, scores: scores)
         for i in fit.sources.indices { fit.sources[i].id = "S\(i + 1)" }
         let sent = fit.sources
@@ -178,13 +186,13 @@ public struct AskEngine: Sendable {
             answer = try await Self.withTimeout(o.timeout) { try await model.answer(question: question, sources: sent, language: lang) }
         } catch {
             let why = (error as? InsightsProviderError)?.description ?? String(describing: error).prefix(200).description
-            return fallback(missing: why)
+            return fallback(missing: why, kind: "failed")
         }
         let validation = AskValidator.validate(answer, sources: sent)
         explain?.droppedSentences = validation.dropped
         explain?.noAnswer = validation.reason
         guard validation.answers else {
-            return fallback(missing: "I couldn't find that in your notes", dropped: validation.dropped.count)
+            return fallback(missing: "I couldn't find that in your notes", kind: "notFound", dropped: validation.dropped.count)
         }
 
         // Citations drawn by code: the union of the surviving sentences' sources, in order of first use.
@@ -198,7 +206,7 @@ public struct AskEngine: Sendable {
         let rows = usedOrder.compactMap { id in listed.first { $0.note == id } ?? fused.first { $0.note == id } }.map { result($0, used: true) }
             + listed.filter { !usedOrder.contains($0.note) }.map { result($0, used: false) }
         return AskResult(question: question, mode: .answer, lang: lang, enough: true, dropped: validation.dropped.count, answer: sentences,
-                         notes: rows, missing: nil, notices: notices, explain: explain)
+                         notes: rows, missing: nil, missingKind: nil, vectors: vectorsKind, notices: notices, explain: explain)
     }
 
     /// Runs `op`, or throws when it takes longer than `seconds`.
