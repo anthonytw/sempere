@@ -4,6 +4,7 @@
 
 import { t, tn } from "../i18n/index.ts";
 import { Budget } from "../format/attachments.ts";
+import { displayTitle, voiceOrigin } from "../format/displaytitle.ts";
 import { decodeState } from "../format/model.ts";
 import { parsePayload, ShareFormatError } from "../share/container.ts";
 import { ShareBlobs } from "../share/blobs.ts";
@@ -86,7 +87,7 @@ export class ShareApp {
     this.recordings = recordings;
     this.view?.destroy();
     this.view = new NoteView(state, blobs, undefined, (id) => recordings.play(id));
-    const title = state.meta.title || t("Untitled");
+    const title = displayTitle(state.meta.title, voiceOrigin(state.recordings)) || t("Untitled");
     const m = state.meta;
     this.root.replaceChildren(h("div", { class: "app" },
       h("div", { class: "topbar" }, this.banner(),

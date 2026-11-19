@@ -183,6 +183,8 @@ export const catalog = {
   "unreadable": { es: "ilegible" },
   "Untitled": { es: "Sin título" },
   "Vault": { es: "Bóveda" },
+  "Voice note": { es: "Nota de voz" },
+  "Watch voice note": { es: "Nota de voz del reloj" },
   "Voice note from {name}": { es: "Nota de voz de {name}" },
   "Voice note from a device no longer in this vault": { es: "Nota de voz de un dispositivo que ya no está en esta bóveda" },
   "Vault URL": { es: "URL de la bóveda" },
