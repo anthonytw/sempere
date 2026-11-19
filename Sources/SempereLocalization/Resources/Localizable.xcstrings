@@ -28378,6 +28378,19 @@
         }
       }
     },
+    "Transcribe every recording of this note again, in a language you choose" : {
+      "comment" : "Help tag of the Transcribe Again menu in the note's Recordings menu",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a transcribir todas las grabaciones de esta nota en el idioma que elijas"
+          }
+        }
+      }
+    },
     "Transcript" : {
       "comment" : "Button: show the recording's transcript",
       "extractionState" : "manual",
