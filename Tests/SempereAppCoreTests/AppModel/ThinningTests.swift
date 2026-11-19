@@ -278,5 +278,76 @@ extension AppModelSuites {
             #expect(done.deletions > 0)
             #expect(files.reads.isEmpty && files.writes.isEmpty)
         }
+
+        /// A thinning pass held in the middle (a slow automatic run at background priority on an iPad): the user's
+        /// deletes, rename and move are written at once, not queued behind the whole pass. Before, the pass held the
+        /// edit gate from its first note to its last, so a note swiped away while it ran was only deleted when the pass
+        /// ended, and not at all when the app was suspended and ended first (an owner report, 2026-11-19: a notebook
+        /// cleared one swipe at a time on an iPad came back, with no `deleteNote` on any copy).
+        @Test func userEditsAreWrittenWhileAThinningPassRuns() async throws {
+            let model = try await Self.unlockedModel()
+            defer { model.close() }
+            var ids: [UUID] = []
+            for i in 0..<4 {
+                let id = try await model.createNote(title: "Inbox \(i)", paper: .ruled, notebook: "Inbox")
+                for j in 0..<3 { try await model.renameNote(id, to: "Inbox \(i).\(j)") }
+                ids.append(id)
+            }
+            let latch = PauseLatch()
+            model.thinningWillRead = { _ in await latch.pause() }
+            model.thinningConcurrency = 1
+            let pass = Task { try await model.thinVault(rule: .allButCheckpoints, dryRun: false) }
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { latch.reached })
+            let vault = try #require(model.vault)
+
+            let edits = Task {
+                for id in ids.prefix(3) { try await model.deleteNote(id) }
+                try await model.renameNote(ids[3], to: "Kept")
+                _ = try await model.moveNotes([ids[3]], toNotebook: "Elsewhere")
+            }
+            let written = await TS.waitUntil(timeout: .seconds(15)) {
+                ids.prefix(3).allSatisfy { (try? vault.reconstruct(noteId: $0).deleted) == true }
+                    && (try? vault.reconstruct(noteId: ids[3]).meta.notebook) == "Elsewhere"
+            }
+            #expect(written, "the edits waited for the thinning pass")
+            latch.open()
+            let report = try await pass.value
+            try await edits.value
+            #expect(Set(report.notes.map(\.id)).isSuperset(of: ids), "every note thinned: \(report.skipped)")
+            for id in ids.prefix(3) {
+                #expect(try vault.reconstruct(noteId: id).deleted)
+                #expect(model.notes.first { $0.id == id }?.deleted == true)
+            }
+            let kept = try vault.reconstruct(noteId: ids[3])
+            #expect(kept.meta.title == "Kept" && kept.meta.notebook == "Elsewhere")
+        }
+    }
+}
+
+/// Holds every caller of `pause()` until `open()` (thinning's test hook).
+final class PauseLatch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var didReach = false
+
+    /// True once a caller has paused.
+    var reached: Bool { lock.lock(); defer { lock.unlock() }; return didReach }
+
+    func pause() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            didReach = true
+            if isOpen { lock.unlock(); c.resume() } else { waiting.append(c); lock.unlock() }
+        }
+    }
+
+    func open() {
+        lock.lock()
+        isOpen = true
+        let all = waiting
+        waiting = []
+        lock.unlock()
+        for c in all { c.resume() }
     }
 }

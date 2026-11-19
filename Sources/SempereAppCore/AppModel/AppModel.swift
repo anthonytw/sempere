@@ -379,6 +379,8 @@ public final class AppModelCore<Host: AppModelHost> {
     var automaticThinning = false
     /// Notes thinning works on at once (`thinVault`).
     var thinningConcurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
+    /// Tests: awaited before thinning reads each note (`thinVault`), to hold a pass in the middle.
+    @ObservationIgnored var thinningWillRead: (@Sendable (UUID) async -> Void)?
     /// The last automatic run `thinIfDue` started (tests wait for it).
     @ObservationIgnored var automaticThinningRun: Task<Void, Never>?
     /// How far a thinning run (or its preview) has got, counted per note;

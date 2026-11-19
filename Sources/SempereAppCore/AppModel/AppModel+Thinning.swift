@@ -148,17 +148,20 @@ extension AppModelCore {
         var readInFull = 0
         defer { perf.end(interval, "notes=\(work.count) read=\(readInFull) dryRun=\(dryRun)") }
         var changed: [UUID] = []
-        // A real run holds the edit gate throughout (as browser edits and key changes do), so it
-        // never interleaves with them; a preview writes nothing and takes no gate.
-        if !dryRun { await editGate.acquire() }
-        defer { if !dryRun { editGate.release() } }
         try ensureCurrent(gen)
-        let tasks = work.map { id in
+        let willRead = thinningWillRead
+        // Every note is planned first, a few at once, writing nothing and holding no gate: a pass over a large vault at
+        // background priority can take minutes, and the user's edits (a delete, a rename, an adoption) must never
+        // wait for all of it. Before, a real run held the edit gate from its first note to its last, so a note swiped
+        // away meanwhile was deleted only when the pass ended, and never when the app was suspended and ended first
+        // (an owner report, 2026-11-19: a notebook cleared one swipe at a time came back).
+        func plan(_ id: UUID, dryRun: Bool) -> @Sendable () async throws -> (UUID, Result<PreparedCompaction, any Error>) {
             // A note opened since the run started is left alone too (asked again before anything is written).
             let isOpen: (@Sendable () async -> Bool)? = skipOpen
                 ? { @Sendable [weak self] in await self?.isNoteOpen(id) ?? true } : nil
             return { @Sendable () async throws -> (UUID, Result<PreparedCompaction, any Error>) in
                 do {
+                    if dryRun { await willRead?(id) }
                     if let isOpen, await isOpen() { throw ThinningSkippedOpen() }
                     return (id, .success(try await NoteWriter.thin(id, mode: mode, vault: vault, clock: clock, cache: cache,
                                                                   coordinated: false, verify: nil, dryRun: dryRun, now: now,
@@ -170,6 +173,7 @@ extension AppModelCore {
                 }
             }
         }
+        let tasks = work.map { plan($0, dryRun: true) }
         let width = max(1, thinningConcurrency)
         var results: [(UUID, Result<PreparedCompaction, any Error>)] = []
         try await withThrowingTaskGroup(of: (UUID, Result<PreparedCompaction, any Error>).self) { group in
@@ -180,11 +184,35 @@ extension AppModelCore {
             }
             while let done = try await group.next() {
                 results.append(done)
-                thinningProgress?.done = results.count
+                if dryRun { thinningProgress?.done = results.count }
                 if next < tasks.count {
                     group.addTask(operation: tasks[next])
                     next += 1
                 }
+            }
+        }
+        if !dryRun {
+            // Then each note with something to delete, one at a time, under the edit gate for that note only (so it
+            // never interleaves with an edit of the note: both would take the next `seq`), planned again from disk.
+            let planned = results
+            results = []
+            for (id, result) in planned {
+                if case .success(let p) = result, !p.plan.deletions.isEmpty {
+                    await editGate.acquire()
+                    let written: (UUID, Result<PreparedCompaction, any Error>)
+                    do {
+                        try ensureCurrent(gen)
+                        written = try await plan(id, dryRun: false)()
+                    } catch {
+                        editGate.release()
+                        throw error
+                    }
+                    editGate.release()
+                    results.append(written)
+                } else {
+                    results.append((id, result))
+                }
+                thinningProgress?.done = results.count
             }
         }
         report.checked = results.count
