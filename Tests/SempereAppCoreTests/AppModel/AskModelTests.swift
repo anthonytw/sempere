@@ -108,6 +108,20 @@ extension AppModelSuites {
             #expect(model.ask.result?.notes.first?.title == "Bread")
         }
 
+        /// Typing in the field after Return does not cancel the Ask: its answer still arrives and the spinner stops.
+        @Test func editingTheFieldAfterSubmittingStillFinishes() async throws {
+            let gated = GatedAnswer()
+            let (model, _) = try await model(provider: gated)
+            model.askQuestion = question
+            model.submitAsk()
+            #expect(await TS.waitUntil { if case .reading = model.ask.phase { return true } else { return false } })
+            model.askQuestion = question + " And"
+            gated.release()
+            #expect(await TS.waitUntil { model.ask.phase == .done })
+            #expect(model.ask.result?.question == question)
+            #expect(model.ask.result?.mode == .answer)
+        }
+
         @Test func cancelKeepsWhatWasFound() async throws {
             let gated = GatedAnswer()
             let (model, _) = try await model(provider: gated)

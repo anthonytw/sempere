@@ -97,6 +97,8 @@ extension AppModelCore {
         guard canSubmitAsk, let vault else { return }
         let question = askQuestion
         askTask?.cancel()
+        askSerial += 1
+        let serial = askSerial
         let gen = generation
         let type = settingsDeviceType
         let summaries = insightsSummaries
@@ -116,20 +118,22 @@ extension AppModelCore {
                 var options = AskOptions()
                 options.detectLanguage = detect
                 options.onRetrieved = { first in
-                    Task { @MainActor in self?.askRetrieved(first, question: question, generation: gen) }
+                    Task { @MainActor in self?.askRetrieved(first, serial: serial, generation: gen) }
                 }
                 return await AskEngine(reader: reader, notes: notes, me: me, model: model, embedder: embedder)
                     .ask(question, options: options)
             }
             let result = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
-            guard let self, !Task.isCancelled, self.generation == gen, self.askQuestion == question else { return }
+            // The question in the field may have changed since (typing does not cancel): the result is this Ask's, and the
+            // answer names its question (`AskResult.question`). A newer Ask or a closed vault cancels it instead.
+            guard let self, !Task.isCancelled, self.generation == gen, self.askSerial == serial else { return }
             self.ask.result = result
             self.ask.phase = .done
         }
     }
 
-    private func askRetrieved(_ first: AskResult, question: String, generation gen: Int) {
-        guard generation == gen, askQuestion == question, ask.phase == .retrieving else { return }
+    private func askRetrieved(_ first: AskResult, serial: Int, generation gen: Int) {
+        guard generation == gen, askSerial == serial, ask.phase == .retrieving else { return }
         ask.result = first
         ask.phase = .reading(notes: min(first.notes.count, AskRetriever.sourceCount))
     }

@@ -294,6 +294,8 @@ public final class AppModelCore<Host: AppModelHost> {
     public var askQuestion = ""
     public internal(set) var ask = AskModelState()
     @ObservationIgnored var askTask: Task<Void, Never>?
+    /// Counts Asks: a result or a retrieval hand-over is taken only from the latest one (the field's text may change meanwhile).
+    @ObservationIgnored var askSerial = 0
     /// Opt-in Spotlight indexing (`AppModel+Spotlight`, docs/design/1.3-spotlight.md): the per-device records and the
     /// index (`services.spotlightIndex`).
     @ObservationIgnored public let spotlight: SpotlightManager
