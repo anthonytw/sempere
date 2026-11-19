@@ -3416,6 +3416,55 @@
         }
       }
     },
+    "%lld summaries and titles will be made again on your devices, a few at a time while charging." : {
+      "comment" : "Insight language change confirmation: %lld is how many notes have a summary",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld summary and title will be made again on your devices, a few at a time while charging."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld summaries and titles will be made again on your devices, a few at a time while charging."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se volverán a generar %lld de resúmenes y títulos en tus dispositivos, unos pocos cada vez y mientras cargan."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se volverá a generar %lld resumen y título en tus dispositivos, unos pocos cada vez y mientras cargan."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se volverán a generar %lld resúmenes y títulos en tus dispositivos, unos pocos cada vez y mientras cargan."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld transcripts could not be read" : {
       "comment" : "Transcript search: transcripts that failed to load",
       "extractionState" : "manual",
@@ -6330,6 +6379,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cambiar carpeta de copia…"
+          }
+        }
+      }
+    },
+    "Change Language" : {
+      "comment" : "Settings ▸ Note Insights ▸ Insight Language: confirm button",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar idioma"
           }
         }
       }
@@ -13619,6 +13681,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hacer principal…"
+          }
+        }
+      }
+    },
+    "Make Summaries and Titles Again?" : {
+      "comment" : "Settings ▸ Note Insights ▸ Insight Language: confirmation alert title",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Volver a generar los resúmenes y títulos?"
           }
         }
       }
@@ -25730,7 +25805,7 @@
         }
       }
     },
-    "The language of generated summaries and voice-note titles. Same as Note writes each in the language of its note. Choosing a language makes them again in it, a few at a time, on every device of this vault; keywords stay as the note has them." : {
+    "The language of generated summaries and voice-note titles. Same as Note writes each in the language of its note. Changing it makes the summaries and titles again, a few at a time, on every device of this vault; keywords stay in the note's language." : {
       "comment" : "Settings ▸ Note Insights ▸ Insight Language footer",
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -25738,7 +25813,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El idioma de los resúmenes y de los títulos de notas de voz generados. «Igual que la nota» escribe cada uno en el idioma de su nota. Si eliges un idioma, se vuelven a generar en él, unos pocos cada vez, en todos los dispositivos de esta bóveda; las palabras clave se quedan como las tiene la nota."
+            "value" : "El idioma de los resúmenes y de los títulos de notas de voz generados. «Igual que la nota» escribe cada uno en el idioma de su nota. Si lo cambias, los resúmenes y títulos se vuelven a generar, unos pocos cada vez, en todos los dispositivos de esta bóveda; las palabras clave se quedan en el idioma de la nota."
           }
         }
       }

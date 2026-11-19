@@ -15,6 +15,8 @@ import UIKit
 /// Search | Ask, under the search field.
 struct AskTargetPicker: View {
     @AppModelEnvironment private var model
+    /// Puts the focus back in the search field: a tap on a segment takes it from the field on iPad and Mac.
+    var refocus: () -> Void = {}
 
     var body: some View {
         @Bindable var model = model
@@ -25,6 +27,10 @@ struct AskTargetPicker: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .padding(.horizontal, 16).padding(.vertical, 8)
+        .onChange(of: model.askTarget) { _, _ in
+            // After the field has redrawn for the new mode (its prompt changes), or the focus would be lost again.
+            Task { @MainActor in refocus() }
+        }
         .accessibilityIdentifier("ask.target")
         .help("Search matches words; Ask answers a question from your notes, on this device")
     }

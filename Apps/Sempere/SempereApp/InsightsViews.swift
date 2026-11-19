@@ -177,6 +177,8 @@ struct InsightsSettingsSection: View {
     @State private var confirmingOff = false
     @State private var titleFormat = ""
     @State private var pinMove: InsightsSettingsWrite.PinMove?
+    /// The language chosen in the picker while its confirmation shows ("" is Same as Note); nil: none waiting.
+    @State private var pendingLanguage: String?
 
     private var state: InsightsModelState { model.insights }
     private var on: Bool { state.mode == .on }
@@ -311,7 +313,7 @@ struct InsightsSettingsSection: View {
         Section {
             Picker("Summary and Title Language", selection: Binding(
                 get: { state.settings.language ?? "" },
-                set: { new in Task { await model.setInsightsLanguage(new.isEmpty ? nil : new) } })) {
+                set: { new in chooseLanguage(new) })) {
                 Text("Same as Note").tag("")
                 ForEach(languageChoices, id: \.self) { tag in
                     Text(verbatim: Locale.current.localizedString(forIdentifier: tag) ?? tag).tag(tag)
@@ -323,8 +325,28 @@ struct InsightsSettingsSection: View {
         } header: {
             Text("Insight Language")
         } footer: {
-            Text("The language of generated summaries and voice-note titles. Same as Note writes each in the language of its note. Choosing a language makes them again in it, a few at a time, on every device of this vault; keywords stay as the note has them.")
+            Text("The language of generated summaries and voice-note titles. Same as Note writes each in the language of its note. Changing it makes the summaries and titles again, a few at a time, on every device of this vault; keywords stay in the note's language.")
         }
+        .alert("Make Summaries and Titles Again?", isPresented: Binding(get: { pendingLanguage != nil }, set: { if !$0 { pendingLanguage = nil } })) {
+            Button("Change Language") {
+                if let new = pendingLanguage { Task { await model.setInsightsLanguage(new.isEmpty ? nil : new) } }
+                pendingLanguage = nil
+            }
+            Button("Cancel", role: .cancel) { pendingLanguage = nil }
+        } message: {
+            Text("\(summarizedNotes) summaries and titles will be made again on your devices, a few at a time while charging.",
+                 comment: "Insight language change confirmation: %lld is how many notes have a summary")
+        }
+    }
+
+    /// The notes whose summary (and title) the new language replaces.
+    private var summarizedNotes: Int { (state.status?.processed ?? 0) + (state.status?.stale ?? 0) }
+
+    /// A language picked in the picker: applied at once when no note has a summary, else after a confirmation (Cancel keeps
+    /// the old value, since the picker reads the setting).
+    private func chooseLanguage(_ new: String) {
+        guard new != (state.settings.language ?? "") else { return }
+        if summarizedNotes > 0 { pendingLanguage = new } else { Task { await model.setInsightsLanguage(new.isEmpty ? nil : new) } }
     }
 
     // MARK: Voice-note titles (D14)
