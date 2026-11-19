@@ -151,6 +151,24 @@ extension NoteDisplayTitleTests {
         }
     }
 
+    /// Ask's label words leave out a voice note's default title whether it is made up or was stored by 1.0 through 1.2,
+    /// while display still shows the stored one (`showsDefault` is false for it).
+    func testAStoredDefaultOfAnOlderNoteIsNoChosenTitle() throws {
+        let start = try XCTUnwrap(RFC3339.parse("2026-10-07T14:32:00Z"))
+        let legacy = VoiceOrigin(started: start)   // adopted before 1.3: no zone
+        let stored = "Voice note 2026-10-07 14:32"
+        XCTAssertTrue(NoteDisplayTitle.isUnchosen(stored: stored, origin: legacy, generated: nil))
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: stored, origin: legacy, generated: nil), "display is unchanged")
+        XCTAssertEqual(NoteDisplayTitle.resolve(stored: stored, origin: legacy, generated: nil), stored)
+        XCTAssertTrue(NoteDisplayTitle.isUnchosen(stored: "", origin: legacy, generated: nil))
+        XCTAssertFalse(NoteDisplayTitle.isUnchosen(stored: stored, origin: legacy, generated: "2026-10-07 14.32 Lab"), "a derived title counts")
+        XCTAssertFalse(NoteDisplayTitle.isUnchosen(stored: "Lab", origin: legacy, generated: nil), "the user's title counts")
+        XCTAssertFalse(NoteDisplayTitle.isUnchosen(stored: stored, origin: nil, generated: nil), "no voice note: the stored title is chosen")
+        var s = NoteSummary(id: UUID(), title: stored, tags: [], notebook: nil, deleted: false, pages: 1, strokes: 0, modified: nil, problem: nil)
+        s.voice = legacy
+        XCTAssertTrue(s.hasUnchosenTitle())
+    }
+
     func testShowsDefaultOnlyForTheMadeUpTitle() {
         XCTAssertTrue(NoteDisplayTitle.showsDefault(stored: "", origin: origin(), generated: nil))
         XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: "", origin: origin(), generated: "2026-11-16 14.32 Lab"), "a derived title")
@@ -172,7 +190,7 @@ extension NoteDisplayTitleTests {
         XCTAssertEqual(s.showing(title: "  ").title, "")
     }
 
-    func testFindTakesTheShownTitleOnlyWhenNoStoredTitleMatches() throws {
+    func testFindTakesTheShownTitleAndACollisionWithAStoredTitleIsAmbiguous() throws {
         let origin = VoiceOrigin(started: started, tz: "America/New_York", source: "phone")
         func summary(_ title: String) -> NoteSummary {
             var s = NoteSummary(id: UUID(), title: title, tags: [], notebook: nil, deleted: false, pages: 1, strokes: 0, modified: nil, problem: nil)
@@ -184,6 +202,15 @@ extension NoteDisplayTitleTests {
         XCTAssertEqual(try NoteSummary.find("voice note x", in: [voice, named], shown: shown).id, voice.id)
         XCTAssertEqual(try NoteSummary.find("Lab", in: [voice, named], shown: shown).id, named.id)
         XCTAssertThrowsError(try NoteSummary.find("voice note x", in: [voice, named]))
+        // One note's stored title that is another's shown title: ambiguous, both listed, never a silent pick.
+        let typed = summary("Voice note X")
+        XCTAssertThrowsError(try NoteSummary.find("Voice note X", in: [voice, typed, named], shown: shown)) { error in
+            guard case NoteSummary.LookupError.ambiguous(_, let ids)? = error as? NoteSummary.LookupError else {
+                return XCTFail("\(error)")
+            }
+            XCTAssertEqual(Set(ids), [voice.id, typed.id])
+        }
+        XCTAssertEqual(try NoteSummary.find("Voice note X", in: [voice, typed, named]).id, typed.id, "without shown titles: the stored one")
     }
 }
 

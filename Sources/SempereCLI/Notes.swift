@@ -81,10 +81,11 @@ enum NoteTitles {
         return out
     }
 
-    /// The notes whose shown title is the made-up default, which Ask leaves out of its label words.
+    /// The notes whose title is no word of anyone's choosing (a voice note's default, made up or stored before 1.3, with
+    /// no derived title), which Ask leaves out of its label words.
     static func defaultTitled(_ notes: [NoteSummary], in vault: Vault) -> Set<UUID> {
         let generated = generated(for: notes, in: vault)
-        return Set(notes.filter { $0.showsDefaultTitle(generated: generated[$0.id]) }.map(\.id))
+        return Set(notes.filter { $0.hasUnchosenTitle(generated: generated[$0.id]) }.map(\.id))
     }
 
     /// What the CLI shows as `note`'s title (empty: no title and no voice note; callers say "(untitled)").

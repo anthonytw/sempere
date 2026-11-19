@@ -59,20 +59,27 @@ public enum NoteDisplayTitle {
         return (words ?? .builtIn(locale: locale)).prefix(origin.source) + " " + f.string(from: origin.started)
     }
 
-    /// `DateFormatter`s by (locale identifier, time zone identifier): one per pair, made once. `DateFormatter.string(from:)`
-    /// is thread-safe once configured, and the cache's lock covers the creation.
+    /// `DateFormatter`s by (locale, time zone identifier): one per pair, made once. The key is the `Locale` value, not its
+    /// identifier, so two locales of one identifier with other preferences (a 24-hour override) never share one.
+    /// `DateFormatter.string(from:)` is thread-safe once configured; the lock covers the creation and a first format,
+    /// which builds the ICU formatter lazily (swift-corelibs-foundation does it on first use, unlocked).
     private final class FormatterCache: @unchecked Sendable {
+        private struct Key: Hashable {
+            var locale: Locale
+            var timeZone: String
+        }
         private let lock = NSLock()
-        private var formatters: [String: DateFormatter] = [:]
+        private var formatters: [Key: DateFormatter] = [:]
 
         func formatter(locale: Locale, timeZone: TimeZone) -> DateFormatter {
-            let key = locale.identifier + "\u{1}" + timeZone.identifier
+            let key = Key(locale: locale, timeZone: timeZone.identifier)
             lock.lock(); defer { lock.unlock() }
             if let f = formatters[key] { return f }
             let f = DateFormatter()
             f.locale = locale
             f.timeZone = timeZone
             f.setLocalizedDateFormatFromTemplate("yMMMdjmm")
+            _ = f.string(from: .distantPast)
             formatters[key] = f
             return f
         }
@@ -130,6 +137,14 @@ public enum NoteDisplayTitle {
         let t = stored.trimmingCharacters(in: .whitespacesAndNewlines)
         if t.isEmpty, let origin { return defaultTitle(for: origin, words: words, locale: locale) }
         return stored
+    }
+
+    /// True when a voice note's title is no word of anyone's choosing: its stored title is blank or a default stored before
+    /// 1.3 (`isStoredDefault`, "Voice note 2026-10-07 14:32") and Note Insights derived none. Ask leaves such a title out of
+    /// its label words and keyword ranking, whether it shows as the made-up default or as the stored one.
+    public static func isUnchosen(stored: String, origin: VoiceOrigin?, generated: String?) -> Bool {
+        guard let origin, isStoredDefault(stored, origin: origin) else { return false }
+        return (generated?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
     }
 
     /// True when `resolve` would show the made-up default ("Voice note <date>") rather than a title the user entered or
@@ -215,6 +230,11 @@ extension NoteSummary {
         var copy = self
         copy.title = title
         return copy
+    }
+
+    /// True when this note's title is no word of anyone's choosing (`NoteDisplayTitle.isUnchosen`): Ask's label words.
+    public func hasUnchosenTitle(generated: String? = nil) -> Bool {
+        NoteDisplayTitle.isUnchosen(stored: title, origin: voice, generated: generated)
     }
 
     /// True when `displayTitle` is the made-up default (`NoteDisplayTitle.showsDefault`).

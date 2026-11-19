@@ -104,7 +104,8 @@ extension AppModelCore {
         let summaries = insightsSummaries
         // Results name notes as the list does (a voice note's derived or default title).
         let titles = Dictionary(summaries.map { ($0.id, displayTitle($0)) }, uniquingKeysWith: { a, _ in a })
-        let defaultTitled = Set(summaries.filter { showsDefaultTitle($0) }.map(\.id))
+        // A voice note's default title (made up, or stored before 1.3) is no label word.
+        let defaultTitled = Set(summaries.filter { $0.hasUnchosenTitle(generated: insightsIndex.shown[$0.id]?.generatedTitle) }.map(\.id))
         refreshInsightsCapability()
         let model = insightsRuntime.model, embedder = insightsRuntime.embedder
         let me = vault.writerDevice

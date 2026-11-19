@@ -80,19 +80,22 @@ public struct NoteSummary: Hashable, Sendable, Codable {
     /// title (case-insensitive).
     ///
     /// `shown` makes the lookup also take the title a note is shown with when it has none of its own (a voice note's
-    /// derived or default title, `NoteDisplayTitle`): it is asked only when no stored title matches, with the notes
-    /// whose stored title is blank or a default, and a stored title always wins.
+    /// derived or default title, `NoteDisplayTitle`), asked with the notes whose stored title is blank or a default. A
+    /// query that is one note's stored title and another's shown title is ambiguous (both ids), never a silent pick.
     public static func find(_ query: String, in notes: [NoteSummary],
                             shown: (([NoteSummary]) -> [UUID: String])? = nil) throws -> NoteSummary {
         if let id = try matchID(query, among: notes.map(\.id)),
            let hit = notes.first(where: { $0.id == id }) { return hit }
         let q = query.lowercased()
         var hits = notes.filter { $0.title.lowercased() == q }
-        if hits.isEmpty, let shown {
-            let candidates = notes.filter { !$0.deleted && $0.voice != nil && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice) }
+        if let shown {
+            let stored = Set(hits.map(\.id))
+            let candidates = notes.filter {
+                !$0.deleted && $0.voice != nil && !stored.contains($0.id) && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice)
+            }
             if !candidates.isEmpty {
                 let names = shown(candidates)
-                hits = candidates.filter { names[$0.id]?.lowercased() == q }
+                hits += candidates.filter { names[$0.id]?.lowercased() == q }
             }
         }
         guard let first = hits.first else { throw LookupError.notFound(query) }

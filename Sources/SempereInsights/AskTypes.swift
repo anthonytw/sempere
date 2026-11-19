@@ -44,8 +44,8 @@ public struct AskNote: Hashable, Sendable {
 
     /// The asks' notes of a vault's summaries: the insight inputs, with their page texts. `titles` are the titles the
     /// caller shows (`NoteDisplayTitle`: a voice note's derived or default title); a result names a note by them, else by
-    /// its stored title. `defaultTitled` are the notes whose shown title is the made-up default: it names them in a result
-    /// but never counts as a label word.
+    /// its stored title. `defaultTitled` are the notes whose title is a voice note's default (made up, or stored before 1.3;
+    /// `NoteDisplayTitle.isUnchosen`): it names them in a result but never counts as a label word.
     public static func notes(_ vault: Vault, summaries: [NoteSummary], titles: [UUID: String] = [:],
                              defaultTitled: Set<UUID> = []) -> [AskNote] {
         let inputs = InsightsNotes.inputs(vault, summaries: summaries)
