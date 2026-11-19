@@ -640,6 +640,41 @@ struct SyncSessionTests {
         session.stop()
     }
 
+    /// Review of build 111, N1: while the provider stays offline (no fewer files waiting look after look), the looks
+    /// stop after `providerRecheckLimit` in a row, until the next run counts again.
+    @Test func providerLooksStopWhileNothingUploads() async throws {
+        let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
+                                  run: { _ in SyncReport() }, countUnconfirmed: { 0 })
+        session.kind = .folder
+        session.uploadsViaICloud = true
+        session.tick = .milliseconds(5)
+        session.providerRecheckDelays = [0.005]
+        session.providerRecheckLimit = 3
+        let looks = Sync.Counter()
+        session.providerSummary = { ProviderUploads.Summary(count: 2) }
+        session.providerRecheck = {
+            _ = looks.add(1)
+            return ProviderUploads.Summary(count: 2)
+        }
+        session.vaultUnlocked()
+        _ = await session.syncNow()
+        session.start()
+        for _ in 0..<200 where looks.add(0) < 3 { try await Task.sleep(for: .milliseconds(5)) }
+        try await Task.sleep(for: .milliseconds(150))
+        // (The loop's own first count may start the looks over once, before the first.)
+        let stopped = looks.add(0)
+        #expect((3...6).contains(stopped))
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(looks.add(0) == stopped, "no more looks while nothing uploads")
+        #expect(session.status.kind == .waitingForProvider(2))
+        // The next run counts again and the looks start over, as many again.
+        _ = await session.syncNow()
+        for _ in 0..<200 where looks.add(0) < stopped + 3 { try await Task.sleep(for: .milliseconds(5)) }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(looks.add(0) == stopped + 3)
+        session.stop()
+    }
+
     @Test func aFolderInICloudNeverSaysSyncedWhileUploadsWait() async throws {
         let session = SyncSession(locationID: UUID(), vaultID: UUID(), name: "V", lastSuccess: nil,
                                   run: { _ in SyncReport() }, countUnconfirmed: { 0 })

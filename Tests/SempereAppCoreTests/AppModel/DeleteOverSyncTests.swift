@@ -27,6 +27,16 @@ extension AppModelSuites {
             return done()
         }
 
+        /// `rounds` two-way runs on both, each with a short settle for what a run starts after it returns (a refresh of
+        /// the list): a fixed number of runs, nothing to wait for (`sync`'s two-second wait per round was idle there).
+        static func sync(_ w: F.World, rounds: Int) async {
+            for _ in 0..<rounds {
+                await w.a.model.syncAllTargetsNow()
+                await w.b.model.syncAllTargetsNow()
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+
         static func expectDeleted(_ w: F.World, _ ids: [UUID], _ sourceLocation: SourceLocation = #_sourceLocation) throws {
             for id in ids {
                 #expect(try #require(w.a.model.vault).reconstruct(noteId: id).deleted, "A's copy", sourceLocation: sourceLocation)
@@ -69,7 +79,7 @@ extension AppModelSuites {
             for c in captures { try? CaptureWriter.store(c, in: vb.inboxURL) }
             await w.b.model.adoptInbox()
             _ = try await w.a.model.thinVault(rule: .allButCheckpoints, dryRun: false)
-            _ = await Self.sync(w, rounds: 3) { false }
+            await Self.sync(w, rounds: 3)
             try Self.expectDeleted(w, ids)
             #expect(try #require(w.a.model.vault).reconstruct(noteId: ids[2]).meta.title == "Renamed on B", "B's edit is kept")
         }
@@ -83,6 +93,7 @@ extension AppModelSuites {
             let bID = w.b.vaultID
             let coordinator = w.b.model.syncCoordinator
             coordinator.start()   // every vault syncs, as in the app
+            defer { for id in coordinator.sessions.keys { _ = coordinator.stop(id) } }
             w.b.model.close()
             await w.b.model.closingEditor?.value
 
@@ -95,7 +106,7 @@ extension AppModelSuites {
             try await w.b.model.unlock(identityText: w.key)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { ids.allSatisfy { id in w.b.model.notes.first { $0.id == id }?.deleted == true } })
             try await w.b.model.renameNote(ids[0], to: "Renamed after")
-            _ = await Self.sync(w, rounds: 3) { false }
+            await Self.sync(w, rounds: 3)
             try Self.expectDeleted(w, ids)
         }
 
@@ -127,7 +138,7 @@ extension AppModelSuites {
             try await w.b.model.renameNote(ids[0], to: "B")
             await w.b.model.syncAllTargetsNow()
             try await Self.reopenA(w, id: vid)
-            _ = await Self.sync(w, rounds: 4) { false }
+            await Self.sync(w, rounds: 4)
             try Self.expectDeleted(w, ids)
         }
 
@@ -146,7 +157,7 @@ extension AppModelSuites {
             }
             await w.b.model.syncAllTargetsNow()
             try await Self.reopenA(w, id: vid)
-            _ = await Self.sync(w, rounds: 4) { false }
+            await Self.sync(w, rounds: 4)
             try Self.expectDeleted(w, ids)
         }
 
@@ -163,7 +174,7 @@ extension AppModelSuites {
             try await Self.reopenA(w, id: vid)
             await w.a.model.syncAllTargetsNow()
             await w.b.model.syncAllTargetsNow()
-            _ = await Self.sync(w, rounds: 4) { false }
+            await Self.sync(w, rounds: 4)
             try Self.expectDeleted(w, ids)
         }
     }

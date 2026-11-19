@@ -250,7 +250,7 @@ extension AppModelCore {
                   let access = try? FolderTargetAccess.open(target, bookmarks: bookmarks) else { return nil }
             defer { access.close() }
             return await Task.detached(priority: .utility) {
-                ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory, written: [], check: uploadCheck)
+                ProviderUploads.recheck(folder: access.folder, stateDirectory: stateDirectory, check: uploadCheck)
             }.value
         }
         session.providerSummary = { await Task.detached(priority: .utility) { ProviderUploads.summary(in: stateDirectory) }.value }

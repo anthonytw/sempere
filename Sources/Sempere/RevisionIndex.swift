@@ -216,6 +216,27 @@ extension Vault {
         return CompactionPlanner.mayDelete(hit, noteId: noteId, mode: mode, now: now)
     }
 
+    /// Whether compacting `noteId` by `mode` may delete anything, from its revisions' metadata only (the summary
+    /// cache's, else a read without stroke geometry): what `loadForCompaction` decides before it reads the note in
+    /// full, without that read, the plan or the snapshots. The app's thinning asks it first for every note and
+    /// thins only those it says yes for. A note with nothing to delete has its summary stored in `cache`, as there.
+    ///
+    /// - Throws: as `revisionIndex` (an unreadable revision stops the note).
+    public func mayCompact(_ noteId: UUID, mode: CompactionMode, now: Date = Date(), cache: SummaryCache?) throws -> Bool {
+        let names = try revisionNames(of: noteId)
+        if let verdict = Self.cachedCompactionVerdict(noteId, revisions: names, mode: mode, now: now, cache: cache) {
+            return verdict
+        }
+        let lite = try loadNote(noteId, names: names, detail: .withoutStrokePoints)
+        if let (name, _) = lite.failures.min(by: { $0.key < $1.key }) {
+            throw CompactionError.unreadableRevision(name.filename)
+        }
+        let metas = lite.revisions.sorted { $0.name < $1.name }.map(RevisionMeta.init)
+        let may = CompactionPlanner.mayDelete(metas, noteId: noteId, mode: mode, now: now)
+        if !may { cache?.store(summary(of: noteId, loaded: lite), revisions: names, history: metas) }
+        return may
+    }
+
     /// The most plaintext `loadForCompaction` keeps per note between its two
     /// decodes; a larger note is read again for the full decode instead.
     static let compactionPlainBytes = 32 << 20

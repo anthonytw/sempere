@@ -136,11 +136,49 @@ public enum ProviderUploads {
     /// (it never recorded what it wrote): `update` then rescans the folder.
     @discardableResult
     public static func begin(stateDirectory: URL) -> Bool {
-        var r = record(in: stateDirectory)
-        let interrupted = r.inFlight
-        r.inFlight = true
-        save(r, in: stateDirectory)
-        return interrupted
+        exclusive(stateDirectory) {
+            var r = record(in: stateDirectory)
+            let interrupted = r.inFlight
+            r.inFlight = true
+            save(r, in: stateDirectory)
+            return interrupted
+        }
+    }
+
+    /// One lock per state directory: `begin`, `update` and `recheck` read, change and write the record whole, and the
+    /// app's look between runs (`recheck`) may overlap a run's `update`; without it either could write over what the
+    /// other just recorded (a run's new paths lost, its in-flight mark cleared).
+    private static let locks = Locks()
+
+    private final class Locks: @unchecked Sendable {
+        private let lock = NSLock()
+        private var byPath: [String: NSLock] = [:]
+        func lock(for directory: URL) -> NSLock {
+            lock.lock()
+            defer { lock.unlock() }
+            let key = directory.standardizedFileURL.path
+            if let l = byPath[key] { return l }
+            let l = NSLock()
+            byPath[key] = l
+            return l
+        }
+    }
+
+    private static func exclusive<T>(_ stateDirectory: URL, _ body: () -> T) -> T {
+        let lock = locks.lock(for: stateDirectory)
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
+    /// Between runs: asks the provider again about the paths recorded as waiting, writes nothing new to the list and
+    /// leaves a run's in-flight mark as it found it (a run may be under way). Returns what still waits.
+    @discardableResult
+    public static func recheck(folder: URL, stateDirectory: URL, check: Check, now: Date = Date()) -> Summary {
+        exclusive(stateDirectory) {
+            reconcile(folder: folder, stateDirectory: stateDirectory, written: [], rescan: false, keepInFlight: true,
+                      check: check, now: now)
+        }
     }
 
     /// After a run into `folder`: the paths it wrote (`written`) join those waiting (with every file of the folder
@@ -148,6 +186,14 @@ public enum ProviderUploads {
     /// actor (a resource lookup per file).
     @discardableResult
     public static func update(folder: URL, stateDirectory: URL, written: [String], rescan: Bool = false, check: Check, now: Date = Date()) -> Summary {
+        exclusive(stateDirectory) {
+            reconcile(folder: folder, stateDirectory: stateDirectory, written: written, rescan: rescan, keepInFlight: false,
+                      check: check, now: now)
+        }
+    }
+
+    private static func reconcile(folder: URL, stateDirectory: URL, written: [String], rescan: Bool, keepInFlight: Bool,
+                                  check: Check, now: Date) -> Summary {
         let previous = record(in: stateDirectory)
         var candidates = previous.paths + written
         // A rescan only for a provider's folder: a drive's or a local folder's files are never waiting.
@@ -162,6 +208,7 @@ public enum ProviderUploads {
         var out = Record()
         // A rescan that stopped at its cap did not look at every file: the record is incomplete (review of #91).
         out.truncated = capped
+        out.inFlight = keepInFlight && previous.inFlight
         for path in candidates where seen.insert(path).inserted {
             let answer = answer(for: folder.appendingPathComponent(path), inProvider: inProvider, check: check, now: now)
             switch answer {

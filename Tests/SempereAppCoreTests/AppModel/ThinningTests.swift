@@ -321,6 +321,46 @@ extension AppModelSuites {
             let kept = try vault.reconstruct(noteId: ids[3])
             #expect(kept.meta.title == "Kept" && kept.meta.notebook == "Elsewhere")
         }
+
+        /// Review of build 111, B1: the pass holds the gate only per note, and a device change (or re-encryption) opens
+        /// the vault again under a new epoch (`adoptReopened`) without a new `generation`. A pass held between its checks
+        /// and its writes while a device is removed writes nothing under the old key afterward and deletes no autosave;
+        /// it ends cancelled, and the automatic run is due again.
+        @Test func aKeyChangeDuringAPassStopsItBeforeAnythingIsWrittenUnderTheOldKey() async throws {
+            let w = try await DeviceWorld.make(others: ["Old Mac"])
+            let model = try await w.model()
+            defer { model.close() }
+            var ids: [UUID] = []
+            for i in 0..<2 {
+                let id = try await model.createNote(title: "Note \(i)", paper: .ruled, notebook: nil)
+                for j in 0..<3 { try await model.renameNote(id, to: "Note \(i).\(j)") }
+                ids.append(id)
+            }
+            let vault = try #require(model.vault)
+            func files(_ id: UUID) throws -> Set<String> { Set(try vault.revisionNames(of: id).map(\.filename)) }
+            var before: [UUID: Set<String>] = [:]
+            for id in ids { before[id] = try files(id) }
+            let latch = PauseLatch()
+            model.thinningWillRead = { _ in await latch.pause() }
+            model.thinningConcurrency = 1
+            let pass = Task { try await model.thinVault(rule: .allButCheckpoints, dryRun: false) }
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { latch.reached })
+
+            let oldMac = try #require(w.others["Old Mac"]?.keys.id)
+            let epochBefore = model.keyEpoch
+            _ = try await model.removeDevices([oldMac])
+            #expect(model.keyEpoch > epochBefore)
+            #expect(model.vault?.manifest.epoch == 2)
+            latch.open()
+            await #expect(throws: CancellationError.self) { try await pass.value }
+            for id in ids {
+                #expect(try files(id) == before[id], "nothing written or deleted under the old key")
+            }
+            // The next pass runs under the new key and thins them.
+            model.thinningWillRead = nil
+            let report = try await model.thinVault(rule: .allButCheckpoints, dryRun: false)
+            #expect(Set(report.notes.map(\.id)) == Set(ids), "\(report.skipped)")
+        }
     }
 }
 

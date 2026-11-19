@@ -141,7 +141,14 @@ public final class SyncSession {
     @ObservationIgnored var providerRecheck: (@Sendable () async -> ProviderUploads.Summary?)?
     /// The delays between those looks (the last repeats).
     @ObservationIgnored var providerRecheckDelays: [TimeInterval] = [15, 30, 60, 120, 300]
+    /// The most looks in a row that find no fewer files waiting (the provider offline): then the loop stops looking
+    /// until the next run's count (about 45 minutes with the delays above).
+    @ObservationIgnored var providerRecheckLimit = 12
     @ObservationIgnored private var providerRecheckStep = 0
+    /// Looks in a row since the waiting count last went down (or since a run's count).
+    @ObservationIgnored private var providerRecheckIdle = 0
+    /// Runs started so far: a look that a run overlapped keeps its answer to itself (the run's count is newer).
+    @ObservationIgnored private var runsStarted = 0
     @ObservationIgnored private var providerRecheckDue: Date?
     /// The folder is in iCloud Drive (the wording names it).
     @ObservationIgnored var uploadsViaICloud = false
@@ -224,7 +231,11 @@ public final class SyncSession {
                 if self.mayRunNow, self.schedule.isDue(now: self.now()) {
                     _ = await self.runOnce(interactive: self.mayMount(demanded: self.schedule.demanded))
                 }
-                if let due = self.providerRecheckDue, self.now() >= due, !self.isSyncing { await self.recheckProvider() }
+                if let due = self.providerRecheckDue, self.now() >= due {
+                    // A run the loop did not start is going: its count plans the next look; until then the look waits
+                    // a step, so the loop does not wake every tick for it.
+                    if self.isSyncing { self.postponeProviderRecheck() } else { await self.recheckProvider() }
+                }
                 guard !Task.isCancelled else { return }
                 let nap = Task { [delay = self.sleepDuration()] in _ = try? await Task.sleep(for: delay) }
                 self.sleeper = nap
@@ -369,6 +380,7 @@ public final class SyncSession {
             await admit { [weak self] in mode == .twoWay || self?.isOpenVault == true }
             defer { release() }
             isSyncing = true
+            runsStarted += 1
             schedule.started(at: now())
             defer {
                 if mode == .twoWay { afterTwoWayRun() }
@@ -455,18 +467,42 @@ public final class SyncSession {
             providerRecheckStep = 0
             return
         }
-        if fresh { providerRecheckStep = 0 }
+        if fresh {
+            providerRecheckStep = 0
+            providerRecheckIdle = 0
+        }
         let delays = providerRecheckDelays
-        guard !delays.isEmpty else { return }
+        guard !delays.isEmpty, providerRecheckIdle < providerRecheckLimit else {
+            providerRecheckDue = nil
+            return
+        }
         providerRecheckDue = now().addingTimeInterval(delays[min(providerRecheckStep, delays.count - 1)])
         providerRecheckStep += 1
+    }
+
+    /// The look fell due while a run is going: due again after the current step's delay (the run's count usually
+    /// plans it first).
+    private func postponeProviderRecheck() {
+        let delays = providerRecheckDelays
+        guard !delays.isEmpty else { providerRecheckDue = nil; return }
+        providerRecheckDue = now().addingTimeInterval(delays[min(max(providerRecheckStep - 1, 0), delays.count - 1)])
     }
 
     /// One look at the waiting files (`providerRecheck`); the status follows.
     func recheckProvider() async {
         providerRecheckDue = nil
         guard let providerRecheck else { return }
-        if let summary = await providerRecheck() { apply(summary) }
+        let before = providerPending
+        let runs = runsStarted
+        let summary = await providerRecheck()
+        // A run started meanwhile counts again when it ends (`recount`), and plans the next look.
+        guard runs == runsStarted, !isSyncing else { return }
+        if let summary {
+            apply(summary)
+            providerRecheckIdle = providerPending < before ? 0 : providerRecheckIdle + 1
+        } else {
+            providerRecheckIdle += 1
+        }
         planProviderRecheck(fresh: false)
     }
 

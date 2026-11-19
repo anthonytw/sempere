@@ -75,6 +75,7 @@ struct VersionHistoryAppTests {
     @Test func thinningProgressHeadline() {
         #expect(ThinningProgress(done: 120, total: 640, dryRun: true).headline == "Checking notes: 120 of 640")
         #expect(ThinningProgress(done: 3, total: 12, dryRun: false).headline == "Thinning notes: 3 of 12")
+        #expect(ThinningProgress(done: 5, total: 640, dryRun: false, checking: true).headline == "Checking notes: 5 of 640")
     }
 
     // MARK: - Menu

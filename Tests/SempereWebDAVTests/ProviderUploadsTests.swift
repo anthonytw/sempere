@@ -122,4 +122,49 @@ struct ProviderUploadsTests {
         #expect(try !remote.write(["a.age"], .data(Data([3])), condition: .create), "a refused write is not logged")
         #expect(log.paths == ["settings.age", "a.age"])
     }
+
+    /// Review of build 111, S1: the app's look between runs (`recheck`) and a run's `update` read, change and write the
+    /// same record. A look that overlaps a run never drops the paths the run recorded, and leaves its in-flight mark.
+    @Test func aRecheckOverlappingARunKeepsItsPathsAndItsMark() async throws {
+        let dir = try TestTemp.directory("provider-state")
+        let folder = try TestTemp.directory("provider-folder")
+        ProviderUploads.save(ProviderUploads.Record(paths: ["old.age"]), in: dir)
+        #expect(!ProviderUploads.begin(stateDirectory: dir))
+        // The look answers slowly for the file it finds waiting, so the run's update lands while it asks.
+        let asking = Sync.Flag()
+        let slow: ProviderUploads.Check = { url in
+            if url == folder { return .uploaded }
+            asking.set()
+            Thread.sleep(forTimeInterval: 0.3)
+            return .waiting
+        }
+        let look = Task.detached { ProviderUploads.recheck(folder: folder, stateDirectory: dir, check: slow) }
+        for _ in 0..<200 where !asking.isSet { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(asking.isSet)
+        #expect(ProviderUploads.record(in: dir).inFlight, "the look leaves the run's mark")
+        let run = Task.detached {
+            ProviderUploads.update(folder: folder, stateDirectory: dir, written: ["new.age"],
+                                   check: { $0 == folder ? .uploaded : .waiting })
+        }
+        _ = await look.value
+        #expect(await run.value.count == 2)
+        let record = ProviderUploads.record(in: dir)
+        #expect(Set(record.paths) == ["old.age", "new.age"], "the run's new path survives the look")
+        #expect(!record.inFlight, "the run's update clears its own mark")
+
+        // A look alone keeps the mark of a run under way.
+        ProviderUploads.begin(stateDirectory: dir)
+        #expect(ProviderUploads.recheck(folder: folder, stateDirectory: dir, check: { $0 == folder ? .uploaded : .waiting }).count == 2)
+        #expect(ProviderUploads.record(in: dir).inFlight)
+    }
+}
+
+/// Test helpers for the overlapping look.
+private enum Sync {
+    final class Flag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func set() { lock.lock(); value = true; lock.unlock() }
+        var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    }
 }

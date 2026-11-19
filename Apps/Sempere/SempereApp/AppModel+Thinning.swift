@@ -17,9 +17,10 @@ extension ThinningPreference {
 }
 
 extension ThinningProgress {
-    /// "Checking notes: 120 of 640" while a preview runs, "Thinning notes: …" while a run does.
+    /// "Checking notes: 120 of 640" while a preview runs (and a run checks which notes to thin), "Thinning notes: …"
+    /// while a run thins them.
     var headline: String {
-        dryRun
+        checking
             ? String(localized: "Checking notes: \(done) of \(total)", comment: "Thinning preview progress")
             : String(localized: "Thinning notes: \(done) of \(total)", comment: "Thinning progress")
     }
