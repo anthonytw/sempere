@@ -29,12 +29,22 @@ final class SpotlightRuntime {
     /// closed do not linger until they expire, then donates everything again (which also renews the expiry).
     var needsFull = true
     var task: Task<Void, Never>?
-    var running = false
+    var running = false {
+        didSet { if !running { let waiting = idleWaiters; idleWaiters = []; for w in waiting { w.resume() } } }
+    }
+    var idleWaiters: [CheckedContinuation<Void, Never>] = []
     var again = false
     /// A pass was wanted while the app was not active (`.complete` forbids index writes while the device is locked).
     var deferred = false
     /// Pause after a change before the pass runs.
     var debounce: Duration = .seconds(2)
+
+    /// Returns once no pass is in flight (at once when none is): a removal waits for it, so an upsert batch the pass
+    /// had already sent cannot land after the removal.
+    func untilIdle() async {
+        guard running else { return }
+        await withCheckedContinuation { idleWaiters.append($0) }
+    }
 
     func reset() {
         task?.cancel()
@@ -74,6 +84,7 @@ extension AppModelCore {
         spotlightRuntime.task?.cancel()
         if mode == .off {
             spotlightRuntime.reset()
+            await spotlightRuntime.untilIdle()
             await spotlight.removeDomain(id)
             await spotlight.clearIndexIfNoneOn()
         } else {
@@ -92,7 +103,9 @@ extension AppModelCore {
         spotlightMode = .off
         spotlightNotice = notice
         spotlightRuntime.reset()
+        let runtime = spotlightRuntime
         Task {
+            await runtime.untilIdle()
             await spotlight.removeDomain(id)
             await spotlight.clearIndexIfNoneOn()
         }
@@ -188,6 +201,11 @@ extension AppModelCore {
         } while runtime.again && spotlightMode.isOn
     }
 
+    /// Checked immediately before every index write: a pass that resumes after the switch changed sends nothing.
+    private func canSend(_ gen: Int, _ mode: SpotlightMode) -> Bool {
+        spotlightMode == mode && mode.isOn && gen == generation
+    }
+
     private func spotlightOnePass() async {
         guard let vault, spotlightMode.isOn else { return }
         let gen = generation
@@ -216,7 +234,7 @@ extension AppModelCore {
         let plan = await Task.detached(priority: .utility) {
             SpotlightPlanner.plan(vaultId: id, notes: snapshot, options: options, transcripts: transcripts, notDownloaded: waiting)
         }.value
-        guard gen == generation, spotlightMode == mode else { return }
+        guard canSend(gen, mode) else { return }
         spotlightOmitted = plan.omitted
         if runtime.needsFull {
             guard await spotlight.removeDomain(id) else { return }
@@ -228,12 +246,14 @@ extension AppModelCore {
         do {
             for batch in stride(from: 0, to: change.deletes.count, by: SpotlightPlanner.batchSize) {
                 let ids = Array(change.deletes[batch..<min(batch + SpotlightPlanner.batchSize, change.deletes.count)])
+                guard canSend(gen, mode) else { return }
                 try await spotlight.index.delete(ids: ids)
                 guard gen == generation else { return }
                 for id in ids { runtime.fingerprints[id] = nil }
             }
             for batch in stride(from: 0, to: change.upserts.count, by: SpotlightPlanner.batchSize) {
                 let items = Array(change.upserts[batch..<min(batch + SpotlightPlanner.batchSize, change.upserts.count)])
+                guard canSend(gen, mode) else { return }
                 try await spotlight.index.index(items)
                 guard gen == generation, spotlightMode == mode else { return }
                 for item in items { runtime.fingerprints[item.id] = item.fingerprint }

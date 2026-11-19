@@ -19,7 +19,30 @@ final class FakeSpotlightIndex: SpotlightIndexing, @unchecked Sendable {
     }
     func clearCalls() { lock.withLock { log = [] } }
 
+    /// While closed, `index` waits inside the call (after noting that it started) until `openGate()`.
+    private var gateClosed = false
+    private var gateWaiters: [CheckedContinuation<Void, Never>] = []
+    private var started = 0
+    func closeGate() { lock.withLock { gateClosed = true } }
+    func openGate() {
+        let waiting: [CheckedContinuation<Void, Never>] = lock.withLock {
+            gateClosed = false
+            defer { gateWaiters = [] }
+            return gateWaiters
+        }
+        for w in waiting { w.resume() }
+    }
+    var indexCallsStarted: Int { lock.withLock { started } }
+
     func index(_ items: [SpotlightItem]) async throws {
+        lock.withLock { started += 1 }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            let wait = lock.withLock { () -> Bool in
+                if gateClosed { gateWaiters.append(c); return true }
+                return false
+            }
+            if !wait { c.resume() }
+        }
         lock.withLock {
             log.append("index \(items.count)")
             for i in items { held[i.id] = i }
@@ -128,6 +151,23 @@ extension AppModelSuites {
             #expect(r.index.items.isEmpty)
             #expect(r.index.calls == ["deleteDomain", "deleteAll"])
             #expect(r.model.spotlight.vaultsOn.isEmpty)
+        }
+
+        @Test func turningItOffWaitsForAPassInFlightSoNothingOutlivesIt() async throws {
+            let r = try await Self.rig()
+            defer { r.model.close() }
+            r.index.closeGate()
+            let on = Task { await r.model.setSpotlight(.metadata) }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { r.index.indexCallsStarted > 0 })
+            // The pass is inside its upsert batch; the switch goes off now.
+            let off = Task { await r.model.setSpotlight(.off) }
+            _ = await TS.waitUntil(timeout: .milliseconds(200)) { false }
+            r.index.openGate()
+            await on.value
+            await off.value
+            #expect(r.index.items.isEmpty)
+            #expect(r.index.calls.last == "deleteAll")
+            #expect(r.model.spotlightMode == .off)
         }
 
         @Test func aDeletedNoteLeavesAndARestoredOneComesBack() async throws {
