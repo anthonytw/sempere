@@ -37,11 +37,15 @@ public struct AskNote: Hashable, Sendable {
 
     public var id: UUID { input.id }
 
-    /// The asks' notes of a vault's summaries: the insight inputs, with their page texts.
-    public static func notes(_ vault: Vault, summaries: [NoteSummary]) -> [AskNote] {
+    /// The asks' notes of a vault's summaries: the insight inputs, with their page texts. `titles` are the titles the
+    /// caller shows (`NoteDisplayTitle`: a voice note's derived or default title); a result names a note by them, else by
+    /// its stored title.
+    public static func notes(_ vault: Vault, summaries: [NoteSummary], titles: [UUID: String] = [:]) -> [AskNote] {
         let inputs = InsightsNotes.inputs(vault, summaries: summaries)
         let byId = Dictionary(summaries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         return inputs.map { input in
+            var input = input
+            if let shown = titles[input.id], !shown.isEmpty { input.title = shown }
             var parts = (byId[input.id]?.pageTexts ?? []).map { AskPassage(page: $0.number, text: $0.text) }
             let transcript = input.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             if !transcript.isEmpty { parts.append(AskPassage(page: nil, text: transcript)) }

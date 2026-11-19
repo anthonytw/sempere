@@ -862,7 +862,8 @@ public final class AppModelCore<Host: AppModelHost> {
         // Recently Recognized depends on the time too (`activityNow`), which no key holds: never cached.
         if sidebarSelection == .recentlyRecognized { return computeVisibleNotes() }
         let key = DerivedLists.VisibleKey(version: listVersion, selection: sidebarSelection, search: searchText,
-                                          sort: sortOrder, favoritesFirst: favoritesFirst)
+                                          sort: sortOrder, favoritesFirst: favoritesFirst,
+                                          titles: sortOrder.key == .title ? insights.revision : 0)
         if let v = derived.visible, v.key == key { return v.value }
         let value = computeVisibleNotes()
         derived.visible = (key, value)
@@ -873,7 +874,12 @@ public final class AppModelCore<Host: AppModelHost> {
         let inSelection = notesInSelection
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let matching = query.isEmpty ? inSelection : inSelection.filter { $0.title.localizedCaseInsensitiveContains(query) }
-        return Self.sorted(matching, by: sortOrder, favoritesFirst: favoritesFirst)
+        // By title: the title each row shows (`displayTitle`), as `notes list --sort title` sorts.
+        var titles: [UUID: String]?
+        if sortOrder.key == .title {
+            titles = Dictionary(matching.map { ($0.id, displayTitle($0)) }, uniquingKeysWith: { a, _ in a })
+        }
+        return Self.sorted(matching, by: sortOrder, favoritesFirst: favoritesFirst, titles: titles)
     }
 
     /// The notes the sidebar selection shows, before any search.
@@ -889,8 +895,12 @@ public final class AppModelCore<Host: AppModelHost> {
         }
     }
 
-    static func sorted(_ list: [NoteSummary], by order: NoteSort, favoritesFirst: Bool = false) -> [NoteSummary] {
-        NoteOrder(order.key, favoritesFirst: favoritesFirst).sorted(list)
+    /// `list` in `order`; under the title order by `titles` (the shown titles) when given, else the stored ones.
+    static func sorted(_ list: [NoteSummary], by order: NoteSort, favoritesFirst: Bool = false,
+                       titles: [UUID: String]? = nil) -> [NoteSummary] {
+        var resolve: (@Sendable (NoteSummary) -> String)?
+        if let titles { resolve = { note in titles[note.id] ?? note.title } }
+        return NoteOrder(order.key, favoritesFirst: favoritesFirst, title: resolve).sorted(list)
     }
 
     public var selectedNote: NoteSummary? {

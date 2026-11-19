@@ -1358,10 +1358,11 @@ title order (Finder order: `Note 2` before `Note 10`) unless `--sort modified`
 or `--sort created` (newest first, notes without the date last);
 `--favorites-first` puts the favorites ahead of the other notes, each group in
 that order. These are the app's note-list rules (`NoteOrder`). A quick voice note stores no title (1.3), so `list` and
-`show` print what the app shows (`NoteDisplayTitle`): the title Note Insights derived for it when there is one, else
-"Voice note <date and time in the capture's zone>" ("Watch voice note …" for the Apple Watch, "Nota de voz …" under a
-Spanish locale), only while the stored title is blank or a default stored before 1.3; a title anyone typed is shown as
-it is. `--json` keeps `title` as stored and adds `displayTitle`. Order is by the stored title. `--notebook` takes a notebook path and lists the
+`show` print what the app shows (`NoteDisplayTitle`): the title Note Insights derived for the note's current text when
+there is one, else "Voice note <date and time in the capture's zone>" ("Watch voice note …" for the Apple Watch; always
+English, dates in `en_US_POSIX`, the same on every machine), only while the stored title is blank or a default stored
+before 1.3; a title anyone typed is shown as it is. `--json` keeps `title` as stored and adds `displayTitle`. The title
+order sorts by that shown title, as the app's list does. `sempere ask` names notes the same way. `--notebook` takes a notebook path and lists the
 notes in it or below it, comparing whole segments (`A/B` holds `A/B/C` but not
 `A/Bc`), as the app's sidebar does; `--tag` ignores case. Notes are read in parallel without their stroke
 geometry, and the summaries are kept in an encrypted per-device cache

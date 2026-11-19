@@ -176,12 +176,17 @@ struct AskNoteRow: View {
     let question: String
     let showsPassage: Bool
 
+    /// The title the note list shows for it now (a voice note's derived or default title), else the result's.
+    private var shownTitle: String {
+        UUID(uuidString: note.note).flatMap { model.notesByID[$0] }.map { model.displayTitle($0) } ?? note.title
+    }
+
     var body: some View {
         Button { model.openAskNote(note.note, page: note.pages.first) } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline) {
                     if let number { Text("\(number)").font(.caption.bold()).foregroundStyle(.secondary) }
-                    Text(note.title.isEmpty ? String(localized: "Untitled note") : note.title).font(.headline)
+                    Text(shownTitle.isEmpty ? String(localized: "Untitled note") : shownTitle).font(.headline)
                 }
                 Text(AskWording.detail(note)).font(.caption).foregroundStyle(.secondary)
                 if showsPassage, let best = note.passages.first {

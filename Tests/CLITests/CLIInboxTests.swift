@@ -91,10 +91,18 @@ final class CLIInboxTests: CLITestCase {
         let list = try XCTUnwrap(try cli(["notes", "list", "--json"] + unlocked).json as? [[String: Any]])
         let row = try XCTUnwrap(list.first { $0["id"] as? String == note })
         XCTAssertEqual(row["title"] as? String, "")
-        XCTAssertTrue((row["displayTitle"] as? String ?? "").hasPrefix("Voice note") || (row["displayTitle"] as? String ?? "").hasPrefix("Nota de voz"),
-                      "\(row["displayTitle"] ?? "nil")")
+        // English words and en_US_POSIX dates on every machine (the CLI's messages stay English), in the capture's zone.
+        let shown = try XCTUnwrap(row["displayTitle"] as? String)
+        XCTAssertTrue(shown.hasPrefix("Voice note Oct 7, 2026"), shown)
         let table = try cli(["notes", "list"] + unlocked)
         XCTAssertFalse(table.out.contains("(untitled)"), table.out)
+        // --sort title sorts by the shown title, as the app's list does: "Voice note" between "Apple" and "Zebra" (a blank
+        // stored title would sort first).
+        for title in ["Zebra", "Apple"] { XCTAssertEqual(try cli(["notes", "new", title] + unlocked).status, 0) }
+        let sorted = try XCTUnwrap(try cli(["notes", "list", "--sort", "title", "--json"] + unlocked).json as? [[String: Any]])
+        let order = sorted.compactMap { $0["displayTitle"] as? String }.map { String($0.prefix(10)) }
+            .filter { ["Apple", "Voice note", "Zebra"].contains($0) }
+        XCTAssertEqual(order, ["Apple", "Voice note", "Zebra"])
         XCTAssertEqual(try cli(["notes", "rename", note, "Standup"] + unlocked).status, 0)
         let renamed = try XCTUnwrap(try cli(["notes", "list", "--json"] + unlocked).json as? [[String: Any]])
         XCTAssertEqual(renamed.first { $0["id"] as? String == note }?["displayTitle"] as? String, "Standup")

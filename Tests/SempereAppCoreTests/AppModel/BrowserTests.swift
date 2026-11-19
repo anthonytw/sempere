@@ -263,6 +263,9 @@ extension AppModelSuites {
             let list = [note(1, Date(timeIntervalSince1970: 10)), note(2, nil), note(3, Date(timeIntervalSince1970: 20))]
             #expect(AppModel.sorted(list, by: .modified).map(\.title) == ["t3", "t1", "t2"])
             #expect(AppModel.sorted(list, by: .title).map(\.title) == ["t1", "t2", "t3"])
+            // By title: the titles the rows show (`displayTitle`) when given, as `notes list --sort title`.
+            let shown = [list[0].id: "zz", list[1].id: "aa"]
+            #expect(AppModel.sorted(list, by: .title, titles: shown).map(\.title) == ["t2", "t3", "t1"])
         }
 
         /// Date Created (newest first) and "Favorites at Top" under every order (`NoteOrder`, shared with the CLI).

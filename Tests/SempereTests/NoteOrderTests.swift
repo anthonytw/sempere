@@ -44,6 +44,16 @@ final class NoteOrderTests: XCTestCase {
         XCTAssertEqual(titles(NoteOrder(.created, favoritesFirst: true)), ["note 2#2", "Beta#4", "Alpha#3", "Alpha#5", "Note 10#1"])
     }
 
+    /// Under `.title` a listing sorts by the title it shows (the app's and the CLI's display title), not the stored one;
+    /// the resolver is not part of equality.
+    func testTitleSortsByTheResolvedTitle() {
+        let shown: [String: String] = ["00000000-0000-4000-8000-000000000004": "Voice note Nov 16"]
+        let order = NoteOrder(.title, title: { shown[$0.id.uuidString] ?? $0.title })
+        XCTAssertEqual(titles(order), ["Alpha#3", "Alpha#5", "note 2#2", "Note 10#1", "Beta#4"])
+        XCTAssertEqual(order, NoteOrder(.title))
+        XCTAssertEqual(titles(NoteOrder(.modified, title: { _ in "same" })), titles(NoteOrder(.modified)), "only the title order uses it")
+    }
+
     func testTheOrderDoesNotDependOnTheInput() {
         for key in NoteOrder.Key.allCases {
             for first in [false, true] {

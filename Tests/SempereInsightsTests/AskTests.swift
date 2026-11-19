@@ -321,6 +321,21 @@ final class AskTests: TempDirTestCase {
         XCTAssertEqual(try JSONDecoder().decode(AskResult.self, from: Data(json2.utf8)), missing)
     }
 
+    /// A result names a note by the title the caller shows (a voice note's derived or default title), not a blank stored one.
+    func testResultsUseTheShownTitles() async throws {
+        let id = UUID(), page = UUID()
+        var ops = NoteOps.newNote(title: "", paper: .ruled, notebook: nil, pageId: page)
+        ops.append(.setPageRecognition(pageId: page, recognition: Recognition(engine: "test", text: Self.corpus[0].1)))
+        try vault.apply(ops, to: id, deviceState: tmp.appendingPathComponent("dev.json"), app: "test/1")
+        let summaries = try vault.summaries()
+        XCTAssertEqual(AskNote.notes(vault, summaries: summaries).first?.input.title, "")
+        let notes = AskNote.notes(vault, summaries: summaries, titles: [id: "Voice note Nov 16, 2026 at 2:32 PM"])
+        XCTAssertEqual(notes.first?.input.title, "Voice note Nov 16, 2026 at 2:32 PM")
+        var o = AskOptions(); o.retrieveOnly = true
+        let r = await (try engine(notes)).ask(q, options: o)
+        XCTAssertEqual(r.notes.first?.title, "Voice note Nov 16, 2026 at 2:32 PM")
+    }
+
     // MARK: Kinds, matched words and the retrieval hand-over (a43e8ae)
 
     func testMissingKindsAndVectorKinds() async throws {

@@ -73,7 +73,7 @@ struct AskCommand: ParsableCommand {
         OpenedVaults.shared.markUnchanged(vault.url)
         try vault.requireCompleteCopy()
         let summaries = try vault.summaries(of: nil, cache: cache.cache(for: vault))
-        let notes = AskNote.notes(vault, summaries: summaries)
+        let notes = AskNote.notes(vault, summaries: summaries, titles: NoteTitles.display(summaries, in: vault))
         let engine = AskEngine(reader: InsightsReader(vault: vault), notes: notes, me: vault.writerDevice,
                                model: retrieveOnly ? nil : p.model, embedder: p.embedder)
         var o = AskOptions()
