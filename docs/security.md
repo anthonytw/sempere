@@ -191,7 +191,13 @@ sent back, with the device list, is encrypted to the new device's key
   listings, drawings and attachment previews, and the memo of notes whose insights could not be made (so they are
   not asked of the model again at once; private, not backed up, deleted when Note Insights is turned off on this device,
   or at the next pass after it is turned off elsewhere, and when the vault is removed from the device), are encrypted under keys derived from the vault's key ([`format.md`](format.md) §10).
-  Note insights are kept on the device only in memory, outside the vault's own `insights/` files. Details: [`io.md`](io.md),
+  Note insights are kept on the device only in memory, outside the vault's own `insights/` files. **Ask your notes**
+  (`sempere ask`, the app's Ask) keeps nothing: the question, the passages sent to Apple's on-device model, the answer and the
+  passage embeddings it makes are held in memory for that request and dropped; none is written to the vault, the caches, the
+  recent-searches memory, the clipboard (except an explicit Copy of the answer) or a log, and the answer is not donated to
+  Spotlight. The model has no tools, no network and no write access, and the question and every note text are neutralized so
+  they cannot close or open the prompt's blocks; its output is checked against the cited passages before it is shown, and drawn as
+  plain text. Details: [`design/1.3-ask.md`](design/1.3-ask.md) §3.3, §5. Details: [`io.md`](io.md),
   [`quick-capture.md`](quick-capture.md).
 - **Exports.** A PDF, image or Markdown export is not encrypted. Where you send
   it is up to you.
