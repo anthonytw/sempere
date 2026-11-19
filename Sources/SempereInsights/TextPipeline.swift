@@ -533,9 +533,16 @@ public struct FactCheck: Sendable {
         guard !kept.isEmpty, total > 0, Double(unsupported) / Double(total) <= Self.maxDroppedShare else {
             return Result(summary: nil, dropped: dropped, kept: 0)
         }
+        let cut = Self.cut(kept, maxSentences: maxSentences, maxCharacters: maxCharacters)
+        return Result(summary: cut.summary, dropped: dropped, kept: cut.kept)
+    }
+
+    /// The first `sentences` joined by spaces, at most `maxSentences` of them and `maxCharacters` characters in all (a
+    /// first sentence longer than that is cut to it): the summary's length rule, also applied to a translated summary.
+    public static func cut(_ sentences: [String], maxSentences: Int = 4, maxCharacters: Int = 600) -> (summary: String?, kept: Int) {
         var out = ""
         var n = 0
-        for s in kept.prefix(maxSentences) {
+        for s in sentences.prefix(maxSentences) {
             let next = out.isEmpty ? s : out + " " + s
             if next.count > maxCharacters {
                 if out.isEmpty { out = String(s.prefix(maxCharacters)); n = 1 }
@@ -543,7 +550,12 @@ public struct FactCheck: Sendable {
             }
             out = next; n += 1
         }
-        return Result(summary: out.isEmpty ? nil : out, dropped: dropped, kept: n)
+        return (out.isEmpty ? nil : out, n)
+    }
+
+    /// `cut` of a whole text (a translation): split into sentences first.
+    public static func cut(text: String) -> String? {
+        cut(InsightsChunker.sentences(text.replacingOccurrences(of: "\n", with: " "))).summary
     }
 
     /// True when `sentence` passes: every strict token supported, and enough of its content words.

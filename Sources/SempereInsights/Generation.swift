@@ -38,7 +38,9 @@ public enum InsightsGenerator {
         }
         var summary = check.summary
         if let outputLanguage {
-            if let s = summary, !s.isEmpty { summary = try await model.translate(s, to: outputLanguage) }
+            // A translation is held to the summary's own length rule (4 sentences, 600 characters), so it never exceeds
+            // what a file may hold (`InsightsLimits.maxSummary`), however much longer the model made it.
+            if let s = summary, !s.isEmpty { summary = FactCheck.cut(text: try await model.translate(s, to: outputLanguage)) }
             if let g = slug {
                 // A title must stay short: a translation that grows past a title is not used (the title then has no slug).
                 let t = VoiceNoteTitleFormat.cleaned(try await model.translate(g, to: outputLanguage))

@@ -92,6 +92,35 @@ extension InsightsUpdaterTests {
         XCTAssertEqual(r.failures.count, 1, "the failure is reported, not hidden")
     }
 
+    /// A translation that grows is held to the summary's rule (4 sentences, 600 characters), never past a file's limit.
+    func testATranslatedSummaryIsCutLikeTheFactCheckedOne() async throws {
+        final class Wordy: ModelProvider, @unchecked Sendable {
+            let inner = FakeModelProvider()
+            var identity: GenerationIdentity { inner.identity }
+            var availability: ModelAvailability { inner.availability }
+            var contextTokens: Int { inner.contextTokens }
+            func supports(language: String?) -> Bool { inner.supports(language: language) }
+            func extract(_ text: String, language: String?) async throws -> ModelExtraction { try await inner.extract(text, language: language) }
+            func merge(_ parts: [ModelExtraction], language: String?) async throws -> ModelExtraction { try await inner.merge(parts, language: language) }
+            func summarize(topic: String, summaries: [String], language: String?) async throws -> String {
+                try await inner.summarize(topic: topic, summaries: summaries, language: language)
+            }
+            func title(transcript: String, language: String?) async throws -> String { try await inner.title(transcript: transcript, language: language) }
+            func translate(_ text: String, to language: String) async throws -> String {
+                (1...40).map { "La frase número \($0) repite la traducción con muchas palabras de más." }.joined(separator: "\n")
+            }
+        }
+        let text = Self.physics[0]
+        let gen = try await InsightsGenerator.generate(text: text, hash: InsightsText.hash(text), language: "en", model: Wordy(),
+                                                       merger: nil, outputLanguage: "es")
+        let summary = try XCTUnwrap(gen.summary)
+        XCTAssertLessThanOrEqual(summary.count, 600)
+        XCTAssertLessThanOrEqual(InsightsChunker.sentences(summary).count, 4)
+        XCTAssertTrue(summary.hasPrefix("La frase número 1 "), summary)
+        XCTAssertFalse(summary.contains("\n"))
+        XCTAssertEqual(FactCheck.cut(text: String(repeating: "x", count: 5000)), String(repeating: "x", count: 600))
+    }
+
     func testTheSettingValidatesTagsAndSharesTheVault() throws {
         let spec = try XCTUnwrap(SharedSettingsCatalog.spec(named: "insights.language"))
         XCTAssertEqual(spec.defaultValue, .null)
