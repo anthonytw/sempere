@@ -283,11 +283,13 @@ public enum AskRetriever {
             // The lowest-scoring passage over all sources; a source left with none is dropped.
             var best: (Int, Int, Double)?
             for i in s.indices where s[i].passages.count > 1 {
-                if let j = lowest(i), best == nil || sc[i][j] < best!.2 { best = (i, j, sc[i][j]) }
+                guard let j = lowest(i) else { continue }
+                if let b = best, b.2 <= sc[i][j] { continue }
+                best = (i, j, sc[i][j])
             }
             if let (i, j, _) = best { s[i].passages.remove(at: j); sc[i].remove(at: j); continue }
             // Every source has one passage: drop the source whose passage scores lowest.
-            let drop = s.indices.min { (sc[$0].first ?? 0, -$0) < (sc[$1].first ?? 0, -$1) }!
+            guard let drop = s.indices.min(by: { (sc[$0].first ?? 0, -$0) < (sc[$1].first ?? 0, -$1) }) else { break }
             s.remove(at: drop); sc.remove(at: drop)
         }
         return (s, sc)

@@ -158,7 +158,8 @@ status() {   # context, state, description
 
 # The iPad and iPhone unit suites on products built once, side by side (two simulators, two result bundles). One log, both outputs.
 sim_unit() {
-  if [[ ${SEMPERE_SIM_UNIT:-parallel} == serial ]]; then scripts/app.sh test && scripts/app.sh test-phone; return; fi
+  # One simulator clone (the build lock's SEMPERE_SIM_ID) cannot run both suites at once: serial then.
+  if [[ ${SEMPERE_SIM_UNIT:-parallel} == serial || -n ${SEMPERE_SIM_ID:-} ]]; then scripts/app.sh test && scripts/app.sh test-phone; return; fi
   scripts/app.sh build-sim-unit || return 1
   local a b ra=0 rb=0
   SEMPERE_XCB_ACTION=test-without-building SEMPERE_RESULT_BUNDLE=build/local-ci/ipad.xcresult \
