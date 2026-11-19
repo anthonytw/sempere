@@ -48,7 +48,9 @@ let package = Package(
     dependencies: [
         // 4.0 adds X-Wing (ML-KEM-768 + X25519) and HPKE with it, for the
         // post-quantum age recipient (Sources/Age/MLKEM768X25519.swift).
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0"),
+        // Up to 5.x: 5.0 needs Swift 6.2 (an older toolchain resolves to 4.x, the floor in docs/post-quantum.md); the
+        // checked-in Package.resolved pins 5.1.1 (audit F-04, docs/audits/2026-11-1.2.md).
+        .package(url: "https://github.com/apple/swift-crypto.git", "4.0.0" ..< "6.0.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
     ],
     targets: [
