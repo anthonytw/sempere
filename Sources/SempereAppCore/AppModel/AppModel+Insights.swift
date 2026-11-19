@@ -30,6 +30,9 @@ public struct InsightsServices: Sendable {
     public var maxGraphNotes: Int
     /// This platform (the device record's).
     public var platform: InsightsPlatform
+    /// The language of a question (NaturalLanguage's recognizer, which lives outside the package); nil: the vault's main
+    /// language (Ask, docs/design/1.3-ask.md §3.1).
+    public var detectLanguage: (@Sendable (String) -> String?)?
 
     public init(model: @escaping @Sendable () -> (any ModelProvider)?, embedder: @escaping @Sendable () -> (any EmbeddingProvider)?,
                 powerWindow: @escaping @MainActor @Sendable () -> Bool, maxGraphNotes: Int = 4000,
@@ -263,6 +266,7 @@ extension AppModelCore {
         runtime.dueNotes = []
         insightsIndex = InsightsIndex()
         insights = InsightsModelState()
+        stopAsk()
     }
 
     // MARK: Reading

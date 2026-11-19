@@ -205,6 +205,22 @@ struct MenuCommandTests {
         }
     }
 
+    /// ⌥⌘F: free today (⇧⌥⌘F is Bring Item to Front), in the Edit menu with Find, and not one of UIKit's own.
+    @Test func askYourNotesIsOptionCommandFInTheEditMenu() throws {
+        let shortcut = try #require(MenuCommand.askYourNotes.shortcut)
+        #expect(shortcut == MenuCommand.Shortcut("f", [.command, .option]))
+        #expect(MenuCommand.allCases.filter { $0.shortcut == shortcut } == [.askYourNotes])
+        #expect(MenuCommand.bringItemToFront.shortcut != shortcut)
+        #expect(!MenuCommand.nativeOnMac.contains(.askYourNotes), "a SwiftUI command: UIKit has nothing on ⌥⌘F")
+        #expect(MenuLayout.edit.flatMap { $0 }.contains(.askYourNotes))
+        let none = MenuCommand.Context(window: .library, vault: .none)
+        #expect(!MenuCommand.askYourNotes.isEnabled(in: none))
+        var c = MenuCommand.Context(window: .library, vault: .unlocked)
+        #expect(MenuCommand.askYourNotes.isEnabled(in: c))
+        c.window = .note
+        #expect(!MenuCommand.askYourNotes.isEnabled(in: c), "the library window's field")
+    }
+
     @Test func libraryOnlyCommandsAreOffInANoteWindow() {
         let note = MenuCommand.Context(window: .note, vault: .unlocked, hasNote: true)
         for command in [MenuCommand.newNote, .find, .toggleNoteList, .openVault, .newVault, .reloadVault, .openNoteInWindow] {

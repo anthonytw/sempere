@@ -48,7 +48,10 @@ struct AppCommands: Commands {
             // Import, insert, export, reload.
             sections(Array(MenuLayout.file.dropFirst(2)))
         }
-        // Edit > Find Notes (⌘F) is UIKit's own Find item, renamed (`MacMenus`).
+        // Edit > Find Notes (⌘F) is UIKit's own Find item, renamed (`MacMenus`); Ask Your Notes… (⌥⌘F) follows it.
+        CommandGroup(after: .textEditing) {
+            section(MenuLayout.edit[0])
+        }
         CommandMenu("Note") {
             sections(MenuLayout.note)
         }

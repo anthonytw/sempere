@@ -65,8 +65,10 @@ public enum LibraryCommands {
             if let selected { Task { await model.report { try await model.deleteNote(selected) } } }
         case .restoreNote:
             if let selected { Task { await model.report { try await model.restoreNote(selected) } } }
-        case .find:
+        case .find, .askYourNotes:
             if ColumnChoice(stored: storedColumns) == .detailOnly { outcome.columns = ColumnChoice.doubleColumn.stored }
+            // Find goes back to Search; Ask Your Notes… is the same field in Ask mode (its text is not the search text).
+            model.askTarget = command == .askYourNotes ? .ask : .search
             ui.searchPresented = true
         case .toggleNoteList: outcome.columns = ColumnChoice.toggled(storedColumns)
         default: break

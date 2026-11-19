@@ -186,6 +186,19 @@ extension AppModelSuites {
             }
         }
 
+        /// Edit ▸ Find ▸ Ask Your Notes… is the search field in Ask mode, with the list brought back like Find; ⌘F goes back to Search.
+        @Test func askYourNotesPutsTheFieldInAskMode() {
+            let model = AppModel(deviceStateURL: TS.deviceStateURL())
+            let ui = WindowUI()
+            let full = LibraryCommands.perform(.askYourNotes, model: model, ui: ui, recents: [], storedColumns: "detailOnly")
+            #expect(full == .init(effect: nil, columns: "doubleColumn"))
+            #expect(ui.searchPresented)
+            #expect(model.askTarget == .ask)
+            _ = LibraryCommands.perform(.find, model: model, ui: ui, recents: [], storedColumns: "all")
+            #expect(model.askTarget == .search)
+            #expect(model.searchText.isEmpty && model.askQuestion.isEmpty)
+        }
+
         @Test func hideOrShowNoteListTogglesTheStoredLayout() {
             let model = AppModel(deviceStateURL: TS.deviceStateURL())
             let ui = WindowUI()

@@ -137,13 +137,13 @@ ui_mac=(MacWindowUITests MacItemUITests SidebarDropUITests MacFocusUITests QuitP
         MacImportUITests MacExportUITests MacRealMouseUITests FolderPickerUITests MacNoteModeUITests NoteToolbarUITests
         VaultStoreUITests CopyKeyExpiryMacUITests)
 ui_mac_smoke=(LaunchSmokeUITests)
-ui_ipad=(SidebarDropUITests BulkNotesUITests PadFocusUITests SearchHighlightUITests PaletteButtonUITests SavedToolsUITests IPadCanvasUITests
+ui_ipad=(SidebarDropUITests BulkNotesUITests PadFocusUITests SearchHighlightUITests AskUITests PaletteButtonUITests SavedToolsUITests IPadCanvasUITests
          LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote
          LaunchSmokeUITests/testFreshLaunchDoubleColumn LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour
          NewVaultSheetUITests MacImportUITests MacExportUITests FolderPickerUITests PhoneCanvasModeUITests
          NoteToolbarUITests VaultStoreUITests)
 ui_phone=(PhoneCanvasUITests PhoneParityUITests PhoneReadingScrollUITests PhoneCanvasModeUITests NoteToolbarUITests
-          SearchHighlightUITests NotificationPromptPhoneUITests)
+          SearchHighlightUITests AskUITests NotificationPromptPhoneUITests)
 # 18 launches: only `scripts/app.sh pseudo` (local-ci.sh --release).
 ui_pseudo=(PseudoLanguageUITests)
 # Screenshot generators (scripts/screenshots.sh): they assert nothing.

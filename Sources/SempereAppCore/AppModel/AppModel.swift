@@ -287,6 +287,13 @@ public final class AppModelCore<Host: AppModelHost> {
     @ObservationIgnored let insightsRuntime = InsightsRuntime()
     /// The providers and power state of Note Insights (`services.insights`; tests set their own).
     @ObservationIgnored public var insightsServices: InsightsServices
+    /// Ask your notes (`AppModel+Ask`, docs/design/1.3-ask.md): what the search field does (Search or Ask), the
+    /// question typed for Ask (never `searchText`, so Search and the recent searches never see it, D9) and the answer
+    /// on screen. All of it is memory: nothing is stored, and closing or locking the vault drops it.
+    public var askTarget = AskTarget.search
+    public var askQuestion = ""
+    public internal(set) var ask = AskModelState()
+    @ObservationIgnored var askTask: Task<Void, Never>?
     /// Opt-in Spotlight indexing (`AppModel+Spotlight`, docs/design/1.3-spotlight.md): the per-device records and the
     /// index (`services.spotlightIndex`).
     @ObservationIgnored public let spotlight: SpotlightManager
