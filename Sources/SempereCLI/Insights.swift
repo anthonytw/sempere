@@ -63,6 +63,17 @@ enum InsightsCLI {
         return n
     }
 
+    /// The options of an update on this machine: its failure memo and the settings of a Mac (the top level elsewhere).
+    static func updateOptions(for vault: Vault) -> InsightsUpdateOptions {
+        var o = InsightsUpdateOptions()
+        o.failureMemo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
+        #if os(macOS)
+        o.deviceType = .mac   // the settings as a Mac reads them; elsewhere the top level only
+        o.powerWindow = ProcessInfo.processInfo.thermalState != .serious && ProcessInfo.processInfo.thermalState != .critical
+        #endif
+        return o
+    }
+
     static func shortId(_ id: String) -> String { String(id.prefix(8)) }
 
     static func ms(_ d: Date?) -> String { d.map(Format.local) ?? "-" }
@@ -105,14 +116,9 @@ struct InsightsUpdate: ParsableCommand {
         let vault = try access.openVault(.required)
         if !dryRun { try vault.requireWritable() }
         let inputs = try InsightsCLI.inputs(vault, cache: cache)
-        var o = InsightsUpdateOptions()
+        var o = InsightsCLI.updateOptions(for: vault)
         if let note { o.note = try vault.resolveNote(note) }
         o.force = force; o.limit = limit; o.embeddingsOnly = embeddingsOnly; o.dryRun = dryRun
-        o.failureMemo = InsightsFailureMemo.defaultURL(vaultId: vault.vaultId)
-        #if os(macOS)
-        o.deviceType = .mac   // the settings as a Mac reads them; elsewhere the top level only
-        o.powerWindow = ProcessInfo.processInfo.thermalState != .serious && ProcessInfo.processInfo.thermalState != .critical
-        #endif
         let updater = InsightsUpdater(vault: vault, model: embeddingsOnly ? nil : p.model, embedder: p.embedder,
                                       deviceState: DeviceState.defaultURL(), app: appName)
         let options = o

@@ -40,6 +40,29 @@ struct LoggingTranscriber: RecordingTranscribing {
     }
 }
 
+/// Writes a transcript in the language it is asked for (`FakeTranscriber`'s words), and logs each explicit language.
+struct LanguageTranscriber: RecordingTranscribing {
+    var log: LanguageLog
+
+    func transcribe(file: URL, recording: UUID, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript {
+        try await transcribe(file: file, recording: recording, language: nil, noteLanguage: noteLanguage, allowModelDownload: allowModelDownload)
+    }
+
+    func transcribe(file: URL, recording: UUID, language: String?, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript {
+        log.record(language)
+        return TranscriptBuilder.transcript(recording: recording, engine: "test-1", language: language ?? "en-US",
+                                            segments: TranscriptBuilder.segments(fromWords: [
+                                                RecognizedSpan(text: "Linear", start: 0.2, end: 0.6, confidence: 0.9)]))
+    }
+}
+
+final class LanguageLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [String?] = []
+    func record(_ l: String?) { lock.withLock { entries.append(l) } }
+    var languages: [String?] { lock.withLock { entries } }
+}
+
 extension AppModelSuites {
     /// Playback, transcription and recovery of the open notes' recordings (`AppModel+Recordings`, wave 5b part 3;
     /// moved from the app's `RecordingTests` and `OfflineTranscriptionTests`, whose microphone half stays there).
@@ -96,6 +119,36 @@ extension AppModelSuites {
             let player = try #require(editor.player)
             #expect(await TS.waitUntil(timeout: .seconds(30)) { player.transcript != nil })
             #expect(player.transcript?.position(at: player.position)?.word == 1)
+            model.close()
+        }
+
+        /// 1.3 "Transcribe Again": every recording of the note is transcribed again in the chosen language, each new
+        /// transcript replaces the old (a register; the old blob stays in the history), and the automatic choice passes none.
+        @Test func transcribeAgainReplacesEveryTranscriptInTheChosenLanguage() async throws {
+            let log = LanguageLog()
+            let model = try await Self.model(transcriber: LanguageTranscriber(log: log))
+            let editor = try #require(model.editor)
+            let a = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
+            let b = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_100))
+            await model.transcribe(a, in: editor)
+            let firstRef = try #require(editor.recording(a.id)?.transcript)
+            #expect(editor.recording(b.id)?.transcript == nil)
+            let done = await model.transcribeAgain(in: editor, language: "es-ES", redoInsights: false)
+            #expect(done == 2, "both recordings, the one with a transcript and the one without")
+            #expect(model.alert == nil)
+            let vault = try #require(model.vault)
+            for r in [a, b] {
+                let ref = try #require(editor.recording(r.id)?.transcript)
+                let t = try Transcript.decode(try await Self.read(ref, in: vault))
+                #expect(t.language == "es-ES" && t.recording == r.id)
+            }
+            #expect(editor.recording(a.id)?.transcript != firstRef, "replaced")
+            #expect(log.languages.suffix(2).allSatisfy { $0 == "es-ES" })
+            // The automatic choice names no language, and "also redo insights" does nothing while Note Insights is off.
+            #expect(await model.transcribeAgain(in: editor, language: nil, redoInsights: true) == 2)
+            #expect(log.languages.suffix(2).allSatisfy { $0 == nil })
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { !model.noteInsightsPending(Self.lecture) })
+            #expect(model.transcribing.isEmpty)
             model.close()
         }
 

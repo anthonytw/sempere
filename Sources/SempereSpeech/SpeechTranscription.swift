@@ -144,6 +144,21 @@ public enum SpeechTranscription {
         #endif
     }
 
+    /// Every language the engines here can transcribe, as sorted BCP 47 tags (SpeechTranscriber's supported locales and
+    /// SFSpeechRecognizer's; an on-device model may still have to be downloaded). Empty where there is no Speech framework.
+    /// What "Transcribe Again" offers, and `sempere transcribe --languages` prints.
+    public static func supportedLanguages() async -> [String] {
+        #if canImport(Speech)
+        var tags = Set(SFSpeechRecognizer.supportedLocales().compactMap { TranscriptionLanguage.tag($0.identifier) })
+        if #available(macOS 26.0, iOS 26.0, *) {
+            for l in await SpeechTranscriber.supportedLocales { if let t = TranscriptionLanguage.tag(l.identifier(.bcp47)) { tags.insert(t) } }
+        }
+        return tags.sorted()
+        #else
+        return []
+        #endif
+    }
+
     /// Which engines can transcribe `options`' language here (nothing is downloaded).
     public static func availability(options: Options = Options()) async -> [EngineStatus] {
         #if canImport(Speech)

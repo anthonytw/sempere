@@ -4970,6 +4970,19 @@
         }
       }
     },
+    "Also Redo Insights" : {
+      "comment" : "Transcribe Again menu: make the note's Note Insights again after transcribing",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rehacer también los análisis"
+          }
+        }
+      }
+    },
     "Also remove the devices “%@” added" : {
       "comment" : "Removal sheet; the value is a device name",
       "extractionState" : "manual",
@@ -5550,6 +5563,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Automática"
+          }
+        }
+      }
+    },
+    "Automatic (%@)" : {
+      "comment" : "Transcribe Again menu: the language is chosen for you; the value is its name, e.g. Spanish",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automática (%@)"
           }
         }
       }
@@ -28314,7 +28340,7 @@
       }
     },
     "Transcribe Again" : {
-      "comment" : "Menu item: transcribe a recording again",
+      "comment" : "Menu item: transcribe a recording again, and the note's menu of languages to transcribe every recording again",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {

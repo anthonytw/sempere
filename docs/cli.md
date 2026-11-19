@@ -2119,7 +2119,9 @@ and changes nothing. `--json` gives `{note, page, pageId, strokes, engine, secon
 ```
 sempere transcribe (ID|TITLE [RECORDING...] | --all) [--language TAG] [--engine auto|speechtranscriber|sfspeech]
                    [--force] [--dry-run] [--no-download]
+sempere transcribe ID|TITLE [RECORDING...] --again [--language TAG] [--insights] [--dry-run]
 sempere transcribe --check [--language TAG]
+sempere transcribe --languages
 sempere transcribe --download-model [--language TAG]
 ```
 
@@ -2157,11 +2159,24 @@ Transcription ▸ Download Language Model button runs. It stands alone (`--check
 Speech framework or no such model. The SFSpeechRecognizer fallback has no
 downloadable model.
 
+`--again` is the app's "Transcribe Again" for one note (it needs a note, not `--all`): it
+replaces the transcripts of the note's recordings, the ones named or else all of them, whether or not they
+had one, in `--language` (else the note's language, else this machine's; the app's own Transcription language setting is not read here). A
+transcript is a register, so the replaced one stays in the note's history, as any earlier value of a field
+does, until compaction and `blobs gc` collect it (`format.md` §8.3.2). `--insights` (with `--again`, or any run for one
+note) then makes the note's Note Insights again from the new text, as `sempere insights update --note NOTE
+--force` does (summary, keywords, vector and a voice note's derived title; needs Note Insights on and the
+model, else the transcripts are replaced and the command exits 1 saying the insights were not made again;
+nothing is made again for a note that transcribed nothing). `--dry-run` lists what would be read and, with
+`--insights`, says the insights would be made again. `--languages` prints the languages the recognizers here
+support (BCP 47 tags, one per line; `--json` gives `{supported, languages}`; none without the Speech
+framework) and needs no vault: it is the list "Transcribe Again" offers.
+
 **macOS only.** The Linux build exits 1 with a message and changes nothing
-(`--dry-run` and `--check` still work). `--json` gives `{dryRun, notes: [{note,
+(`--dry-run`, `--check` and `--languages` still work). `--json` gives `{dryRun, notes: [{note,
 title, file, error, recordings: [{id, title, engine, language, segments, words,
-transcript, error}]}]}`; a recording that cannot be transcribed is reported
-and the exit code is 1.
+transcript, error}]}], insights}`; `insights` (only with `--insights`) is `{dryRun, redone, skipped, generated,
+titled, error}`; a recording that cannot be transcribed is reported and the exit code is 1.
 
 ### Quick capture inbox
 

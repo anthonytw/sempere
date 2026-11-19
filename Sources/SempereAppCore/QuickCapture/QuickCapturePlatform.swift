@@ -39,6 +39,17 @@ public protocol RecordingTranscribing: Sendable {
     /// adopted capture) pass false: offline, a download would fail or wait, so they report
     /// `modelNotDownloaded` instead (offline audit A-P1).
     func transcribe(file: URL, recording: UUID, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript
+    /// The same in an explicit `language` (a BCP 47 tag the person chose for "Transcribe Again"), which wins over the
+    /// note's and the device's setting; nil is the automatic choice.
+    func transcribe(file: URL, recording: UUID, language: String?, noteLanguage: String?, allowModelDownload: Bool) async throws -> Transcript
+}
+
+extension RecordingTranscribing {
+    /// A transcriber that knows no explicit language uses its automatic choice.
+    public func transcribe(file: URL, recording: UUID, language: String?, noteLanguage: String?,
+                           allowModelDownload: Bool) async throws -> Transcript {
+        try await transcribe(file: file, recording: recording, noteLanguage: noteLanguage, allowModelDownload: allowModelDownload)
+    }
 }
 
 /// A device without a recorder (tests, the CLI): the microphone is refused, so nothing starts.
