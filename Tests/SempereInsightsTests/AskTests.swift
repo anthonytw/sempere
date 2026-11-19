@@ -267,7 +267,7 @@ final class AskTests: TempDirTestCase {
         let unsupported = await (try engine(notes, vectors: vectors, model: FakeModelProvider(s))).ask(q, options: o)
         XCTAssertEqual(unsupported.mode, .keyword)
         XCTAssertTrue(unsupported.missing?.contains("does not support es") == true)
-        o.language = nil; o.detectLanguage = { _ in "fr" }
+        o.language = nil; o.detectLanguage = { _, _ in "fr" }
         let r7 = await (try engine(notes, vectors: vectors)).ask(q, options: o)
         XCTAssertEqual(r7.lang, "fr")
     }
@@ -334,6 +334,54 @@ final class AskTests: TempDirTestCase {
         var o = AskOptions(); o.retrieveOnly = true
         let r = await (try engine(notes)).ask(q, options: o)
         XCTAssertEqual(r.notes.first?.title, "Voice note Nov 16, 2026 at 2:32 PM")
+    }
+
+    /// A made-up default title ("Voice note <date>") names the note in a result but is no label word: the keyword ranking
+    /// and the validator's label words leave it out, while a stored or derived title still counts.
+    func testADefaultVoiceTitleIsNoLabelWord() async throws {
+        let id = UUID(), page = UUID()
+        var ops = NoteOps.newNote(title: "", paper: .ruled, notebook: nil, pageId: page)
+        ops.append(.setPageRecognition(pageId: page, recognition: Recognition(engine: "test", text: Self.corpus[2].1)))
+        try vault.apply(ops, to: id, deviceState: tmp.appendingPathComponent("dev.json"), app: "test/1")
+        let summaries = try vault.summaries()
+        let shown = "Voice note Nov 16, 2026 at 2:32 PM"
+        let asDefault = AskNote.notes(vault, summaries: summaries, titles: [id: shown], defaultTitled: [id])
+        XCTAssertEqual(asDefault.first?.input.title, shown)
+        XCTAssertEqual(asDefault.first?.labelTitle, "")
+        let derived = AskNote.notes(vault, summaries: summaries, titles: [id: "2026-11-16 14.32 Sourdough starter"])
+        XCTAssertEqual(derived.first?.labelTitle, "2026-11-16 14.32 Sourdough starter")
+        var o = AskOptions(); o.retrieveOnly = true
+        // Nothing in the note's text says "voice" or "nov": only its default title would match.
+        let byDefault = await (try engine(asDefault)).ask("voice nov", options: o)
+        XCTAssertTrue(byDefault.notes.isEmpty, "\(byDefault.notes)")
+        let byLabel = await (try engine(AskNote.notes(vault, summaries: summaries, titles: [id: "Voice note Nov 16, 2026 at 2:32 PM"]))).ask("voice nov", options: o)
+        XCTAssertEqual(byLabel.notes.count, 1, "a title that is not a default stays a label word")
+        XCTAssertEqual(AskSource(id: "S1", note: id, title: shown, summary: nil, passages: [], labelTitle: "").labelTitle, "")
+    }
+
+    // MARK: Which language a question is in
+
+    func testQuestionLanguageIsChosenAmongTheVaultsAndTheDevicesLanguages() {
+        XCTAssertEqual(AskLanguage.candidates(noteLanguages: ["es", "en-US", "es", "es-MX"], device: "en"), ["es", "en"])
+        XCTAssertEqual(AskLanguage.candidates(noteLanguages: [], device: "fr"), ["fr"])
+        XCTAssertEqual(AskLanguage.choose(hypotheses: [("es", 0.7), ("en", 0.3)], among: ["en", "es"]), "es")
+        XCTAssertNil(AskLanguage.choose(hypotheses: [("es", 0.45), ("en", 0.4)], among: ["en", "es"]), "below the confidence: the main language")
+        XCTAssertNil(AskLanguage.choose(hypotheses: [("fr", 0.9), ("en", 0.1)], among: ["en", "es"]), "a language nobody here uses is not chosen")
+        XCTAssertEqual(AskLanguage.choose(hypotheses: [("pt-BR", 0.8)], among: ["pt"]), "pt", "tags compare by primary language")
+        XCTAssertNil(AskLanguage.choose(hypotheses: [], among: ["en"]))
+        XCTAssertNil(AskLanguage.choose(hypotheses: [("en", 0.9)], among: []))
+    }
+
+    func testTheEngineOffersTheRecognizerTheVaultsLanguagesAndFallsBackToTheMainOne() async throws {
+        let notes = [note("A", Self.corpus[0].1, language: "es"), note("B", Self.corpus[1].1, language: "es"),
+                     note("C", Self.corpus[2].1, language: "en")]
+        final class Seen: @unchecked Sendable { var among: [String] = [] }
+        let seen = Seen()
+        var o = AskOptions(); o.retrieveOnly = true; o.deviceLanguage = "fr"
+        o.detectLanguage = { _, among in seen.among = among; return nil }
+        let r = await (try engine(notes)).ask(q, options: o)
+        XCTAssertEqual(seen.among, ["es", "en", "fr"])
+        XCTAssertEqual(r.lang, "es", "no confident detection: the vault's main language")
     }
 
     // MARK: Kinds, matched words and the retrieval hand-over (a43e8ae)

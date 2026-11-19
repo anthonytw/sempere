@@ -73,12 +73,13 @@ struct AskCommand: ParsableCommand {
         OpenedVaults.shared.markUnchanged(vault.url)
         try vault.requireCompleteCopy()
         let summaries = try vault.summaries(of: nil, cache: cache.cache(for: vault))
-        let notes = AskNote.notes(vault, summaries: summaries, titles: NoteTitles.display(summaries, in: vault))
+        let notes = AskNote.notes(vault, summaries: summaries, titles: NoteTitles.display(summaries, in: vault),
+                              defaultTitled: NoteTitles.defaultTitled(summaries, in: vault))
         let engine = AskEngine(reader: InsightsReader(vault: vault), notes: notes, me: vault.writerDevice,
                                model: retrieveOnly ? nil : p.model, embedder: p.embedder)
         var o = AskOptions()
         o.limit = limit; o.filter = filter; o.language = lang; o.retrieveOnly = retrieveOnly; o.explain = explain
-        o.detectLanguage = { AppleInsightsProviders.detectLanguage($0) }
+        o.detectLanguage = { AppleInsightsProviders.detectLanguage($0, among: $1) }
         let options = o
         let q = question
         let result = try blockingThrowing { await engine.ask(q, options: options) }

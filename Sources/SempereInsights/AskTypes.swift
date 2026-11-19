@@ -32,24 +32,32 @@ public struct AskNote: Hashable, Sendable {
     /// Each page's text in page order (`PageText.texts`, which carries typed text, PDF text and equations' source),
     /// then the transcripts as one part with no page.
     public var parts: [AskPassage]
+    /// The title as a label for ranking and fact checks: `input.title` unless that is a made-up default title ("Voice note
+    /// <date>"), which says nothing about the note and is left out (empty).
+    public var labelTitle: String
 
-    public init(input: InsightsNoteInput, parts: [AskPassage]) { self.input = input; self.parts = parts }
+    public init(input: InsightsNoteInput, parts: [AskPassage], labelTitle: String? = nil) {
+        self.input = input; self.parts = parts; self.labelTitle = labelTitle ?? input.title
+    }
 
     public var id: UUID { input.id }
 
     /// The asks' notes of a vault's summaries: the insight inputs, with their page texts. `titles` are the titles the
     /// caller shows (`NoteDisplayTitle`: a voice note's derived or default title); a result names a note by them, else by
-    /// its stored title.
-    public static func notes(_ vault: Vault, summaries: [NoteSummary], titles: [UUID: String] = [:]) -> [AskNote] {
+    /// its stored title. `defaultTitled` are the notes whose shown title is the made-up default: it names them in a result
+    /// but never counts as a label word.
+    public static func notes(_ vault: Vault, summaries: [NoteSummary], titles: [UUID: String] = [:],
+                             defaultTitled: Set<UUID> = []) -> [AskNote] {
         let inputs = InsightsNotes.inputs(vault, summaries: summaries)
         let byId = Dictionary(summaries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         return inputs.map { input in
             var input = input
             if let shown = titles[input.id], !shown.isEmpty { input.title = shown }
+            let label = defaultTitled.contains(input.id) ? "" : input.title
             var parts = (byId[input.id]?.pageTexts ?? []).map { AskPassage(page: $0.number, text: $0.text) }
             let transcript = input.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             if !transcript.isEmpty { parts.append(AskPassage(page: nil, text: transcript)) }
-            return AskNote(input: input, parts: parts)
+            return AskNote(input: input, parts: parts, labelTitle: label)
         }
     }
 }
@@ -84,12 +92,15 @@ public struct AskSource: Hashable, Sendable {
     public var id: String
     public var note: UUID
     public var title: String
+    /// `title` as a label word source (`AskNote.labelTitle`).
+    public var labelTitle: String
     /// The note's insight summary when current: the one-line header (design §3.1 step 6).
     public var summary: String?
     public var passages: [AskPassage]
 
-    public init(id: String, note: UUID, title: String, summary: String?, passages: [AskPassage]) {
+    public init(id: String, note: UUID, title: String, summary: String?, passages: [AskPassage], labelTitle: String? = nil) {
         self.id = id; self.note = note; self.title = title; self.summary = summary; self.passages = passages
+        self.labelTitle = labelTitle ?? title
     }
 
     /// The text the model reads for this source (summary first, then the passages), also what its sentences are

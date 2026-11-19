@@ -43,7 +43,7 @@ public enum AskValidator {
             if let bad = ids.first(where: { byId[$0] == nil }) { drop(text, "unknown source \(bad.prefix(8))"); continue }
             let cited = ids.compactMap { byId[$0] }
             let evidence = cited.map(\.evidenceText).joined(separator: "\n")
-            let labels = FactCheck.Context(title: cited.map(\.title).joined(separator: " "))
+            let labels = FactCheck.Context(title: cited.map(\.labelTitle).joined(separator: " "))
             if let token = FactCheck(source: evidence, context: labels).unsupportedToken(text) {
                 drop(text, "not in the cited passages: \(token)"); continue
             }
