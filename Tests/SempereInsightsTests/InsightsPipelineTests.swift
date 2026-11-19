@@ -7,6 +7,41 @@ import XCTest
 /// IDF, typo merge, chunking and the overflow retry, the fact check, CSLS and mean-centering, the unrelated note,
 /// Louvain and layout determinism, placement, cluster ids across a rebuild, canaries, the pin and the policy.
 final class InsightsPipelineTests: XCTestCase {
+    // MARK: Determinism (D21)
+
+    /// The same graph, its edges added in different orders (so its dictionaries iterate differently), gives the same
+    /// communities and the same layout bytes: every float accumulation runs in a fixed order.
+    func testLouvainAndLayoutDoNotDependOnAdjacencyOrder() {
+        var state: UInt64 = 0x9E3779B97F4A7C15
+        func next() -> UInt64 { state = state &* 6364136223846793005 &+ 1442695040888963407; return state >> 11 }
+        let n = 60
+        var edges: [(Int, Int, Double)] = []
+        for i in 0..<n {
+            for _ in 0..<5 {
+                let j = Int(next() % UInt64(n))
+                if j != i { edges.append((min(i, j), max(i, j), Double(next() % 100_000) / 99_991 + 0.01)) }
+            }
+        }
+        var unique: [Int: [Int: Double]] = [:]
+        for (a, b, w) in edges { unique[a, default: [:]][b] = w }
+        let flat = unique.keys.sorted().flatMap { a in unique[a]!.keys.sorted().map { (a, $0, unique[a]![$0]!) } }
+        let ids = (0..<n).map { UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", $0))! }
+        var reference: (comm: [Int], agg: [Int], pos: [String])?
+        for round in 0..<12 {
+            var order = flat
+            var rng = SystemRandomNumberGenerator()
+            if round > 0 { order.shuffle(using: &rng) }
+            var g = WeightedGraph(n: n)
+            for (a, b, w) in order { g.add(a, b, w) }
+            let comm = Louvain.communities(g)
+            let agg = Louvain.communities(Louvain.aggregate(g, comm))
+            let layout = MapBuilder.layout(ids: ids, graph: g, clusterOf: comm, previous: [:])
+            let pos = ids.map { "\(layout[$0]!.x),\(layout[$0]!.y)" }
+            if let r = reference { XCTAssertEqual(r.comm, comm); XCTAssertEqual(r.agg, agg); XCTAssertEqual(r.pos, pos, "round \(round)") }
+            else { reference = (comm, agg, pos) }
+        }
+    }
+
     // MARK: Normalization
 
     func testNormalizationTable() {
