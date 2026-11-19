@@ -92,7 +92,7 @@ extension AppModelSuites {
             #expect(!html.contains("Fixture lecture"))
             #expect(html.contains("<title>Shared note</title>"))
             let template = try #require(ShareTemplate(html: Data(ShareViewerTemplate.data)))
-            let verified = template.verify(file: file)
+            let verified = template.verify(file: file, minLog2N: 10)   // the tests write fast scrypt (2^10)
             #expect(verified.ok && verified.scryptLog2N == 10)
             #expect((r.webShareSections?.template ?? 0) > 100_000)
             #expect((r.webShareSections?.ink ?? 0) > 0)
