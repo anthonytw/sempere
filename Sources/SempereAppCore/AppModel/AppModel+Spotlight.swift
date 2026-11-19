@@ -85,6 +85,9 @@ extension AppModelCore {
         if mode == .off {
             spotlightRuntime.reset()
             await spotlightRuntime.untilIdle()
+            // Turned back on while the pass finished: its re-donation stands, and removing now would empty an index
+            // the switch says is on (with fingerprints claiming it is full).
+            guard spotlight.mode(for: id) == .off else { return }
             await spotlight.removeDomain(id)
             await spotlight.clearIndexIfNoneOn()
         } else {
@@ -106,6 +109,7 @@ extension AppModelCore {
         let runtime = spotlightRuntime
         Task {
             await runtime.untilIdle()
+            guard spotlight.mode(for: id) == .off else { return }   // turned back on meanwhile: keep its donation
             await spotlight.removeDomain(id)
             await spotlight.clearIndexIfNoneOn()
         }

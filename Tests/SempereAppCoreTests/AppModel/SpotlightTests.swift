@@ -170,6 +170,27 @@ extension AppModelSuites {
             #expect(r.model.spotlightMode == .off)
         }
 
+        @Test func offThenOnAgainWhileAPassRunsKeepsTheIndexFull() async throws {
+            let r = try await Self.rig()
+            defer { r.model.close() }
+            r.index.closeGate()
+            let on = Task { await r.model.setSpotlight(.metadata) }
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { r.index.indexCallsStarted > 0 })
+            let off = Task { await r.model.setSpotlight(.off) }
+            _ = await TS.waitUntil(timeout: .milliseconds(200)) { false }
+            // Back on before the pass finishes: the waiting "off" must not empty the index afterward.
+            let again = Task { await r.model.setSpotlight(.metadata) }
+            _ = await TS.waitUntil(timeout: .milliseconds(200)) { false }
+            r.index.openGate()
+            await on.value
+            await off.value
+            await again.value
+            #expect(r.model.spotlightMode == .metadata)
+            #expect(await TS.waitUntil(timeout: .seconds(5)) { r.index.items.count == 2 })
+            _ = await TS.waitUntil(timeout: .milliseconds(300)) { false }
+            #expect(r.index.items.count == 2, "nothing removed the items after the switch went back on")
+        }
+
         @Test func aDeletedNoteLeavesAndARestoredOneComesBack() async throws {
             let r = try await Self.rig()
             defer { r.model.close() }
