@@ -156,14 +156,21 @@ extension AppModelCore {
     // MARK: - Transcription
 
     /// Transcribes a recording of the editor's note now (the Transcribe
-    /// button; works whatever the automatic setting says).
-    public func transcribe(_ recording: Recording, in editor: Editor) async {
+    /// button; works whatever the automatic setting says), in `language` (a BCP 47 tag; nil: the automatic choice, the
+    /// Settings language else the note's else the device's). With `redoInsights` the note's summary, keywords and title
+    /// are made again from the new text once it is there (a no-op while Note Insights is off or this device has no model,
+    /// and when the recording was not transcribed).
+    public func transcribe(_ recording: Recording, in editor: Editor, language: String? = nil, redoInsights: Bool = false) async {
         guard let cache = attachmentCache() else { return }
         let note = editor.noteID
         do {
             let url = try await cache.acquire(note: note, ref: recording.blob)
-            await transcribe(recording, note: note, file: url, meta: editor.meta, automatic: false)
+            let before = editor.recordings.first { $0.id == recording.id }?.transcript
+            await transcribe(recording, note: note, file: url, meta: editor.meta, automatic: false, language: language)
             await cache.release(note: note, ref: recording.blob, discard: true)
+            if redoInsights, editor.recordings.first(where: { $0.id == recording.id })?.transcript != before {
+                regenerateNoteInsights(note)
+            }
         } catch {
             alert = .notice(.recordingUnreadable(services.describeError(error)))
         }

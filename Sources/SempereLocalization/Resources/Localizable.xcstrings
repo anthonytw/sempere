@@ -28814,6 +28814,19 @@
         }
       }
     },
+    "Transcribe All Again" : {
+      "comment" : "Toolbar menu of the All Recordings list: transcribe every recording of the note again, in a language you choose",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a transcribir todo"
+          }
+        }
+      }
+    },
     "Transcribe Recordings on This Device" : {
       "comment" : "Settings toggle",
       "extractionState" : "manual",
@@ -28849,6 +28862,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vuelve a transcribir todas las grabaciones de esta nota en el idioma que elijas"
+          }
+        }
+      }
+    },
+    "Transcribe this recording in a language you choose" : {
+      "comment" : "Help tag of the Transcribe menu of one recording",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transcribe esta grabación en el idioma que elijas"
           }
         }
       }

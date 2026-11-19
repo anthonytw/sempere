@@ -152,6 +152,33 @@ extension AppModelSuites {
             model.close()
         }
 
+        /// One recording is transcribed again in a language chosen for it alone: the note's other recordings keep their
+        /// transcripts, and nil passes no language.
+        @Test func transcribeOneRecordingInTheChosenLanguage() async throws {
+            let log = LanguageLog()
+            let model = try await Self.model(transcriber: LanguageTranscriber(log: log))
+            let editor = try #require(model.editor)
+            let a = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_000))
+            let b = try await editor.addRecording(file: Self.tone, started: Date(timeIntervalSince1970: 1_800_000_100))
+            await model.transcribe(a, in: editor)
+            await model.transcribe(b, in: editor)
+            let bRef = try #require(editor.recording(b.id)?.transcript)
+            let aRef = try #require(editor.recording(a.id)?.transcript)
+            await model.transcribe(a, in: editor, language: "es-ES", redoInsights: true)
+            #expect(model.alert == nil)
+            #expect(log.languages.last == "es-ES")
+            let vault = try #require(model.vault)
+            let newRef = try #require(editor.recording(a.id)?.transcript)
+            #expect(newRef != aRef, "replaced")
+            #expect(try Transcript.decode(try await Self.read(newRef, in: vault)).language == "es-ES")
+            #expect(editor.recording(b.id)?.transcript == bRef, "the other recording is untouched")
+            await model.transcribe(a, in: editor, language: nil)
+            #expect(log.languages.last == .some(nil))
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { !model.noteInsightsPending(Self.lecture) })
+            #expect(model.transcribing.isEmpty)
+            model.close()
+        }
+
         @Test func playbackLoadsFromTheBlobCacheAndSeeks() async throws {
             let model = try await Self.model()
             let editor = try #require(model.editor)

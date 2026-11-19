@@ -165,12 +165,7 @@ struct RecordingsMenu: View {
                             Button("Show Transcript", systemImage: "text.quote") { showingTranscript = r }
                         }
                         if !editor.isReadOnly {
-                            Button(r.transcript == nil ? String(localized: "Transcribe", comment: "Menu item: transcribe a recording")
-                                                       : String(localized: "Transcribe Again", comment: "Menu item: transcribe a recording again"),
-                                   systemImage: "waveform.and.mic") {
-                                Task { await model.transcribe(r, in: editor) }
-                            }
-                            .disabled(model.transcribing.contains(r.id))
+                            TranscribeRecordingMenu(editor: editor, recording: r)
                             Button("Rename…", systemImage: "pencil") { renaming = r }
                             Button("Delete", systemImage: "trash", role: .destructive) {
                                 Task { await editor.removeRecording(r.id) }
@@ -442,6 +437,9 @@ struct RecordingsListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                if !editor.isReadOnly {
+                    ToolbarItem(placement: .secondaryAction) { TranscribeAgainMenu(editor: editor, title: "Transcribe All Again") }
+                }
             }
             .alert("Rename Recording", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField("Title", text: $newTitle)
@@ -501,10 +499,7 @@ struct RecordingsListView: View {
                     }
                 }
                 if !editor.isReadOnly {
-                    Button(r.transcript == nil ? "Transcribe" : "Transcribe Again", systemImage: "waveform.and.mic") {
-                        Task { await model.transcribe(r, in: editor) }
-                    }
-                    .disabled(model.transcribing.contains(r.id))
+                    TranscribeRecordingMenu(editor: editor, recording: r)
                     Button("Rename…", systemImage: "pencil") {
                         newTitle = r.title ?? ""
                         renaming = r
@@ -523,42 +518,78 @@ struct RecordingsListView: View {
 }
 
 
-/// "Transcribe Again" for the whole note: a menu of the languages the recognizers support (Automatic first: the language
-/// chosen in Settings, else the note's, else the device's) and the choice to make the note's insights again afterwards.
-struct TranscribeAgainMenu: View {
-    let editor: NoteEditor
-    @AppModelEnvironment private var model
-    /// The recognizers' languages, read once when the menu first shows.
-    @State private var languages: [String] = []
+/// The choices of a transcription language, shared by every "Transcribe" menu so they cannot drift: Automatic first
+/// (the language chosen in Settings, else the note's, else the device's), then the languages the recognizers support,
+/// then the choice to make the note's insights again afterwards. `run` gets the chosen BCP 47 tag (nil: automatic) and
+/// whether to redo the insights.
+struct TranscriptionLanguageChoices: View {
+    let meta: NoteMeta?
+    /// The recognizers' languages (`SpeechTranscription.supportedLanguages()`, loaded by the menu that shows these).
+    let languages: [String]
+    let run: (_ language: String?, _ redoInsights: Bool) -> Void
     @AppStorage("transcribeAgain.redoInsights") private var redoInsights = false
 
     var body: some View {
-        Menu {
-            Button {
-                run(nil)
-            } label: {
-                Text(Self.automaticTitle(editor.meta))
-            }
-            if !languages.isEmpty {
-                Divider()
-                ForEach(languages, id: \.self) { tag in
-                    Button(Self.name(of: tag)) { run(tag) }
-                }
-            }
-            Divider()
-            Toggle("Also Redo Insights", isOn: $redoInsights)
+        Button {
+            run(nil, redoInsights)
         } label: {
-            Label("Transcribe Again", systemImage: "waveform.and.mic")
+            Text(TranscribeAgainMenu.automaticTitle(meta))
+        }
+        if !languages.isEmpty {
+            Divider()
+            ForEach(languages, id: \.self) { tag in
+                Button(TranscribeAgainMenu.name(of: tag)) { run(tag, redoInsights) }
+            }
+        }
+        Divider()
+        Toggle("Also Redo Insights", isOn: $redoInsights)
+    }
+}
+
+/// "Transcribe" / "Transcribe Again" for one recording: a submenu of the languages (`TranscriptionLanguageChoices`).
+struct TranscribeRecordingMenu: View {
+    let editor: NoteEditor
+    let recording: Recording
+    @AppModelEnvironment private var model
+    @State private var languages: [String] = []
+
+    var body: some View {
+        Menu {
+            TranscriptionLanguageChoices(meta: editor.meta, languages: languages) { language, redo in
+                Task { await model.transcribe(recording, in: editor, language: language, redoInsights: redo) }
+            }
+        } label: {
+            Label(recording.transcript == nil ? String(localized: "Transcribe", comment: "Menu item: transcribe a recording")
+                                              : String(localized: "Transcribe Again", comment: "Menu item: transcribe a recording again"),
+                  systemImage: "waveform.and.mic")
+        }
+        .disabled(model.transcribing.contains(recording.id))
+        .help("Transcribe this recording in a language you choose")
+        .task { languages = await SpeechTranscription.supportedLanguages() }
+        .accessibilityIdentifier("recording.transcribe")
+    }
+}
+
+/// "Transcribe Again" for the whole note: a menu of the languages (`TranscriptionLanguageChoices`) that transcribes every
+/// recording again. In the Recordings menu it is "Transcribe Again"; the All Recordings list titles it "Transcribe All Again".
+struct TranscribeAgainMenu: View {
+    let editor: NoteEditor
+    var title: LocalizedStringKey = "Transcribe Again"
+    @AppModelEnvironment private var model
+    @State private var languages: [String] = []
+
+    var body: some View {
+        Menu {
+            TranscriptionLanguageChoices(meta: editor.meta, languages: languages) { language, redo in
+                Task { await model.transcribeAgain(in: editor, language: language, redoInsights: redo) }
+            }
+        } label: {
+            Label(title, systemImage: "waveform.and.mic")
         }
         .disabled(editor.recordings.isEmpty || !editor.recordings.allSatisfy { !model.transcribing.contains($0.id) })
         .help("Transcribe every recording of this note again, in a language you choose")
         .task { languages = await SpeechTranscription.supportedLanguages() }
         .accessibilityIdentifier("recordings.transcribeAgain")
-    }
-
-    private func run(_ language: String?) {
-        let redo = redoInsights
-        Task { await model.transcribeAgain(in: editor, language: language, redoInsights: redo) }
     }
 
     /// "Automatic (Spanish)": what a transcription would use without a choice.
