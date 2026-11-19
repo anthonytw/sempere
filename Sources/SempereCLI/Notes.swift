@@ -69,16 +69,7 @@ enum NoteTitles {
     /// Reads the insights store only when some note needs it (a voice note whose title is blank or a default), and takes
     /// the title derived for the note's current text (format.md §16.2: a title made for older text is not shown).
     static func generated(for notes: [NoteSummary], in vault: Vault) -> [UUID: String] {
-        let wanted = notes.filter { !$0.deleted && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice) && $0.voice != nil }
-        guard !wanted.isEmpty, FileManager.default.fileExists(atPath: vault.insightsURL.path) else { return [:] }
-        let snapshot = InsightsStore(vault: vault).snapshot()
-        let settings = InsightsSettings.read(vault)
-        let language = settings.language
-        var out: [UUID: String] = [:]
-        for n in InsightsNotes.inputs(vault, summaries: wanted) {
-            if let t = snapshot.bestTitle(for: n.id, hash: n.hash, language: language, format: settings.voiceNoteTitle) { out[n.id] = t }
-        }
-        return out
+        InsightsNotes.derivedTitles(vault, for: notes)
     }
 
     /// The notes whose title is no word of anyone's choosing (a voice note's default, made up or stored before 1.3, with

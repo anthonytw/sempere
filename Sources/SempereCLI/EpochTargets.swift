@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 import SempereWebDAV
 
@@ -70,6 +71,7 @@ enum EpochTargets {
         var base = SyncOptions()
         base.deviceID = vault.writerDevice
         base.deviceLabel = conflictDeviceLabel
+        base.derivedTitles = { InsightsNotes.derivedTitles($0, for: $1) }
         base.localWriteLock = store.writeLock(for: vault.vaultId)
         let scratch = store.targets.stateDirectory(UUID(), of: vault.vaultId).deletingLastPathComponent()
             .appendingPathComponent("pull", isDirectory: true)

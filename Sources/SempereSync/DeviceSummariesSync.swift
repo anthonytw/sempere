@@ -356,7 +356,7 @@ extension SyncEngine {
         guard !options.dryRun, device == v.writerDevice,
               let contents = try? v.openDevicePublishedSummaries(local, device: device, now: options.now),
               let version = PublishedSummaries.nextVersion(after: max(above, contents.version ?? 0), now: options.now),
-              let data = try? v.sealDevicePublishedSummaries(contents.entries, version: version)
+              let data = try? v.sealDevicePublishedSummaries(contents.entries, version: version, titles: contents.titles)
         else { return nil }
         let path = "\(PublishedSummaries.deviceFolderName)/\(name)"
         try requireLocalWrite("write \(path)")

@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 import SempereWebDAV
 
@@ -246,6 +247,7 @@ struct StoreSync: ParsableCommand {
         base.deviceID = vault.writerDevice ?? SyncCLI.deviceID()
         base.deviceLabel = conflictDeviceLabel
         base.summaryCacheDirectory = SummaryCache.cliDirectory(environment: Env.vars)
+        base.derivedTitles = { InsightsNotes.derivedTitles($0, for: $1) }
         base.largeBlobs = largeBlobs
         base.arrivalWait = TimeInterval(wait ?? 30)
         base.localWriteLock = store.writeLock(for: entry.vaultId)

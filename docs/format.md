@@ -116,7 +116,7 @@ except these, which are replaced whole (atomically):
 | --- | --- | --- |
 | `vault.json` | the home device (§15.3); for `label` alone, any listed device | creation, a device approved or renamed (§2), a label change (§2) |
 | `settings.age` | devices that opted in | when a shared setting changes, or a device's merged copy is newer (§13.3) |
-| `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note changed (§12.4) |
+| `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note, or the title it is shown under, changed (§12.4) |
 | `summaries/<device>.sealed` | that device only (signed by it) | when its listing changed (§12.5) |
 | `insights/*.<device>.insights.age` | that device only | when its insights change, or it tombstones them or writes them again under a new key (§16) |
 
@@ -2893,7 +2893,7 @@ where the table says how they degrade.
 | PDF attachment (export, `SemperePDF`) | 1 GiB file; 10⁶ objects; 256 MiB per decoded stream, 1 GiB decoded per file; the object parser reads at most 4 bytes per byte of the file and of its decoded streams, plus 64 MiB; nesting and page-tree depth 64; 32 reference hops; 4 096 cross-reference sections; 16 filters per stream; encrypted files refused | `PDFLimits` |
 | PDF page drawn as pixels (SVG, PNG) | 16 M pixels per page (drawn at a lower resolution beyond), 256 M per export (placeholders beyond) | `RenderLimits.maxBackgroundPixels…` |
 | summary cache file (§10) | 64 MiB on disk, 256 MiB after gunzip; any failure discards it | `SummaryCache.maxFileBytes` |
-| published summaries (§12) | 64 MiB on disk, 256 MiB after gunzip; unknown fields skipped, not kept; any failure ignores the file, a bad entry only that entry | `PublishedSummaries.maxFileBytes` |
+| published summaries (§12) | 64 MiB on disk, 256 MiB after gunzip; unknown fields skipped, not kept; any failure ignores the file, a bad entry only that entry; `shown` at most 1 000 characters and `voice.tz` 64 (a longer one reads as absent) | `PublishedSummaries.maxFileBytes`, `.maxShownLength`, `.maxZoneLength` |
 | notebook records (§14) | 64 KiB on disk and after gunzip per record; 256 `add` paths and 4 096 `remove` ids per record, a path at most 1 200 Unicode scalars (else the record is refused); 10 000 records per vault (the rest ignored and reported) | `NotebookRecords.maxFileBytes`, `.maxAdds`, `.maxRemoves`, `.maxRecords` |
 | shared settings (§13) | 1 MiB on disk, 1 MiB after gunzip; 4 096 slots, 32 type blocks (else the file is refused); a malformed `$meta` entry or version, or an invalid value, is ignored alone | `SharedSettings.maxFileBytes`, `.maxSlots`, `.maxBlocks` |
 | note insights (§16) | a note file or device record 64 KiB, a topics file 1 MiB, a map 8 MiB, on disk and after gunzip; the counts and lengths of §16.7; any failure ignores the file | `InsightsFileKind.maxBytes`, `InsightsLimits` |
@@ -3365,8 +3365,23 @@ file = 534d505501a0a1a2a3a4a5a6a7a8a9aaabb466bcf027fe45b94f3fe195f6e0b57d9c6e
       "modified": "2026-10-06T09:12:44.512Z",
       "pages": 2,
       "pageTexts": [{ "page": 1, "text": "milk eggs" }]
+    },
+    "0b9d4c1e-7f2a-4e38-9c65-3a1f8e2d6b07": {
+      "revisions": ["17598432000000000-a1b2c3d4-1.delta.age"],
+      "title": "",
+      "tags": [],
+      "notebook": "Voice",
+      "favorite": false,
+      "deleted": false,
+      "created": "2026-10-07T14:32:05.120Z",
+      "modified": "2026-10-07T14:32:05.120Z",
+      "pages": 1,
+      "pageTexts": [],
+      "voice": { "started": "2026-10-07T14:32:00.000Z", "tz": "America/New_York", "source": "phone" },
+      "shown": "2026-10-07 10.32 Standup budget review"
     }
-  }
+  },
+  "titles": 1
 }
 ```
 
@@ -3405,13 +3420,42 @@ file = 534d505501a0a1a2a3a4a5a6a7a8a9aaabb466bcf027fe45b94f3fe195f6e0b57d9c6e
   source of each math item (§8.2.8) in drawing order (§8.2.3), the non-empty
   ones joined by `\n`, in page order. Pages
   without such text are left out. Dates are as in §6.
+- `voice` and `shown` (both optional, 1.3) let a reader show a quick voice note (§11.3) under the title the apps show
+  (§16.8) without reading its revisions or the insights files:
+  - `voice`: present when the note is a voice note (it has a recording with `captured`, §8.3.1; the first such one
+    counts) whose stored `title` is no one's choice: blank, or a default stored by 1.0 through 1.2 (§16.8). `started`
+    is that recording's `started` (§6), `tz` and `source` its `captureInfo` members (§8.3.1), each absent when the
+    recording has none. Absent for every other note. It carries no device id: `captured` (who captured it) is never
+    published.
+  - `shown`: present only with `voice`, when the writer shows a title Note Insights derived for the note (§16.8): the
+    `title` of the best insights file for the note's current text hash in the insight language and title format now
+    set (§16.2), the title `sempere notes list` shows. Absent when the writer shows no derived title (none yet, or a
+    writer that does not read `insights/`).
+
+  A reader shows, in this order: `shown`; else, when `voice` is present and `title` is blank, the default title made
+  from `voice` in the reader's own language and in the capture's zone (`tz`, else the reader's) ("Voice note <date
+  and time>", "Watch voice note …" for `source` `watch`, §16.8); else `title` (blank: "Untitled"). The default is made by
+  the reader, not stored, so each reader words it in its own language. A reader that does not know the members ignores
+  them (below) and shows `title`, as before 1.3: a blank title then reads "Untitled", which is what such a reader shows
+  for the note's revisions too. A malformed `voice` (a `started` that is not a date of §6, a member of another type) is
+  ignored alone, and so is a `shown` that is not a string, is blank after trimming, is longer than 1 000 characters or
+  comes without `voice`; neither ever makes the entry malformed. A `tz` longer than 64 characters reads as absent.
+  Like the rest of the file, both are inside the ciphertext (§12.1): the storage server sees no title, derived or not.
 
 A per-device file (§12.5) also has `"device"`, its writer's device id, and `"version"`, an integer
 from 1 to 2^53 − 1 that its writer raises with every write (§12.5); both are covered by its signature. The root file has neither; a reader
 ignores a malformed value of either.
 
+`titles` (optional, 1.3, root and per-device files): `1` when the writer gave every entry `voice` where it applies
+(above). A writer that reuses the entries of a file with it takes an entry without `voice` as final; without it (a file
+of a writer before 1.3) an entry without `voice` whose `title` is blank or has the shape of a stored default (§16.8) may
+be such a writer's entry of a voice note, and is made again (§12.4). Writers of 1.3 always write it, except when they
+seal again the same entries of a file that had none (a per-device file resealed, §12.5). Readers that only show
+entries ignore it; a value other than a positive integer reads as absent.
+
 Unknown fields are ignored. Writers emit no others under `format`
-`sempere-summaries/1`; a change readers must not misread changes `format`.
+`sempere-summaries/1` (`voice`, `shown` and `titles` were added in 1.3 as optional members that older readers ignore,
+above); a change readers must not misread changes `format`.
 
 ### 12.3 Reading
 
@@ -3441,8 +3485,34 @@ say once it opens a note, and prefers that summary from then on.
 `sempere vault summaries` writes the file (docs/cli.md); `sempere sync
 webdav` keeps the server's copy current, computed from what the server holds
 after the sync. The file is never copied between the two sides of a sync:
-each writer computes it from its own listing. The apps do not write it: they
-write per-device files (§12.5).
+each writer computes it from its own listing. The apps write it only through a sync, on its other side (a server or a
+sync folder): they keep an existing copy current, and create one for devices joining the vault; in their own vault
+folder they write per-device files (§12.5).
+
+The file is rewritten when a listed note changed, and when the title a note is shown under changed though its
+revisions did not: a title Note Insights derived later (§16.8) arrives in `insights/`, not in a revision. A writer
+that reads `insights/` therefore never reuses an entry that has `voice` from the file it replaces: it looks up the
+note's `shown` again whenever it writes. The note's summary comes from its summary cache (§10); of `insights/` it reads
+only those notes' own files (`<note>.<device>.insights.age`, never the maps, topics or device records), and a note's
+transcripts (for the text hash, §16.2) only when one of its files holds a title. A file without `titles` (above) is
+from a writer before 1.3: its entries with no `voice` whose `title` is blank or has the shape of a stored default
+(§16.8), which may be such a writer's entries of voice notes, are made again, and the file is rewritten with the marker
+(once; from then on such entries are final).
+
+Writers skip that work while nothing it depends on changed: what they compare, besides the listing of the side they
+write for and the epoch, is the names, sizes and modification times of the vault's insights note files and of
+`settings.age` (the insight language and the title format). A sync keeps that with the listing it last wrote for; the
+CLI's refresh after a command (any command that unlocks the vault) keeps it, with the bytes of `vault.json`, the
+version of its summary computation and the root file's size and modification time, beside its summary cache, so a
+command that changes none of them reads no note and no insights file. Like the sync, it keeps it only after a complete
+refresh (every listed note got an entry): a note that could not be summarized yet is tried again by the next command.
+A derived title that arrives, or a change of those settings, is published by the next sync or command. A writer that
+reads `insights/` and finds no such folder shows no derived title: it drops `shown` from the entries it reuses. A writer
+that does not read `insights/` publishes `voice` and keeps the `shown` of entries it reuses.
+
+A writer of 1.2 or earlier that rewrites the file (any change of the listing) knows neither member nor the marker, so
+its file has none of them: the viewer then lists such voice notes as "Untitled" until a writer of 1.3 rewrites it,
+which it does at its next sync or command (the file has no marker, so its voice notes are made again).
 
 ### 12.5 Per-device files
 

@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 
 /// A folder target's folder, reachable for one run: its bookmark resolved (security scope held until
@@ -167,6 +168,7 @@ extension AppModelCore {
                     }
                     var options = SyncOptions(deviceLabel: "app")
                     options.summaryCacheDirectory = cacheDirectory
+                    options.derivedTitles = { InsightsNotes.derivedTitles($0, for: $1) }
                     options.localWriteLock = lock
                     options.quarantineDirectory = quarantine
                     options.arrivalWait = wait

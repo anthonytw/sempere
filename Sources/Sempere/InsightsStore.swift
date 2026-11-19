@@ -269,11 +269,18 @@ public struct InsightsStore: Sendable {
 
     /// Every file of the folder, read under the current key (`InsightsSnapshot`). Files of removed devices are left
     /// out (they are deleted by `removeRemovedDevices`).
-    public func snapshot() -> InsightsSnapshot {
+    public func snapshot() -> InsightsSnapshot { snapshot(only: nil) }
+
+    /// The note files of `notes` only (`insights/<id>.<device>.insights.age`), read under the current key: what a reader that
+    /// needs a few notes' titles reads (`InsightsNotes.derivedTitles`), without the maps, topics and device records.
+    public func snapshot(notes: Set<UUID>) -> InsightsSnapshot { snapshot(only: notes) }
+
+    private func snapshot(only notes: Set<UUID>?) -> InsightsSnapshot {
         var s = InsightsSnapshot()
         guard vault.canRead else { return s }
         let removed = vault.removedInsightsDevices()
         for name in Self.names(in: folder) {
+            if let notes, !(name.kind == .note && name.noteId.map(notes.contains) == true) { continue }
             if removed.contains(name.device) {
                 s.ignored[name.fileName] = .cannotWrite("written by a device removed from the vault")
                 continue

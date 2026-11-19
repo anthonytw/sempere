@@ -1,6 +1,7 @@
 // The title a voice note is shown under while it stores none (format.md §8.3.1 `captureInfo`, §16.8), the viewer's part
 // of Swift's `NoteDisplayTitle.defaultTitle`: the words for the capture's source and the capture's date and time, in the
-// capture's own time zone. The viewer does not read Note Insights' derived titles, so a title the person typed wins and a
+// capture's own time zone. The viewer does not read Note Insights' files: a derived title reaches it only as the published
+// summaries' `shown` (format.md §12.2), which a row prefers (`shownTitle`). Otherwise a title the person typed wins and a
 // blank one shows this default (a 1.0 through 1.2 note stored its default, which is shown as stored).
 
 import { locale, t } from "../i18n/index.ts";
@@ -48,4 +49,9 @@ export function defaultVoiceTitle(origin: VoiceOrigin): string {
 export function displayTitle(stored: string, origin: VoiceOrigin | undefined): string {
   if (stored.trim() !== "") return stored;
   return origin === undefined ? "" : defaultVoiceTitle(origin);
+}
+
+/** A list row's title (format.md §12.2): the published `shown` title (one Note Insights derived), else `displayTitle`. */
+export function shownTitle(n: { title: string; voice?: VoiceOrigin; shown?: string }): string {
+  return n.shown !== undefined && n.shown.trim() !== "" ? n.shown : displayTitle(n.title, n.voice);
 }

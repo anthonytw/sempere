@@ -29,6 +29,11 @@ extension SyncEngine {
             var hashed = try encodedWebIndex()
             hashed.append(0)
             hashed.append(vault.manifest.epochId)
+            // And what the shown titles are made from (format.md §12.4): a title derived since the last write refreshes it.
+            if options.derivedTitles != nil {
+                hashed.append(0)
+                hashed.append(PublishedSummaries.derivedTitlesStamp(vault))
+            }
             listing = FileDigest.sha256(hashed)
         } catch {
             report.errors.append(.init(path: name, message: Self.describe(error)))
@@ -53,19 +58,25 @@ extension SyncEngine {
             // later (the next uncontested run drops any that are gone).
             for attempt in 0..<Self.summariesWriteAttempts {
                 var current: [UUID: PublishedSummaries.Entry]?
+                var currentTitled = false
                 var condition = PutCondition.create
                 if exists {
                     condition = .unconditional
                     if let got = try? transport.read([name], maxBytes: PublishedSummaries.maxFileBytes) {
-                        current = try? vault.openPublishedSummaries(got.data)
+                        let contents = try? vault.openPublishedSummariesContents(got.data)
+                        current = contents?.entries
+                        currentTitled = contents?.titles ?? false
                         condition = Self.replaceCondition(etag: got.etag)
                     }
                 }
-                (entries, _) = try vault.publishedSummaryEntries(for: remoteRevisions, reuse: current ?? [:], cache: cache)
+                (entries, _) = try vault.publishedSummaryEntries(for: remoteRevisions, reuse: current ?? [:],
+                                                                reuseTitled: currentTitled, cache: cache,
+                                                                derivedTitles: options.derivedTitles)
                 if attempt > 0, let current {
-                    for (id, e) in current where entries[id] == nil { entries[id] = e; kept = true }
+                    // (An earlier writer's entry that may lack `voice` is not kept: this file carries the `titles` marker.)
+                    for (id, e) in current where entries[id] == nil && (currentTitled || !e.mayLackVoice) { entries[id] = e; kept = true }
                 }
-                if current == entries { written = true; break }
+                if current == entries && currentTitled { written = true; break }
                 try ensureCollection([])
                 if try transport.write([name], .data(try vault.sealPublishedSummaries(entries)), condition: condition) {
                     report.uploaded.append(name)
