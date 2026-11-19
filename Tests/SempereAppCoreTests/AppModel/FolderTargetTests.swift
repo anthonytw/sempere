@@ -142,6 +142,21 @@ extension AppModelSuites {
 
         /// The target folder deleted after it was synced: the run says so ("choose it again"), recreates
         /// nothing and deletes nothing here. Its parent gone too (a drive not connected): offline, not an error.
+        /// A target folder the provider syncs as one item (a package) is reported for the Sync Targets row's warning
+        /// (docs/io.md "A vault folder held as a package"); a plain one is not.
+        @Test func aTargetFolderHeldAsAPackageIsReported() async throws {
+            let w = try await Self.world(withB: false)
+            defer { w.a.model.close() }
+            let target = try #require(w.a.model.openVaultTargets.first)
+            #expect(await w.a.model.folderTargetPackageRecord(target) == nil)
+            w.provider.rootRecord = ProviderItemRecord(isPackage: true, contentType: "dyn.example", finderBundleBit: false,
+                                                       ubiquitous: true, hasUnresolvedConflicts: true)
+            let record = try #require(await w.a.model.folderTargetPackageRecord(target))
+            #expect(record.packageCause == .providerRecord)
+            w.provider.rootRecord = ProviderItemRecord(isPackage: false, ubiquitous: true, hasUnresolvedConflicts: false)
+            #expect(await w.a.model.folderTargetPackageRecord(target) == nil)
+        }
+
         @Test func aTargetFolderDeletedOrUnavailable() async throws {
             let w = try await Self.world(withB: false)
             defer { w.a.model.close() }

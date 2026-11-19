@@ -193,6 +193,13 @@ extension AppModelCore {
                     BundleBitRepair.clear(entry.url, .storeVault, log: perf)
                     BundleBitRepair.clear(access.folder, .syncTarget, log: perf)
                     defer { BundleBitRepair.clear(access.folder, .syncTarget, log: perf) }
+                    // Still a package with the flag cleared: the provider's own record (docs/io.md "A vault folder held as
+                    // a package"). Resource values only; the Sync Targets row warns (`folderTargetPackageRecord`).
+                    if let record = (folderProvider ?? FolderProviders.detect(access.folder)).itemRecord(of: access.folder),
+                       record.heldAsPackage {
+                        perf.log(.error, "bundleBit", "the sync target folder is held as a package by its provider "
+                                 + "(type \(record.contentType ?? "-"), conflicts \(record.hasUnresolvedConflicts == true))")
+                    }
                     if let join {
                         // A join run (design §6.2): the request goes out, home's approval comes in, keyless.
                         var joinOptions = options
@@ -527,5 +534,26 @@ extension AppModelCore {
     /// "Sync Now" for every target of the open vault.
     public func syncAllTargetsNow() async {
         for s in syncSessions { await s.syncNow() }
+    }
+}
+
+// MARK: - A folder target held as a package (docs/io.md "A vault folder held as a package")
+
+extension AppModelCore {
+    /// What the provider records about a folder target's folder when it is a problem: it syncs the folder as one item
+    /// (a package), or the folder itself has unresolved conflict versions (whole-vault versions: `sempere vault
+    /// conflicts` merges them back). Nil otherwise, for a WebDAV target, or when the folder cannot be reached.
+    /// Resource values only (no walk), off the main actor: cheap enough for each time the row shows.
+    public func folderTargetPackageRecord(_ target: SyncTarget) async -> ProviderItemRecord? {
+        guard target.kind == .folder else { return nil }
+        let bookmarks = services.bookmarks, provider = folderProvider
+        return await Task.detached(priority: .utility) { () -> ProviderItemRecord? in
+            guard let access = try? FolderTargetAccess.open(target, bookmarks: bookmarks) else { return nil }
+            defer { access.close() }
+            let hooks = provider?(access.folder) ?? FolderProviders.detect(access.folder)
+            guard let record = hooks.itemRecord(of: access.folder),
+                  record.heldAsPackage || record.hasUnresolvedConflicts == true else { return nil }
+            return record
+        }.value
     }
 }

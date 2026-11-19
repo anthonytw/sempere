@@ -270,6 +270,7 @@ struct StoreSync: ParsableCommand {
                     let folder = URL(fileURLWithPath: path, isDirectory: true)
                     clearBundleBits([entry.url, folder])
                     defer { clearBundleBits([entry.url, folder]) }
+                    warnIfHeldAsPackage(folder)
                     report = try FolderTargetRun.run(vaultFolder: entry.url, folder: folder,
                                                      vault: vault, stateURL: stateURL, twoWay: true, options: options)
                 case .webdav:
