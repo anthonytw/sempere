@@ -372,6 +372,16 @@ final class AskTests: TempDirTestCase {
         XCTAssertNil(AskLanguage.choose(hypotheses: [("en", 0.9)], among: []))
     }
 
+    /// NaturalLanguage knows Chinese only by script: a `zh` candidate constrains the recognizer to both, and `choose` folds
+    /// a script's hypothesis back to `zh`.
+    func testChineseCandidatesBecomeBothScriptsForTheRecognizer() {
+        XCTAssertEqual(AppleInsightsProviders.recognizerLanguages(for: ["en", "zh"]), ["en", "zh-Hans", "zh-Hant"])
+        XCTAssertEqual(AppleInsightsProviders.recognizerLanguages(for: ["zh-TW", "zh", "es"]), ["zh-Hans", "zh-Hant", "es"])
+        XCTAssertEqual(AppleInsightsProviders.recognizerLanguages(for: ["zh-Hant"]), ["zh-Hant"])
+        XCTAssertEqual(AppleInsightsProviders.recognizerLanguages(for: []), [])
+        XCTAssertEqual(AskLanguage.choose(hypotheses: [("zh-Hans", 0.9)], among: ["en", "zh"]), "zh")
+    }
+
     func testTheEngineOffersTheRecognizerTheVaultsLanguagesAndFallsBackToTheMainOne() async throws {
         let notes = [note("A", Self.corpus[0].1, language: "es"), note("B", Self.corpus[1].1, language: "es"),
                      note("C", Self.corpus[2].1, language: "en")]
