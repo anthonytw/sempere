@@ -408,6 +408,34 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertNotNil(gone.entries[blank]?.voice)
     }
 
+    /// An incomplete refresh (a note that got no entry: unreadable now, say a revision whose writer's approval has not
+    /// arrived) writes no stamp, so the next command tries again though the listing is the same.
+    func testAnIncompleteRefreshWritesNoStampAndTheNextOneCatchesUp() throws {
+        let vault = try makeVault(pqIdentity())
+        let note = UUID()
+        let r = rev(note, devA, 1, 0, NoteOps.newNote(title: "Synthetic late", pageId: UUID()))
+        try vault.write(r)
+        try vault.sealPublishedSummaries([:]).write(to: vault.publishedSummariesURL)
+        let stamps = tmp.appendingPathComponent("stamps", isDirectory: true)
+        let stampURL = vault.publishedSummariesStampURL(in: stamps)
+        try flipByte(fileURL(vault, note, r.name), at: 40)
+        _ = try vault.refreshPublishedSummaries(cacheDirectory: stamps)
+        XCTAssertNil(vault.readPublishedSummaries()[note])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stampURL.path), "incomplete: nothing remembered")
+        // The revision reads now (same name, same listing): the next refresh adds its entry and remembers.
+        try flipByte(fileURL(vault, note, r.name), at: 40)
+        XCTAssertTrue(try vault.refreshPublishedSummaries(cacheDirectory: stamps))
+        XCTAssertEqual(vault.readPublishedSummaries()[note]?.title, "Synthetic late")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stampURL.path))
+        XCTAssertFalse(try vault.refreshPublishedSummaries(cacheDirectory: stamps))
+        // A change of vault.json (here its bytes only) invalidates the stamp; the refresh then finds the file current.
+        let stamp = try Data(contentsOf: stampURL)
+        let manifest = vault.url.appendingPathComponent("vault.json")
+        try (Data(contentsOf: manifest) + Data("\n".utf8)).write(to: manifest)
+        XCTAssertFalse(try vault.refreshPublishedSummaries(cacheDirectory: stamps))
+        XCTAssertNotEqual(try Data(contentsOf: stampURL), stamp)
+    }
+
     /// The refresh after a command (`refreshPublishedSummaries` with a stamp folder) reads nothing while the listing, the file
     /// and what titles are made from are unchanged: derived titles are not looked up again.
     func testARefreshWithAnUnchangedStampReadsNothing() throws {

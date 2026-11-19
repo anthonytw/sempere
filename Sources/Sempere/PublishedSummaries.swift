@@ -854,10 +854,13 @@ extension Vault {
            (try? Data(contentsOf: stampURL)) == stamp {
             return false
         }
-        let changed = try vault.refreshOpenedPublishedSummaries(
+        let (changed, complete) = try vault.refreshOpenedPublishedSummaries(
             cache: cacheDirectory.flatMap { try? SummaryCache(directory: $0, vault: vault) }, ownListing: listing,
             derivedTitles: derivedTitles)
-        if let stampURL, let listing, let stamp = vault.publishedSummariesRefreshStamp(listing, titles: derivedTitles != nil) {
+        // Only a complete refresh is remembered: a note that got no entry (unreadable now, or of newer content) or a
+        // refresh that stopped early is tried again by the next command, though the listing is the same.
+        if complete, let stampURL, let listing,
+           let stamp = vault.publishedSummariesRefreshStamp(listing, titles: derivedTitles != nil) {
             try? FileIO.createDirectory(stampURL.deletingLastPathComponent())
             try? FileIO.writeAtomically(stamp, to: stampURL, replacing: true)
         }
@@ -872,13 +875,17 @@ extension Vault {
         return directory.appendingPathComponent("published-\(name).stamp")
     }
 
-    /// What a refresh's outcome depends on: `listing` (note → revision names), the epoch, the root file's size and
-    /// modification time and, with `titles`, what the shown titles are made from. Nil when the file cannot be looked at.
+    /// What a refresh's outcome depends on: `listing` (note → revision names), the bytes of `vault.json` (the epoch and the
+    /// device list, which decide what reads), how entries are computed (`SummaryCache.schemaVersion`), the root file's size
+    /// and modification time and, with `titles`, what the shown titles are made from. Nil when a file cannot be looked at.
     func publishedSummariesRefreshStamp(_ listing: [String: [String]], titles: Bool) -> Data? {
         guard let v = try? publishedSummariesURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
-              let size = v.fileSize, let modified = v.contentModificationDate else { return nil }
+              let size = v.fileSize, let modified = v.contentModificationDate,
+              let manifestBytes = try? FileIO.read(manifestURL, maxBytes: 16 << 20) else { return nil }
         var h = SHA256()
-        h.update(data: Data("sempere published summaries refresh 1\n\(manifest.epochId)\n\(size) \(modified.timeIntervalSince1970)\n".utf8))
+        h.update(data: Data("sempere published summaries refresh \(SummaryCache.schemaVersion)\n".utf8))
+        h.update(data: Data(SHA256.hash(data: manifestBytes)))
+        h.update(data: Data("\n\(size) \(modified.timeIntervalSince1970)\n".utf8))
         for (id, names) in listing.sorted(by: { $0.key < $1.key }) {
             h.update(data: Data("\(id) \(names.sorted().joined(separator: " "))\n".utf8))
         }
@@ -886,20 +893,26 @@ extension Vault {
         return Data(h.finalize())
     }
 
+    /// Whether the file was rewritten, and whether the refresh was complete: it reached the compare-or-write step and
+    /// every note of `ownListing` (with revisions) got an entry.
     private func refreshOpenedPublishedSummaries(cache: SummaryCache?, ownListing: [String: [String]]?,
-                                                 derivedTitles: PublishedSummaries.DerivedTitles?) throws -> Bool {
-        guard canRead else { return false }
+                                                 derivedTitles: PublishedSummaries.DerivedTitles?) throws
+        -> (changed: Bool, complete: Bool) {
+        guard canRead else { return (false, false) }
         let data = try? FileIO.read(publishedSummariesURL, maxBytes: PublishedSummaries.maxFileBytes)
         let current = data.flatMap { try? openPublishedSummariesContents($0) }
-        guard !isReadOnly else { return false }
+        guard !isReadOnly else { return (false, false) }
         let (entries, _) = try publishedSummaryEntries(reuse: current?.entries ?? [:], reuseTitled: current?.titles ?? false,
                                                        cache: cache, ownListing: ownListing, derivedTitles: derivedTitles)
         // Summarizing may have just read newer content (format.md §7.3).
-        guard !isReadOnly else { return false }
+        guard !isReadOnly else { return (false, false) }
+        let complete = ownListing.map { listing in
+            listing.allSatisfy { key, names in names.isEmpty || (UUID(uuidString: key).map { entries[$0] != nil } ?? true) }
+        } ?? false
         // A file without the `titles` marker is rewritten once to gain it.
-        if let current, current.titles, current.entries == entries { return false }
+        if let current, current.titles, current.entries == entries { return (false, complete) }
         try FileIO.writeAtomically(try sealPublishedSummaries(entries), to: publishedSummariesURL, replacing: true)
-        return true
+        return (true, complete)
     }
 }
 

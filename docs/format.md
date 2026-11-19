@@ -3502,8 +3502,10 @@ from a writer before 1.3: its entries with no `voice` whose `title` is blank or 
 Writers skip that work while nothing it depends on changed: what they compare, besides the listing of the side they
 write for and the epoch, is the names, sizes and modification times of the vault's insights note files and of
 `settings.age` (the insight language and the title format). A sync keeps that with the listing it last wrote for; the
-CLI's refresh after a command (any command that unlocks the vault) keeps it, with the root file's size and
-modification time, beside its summary cache, so a command that changes none of them reads no note and no insights file.
+CLI's refresh after a command (any command that unlocks the vault) keeps it, with the bytes of `vault.json`, the
+version of its summary computation and the root file's size and modification time, beside its summary cache, so a
+command that changes none of them reads no note and no insights file. Like the sync, it keeps it only after a complete
+refresh (every listed note got an entry): a note that could not be summarized yet is tried again by the next command.
 A derived title that arrives, or a change of those settings, is published by the next sync or command. A writer that
 reads `insights/` and finds no such folder shows no derived title: it drops `shown` from the entries it reuses. A writer
 that does not read `insights/` publishes `voice` and keeps the `shown` of entries it reuses.
