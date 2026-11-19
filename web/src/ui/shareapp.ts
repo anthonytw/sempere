@@ -12,7 +12,7 @@ import { openShare } from "../share/worker.ts";
 import { isDecodeError } from "../format/model.ts";
 import { NoteView } from "./noteview.ts";
 import { RecordingsPanel } from "./recordings.ts";
-import { h } from "./dom.ts";
+import { formatDate, h } from "./dom.ts";
 
 /** What the page needs from its surroundings, so tests can drive it. */
 export interface ShareHost {
@@ -80,7 +80,9 @@ export class ShareApp {
     const payload = await parsePayload(plain);
     const state = decodeState(payload.note, "$.note", new Budget());
     const blobs = new ShareBlobs(payload.blobs);
-    const recordings = new RecordingsPanel(state.recordings, blobs);
+    // A share written without dates carries the epoch for every date (WebPageShare.flatten): show none.
+    const hasDates = state.meta.created !== 0;
+    const recordings = new RecordingsPanel(state.recordings, blobs, undefined, hasDates);
     this.recordings = recordings;
     this.view?.destroy();
     this.view = new NoteView(state, blobs, undefined, (id) => recordings.play(id));
@@ -93,6 +95,7 @@ export class ShareApp {
         h("h2", { text: title }),
         m.tags.length ? h("p", { class: "tags" }, ...m.tags.map((x) => h("span", { class: "tag", text: `#${x}` }))) : null,
         h("p", { class: "sub", text: [m.notebook ? t("Notebook: {name}", { name: m.notebook.replaceAll("/", " › ") }) : "",
+          hasDates ? formatDate(state.meta.created) : "",
           tn("{count} pages", state.pages.length)].filter(Boolean).join(" · ") }),
         this.view.problemsEl, recordings.root),
       this.view.root));

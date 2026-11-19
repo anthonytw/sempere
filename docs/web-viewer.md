@@ -956,7 +956,7 @@ file and the passphrase by different ways, `--verify`, or use the stock `age` pa
 
 | Release | Script (`script-src`) | Style (`style-src`) | Template (SHA-256 of the page as `ShareViewerTemplate.html`: the file with its data block empty) |
 | --- | --- | --- | --- |
-| 1.3 (unreleased) | `sha256-xbkItdNBs46FjtcX9KBedJtco+VGSI8tofYqP+p4j0M=` | `sha256-cZL1/KwjSNvC7zebHbw9rRO44PocwPVtFlmx9sv8pAo=` | `a6960c9063e3394c3a6f9518c83c22d159474b7dd473d8735bb6e2d031ec0818` |
+| 1.3 (unreleased) | `sha256-mb0NJCj1rktCrormJKIfFA/SUJJ6q87k8mTRQCYix7c=` | `sha256-cZL1/KwjSNvC7zebHbw9rRO44PocwPVtFlmx9sv8pAo=` | `48739bd1dcbe810256e87f1e5a916cf7157882dbcdf1c501bc2388ddc90895c5` |
 
 **Tests.** Swift: `WebPageShareTests` (flattening, what leaks, pictures, sizes, audio, encryption, the stock `age` recipe, `--verify`, the
 fixture), `JPEGEncoderTests`, `CLIShareTests`. Web: `web/test/share.test.ts` (the Swift fixture opens, hostile containers, work factor 21

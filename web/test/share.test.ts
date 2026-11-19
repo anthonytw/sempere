@@ -15,6 +15,7 @@ import { maxBlobs, parsePayload, ShareFormatError } from "../src/share/container
 import { shareContentSecurityPolicy } from "../src/share/csp.ts";
 import { ageBytes, decryptShare, maxWorkFactor, ShareOpenError, shareWorkFactor } from "../src/share/open.ts";
 import { openShare } from "../src/share/worker.ts";
+import { recordingSub } from "../src/ui/recordings.ts";
 import { asBlobRef } from "../src/vault/blobs.ts";
 import { SplitMix64 } from "./builders.ts";
 
@@ -83,6 +84,16 @@ describe("a share made by the Swift writer", () => {
     expect(Array.from(plain)).toEqual(Array.from(container));
     // Without the script to copy there is no worker at all.
     expect(Array.from(await openShare(armored, passphrase, undefined))).toEqual(Array.from(container));
+  });
+});
+
+describe("a share written without dates", () => {
+  it("shows no start time on a recording (the epoch is not a date), and one when dates are included", () => {
+    expect(recordingSub(0, "1:05", false)).toBe("1:05");
+    expect(recordingSub(0, "", false)).toBe("");
+    const withDates = recordingSub(Date.UTC(2026, 10, 18, 12), "1:05", true);
+    expect(withDates).toMatch(/2026/);
+    expect(withDates.endsWith(" · 1:05")).toBe(true);
   });
 });
 
