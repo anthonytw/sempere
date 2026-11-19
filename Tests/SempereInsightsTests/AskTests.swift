@@ -5,9 +5,7 @@ import TempDirSupport
 import VaultTestSupport
 import XCTest
 @testable import SempereInsights
-#if canImport(FoundationModels)
-import SempereInsightsApple
-#endif
+import SempereInsightsApple   // builds everywhere; its factories return nil without the frameworks
 
 /// Ask your notes (docs/design/1.3-ask.md §6, Linux, fakes): fusion, passages, the budget, the validator, the mode
 /// ladder, vectors of two devices under one key, filters, other languages, a hostile note and the result's JSON shape.
