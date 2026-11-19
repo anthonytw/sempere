@@ -372,7 +372,7 @@ public struct InsightsStore: Sendable {
         }
     }
 
-    /// Replaces this device's sidecar of `note` with a tombstone (no `gen`, no `emb`; format.md §16.6), so a device
+    /// Replaces this device's sidecar of `note` with a tombstone (no `gen`, `emb` or `title`; format.md §16.6), so a device
     /// bridging two targets cannot bring the old one back. Nothing when this device has no file for it.
     @discardableResult
     public func tombstone(note: UUID, now: Date = Date()) throws -> Bool {

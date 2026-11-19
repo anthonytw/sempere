@@ -130,6 +130,14 @@ final class InsightsStoreTests: VaultTestCase {
         XCTAssertEqual(s.notes[note]?[me]?.isTombstone, true)
         XCTAssertGreaterThan(s.notes[note]?[me]?.written ?? 0, 1_790_000_000_000, "a later written")
         XCTAssertNil(s.bestGen(for: note, hash: nil))
+        // A file holding only a derived title is no tombstone (format.md §16.6: gen, emb and title all absent).
+        var titled = InsightsNoteFile(noteId: note, device: me, written: 1)
+        XCTAssertTrue(titled.isTombstone)
+        titled.title = .init(hash: String(repeating: "a", count: 32), text: "2026-11-16 14.32 Lab", at: 1)
+        XCTAssertFalse(titled.isTombstone)
+        try store.write(.note(titled), now: now)
+        XCTAssertTrue(try store.tombstone(note: note, now: now), "a title-only file is replaced by a tombstone")
+        XCTAssertNil(store.snapshot().notes[note]?[me]?.title)
         // Best pick: the hash first, then the later written.
         var snap = InsightsSnapshot()
         let d1 = DeviceID("11111111")!, d2 = DeviceID("22222222")!

@@ -4592,7 +4592,7 @@ one a reader shows.
   takes a note's derived title from the file whose `title.hash` equals the note's current hash, the later `at`, then the
   larger device id; a title for another hash is not shown. 1.2 wrote `titleOp` here (the stamp of a rename it made to the
   note's own title); readers of 1.3 ignore it, and 1.2 readers ignore `title`.
-- `gen` and `emb` both absent: a **tombstone** (§16.6).
+- `gen`, `emb` and `title` all absent: a **tombstone** (§16.6). A file holding only a `title` is not one.
 
 A reader takes a note's `gen` from the best file: one whose `gen.hash` equals the note's current hash, then the later
 `written`, then the larger device id; without one, the latest `gen` of any hash, shown as stale. It takes `emb` from the
@@ -4675,7 +4675,7 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
 
 ### 16.6 Deletion, new epochs and turning it off
 
-- **Tombstones.** A device "removes" its note file by replacing it with one without `gen` and `emb` at a later
+- **Tombstones.** A device "removes" its note file by replacing it with one without `gen`, `emb` and `title` at a later
   `written`, so a device bridging two targets cannot bring the old one back: when the note is deleted (§5.2), and when
   its `gen` is stale (older text, or the current text in another insight language than `insights.language`) while another
   device's is current.

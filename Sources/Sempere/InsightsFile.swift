@@ -274,8 +274,9 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
         self.title = title
     }
 
-    /// No `gen` and no `emb`: the device removed what it had for the note (format.md §16.6).
-    public var isTombstone: Bool { gen == nil && emb == nil }
+    /// No `gen`, no `emb` and no `title`: the device removed what it had for the note (format.md §16.6). A file holding
+    /// only a derived title still says something.
+    public var isTombstone: Bool { gen == nil && emb == nil && title == nil }
 
     func check() throws {
         try InsightsValidate.short(hashBasis, "hashBasis")
