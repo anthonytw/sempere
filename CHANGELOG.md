@@ -6,6 +6,89 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [Unreleased]
 
+## [1.3.0] - TODO(user): release date (YYYY-MM-DD)
+
+### Added
+
+- Ask your notes: type a question in the search field's new Ask mode (Edit ▸ Find ▸ Ask Your Notes… on the Mac,
+  ⌥⌘F) and get a short answer written on your device by Apple's on-device model from your notes, with the notes
+  it came from listed under it and numbered buttons that open them at the page. Without Apple Intelligence or Note
+  Insights you still get the best-matching notes and passages. Nothing is stored or sent anywhere.
+  `sempere ask "question"` does the same on the command line.
+- Note list: Select mode can now Move To a notebook, Delete (to Recently Deleted, with a confirmation) or Restore
+  all the selected notes at once, from the toolbar, the context menu or the Mac menu bar, each as one undo step that Redo can bring back (dragging notes onto a notebook in the sidebar can be redone too).
+- CLI: `notes delete` and `notes undelete` take several notes in one command.
+- Saved tools: save a pen or highlighter setup (ink, color, exact width, opacity) under a name and pick it with one tap
+  from the palette on iPad, iPhone and Mac, or on the Mac with Control-Command-1 to 9 from Tools ▸ Saved Tools. They
+  follow you across devices through the vault's shared settings (Settings ▸ Writing ▸ Saved Tools).
+- `sempere tools list|add|edit|remove|move|export|import`: manage saved tools from the command line and share a pen set
+  as a small `sempere-tools/1` file.
+- Note Insights: Settings ▸ Note Insights ▸ Insight Language chooses the language of generated summaries and voice-note
+  titles: Same as Note (the default) or one fixed language for the whole vault. Choosing one makes summaries, titles and
+  topic summaries be made again in it, a few at a time, on every device; keywords stay as the notes have them.
+  `sempere settings set insights.language es` does the same from the command line.
+- Share a note as a web page: File ▸ Export ▸ Web Page (Encrypted)… (and `sempere share`) makes one note into a single file, encrypted
+  with a passphrase, that opens in any web browser with nothing to install and nothing uploaded. Send the file and the passphrase
+  by different ways; the note is flattened to its current state (no history, other notes or keys), pictures lose their location and
+  camera data, and recordings, tags, the notebook and dates are included only if you ask. `sempere share --verify` checks a file
+  against the release.
+- Spotlight: an opt-in switch (Settings > Spotlight, off by default, per vault and per device) shows note titles,
+  notebooks, tags and dates in Spotlight search, and a second switch, Include Note Text, adds the text of notes. Items
+  are removed when you turn it off, delete a note, change the vault's keys, remove a device or remove the vault, and a
+  result opens the note. Spotlight's index is outside the vault's encryption; the switches say so.
+- CLI: `sempere spotlight plan` lists exactly what the Spotlight switches would donate.
+- Recordings: the Recordings menu of a note has Transcribe Again, which transcribes every recording of the note again in
+  a language you choose (Automatic, or any language the speech recognizer supports), replacing the old transcripts, with
+  Also Redo Insights to make the note's summary and title again from the new text. `sempere transcribe NOTE --again
+  --language es-ES --insights` does the same from the command line, and `sempere transcribe --languages` lists the
+  languages.
+
+### Changed
+
+- Note Insights: any device that can do the work now does it. There is no longer a "Map and Titles Device" to pick:
+  a device with Apple Intelligence makes the summaries and keywords no device has made yet, a device with the embedding
+  model makes the vectors no device has and rebuilds the map of related notes when it is due, and any device names voice
+  notes. Maps built at the same time are identical, and a summary or title made on two devices at once settles to the
+  same one everywhere. A device whose embedding numbers drift from the map's keeps its vectors to itself and never
+  writes the shared set. Settings ▸ Note Insights lists each device and what it can do.
+- Settings ▸ Note Insights: changing the summary and title language asks first, and says how many summaries and titles will be made again.
+- Voice notes with no title of their own are named by the title the list shows (the derived one, else "Voice note" and the date) in Spotlight, export file names, `sempere` note lookups by title, the web viewer and shared web pages (which carry the capture time only when they include dates), and that default title no longer counts as a word of the note in Ask.
+- Changing the voice-note title format makes the titles again in the new format.
+- Ask: a question's language is chosen among the languages of your notes and the device, and falls back to your notes' main language when unsure.
+- Web viewer: a quick voice note with no title of its own is listed as in the app, under the title Note Insights
+  derived for it or "Voice note" with the capture's date and time, instead of "Untitled". The published summaries
+  (`sempere vault summaries`, `sync webdav --web-viewer`) now carry that title inside the encrypted file, and are
+  rewritten when a derived title arrives.
+- Voice notes: a quick voice note, from your iPhone or your Apple Watch, no longer gets a title written into it.
+  Until you give it one, the list and the editor show "Voice note" (or "Watch voice note") with its date and time, in
+  your language and the time zone it was recorded in, and Note Insights' generated title (from the transcript) is kept
+  beside the note instead of replacing its title, so it follows the note's text and a title you type is always the one
+  shown. Notes from earlier versions keep the titles they have, and still get a generated title while their title is
+  the default one. Update every device that shares the vault to 1.3: a device still on 1.2 keeps writing generated
+  titles into notes and shows a blank title for new voice notes.
+
+### Removed
+
+- Note Insights: the map and titles device setting and `sempere insights work-device`. The old setting is deprecated: a
+  settings file that still holds it stays valid and the value is ignored.
+
+### Fixed
+
+- iPad: a tap on a notebook that holds sub-notebooks opens it again instead of only folding it; the
+  chevron at the end of its row folds and unfolds its sub-notebooks, as on the iPhone.
+- Notes: a transcript Sempere writes by itself, when a voice note arrives or finishes, or when you use Transcribe, no
+  longer moves the note's modified date or its place in the list sorted by Modified; only your own edits do. (A
+  generated voice-note title never touches the note any more either.)
+- Search | Ask: choosing a segment keeps the cursor in the search field on iPad and Mac.
+- Apple Watch: a note your iPhone holds without a vault yet (saved under an old key, or while "Use on Apple Watch" was
+  off) now stays on the watch until you add or delete it on the phone, so deleting and reinstalling the iPhone app no
+  longer loses it; the watch sends it again after the reinstall.
+- Devices: voice notes this device saved under its earlier key, before it was removed and joined again, are now re-sealed
+  under the new key instead of being retried at every write (only keys this device itself held, which it now remembers
+  from this version on); a note no key this device held can open is given up on once and left in the inbox.
+- Apple Watch: after an iPhone restart, before the first unlock, or when the held-notes folder cannot be read, the phone
+  no longer tells the watch it holds nothing, so the watch keeps its copies.
+
 ## [1.2.0] - TODO(user): release date (YYYY-MM-DD)
 
 ### Security
@@ -235,7 +318,8 @@ This release fixes four issues found by the project's first security audit
 
 Initial release.
 
-[Unreleased]: https://github.com/anthonytw/sempere/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/anthonytw/sempere/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/anthonytw/sempere/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/anthonytw/sempere/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/anthonytw/sempere/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/anthonytw/sempere/compare/v1.0.0...v1.0.1
