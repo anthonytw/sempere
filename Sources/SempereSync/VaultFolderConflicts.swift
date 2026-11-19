@@ -12,15 +12,26 @@ import Sempere
 //
 // `inspect` reports, without a key and without writing: what the provider records about the folder
 // (`FolderProvider.itemRecord`), the unresolved conflict versions of the folder and of its mutable files, and for each
-// version the files the current folder lacks (by kind) and the mutable files that differ. `merge` (`sempere vault
-// conflicts --merge`) copies back only missing WRITE-ONCE files (format.md §1.3: revisions, blobs, inbox files, epoch
-// records, join requests, notebook records, the passphrase copy), each checked first as a received file (§9.1, under
-// the vault's key) and placed through a temporary name that never replaces a file, in a coordinated write. A file that
-// fails its check goes to the quarantine folder instead. Mutable files follow the rules the engine and `vault
-// merge-copy` already use (`settings.age` merged per key; `vault.json` taken only as a later version by home, an older
-// one is superseded; the web viewer's files and insights are rewritten by every writer), anything else is kept aside
-// and reported, never picked. Versions are marked resolved only after everything they hold was placed, quarantined or
-// settled; they are kept (the system's version browser still has them) unless `removeVersions`.
+// version the files the current folder lacks (by kind) and the mutable files that differ. A version that cannot be
+// listed whole (its contents not on this device, a folder that cannot be read, its root gone) carries a `problem` and
+// is never judged from what it lists. Walks use `lstat`: symbolic links and special files are reported, never
+// followed; reads are bounded and follow no link below the version's root.
+//
+// `merge` (`sempere vault conflicts --merge`) runs inside ONE coordinated write of the vault folder (a plain folder:
+// its `.sempere-lock`, as `FolderRemote` takes it), with no coordination nested inside it. It re-reads `vault.json`
+// there, then:
+// 1. places the missing epoch records of every version and reopens the vault, so files under a new key are judged
+//    under it;
+// 2. places the other missing WRITE-ONCE files (format.md §1.3), each staged privately with a no-follow bounded read,
+//    checked as a received file (§9.1, under the vault's key) and placed through a temporary name that never replaces
+//    a file. The acceptance rule's outcomes are kept apart: pending leaves the version unresolved, set aside goes to
+//    the vault's set-aside store; neither is quarantined. A file that fails its own check goes to the quarantine.
+// 3. settles mutable files by the engine's rules: `settings.age` merged per key with what is on disk just before it
+//    is written (never when the current file cannot be read); `vault.json` decided by `Vault.judgeIncoming` (only a
+//    later version in the same epoch is taken); anything else is kept aside and reported, never picked.
+// Versions are marked resolved only after everything they hold was placed, set aside, quarantined or settled; they are
+// kept (the system's version browser still has them) unless `removeVersions`, and a version any of whose files went
+// only to the quarantine (or was not placed: unknown files, links) is never removed.
 
 /// Inspecting and merging a vault folder's provider conflict versions (see above).
 public enum VaultFolderConflicts {
@@ -87,6 +98,12 @@ public enum VaultFolderConflicts {
         public var missing: [String: [String]]
         /// Mutable files (and unknown ones) it holds with other bytes than the current folder's, sorted.
         public var differing: [String]
+        /// Entries it holds that are neither a regular file nor a folder (symbolic links, special files): never
+        /// followed, never copied, reported (`path (why)`).
+        public var skipped: [String] = []
+        /// Why it cannot be judged (its contents are not on this device, it cannot be listed whole, it is gone): it is
+        /// never resolved while this is set.
+        public var problem: String?
 
         /// How many of `missing` are write-once (safe to copy back).
         public var writeOnceMissing: Int {
@@ -103,6 +120,8 @@ public enum VaultFolderConflicts {
         /// What the provider records about the folder; nil when it records nothing (a plain folder, Linux).
         public var record: ProviderItemRecord?
         public var versions: [Version]
+        /// Entries of the current folder that are neither a regular file nor a folder (never followed), sorted.
+        public var skipped: [String] = []
 
         /// The provider syncs the folder as one item.
         public var heldAsPackage: Bool { record?.heldAsPackage ?? false }
@@ -132,72 +151,169 @@ public enum VaultFolderConflicts {
         for dir in [PublishedSummaries.deviceFolderName, Vault.insightsName] {
             out += Vault.visibleEntries(folder.appendingPathComponent(dir, isDirectory: true)).map { "\(dir)/\($0)" }
         }
-        return out.filter { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
+        return out.filter { FolderRemote.lstatItem(folder.appendingPathComponent($0)).stat?.isRegularFile == true }
     }
 
     /// Reports the folder's provider record and its unresolved conflict versions (see the top of the file). Reads only.
-    public static func inspect(folder: URL, provider: any FolderProvider) -> Inspection {
+    ///
+    /// - Throws: `ListingError` when the current folder cannot be listed whole.
+    public static func inspect(folder: URL, provider: any FolderProvider) throws -> Inspection {
+        let current = try listFiles(folder, current: true)
         var inspection = Inspection(folder: folder.path, provider: provider.name, record: provider.itemRecord(of: folder),
-                                    versions: [])
-        let current = listFiles(folder, mapStandIns: true)
+                                    versions: [], skipped: current.skipped)
         for v in provider.conflictVersions(of: folder) {
-            guard let root = provider.versionFile(of: folder, id: v.id) else { continue }
-            let theirs = listFiles(root, mapStandIns: false)
-            var missing: [String: [String]] = [:]
-            var differing: [String] = []
-            for path in theirs.sorted() {
+            var version = Version(id: v.id, item: "", modified: v.modified, device: v.device, files: 0, missing: [:],
+                                  differing: [])
+            defer { inspection.versions.append(version) }
+            if v.hasLocalContents == false {
+                version.problem = "its contents are not on this device (open the folder's versions in the Finder so they "
+                    + "download, then run again)"
+                continue
+            }
+            guard let root = provider.versionFile(of: folder, id: v.id) else {
+                version.problem = "the provider lists it but has no contents for it"
+                continue
+            }
+            let theirs: Listing
+            do { theirs = try listFiles(root, current: false) } catch {
+                version.problem = "it cannot be listed whole: \(error)"
+                continue
+            }
+            version.files = theirs.files.count
+            version.skipped = theirs.skipped
+            for path in theirs.files.sorted() {
                 guard let kind = kind(of: path) else { continue }
-                if !current.contains(path) {
-                    missing[kind.rawValue, default: []].append(path)
+                if !current.files.contains(path) {
+                    version.missing[kind.rawValue, default: []].append(path)
                 } else if !kind.isWriteOnce, kind != .derived,
-                          !sameBytes(root.appendingPathComponent(path), folder.appendingPathComponent(path)) {
-                    differing.append(path)
+                          !sameBytes(Source(base: root, path: path), Source(base: folder, path: path)) {
+                    version.differing.append(path)
                 }
             }
-            inspection.versions.append(Version(id: v.id, item: "", modified: v.modified, device: v.device,
-                                               files: theirs.count, missing: missing, differing: differing))
         }
         for path in versionedFiles(in: folder) {
             let url = folder.appendingPathComponent(path)
             for v in provider.conflictVersions(of: url) {
-                guard let file = provider.versionFile(of: url, id: v.id) else { continue }
-                let differs = kind(of: path) != .derived && !sameBytes(file, url)
-                inspection.versions.append(Version(id: v.id, item: path, modified: v.modified, device: v.device, files: 1,
-                                                   missing: [:], differing: differs ? [path] : []))
+                var version = Version(id: v.id, item: path, modified: v.modified, device: v.device, files: 1, missing: [:],
+                                      differing: [])
+                defer { inspection.versions.append(version) }
+                if v.hasLocalContents == false {
+                    version.problem = "its contents are not on this device"
+                    continue
+                }
+                guard let file = provider.versionFile(of: url, id: v.id) else {
+                    version.problem = "the provider lists it but has no contents for it"
+                    continue
+                }
+                guard FolderRemote.lstatItem(file).stat?.isRegularFile == true else {
+                    version.problem = "its contents are not a regular file"
+                    continue
+                }
+                if kind(of: path) != .derived, !sameBytes(Source(file: file), Source(base: folder, path: path)) {
+                    version.differing = [path]
+                }
             }
         }
         return inspection
     }
 
-    /// Every regular file below `root`, as relative paths; hidden names skipped, except that iCloud Drive's stand-ins
-    /// (`.<name>.icloud`) count as the file they stand for when `mapStandIns`.
-    static func listFiles(_ root: URL, mapStandIns: Bool) -> Set<String> {
-        var out = Set<String>()
-        func walk(_ dir: URL, _ prefix: String, depth: Int) {
-            guard depth < 8, let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
-            for name in names {
+    /// Why a folder cannot be listed whole (a version that throws one is never judged).
+    public enum ListingError: Error, Hashable, Sendable, CustomStringConvertible {
+        case missing(String)
+        case unreadable(String, String)
+        case tooManyEntries(String, Int)
+        case tooDeep(String)
+
+        public var description: String {
+            switch self {
+            case .missing(let p): return "\(p) does not exist"
+            case .unreadable(let p, let why): return "\(p) cannot be read: \(why)"
+            case .tooManyEntries(let p, let n): return "\(p) holds more than \(n) entries"
+            case .tooDeep(let p): return "\(p) is nested deeper than any vault folder"
+            }
+        }
+    }
+
+    /// The most entries a listing walks before it gives up (a vault holds far fewer).
+    public static let maxEntries = 2_000_000
+    /// Folders deeper than this are no vault's (`notes/<id>/att/` is the deepest).
+    static let maxDepth = 8
+
+    /// A listing: regular files by relative path, and entries skipped (links, special files).
+    struct Listing {
+        var files = Set<String>()
+        var skipped: [String] = []
+    }
+
+    /// Every regular file below `root`, as relative paths, by `lstat`: hidden names skipped, symbolic links and special
+    /// files reported in `skipped`, never followed. For the `current` folder an iCloud stand-in (`.<name>.icloud`)
+    /// counts as the file it stands for, and a link counts as present (nothing is ever placed over it).
+    ///
+    /// - Throws: `ListingError` when `root` or any folder below it cannot be listed, or past the limits.
+    static func listFiles(_ root: URL, current: Bool, maxEntries: Int = VaultFolderConflicts.maxEntries) throws -> Listing {
+        var out = Listing()
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDir) else { throw ListingError.missing(root.path) }
+        guard isDir.boolValue else { throw ListingError.unreadable(root.path, "not a folder") }
+        var count = 0
+        func walk(_ dir: URL, _ prefix: String, depth: Int) throws {
+            let names: [String]
+            do { names = try FileManager.default.contentsOfDirectory(atPath: dir.path) } catch {
+                throw ListingError.unreadable(prefix.isEmpty ? "the folder" : String(prefix.dropLast()), "\(error)")
+            }
+            for name in names.sorted() {
+                count += 1
+                guard count <= maxEntries else { throw ListingError.tooManyEntries(root.path, maxEntries) }
                 let url = dir.appendingPathComponent(name)
-                var isDir: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { continue }
+                let item = FolderRemote.lstatItem(url)
                 if name.hasPrefix(".") {
-                    if mapStandIns, !isDir.boolValue, let real = UbiquitousPlaceholder.realName(of: name) {
-                        out.insert(prefix + real)
+                    if current, item.stat?.isRegularFile == true, let real = UbiquitousPlaceholder.realName(of: name) {
+                        out.files.insert(prefix + real)
                     }
                     continue
                 }
-                if isDir.boolValue { walk(url, prefix + name + "/", depth: depth + 1) } else { out.insert(prefix + name) }
+                if item.isLink {
+                    out.skipped.append(prefix + name + " (a symbolic link: not followed)")
+                    if current { out.files.insert(prefix + name) }
+                    continue
+                }
+                guard let stat = item.stat else {
+                    throw ListingError.unreadable(prefix + name, "lstat failed (errno \(item.errno))")
+                }
+                if stat.isDirectory {
+                    guard depth + 1 < maxDepth else { throw ListingError.tooDeep(prefix + name) }
+                    try walk(url, prefix + name + "/", depth: depth + 1)
+                } else if stat.isRegularFile {
+                    out.files.insert(prefix + name)
+                } else {
+                    out.skipped.append(prefix + name + " (not a regular file: not copied)")
+                    if current { out.files.insert(prefix + name) }
+                }
             }
         }
-        walk(root, "", depth: 0)
+        try walk(root, "", depth: 0)
+        out.skipped.sort()
         return out
+    }
+
+    /// Where a file's bytes are: `path` below `base`, read without following a link below `base`.
+    struct Source {
+        var base: URL
+        var path: String
+
+        init(base: URL, path: String) { self.base = base; self.path = path }
+        /// A file version (the file itself).
+        init(file: URL) { base = file.deletingLastPathComponent(); path = file.lastPathComponent }
+
+        func read(maxBytes: Int) throws -> Data { try BoundedRead.contents(under: base, path, maxBytes: maxBytes) }
+        func open() throws -> FileHandle { try BoundedRead.openRegularFile(under: base, path) }
     }
 
     /// Mutable files are small (`vault.json`, settings, summaries); anything larger is taken as differing.
     static let maxCompareBytes = 64 << 20
 
-    static func sameBytes(_ a: URL, _ b: URL) -> Bool {
-        guard let x = try? BoundedRead.contents(of: a, maxBytes: maxCompareBytes),
-              let y = try? BoundedRead.contents(of: b, maxBytes: maxCompareBytes) else { return false }
+    static func sameBytes(_ a: Source, _ b: Source) -> Bool {
+        guard let x = try? a.read(maxBytes: maxCompareBytes), let y = try? b.read(maxBytes: maxCompareBytes) else { return false }
         return x == y
     }
 
@@ -205,16 +321,25 @@ public enum VaultFolderConflicts {
 
     /// How `merge` runs.
     public struct MergeOptions: Sendable {
-        /// Only report what would be done; nothing is written, nothing resolved.
+        /// Only report what would be done; nothing is written in the vault, the quarantine or the provider, nothing
+        /// resolved (files are checked from a private temporary copy, removed at the end).
         public var dryRun = false
-        /// Remove each version once resolved (`NSFileVersion.remove`); otherwise they are only marked resolved.
+        /// Remove each version once resolved (`NSFileVersion.remove`); otherwise they are only marked resolved. A
+        /// version with a file that went only to the quarantine (or was not placed) is never removed.
         public var removeVersions = false
         /// Where files that fail their check (`<quarantine>/<version>/<path>`) and the mutable files of the versions
-        /// (`<quarantine>/kept/<version>/<path>`) are copied, with `report.json`. Never inside the vault.
+        /// (`<quarantine>/kept/<version>/<path>`) are copied, with `report.json`. Never inside the vault; a real run
+        /// refuses one that is not empty.
         public var quarantine: URL
+        /// Where files are staged to be checked (removed at the end); nil: a new folder in the temporary directory.
+        public var staging: URL?
+        /// How long a plain folder's `.sempere-lock` is waited for.
+        var lockTimeout: TimeInterval = 30
+        /// Tests: replaces the received-file check of a staged file.
+        var checkOverride: (@Sendable (_ path: String, _ kind: FileKind, _ staged: URL) throws -> Void)?
 
-        public init(quarantine: URL, dryRun: Bool = false, removeVersions: Bool = false) {
-            self.quarantine = quarantine; self.dryRun = dryRun; self.removeVersions = removeVersions
+        public init(quarantine: URL, dryRun: Bool = false, removeVersions: Bool = false, staging: URL? = nil) {
+            self.quarantine = quarantine; self.dryRun = dryRun; self.removeVersions = removeVersions; self.staging = staging
         }
     }
 
@@ -223,117 +348,215 @@ public enum VaultFolderConflicts {
         public var dryRun = false
         /// Write-once files copied into the vault folder, sorted.
         public var copied: [String] = []
-        /// Write-once files that failed their check (path → why): copied into the quarantine, never placed.
-        public var quarantined: [String: String] = [:]
+        /// Write-once files that failed their check (path → one `version: why` per version): copied into the
+        /// quarantine, never placed.
+        public var quarantined: [String: [String]] = [:]
+        /// Write-once files the acceptance rule sets aside (an earlier key it does not take): kept in the vault's
+        /// set-aside store, never placed, never quarantined (key-hierarchy design §5.3).
+        public var setAside: [String] = []
         /// Mutable or unknown files of the versions copied aside into `<quarantine>/kept/`.
         public var keptAside: [String] = []
+        /// Unknown files only a version holds (format.md §1): not known to be write-once, so never placed; kept aside
+        /// in `<quarantine>/kept/` for a person to look at. Sorted.
+        public var keptUnknown: [String] = []
         /// Mutable files written by a rule: `vault.json` (a later version by home), `settings.age` (merged per key).
         public var written: [String] = []
         /// Mutable files of versions settled by a rule (path → how).
         public var settled: [String: String] = [:]
-        /// Mutable files left as they are and reported (path → why): their versions stay unresolved.
-        public var unsettled: [String: String] = [:]
+        /// Files left as they are and reported (path → one `version: why` per version): their versions stay unresolved.
+        public var unsettled: [String: [String]] = [:]
         /// Versions marked resolved (ids), and removed (`removeVersions`).
         public var resolved: [String] = []
         public var removed: [String] = []
         /// Versions left unresolved (ids).
         public var left: [String] = []
-        /// Failures that leave a version unresolved (path → message).
-        public var errors: [String: String] = [:]
+        /// Failures that leave a version unresolved (path → one `version: message` per version).
+        public var errors: [String: [String]] = [:]
         /// The quarantine folder, when anything went there.
         public var quarantine: String?
-        /// The inspection the merge worked from.
+        /// The inspection the merge worked from (made inside the merge's write).
         public var inspection: Inspection
 
         /// Everything was merged and every version resolved.
-        public var isComplete: Bool { left.isEmpty && errors.isEmpty && unsettled.isEmpty && quarantined.isEmpty }
+        public var isComplete: Bool {
+            left.isEmpty && errors.isEmpty && unsettled.isEmpty && quarantined.isEmpty && keptUnknown.isEmpty
+                && inspection.versions.allSatisfy(\.skipped.isEmpty)
+        }
     }
 
     /// Errors from `merge`.
     public enum MergeError: Error, Hashable, Sendable, CustomStringConvertible {
         /// The quarantine folder is inside the vault folder.
         case quarantineInsideVault(String)
+        /// The quarantine folder holds files already (a real run starts from an empty one, so nothing is mixed).
+        case quarantineNotEmpty(String)
+        /// Another writer holds the plain folder's `.sempere-lock`.
+        case busy(String)
 
         public var description: String {
             switch self {
             case .quarantineInsideVault(let p): return "the quarantine folder \(p) is inside the vault folder"
+            case .quarantineNotEmpty(let p): return "the quarantine folder \(p) is not empty: name a new one"
+            case .busy(let p): return "another writer holds \(p)'s lock: quit Sempere and other sempere commands, then run again"
             }
         }
     }
 
+    /// The path of `url` with symbolic links resolved, including those of a folder above a part that does not exist yet.
+    static func canonical(_ url: URL) -> String {
+        var existing = url.standardizedFileURL
+        var rest: [String] = []
+        while !FileManager.default.fileExists(atPath: existing.path), existing.pathComponents.count > 1 {
+            rest.insert(existing.lastPathComponent, at: 0)
+            existing = existing.deletingLastPathComponent()
+        }
+        var out = URL(fileURLWithPath: existing.canonicalPath)
+        for part in rest { out.appendPathComponent(part) }
+        return out.standardizedFileURL.path
+    }
+
     /// Merges the folder's conflict versions back (see the top of the file). `vault` is the vault opened at `folder`;
-    /// unlocked for a real run (each file is checked under its key), locked is enough for a dry run (structural checks).
+    /// a real run needs it writable (a device key, a trusted list), a dry run reads only (locked: structural checks).
     ///
-    /// - Throws: `VaultError.locked` (a real run without the key), `VaultError.readOnly` (a vault of a newer format),
-    ///   `MergeError`; per-file failures are reported, never thrown.
+    /// - Throws: what `Vault.requireWritable` throws (a real run), `MergeError`, `ListingError` (the current folder);
+    ///   per-file failures are reported, never thrown.
     public static func merge(folder: URL, provider: any FolderProvider, vault: Vault,
                              options: MergeOptions) throws -> MergeReport {
         if !options.dryRun {
             try vault.requireNotReadOnly()
             guard vault.canRead else { throw VaultError.locked }
+            try vault.requireWritable()
         }
-        let q = options.quarantine.standardizedFileURL.path, f = folder.standardizedFileURL.path
+        let q = canonical(options.quarantine), f = canonical(folder)
         if q == f || q.hasPrefix(f + "/") { throw MergeError.quarantineInsideVault(q) }
+        if !options.dryRun, let entries = try? FileManager.default.contentsOfDirectory(atPath: options.quarantine.path),
+           !entries.isEmpty {
+            throw MergeError.quarantineNotEmpty(options.quarantine.path)
+        }
+        let staging = options.staging ?? FileManager.default.temporaryDirectory
+            .appendingPathComponent("sempere-conflicts-\(UUID().uuidString.lowercased())", isDirectory: true)
+        try FileIO.createPrivateDirectory(staging)
+        defer { try? FileManager.default.removeItem(at: staging) }
 
-        var m = Merger(folder: folder, provider: provider, vault: vault, options: options,
-                       report: MergeReport(dryRun: options.dryRun, inspection: inspect(folder: folder, provider: provider)))
-        m.run()
+        var m = Merger(folder: folder, provider: provider, vault: vault, options: options, staging: staging,
+                       report: MergeReport(dryRun: options.dryRun,
+                                           inspection: Inspection(folder: folder.path, provider: provider.name, versions: [])))
+        if options.dryRun {
+            try m.run()
+        } else {
+            try withBaseWrite(folder, provider, timeout: options.lockTimeout) { try m.run() }
+        }
         return m.report
+    }
+
+    /// Runs `body` holding one write of the vault folder: a coordinated write in a provider's folder (nothing inside may
+    /// coordinate again), the folder's `.sempere-lock` in a plain one (as `FolderRemote.locked`).
+    static func withBaseWrite<T>(_ folder: URL, _ provider: any FolderProvider, timeout: TimeInterval,
+                                 _ body: () throws -> T) throws -> T {
+        if provider.managesFiles { return try provider.coordinatedWrite(folder, body) }
+        let lock = VaultFileLock.at(folder.appendingPathComponent(FolderRemote.lockName), kind: "folder")
+        do {
+            return try lock.withLock(timeout: timeout, body)
+        } catch VaultFileLock.LockError.timedOut, VaultFileLock.LockError.suspended {
+            throw MergeError.busy(folder.path)
+        }
     }
 
     /// One merge's state.
     struct Merger {
         let folder: URL
         let provider: any FolderProvider
-        let vault: Vault
+        var vault: Vault
         let options: MergeOptions
+        let staging: URL
         var report: MergeReport
-        /// Version ids that may not be resolved (an error or an unsettled file).
+        /// Version ids that may not be resolved (an error, a pending or unsettled file).
         var blocked = Set<String>()
-        var copied = Set<String>()
-        /// `vault.json` versions that are later versions by home of the current one: (version id, bytes).
+        /// Version ids that may be marked resolved but never removed (a file only the quarantine has, an unknown file
+        /// not placed, a link not followed).
+        var keep = Set<String>()
+        var tags: [String: String] = [:]
+        var placed = Set<String>()
+        var staged = 0
+        /// `vault.json` versions that are later versions by home in this epoch: (version id, bytes).
         var laterManifests: [(id: String, data: Data)] = []
-        var mergedSettings: SharedSettings?
-        var settingsChanged = false
+        /// The versions' settings merged per key (not yet with the current file).
+        var versionSettings: SharedSettings?
         var settingsVersions: [String] = []
 
         var fm: FileManager { .default }
 
-        mutating func run() {
+        mutating func run() throws {
+            if !options.dryRun {
+                // Inside the write: vault.json as it is now, checked again (S5).
+                vault = try vault.reopened()
+                try vault.requireWritable()
+            }
+            report.inspection = try inspect(folder: folder, provider: provider)
             let versions = report.inspection.versions
+            var usable: [(Version, URL)] = []
             for (index, v) in versions.enumerated() {
-                let itemURL = v.item.isEmpty ? folder : folder.appendingPathComponent(v.item)
-                guard let root = provider.versionFile(of: itemURL, id: v.id) else {
-                    fail(v.id, v.item.isEmpty ? "(vault folder)" : v.item, "the version is gone")
+                tags[v.id] = Self.tag(index, v)
+                if !v.skipped.isEmpty { keep.insert(v.id) }
+                if let problem = v.problem {
+                    fail(v.id, Self.itemName(v), problem)
                     continue
                 }
-                let tag = Self.tag(index, v)
-                // A file's version holds one file; the folder's, files at their paths.
-                func source(_ path: String) -> URL { v.item.isEmpty ? root.appendingPathComponent(path) : root }
-                let missing = v.missing.values.flatMap { $0 }.sorted()
-                for path in missing {
+                let itemURL = v.item.isEmpty ? folder : folder.appendingPathComponent(v.item)
+                guard let root = provider.versionFile(of: itemURL, id: v.id) else {
+                    fail(v.id, Self.itemName(v), "the version is gone")
+                    continue
+                }
+                usable.append((v, root))
+            }
+            // Pass 1: every version's epoch records, then the vault reopened, so files under a new key are judged
+            // under it (design §5.3).
+            var placedRecord = false
+            for (v, root) in usable {
+                for path in (v.missing[FileKind.epoch.rawValue] ?? []).sorted() {
+                    if placeWriteOnce(path, .epoch, from: source(v, root, path), version: v.id) { placedRecord = true }
+                }
+            }
+            if placedRecord, !options.dryRun {
+                do { vault = try vault.reopened() } catch {
+                    for (v, _) in usable { fail(v.id, Vault.manifestName, "cannot reopen the vault after placing epoch records: \(error)") }
+                    usable = []
+                }
+            }
+            // Pass 2: the other files.
+            for (v, root) in usable {
+                for path in v.missing.filter({ $0.key != FileKind.epoch.rawValue }).values.flatMap({ $0 }).sorted() {
                     guard let kind = VaultFolderConflicts.kind(of: path) else { continue }
                     if kind.isWriteOnce {
-                        placeWriteOnce(path, kind, from: source(path), version: v.id, tag: tag)
+                        placeWriteOnce(path, kind, from: source(v, root, path), version: v.id)
                     } else {
-                        settleMutable(path, kind, from: source(path), version: v.id, tag: tag, currentExists: false)
+                        settleMutable(path, kind, from: source(v, root, path), version: v.id, currentExists: false)
                     }
                 }
                 for path in v.differing {
                     guard let kind = VaultFolderConflicts.kind(of: path) else { continue }
-                    settleMutable(path, kind, from: source(path), version: v.id, tag: tag, currentExists: true)
+                    settleMutable(path, kind, from: source(v, root, path), version: v.id, currentExists: true)
                 }
             }
             finishSettings()
             finishManifest()
             resolve(versions)
-            report.copied = copied.sorted()
+            report.copied = placed.sorted()
             report.keptAside.sort()
+            report.keptUnknown = Set(report.keptUnknown).sorted()
+            report.setAside = Set(report.setAside).sorted()
             if !options.dryRun, !report.quarantined.isEmpty || !report.keptAside.isEmpty {
                 report.quarantine = options.quarantine.path
                 writeReportFile()
             }
         }
+
+        /// A file's version holds one file; the folder's, files at their paths.
+        func source(_ v: Version, _ root: URL, _ path: String) -> Source {
+            v.item.isEmpty ? Source(base: root, path: path) : Source(file: root)
+        }
+
+        static func itemName(_ v: Version) -> String { v.item.isEmpty ? "(vault folder)" : v.item }
 
         static func tag(_ index: Int, _ v: Version) -> String {
             let device = (v.device ?? "unknown").map { $0.isLetter || $0.isNumber ? $0 : "-" }
@@ -341,138 +564,264 @@ public enum VaultFolderConflicts {
             return String(repeating: "0", count: max(0, 2 - n.count)) + n + "-" + String(device.prefix(40))
         }
 
+        func tag(_ version: String) -> String { tags[version] ?? version }
+
         mutating func fail(_ version: String, _ path: String, _ message: String) {
-            report.errors[path] = message
+            report.errors[path, default: []].append("\(tag(version)): \(message)")
+            blocked.insert(version)
+        }
+
+        mutating func unsettle(_ version: String, _ path: String, _ why: String) {
+            report.unsettled[path, default: []].append("\(tag(version)): \(why)")
             blocked.insert(version)
         }
 
         // MARK: write-once files
 
-        mutating func placeWriteOnce(_ path: String, _ kind: FileKind, from: URL, version: String, tag: String) {
+        /// Places one missing write-once file; true when it was placed (or, dry run, would be).
+        @discardableResult
+        mutating func placeWriteOnce(_ path: String, _ kind: FileKind, from: Source, version: String) -> Bool {
+            if placed.contains(path) { return false }   // an earlier version brought it
             let dest = folder.appendingPathComponent(path)
-            if copied.contains(path) || Vault.holds(dest) { return }   // an earlier version brought it
+            let present = FolderRemote.lstatItem(dest)
+            if present.stat != nil || present.isLink
+                || FolderRemote.lstatItem(dest.deletingLastPathComponent()
+                    .appendingPathComponent(UbiquitousPlaceholder.standInName(for: dest.lastPathComponent))).stat != nil {
+                report.settled[path] = "already in the folder"
+                return false
+            }
+            let name = dest.lastPathComponent
+            if kind == .passphraseCopy, Vault.passphraseCopyFingerprint(name) != vault.manifest.recoveryFingerprint {
+                // A retired kit's copy (format.md §15.11): a kit replacement deleted it on purpose.
+                keepAside(from, path, version: version)
+                report.settled[path] = "a retired recovery kit's passphrase copy: kept aside, not copied back"
+                return false
+            }
+            let file: URL
+            do { file = try stage(from, name: name, maxBytes: Self.maxBytes(kind, name)) } catch let e as IncomingFileProblem {
+                quarantine(from, path, version: version, why: e.reason)
+                return false
+            } catch {
+                fail(version, path, "cannot read it from the version: \(error)")
+                return false
+            }
             do {
-                try check(path, kind, from)
+                if let override = options.checkOverride { try override(path, kind, file) } else { try check(path, kind, file) }
+            } catch let p as IncomingFileProblem where p.pending {
+                unsettle(version, path, "waits for a device-change record (\(p.reason)): left with its version")
+                return false
+            } catch let p as IncomingFileProblem where p.setAside != nil {
+                setAside(file, path, reason: p.setAside ?? .notSealed, version: version)
+                return false
             } catch let e as VaultError {
                 // The vault cannot judge it now (a tampered list, an I/O failure): neither placed nor quarantined.
                 fail(version, path, "\(e)")
-                return
+                return false
             } catch {
-                report.quarantined[path] = "\(error)"
-                if !options.dryRun {
-                    do { try copyAside(from, to: options.quarantine.appendingPathComponent(tag).appendingPathComponent(path)) } catch {
-                        fail(version, path, "cannot quarantine: \(error)")
-                    }
-                }
-                return
+                quarantine(from, path, version: version, why: "\(error)")
+                return false
             }
             if options.dryRun {
-                copied.insert(path)
-                return
+                placed.insert(path)
+                return true
             }
             do {
-                try provider.coordinatedWrite(dest) { try Vault.copyNew(from, to: dest) }
-                copied.insert(path)
+                try vault.requireWritable()
+                if try Self.placeNew(file, at: dest) {
+                    placed.insert(path)
+                    return true
+                }
+                report.settled[path] = "already in the folder (it appeared during the merge)"
             } catch {
                 fail(version, path, "cannot copy: \(error)")
             }
+            return false
         }
 
-        /// The received-file check of its kind (format.md §9.1); throws `IncomingFileProblem` (or another error) for
-        /// a file's own fault, `VaultError` when the vault cannot judge it.
-        func check(_ path: String, _ kind: FileKind, _ from: URL) throws {
+        static func maxBytes(_ kind: FileKind, _ name: String) -> Int {
+            switch kind {
+            case .revision: return BoundedRead.maxRevisionBytes
+            case .blob: return BoundedRead.maxBlobFileBytes
+            case .inbox: return CaptureFile.parse(name: name).map { CaptureFile.maxSealedBytes($0.kind) } ?? 0
+            case .epoch: return EpochRecord.maxBytes
+            case .join: return JoinRequest.maxBytes
+            case .notebook: return NotebookRecords.maxFileBytes
+            case .passphraseCopy: return RecoveryPassphraseCopy.maxBytes
+            case .manifest, .settings, .journal, .derived, .other: return maxCompareBytes
+            }
+        }
+
+        /// Copies the file into a private folder of its own under its name (the inbox check reads it by name), with a
+        /// no-follow read, at most `maxBytes`.
+        ///
+        /// - Throws: `IncomingFileProblem` when it is larger (its own fault), else the read's error.
+        mutating func stage(_ from: Source, name: String, maxBytes: Int) throws -> URL {
+            staged += 1
+            let dir = staging.appendingPathComponent(String(staged), isDirectory: true)
+            try FileIO.createPrivateDirectory(dir)
+            let to = dir.appendingPathComponent(name)
+            let input = try from.open()
+            defer { try? input.close() }
+            var total = 0
+            try FileIO.writeNewFile(to) { write in
+                while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty {
+                    total += chunk.count
+                    guard total <= maxBytes else { throw IncomingFileProblem("larger than \(maxBytes) bytes") }
+                    try write(chunk)
+                }
+            }
+            return to
+        }
+
+        /// Places `file` (staged) at `dest` through a temporary name in its folder: never replaces anything. False when
+        /// something is there already.
+        static func placeNew(_ file: URL, at dest: URL) throws -> Bool {
+            let dir = dest.deletingLastPathComponent()
+            try FileIO.createDirectory(dir)
+            let tmp = FileIO.tempURL(in: dir)
+            let input = try BoundedRead.openRegularFile(file)
+            defer { try? input.close() }
+            try FileIO.writeNewFile(tmp) { write in
+                while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty { try write(chunk) }
+            }
+            do { try FileIO.placeNew(tmp, at: dest) } catch VaultError.alreadyExists {
+                try? FileManager.default.removeItem(at: tmp)
+                return false
+            }
+            return true
+        }
+
+        /// The received-file check of its kind (format.md §9.1) on the staged copy; throws `IncomingFileProblem` (or
+        /// another error) for a file's own fault, `VaultError` when the vault cannot judge it.
+        func check(_ path: String, _ kind: FileKind, _ file: URL) throws {
             let parts = path.split(separator: "/").map(String.init)
             let name = parts.last ?? path
+            func data() throws -> Data { try BoundedRead.contents(of: file, maxBytes: Self.maxBytes(kind, name)) }
             switch kind {
             case .revision:
                 guard let id = VaultFolderConflicts.noteId(parts[1]), let rev = RevisionName(name) else {
                     throw IncomingFileProblem("not a revision path")
                 }
-                let data = try BoundedRead.contents(of: from, maxBytes: BoundedRead.maxRevisionBytes)
-                try vault.checkIncomingRevision(data, noteId: id, name: rev)
+                try vault.checkIncomingRevision(try data(), noteId: id, name: rev)
             case .blob:
-                try vault.checkIncomingBlob(at: from, fileName: name, note: VaultFolderConflicts.noteId(parts[1]))
+                try vault.checkIncomingBlob(at: file, fileName: name, note: VaultFolderConflicts.noteId(parts[1]))
             case .inbox:
-                try vault.checkIncomingInboxFile(at: from, name: name)
+                try vault.checkIncomingInboxFile(at: file, name: name)
             case .epoch:
-                try Vault.checkIncomingEpochRecord(try BoundedRead.contents(of: from, maxBytes: EpochRecord.maxBytes), name: name)
+                try Vault.checkIncomingEpochRecord(try data(), name: name)
             case .join:
-                _ = try JoinRequest.parse(try BoundedRead.contents(of: from, maxBytes: JoinRequest.maxBytes))
+                // Plaintext and untrusted (format.md §15.12): it must parse, be named after its own key and name this
+                // vault (as `EpochSync` requires of one it downloads).
+                let request = try JoinRequest.parse(try data())
+                guard request.fileName == name else { throw IncomingFileProblem("not named after its own key") }
+                guard request.vaultId == vault.vaultId else { throw IncomingFileProblem("a join request of another vault") }
             case .notebook:
-                let data = try BoundedRead.contents(of: from, maxBytes: NotebookRecords.maxFileBytes)
-                if vault.canRead { _ = try vault.openNotebookRecord(data, fileName: name) }
+                let bytes = try data()
+                guard vault.canRead else { return }
+                do { _ = try vault.openNotebookRecord(bytes, fileName: name) } catch NotebookRecordError.setAside(let r) {
+                    throw IncomingFileProblem("set aside: \(r.text)", setAside: r)
+                } catch NotebookRecordError.pending {
+                    throw IncomingFileProblem("waits for a device-change record", pending: true)
+                }
             case .passphraseCopy:
-                try Vault.checkIncomingPassphraseCopy(try BoundedRead.contents(of: from, maxBytes: BoundedRead.maxSmallFileBytes),
-                                                      name: name)
+                try Vault.checkIncomingPassphraseCopy(try data(), name: name)
             case .manifest, .settings, .journal, .derived, .other:
                 throw IncomingFileProblem("not a write-once file")
             }
         }
 
-        // MARK: mutable files
+        mutating func quarantine(_ from: Source, _ path: String, version: String, why: String) {
+            report.quarantined[path, default: []].append("\(tag(version)): \(why)")
+            keep.insert(version)
+            guard !options.dryRun else { return }
+            do {
+                try Self.copyAside(from, to: options.quarantine.appendingPathComponent(tag(version)).appendingPathComponent(path))
+            } catch {
+                fail(version, path, "cannot quarantine: \(error)")
+            }
+        }
 
-        mutating func settleMutable(_ path: String, _ kind: FileKind, from: URL, version: String, tag: String,
-                                    currentExists: Bool) {
-            if kind == .derived {
-                report.settled[path] = currentExists ? "rewritten by every writer: the current one stays"
-                    : "rewritten by every writer: the next sync writes it"
+        /// A file the acceptance rule sets aside: kept in the vault's set-aside store (never placed, never quarantined),
+        /// and then settled.
+        mutating func setAside(_ file: URL, _ path: String, reason: SetAsideReason, version: String) {
+            guard let store = vault.setAsideStore else {
+                fail(version, path, "set aside by the acceptance rule (\(reason.text)), and this run has no set-aside store")
                 return
             }
-            keepAside(from, path, tag: tag, version: version)
+            if !options.dryRun {
+                do { try store.keep(file: file, path: path, vaultId: vault.vaultId, reason: reason) } catch {
+                    fail(version, path, "cannot keep it set aside: \(error)")
+                    return
+                }
+            }
+            report.setAside.append(path)
+        }
+
+        // MARK: mutable files
+
+        mutating func settleMutable(_ path: String, _ kind: FileKind, from: Source, version: String, currentExists: Bool) {
             switch kind {
-            case .manifest: judgeManifest(path, from: from, version: version)
-            case .settings: judgeSettings(path, from: from, version: version)
+            case .derived:
+                report.settled[path] = currentExists ? "rewritten by every writer: the current one stays"
+                    : "rewritten by every writer: the next sync writes it"
+            case .manifest:
+                keepAside(from, path, version: version)
+                judgeManifest(path, from: from, version: version)
+            case .settings:
+                keepAside(from, path, version: version)
+                judgeSettings(path, from: from, version: version)
             case .journal:
+                keepAside(from, path, version: version)
                 unsettle(version, path, "a re-encryption journal differs: kept aside for review, never picked")
             default:
-                report.settled[path] = "not a file this version knows: kept aside (\(tag))"
+                keepAside(from, path, version: version)
+                if currentExists {
+                    report.settled[path] = "an unknown file that differs: the current one stays, the version's is kept aside"
+                } else {
+                    // Unknown files are never deleted (format.md §1), but nothing says they are write-once: not placed.
+                    report.keptUnknown.append(path)
+                    keep.insert(version)
+                }
             }
         }
 
-        mutating func unsettle(_ version: String, _ path: String, _ why: String) {
-            report.unsettled[path] = why
-            blocked.insert(version)
-        }
-
-        mutating func keepAside(_ from: URL, _ path: String, tag: String, version: String) {
-            report.keptAside.append("\(tag)/\(path)")
+        mutating func keepAside(_ from: Source, _ path: String, version: String) {
+            report.keptAside.append("\(tag(version))/\(path)")
             guard !options.dryRun else { return }
-            do { try copyAside(from, to: options.quarantine.appendingPathComponent("kept").appendingPathComponent(tag)
-                                .appendingPathComponent(path)) } catch {
+            do {
+                try Self.copyAside(from, to: options.quarantine.appendingPathComponent("kept").appendingPathComponent(tag(version))
+                    .appendingPathComponent(path))
+            } catch {
                 fail(version, path, "cannot keep aside: \(error)")
             }
         }
 
-        /// `vault.json`: the same (or label only) is settled; a later version by home is a candidate (`finishManifest`);
-        /// one the current is a later version of, or of an earlier epoch of the same vault, is superseded; anything else
-        /// is left (design §5.1: never merged, never picked).
-        mutating func judgeManifest(_ path: String, from: URL, version: String) {
-            guard let theirs = try? BoundedRead.contents(of: from, maxBytes: BoundedRead.maxManifestBytes) else {
+        /// `vault.json`, judged by `Vault.judgeIncoming` against the one on disk now: the same (or label only) and an
+        /// earlier one are settled; a later version by home in the same epoch is a candidate (`finishManifest`);
+        /// anything else (another epoch, a conflict, refused, waiting) is left (design §5.1: never merged, never picked).
+        mutating func judgeManifest(_ path: String, from: Source, version: String) {
+            guard let theirs = try? from.read(maxBytes: BoundedRead.maxManifestBytes) else {
                 unsettle(version, path, "a version of vault.json cannot be read")
                 return
             }
-            let current = try? BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
-                                                    maxBytes: BoundedRead.maxManifestBytes)
-            if let current, theirs == current || EpochManifest.sameExceptLabel(theirs, current) {
+            let local = try? BoundedRead.contents(under: folder, Vault.manifestName, maxBytes: BoundedRead.maxManifestBytes)
+            switch vault.judgeIncoming(theirs, local: local) {
+            case .same:
                 report.settled[path] = "the same vault.json (or only its label differs)"
-                return
+            case .behind:
+                report.settled[path] = "an earlier vault.json: the current one is later"
+            case .later:
+                if (try? Vault.readManifest(theirs))?.epochId == vault.manifest.epochId {
+                    laterManifests.append((version, theirs))
+                } else {
+                    unsettle(version, path, "a vault.json of a later epoch: only a sync takes another epoch (its record "
+                        + "first); left")
+                }
+            case .laterRecordPending:
+                unsettle(version, path, "a vault.json of a later epoch whose record has not arrived: left")
+            case .waiting(let why), .unlisted(let why), .conflict(let why), .refused(let why):
+                unsettle(version, path, "another vault.json, not taken: \(why)")
             }
-            guard vault.canRead else {
-                unsettle(version, path, "vault.json differs: judging it needs the vault's key")
-                return
-            }
-            if vault.laterVersion(theirs) != nil {
-                laterManifests.append((version, theirs))
-                return
-            }
-            if let m = try? Vault.readManifest(theirs), m.vaultId == vault.vaultId, m.root == vault.manifest.root,
-               vault.listStatus.problem == nil,
-               m.epoch < vault.manifest.epoch || vault.isLaterVersion(vault.manifest, of: m) {
-                report.settled[path] = "an earlier vault.json (epoch \(m.epoch), \(m.keys.count) keys): the current one is later"
-                return
-            }
-            unsettle(version, path, "another vault.json that is neither earlier nor a later version by home: both kept, "
-                + "nothing picked (design §5.1)")
         }
 
         /// The later versions by home: one of them later than every other is taken (written last), else none.
@@ -487,16 +836,17 @@ public enum VaultFolderConflicts {
                 for c in laterManifests { unsettle(c.id, path, "several later versions of vault.json that do not follow each other") }
                 return
             }
-            if vault.isRecoveryOpen {
-                for c in laterManifests {
-                    unsettle(c.id, path, "a later vault.json by home: the recovery key never writes; run again with the device key")
-                }
-                return
-            }
             if !options.dryRun {
                 let dest = folder.appendingPathComponent(path)
                 do {
-                    try provider.coordinatedWrite(dest) { try FileIO.writeAtomically(latest.1, to: dest, replacing: true) }
+                    try vault.requireWritable()
+                    // Judged again against the file on disk right now (still inside the merge's write).
+                    let local = try BoundedRead.contents(under: folder, path, maxBytes: BoundedRead.maxManifestBytes)
+                    guard vault.judgeIncoming(latest.1, local: local) == .later else {
+                        for c in laterManifests { unsettle(c.id, path, "vault.json changed during the merge: left") }
+                        return
+                    }
+                    try FileIO.writeAtomically(latest.1, to: dest, replacing: true)
                 } catch {
                     for c in laterManifests { fail(c.id, path, "cannot write vault.json: \(error)") }
                     return
@@ -506,43 +856,62 @@ public enum VaultFolderConflicts {
             report.settled[path] = "a later version by home taken (design §5.1)"
         }
 
-        /// `settings.age`: merged per key (format.md §13.3) once the vault is unlocked by a device key.
-        mutating func judgeSettings(_ path: String, from: URL, version: String) {
+        /// `settings.age`: each version's merged per key (format.md §13.3) once the vault is unlocked by a device key;
+        /// pending, set-aside and newer-reader versions leave their version unresolved.
+        mutating func judgeSettings(_ path: String, from: Source, version: String) {
             guard vault.canRead, !vault.isRecoveryOpen else {
                 unsettle(version, path, vault.isRecoveryOpen
                          ? "settings.age differs: merging writes it, and the recovery key never writes"
                          : "settings.age differs: merging it needs the vault's key")
                 return
             }
-            guard let data = try? BoundedRead.contents(of: from, maxBytes: SharedSettings.maxFileBytes) else {
+            guard let data = try? from.read(maxBytes: SharedSettings.maxFileBytes) else {
                 unsettle(version, path, "a version of settings.age cannot be read")
                 return
             }
             do {
                 let theirs = SharedSettingsMigrations.migrated(try vault.openSharedSettings(data).settings)
-                if mergedSettings == nil, settingsVersions.isEmpty { mergedSettings = try? vault.readSharedSettings() }
-                let before = mergedSettings
-                mergedSettings = mergedSettings.map { $0.merging(theirs) } ?? theirs
-                if mergedSettings != before { settingsChanged = true }
+                versionSettings = versionSettings.map { $0.merging(theirs) } ?? theirs
                 settingsVersions.append(version)
             } catch SharedSettingsError.needsNewerReader {
                 unsettle(version, path, "a version of settings.age needs a newer reader: left")
+            } catch SharedSettingsError.pending {
+                unsettle(version, path, "a version of settings.age waits for a device-change record: left")
+            } catch SharedSettingsError.setAside(let r) {
+                unsettle(version, path, "a version of settings.age under an earlier key (\(r.text)): kept aside, left")
             } catch {
                 // Another vault's, or damaged: not settings of this vault (the engine's rule); kept aside above.
                 report.settled[path] = "a version that is not this vault's settings (damaged or another vault's): kept aside"
             }
         }
 
+        /// Writes the versions' settings merged with the file on disk just before writing (`updateSharedSettings`),
+        /// only when the current file reads (or is absent) and `vault.json` on disk is still of this vault's epoch.
         mutating func finishSettings() {
             let path = SharedSettings.fileName
-            guard !settingsVersions.isEmpty else { return }
-            guard settingsChanged, let merged = mergedSettings else {
+            guard !settingsVersions.isEmpty, let merged = versionSettings else { return }
+            let current: SharedSettings?
+            do { current = try vault.readSharedSettings() } catch {
+                for v in settingsVersions {
+                    unsettle(v, path, "the current settings.age cannot be read (\(error)): never replaced; left")
+                }
+                return
+            }
+            let base = current ?? SharedSettings()
+            if current != nil, base.merging(merged) == base {
                 report.settled[path] = report.settled[path] ?? "the versions add nothing: merged per key, no change"
                 return
             }
             if !options.dryRun {
+                guard vault.keysMatchManifestOnDisk() else {
+                    for v in settingsVersions {
+                        unsettle(v, path, "vault.json on disk is of another epoch than this run's: run again; left")
+                    }
+                    return
+                }
                 do {
-                    try provider.coordinatedWrite(folder.appendingPathComponent(path)) { try vault.writeSharedSettings(merged) }
+                    try vault.requireWritable()
+                    try vault.updateSharedSettings { $0 = $0.merging(merged) }
                 } catch {
                     for v in settingsVersions { fail(v, path, "cannot write the merged settings: \(error)") }
                     return
@@ -554,6 +923,7 @@ public enum VaultFolderConflicts {
 
         // MARK: resolving
 
+        /// Resolves the versions that may be: without coordinating (the merge holds the folder's write).
         mutating func resolve(_ versions: [Version]) {
             var byItem: [String: Set<String>] = [:]
             for v in versions {
@@ -561,31 +931,46 @@ public enum VaultFolderConflicts {
             }
             for (item, ids) in byItem.sorted(by: { $0.key < $1.key }) {
                 let url = item.isEmpty ? folder : folder.appendingPathComponent(item)
+                let removable = options.removeVersions ? ids.subtracting(keep) : []
+                let markOnly = ids.subtracting(removable)
                 if options.dryRun {
                     report.resolved += ids.sorted()
                     continue
                 }
                 do {
-                    if options.removeVersions {
-                        try provider.resolveConflicts(of: url, ids: ids)
-                        report.removed += ids.sorted()
-                    } else {
-                        try provider.markConflictsResolved(of: url, ids: ids)
+                    if !removable.isEmpty {
+                        try provider.settleConflictVersions(of: url, ids: removable, remove: true)
+                        report.removed += removable.sorted()
                     }
+                    if !markOnly.isEmpty { try provider.settleConflictVersions(of: url, ids: markOnly, remove: false) }
                     report.resolved += ids.sorted()
                 } catch {
-                    report.errors[item.isEmpty ? "(vault folder)" : item] = "cannot resolve its versions: \(error)"
-                    report.left += ids.sorted()
+                    report.errors[item.isEmpty ? "(vault folder)" : item, default: []].append("cannot resolve its versions: \(error)")
+                    report.left += ids.subtracting(report.removed).sorted()
+                    report.resolved += ids.intersection(report.removed).sorted()
                 }
             }
         }
 
         // MARK: files outside the vault
 
-        func copyAside(_ from: URL, to: URL) throws {
-            try fm.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if fm.fileExists(atPath: to.path) { return }
-            try fm.copyItem(at: from, to: to)
+        /// Copies `from` (no link followed) to `to`, a new file. A file already at `to` with the same bytes is kept;
+        /// one with other bytes is an error (never overwritten, never taken for this one).
+        static func copyAside(_ from: Source, to: URL) throws {
+            try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if FolderRemote.lstatItem(to).stat != nil || FolderRemote.lstatItem(to).isLink {
+                guard let a = try? from.read(maxBytes: maxCompareBytes),
+                      let b = try? BoundedRead.contents(under: to.deletingLastPathComponent(), to.lastPathComponent,
+                                                         maxBytes: maxCompareBytes), a == b else {
+                    throw VaultError.alreadyExists("\(to.path) holds other bytes")
+                }
+                return
+            }
+            let input = try from.open()
+            defer { try? input.close() }
+            try FileIO.writeNewFile(to) { write in
+                while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty { try write(chunk) }
+            }
         }
 
         func writeReportFile() {

@@ -633,19 +633,31 @@ sempere vault reencrypt --status [--json]
   `$SEMPERE_VAULT`. Exit 0 when there is no version and the folder is not a package, 3 otherwise. `--json`: `folder`,
   `provider`, `record`, `heldAsPackage`, `packageCause`, `versions` (`id`, `item` ("" for the folder), `modified`,
   `device`, `files`, `missing` (kind → paths), `differing`), `writeOnceMissing`, `mutableToReview`.
-  With `--merge` it copies back only missing write-once files, each checked under the vault's key as a received file
-  and placed without replacing anything (coordinated); one that fails goes to the quarantine. Mutable files are copied
-  aside into `<quarantine>/kept/`; `settings.age` is merged per key, `vault.json` taken only as a later version by home
-  (an earlier one is superseded), anything else left and listed. Then the versions with nothing left are marked
-  resolved and kept (`--remove-versions`: removed), and the Finder's flag is cleared. The quarantine defaults to
-  `$XDG_STATE_HOME/sempere/conflicts/<vault id>/<time>/` (with `report.json`) and may not be inside the vault. It
-  needs the key (`--identity`, this machine's device key, or `--recovery-key`, which writes no mutable file; exit 4
-  without); `--dry-run` prints the plan, writes nothing, and works locked (structural checks). Exit 0 when everything
-  was merged and resolved, 3 when something was left or quarantined, 1 on a failure. `--json`: `dryRun`, `complete`,
-  `copied`, `quarantined` (path → why), `keptAside`, `written`, `settled`, `unsettled` (path → how or why),
-  `resolved`, `removed`, `left`, `errors`, `quarantine`, `heldAsPackage`, `bundleBit` (`result` `notSet`, `cleared` or
-  `failed`, `errno`, `heldAsPackageAfter`, `recordAfter`). The app warns about such a folder but never merges it; this
-  is the recovery path. `store sync` and `sync folder` print a warning on stderr for a target folder held as a package.
+  With `--merge` (pause Sempere on every device first) it holds one write of the folder for the whole run, reads
+  `vault.json` again inside it, places the versions' missing epoch records first and reopens the vault, then copies
+  back the other missing write-once files, each read without following links, checked under the vault's key as a
+  received file and placed without replacing anything. One that fails goes to the quarantine; one the acceptance rule
+  sets aside goes to this machine's set-aside store; one that waits for a device-change record leaves its version
+  unresolved. A retired kit's passphrase copy is never copied back; an unknown file only a version has is never placed
+  (kept aside, `keptUnknown`). Mutable files are copied aside into `<quarantine>/kept/`; `settings.age` is merged per
+  key with the current file (never when that cannot be read), `vault.json` decided by `judgeIncoming` (only a later
+  version by home in the same epoch is taken), anything else left and listed. A version that cannot be listed whole
+  (contents not downloaded, a folder that cannot be read) is never resolved. Then the versions with nothing left are
+  marked resolved and kept (`--remove-versions`: removed, except a version with a quarantined or unplaced file), and,
+  only when everything was merged, the Finder's flag is cleared. The quarantine defaults to
+  `$XDG_STATE_HOME/sempere/conflicts/<vault id>/<time>/` (with `report.json`), may not be inside the vault, and a
+  real run refuses a `--quarantine` folder that is not empty (`--quarantine` goes with `--merge`). It needs this
+  machine's device key or `--identity` (exit 4 without); `--recovery-key` opens read-only, so it is refused with
+  `--merge` (exit 2) and works with `--merge --dry-run`. `--dry-run` prints the plan, writes nothing (not even the
+  vault's index or summaries) and works locked (structural checks). Exit 0 when everything was merged and resolved,
+  3 when something was left or quarantined, 1 on a failure (a Finder flag that cannot be cleared included). `--json`:
+  `dryRun`, `complete`, `copied`, `quarantined` (path → one `version: why` per version), `setAside`, `keptAside`,
+  `keptUnknown`, `skipped`, `written`, `settled` (path → how), `unsettled` (path → one `version: why` per version),
+  `resolved`, `removed`, `left`, `errors` (path → one `version: message` per version), `quarantine`,
+  `heldAsPackage`, `bundleBit` (`result` `notSet`, `cleared` or `failed`, `errno`, `heldAsPackageAfter`,
+  `recordAfter`). Each version also carries `skipped` (links and special files, never followed) and `problem` (why it
+  cannot be judged). The app warns about such a folder but never merges it; this is the recovery path. `store sync`
+  and `sync folder` print a warning on stderr for a target folder held as a package.
 - `merge-copy FROM` merges another copy of the same vault into the vault
   (`format.md` §1.3): the losing side of an iCloud Drive conflict, a copy taken
   from another device, a folder restored from a backup. Every revision, blob,

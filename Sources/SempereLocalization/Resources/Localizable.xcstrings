@@ -27989,6 +27989,19 @@
         }
       }
     },
+    "This folder’s provider syncs it as one package, so changes made on two devices at once can hide each other’s files." : {
+      "comment" : "Warning on a sync folder row when a provider other than iCloud Drive syncs the folder as one package.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El proveedor de esta carpeta la sincroniza como un solo paquete, así que los cambios hechos a la vez en dos dispositivos pueden ocultar los archivos del otro."
+          }
+        }
+      }
+    },
     "This image could not be converted to JPEG or PNG." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -30965,15 +30978,28 @@
         }
       }
     },
-    "Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 2. Here, choose Add Folder… and make a new folder with another name in iCloud Drive; this device copies the vault into it. 3. On each other device, add the same new folder, then remove the old target. 4. Once every device syncs with the new folder, move the old one to the Trash. Renaming the old folder does not help: iCloud Drive keeps it a package." : {
-      "comment" : "Steps in the alert for a sync folder iCloud Drive treats as a package. Keep the command text in English.",
+    "Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. Pause Sempere on every device (leave it closed) until step 3. 2. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 3. Open Sempere on that Mac only and let it sync once with the old folder, so the recovered files reach its copy. 4. On one device, choose Add Folder… and make a new folder with another name in iCloud Drive; that device copies the vault into it. 5. On each other device, add the same new folder, then remove the old target. 6. Before moving the old folder to the Trash, check that the files the merge copied back are in the new folder, and keep the merge’s quarantine folder. Renaming the old folder does not help: iCloud Drive keeps it a package." : {
+      "comment" : "Steps of the How to Fix alert for a sync folder in iCloud Drive held as a package.",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tus notas en este dispositivo están a salvo: viven en la app. Para dar a los otros dispositivos una carpeta normal: 1. En un Mac, recupera lo que guardan las versiones en conflicto con la herramienta de línea de comandos sempere (sempere vault conflicts --merge). 2. Aquí, elige Añadir carpeta… y crea en iCloud Drive una carpeta nueva con otro nombre; este dispositivo copia la bóveda en ella. 3. En cada uno de los otros dispositivos, añade esa misma carpeta nueva y luego quita el destino anterior. 4. Cuando todos los dispositivos se sincronicen con la carpeta nueva, mueve la anterior a la Papelera. Cambiar el nombre de la carpeta anterior no sirve: iCloud Drive la sigue tratando como un paquete."
+            "value" : "Tus notas en este dispositivo están a salvo: viven en la app. Para dar a los demás dispositivos una carpeta normal: 1. Pausa Sempere en todos los dispositivos (déjalo cerrado) hasta el paso 3. 2. En un Mac, recupera lo que guardan las versiones en conflicto con la herramienta de línea de comandos sempere (sempere vault conflicts --merge). 3. Abre Sempere solo en ese Mac y deja que se sincronice una vez con la carpeta antigua, para que los archivos recuperados lleguen a su copia. 4. En un dispositivo, elige Añadir carpeta… y crea una carpeta nueva con otro nombre en iCloud Drive; ese dispositivo copia la bóveda en ella. 5. En cada uno de los demás dispositivos, añade la misma carpeta nueva y luego quita el destino antiguo. 6. Antes de mover la carpeta antigua a la Papelera, comprueba que los archivos que la recuperación copió están en la carpeta nueva, y conserva la carpeta de cuarentena de la recuperación. Cambiar el nombre de la carpeta antigua no sirve: iCloud Drive la sigue tratando como un paquete."
+          }
+        }
+      }
+    },
+    "Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. Pause Sempere on every device (leave it closed) until step 3. 2. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 3. Open Sempere on that Mac only and let it sync once with the old folder, so the recovered files reach its copy. 4. On one device, choose Add Folder… and make a new folder with another name in the same cloud storage; that device copies the vault into it. 5. On each other device, add the same new folder, then remove the old target. 6. Before moving the old folder to the Trash, check that the files the merge copied back are in the new folder, and keep the merge’s quarantine folder. Renaming the old folder does not help: the provider keeps it a package." : {
+      "comment" : "Steps of the How to Fix alert for a sync folder held as a package by a provider other than iCloud Drive.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus notas en este dispositivo están a salvo: viven en la app. Para dar a los demás dispositivos una carpeta normal: 1. Pausa Sempere en todos los dispositivos (déjalo cerrado) hasta el paso 3. 2. En un Mac, recupera lo que guardan las versiones en conflicto con la herramienta de línea de comandos sempere (sempere vault conflicts --merge). 3. Abre Sempere solo en ese Mac y deja que se sincronice una vez con la carpeta antigua, para que los archivos recuperados lleguen a su copia. 4. En un dispositivo, elige Añadir carpeta… y crea una carpeta nueva con otro nombre en el mismo almacenamiento en la nube; ese dispositivo copia la bóveda en ella. 5. En cada uno de los demás dispositivos, añade la misma carpeta nueva y luego quita el destino antiguo. 6. Antes de mover la carpeta antigua a la Papelera, comprueba que los archivos que la recuperación copió están en la carpeta nueva, y conserva la carpeta de cuarentena de la recuperación. Cambiar el nombre de la carpeta antigua no sirve: el proveedor la sigue tratando como un paquete."
           }
         }
       }

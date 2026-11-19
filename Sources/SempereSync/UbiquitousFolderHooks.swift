@@ -118,7 +118,8 @@ public final class UbiquitousFolderHooks: FolderProvider, @unchecked Sendable {
     public func conflictVersions(of url: URL) -> [RemoteVersion] {
         guard managesFiles, FileManager.default.fileExists(atPath: url.path) else { return [] }
         return (NSFileVersion.unresolvedConflictVersionsOfItem(at: url) ?? []).map {
-            RemoteVersion(id: $0.url.path, modified: $0.modificationDate, device: $0.localizedNameOfSavingComputer)
+            RemoteVersion(id: $0.url.path, modified: $0.modificationDate, device: $0.localizedNameOfSavingComputer,
+                          hasLocalContents: $0.hasLocalContents)
         }
     }
 
@@ -131,11 +132,16 @@ public final class UbiquitousFolderHooks: FolderProvider, @unchecked Sendable {
     /// that appeared since (not in `ids`) is left for the next run.
     public func resolveConflicts(of url: URL, ids: Set<String>) throws {
         guard managesFiles, !ids.isEmpty else { return }
-        try coordinatedWrite(url) {
-            for v in NSFileVersion.unresolvedConflictVersionsOfItem(at: url) ?? [] where ids.contains(v.url.path) {
-                v.isResolved = true
-                try v.remove()
-            }
+        try coordinatedWrite(url) { try settleConflictVersions(of: url, ids: ids, remove: true) }
+    }
+
+    /// Marks the versions resolved (and removes them when `remove`) without coordinating: the caller holds a coordinated
+    /// write of `url` or of a folder above it.
+    public func settleConflictVersions(of url: URL, ids: Set<String>, remove: Bool) throws {
+        guard managesFiles, !ids.isEmpty else { return }
+        for v in NSFileVersion.unresolvedConflictVersionsOfItem(at: url) ?? [] where ids.contains(v.url.path) {
+            v.isResolved = true
+            if remove { try v.remove() }
         }
     }
 
@@ -143,11 +149,7 @@ public final class UbiquitousFolderHooks: FolderProvider, @unchecked Sendable {
     /// `removeOtherVersionsOfItem`, which also drops the item's versions that are no conflict).
     public func markConflictsResolved(of url: URL, ids: Set<String>) throws {
         guard managesFiles, !ids.isEmpty else { return }
-        try coordinatedWrite(url) {
-            for v in NSFileVersion.unresolvedConflictVersionsOfItem(at: url) ?? [] where ids.contains(v.url.path) {
-                v.isResolved = true
-            }
-        }
+        try coordinatedWrite(url) { try settleConflictVersions(of: url, ids: ids, remove: false) }
     }
 
     public func itemRecord(of url: URL) -> ProviderItemRecord? {

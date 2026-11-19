@@ -539,21 +539,33 @@ extension AppModelCore {
 
 // MARK: - A folder target held as a package (docs/io.md "A vault folder held as a package")
 
+/// Why a folder target's row warns (`folderTargetPackageRecord`): what the provider records, and whether the provider is
+/// iCloud Drive (the app names it; any other provider is named generically).
+public struct FolderTargetPackageWarning: Equatable, Sendable {
+    public var record: ProviderItemRecord
+    public var isICloudDrive: Bool
+
+    public init(record: ProviderItemRecord, isICloudDrive: Bool) {
+        self.record = record; self.isICloudDrive = isICloudDrive
+    }
+}
+
 extension AppModelCore {
     /// What the provider records about a folder target's folder when it is a problem: it syncs the folder as one item
     /// (a package), or the folder itself has unresolved conflict versions (whole-vault versions: `sempere vault
     /// conflicts` merges them back). Nil otherwise, for a WebDAV target, or when the folder cannot be reached.
-    /// Resource values only (no walk), off the main actor: cheap enough for each time the row shows.
-    public func folderTargetPackageRecord(_ target: SyncTarget) async -> ProviderItemRecord? {
+    /// Resource values only (no walk), off the main actor: cheap enough for each time the row shows and after each run.
+    public func folderTargetPackageRecord(_ target: SyncTarget) async -> FolderTargetPackageWarning? {
         guard target.kind == .folder else { return nil }
         let bookmarks = services.bookmarks, provider = folderProvider
-        return await Task.detached(priority: .utility) { () -> ProviderItemRecord? in
+        return await Task.detached(priority: .utility) { () -> FolderTargetPackageWarning? in
             guard let access = try? FolderTargetAccess.open(target, bookmarks: bookmarks) else { return nil }
             defer { access.close() }
             let hooks = provider?(access.folder) ?? FolderProviders.detect(access.folder)
             guard let record = hooks.itemRecord(of: access.folder),
                   record.heldAsPackage || record.hasUnresolvedConflicts == true else { return nil }
-            return record
+            return FolderTargetPackageWarning(record: record,
+                                              isICloudDrive: FolderLocation.classify(access.folder) == .iCloudDrive)
         }.value
     }
 }

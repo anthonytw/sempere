@@ -117,7 +117,7 @@ private struct SyncTargetRow: View {
     let remove: () -> Void
     /// The provider syncs the folder as one item, or it has whole-folder conflict versions (docs/io.md "A vault folder
     /// held as a package"): a warning, never a block.
-    @State private var packageRecord: ProviderItemRecord?
+    @State private var packageWarning: FolderTargetPackageWarning?
     @State private var showingPackageHelp = false
 
     var body: some View {
@@ -140,11 +140,8 @@ private struct SyncTargetRow: View {
                             .accessibilityIdentifier("syncTargetRechoose")
                     }
                 }
-                if let record = packageRecord {
-                    Label(record.heldAsPackage
-                          ? "iCloud Drive syncs this folder as one package, so changes made on two devices at once can hide each other’s files."
-                          : "This folder has conflicting versions from other devices.",
-                          systemImage: "exclamationmark.triangle")
+                if let warning = packageWarning {
+                    Label(warningText(warning), systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.orange)
                         .accessibilityIdentifier("syncTargetPackageWarning")
                     Button("How to Fix…") { showingPackageHelp = true }
@@ -162,13 +159,35 @@ private struct SyncTargetRow: View {
             .help("Remove this sync target")
             .accessibilityIdentifier("syncTargetRemove")
         }
-        .task(id: target.id) { packageRecord = await model.folderTargetPackageRecord(target) }
+        // Asked again when the row shows and whenever a run starts or ends (a run may merge or clear the flag).
+        .task(id: PackageCheck(target: target.id, syncing: session?.isSyncing == true)) {
+            packageWarning = await model.folderTargetPackageRecord(target)
+        }
         .alert("Sync Folder Kept as a Package", isPresented: $showingPackageHelp) {
             Button("OK") { showingPackageHelp = false }
         } message: {
-            Text("Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 2. Here, choose Add Folder… and make a new folder with another name in iCloud Drive; this device copies the vault into it. 3. On each other device, add the same new folder, then remove the old target. 4. Once every device syncs with the new folder, move the old one to the Trash. Renaming the old folder does not help: iCloud Drive keeps it a package.")
+            if packageWarning?.isICloudDrive ?? true {
+                Text("Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. Pause Sempere on every device (leave it closed) until step 3. 2. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 3. Open Sempere on that Mac only and let it sync once with the old folder, so the recovered files reach its copy. 4. On one device, choose Add Folder… and make a new folder with another name in iCloud Drive; that device copies the vault into it. 5. On each other device, add the same new folder, then remove the old target. 6. Before moving the old folder to the Trash, check that the files the merge copied back are in the new folder, and keep the merge’s quarantine folder. Renaming the old folder does not help: iCloud Drive keeps it a package.")
+            } else {
+                Text("Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. Pause Sempere on every device (leave it closed) until step 3. 2. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 3. Open Sempere on that Mac only and let it sync once with the old folder, so the recovered files reach its copy. 4. On one device, choose Add Folder… and make a new folder with another name in the same cloud storage; that device copies the vault into it. 5. On each other device, add the same new folder, then remove the old target. 6. Before moving the old folder to the Trash, check that the files the merge copied back are in the new folder, and keep the merge’s quarantine folder. Renaming the old folder does not help: the provider keeps it a package.")
+            }
         }
     }
+
+    private func warningText(_ warning: FolderTargetPackageWarning) -> String {
+        guard warning.record.heldAsPackage else {
+            return String(localized: "This folder has conflicting versions from other devices.")
+        }
+        return warning.isICloudDrive
+            ? String(localized: "iCloud Drive syncs this folder as one package, so changes made on two devices at once can hide each other’s files.")
+            : String(localized: "This folder’s provider syncs it as one package, so changes made on two devices at once can hide each other’s files.")
+    }
+}
+
+/// When a row asks again whether its folder is held as a package.
+private struct PackageCheck: Hashable {
+    var target: UUID
+    var syncing: Bool
 }
 
 /// A vault folder picked with "Open Vault…", waiting for the user's choice (`OpenVaultSheet`).

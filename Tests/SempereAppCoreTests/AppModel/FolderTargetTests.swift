@@ -151,8 +151,9 @@ extension AppModelSuites {
             #expect(await w.a.model.folderTargetPackageRecord(target) == nil)
             w.provider.rootRecord = ProviderItemRecord(isPackage: true, contentType: "dyn.example", finderBundleBit: false,
                                                        ubiquitous: true, hasUnresolvedConflicts: true)
-            let record = try #require(await w.a.model.folderTargetPackageRecord(target))
-            #expect(record.packageCause == .providerRecord)
+            let warning = try #require(await w.a.model.folderTargetPackageRecord(target))
+            #expect(warning.record.packageCause == .providerRecord)
+            #expect(!warning.isICloudDrive, "a folder outside iCloud Drive: the app names its provider generically")
             w.provider.rootRecord = ProviderItemRecord(isPackage: false, ubiquitous: true, hasUnresolvedConflicts: false)
             #expect(await w.a.model.folderTargetPackageRecord(target) == nil)
         }

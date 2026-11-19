@@ -72,6 +72,10 @@ public protocol FolderProvider: Sendable {
     /// Marks the versions `ids` of the item at `url` (a file or a folder) resolved and keeps them: the system's
     /// version browser still has them (`sempere vault conflicts --merge` without `--remove-versions`).
     func markConflictsResolved(of url: URL, ids: Set<String>) throws
+    /// `resolveConflicts` (`remove`) or `markConflictsResolved`, for a caller that already holds a coordinated write of
+    /// `url` or of a folder above it (`VaultFolderConflicts.merge`): never coordinates again, since a nested
+    /// coordination of one item waits for the first for ever.
+    func settleConflictVersions(of url: URL, ids: Set<String>, remove: Bool) throws
     /// What the provider records about the item at `url` (a vault or sync folder): held as a package, its type, whether
     /// it has unresolved conflict versions. Resource values only, no walk: cheap enough for every run. Nil when the
     /// provider records nothing of the kind (a plain folder, Linux).
@@ -90,6 +94,9 @@ extension FolderProvider {
     public func versionFile(of url: URL, id: String) -> URL? { nil }
     public func resolveConflicts(of url: URL, ids: Set<String>) throws {}
     public func markConflictsResolved(of url: URL, ids: Set<String>) throws {}
+    public func settleConflictVersions(of url: URL, ids: Set<String>, remove: Bool) throws {
+        if remove { try resolveConflicts(of: url, ids: ids) } else { try markConflictsResolved(of: url, ids: ids) }
+    }
     public func itemRecord(of url: URL) -> ProviderItemRecord? { nil }
     public func changes(below root: URL) -> AsyncStream<RemoteChange>? { nil }
 }

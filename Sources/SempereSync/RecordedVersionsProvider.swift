@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 // MARK: - Conflict versions recorded in a folder, for tests and drills (docs/io.md "A vault folder held as a package")
@@ -9,8 +10,10 @@ import Foundation
 //     <store>/versions/@/<id>/…               a conflict version of the vault folder itself (a folder)
 //     <store>/versions/<path, / as %2F>/<id>  a conflict version of the file at <path> (a file)
 //     <store>/resolved/<same>/<id>            a version marked resolved (moved here); `resolveConflicts` deletes it
+//     <store>/dataless/<id>                   present: the version's bytes are not on this device (`hasLocalContents`)
 //
-// The device is the part of `<id>` after the last `@` (`v1@iPad`), if any. Foundation only.
+// The device is the part of `<id>` after the last `@` (`v1@iPad`), if any. Foundation only. Debug builds only: a
+// release build never takes conflict versions from a folder an environment variable names.
 
 /// A provider simulated by a folder of recorded versions (see above).
 public struct RecordedVersionsProvider: FolderProvider {
@@ -46,7 +49,8 @@ public struct RecordedVersionsProvider: FolderProvider {
         return ids.filter { !$0.hasPrefix(".") }.sorted().map { id in
             let modified = (try? FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent(id).path))?[.modificationDate] as? Date
             let device = id.split(separator: "@").count > 1 ? id.split(separator: "@").last.map(String.init) : nil
-            return RemoteVersion(id: id, modified: modified, device: device)
+            let dataless = FileManager.default.fileExists(atPath: store.appendingPathComponent("dataless/\(id)").path)
+            return RemoteVersion(id: id, modified: modified, device: device, hasLocalContents: !dataless)
         }
     }
 
@@ -76,3 +80,4 @@ public struct RecordedVersionsProvider: FolderProvider {
                                   hasUnresolvedConflicts: !conflictVersions(of: url).isEmpty)
     }
 }
+#endif

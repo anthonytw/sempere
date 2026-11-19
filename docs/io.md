@@ -692,28 +692,50 @@ per run for the same folder means it comes back. The reliable fix is a new folde
   that differ. Write-once kinds (format.md §1.3: revisions, blobs, inbox files, epoch records, join requests, notebook
   records, the passphrase copy) are safe to copy back; `vault.json`, `settings.age`, the journal and unknown files need care.
 
-**Merge: `--merge [--dry-run] [--remove-versions] [--quarantine DIR]`** (`VaultFolderConflicts.merge`):
-1. Each missing write-once file is checked as a received file (§9.1) under the vault's key (`checkIncomingRevision`,
-   `checkIncomingBlob`, `checkIncomingInboxFile`, `checkIncomingEpochRecord`, `JoinRequest.parse`, `openNotebookRecord`,
-   `checkIncomingPassphraseCopy`), then placed with `Vault.copyNew` (temporary name, fsync, `link`: never replaces a file) in
-   a coordinated write of that file. One that fails goes to `<quarantine>/<nn-device>/<path>`, never into the vault. A
-   `VaultError` (the vault cannot judge it now) leaves the version unresolved.
-2. Mutable files are copied aside into `<quarantine>/kept/<nn-device>/` first, then: `settings.age` merged per key (§13.3;
-   device key only, the recovery key never writes); `vault.json` the same or label-only is settled, a later version by home
-   (`laterVersion`) is taken if one is later than every other candidate (written last), an earlier one (the current is a
-   later version of it, or it is of an earlier epoch) is superseded, anything else is left and reported (design §5.1); the
-   journal is left; the web viewer's files and insights are rewritten by every writer (settled); unknown files are kept aside.
-3. Only then are versions marked resolved, those with no error and no file left: `NSFileVersion.isResolved = true` in a
-   coordinated write, and kept. Not `removeOtherVersionsOfItem`: it deletes every other version of the item, conflict or
-   not, and the kept ones are the last copy of whatever a later check might find missing. `--remove-versions` removes each
-   resolved version (`NSFileVersion.remove`, as the engine does for the root files' versions) once the merged vault looks right.
-4. Then the Finder flag is cleared (`FinderBundleBit.clearReporting`) and the provider's record read again: `bundleBit` in the
-   output says whether the folder is still held as a package.
+**Merge: `--merge [--dry-run] [--remove-versions] [--quarantine DIR]`** (`VaultFolderConflicts.merge`). Pause Sempere on
+every device (leave the app closed) for the whole merge: the merge holds one write of the folder, but a device writing into
+the package meanwhile makes yet another whole-vault version.
+0. The whole merge runs inside ONE coordinated write of the vault folder (a plain folder: its `.sempere-lock`, as
+   `FolderRemote.locked` takes it), with no coordination nested inside it (a nested coordination of one item waits for ever).
+   Inside it `vault.json` is read again (`Vault.reopened`, `requireWritable`), and the folder and every version are listed
+   again. A version is judged only from a whole listing (`lstat`, every folder read, at most `maxEntries` entries, no
+   symbolic link followed: links and special files are reported as skipped): one whose contents are not on this device
+   (`NSFileVersion.hasLocalContents` false), whose root is gone or any folder of which cannot be listed has a `problem` and
+   stays unresolved.
+1. Pass 1 places every version's missing epoch records, then reopens the vault, so pass 2 judges files under a new key with
+   it. Pass 2 places the other missing write-once files. Each is staged privately with a no-follow bounded read
+   (`BoundedRead.openRegularFile(under:)`), checked as a received file (§9.1) under the vault's key (`checkIncomingRevision`,
+   `checkIncomingBlob`, `checkIncomingInboxFile`, `checkIncomingEpochRecord`, `JoinRequest.parse` plus its own file name
+   and this vault's id, `openNotebookRecord`, `checkIncomingPassphraseCopy`), then placed through a temporary name that never
+   replaces a file, after `requireWritable`. The acceptance rule's outcomes are never quarantined: pending (its key's record
+   has not arrived) leaves the version unresolved, set aside goes to this machine's set-aside store
+   (`vault.setAsideStore.keep`) and is settled. A file that fails its own check goes to `<quarantine>/<nn-device>/<path>`;
+   a `VaultError` (the vault cannot judge it now) leaves the version unresolved. A retired kit's passphrase copy (not the
+   current recovery key's fingerprint) is kept aside, never copied back. An unknown file only a version has is never placed
+   (nothing says it is write-once, format.md §1): it is kept aside and listed as `keptUnknown`.
+2. Mutable files are copied aside into `<quarantine>/kept/<nn-device>/` first, then: `settings.age` versions merged per key
+   (§13.3; device key only; pending, set-aside or newer-reader versions are left), then merged with the file on disk just
+   before it is written (`updateSharedSettings`), only when the current file reads (or is absent) and `keysMatchManifestOnDisk`;
+   `vault.json` decided by `Vault.judgeIncoming` against the file on disk: same and behind are settled, a later version by home
+   in the same epoch is taken if one is later than every other candidate (judged again just before it is written), anything
+   else (another epoch, a conflict, refused, waiting) is left and reported (design §5.1); the journal is left; the web
+   viewer's files and insights are rewritten by every writer (settled).
+3. Only then are versions marked resolved, those with no error and no file left: `NSFileVersion.isResolved = true` (inside
+   the merge's write: `settleConflictVersions`, uncoordinated), and kept. Not `removeOtherVersionsOfItem`: it deletes every
+   other version of the item, conflict or not, and the kept ones are the last copy of whatever a later check might find
+   missing. `--remove-versions` removes each resolved version (`NSFileVersion.remove`) once the merged vault looks right,
+   except a version with a quarantined file, an unknown file not placed or a skipped link: those are only marked resolved.
+4. Then, only when the report is complete, the Finder flag is cleared (`FinderBundleBit.clearReporting`; a failure exits 1)
+   and the provider's record read again: `bundleBit` in the output says whether the folder is still held as a package.
 
-The quarantine defaults to `$XDG_STATE_HOME/sempere/conflicts/<vault id>/<time>/`, never inside the vault, with
-`report.json`. A real run needs the key (`--identity`, this machine's device key, or `--recovery-key`, which copies write-once
-files but writes no mutable file); `--dry-run` works locked, with structural checks only. Tests use `RecordedVersionsProvider`
-(versions as folders on disk; the CLI's `SEMPERE_TEST_PROVIDER_VERSIONS`), never iCloud.
+The quarantine defaults to `$XDG_STATE_HOME/sempere/conflicts/<vault id>/<time>/`, never inside the vault (compared with
+symbolic links resolved), with `report.json`; a real run refuses a `--quarantine` folder that is not empty. A real run needs
+this machine's device key or `--identity`; `--recovery-key` opens the vault read-only, so it is refused with `--merge` and
+works with `--merge --dry-run`. `--dry-run` writes nothing (not the vault, its index or summaries, the quarantine or the
+trust record; it checks against a copy of the trust record) and works locked, with structural checks only; a file under a
+key whose epoch record only a version holds shows as pending in a dry run (the record is not placed). Neither mode lets the
+CLI rewrite `sempere-index.json` or the sealed summaries at exit (`OpenedVaults.forget`). Tests use `RecordedVersionsProvider`
+(versions as folders on disk; the CLI's `SEMPERE_TEST_PROVIDER_VERSIONS`, debug builds only), never iCloud.
 
 **In the app** (iOS, iPadOS, Mac): no automatic merge of whole-vault versions (CLI-only recovery). Each folder target's row in
 Sync Targets asks `folderTargetPackageRecord` (resource values, off the main actor) and shows a non-blocking warning when the
@@ -725,17 +747,34 @@ engine on every run, as before ("Folder targets in providers"): kept and reporte
 ### Moving to a plain folder
 
 Every vault is a store vault, so a sync folder is only a meeting point: moving it is changing the target, not moving the vault.
-1. On the Mac, merge back first: `sempere vault conflicts "$V" --merge --dry-run`, then without `--dry-run`. Let each device
-   run one sync with the old folder afterwards, so the merged files reach every store copy.
-2. On ONE device (an iPad or iPhone is the safest: no stale LaunchServices records there), Sync Targets ▸ Add Folder… ▸ a new
+1. Pause Sempere on every device (quit it on the Mac, leave it closed on the iPad and iPhone) until step 4. Optionally keep a
+   copy of the old folder first: `ditto "$V" "$HOME/Desktop/vault-before-merge.sempere"`.
+2. On the Mac, merge back: `sempere vault conflicts "$V" --merge --dry-run`, then without `--dry-run`. Keep the quarantine
+   folder the report names (`report.json`), and note the `copied` paths.
+3. Open Sempere on that Mac only and let it sync once with the old folder, so the recovered files reach its store copy. The
+   other devices do not sync with the old folder again.
+4. Remove stale LaunchServices registrations on the Mac before checking a new folder (an old development build that declared
+   the vault type `com.apple.package` makes a new `.sempere` folder a package too). List every registered app that declares
+   it, then unregister each old development build (anything but the installed app) and reopen the Finder:
+
+   ```bash
+   LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+   "$LSREG" -dump | grep -B8 -A8 'io.github.anthonytw.sempere'
+   "$LSREG" -u "/path/to/old/Sempere.app"     # once per stale path the dump shows
+   killall Finder
+   ```
+5. On ONE device (an iPad or iPhone is the safest: no stale LaunchServices records there), Sync Targets ▸ Add Folder… ▸ a new
    folder in iCloud Drive with another name (`ToneDawgNotes 2` or a new parent folder; the copy goes in as
    `<vault>.sempere`, `FolderTargetPlacement`). The first run copies the whole store vault into it.
-3. On the Mac, check it: `sempere vault conflicts "<new folder>/<vault>.sempere"` must say `PACKAGE no`. If it says yes,
+6. On the Mac, check it: `sempere vault conflicts "<new folder>/<vault>.sempere"` must say `PACKAGE no`. If it says yes,
    stop: the account still makes `.sempere` folders packages (use a WebDAV target, or a folder outside iCloud Drive).
-4. On each other device: Add Folder… with the same new folder (a target added to a vault with notes copies what either side
+7. On each other device: Add Folder… with the same new folder (a target added to a vault with notes copies what either side
    lacks), sync, then remove the old target (nothing is deleted there). A bookmark of the old folder is never reused.
-5. When every device syncs with the new folder (Vault Details shows each target's devices), move the old folder to the Trash.
-   Never rename it as a fix: iCloud Drive keeps the item, and its record, through a rename.
+8. Before moving the old folder to the Trash: every device syncs with the new folder (Vault Details shows each target's
+   devices), and each path in the merge report's `copied` list exists in the new folder (for example
+   `for p in $(jq -r '.copied[]' report.json); do test -e "<new folder>/<vault>.sempere/$p" || echo "MISSING $p"; done`
+   with the `--json` output saved as `report.json`). Keep the quarantine folder. Never rename the old folder as a fix: iCloud
+   Drive keeps the item, and its record, through a rename.
 
 ## Atomic writes
 

@@ -83,5 +83,69 @@ final class CLIVaultConflictsTests: CLITestCase {
         let vault = try copyFixtureVault(as: "kept.sempere")
         let r = try cli(["vault", "conflicts", vault, "--dry-run"])
         XCTAssertEqual(r.status, 2, r.out + r.err)
+        let q = try cli(["vault", "conflicts", vault, "--quarantine", path("q")])
+        XCTAssertEqual(q.status, 2, q.out + q.err)
+        // The recovery key opens read-only: a merge is refused before anything is read; a dry run is allowed.
+        let rec = try cli(["vault", "conflicts", vault, "--merge", "--recovery-key", path("no-such-key")])
+        XCTAssertEqual(rec.status, 2, rec.out + rec.err)
+        XCTAssertTrue(rec.err.contains("read-only"), rec.err)
     }
+
+    /// Neither a dry run nor a merge lets the CLI rewrite the vault's index or sealed summaries at exit.
+    func testTheIndexAndSummariesAreLeftAlone() throws {
+        let (vault, store, note) = try losingSide()
+        let env = ["SEMPERE_TEST_PROVIDER_VERSIONS": store.path]
+        let junk = Data("stale".utf8)
+        for name in ["sempere-index.json", "sempere-summaries.sealed"] {
+            try junk.write(to: URL(fileURLWithPath: vault).appendingPathComponent(name))
+        }
+        let dry = try cli(["vault", "conflicts", vault, "--merge", "--dry-run", "--identity", Self.fixtureKey], env: env)
+        XCTAssertEqual(dry.status, 0, dry.out + dry.err)
+        let run = try cli(["vault", "conflicts", vault, "--merge", "--identity", Self.fixtureKey, "--quarantine", path("q")],
+                          env: env)
+        XCTAssertEqual(run.status, 0, run.out + run.err)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: vault + "/notes/\(note)"), "the note is back")
+        for name in ["sempere-index.json", "sempere-summaries.sealed"] {
+            XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: vault).appendingPathComponent(name)), junk, name)
+        }
+    }
+
+    /// A real run refuses a quarantine folder that is not empty.
+    func testANonEmptyQuarantineIsRefused() throws {
+        let (vault, store, _) = try losingSide()
+        try FileManager.default.createDirectory(atPath: path("q"), withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: URL(fileURLWithPath: path("q/report.json")))
+        let r = try cli(["vault", "conflicts", vault, "--merge", "--identity", Self.fixtureKey, "--quarantine", path("q")],
+                        env: ["SEMPERE_TEST_PROVIDER_VERSIONS": store.path])
+        XCTAssertEqual(r.status, 2, r.out + r.err)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.appendingPathComponent("versions/@/v1@iPad").path))
+    }
+
+    #if canImport(Darwin)
+    private func finderBundleBit(_ path: String) -> Bool {
+        var info = [UInt8](repeating: 0, count: 32)
+        guard getxattr(path, "com.apple.FinderInfo", &info, 32, 0, 0) == 32 else { return false }
+        return info[8] & 0x20 != 0
+    }
+
+    private func setFinderBundleBit(_ path: String) {
+        var info = [UInt8](repeating: 0, count: 32)
+        info[8] = 0x20
+        XCTAssertEqual(setxattr(path, "com.apple.FinderInfo", &info, 32, 0, 0), 0)
+    }
+
+    /// The Finder's flag is cleared only when the merge is complete (not when something was quarantined or left).
+    func testTheFinderFlagIsClearedOnlyWhenComplete() throws {
+        let (vault, store, note) = try losingSide()
+        let env = ["SEMPERE_TEST_PROVIDER_VERSIONS": store.path]
+        let junk = "notes/\(note)/17900000000000000-0000000a-9.delta.age"
+        try Data("junk".utf8).write(to: store.appendingPathComponent("versions/@/v1@iPad/\(junk)"))
+        setFinderBundleBit(vault)
+        let r = try cli(["vault", "conflicts", vault, "--merge", "--identity", Self.fixtureKey, "--quarantine", path("q"),
+                         "--json"], env: env)
+        XCTAssertEqual(r.status, 3, r.out + r.err)
+        XCTAssertEqual((r.json as? [String: Any])?["complete"] as? Bool, false)
+        XCTAssertTrue(finderBundleBit(vault), "an incomplete merge leaves the flag")
+    }
+    #endif
 }

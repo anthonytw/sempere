@@ -421,8 +421,8 @@ and opens in Sempere on a double-click, until the newer build replaces it.
 
 If Sync Targets warns that iCloud Drive syncs a sync folder "as one package", your notes on this Mac are safe (they live
 in the app), but devices writing at once make conflicting copies of the whole folder, and a file only one copy has can go
-missing from it. Merge those back with the `sempere` tool (`sempere vault conflicts "<folder>" --merge --dry-run`, then
-without `--dry-run`), then move the sync folder to a new one: How to Fix… lists the steps, and docs/io.md "Moving to a
+missing from it. Pause Sempere on every device, then merge those back with the `sempere` tool (`sempere vault conflicts
+"<folder>" --merge --dry-run`, then without `--dry-run`), let this Mac's app sync once with the old folder, then move the sync folder to a new one: How to Fix… lists the steps, and docs/io.md "Moving to a
 plain folder" has them in full.
 
 What opens a vault in Sempere: File ▸ Open Vault… (⌘O) or Open Recent, the Library window, and
