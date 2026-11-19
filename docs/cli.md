@@ -1424,7 +1424,7 @@ written by a newer version, or damaged). The first line says whether the note is
 set that (`no revision here holds it` when only a snapshot's recorded clock still carries it, `never set`). `--json`
 emits `note`, `deleted`, `deletedClock`, `deletedBy`, `revisions` (each `revision`, `kind`, `hlc`, `device`, `seq`,
 `wall`, `app`, `session`, `checkpoint`, `asOf`, and `ops` for a delta or `included`, `deleted` and `deletedClock` for a
-snapshot) and `failures` (each `revision`, `kind`, `error`). Run it on each device's copy of a note that came back
+snapshot), `failures` (each `revision`, `kind`, `error`) and `problem`: why the revisions that read do not merge (two different revisions with one device and `seq`, as two installs sharing one device state file write; the text output's `does not merge:` line), which the app lists as a live note with a problem. Run it on each device's copy of a note that came back
 after a delete, or went away, to see which device's revision decided it.
 
 `restore` is the CLI's revert (the app's Undo and Redo buttons undo the steps of the open session on one

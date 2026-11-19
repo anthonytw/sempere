@@ -56,11 +56,18 @@ public struct RevisionLog: Hashable, Sendable, Encodable {
     public var revisions: [RevisionLogEntry]
     /// Every listed revision that did not read, sorted by name.
     public var failures: [RevisionLogFailure]
+    /// Why the revisions that read do not merge (two different revisions with one device and `seq`, format.md §5), nil
+    /// when they do. The app then lists the note as not deleted, with a problem (`Vault.summary(of:loaded:)`).
+    public var problem: String?
 
     /// The log of `loaded` (every revision of note `id`).
-    public init(note id: UUID, loaded: LoadedNote) throws {
+    public init(note id: UUID, loaded: LoadedNote) {
         note = id.uuidString.lowercased()
-        let state = loaded.revisions.isEmpty ? nil : try NoteReducer.reconstruct(loaded.revisions)
+        var state: NoteState?
+        problem = nil
+        if !loaded.revisions.isEmpty {
+            do { state = try NoteReducer.reconstruct(loaded.revisions) } catch { problem = "cannot reconstruct: \(error)" }
+        }
         deleted = state?.deleted ?? false
         let clock = state?.clocks?[NoteState.ClockKey.deleted.rawValue].flatMap(Stamp.init) ?? .zero
         deletedClock = clock.description

@@ -98,5 +98,73 @@ extension AppModelSuites {
             _ = await Self.sync(w, rounds: 3) { false }
             try Self.expectDeleted(w, ids)
         }
+
+        static func make(_ w: F.World) async throws -> [UUID] {
+            var ids: [UUID] = []
+            for i in 0..<3 { ids.append(try await w.a.model.createNote(title: "N\(i)", paper: .ruled, notebook: nil)) }
+            #expect(await Self.sync(w) { ids.allSatisfy { id in w.b.model.notes.contains { $0.id == id } } })
+            return ids
+        }
+
+        static func reopenA(_ w: F.World, id: UUID) async throws {
+            w.a.model.close()
+            await w.a.model.closingEditor?.value
+            let entry = try #require(w.a.store.entry(id: id))
+            try await w.a.model.openStored(entry, library: w.a.library)
+            try await w.a.model.unlock(identityText: w.key)
+        }
+
+        /// The owner's flow (1.2 deleted, the app closed before a run, 1.3 opened it): A deletes and closes before any
+        /// run; B, which never saw the delete, edits and syncs; A opens the vault again and syncs.
+        @Test func aDeleteNeverPushedBeforeTheAppClosedIsPushedWhenItOpensAgain() async throws {
+            let w = try await F.world()
+            defer { w.a.model.close(); w.b.model.close() }
+            let ids = try await Self.make(w)
+            let vid = w.a.vaultID
+            for id in ids { try await w.a.model.deleteNote(id) }
+            w.a.model.close()
+            await w.a.model.closingEditor?.value
+            try await w.b.model.renameNote(ids[0], to: "B")
+            await w.b.model.syncAllTargetsNow()
+            try await Self.reopenA(w, id: vid)
+            _ = await Self.sync(w, rounds: 4) { false }
+            try Self.expectDeleted(w, ids)
+        }
+
+        /// The delete reached the folder, then the folder lost those files (the provider never uploaded them, or put an
+        /// older copy of the note folder back): A puts them back, B takes them.
+        @Test func aDeleteTheFolderLostIsPutBack() async throws {
+            let w = try await F.world()
+            defer { w.a.model.close(); w.b.model.close() }
+            let ids = try await Self.make(w)
+            let vid = w.a.vaultID
+            let before = F.noteFiles(w.shared)
+            for id in ids { try await w.a.model.deleteNote(id) }
+            await w.a.model.syncAllTargetsNow()
+            for f in F.noteFiles(w.shared).subtracting(before) {
+                try FileManager.default.removeItem(at: w.shared.appendingPathComponent("notes").appendingPathComponent(f))
+            }
+            await w.b.model.syncAllTargetsNow()
+            try await Self.reopenA(w, id: vid)
+            _ = await Self.sync(w, rounds: 4) { false }
+            try Self.expectDeleted(w, ids)
+        }
+
+        /// The delete reached the folder; the note folders then list empty for A's next run (a provider's fresh listing):
+        /// nothing is deleted or taken for deleted.
+        @Test func aFolderThatListsEmptyDeletesNothing() async throws {
+            let w = try await F.world()
+            defer { w.a.model.close(); w.b.model.close() }
+            let ids = try await Self.make(w)
+            let vid = w.a.vaultID
+            for id in ids { try await w.a.model.deleteNote(id) }
+            await w.a.model.syncAllTargetsNow()
+            for id in ids { try w.provider.unlist("notes/\(id.uuidString.lowercased())") }
+            try await Self.reopenA(w, id: vid)
+            await w.a.model.syncAllTargetsNow()
+            await w.b.model.syncAllTargetsNow()
+            _ = await Self.sync(w, rounds: 4) { false }
+            try Self.expectDeleted(w, ids)
+        }
     }
 }

@@ -133,7 +133,7 @@ struct NotesRevisions: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         let id = try vault.resolveShownNote(note)
-        let log = try RevisionLog(note: id, loaded: try vault.loadNote(id, detail: .withoutStrokePoints))
+        let log = RevisionLog(note: id, loaded: try vault.loadNote(id, detail: .withoutStrokePoints))
         if output.json { try output.emitJSON(log); return }
         print("\(log.note): \(log.deleted ? "deleted" : "not deleted"), set by \(log.deletedClock)"
               + (log.deletedBy.map { " (\($0))" } ?? (log.deletedClock == Stamp.zero.description ? " (never set)" : " (no revision here holds it)")))
@@ -149,6 +149,7 @@ struct NotesRevisions: ParsableCommand {
         }
         print(Format.table(rows))
         for f in log.failures { print("not read: \(f.revision): \(f.kind): \(f.error)") }
+        if let p = log.problem { print("does not merge: \(p)") }
     }
 }
 
