@@ -96,6 +96,17 @@ public protocol ModelProvider: Sendable {
     func summarize(topic: String, summaries: [String], language: String?) async throws -> String
     /// A 2-6 word title for a voice note's transcript (D14).
     func title(transcript: String, language: String?) async throws -> String
+    /// `text` (a summary or a title) written in `language` (a BCP 47 tag): unchanged when it already is in it, names and
+    /// numbers kept. For the insight language setting (`insights.language`, format.md §16.8): the summary and the title are
+    /// first made and fact-checked in the note's own language, then put into the chosen one.
+    func translate(_ text: String, to language: String) async throws -> String
+}
+
+extension ModelProvider {
+    /// A provider that cannot translate refuses: a fixed insight language is then not made by this device.
+    public func translate(_ text: String, to language: String) async throws -> String {
+        throw InsightsProviderError.failed("this model cannot translate")
+    }
 }
 
 /// A sentence embedder at explicit revisions (design §3.8): never "the current" one.

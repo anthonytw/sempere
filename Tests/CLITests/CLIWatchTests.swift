@@ -85,7 +85,7 @@ final class CLIWatchTests: CLITestCase {
         // It is an ordinary inbox capture now.
         let listed = try XCTUnwrap(try cli(["inbox", "list", "--json"] + unlocked).json as? [[String: Any]])
         XCTAssertEqual(listed.count, 1)
-        XCTAssertEqual(listed.first?["title"] as? String, "Watch voice note \(Self.localTitleSuffix("2026-11-09T14:32:00Z"))")
+        XCTAssertEqual(listed.first?["title"] as? String, "", "a Watch note stores no title: the note shows a Watch default")
         let imported = try json(try cli(["inbox", "import", "--json"] + unlocked))
         let result = try XCTUnwrap((imported["captures"] as? [[String: Any]])?.first)
         XCTAssertNil(result["error"])
@@ -111,12 +111,6 @@ final class CLIWatchTests: CLITestCase {
         let third = try json(try cli(args))
         XCTAssertEqual((third["files"] as? [[String: Any]])?.first?["outcome"] as? String, "duplicate")
         XCTAssertEqual((try cli(["inbox", "list", "--json"] + locked).json as? [[String: Any]])?.count, 0)
-    }
-
-    /// The default title is in the machine's time zone; the test names it the same way.
-    static func localTitleSuffix(_ rfc3339: String) -> String {
-        guard let t = RFC3339.parse(rfc3339) else { return "" }
-        return String(CaptureWriter.defaultTitle(t).dropFirst("Voice note ".count))
     }
 
     func testAnM4AIsSealedAsItIs() throws {

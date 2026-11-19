@@ -451,7 +451,7 @@ export function checkItemChange(field: string, value: unknown, path: string, bud
 // `captured` (capture attribution) is immutable, as in Swift's `Recording.knownFields`, and read leniently
 // where it is shown (`captured.ts`): a setRecording naming it is invalid.
 export const recordingFields = ["id", "blob", "started", "duration", "codec", "sampleRate", "channels", "bitRate", "title",
-  "transcript", "parent", "captured", "origin", "clocks"];
+  "transcript", "parent", "captured", "captureInfo", "origin", "clocks"];
 const recordingKeys: ReadonlySet<string> = new Set(recordingFields);
 /** All but the registers `title` and `transcript`. */
 const immutableRecordingFields: ReadonlySet<string> = new Set(recordingFields.filter((f) => f !== "title" && f !== "transcript"));

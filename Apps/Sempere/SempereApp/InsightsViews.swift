@@ -210,6 +210,7 @@ struct InsightsSettingsSection: View {
         if on {
             statusSection
             devicesSection
+            languageSection
             titleSection
             embeddingSection
         }
@@ -298,6 +299,34 @@ struct InsightsSettingsSection: View {
         }
     }
 
+    // MARK: Insight language (1.3)
+
+    private var languageChoices: [String] {
+        var tags = InsightsLanguage.choices
+        if let set = state.settings.language, !tags.contains(set) { tags.append(set) }
+        return tags
+    }
+
+    @ViewBuilder private var languageSection: some View {
+        Section {
+            Picker("Summary and Title Language", selection: Binding(
+                get: { state.settings.language ?? "" },
+                set: { new in Task { await model.setInsightsLanguage(new.isEmpty ? nil : new) } })) {
+                Text("Same as Note").tag("")
+                ForEach(languageChoices, id: \.self) { tag in
+                    Text(verbatim: Locale.current.localizedString(forIdentifier: tag) ?? tag).tag(tag)
+                }
+            }
+            .disabled(!writable)
+            .vaultSetting("insights.language")
+            .accessibilityIdentifier("insights.language")
+        } header: {
+            Text("Insight Language")
+        } footer: {
+            Text("The language of generated summaries and voice-note titles. Same as Note writes each in the language of its note. Choosing a language makes them again in it, a few at a time, on every device of this vault; keywords stay as the note has them.")
+        }
+    }
+
     // MARK: Voice-note titles (D14)
 
     @ViewBuilder private var titleSection: some View {
@@ -328,7 +357,7 @@ struct InsightsSettingsSection: View {
         } header: {
             Text("Voice Note Titles")
         } footer: {
-            Text("Quick voice notes are named from their transcript while they keep the title they were recorded with. {date} and {time} are when the note was recorded, {slug} a few words from the model. A title you set yourself is never replaced.")
+            Text("Quick voice notes without a title of their own are shown with one made from their transcript. {date} and {time} are when the note was recorded, {slug} a few words from the model. A title you set yourself is always the one shown, and the generated one is never written into the note.")
         }
         .onAppear { titleFormat = state.settings.voiceNoteTitle }
         .onChange(of: state.settings.voiceNoteTitle) { _, new in titleFormat = new }
@@ -431,7 +460,7 @@ struct NoteInsightsSheet: View {
                     Text("Note Insights is off for this vault.").foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle(model.notesByID[noteID].map { NoteTitle.display($0.title) } ?? String(localized: "Note Insights"))
+            .navigationTitle(model.notesByID[noteID].map { NoteTitle.display(model.displayTitle($0)) } ?? String(localized: "Note Insights"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .id(model.insights.revision)

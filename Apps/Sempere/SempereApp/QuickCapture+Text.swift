@@ -48,14 +48,6 @@ extension QuickCapture {
                comment: "Added after the reason a voice note could not be saved")
     }
 
-    /// "Voice note 2026-10-07 14:32", the words in this device's language and the start in `CaptureWriter.defaultTitle`'s
-    /// fixed form, which Note Insights recognizes as the capture default (`VoiceNoteTitleState.isCaptureDefault`) and
-    /// replaces with a title from the transcript. Before 1.2 the start was localized too, and no automatic title took it.
-    nonisolated static func title(_ started: Date) -> String {
-        let stamp = String(CaptureWriter.defaultTitle(started).dropFirst("Voice note ".count))
-        return String(localized: "Voice note \(stamp)", comment: "Default title of a quick-capture voice note: its start date and time")
-    }
-
     /// `error`, followed by `keptOnDevice` when the recording was kept.
     nonisolated static func failureText(_ error: String?, kept: Bool) -> String? {
         error.map { kept ? "\($0) \(keptOnDevice)" : $0 }

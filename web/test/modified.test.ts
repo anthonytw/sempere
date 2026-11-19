@@ -24,6 +24,17 @@ describe("modifiedDate", () => {
     expect(modifiedDate([...edits(log), r, both, alone])).toBe(baseMillis + 10);
   });
 
+  it("leaves out transcript-only deltas (1.3), as Swift's Op.isDerived does", () => {
+    const log = new LogBuilder();
+    const rec = "7e57c0de-0000-4000-8000-0000000000b1";
+    const t = log.delta(devB, 20, [{ op: "setRecording", recordingId: rec, field: "transcript", value: null }]);
+    const title = log.delta(devB, 30, [{ op: "setRecording", recordingId: rec, field: "title", value: "Lecture" }]);
+    expect(isDerivedOnly(t)).toBe(true);
+    expect(isDerivedOnly(title)).toBe(false);
+    expect(modifiedDate([...edits(log), t])).toBe(baseMillis + 10);
+    expect(modifiedDate([...edits(log), t, title])).toBe(baseMillis + 30);
+  });
+
   it("counts a delta with any other op, an empty one and a newer one", () => {
     const log = new LogBuilder();
     const mixed = log.delta(devA, 20, [op.addStroke(p, stroke(newUUID())), op.setPageRecognition(p, recognition("x"))]);

@@ -16,6 +16,7 @@
     "history.thinAfterDays",
     "insights.embeddingRevision",
     "insights.enabled",
+    "insights.language",
     "insights.voiceNoteTitle",
     "insights.workDevice",
     "math.recognize",

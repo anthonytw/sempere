@@ -45,6 +45,19 @@ final class CLISettingsTests: CLITestCase {
         XCTAssertNotNil(reset.meta, "a reset is recorded")
     }
 
+    /// The insight language (1.3): a vault-wide language tag, `same` for the default (the note's own language).
+    func testTheInsightLanguageSetting() throws {
+        let v = try makeVault()
+        XCTAssertEqual(try cli(["settings", "get", "insights.language", "--json"] + base(v)).json.flatMap { ($0 as? [String: Any])?["source"] as? String },
+                       "default")
+        XCTAssertEqual(try cli(["settings", "set", "insights.language", "pt-BR"] + base(v)).status, 0)
+        XCTAssertEqual(try cli(["settings", "get", "insights.language"] + base(v)).out.trimmingCharacters(in: .whitespacesAndNewlines), "\"pt-BR\"")
+        XCTAssertEqual(try cli(["settings", "set", "insights.language", "not a tag"] + base(v)).status, 2)
+        XCTAssertEqual(try cli(["settings", "set", "insights.language", "same"] + base(v)).status, 0)
+        let get = try cli(["settings", "get", "insights.language", "--json"] + base(v))
+        XCTAssertTrue((get.json as? [String: Any])?["value"] is NSNull, get.out)
+    }
+
     func testTypeBlocks() throws {
         let v = try makeVault()
         XCTAssertEqual(try cli(["settings", "set", "eraser.mode", "pixel", "--type", "mac"] + base(v)).status, 0)

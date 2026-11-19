@@ -61,8 +61,7 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         let isA = vault.writerDevice == a.writerDevice
         o.platform = .init(platform: isA ? "mac" : "ios", os: "27.2")
         edit(&o)
-        var u = InsightsUpdater(vault: vault, model: model, embedder: embedder, deviceState: isA ? stateA : stateB, app: "test/1")
-        u.writerDevice = vault.writerDevice
+        let u = InsightsUpdater(vault: vault, model: model, embedder: embedder, deviceState: isA ? stateA : stateB, app: "test/1")
         return try await u.run(o, notes: try inputs())
     }
 
@@ -435,7 +434,7 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         let id = UUID()
         let audio = Data((0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 7) })
         let started = Date(timeIntervalSince1970: 1_789_990_000)
-        try CaptureWriter.store(try w.seal(audio: audio, started: started, title: "Voice note 2026-09-21 10:46", id: id), in: a.inboxURL)
+        try CaptureWriter.store(try w.seal(audio: audio, started: started, source: "phone", timeZone: TimeZone(identifier: "UTC")!, id: id), in: a.inboxURL)
         let t = TranscriptBuilder.transcript(recording: CaptureAdoption.ids(for: id).recording, engine: "e", language: "en-US",
                                              created: started, segments: [.init(start: 0, end: 4, text: text)])
         try CaptureWriter.store(try w.seal(transcript: t, capture: id, audio: BlobRef(content: audio, type: "audio/mp4")), in: a.inboxURL)
@@ -443,25 +442,39 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
         return CaptureAdoption.ids(for: id).note
     }
 
+    /// The note's own title (blank for a 1.3 voice note) and the title Note Insights derived for it.
     func title(_ id: UUID, in vault: Vault) throws -> String { try vault.reconstruct(noteId: id).meta.title }
+    func derived(_ id: UUID, in vault: Vault) -> String? { InsightsStore(vault: vault).snapshot().bestTitle(for: id, hash: nil) }
 
-    /// A device without the embedder titles a voice note: no role to hold.
-    func testAnyDeviceTitlesAVoiceNoteOnceAndTheOtherLeavesItAlone() async throws {
-        let base = Date()   // the adoption's revision is stamped with the real clock: titles must come after it
+    /// A device without the embedder derives a voice note's title: no role to hold, and the note itself is never written.
+    func testAnyDeviceDerivesAVoiceNoteTitleOnceAndTheOtherLeavesItAlone() async throws {
+        let base = Date()
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
         let first = try await run(b, model: model(), embedder: nil, at: base.addingTimeInterval(60)) { $0.force = true }
         XCTAssertEqual(first.titled, [id.uuidString.lowercased()])
-        let titled = try title(id, in: a)
-        XCTAssertEqual(titled, "2026-09-21 10.46 Spring Lab Results Show")
+        XCTAssertEqual(try title(id, in: a), "", "the note keeps no title: 1.3 stores none")
+        let derivedTitle = try XCTUnwrap(derived(id, in: a))
+        XCTAssertEqual(derivedTitle, "2026-09-21 11.26 Spring Lab Results Show")
         let second = try await run(a, model: model()) { $0.force = true }
-        XCTAssertEqual(second.titled + second.restoredTitles, [], "applied at most once: no longer the capture default")
-        XCTAssertEqual(try title(id, in: a), titled)
+        XCTAssertEqual(second.titled, [], "derived at most once for one text")
+        XCTAssertEqual(derived(id, in: a), derivedTitle)
+        XCTAssertEqual(try title(id, in: a), "")
     }
 
-    /// Two devices title one voice note before they see each other's title (their summaries differ): the register's last
-    /// writer stays, and neither device takes the other's automatic title for a user's rename and flips it.
-    func testTwoDevicesTitlingOneNoteSettleOnTheLastWriter() async throws {
-        let base = Date()   // the adoption's revision is stamped with the real clock: titles must come after it
+    /// A title the user typed is never touched, and nothing is derived while it stands.
+    func testAUserTitleStandsAndGetsNoDerivedTitle() async throws {
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        _ = try a.apply(NoteOps.rename(to: "My lab", state: try a.reconstruct(noteId: id)), to: id, deviceState: stateA, app: "test/1")
+        let r = try await run(b, model: model(), embedder: nil, at: Date().addingTimeInterval(60)) { $0.force = true }
+        XCTAssertEqual(r.titled, [])
+        XCTAssertNil(derived(id, in: a))
+        XCTAssertEqual(try title(id, in: a), "My lab")
+    }
+
+    /// Two devices derive a title for one voice note before they see each other's (their summaries differ): each writes
+    /// its own file, readers take the later `written` (then the larger device id), and no device rewrites to flip it.
+    func testTwoDevicesDerivingOneTitleSettleOnOneWinner() async throws {
+        let base = Date()
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
         let copy = tmp.appendingPathComponent("B.sempere")
         try FileManager.default.copyItem(at: a.url, to: copy)
@@ -477,19 +490,19 @@ final class InsightsEveryDeviceTests: TempDirTestCase {
             .run(o, notes: ins)
         XCTAssertEqual(ra.titled, [id.uuidString.lowercased()])
         XCTAssertEqual(rb.titled, [id.uuidString.lowercased()])
-        XCTAssertNotEqual(try title(id, in: a), try title(id, in: bCopy), "each saw only its own title")
+        XCTAssertNotEqual(derived(id, in: a), derived(id, in: bCopy), "each saw only its own title")
         try deliver(from: bCopy, to: a)
         try deliver(from: a, to: bCopy)
-        let settled = try title(id, in: a)
-        XCTAssertEqual(try title(id, in: bCopy), settled, "one register, one winner on every reader")
+        let settled = try XCTUnwrap(derived(id, in: a))
+        XCTAssertEqual(derived(id, in: bCopy), settled, "one winner on every reader")
         for round in 1...2 {
             o.now = base.addingTimeInterval(Double(round) * 3600)
             let xa = try await InsightsUpdater(vault: a, model: FakeModelProvider(wordsA), embedder: nil, deviceState: stateA,
                                                app: "test/1").run(o, notes: ins)
             let xb = try await InsightsUpdater(vault: bCopy, model: FakeModelProvider(wordsB), embedder: nil, deviceState: stateB,
                                                app: "test/1").run(o, notes: ins)
-            XCTAssertEqual(xa.titled + xa.restoredTitles + xb.titled + xb.restoredTitles, [], "no flip-flop")
-            XCTAssertEqual(try title(id, in: a), settled)
+            XCTAssertEqual(xa.titled + xb.titled, [], "no flip-flop")
+            XCTAssertEqual(derived(id, in: a), settled)
         }
     }
 

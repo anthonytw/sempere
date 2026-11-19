@@ -94,6 +94,16 @@ public enum InsightsPrompts {
     }
 
     public static func title(_ transcript: String) -> String { prompt("Give this voice note a short title.", data: transcript) }
+
+    /// The language as the model is told it: its English name ("Spanish"), else the tag.
+    public static func languageName(_ tag: String) -> String {
+        Locale(identifier: "en").localizedString(forIdentifier: tag) ?? tag
+    }
+
+    public static func translate(_ text: String, to language: String) -> String {
+        prompt("Write this text in \(languageName(language)). If it is already in \(languageName(language)), return it unchanged. "
+               + "Keep names, numbers and technical terms; add nothing.", data: text)
+    }
 }
 
 #if canImport(FoundationModels)
@@ -188,6 +198,18 @@ public struct AppleModelProvider: ModelProvider {
         ]), dependencies: [])
         let content = try await respond(InsightsPrompts.title(transcript), schema: schema, maximumTokens: 60)
         return (try? content.value(String.self, forProperty: "title")) ?? ""
+    }
+
+    public func translate(_ text: String, to language: String) async throws -> String {
+        let schema = try GenerationSchema(root: DynamicGenerationSchema(name: "Translation", properties: [
+            .init(name: "text", description: "The text in the requested language, nothing else", schema: .init(type: String.self)),
+        ]), dependencies: [])
+        let content = try await respond(InsightsPrompts.translate(text, to: language), schema: schema,
+                                        maximumTokens: max(60, InsightsChunker.tokens(text) * 3))
+        let out = ((try? content.value(String.self, forProperty: "text")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // An empty answer is a refusal: the note's own text is not passed off as the translation.
+        guard !out.isEmpty else { throw InsightsProviderError.failed("the model returned no translation") }
+        return out
     }
 
     private func respond(_ prompt: String, schema: GenerationSchema, maximumTokens: Int) async throws -> GeneratedContent {

@@ -69,7 +69,7 @@ public enum SettingsSyncBridge {
     public static let modelKeys: Set<String> = ["quickCapture.notebook", "quickCapture.transcribe", "backup.reminderDays",
                                                 "handwriting.recognize", "search.transcripts", "appearance.icon",
                                                 "insights.enabled", "insights.workDevice",
-                                                "insights.embeddingRevision", "insights.voiceNoteTitle"]
+                                                "insights.embeddingRevision", "insights.voiceNoteTitle", "insights.language"]
 
     /// This device's effective value of every setting a device of `type` uses,
     /// in the stored form of `SharedSettingSpec.validated`. A setting that cannot

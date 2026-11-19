@@ -169,19 +169,46 @@ extension AppModelCore {
         }
     }
 
+    /// "Transcribe Again" for the editor's whole note (its menu): every recording is transcribed again, in `language` (a
+    /// BCP 47 tag; nil: the automatic choice, the Settings language else the note's else the device's), and each new
+    /// transcript replaces the one the recording had (a register; the old blob stays in the history until it is collected).
+    /// With `redoInsights` the note's summary, keywords and title are made again from the new text once it is there (a
+    /// no-op while Note Insights is off or this device has no model). Returns how many recordings were transcribed.
+    @discardableResult
+    public func transcribeAgain(in editor: Editor, language: String?, redoInsights: Bool) async -> Int {
+        guard let cache = attachmentCache(), !editor.isReadOnly else { return 0 }
+        let note = editor.noteID
+        var done = 0
+        for recording in editor.recordings where !transcribing.contains(recording.id) {
+            do {
+                let url = try await cache.acquire(note: note, ref: recording.blob)
+                let before = editor.recordings.first { $0.id == recording.id }?.transcript
+                await transcribe(recording, note: note, file: url, meta: editor.meta, automatic: false, language: language)
+                await cache.release(note: note, ref: recording.blob, discard: true)
+                if editor.recordings.first(where: { $0.id == recording.id })?.transcript != before { done += 1 }
+            } catch {
+                alert = .notice(.recordingUnreadable(services.describeError(error)))
+                break
+            }
+        }
+        if redoInsights, done > 0 { regenerateNoteInsights(note) }
+        return done
+    }
+
     /// Transcribes the audio in `file` (recording `recording` of `note`) on
     /// this device and stores the transcript: the blob, then one delta. The
     /// note's language when it has one, else the device's. An `automatic` job (not the Transcribe button) never
     /// downloads the language model: without it, it says where to get it.
-    public func transcribe(_ recording: Recording, note: UUID, file: URL, meta: NoteMeta?, automatic: Bool) async {
+    public func transcribe(_ recording: Recording, note: UUID, file: URL, meta: NoteMeta?, automatic: Bool,
+                           language explicit: String? = nil) async {
         guard let transcriber, !transcribing.contains(recording.id) else { return }
         let gen = generation
         transcribing.insert(recording.id)
         defer { transcribing.remove(recording.id) }
         do {
             let language = meta.flatMap(TranscriptionLanguage.noteLanguage(of:))
-            let transcript = try await transcriber.transcribe(file: file, recording: recording.id, noteLanguage: language,
-                                                              allowModelDownload: !automatic)
+            let transcript = try await transcriber.transcribe(file: file, recording: recording.id, language: explicit,
+                                                              noteLanguage: language, allowModelDownload: !automatic)
             try ensureCurrent(gen)
             let ref = try await storeTranscript(transcript, note: note)
             try ensureCurrent(gen)

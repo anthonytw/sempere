@@ -31,19 +31,12 @@ struct QuickCaptureFlowTests {
         let pending = try rig.openVault().readCapture(outcome.id)
         #expect(pending.audio == Data("AUDIO-FRAMES".utf8))
         #expect(pending.manifest?.audio.type == "audio/mp4")
-        #expect(pending.manifest?.title == CaptureWriter.defaultTitle(rig.clock.now), "no title given: the library's")
+        #expect(pending.manifest?.title == "", "1.3 stores no title: the note shows a default made at display time")
+        #expect(pending.manifest?.source == "phone", "a quick voice note says where it came from")
+        #expect(pending.manifest?.tz == TimeZone.current.identifier, "and the zone its clock read")
         #expect(pending.transcript?.segments.first?.words?.map(\.t) == ["Linear", "maps."])
         #expect(rig.audio.formats == [CaptureSegments.captureFormat(.default)])
         #expect(rig.audio.lastRecording?.segments.first?.pathExtension == CaptureSegments.segmentExtension)
-    }
-
-    /// The app's title, in the device's language, when it gives one (`noteTitle`).
-    @Test func theAppNamesTheVoiceNote() async throws {
-        let rig = try CaptureRig()
-        rig.capture.noteTitle = { _ in "Nota de voz" }
-        try await rig.capture.start()
-        let outcome = try await rig.capture.stop()
-        #expect(try rig.openVault().readCapture(outcome.id).manifest?.title == "Nota de voz")
     }
 
     /// Device check c48: a voice note stopped at once is saved, not dropped as too short; and again from the

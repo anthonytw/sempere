@@ -127,7 +127,7 @@ struct MoveNoteView: View {
                         NotebookField(title: "Notebook (School/Math for levels)", text: $notebook,
                                       notebooks: model.notebooks, excluding: note.notebook, reveal: proxy)
                     } header: {
-                        Text(NoteTitle.display(note.title))
+                        Text(NoteTitle.display(model.displayTitle(note)))
                     } footer: {
                         if let current = NotebookPath.canonical(note.notebook) {
                             Text("Now in \(NotebookChoices.display(current)).")

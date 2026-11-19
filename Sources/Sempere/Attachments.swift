@@ -942,6 +942,9 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
     /// Immutable: who captured it, for a voice note adopted from the inbox
     /// (format.md §8.3.1, §11.3). Nil otherwise, or when the value is malformed.
     public var captured: CaptureAttribution?
+    /// Immutable: where and how a voice note was captured, for a default title shown at display time
+    /// (format.md §8.3.1 `captureInfo`). Nil for notes adopted before 1.3 and for recordings made in a note.
+    public var captureInfo: CaptureInfo?
     /// Snapshot only, as on items.
     public var origin: String?
     /// Snapshot only: register name → `"<hlc>-<device>"` stamp.
@@ -951,11 +954,13 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
 
     public init(id: UUID = UUID(), blob: BlobRef, started: Date, duration: Double? = nil, codec: String? = nil,
                 sampleRate: Int? = nil, channels: Int? = nil, bitRate: Int? = nil, title: String? = nil,
-                transcript: BlobRef? = nil, parent: UUID? = nil, captured: CaptureAttribution? = nil, origin: String? = nil,
+                transcript: BlobRef? = nil, parent: UUID? = nil, captured: CaptureAttribution? = nil,
+                captureInfo: CaptureInfo? = nil, origin: String? = nil,
                 clocks: [String: String]? = nil, extra: [String: JSONValue] = [:]) {
         self.id = id; self.blob = blob; self.started = started; self.duration = duration; self.codec = codec
         self.sampleRate = sampleRate; self.channels = channels; self.bitRate = bitRate; self.title = title
-        self.transcript = transcript; self.parent = parent; self.captured = captured; self.origin = origin
+        self.transcript = transcript; self.parent = parent; self.captured = captured; self.captureInfo = captureInfo
+        self.origin = origin
         self.clocks = clocks; self.extra = extra
     }
 
@@ -966,7 +971,7 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
     }
 
     static let knownFields: Set<String> = ["id", "blob", "started", "duration", "codec", "sampleRate", "channels",
-                                           "bitRate", "title", "transcript", "parent", "captured", "origin", "clocks"]
+                                           "bitRate", "title", "transcript", "parent", "captured", "captureInfo", "origin", "clocks"]
 
     /// Fields `setRecording` may not name: all but the registers `title` and
     /// `transcript` and unknown fields.
@@ -987,6 +992,7 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
         parent = try c.decodeIfPresent(LowercaseUUID.self, "parent")?.uuid
         // Informational: a malformed value reads as absent, never rejects the revision.
         captured = (try? c.decodeIfPresent(CaptureAttribution.self, "captured")) ?? nil
+        captureInfo = (try? c.decodeIfPresent(CaptureInfo.self, "captureInfo")) ?? nil
         origin = try c.decodeIfPresent(String.self, "origin")
         clocks = try c.decodeIfPresent([String: String].self, "clocks")
         extra = try c.extra(excluding: Self.knownFields)
@@ -1006,6 +1012,7 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
         try c.encodeIfPresent(transcript, "transcript")
         try c.encodeIfPresent(parent.map(LowercaseUUID.init), "parent")
         try c.encodeIfPresent(captured, "captured")
+        try c.encodeIfPresent(captureInfo, "captureInfo")
         try c.encodeIfPresent(origin, "origin")
         if let clocks, !clocks.isEmpty { try c.encode(clocks, "clocks") }
         try c.encodeExtra(extra, excluding: Self.knownFields)
@@ -1043,6 +1050,38 @@ public struct CaptureAttribution: Hashable, Sendable, Codable {
     public func label(in manifest: EpochManifest) -> String? {
         manifest.devices.first { CaptureKey.fingerprint(of: $0.key) == recipient }?.name
     }
+}
+
+/// Where and how a voice note was captured (format.md §8.3.1 `captureInfo`, §11.2): the capture's time zone, so a title made
+/// from its date and time reads as the person saw the clock, and the kind of device it came from. Both optional; a value
+/// of another shape reads as absent.
+public struct CaptureInfo: Hashable, Sendable, Codable {
+    /// An IANA time zone identifier of the capturing device (`America/New_York`), at most 64 characters.
+    public var tz: String?
+    /// `phone` (a quick voice note on the iPhone or iPad) or `watch`; another value reads as no source.
+    public var source: String?
+
+    public init(tz: String? = nil, source: String? = nil) {
+        self.tz = tz.flatMap(Self.validZone); self.source = source.flatMap(Self.validSource)
+    }
+
+    /// The sources a reader knows.
+    public static let sources = ["phone", "watch"]
+
+    static func validZone(_ s: String) -> String? {
+        s.count <= 64 && !s.isEmpty && TimeZone(identifier: s) != nil ? s : nil
+    }
+    static func validSource(_ s: String) -> String? { sources.contains(s) ? s : nil }
+
+    enum CodingKeys: String, CodingKey { case tz, source }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tz = (try? c.decodeIfPresent(String.self, forKey: .tz)).flatMap { $0 }.flatMap(Self.validZone)
+        source = (try? c.decodeIfPresent(String.self, forKey: .source)).flatMap { $0 }.flatMap(Self.validSource)
+    }
+
+    public var isEmpty: Bool { tz == nil && source == nil }
 }
 
 /// One `setRecording` (format.md §8.3.1): a new value for a register of a

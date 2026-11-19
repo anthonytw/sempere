@@ -32,6 +32,17 @@ public enum InsightsSettingsWrite {
         try write(vault, InsightsSettings.keys.voiceNoteTitle, .string(f), now: now)
     }
 
+    /// The language of generated summaries and voice-note titles (`insights.language`): a BCP 47 tag, or nil for "same as the
+    /// note" (the default; resets the key). Refuses a tag that is none. Changing it makes summaries and titles be made again,
+    /// in the new language, a few at a time (every device reads the same setting, so they all write the same language).
+    public static func setLanguage(_ tag: String?, vault: Vault, now: Date = Date()) throws {
+        guard let tag else { return try write(vault, InsightsSettings.keys.language, nil, now: now) }
+        guard let spec = SharedSettingsCatalog.spec(named: InsightsSettings.keys.language), spec.validated(.string(tag)) != nil else {
+            throw InsightsSettingsError.invalidLanguage(tag)
+        }
+        try write(vault, InsightsSettings.keys.language, .string(tag), now: now)
+    }
+
     /// What moving the pinned embedding revision would do (D12): the devices it leaves out (they become vector
     /// readers).
     public struct PinMove: Hashable, Sendable {
@@ -63,9 +74,11 @@ public enum InsightsSettingsWrite {
 
 public enum InsightsSettingsError: Error, Hashable, Sendable, CustomStringConvertible {
     case invalidFormat(String)
+    case invalidLanguage(String)
     public var description: String {
         switch self {
         case .invalidFormat(let why): return "not a voice-note title format: \(why)"
+        case .invalidLanguage(let tag): return "not a language tag: \(tag) (use a BCP 47 tag such as es or pt-BR)"
         }
     }
 }

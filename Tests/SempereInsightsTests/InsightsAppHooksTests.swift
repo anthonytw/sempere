@@ -6,62 +6,41 @@ import VaultTestSupport
 import XCTest
 @testable import SempereInsights
 
-/// What the app (Insights PR 2) needs from the core: titles written through the caller's clock (`titleWriter`, never a
-/// second clock on the app's state file), open notes left alone, the settings writes Settings ▸ Note Insights and the
+/// What the app (Insights PR 2) needs from the core: titles derived into the device's own insights file (never into the note), open notes left alone, the settings writes Settings ▸ Note Insights and the
 /// CLI share (under the vault's write lock), and the whole related graph at once, bounded (review of #50, L7).
 extension InsightsUpdaterTests {
-    func testTitlesGoThroughTheCallersWriter() async throws {
+    func testTitlesAreDerivedIntoTheSidecarNeverTheNote() async throws {
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
         try enable()
-        let calls = Calls()
         var o = InsightsUpdateOptions()
         o.now = now; o.force = true
         o.platform = .init(platform: "ios", os: "iOS 27.2")
-        var updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
+        let updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
                                       deviceState: tmp.appendingPathComponent("missing.json"), app: "test/1")
-        let vault = self.vault!, state = self.state
-        updater.titleWriter = { note, build, wall in
-            calls.add(note)
-            // The caller's own clock (here: the test's state file) writes the delta the builder decides on disk.
-            guard let ops = try build() else { return nil }
-            let rev = try vault.apply(ops, to: note, deviceState: state, app: "app/1", wall: wall)
-            return RevisionName(hlc: rev.hlc, device: rev.device, seq: rev.seq, kind: .delta)
-        }
-        updater.writerDevice = try DeviceState.loadOrCreate(at: state).device
+        let revisions = try vault.loadNote(id).revisions.count
         let r = try await updater.run(o, notes: try inputs())
         XCTAssertEqual(r.titled, [id.uuidString.lowercased()])
-        XCTAssertEqual(calls.ids, [id])
-        XCTAssertEqual(try title(id), "2026-09-21 10.46 Spring Lab Results Show")
-        // The `titleOp` names the writer's revision, so the next pass keeps the title.
+        XCTAssertEqual(try title(id), "", "the note keeps no title")
+        XCTAssertEqual(try vault.loadNote(id).revisions.count, revisions, "and no revision is written for the title")
+        XCTAssertEqual(InsightsStore(vault: vault).snapshot().bestTitle(for: id, hash: nil), "2026-09-21 11.26 Spring Lab Results Show")
         let again = try await updater.run(o, notes: try inputs())
-        XCTAssertEqual(again.titled, [])
-        XCTAssertEqual(again.restoredTitles, [])
-        XCTAssertEqual(calls.ids, [id])
+        XCTAssertEqual(again.titled, [], "once per text")
     }
 
-    /// A rename made between the decision and the write wins: the writer's builder reads the note on disk again and
-    /// gives no ops (review of #52).
-    func testARenameBetweenTheDecisionAndTheWriteWins() async throws {
+    /// A title the user typed is never touched: no title is derived while it stands.
+    func testARenameKeepsTheDerivedTitleAway() async throws {
         let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
         try enable()
+        try vault.apply([.setMeta(.title("My lab"))], to: id, deviceState: state, app: "app/1", wall: now)
         var o = InsightsUpdateOptions()
         o.now = now; o.force = true
         o.platform = .init(platform: "mac", os: "macOS 27.2")
-        var updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
+        let updater = InsightsUpdater(vault: vault, model: FakeModelProvider(), embedder: FakeEmbeddingProvider(),
                                       deviceState: state, app: "test/1")
-        let vault = self.vault!, state = self.state, now = self.now
-        updater.titleWriter = { note, build, wall in
-            // The user renames the note just before the write.
-            try vault.apply([.setMeta(.title("My lab"))], to: note, deviceState: state, app: "app/1", wall: now)
-            guard let ops = try build() else { return nil }
-            let rev = try vault.apply(ops, to: note, deviceState: state, app: "app/1", wall: wall)
-            return RevisionName(hlc: rev.hlc, device: rev.device, seq: rev.seq, kind: .delta)
-        }
-        updater.writerDevice = try DeviceState.loadOrCreate(at: state).device
         let r = try await updater.run(o, notes: try inputs())
         XCTAssertEqual(r.titled, [])
         XCTAssertEqual(try title(id), "My lab")
-        XCTAssertNil(InsightsStore(vault: vault).snapshot().notes[id]?[vault.writerDevice!]?.titleOp, "no titleOp for a title not written")
+        XCTAssertNil(InsightsStore(vault: vault).snapshot().bestTitle(for: id, hash: nil))
     }
 
     /// A device generates whatever its type (D21: every capable device does the work; `insights.compute` is gone and

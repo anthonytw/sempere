@@ -72,7 +72,8 @@ struct QuickCaptureTests {
         #expect(audio.dropFirst(4).prefix(4) == Data("ftyp".utf8))
         #expect(pending.manifest?.audio.type == "audio/mp4")
         #expect(pending.manifest?.notebook == "Inbox")
-        #expect(pending.manifest?.title.hasPrefix("Voice note ") == true)
+        #expect(pending.manifest?.title == "", "1.3 stores no title")
+        #expect(pending.manifest?.source == "phone")
         #expect(pending.transcript?.segments.first?.words?.map(\.t) == ["Linear", "maps."])
     }
 
@@ -186,7 +187,7 @@ struct QuickCaptureTests {
         })
         let state = try vault.reconstruct(noteId: ids.note)
         #expect(state.meta.notebook == "Inbox")
-        #expect(state.meta.title.hasPrefix("Voice note "))
+        #expect(state.meta.title == "", "1.3 stores no title")
         #expect(state.recordings.map(\.id) == [ids.recording])
         #expect(Self.inbox(url).isEmpty, "adopted captures leave the inbox")
         #expect(model.notes.contains { $0.id == ids.note })
