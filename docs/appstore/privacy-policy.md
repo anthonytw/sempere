@@ -82,6 +82,10 @@ your key, nobody can decrypt your notes.**
   are saved in your vault, encrypted like your notes, and sync with it; turning Note Insights off deletes them.
   Summaries need Apple Intelligence on the device that makes them; the system downloads and manages Apple's models,
   and that download contains none of your data.
+- **Share as Web Page** (File ▸ Export ▸ Web Page (Encrypted)…) makes one note into a single file on your device,
+  encrypted with a passphrase, that opens in any web browser. The file is made on your device, nothing is uploaded by
+  Sempere, and the passphrase is not kept by the app. You send the file yourself, by any means you choose; whoever
+  has the file and the passphrase can read the note.
 
 ## Network connections
 

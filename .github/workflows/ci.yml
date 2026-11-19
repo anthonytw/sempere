@@ -148,6 +148,10 @@ jobs:
         run: |
           npm run build
           grep -q 'Content-Security-Policy' dist/index.html
+      # The share viewer (docs/web-viewer.md "Share files"): the Swift source the CLI and the app embed is what this build makes.
+      - name: Share template is current
+        working-directory: .
+        run: scripts/build-share-template.sh --check
 
   help:
     name: Help and portability checks

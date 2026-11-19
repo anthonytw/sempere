@@ -1,3 +1,4 @@
+import Sempere
 import SempereRender
 import SwiftUI
 import UIKit
@@ -12,6 +13,10 @@ struct ExportSheet: View {
     @State private var job = ExportJob()
     @State private var options: ShareOptions
     @State private var handOff = ExportHandOffState()
+    /// A web page's passphrase: generated for this sheet, never stored (design §3.4); the user may type their own.
+    @State private var generatedPassphrase = GeneratedPassphrase.make()
+    @State private var useOwnPassphrase = false
+    @State private var ownPassphrase = ""
 
     init(request: ExportRequest) {
         self.request = request
@@ -73,8 +78,13 @@ struct ExportSheet: View {
             .pickerStyle(.inline)
             .labelsHidden()
         }
+        if options.format == .webPage { passphraseSection }
         Section {
-            if options.format != .media {
+            if options.format == .webPage {
+                if recordingCount > 0 { Toggle("Include Recordings", isOn: $options.webShare.includeAudio) }
+                Toggle("Include Recognized Text", isOn: $options.webShare.includeText)
+            }
+            if options.format != .media && options.format != .webPage {
                 Toggle("Paper Background and Ruling", isOn: $options.paper)
             }
             if options.format == .png || (options.format == .markdown && options.markdownImages == .png) {
@@ -104,16 +114,94 @@ struct ExportSheet: View {
         }
         Section {
             Button("Export", systemImage: ExportCommand.menuImage) {
-                job.start(model: model, ids: request.noteIDs, options: options)
+                var run = options
+                if run.format == .webPage { run.webSharePassphrase = passphrase }
+                job.start(model: model, ids: request.noteIDs, options: run)
             }
+            .disabled(options.format == .webPage && passphrase.isEmpty)
         } footer: {
-            Label("Exports are not encrypted. Anyone who receives the files can read the notes.", systemImage: "lock.open")
-                .font(.footnote)
+            if options.format == .webPage {
+                Label("Anyone who has the file and the passphrase can read the note. Send them in different ways.", systemImage: "lock")
+                    .font(.footnote)
+            } else {
+                Label("Exports are not encrypted. Anyone who receives the files can read the notes.", systemImage: "lock.open")
+                    .font(.footnote)
+            }
         }
+    }
+
+    /// The passphrase the page is encrypted with: seven generated words, or the user's own.
+    private var passphrase: String { useOwnPassphrase ? ownPassphrase : generatedPassphrase }
+
+    /// The page's passphrase: generated, with Copy (this device only, gone after two minutes) and "Use my own".
+    @ViewBuilder
+    private var passphraseSection: some View {
+        Section {
+            if useOwnPassphrase {
+                SecureField("Your Passphrase", text: $ownPassphrase)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            } else {
+                Text(verbatim: generatedPassphrase).font(.body.monospaced()).accessibilityIdentifier("sharePassphrase")
+                Button("Copy Passphrase", systemImage: "doc.on.doc") {
+                    SecretPasteboard.copy(generatedPassphrase, lifetime: Self.passphraseLifetime)
+                }
+            }
+            Toggle("Use My Own Passphrase", isOn: $useOwnPassphrase)
+        } header: {
+            Text("Passphrase for the Page")
+        } footer: {
+            if useOwnPassphrase && Self.isShort(ownPassphrase) {
+                Text("A short passphrase can be guessed. Use the generated one if you can.")
+            }
+        }
+    }
+
+    /// A copied passphrase stays on this device's pasteboard for two minutes.
+    static let passphraseLifetime: TimeInterval = 120
+
+    /// Under 12 characters or four words: a warning, never a refusal (design §3.4).
+    static func isShort(_ passphrase: String) -> Bool {
+        guard !passphrase.isEmpty else { return false }
+        let words = passphrase.split(whereSeparator: { " -_".contains($0) }).count
+        return passphrase.count < 12 || words < 4
+    }
+
+    /// A web page made: its size line, and the passphrase until the sheet closes (the app keeps it nowhere else).
+    @ViewBuilder
+    private func webPageResult(_ outcome: ExportJob.Outcome, _ sections: WebShareSections) -> some View {
+        Section {
+            Label("Web page made", systemImage: "checkmark.circle").foregroundStyle(.green)
+            ForEach(outcome.items, id: \.self) { Text($0.lastPathComponent).font(.callout) }
+            Text(verbatim: Self.sizeLine(sections)).font(.callout).foregroundStyle(.secondary)
+        } footer: {
+            Text("The page opens in a web browser. Mail's preview and most chat apps' previews do not open it: send the file as an attachment.")
+        }
+        Section {
+            Text(verbatim: passphrase).font(.body.monospaced())
+            Button("Copy Passphrase", systemImage: "doc.on.doc") {
+                SecretPasteboard.copy(passphrase, lifetime: Self.passphraseLifetime)
+            }
+        } header: {
+            Text("Passphrase for the Page")
+        } footer: {
+            Text("Send the passphrase in a different way than the file. The app keeps it nowhere: it is gone when you close this sheet.")
+        }
+    }
+
+    /// "4.2 MB in all: ink 0.9 MB, pictures 2.6 MB, audio 0 KB, viewer 0.7 MB".
+    static func sizeLine(_ s: WebShareSections) -> String {
+        func size(_ n: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file) }
+        return String(localized: "\(size(s.total)) in all: ink \(size(s.ink)), pictures \(size(s.images)), audio \(size(s.audio)), viewer \(size(s.template))",
+                      comment: "Export web page: where the file's bytes went, the sizes already worded")
     }
 
     @ViewBuilder
     private func result(_ outcome: ExportJob.Outcome) -> some View {
+        if options.format == .webPage, let sections = outcome.webShareSections {
+            webPageResult(outcome, sections)
+        } else {
         Section {
             Label("\(outcome.exported) notes exported", systemImage: "checkmark.circle").foregroundStyle(.green)
             if outcome.recordingsAttached > 0 {
@@ -133,6 +221,7 @@ struct ExportSheet: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(outcome.items, id: \.self) { Text($0.lastPathComponent).font(.callout) }
+        }
         }
         if !outcome.failures.isEmpty {
             Section("Not exported") {
@@ -162,7 +251,10 @@ struct ExportSheet: View {
         guard count > 0 else { return "" }
         // A leading space: the sentence follows `shape(of:)` in the same footer.
         let sentence: String
-        if options.format == .media {
+        if options.format == .webPage && options.webShare.includeAudio {
+            sentence = String(localized: "\(count) recordings and their transcripts included, as far as they fit.",
+                              comment: "Export web page: recordings included while they fit in the size limit")
+        } else if options.format == .media {
             sentence = String(localized: "\(count) recordings and their transcripts included.")
         } else if options.format == .pdf && options.pdfAttachments {
             sentence = String(localized: "\(count) recordings and their transcripts attached to the PDF.")
@@ -196,6 +288,9 @@ struct ExportSheet: View {
         case .html:
             return many ? String(localized: "A folder with one self-contained HTML file per note and an index.")
                 : String(localized: "One self-contained HTML file.")
+        case .webPage:
+            return String(localized: "One page that opens in any web browser, encrypted with a passphrase.",
+                          comment: "Export web page: what the export contains")
         case .media:
             return many ? String(localized: "A folder per note with its recordings, transcripts, videos, images and PDFs as files.")
                 : String(localized: "A folder with the note's recordings, transcripts, videos, images and PDFs as files.")
@@ -212,6 +307,7 @@ extension ShareFormat {
         case .markdown: return String(localized: "Text (Markdown)", comment: "Export format: Markdown text")
         case .html: return String(localized: "HTML", comment: "Export format: HTML page")
         case .media: return String(localized: "Media", comment: "Export format: recordings, videos, images and PDFs as files")
+        case .webPage: return String(localized: "Web Page (Encrypted)", comment: "Export format: one note as an encrypted web page")
         }
     }
 }

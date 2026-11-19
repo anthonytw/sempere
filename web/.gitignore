@@ -3,3 +3,4 @@ dist/
 *.tsbuildinfo
 # Screenshots the smoke scripts write to the working directory by default.
 /*.png
+dist-share/
