@@ -109,6 +109,49 @@ struct NotesHistory: ParsableCommand {
     }
 }
 
+struct NotesRevisions: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "revisions",
+        abstract: "List every revision file of a note with its ops and stamps, and what set its deleted flag.",
+        discussion: """
+            Read-only diagnosis (format.md §5.3, §5.4): every revision that reads, oldest first by
+            (hlc, device, seq), with its device, wall time, app and, for a delta, its ops (`setMeta title`,
+            `deleteNote`, `addStroke ×12`); for a snapshot what it covers (`included`) and the deleted flag
+            it holds with its recorded clock. Then the revisions listed in the note's folder that do not
+            read here, with why (set aside under an earlier key, pending, unreadable). The first line says
+            whether the note is deleted and which stamp and revision set that. Unlike `history`, positioned
+            snapshots and unreadable files are listed too.
+            """
+    )
+
+    @Argument(help: ArgumentHelp("Note id or title.", valueName: "id|title"))
+    var note: String
+
+    @OptionGroup var access: AccessOptions
+    @OptionGroup var output: OutputOptions
+
+    func run() throws {
+        let vault = try access.openVault(.required)
+        let id = try vault.resolveShownNote(note)
+        let log = try RevisionLog(note: id, loaded: try vault.loadNote(id, detail: .withoutStrokePoints))
+        if output.json { try output.emitJSON(log); return }
+        print("\(log.note): \(log.deleted ? "deleted" : "not deleted"), set by \(log.deletedClock)"
+              + (log.deletedBy.map { " (\($0))" } ?? (log.deletedClock == Stamp.zero.description ? " (never set)" : " (no revision here holds it)")))
+        var rows = output.quiet ? [] : [["KIND", "WALL", "DEVICE", "APP", "REVISION", "OPS"]]
+        for r in log.revisions {
+            let what: String
+            if let ops = r.ops {
+                what = ops.isEmpty ? "(no ops)" : ops.joined(separator: ", ")
+            } else {
+                what = "deleted=\(r.deleted ?? false) @\(r.deletedClock ?? "own stamp")" + (r.asOf.map { " asOf \($0)" } ?? "")
+            }
+            rows.append([r.kind + (r.checkpoint ? "*" : ""), Format.local(r.wall), r.device, r.app, r.revision, what])
+        }
+        print(Format.table(rows))
+        for f in log.failures { print("not read: \(f.revision): \(f.kind): \(f.error)") }
+    }
+}
+
 struct NotesCheckpoint: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "checkpoint",

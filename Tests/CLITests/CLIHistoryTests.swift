@@ -33,6 +33,55 @@ final class CLIHistoryTests: CLITestCase {
         XCTAssertEqual(text.out.split(separator: "\n").count, 6)
     }
 
+    /// `notes revisions` names every revision with its ops and stamps, and which one set the deleted flag: a delete,
+    /// then a restore from this machine, then a delete again.
+    func testRevisionsShowOpsAndWhatSetDeleted() throws {
+        let vault = try copyFixtureVault()
+        let access = ["--vault", vault, "--identity", Self.fixtureKey]
+        func log() throws -> [String: Any] {
+            let r = try cli(["notes", "revisions", Self.lecture, "--json"] + access)
+            XCTAssertEqual(r.status, 0, r.err)
+            return try XCTUnwrap(r.json as? [String: Any])
+        }
+        let start = try log()
+        XCTAssertEqual(start["deleted"] as? Bool, false)
+        let revisions = try XCTUnwrap(start["revisions"] as? [[String: Any]])
+        XCTAssertEqual(revisions.map { $0["revision"] as? String }, try revisionFiles(vault))
+        XCTAssertEqual(revisions.first?["ops"] as? [String], ["addPage", "setMeta title", "setMeta paper", "addStroke ×2"])
+        let snap = try XCTUnwrap(revisions.first { $0["kind"] as? String == "snapshot" })
+        XCTAssertEqual(snap["deleted"] as? Bool, false)
+        XCTAssertNotNil(snap["included"] as? [String: Any])
+        XCTAssertEqual((start["failures"] as? [[String: Any]])?.count, 0)
+
+        XCTAssertEqual(try cli(["notes", "delete", Self.lecture] + access).status, 0)
+        let deleted = try log()
+        XCTAssertEqual(deleted["deleted"] as? Bool, true)
+        let del = try XCTUnwrap((deleted["revisions"] as? [[String: Any]])?.last)
+        XCTAssertEqual(del["ops"] as? [String], ["deleteNote"])
+        XCTAssertEqual(deleted["deletedBy"] as? String, del["revision"] as? String)
+        XCTAssertEqual(deleted["deletedClock"] as? String, "\(del["hlc"] as? String ?? "")-\(del["device"] as? String ?? "")")
+
+        XCTAssertEqual(try cli(["notes", "undelete", Self.lecture] + access).status, 0)
+        let restored = try log()
+        XCTAssertEqual(restored["deleted"] as? Bool, false)
+        let undo = try XCTUnwrap((restored["revisions"] as? [[String: Any]])?.last)
+        XCTAssertEqual(undo["ops"] as? [String], ["restoreNote"])
+        XCTAssertEqual(restored["deletedBy"] as? String, undo["revision"] as? String)
+
+        // A revision that does not read is listed with why, not dropped.
+        let bad = "17900000000000000-0badf00d-1.delta.age"
+        try Data("junk".utf8).write(to: URL(fileURLWithPath: vault + "/notes/\(Self.lecture)/\(bad)"))
+        let failures = try XCTUnwrap(try log()["failures"] as? [[String: Any]])
+        XCTAssertEqual(failures.map { $0["revision"] as? String }, [bad])
+        XCTAssertEqual(failures.first?["kind"] as? String, "unreadable")
+
+        let text = try cli(["notes", "revisions", "Fixture lecture"] + access)
+        XCTAssertEqual(text.status, 0, text.err)
+        XCTAssertTrue(text.out.hasPrefix("\(Self.lecture): not deleted, set by "), text.out)
+        XCTAssertTrue(text.out.contains("restoreNote"), text.out)
+        XCTAssertTrue(text.out.contains("not read: \(bad): unreadable"), text.out)
+    }
+
     func testRestoreWritesOneDeltaAndIsIdempotent() throws {
         let vault = try copyFixtureVault()
         let before = try revisionFiles(vault)
