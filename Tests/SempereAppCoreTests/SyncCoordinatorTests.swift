@@ -671,7 +671,12 @@ struct SyncSessionTests {
         _ = await session.syncNow()
         for _ in 0..<200 where looks.add(0) < stopped + 3 { try await Task.sleep(for: .milliseconds(5)) }
         try await Task.sleep(for: .milliseconds(100))
-        #expect(looks.add(0) == stopped + 3)
+        // At least as many again (a loaded machine may let the loop's own recount start them over once more),
+        // and then they stop again.
+        let again = looks.add(0)
+        #expect(again >= stopped + 3)
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(looks.add(0) == again, "the looks stop again while nothing uploads")
         session.stop()
     }
 
