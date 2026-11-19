@@ -162,11 +162,14 @@ struct SyncFolderCommand: ParsableCommand {
             output.info("folder: \(remote.root.path) (\(remote.provider.managesFiles ? "held by \(remote.provider.name)" : "a plain folder"))")
         }
         let stateURL = SyncEngine.defaultStateURL(remote: remote.root, vault: dir, environment: Env.vars)
-        let sync = SyncEngine(directory: dir, vault: vault, remote: remote, stateURL: stateURL, options: options)
+        let writes = FolderRemote.WriteLog()
+        var logged = remote
+        logged.writeLog = writes
+        let sync = SyncEngine(directory: dir, vault: vault, remote: logged, stateURL: stateURL, options: options)
         // A dry run writes nothing, not even the Finder's bundle flag.
         if !dryRun { clearBundleBits([dir, target]) }
         defer { if !dryRun { clearBundleBits([dir, target]) } }
-        let report: SyncReport
+        var report: SyncReport
         do { report = try sync.run() } catch FolderTargetError.missing(let p) {
             // A folder synced before is never made again (`FolderRemote.absentBase`); say how to start over here.
             meter?.finish()
@@ -174,6 +177,15 @@ struct SyncFolderCommand: ParsableCommand {
                 + "To start over in it, delete this machine's sync state for it: \(stateURL.path)")
         } catch { meter?.finish(); throw error }
         meter?.finish()
+        // In a provider's folder (iCloud Drive) the files this run wrote are only on this machine until the provider has
+        // uploaded them: say how many wait (never counted as an error: the run itself succeeded).
+        if !dryRun, remote.provider.managesFiles {
+            let waiting = ProviderUploads.waiting(folder: target, paths: report.uploaded + writes.paths)
+            if waiting.count > 0 || waiting.error != nil {
+                report.providerPending = waiting.count
+                if case .failed(_, _, let message)? = waiting.error { report.providerError = message }
+            }
+        }
 
         if output.json {
             try output.emitJSON(report)

@@ -399,6 +399,10 @@ enum SyncCLI {
         for e in r.errors { printStderr("error: \(e.path): \(e.message)") }
         for q in r.quarantined { printStderr("quarantined: \(q.path): \(q.message); not placed in the vault") }
         for e in r.rejected { printStderr("rejected: \(e.path): \(e.message); the local copy is kept") }
+        if let n = r.providerPending {
+            printStderr("waiting: \(n) \(n == 1 ? "file" : "files") written here, not uploaded by the provider yet (it holds them only on this machine until it does)")
+        }
+        if let e = r.providerError { printStderr("provider upload error: \(e)") }
         for a in r.arriving { printStderr("arriving: \(a.path): \(a.message)") }
         for d in r.deferred { printStderr("deferred: \(d.path): \(d.message) (--large-blobs now sends it)") }
         for a in r.setAside { printStderr("set aside: \(a.path): \(a.message); kept on this machine, not placed (sempere set-aside)") }

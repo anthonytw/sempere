@@ -147,7 +147,7 @@ public enum ProviderUploads {
     /// when `rescan`, after an interrupted run), and each is asked again; returns what still waits. Off the main
     /// actor (a resource lookup per file).
     @discardableResult
-    public static func update(folder: URL, stateDirectory: URL, written: [String], rescan: Bool = false, check: Check) -> Summary {
+    public static func update(folder: URL, stateDirectory: URL, written: [String], rescan: Bool = false, check: Check, now: Date = Date()) -> Summary {
         let previous = record(in: stateDirectory)
         var candidates = previous.paths + written
         // A rescan only for a provider's folder: a drive's or a local folder's files are never waiting.
@@ -157,12 +157,14 @@ public enum ProviderUploads {
             candidates += found.paths
             capped = found.capped
         }
+        let inProvider = check(folder) != nil
         var seen = Set<String>()
         var out = Record()
         // A rescan that stopped at its cap did not look at every file: the record is incomplete (review of #91).
         out.truncated = capped
         for path in candidates where seen.insert(path).inserted {
-            switch check(folder.appendingPathComponent(path)) {
+            let answer = answer(for: folder.appendingPathComponent(path), inProvider: inProvider, check: check, now: now)
+            switch answer {
             case .waiting?:
                 if out.paths.count >= limit { out.truncated = true } else { out.paths.append(path) }
             case .failed(let code, let domain, let message)?:
@@ -174,6 +176,36 @@ public enum ProviderUploads {
         }
         save(out, in: stateDirectory)
         return summary(in: stateDirectory)
+    }
+
+    /// The provider's answer for `file`; a file just written into a provider's folder, before the provider has taken it in,
+    /// may answer nothing (not yet ubiquitous): it waits, rather than counting as uploaded (owner 2026-11-19, an iPad delete
+    /// read "synced" before iCloud had uploaded it). Only while fresh, as `state(...)`.
+    private static func answer(for file: URL, inProvider: Bool, check: Check, now: Date) -> State? {
+        let answer = check(file)
+        if answer == nil, inProvider, let modified = modified(file), now.timeIntervalSince(modified) < settleTime { return .waiting }
+        return answer
+    }
+
+    /// What of `paths` (vault paths under `folder`) the provider has not uploaded, asked once and kept nowhere: the CLI's
+    /// look after a run (`sempere sync folder`). Empty for a folder that is no provider's.
+    public static func waiting(folder: URL, paths: [String], check: Check = system, now: Date = Date()) -> Summary {
+        guard check(folder) != nil else { return Summary() }
+        var summary = Summary()
+        for path in Set(paths).sorted() {
+            switch answer(for: folder.appendingPathComponent(path), inProvider: true, check: check, now: now) {
+            case .waiting?: summary.count += 1
+            case .failed(let code, let domain, let message)?:
+                summary.count += 1
+                if summary.error == nil { summary.error = .failed(code: code, domain: domain, message: message) }
+            case .uploaded?, nil: break
+            }
+        }
+        return summary
+    }
+
+    private static func modified(_ url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
     /// Every regular file below `folder`, as a vault path, bounded by twice `limit`: `capped` when it stopped there

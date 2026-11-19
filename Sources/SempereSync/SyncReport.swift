@@ -51,6 +51,11 @@ public struct SyncReport: Codable, Hashable, Sendable {
     }
 
     public var dryRun = false
+    /// `sync folder` in a provider's folder (iCloud Drive on a Mac): how many files this run wrote that the provider has not
+    /// uploaded yet; nil elsewhere. They are on this machine only until it does.
+    public var providerPending: Int?
+    /// The provider's upload error for them (a full iCloud storage), nil when it reported none.
+    public var providerError: String?
     /// Paths (relative to the vault root) sent to the server.
     public var uploaded: [String] = []
     /// Paths written locally.

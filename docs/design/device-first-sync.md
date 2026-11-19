@@ -685,7 +685,17 @@ they are not.
 | syncing | "Syncing: ↑ 3 ↓ 12 notes" (and "Uploading to iCloud: n") |
 | offline | "Offline. Changes are kept on this device and sync when you are back online." Not an error |
 | waiting | "Waiting for unlock: 4 changes from other devices" |
+| uploading (iCloud) | "4 changes waiting for iCloud to upload": never "Synced" until iCloud has uploaded what this device wrote (see below) |
 | problem | per target: wrong password, certificate changed, folder not found ("choose it again"), server or iCloud full, quarantined files (n), late files from before a key change (n), device-list conflict |
+
+**iCloud uploads.** A run into an iCloud Drive folder only writes local files; iCloud uploads them later, so "Synced"
+needs two things: the run confirmed the target, and iCloud has uploaded what the run wrote (owner decision 2026-11-19, an
+iPad delete read "synced" while the phone saw nothing for minutes). The session keeps a bounded record of the files this
+device wrote (`ProviderUploads`, every file the folder remote placed, capped at 20,000), asks `ubiquitousItemIsUploaded` /
+`isUploading` / `ubiquitousItemUploadingError` after each run and again on a timer with backoff (15 s up to 5 min) while any
+wait, and shows an upload error as a problem. What iCloud has delivered to another device is out of scope: the receiving side
+cannot know more than what has arrived. WebDAV and non-provider folders are unchanged. `sempere sync folder` prints the same
+count after a run (docs/cli.md).
 
 The menu has Sync Now, Show Details (per target: the last report), Sync Targets…, and Repair….
 

@@ -136,6 +136,19 @@ public struct FolderRemote: SyncRemote {
     public let provider: any FolderProvider
     public var limits: Limits
     public var interrupt: (@Sendable () -> (any Error)?)?
+    /// Told every file this remote places (`write`, the destination of `moveNoOverwrite`), as a vault path: the app asks
+    /// which files a provider has to upload (`ProviderUploads`), including those a run's report does not list as
+    /// uploaded (settings, device records, summaries, the web index). Nil: not recorded.
+    public var writeLog: WriteLog?
+
+    /// A thread-safe list of the paths a `FolderRemote` placed in one run.
+    public final class WriteLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var items: [String] = []
+        public init() {}
+        func add(_ path: [String]) { lock.lock(); items.append(path.joined(separator: "/")); lock.unlock() }
+        public var paths: [String] { lock.lock(); defer { lock.unlock() }; return items }
+    }
 
     /// The lock file of conditional writes in a plain folder (hidden from listings).
     public static let lockName = ".sempere-lock"
@@ -646,6 +659,12 @@ public struct FolderRemote: SyncRemote {
 
     @discardableResult
     public func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool {
+        let placed = try place(path, body, condition: condition)
+        if placed { writeLog?.add(path) }
+        return placed
+    }
+
+    private func place(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool {
         try validate(path)
         try checkInterrupt()
         guard !path.isEmpty else { throw FolderRemoteError.notAFile(shown(path)) }
@@ -679,6 +698,12 @@ public struct FolderRemote: SyncRemote {
 
     @discardableResult
     public func moveNoOverwrite(_ path: [String], to destination: [String]) throws -> Bool {
+        let moved = try move(path, to: destination)
+        if moved { writeLog?.add(destination) }
+        return moved
+    }
+
+    private func move(_ path: [String], to destination: [String]) throws -> Bool {
         try validate(path)
         try validate(destination)
         try checkInterrupt()

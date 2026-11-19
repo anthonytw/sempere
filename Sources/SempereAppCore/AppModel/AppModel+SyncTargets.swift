@@ -198,9 +198,12 @@ extension AppModelCore {
                         var joinOptions = options
                         joinOptions.firstPullIdentities = [join]
                         let rescan = ProviderUploads.begin(stateDirectory: stateDirectory)
+                        let writes = FolderRemote.WriteLog()
                         let report = try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: folderProvider,
-                                                             vault: nil, stateURL: stateURL, twoWay: true, options: joinOptions)
-                        ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory, written: report.uploaded,
+                                                             vault: nil, stateURL: stateURL, twoWay: true, options: joinOptions,
+                                                             writeLog: writes)
+                        ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory,
+                                               written: report.uploaded + writes.paths,
                                                rescan: rescan, check: uploadCheck)
                         return report
                     }
@@ -210,12 +213,15 @@ extension AppModelCore {
                     let rescan = ProviderUploads.begin(stateDirectory: stateDirectory)
                     // The unlock places what locked runs staged (checked under the key), then the run goes on.
                     let placed = twoWay ? try vault.flatMap { try staging.place(vaultFolder: entry.url, vault: $0, options: options) } : nil
+                    let writes = FolderRemote.WriteLog()
                     var report = try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: folderProvider,
-                                                         vault: vault, stateURL: stateURL, twoWay: twoWay, options: options)
+                                                         vault: vault, stateURL: stateURL, twoWay: twoWay, options: options,
+                                                         writeLog: writes)
                     if let placed { report.changed = Self.union(placed.changed, report.changed) }
                     // Written into a provider's folder is not uploaded yet (offline audit P15): what still waits.
-                    ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory, written: report.uploaded,
-                                           rescan: rescan, check: uploadCheck)
+                    // (every file the remote placed, not only those the report lists: settings, records, summaries)
+                    ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory,
+                                           written: report.uploaded + writes.paths, rescan: rescan, check: uploadCheck)
                     if !twoWay, request.stage, !PartialCopy.isPartial(entry.url) {
                         // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
                         _ = try? staging.stage(vaultFolder: entry.url, options: options) { shadow, state, pullOnly in
@@ -237,6 +243,15 @@ extension AppModelCore {
             do { try FolderTargetRun.check(access.folder, stateURL: stateURL) } catch { access.close(); throw error }
             let remote: any SyncRemote = FolderRemote(root: access.folder, provider: provider?(access.folder))
             return (remote, { access.close() }, FolderTargetRun.syncedBefore(stateURL: stateURL))
+        }
+        // Asks the provider again about the recorded files between runs (the bar leaves "waiting" when it has uploaded them).
+        session.providerRecheck = {
+            guard let target = store.targets.targets(of: vaultID).first(where: { $0.id == targetID }),
+                  let access = try? FolderTargetAccess.open(target, bookmarks: bookmarks) else { return nil }
+            defer { access.close() }
+            return await Task.detached(priority: .utility) {
+                ProviderUploads.update(folder: access.folder, stateDirectory: stateDirectory, written: [], check: uploadCheck)
+            }.value
         }
         session.providerSummary = { await Task.detached(priority: .utility) { ProviderUploads.summary(in: stateDirectory) }.value }
         if let path = ref.target.path {
