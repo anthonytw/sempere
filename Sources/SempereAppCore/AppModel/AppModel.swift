@@ -299,6 +299,8 @@ public final class AppModelCore<Host: AppModelHost> {
     public internal(set) var spotlightOmitted = 0
     /// "Untitled note" and the date style of Spotlight results: the app sets localized ones.
     @ObservationIgnored public var spotlightUntitled = "Untitled note"
+    /// The words of a voice note's default title ("Voice note", "Watch voice note"): the app sets localized ones.
+    @ObservationIgnored public var displayTitleWords = NoteDisplayTitle.Words.builtIn()
     @ObservationIgnored public var spotlightDateText: @Sendable (Date) -> String = SpotlightPlanner.isoDay
     /// A note to open once its vault is open, unlocked and listed (`open(_:)`).
     public internal(set) var pendingNoteLink: NoteLink?

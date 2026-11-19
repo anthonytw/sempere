@@ -10,7 +10,7 @@ import SempereInsights
 // foreground while the device is on power and from the background processing task. Every write goes through the
 // package (`InsightsStore`, `InsightsSettingsWrite`, `updateSharedSettingsUnderWriteLock`), which takes the vault's
 // write lock itself: nothing here holds that lock around a store call (`VaultFileLock` is not reentrant; PR 1 notes,
-// item 6). Voice-note titles are written through the model's own clock (`writeInsightsTitle`).
+// item 6). Voice-note titles are derived into the device's own insights file (`InsightsNoteFile.title`), never into the note.
 //
 // Memory (review of #50, L7): the vault's sidecars and vectors are read for a refresh and dropped after it; the model
 // keeps only the index (summaries, keywords, at most 8 edges per note, cluster members), and the related graph is built
@@ -776,8 +776,7 @@ extension AppModelCore {
             insights.passOutcome = forced ? .notListed : nil
             return ([], false)
         }
-        let clock: DeviceClock
-        do { clock = try deviceClockForWriting() } catch {
+        do { _ = try deviceClockForWriting() } catch {
             insights.passOutcome = forced ? .cannotWrite(services.describeError(error)) : nil
             return ([], false)
         }
@@ -787,10 +786,8 @@ extension AppModelCore {
         var remains = false
         var failed = false
         let started = insightsNow()
-        var updater = InsightsUpdater(vault: vault, model: runtime.model, embedder: runtime.embedder, deviceState: deviceStateURL,
+        let updater = InsightsUpdater(vault: vault, model: runtime.model, embedder: runtime.embedder, deviceState: deviceStateURL,
                                       app: services.appName)
-        updater.titleWriter = { [self] id, build, now in try await self.writeInsightsTitle(id, build, wall: now) }
-        updater.writerDevice = clock.device
         while true {
             guard !Task.isCancelled else { remains = true; break }
             guard generation == gen else { break }
@@ -854,16 +851,11 @@ extension AppModelCore {
         return (reports, remains)
     }
 
-    /// A voice note's automatic title (D14), written through the model's clock like every other edit, inside the edit
-    /// gate: `build` decides from the note as it is on disk then, so a rename made here in between wins (it gives no
-    /// ops). Nothing is written to a note open in an editor. Nil when nothing was written.
-    func writeInsightsTitle(_ id: UUID, _ build: @escaping @Sendable () throws -> [Op]?, wall: Date) async throws -> RevisionName? {
-        guard !isNoteOpen(id) else { return nil }
-        var written: RevisionName?
-        try await commit(ids: [id]) { vault, clock, verifier in
-            guard let ops = try build(), !ops.isEmpty else { return }
-            written = try await NoteWriter.append(ops, to: id, vault: vault, clock: clock, wall: wall, verify: verifier(id))
-        }
-        return written
+    /// What the list and the editor show as `note`'s title (`NoteDisplayTitle`): its own title when the user gave one, else
+    /// for a voice note the title Note Insights derived or a default from its source and language. Empty for a note with
+    /// no title that is no voice note; callers say "Untitled".
+    public func displayTitle(_ note: NoteSummary) -> String {
+        _ = insights.revision   // the index is not observed: a refresh bumps this, so a view that shows a title redraws
+        return note.displayTitle(generated: insightsIndex.shown[note.id]?.generatedTitle, words: displayTitleWords)
     }
 }

@@ -2452,6 +2452,13 @@ A recording belongs to the note, not to a page (`recordings`, §5.4):
   another shape treats it as absent; it never rejects the revision for it.
   Readers show that device's `name` (§2) while it is listed, and that the
   device is no longer in the vault otherwise.
+- `captureInfo` (optional, immutable, 1.3): for a voice note adopted from the inbox, where and how it was captured:
+  `{ "tz": "America/New_York", "source": "phone" }`. `tz` is an IANA time zone identifier of the capturing device (at
+  most 64 characters), so a title made from the capture's date and time reads as the clock did there; `source` is
+  `phone` (a quick voice note on an iPhone or iPad) or `watch`. Both optional; a member of another shape or an unknown
+  value reads as absent, and the revision is never rejected for it. A reader of 1.2 or earlier knows no such field: it
+  keeps the object (§7.5) and treats it as a register `setRecording` could change, which nothing does. Readers use it
+  only to word and time a default title (§16.8); a note without it (adopted before 1.3) has none.
 - Registers: `title` (string; absent means `""`) and `transcript` (a blob
   reference or `null`), changed with `setRecording` and merged LWW per
   (recording, field) like item registers (§8.2.2), with `clocks` in
@@ -3164,10 +3171,11 @@ iCloud) are not recorded.
   ```json
   { "format": "sempere-capture/1", "id": "<captureId>", "device": "a1b2c3d4",
     "vault": "<vaultId>", "created": "2026-10-07T14:33:05.120Z",
-    "started": "2026-10-07T14:32:41.000Z", "title": "Voice note 2026-10-07 14:32",
+    "started": "2026-10-07T14:32:41.000Z", "title": "",
     "notebook": "Inbox", "recipient": "…(64 hex digits)…",
     "audio": { "sha256": "…", "size": 196608, "type": "audio/mp4" },
-    "duration": 24.1, "codec": "aac", "sampleRate": 48000, "channels": 1, "bitRate": 64000 }
+    "duration": 24.1, "codec": "aac", "sampleRate": 48000, "channels": 1, "bitRate": 64000,
+    "tz": "America/New_York", "source": "phone" }
   ```
 
   `id` must equal `<captureId>` and `vault` the vault's `vaultId`. `audio` is
@@ -3176,7 +3184,10 @@ iCloud) are not recorded.
   lowercase hex digits) is `fingerprint(r)` of the profile's device key; a
   reader rejects a manifest without it, or whose `recipient` is not that of
   the key that verified the file. `title`, `notebook` (absent:
-  `Inbox`) and the informational fields become the note's; the title and
+  `Inbox`) and the informational fields become the note's (from 1.3 a capture's `title` is `""` unless the person typed
+  one: the note stores no title, and readers show a default, §16.8; captures of 1.0 through 1.2 hold
+  `Voice note YYYY-MM-DD HH:mm`). `tz` and `source` (optional, 1.3: values as in §8.3.1 `captureInfo`) become the
+  recording's `captureInfo`; another shape reads as absent; the title and
   the notebook as at most 300 characters (and 1200 Unicode scalars: one
   character may hold any number of combining marks), control characters replaced by
   spaces (any holder of the capture key writes them, §11.3).
@@ -4539,7 +4550,7 @@ one a reader shows.
     "key": { "model": "nl-sentence", "lang": "en", "rev": 1, "input": 1 },
     "dim": 512, "enc": "f16le-base64", "v": "..."
   },
-  "titleOp": { "stamp": "17647279000000000-0000beef", "title": "2026-10-07 14.32 Spring lab results" }
+  "title": { "hash": "9f2c4e1d7a0b3c58e6d1f4a2b7c90e13", "text": "2026-10-07 14.32 Spring lab results", "at": 1764727900000 }
 }
 ```
 
@@ -4562,8 +4573,12 @@ one a reader shows.
   note's suggested title (§16.8).
 - `emb`: this device's vector of the note (§16.5), little-endian IEEE 754 binary16, base64 (`f16le-base64`),
   `dim` values (1 … 4 096). `key`: model, language, pinned revision, and `input`, the writer's text-cleaning revision.
-- `titleOp`: the stamp (`<hlc>-<device>`, §5.1) of the revision in which this device set the note's title
-  automatically, and that title (§16.8).
+- `title` (1.3): the title this device derived for a voice note (§16.8), rendered from `insights.voiceNoteTitle`, for the
+  insight text whose hash is `hash`; `text` at most 200 characters; `at` Unix milliseconds, 1 … 2^53 − 1, when it was
+  derived (it does not change when the file is rewritten for another reason). It is never written into the note. A reader
+  takes a note's derived title from the file whose `title.hash` equals the note's current hash, the later `at`, then the
+  larger device id; a title for another hash is not shown. 1.2 wrote `titleOp` here (the stamp of a rename it made to the
+  note's own title); readers of 1.3 ignore it, and 1.2 readers ignore `title`.
 - `gen` and `emb` both absent: a **tombstone** (§16.6).
 
 A reader takes a note's `gen` from the best file: one whose `gen.hash` equals the note's current hash, then the later
@@ -4695,15 +4710,18 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   {"notebook": path} | {"tag": key}, "members": n, "membersHash": <SHA-256 hex over the sorted noteId:hash lines>,
   "gen": {model, os, prompt, at, summary} }`. A scope has at least 3 summarized notes; `at` is Unix milliseconds. Scope
   names stay inside the ciphertext. A summary is stale when the members' digest changed.
-- **Voice-note titles.** Any device sets a quick voice note's title (§11.3) from the shared format
-  `insights.voiceNoteTitle` (tokens `{date}` `YYYY-MM-DD` and `{time}` `HH.mm`, 24 hour, in the capture's time zone,
-  read from the capture's default title, which a capture writes in its device's zone, and in UTC when the default
-  title holds no `YYYY-MM-DD HH:mm`; and `{slug}`, the model's 2-6 word title checked against the transcript and cut at 60 characters), in one delta, only
-  while the title is still the capture default, decided by value: the current title equals the first title the note's
-  history holds and ends with the capture's `YYYY-MM-DD HH:mm` (a history thinned past the adoption, whose first title
-  is a rename, is never retitled). It records the stamp of its revision in its note file's `titleOp`, and trusts a
-  `titleOp` only when that stamp names the device's own revisions and the history holds it with that title. A title
-  set by another device after the adoption and before that stamp (so not causally after it), other than a default
-  title, that same automatic title or an automatic title another device recorded in its own `titleOp` for this note (two
-  devices that title one note before they sync leave the register's last writer, and neither flips it), lost only because
-  the check was local: the device writes that title again. Ordinary notes are never retitled; without a usable slug the title stays.
+- **Voice-note titles (1.3).** A quick voice note (§11.3) stores no title unless the person typed one. Any device with
+  a current `gen` slug derives a title from the shared format `insights.voiceNoteTitle` (tokens `{date}` `YYYY-MM-DD` and
+  `{time}` `HH.mm`, 24 hour, in the capture's time zone, from the recording's `captureInfo.tz` (§8.3.1), else from a
+  `YYYY-MM-DD HH:mm` ending of a default title that a note of 1.0 through 1.2 stored, else UTC; and `{slug}`, the model's
+  2-6 word title checked against the transcript and cut at 60 characters) and records it in its own note file's `title`
+  (§16.2): once per text, only while the note's own title is blank or a default stored before 1.3 (a title ending in the
+  capture's `YYYY-MM-DD HH:mm`, or "Voice note"/"Nota de voz" and the start in the capturing device's language; a title
+  of anyone's choosing is never judged a default), and only when no file already holds a `title` for the note's current
+  hash, so devices that derive at once settle on the later `at` (then the larger device id) and none rewrites to flip it.
+  Nothing is written to the note: readers show, in this order, the title the person typed; else (a voice note with a
+  blank or default stored title) the derived title; else a default made at display time from the recording's
+  `captureInfo.source` and the reader's language ("Voice note <date and time in the capture's zone>", "Watch voice note
+  …"); else "Untitled". Ordinary notes get no derived title, and without a usable slug none is derived. 1.2 devices that
+  share the vault still rename a note whose stored title is a default (their `titleOp`), and show a blank title as
+  "Untitled".

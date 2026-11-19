@@ -124,7 +124,7 @@ struct InsightsUpdate: ParsableCommand {
         if output.json { return try output.emitJSON(report) }
         let verb = dryRun ? "would " : ""
         for (label, list) in [("generated", report.generated), ("embedded", report.embedded), ("tombstoned", report.tombstoned),
-                              ("dropped stale", report.dropped), ("titled", report.titled), ("restored title", report.restoredTitles)]
+                              ("dropped stale", report.dropped), ("titled", report.titled)]
         where !list.isEmpty {
             output.info("\(dryRun ? "would be " : "")\(label): \(list.count)  " + list.map(InsightsCLI.shortId).joined(separator: " "))
         }
@@ -423,12 +423,13 @@ struct InsightsMap: ParsableCommand {
 struct InsightsTitle: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "title",
-        abstract: "Title a voice note from its insights (D14), while its title is still the capture default.",
+        abstract: "Derive a voice note's title from its insights (D14); the note's own title is never changed.",
         discussion: """
             The title follows --format, else the vault's insights.voiceNoteTitle (default {date} {time} {slug}): \
             {date} YYYY-MM-DD and {time} HH.mm in the capture's time zone, {slug} the model's 2-6 word title, \
-            fact-checked against the transcript. A title the user set is never replaced; a rename made on another \
-            device that lost to this device's title is restored. Uses a stored slug; without one, makes it with \
+            fact-checked against the transcript. The title is kept in the note's insights file, not in the note: \
+            `notes list` and the app show it while the note has no title of its own (or a default one made before \
+            1.3). A title the user set is never replaced. Uses a stored slug; without one, makes it with \
             Apple's on-device model (exit 3 where there is none).
             """)
 
@@ -460,25 +461,14 @@ struct InsightsTitle: ParsableCommand {
             }
         }
         let updater = InsightsUpdater(vault: vault, model: nil, embedder: nil, deviceState: DeviceState.defaultURL(), app: appName)
-        let decision: VoiceNoteTitleState.Decision
-        let isVoice: Bool
-        if dryRun {
-            (decision, isVoice) = try updater.proposedTitle(n, format: fmt, slug: slug)
-        } else {
-            let p = try updater.proposedTitle(n, format: fmt, slug: slug)
-            isVoice = p.isVoice
-            decision = isVoice ? try updater.writeTitle(n, format: fmt, slug: slug) : .keep
-        }
-        let out: Out
-        switch decision {
-        case .apply(let t): out = Out(note: n.id.uuidString.lowercased(), action: "apply", title: t, dryRun: dryRun)
-        case .restore(let t): out = Out(note: n.id.uuidString.lowercased(), action: "restore", title: t, dryRun: dryRun)
-        case .keep: out = Out(note: n.id.uuidString.lowercased(), action: isVoice ? "keep" : "notVoiceNote", title: nil, dryRun: dryRun)
-        }
+        let isVoice = try vault.reconstruct(try vault.loadNote(n.id)).recordings.contains { $0.captured != nil }
+        let title = isVoice ? (dryRun ? try updater.proposedTitle(n, format: fmt, slug: slug)
+                                      : try updater.writeTitle(n, format: fmt, slug: slug)) : nil
+        let id = n.id.uuidString.lowercased()
+        let out = Out(note: id, action: title != nil ? "apply" : (isVoice ? "keep" : "notVoiceNote"), title: title, dryRun: dryRun)
         if output.json { return try output.emitJSON(out) }
         switch out.action {
         case "apply": output.info("\(dryRun ? "would title" : "titled") \(InsightsCLI.shortId(out.note)): \(out.title ?? "")")
-        case "restore": output.info("\(dryRun ? "would restore" : "restored") the user's title: \(out.title ?? "")")
         case "notVoiceNote": output.info("not a voice note: titles are only for quick voice notes")
         default: output.info("the title stays (\(n.title))")
         }

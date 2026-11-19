@@ -209,9 +209,15 @@ public struct InsightsSnapshot: Sendable {
         return pool.sorted { (order($0.1.written), $0.0.rawValue) > (order($1.1.written), $1.0.rawValue) }.first.map { ($0.1, $0.0) }
     }
 
-    /// The stamps of the `titleOp`s every device recorded for `note` (their automatic voice-note titles).
-    public func automaticTitleStamps(for note: UUID) -> Set<Stamp> {
-        Set((notes[note] ?? [:]).values.compactMap { $0.titleOp.flatMap { Stamp($0.stamp) } })
+    /// The title a reader shows for a voice note whose insight text hashes to `hash` (format.md §16.2): among the files
+    /// holding a `title` for that hash, the later `at` (when it was derived, not when the file was last written), then the
+    /// larger device id, so every reader takes the same one and no device's rewrite of its file flips it; none when no file
+    /// has one for that hash (a title made for older text is not shown). A reader that has not hashed the note (a listing)
+    /// passes nil and takes the best title of any hash.
+    public func bestTitle(for note: UUID, hash: String?, now: Date = Date()) -> String? {
+        func order(_ at: Int64) -> Int64 { InsightsCodec.isOrdered(at, now: now) ? at : -1 }
+        return (notes[note] ?? [:]).compactMap { d, f in f.title.flatMap { hash == nil || $0.hash == hash ? (d, $0.at, $0.text) : nil } }
+            .sorted { (order($0.1), $0.0.rawValue) > (order($1.1), $1.0.rawValue) }.first?.2
     }
 }
 

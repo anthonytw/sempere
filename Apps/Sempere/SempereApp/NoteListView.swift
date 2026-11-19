@@ -421,6 +421,7 @@ private struct OpenOnDoubleClick: ViewModifier {
 
 private struct NoteRow: View {
     let note: NoteSummary
+    @AppModelEnvironment private var model
     /// Not downloaded from iCloud yet: nothing is known about it but its id.
     var placeholder = false
     /// The WebDAV server a partial copy downloads from (named in the placeholder); nil for iCloud.
@@ -455,7 +456,7 @@ private struct NoteRow: View {
     private var summary: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Text(note.title.isEmpty ? String(localized: "Untitled", comment: "Shown for a note without a title") : note.title)
+                Text(NoteTitle.display(model.displayTitle(note)))
                     .font(.headline)
                 if note.favorite {
                     FavoriteMark()
@@ -756,12 +757,13 @@ private struct InsightsHitRow: View {
 private struct TranscriptHitRow: View {
     let hit: TranscriptSearchHit
     let note: NoteSummary
+    @AppModelEnvironment private var model
     let query: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Text(NoteTitle.display(note.title)).font(.headline)
+                Text(NoteTitle.display(model.displayTitle(note))).font(.headline)
                 Label(hit.timeText, systemImage: "waveform")
                     .font(.caption.weight(.semibold)).monospacedDigit()
                     .padding(.horizontal, 6).padding(.vertical, 1)
@@ -807,11 +809,12 @@ extension SearchSnippetText {
 private struct SearchRow: View {
     let hit: NoteSearchHit
     let note: NoteSummary
+    @AppModelEnvironment private var model
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Text(NoteTitle.display(note.title)).font(.headline)
+                Text(NoteTitle.display(model.displayTitle(note))).font(.headline)
                 if let page = hit.page, note.pages > 1 {
                     Text("Page \(page.number)").font(.caption.weight(.semibold))
                         .padding(.horizontal, 6).padding(.vertical, 1)

@@ -29611,7 +29611,7 @@
       }
     },
     "Voice note" : {
-      "comment" : "Live Activity label while a voice note records",
+      "comment" : "Live Activity label while a voice note records, and the first words of the default title of a quick voice note before its date",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
@@ -29619,19 +29619,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nota de voz"
-          }
-        }
-      }
-    },
-    "Voice note %@" : {
-      "comment" : "Default title of a quick-capture voice note: its start date and time",
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nota de voz %@"
           }
         }
       }
@@ -29862,6 +29849,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avisos"
+          }
+        }
+      }
+    },
+    "Watch voice note" : {
+      "comment" : "First words of the default title of a voice note recorded on the Apple Watch, before its date",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz del reloj"
           }
         }
       }

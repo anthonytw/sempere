@@ -431,7 +431,7 @@ struct NoteInsightsSheet: View {
                     Text("Note Insights is off for this vault.").foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle(model.notesByID[noteID].map { NoteTitle.display($0.title) } ?? String(localized: "Note Insights"))
+            .navigationTitle(model.notesByID[noteID].map { NoteTitle.display(model.displayTitle($0)) } ?? String(localized: "Note Insights"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .id(model.insights.revision)

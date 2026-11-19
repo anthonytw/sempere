@@ -673,10 +673,17 @@ final class InsightsPipelineTests: XCTestCase {
         XCTAssertNil(VoiceNoteTitleFormat.render("{date} {slug}", date: "2026-10-07", time: "14.32", slug: nil), "no slug: the default stays")
         XCTAssertEqual(VoiceNoteTitleFormat.render("{date} {time}", date: "2026-10-07", time: "14.32", slug: nil), "2026-10-07 14.32")
         XCTAssertEqual(VoiceNoteTitleFormat.cleaned(String(repeating: "word ", count: 30)).count <= 60, true)
-        let t = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: "Voice note 2026-10-07 14:32", started: Date(timeIntervalSince1970: 0))
+        // A note of 1.0 through 1.2: the local time is in its stored default title.
+        let t = VoiceNoteTitleFormat.captureDateAndTime(origin: nil, storedTitle: "Voice note 2026-10-07 14:32", started: Date(timeIntervalSince1970: 0))
         XCTAssertEqual(t.date, "2026-10-07"); XCTAssertEqual(t.time, "14.32")
-        let u = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: "Untitled", started: Date(timeIntervalSince1970: 1_790_000_000))
+        let u = VoiceNoteTitleFormat.captureDateAndTime(origin: nil, storedTitle: "Untitled", started: Date(timeIntervalSince1970: 1_790_000_000))
         XCTAssertEqual(u.date, "2026-09-21"); XCTAssertEqual(u.time, "14.13")
+        // 1.3: the capture's own time zone, with no title at all.
+        let ny = VoiceOrigin(started: Date(timeIntervalSince1970: 1_790_000_000), tz: "America/New_York", source: "phone")
+        let n = VoiceNoteTitleFormat.captureDateAndTime(origin: ny, storedTitle: "", started: ny.started)
+        XCTAssertEqual(n.date, "2026-09-21"); XCTAssertEqual(n.time, "10.13")
+        let tokyo = VoiceOrigin(started: Date(timeIntervalSince1970: 1_790_000_000), tz: "Asia/Tokyo", source: "watch")
+        XCTAssertEqual(VoiceNoteTitleFormat.captureDateAndTime(origin: tokyo, storedTitle: nil, started: tokyo.started).time, "23.13")
     }
 
     /// 1.1's app titled quick voice notes with the start in the device's language ("Nota de voz 16 nov 2026, 14:32"), which
@@ -687,15 +694,15 @@ final class InsightsPipelineTests: XCTestCase {
         let started = Date(timeIntervalSince1970: 1_794_857_520)
         for title in ["Nota de voz 16 nov 2026, 14:32", "Voice note Nov 16, 2026 at 2:32 PM", "Nota de voz 16 nov 2026, 20:32",
                       "Voice note 17 Nov 2026 at 01:02", "Voice note 16.11.2026, 20.32"] {
-            XCTAssertTrue(VoiceNoteTitleState.isLocalizedCaptureDefault(title, started: started), title)
+            XCTAssertTrue(NoteDisplayTitle.isLocalizedCaptureDefault(title, started: started), title)
         }
         for title in ["Nota de voz 16 nov 2026, 14:35", "Lab results 2025 at 2:32", "Groceries", "Call w/ Ana, Nov 16 2026 9:32"] {
-            XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault(title, started: started), title)
+            XCTAssertFalse(NoteDisplayTitle.isLocalizedCaptureDefault(title, started: started), title)
         }
-        XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault("Voice note Nov 16, 2026 at 2:32 PM",
+        XCTAssertFalse(NoteDisplayTitle.isLocalizedCaptureDefault("Voice note Nov 16, 2026 at 2:32 PM",
                                                                      started: started.addingTimeInterval(400 * 86_400)), "another year")
-        XCTAssertFalse(VoiceNoteTitleState.isLocalizedCaptureDefault("Nota de voz 16 nov 2026, 14:32", started: nil))
-        XCTAssertTrue(VoiceNoteTitleState.isCaptureDefault("Nota de voz 2026-11-16 14:32"), "1.2's app title, in Spanish")
+        XCTAssertFalse(NoteDisplayTitle.isLocalizedCaptureDefault("Nota de voz 16 nov 2026, 14:32", started: nil))
+        XCTAssertTrue(NoteDisplayTitle.isCaptureDefault("Nota de voz 2026-11-16 14:32"), "1.2's app title, in Spanish")
     }
 
     func testEmbeddingInputCleaning() {

@@ -58,6 +58,8 @@ public struct NoteSummary: Hashable, Sendable, Codable {
     /// The last vault-wide recognition run that read the note (format.md §5.4
     /// `recognized`): "Recently Recognized" lists the recent ones.
     public var recognized: RecognitionRecord?
+    /// Where and when the note's voice recording was captured (`NoteDisplayTitle`); nil for a note that holds none.
+    public var voice: VoiceOrigin?
     /// What the note holds that a newer version wrote, and what could not be
     /// shown (format.md §7.4); nil when nothing. The vault is then read-only.
     public var newer: NewerContent?
@@ -210,6 +212,7 @@ extension NoteSummary {
         favorite = state.meta.favorite
         created = state.meta.created
         recognized = state.meta.recognized
+        voice = VoiceOrigin(state: state)
     }
 }
 

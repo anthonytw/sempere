@@ -46,6 +46,8 @@ public struct InsightsReader: Sendable {
         public var slug: String?
         public var embedded: Bool
         public var embeddingKey: String?
+        /// The title Note Insights derived for a voice note's current text (`InsightsNoteFile.title`); nil when none.
+        public var generatedTitle: String? = nil
     }
 
     /// The note's insights: `current` (its text's hash), `stale` (an older text or model), `missing` or `deleted`.
@@ -59,7 +61,8 @@ public struct InsightsReader: Sendable {
                      deviceName: best.flatMap { deviceNames[$0.device.rawValue] },
                      written: best.map { Date(timeIntervalSince1970: Double($0.written) / 1000) }, model: best?.gen.model,
                      os: best?.gen.os, prompt: best?.gen.prompt, dropped: best?.gen.dropped, slug: best?.gen.slug,
-                     embedded: emb?.hash == note.hash, embeddingKey: emb?.key.description)
+                     embedded: emb?.hash == note.hash, embeddingKey: emb?.key.description,
+                     generatedTitle: snapshot.bestTitle(for: note.id, hash: note.hash))
     }
 
     // MARK: Compatibility

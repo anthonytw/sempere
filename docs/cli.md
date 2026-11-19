@@ -1357,7 +1357,11 @@ hidden unless `--deleted`, and `--favorites` lists only favorites. Notes are in
 title order (Finder order: `Note 2` before `Note 10`) unless `--sort modified`
 or `--sort created` (newest first, notes without the date last);
 `--favorites-first` puts the favorites ahead of the other notes, each group in
-that order. These are the app's note-list rules (`NoteOrder`). `--notebook` takes a notebook path and lists the
+that order. These are the app's note-list rules (`NoteOrder`). A quick voice note stores no title (1.3), so `list` and
+`show` print what the app shows (`NoteDisplayTitle`): the title Note Insights derived for it when there is one, else
+"Voice note <date and time in the capture's zone>" ("Watch voice note …" for the Apple Watch, "Nota de voz …" under a
+Spanish locale), only while the stored title is blank or a default stored before 1.3; a title anyone typed is shown as
+it is. `--json` keeps `title` as stored and adds `displayTitle`. Order is by the stored title. `--notebook` takes a notebook path and lists the
 notes in it or below it, comparing whole segments (`A/B` holds `A/B/C` but not
 `A/Bc`), as the app's sidebar does; `--tag` ignores case. Notes are read in parallel without their stroke
 geometry, and the summaries are kept in an encrypted per-device cache
@@ -2202,7 +2206,9 @@ in `vault.json`, or `from a device no longer in this vault (…)`).
 A capture sealed by a device that is no longer in the vault never verifies:
 it is reported and kept.
 `import` adopts each capture as a note in the capture's notebook ("Inbox"),
-titled from its date: the audio and transcript as blobs, then one delta as this
+with the title the capture was given by `--title` and otherwise none (from 1.3 a voice note stores no title: `notes list`,
+`notes show` and the app show a default from its source and language, "Voice note <date>", or the title Note Insights
+derived, `insights title`; a title typed later is the note's and always wins): the audio and transcript as blobs, then one delta as this
 machine (the note's page shows the recording's card, where its transcript reads, as a recording made
 in a note does) (the recording records who captured it, `captured`, `format.md`
 §8.3.1), then the inbox files are deleted. The note, page and recording ids
@@ -2414,7 +2420,8 @@ Every command takes `--json`, the access options and `--no-cache`.
 - `update` does this device's work now (the scheduling policy of the design's §3.7): generate each eligible note
   (text unchanged for 10 minutes, `--force`: now and again) that no device has a current summary of; on a device that
   supports the pin also embed each eligible note no device has a current vector of (`--force`: again), tombstone deleted
-  notes, title voice notes whose title is still the capture default (`insights.voiceNoteTitle`), rebuild the map when
+  notes, derive titles for voice notes whose own title is blank or a default stored before 1.3 (`insights.voiceNoteTitle`;
+  kept in the note's insights file, never written to the note), rebuild the map when
   more than 10% changed since the best map of any device, or weekly (the build is deterministic: devices that rebuild
   at once write the same map; the first build pins the embedding revision, the lowest every recently seen device supports),
   write this device's record and the notebook and tag summaries that are due (each at most once a day; one whose
@@ -2446,18 +2453,19 @@ Every command takes `--json`, the access options and `--no-cache`.
 - `map` prints the map as JSON (nodes with positions and clusters, clusters with labels) or SVG. `--rebuild` (needs
   the embedder) embeds what is missing and rebuilds it on this device. `--pin REV` moves the pinned
   revision: it lists the devices left out (they become vector readers) and needs `--yes`.
-- `title` titles a voice note from its insights while its title is still the capture default (a user's title is never
-  replaced; a rename from another device that lost to this device's title is restored), with `--format` or the
-  vault's format; it uses a stored slug, else asks the model (exit 3 without one).
+- `title` derives a voice note's title from its insights while the note's own title is blank or a default stored before 1.3
+  (a user's title is never touched, and the derived title is never written into the note: it lives in this device's
+  insights file for the note, `format.md` §16.2 `title`, and `notes list`, `notes show` and the app show it in place of
+  a blank title), with `--format` or the vault's format; it uses a stored slug, else asks the model (exit 3 without one).
 - `purge` turns Note Insights off (`insights.enabled false`) and deletes every insights file here; the next sync
   deletes them on the targets, and every device deletes its own.
 
 Linux runs everything but `update`, `topic --generate` and `map --rebuild` (exit 3, "needs
 macOS 26"); `map --pin` works there (it only writes the setting). Writes are refused like every write (exit 6, 7).
 `--json`: `update` gives `{device, generated, embedded, tombstoned, dropped, titled,
-restoredTitles, removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
+removed, mapBuilt, deviceRecord, topics, pinSet, failures, notes, dryRun}`; `show` gives
 `{note, title, state, summary, keywords: [{t, w}], concepts, device, deviceName, written, model, os, prompt, dropped,
-slug, embedded, embeddingKey}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
+slug, embedded, embeddingKey, generatedTitle}`; `related` gives `{basis, compatibility, related: [{note, title, score, csls,
 keywordOverlap, why, shared, placed}]}`; `search` gives `[{note, title, field, matched, stale}]`; `topic` gives `{scope, members, summary, generated, stale, device,
 at}` (`--list`: an array of those); `status`, `map`, `title` and `purge` give their fields as named in the text output.
 

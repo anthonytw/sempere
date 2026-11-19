@@ -112,7 +112,6 @@ public struct InsightsUpdateReport: Hashable, Sendable, Codable {
     public var tombstoned: [String] = []
     public var dropped: [String] = []
     public var titled: [String] = []
-    public var restoredTitles: [String] = []
     public var removed: [String] = []
     public var mapBuilt = false
     public var deviceRecord = false
@@ -186,13 +185,6 @@ public enum InsightsUpdateError: Error, Hashable, Sendable, CustomStringConverti
     }
 }
 
-/// Writes one delta to `note` (a voice note's rename, D14) whose ops `build` decides from the note as it is on disk at
-/// the moment of writing (nil: nothing to write, a rename in between won), and returns the revision written, or nil.
-/// The app's: through its model's `DeviceClock` and edit gate (CLAUDE.md: never open a second clock on a state file a
-/// `DeviceClock` holds); without one the updater writes with `Vault.apply` and the machine's `DeviceState` (the CLI).
-public typealias InsightsTitleWriter = @Sendable (_ note: UUID, _ build: @escaping @Sendable () throws -> [Op]?, _ now: Date)
-    async throws -> RevisionName?
-
 public struct InsightsUpdater: Sendable {
     public var vault: Vault
     public var model: (any ModelProvider)?
@@ -200,22 +192,9 @@ public struct InsightsUpdater: Sendable {
     /// The device state file voice-note titles are written with (`Vault.apply`).
     public var deviceState: URL
     public var app: String
-    /// Where voice-note titles are written (nil: `Vault.apply` with `deviceState`).
-    public var titleWriter: InsightsTitleWriter?
-    /// The device id this device's revisions carry, when the caller knows it (the app's clock); nil: read from
-    /// `deviceState`.
-    public var writerDevice: DeviceID?
 
     public init(vault: Vault, model: (any ModelProvider)?, embedder: (any EmbeddingProvider)?, deviceState: URL, app: String) {
         self.vault = vault; self.model = model; self.embedder = embedder; self.deviceState = deviceState; self.app = app
-    }
-
-    /// The device id this device's revisions carry (its state file's), which a `titleOp` of its own names; nil before
-    /// the state file exists (then no `titleOp` is this device's).
-    var revisionWriter: DeviceID? {
-        if let writerDevice { return writerDevice }
-        guard FileManager.default.fileExists(atPath: deviceState.path) else { return nil }
-        return (try? DeviceState.loadOrCreate(at: deviceState))?.device
     }
 
     public func run(_ o: InsightsUpdateOptions, notes inputs: [InsightsNoteInput]) async throws -> InsightsUpdateReport {
@@ -353,18 +332,14 @@ public struct InsightsUpdater: Sendable {
             report.cancelled = true
             return report
         }
-        // Voice-note titles (D14): from any device's current `gen` slug, while the title is the capture default.
-        // Any device may set a title (D21), once per note: only while the title is still the capture default, from the best
-        // `gen`'s slug, so devices that race write the same title (format.md §16.8, D14); `insights title` stays manual.
+        // Voice-note titles (D14, 1.3): derived from any device's current `gen` slug into this device's own note file, never
+        // into the note, and only while the note's own title is blank or a default (`NoteDisplayTitle`), so a user's title
+        // is never touched. Devices that race write the same text (format.md §16.8); `insights title` is the manual form.
         if o.titles, !o.embeddingsOnly {
             for note in selected where !note.deleted && !note.transcript.isEmpty && !o.openNotes.contains(note.id) {
                 if Task.isCancelled { report.cancelled = true; return report }
-                guard let outcome = try await applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle,
-                                                   dryRun: o.dryRun, now: o.now) else { continue }
-                switch outcome {
-                case .apply: report.titled.append(note.id.uuidString.lowercased())
-                case .restore: report.restoredTitles.append(note.id.uuidString.lowercased())
-                case .keep: break
+                if try applyTitle(note, snapshot: snapshot, me: me, format: settings.voiceNoteTitle, dryRun: o.dryRun, now: o.now) {
+                    report.titled.append(note.id.uuidString.lowercased())
                 }
             }
             if !o.dryRun { snapshot = store.snapshot() }
@@ -419,107 +394,55 @@ public struct InsightsUpdater: Sendable {
 
     // MARK: Titles
 
-    enum TitleOutcome { case apply, restore, keep }
+    /// The title Note Insights would derive for a voice note now (nil: it keeps none): the rendered `format` for the current
+    /// `gen`'s slug and the capture's date and time, only while the note's own title is blank or a default. `slug` overrides
+    /// the best current `gen`'s (the manual command).
+    func derivedTitle(_ note: InsightsNoteInput, snapshot: InsightsSnapshot, format: String, slug override: String? = nil,
+                      now: Date) throws -> (title: String, hash: String)? {
+        let loaded = try vault.loadNote(note.id)
+        let state = try vault.reconstruct(loaded)
+        guard let origin = VoiceOrigin(state: state), NoteDisplayTitle.isStoredDefault(state.meta.title, origin: origin) else {
+            return nil
+        }
+        let slug = override ?? snapshot.bestGen(for: note.id, hash: note.hash).flatMap { $0.current ? $0.gen.slug : nil }
+        let local = VoiceNoteTitleFormat.captureDateAndTime(origin: origin, storedTitle: state.meta.title, started: origin.started)
+        guard let title = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug) else { return nil }
+        return (title, note.hash)
+    }
 
-    /// Applies (or restores) a voice note's title; nil when there is nothing to do.
+    /// Records this device's derived title of a voice note in its own note file; false when there is nothing to do.
     func applyTitle(_ note: InsightsNoteInput, snapshot: InsightsSnapshot, me: DeviceID, format: String, dryRun: Bool,
-                    now: Date) async throws -> TitleOutcome? {
-        let loaded = try vault.loadNote(note.id)
-        let state = try vault.reconstruct(loaded)
-        let titles = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
-        guard titles.isVoiceNote else { return nil }
-        let ownFile = snapshot.notes[note.id]?[me]
-        let best = snapshot.bestGen(for: note.id, hash: note.hash)
-        let slug = best.flatMap { $0.current ? $0.gen.slug : nil }
-        let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
-                                                            started: titles.started ?? note.modified ?? now)
-        let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        let writer = revisionWriter
-        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: writer,
-                                     automatic: snapshot.automaticTitleStamps(for: note.id))
-        switch decision {
-        case .keep: return nil
-        case .apply(let title):
-            guard !dryRun else { return .apply }
-            guard let stamp = try await rename(note.id, decision: decision, applied: ownFile?.titleOp, proposed: proposed,
-                                               writer: writer, automatic: snapshot.automaticTitleStamps(for: note.id),
-                                               now: now) else { return nil }
-            var f = ownFile ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
-            f.titleOp = .init(stamp: stamp.description, title: title)
-            try InsightsStore(vault: vault).write(.note(f), now: now)
-            return .apply
-        case .restore:
-            guard !dryRun else { return .restore }
-            guard try await rename(note.id, decision: decision, applied: ownFile?.titleOp, proposed: proposed, writer: writer,
-                                   automatic: snapshot.automaticTitleStamps(for: note.id), now: now) != nil else { return nil }
-            return .restore
-        }
+                    now: Date) throws -> Bool {
+        // Once per text: a title any device derived for this text stands, so devices that race (their slugs differ) leave
+        // one winner by the order of `written` and device id, and none rewrites its own to flip it.
+        guard snapshot.bestTitle(for: note.id, hash: note.hash) == nil,
+              let derived = try derivedTitle(note, snapshot: snapshot, format: format, now: now) else { return false }
+        guard !dryRun else { return true }
+        try writeTitle(note, derived, snapshot: snapshot, me: me, now: now)
+        return true
     }
 
-    /// One rename delta through `titleWriter`, else `Vault.apply` with `deviceState`; the stamp of the revision written,
-    /// nil when the note as it is on disk at the moment of writing no longer gives `decision` (a rename in between wins).
-    func rename(_ id: UUID, decision: VoiceNoteTitleState.Decision, applied: InsightsNoteFile.TitleOp?, proposed: String?,
-                writer: DeviceID?, automatic: Set<Stamp> = [], now: Date) async throws -> Stamp? {
-        let vault = self.vault
-        let build: @Sendable () throws -> [Op]? = {
-            let loaded = try vault.loadNote(id)
-            let state = try vault.reconstruct(loaded)
-            let again = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
-                .decide(applied: applied, proposed: proposed, writer: writer, automatic: automatic)
-            switch (again, decision) {
-            case (.apply(let a), .apply(let b)) where a == b: return NoteOps.rename(to: a, state: state)
-            case (.restore(let a), .restore(let b)) where a == b: return NoteOps.rename(to: a, state: state)
-            default: return nil
-            }
-        }
-        if let titleWriter {
-            guard let r = try await titleWriter(id, build, now) else { return nil }
-            return Stamp(hlc: r.hlc, device: r.device)
-        }
-        guard let ops = try build() else { return nil }
-        let rev = try vault.apply(ops, to: id, deviceState: deviceState, app: app, wall: now)
-        return Stamp(hlc: rev.hlc, device: rev.device)
+    func writeTitle(_ note: InsightsNoteInput, _ derived: (title: String, hash: String), snapshot: InsightsSnapshot, me: DeviceID,
+                    now: Date) throws {
+        var f = snapshot.notes[note.id]?[me] ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
+        f.title = .init(hash: derived.hash, text: derived.title, at: Int64(now.timeIntervalSince1970 * 1000))
+        try InsightsStore(vault: vault).write(.note(f), now: now)
     }
 
-    /// The title `insights title` would give `note` (no write), nil when it keeps its title.
-    public func proposedTitle(_ note: InsightsNoteInput, format: String, slug: String?) throws -> (decision: VoiceNoteTitleState.Decision, isVoice: Bool) {
-        let loaded = try vault.loadNote(note.id)
-        let state = try vault.reconstruct(loaded)
-        let titles = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
-        let me = vault.writerDevice
-        let snapshot = InsightsStore(vault: vault).snapshot()
-        let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
-                                                            started: titles.started ?? note.modified ?? Date())
-        let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        return (titles.decide(applied: me.flatMap { snapshot.notes[note.id]?[$0]?.titleOp }, proposed: proposed, writer: revisionWriter,
-                              automatic: snapshot.automaticTitleStamps(for: note.id)),
-                titles.isVoiceNote)
+    /// The title `insights title` would derive for `note` (no write); nil when it keeps its title or has no voice recording.
+    public func proposedTitle(_ note: InsightsNoteInput, format: String, slug: String?) throws -> String? {
+        try derivedTitle(note, snapshot: InsightsStore(vault: vault).snapshot(), format: format, slug: slug, now: Date())?.title
     }
 
-    /// Writes the title of `insights title` (D14) with `format` and `slug`; returns the decision applied.
-    public func writeTitle(_ note: InsightsNoteInput, format: String, slug: String?, now: Date = Date()) throws -> VoiceNoteTitleState.Decision {
-        let me = try InsightsStore(vault: vault).writer()
-        let snapshot = InsightsStore(vault: vault).snapshot()
-        let loaded = try vault.loadNote(note.id)
-        let state = try vault.reconstruct(loaded)
-        let titles = VoiceNoteTitleState(revisions: loaded.revisions, state: state)
-        let local = VoiceNoteTitleFormat.captureDateAndTime(defaultTitle: titles.defaultTitle?.title,
-                                                            started: titles.started ?? note.modified ?? now)
-        let proposed = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug)
-        let ownFile = snapshot.notes[note.id]?[me]
-        let decision = titles.decide(applied: ownFile?.titleOp, proposed: proposed, writer: revisionWriter,
-                                     automatic: snapshot.automaticTitleStamps(for: note.id))
-        switch decision {
-        case .keep: break
-        case .apply(let title):
-            let rev = try vault.apply(NoteOps.rename(to: title, state: state), to: note.id, deviceState: deviceState, app: app, wall: now)
-            var f = ownFile ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
-            f.titleOp = .init(stamp: Stamp(hlc: rev.hlc, device: rev.device).description, title: title)
-            try InsightsStore(vault: vault).write(.note(f), now: now)
-        case .restore(let title):
-            _ = try vault.apply(NoteOps.rename(to: title, state: state), to: note.id, deviceState: deviceState, app: app, wall: now)
-        }
-        return decision
+    /// Records the title of `insights title` (D14) with `format` and `slug` in this device's note file; returns it, nil
+    /// when the note keeps its title.
+    public func writeTitle(_ note: InsightsNoteInput, format: String, slug: String?, now: Date = Date()) throws -> String? {
+        let store = InsightsStore(vault: vault)
+        let me = try store.writer()
+        let snapshot = store.snapshot()
+        guard let derived = try derivedTitle(note, snapshot: snapshot, format: format, slug: slug, now: now) else { return nil }
+        try writeTitle(note, derived, snapshot: snapshot, me: me, now: now)
+        return derived.title
     }
 
     // MARK: Map, records, topics

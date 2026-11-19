@@ -14,7 +14,11 @@ struct NotesCommand: ParsableCommand {
 
 struct NoteJSON: Encodable {
     var id: String
+    /// The title stored in the note: empty for a voice note nobody titled (1.3 onward).
     var title: String
+    /// What a list shows: `title`, else for a voice note the title Note Insights derived or a default from its source and
+    /// the reader's language (`NoteDisplayTitle`); empty only for a note that is no voice note and has no title.
+    var displayTitle: String
     var tags: [String]
     var notebook: String?
     var deleted: Bool
@@ -41,7 +45,8 @@ struct NoteJSON: Encodable {
     /// What a newer version wrote and what could not be shown (format.md §7.4).
     var newer: NewerContent?
 
-    init(_ s: NoteSummary, vaultReadOnly: Bool = false) {
+    init(_ s: NoteSummary, vaultReadOnly: Bool = false, generatedTitle: String? = nil) {
+        displayTitle = s.displayTitle(generated: generatedTitle)
         readOnly = vaultReadOnly || s.newer != nil
         newer = s.newer
         id = s.id.uuidString.lowercased(); title = s.title; tags = s.tags; notebook = s.notebook
@@ -50,6 +55,20 @@ struct NoteJSON: Encodable {
         attachments = s.attachments.names; created = s.created
         modified = s.modified; problem = s.problem
         lang = s.lang; markersBehindText = s.markersBehindText; favorite = s.favorite; recognized = s.recognized
+    }
+}
+
+/// The titles Note Insights derived, for the voice notes a listing shows without a title of their own.
+enum NoteTitles {
+    /// Reads the insights store only when some note needs it (a voice note whose title is blank or a default); the best title
+    /// of any hash, since a listing has not hashed the notes.
+    static func generated(for notes: [NoteSummary], in vault: Vault) -> [UUID: String] {
+        let wanted = notes.filter { !$0.deleted && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice) && $0.voice != nil }
+        guard !wanted.isEmpty, FileManager.default.fileExists(atPath: vault.insightsURL.path) else { return [:] }
+        let snapshot = InsightsStore(vault: vault).snapshot()
+        var out: [UUID: String] = [:]
+        for n in wanted { if let t = snapshot.bestTitle(for: n.id, hash: nil) { out[n.id] = t } }
+        return out
     }
 }
 
@@ -93,11 +112,13 @@ struct NotesList: ParsableCommand {
             (deleted || !n.deleted) && (!favorites || n.favorite) && (tag.map { t in n.tags.contains { NoteOps.tagKey($0) == NoteOps.tagKey(t) } } ?? true) && (notebook.map { NotebookPath.name(n.notebook, isWithin: $0) } ?? true)
         })
         let readOnly = vault.isReadOnly
-        if output.json { try output.emitJSON(notes.map { NoteJSON($0, vaultReadOnly: readOnly) }); return }
+        let generated = NoteTitles.generated(for: notes, in: vault)
+        if output.json { try output.emitJSON(notes.map { NoteJSON($0, vaultReadOnly: readOnly, generatedTitle: generated[$0.id]) }); return }
         if notes.isEmpty { output.info("No notes."); return }
         var rows = output.quiet ? [] : [["ID", "TITLE", "PAGES", "STROKES", "MODIFIED"]]
         for n in notes {
-            let title = (n.title.isEmpty ? "(untitled)" : n.title) + (n.deleted ? " [deleted]" : "") + (n.favorite ? " [favorite]" : "")
+            let shown = n.displayTitle(generated: generated[n.id])
+            let title = (shown.isEmpty ? "(untitled)" : shown) + (n.deleted ? " [deleted]" : "") + (n.favorite ? " [favorite]" : "")
                 + (n.problem != nil ? " [!]" : "") + (n.newer != nil ? " [newer]" : "")
             rows.append([n.id.uuidString.lowercased(), title, String(n.pages), String(n.strokes), Format.local(n.modified)])
         }
@@ -132,6 +153,7 @@ struct NotesShow: ParsableCommand {
         let state = try? NoteReducer.reconstruct(loaded.revisions)
         let placed = AttachmentListing.items(state)
         let recordings = AttachmentListing.recordings(state)
+        let shownGenerated = NoteTitles.generated(for: [summary], in: vault)[summary.id]
         if output.json {
             struct Rev: Encodable { var name: String; var kind: String; var wall: Date?; var app: String?; var error: String? }
             struct Out: Encodable {
@@ -139,7 +161,7 @@ struct NotesShow: ParsableCommand {
                 var readOnly: Bool; var readOnlyReasons: [String]; var revisions: [Rev]
             }
             let reasons = vault.readOnlyReasons
-            try output.emitJSON(Out(note: NoteJSON(summary, vaultReadOnly: !reasons.isEmpty), items: placed,
+            try output.emitJSON(Out(note: NoteJSON(summary, vaultReadOnly: !reasons.isEmpty, generatedTitle: shownGenerated), items: placed,
                                     recordings: recordings, readOnly: !reasons.isEmpty,
                                     readOnlyReasons: reasons.descriptions, revisions: history.map {
                 Rev(name: $0.name.filename, kind: $0.name.kind.rawValue, wall: $0.wall, app: $0.app,
@@ -148,7 +170,8 @@ struct NotesShow: ParsableCommand {
             return
         }
         print("Id:       \(summary.id.uuidString.lowercased())")
-        print("Title:    \(summary.title.isEmpty ? "(untitled)" : summary.title)")
+        let shownTitle = summary.displayTitle(generated: shownGenerated)
+        print("Title:    \(shownTitle.isEmpty ? "(untitled)" : shownTitle)")
         print("Tags:     \(summary.tags.isEmpty ? "-" : summary.tags.joined(separator: ", "))")
         print("Notebook: \(summary.notebook ?? "-")")
         print("Deleted:  \(summary.deleted ? "yes" : "no")")

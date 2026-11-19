@@ -1,14 +1,11 @@
 import Foundation
 
-// MARK: - Voice-note titles (docs/design/1.2-note-insights.md D14; format.md §16.2 `titleOp`)
+// MARK: - Voice-note titles (docs/design/1.2-note-insights.md D14; format.md §16.2 `title`, §16.8)
 //
-// After adoption, once a voice note's transcript is summarized, any device with a summary sets its title from the shared format
-// `insights.voiceNoteTitle`, only while the title is still the capture default: the title register has not been set
-// since adoption (or was last set by this device's own automatic title). A user's rename always wins and is never
-// overwritten. The check is local, so a rename made on another device that has not synced yet must not lose: the device
-// that titled the note records the stamp of the revision it wrote (`titleOp`), and when it later sees a title set by another device
-// after the adoption and before that stamp (so not causally after it) while its own title still wins, it writes the
-// user's value again.
+// Once a voice note's transcript is summarized, any device with a summary derives a TITLE for it from the shared format
+// `insights.voiceNoteTitle` and records it in its own insights note file (`InsightsNoteFile.title`, bound to the note's
+// insight-text hash). Since 1.3 nothing writes the note's own title: the app and the CLI show the derived title while the
+// stored title is blank or a default (`NoteDisplayTitle`), and a title the user entered always wins and is never touched.
 
 /// The title format of `insights.voiceNoteTitle`: text with the tokens `{date}` (`YYYY-MM-DD`), `{time}` (`HH.mm`,
 /// 24 hour), both in the capture's time zone, and `{slug}` (a 2-6 word title from the model, fact-checked, at most 60
@@ -67,13 +64,18 @@ public enum VoiceNoteTitleFormat {
         return out.trimmingCharacters(in: CharacterSet(charactersIn: " .,;:-"))
     }
 
-    /// The capture's local date and time from its default title (`… YYYY-MM-DD HH:mm`, as `CaptureWriter.defaultTitle`
-    /// writes it in the capturing device's time zone), else from `started` in UTC. The capture records no time zone,
-    /// so the default title is the one place that holds its local time (PR 1 notes in the design).
-    public static func captureDateAndTime(defaultTitle: String?, started: Date) -> (date: String, time: String) {
-        if let t = defaultTitle, let m = localStamp(in: t) { return m }
+    /// The capture's local date and time: from the capture's own time zone when its recording records one
+    /// (`CaptureInfo.tz`, 1.3 onward), else from a default title a note of 1.0 through 1.2 stored (`… YYYY-MM-DD HH:mm`, as
+    /// `CaptureWriter.defaultTitle` wrote it in the capturing device's zone), else from `started` in UTC.
+    public static func captureDateAndTime(origin: VoiceOrigin?, storedTitle: String?, started: Date) -> (date: String, time: String) {
         var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC") ?? cal.timeZone
+        if let tz = origin?.tz.flatMap(TimeZone.init(identifier:)) {
+            cal.timeZone = tz
+        } else if let t = storedTitle, let m = localStamp(in: t) {
+            return m
+        } else {
+            cal.timeZone = TimeZone(identifier: "UTC") ?? cal.timeZone
+        }
         let c = cal.dateComponents([.year, .month, .day, .hour, .minute], from: started)
         return (String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0),
                 String(format: "%02d.%02d", c.hour ?? 0, c.minute ?? 0))
@@ -98,136 +100,5 @@ public enum VoiceNoteTitleFormat {
             i -= 1
         }
         return nil
-    }
-}
-
-/// What a voice note's title history says (D14), from its revisions.
-public struct VoiceNoteTitleState: Hashable, Sendable {
-    /// Every title set, oldest first: deltas' `setMeta(.title)` ops and snapshots' title registers.
-    public var sets: [(stamp: Stamp, title: String)]
-    /// The register's winner.
-    public var current: (stamp: Stamp, title: String)?
-    /// The note is a quick voice note: one of its recordings was captured (format.md §8.3.1, §11.3).
-    public var isVoiceNote: Bool
-    /// The capture's recording start, for the title's date when the default title has none.
-    public var started: Date?
-
-    public static func == (a: Self, b: Self) -> Bool {
-        a.sets.map(\.stamp) == b.sets.map(\.stamp) && a.sets.map(\.title) == b.sets.map(\.title)
-            && a.current?.stamp == b.current?.stamp && a.isVoiceNote == b.isVoiceNote && a.started == b.started
-    }
-    public func hash(into h: inout Hasher) { h.combine(sets.map(\.stamp)); h.combine(isVoiceNote) }
-
-    /// The state of a note from its revisions and its reconstructed state.
-    public init(revisions: [Revision], state: NoteState) {
-        var sets: [(Stamp, String)] = []
-        var seen = Set<Stamp>()
-        for r in revisions {
-            let stamp = Stamp(hlc: r.hlc, device: r.device)
-            switch r.body {
-            case .delta(let ops):
-                for op in ops { if case .setMeta(.title(let t)) = op, seen.insert(stamp).inserted { sets.append((stamp, t)) } }
-            case .snapshot(_, let s):
-                if let c = s.clocks?["title"].flatMap(Stamp.init), c != .zero, seen.insert(c).inserted { sets.append((c, s.meta.title)) }
-            }
-        }
-        sets.sort { $0.0 < $1.0 }
-        self.sets = sets.map { (stamp: $0.0, title: $0.1) }
-        current = self.sets.last
-        let captured = state.recordings.first { $0.captured != nil }
-        isVoiceNote = captured != nil
-        started = captured?.started
-    }
-
-    /// The capture's default title: the first title the note got (adoption sets it).
-    public var defaultTitle: (stamp: Stamp, title: String)? { sets.first }
-
-    /// What to do with the title of this voice note, given the title this device applied before (`applied`, from its
-    /// sidecar's `titleOp`) and the title it would write now (`proposed`).
-    public enum Decision: Hashable, Sendable {
-        /// Write `proposed` (the title is still the capture default).
-        case apply(String)
-        /// A rename from another device lost to this device's automatic title: write the user's title again.
-        case restore(String)
-        /// Leave the title alone (a user's title, already applied, or not a voice note).
-        case keep
-    }
-
-    /// True when `title` has the shape of a capture's default title: it ends with the capture's local
-    /// `YYYY-MM-DD HH:mm` (`CaptureWriter.defaultTitle`, `WatchRecorder.title`, the app's localized form).
-    public static func isCaptureDefault(_ title: String) -> Bool {
-        let scalars = Array(title.trimmingCharacters(in: .whitespaces).unicodeScalars)
-        guard scalars.count >= 16 else { return false }
-        var tail = String.UnicodeScalarView()
-        tail.append(contentsOf: scalars.suffix(16))
-        return VoiceNoteTitleFormat.localStamp(in: String(tail)) != nil
-    }
-
-    /// The note's title is still the capture default, decided by VALUE (review of #50, H1), never by the position of its
-    /// stamp: it equals the first title the history holds and has the default's shape. Thinning can drop the adoption
-    /// delta (the first title is then a user's rename, which has no such shape), and two devices may adopt one capture
-    /// (two sets of the same default title).
-    public var isStillDefault: Bool {
-        guard let first = defaultTitle, let current else { return false }
-        return current.title == first.title
-            && (Self.isCaptureDefault(current.title) || Self.isLocalizedCaptureDefault(current.title, started: started))
-    }
-
-    /// True when `title` has the shape of the default title the app gave quick voice notes before 1.2: "Voice note" (in a
-    /// language of the app) and the
-    /// start in the capturing device's language (`started.formatted(date: .abbreviated, time: .shortened)`, e.g.
-    /// "Nota de voz 16 nov 2026, 14:32"), which ends in no `YYYY-MM-DD HH:mm`. The capture keeps no time zone, so it is
-    /// judged by what every such form holds: the start's year (any zone) and its minute after a `:` or `.`, near the end.
-    /// "Voice note" in each language the app was localized in before 1.2, lowercased.
-    static let localizedPrefixes = ["voice note ", "nota de voz "]
-
-    public static func isLocalizedCaptureDefault(_ title: String, started: Date?) -> Bool {
-        guard let started else { return false }
-        let t = title.trimmingCharacters(in: .whitespaces)
-        // Only the words the app wrote (its localizations: English, Spanish), so a rename that happens to hold the year
-        // and minute (thinning can make a user's rename the first title, `isStillDefault`) is never taken for one.
-        guard t.count <= 80, localizedPrefixes.contains(where: { t.lowercased().hasPrefix($0) }) else { return false }
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC") ?? cal.timeZone
-        // Every zone is within 14 hours of UTC; most zones' offsets are whole or half hours, a few are 45 minutes.
-        let years = Set([-14.0, 0, 14].map { cal.component(.year, from: started.addingTimeInterval($0 * 3600)) })
-        guard years.contains(where: { t.contains(String($0)) }) else { return false }
-        let minute = cal.component(.minute, from: started)
-        let minutes = Set([minute, (minute + 30) % 60, (minute + 15) % 60, (minute + 45) % 60])
-        let tail = String(t.suffix(24))
-        return minutes.contains { m in
-            let mm = String(format: "%02d", m)
-            return tail.contains(":" + mm) || tail.contains("." + mm) || tail.contains("h" + mm)
-        }
-    }
-
-    /// `applied` as this device's own title op: nil unless its stamp names `writer` (the device id this device's
-    /// revisions carry) and the history holds that stamp with that title (review of #50, M2: a copy of the file could
-    /// have been planted).
-    public func ownTitleOp(_ applied: InsightsNoteFile.TitleOp?, writer: DeviceID?) -> Stamp? {
-        guard let applied, let writer, let s = Stamp(applied.stamp), s.device == writer,
-              sets.contains(where: { $0.stamp == s && $0.title == applied.title }) else { return nil }
-        return s
-    }
-
-    /// - Parameter writer: the device id this device's revisions carry (its state file's), which `titleOp` must name.
-    /// - Parameter automatic: the stamps of every device's recorded `titleOp` of this note (`InsightsSnapshot.automaticTitleStamps`):
-    ///   a title set by another device's automatic title (two devices titled one note before they synced, D21) is never
-    ///   taken for a user's rename, so the last writer's title stays and no device flips it.
-    public func decide(applied: InsightsNoteFile.TitleOp?, proposed: String?, writer: DeviceID?, automatic: Set<Stamp> = []) -> Decision {
-        guard isVoiceNote, let first = defaultTitle, let current else { return .keep }
-        if let mine = ownTitleOp(applied, writer: writer), current.stamp == mine {
-            // This device's own title wins: a title another device set after the adoption and before it was not seen
-            // when it was written (not causally after it), so the user's value comes back. Another adoption's default
-            // title, or an automatic title equal to this one, is never taken for a rename.
-            if let lost = sets.last(where: { $0.stamp > first.stamp && $0.stamp < mine && $0.stamp.device != mine.device
-                                             && !Self.isCaptureDefault($0.title) && $0.title != applied?.title
-                                             && !automatic.contains($0.stamp) }) {
-                return .restore(lost.title)
-            }
-            return .keep
-        }
-        guard isStillDefault, let proposed, proposed != current.title else { return .keep }
-        return .apply(proposed)
     }
 }
