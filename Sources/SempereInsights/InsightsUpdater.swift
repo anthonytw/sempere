@@ -48,6 +48,24 @@ public enum InsightsNotes {
         }
     }
 
+    /// The title Note Insights derived for each of `notes` that has one for its current text, in the insight language and
+    /// title format now set (`InsightsSnapshot.bestTitle`, format.md §16.2, §16.8): what a list shows for a voice note whose
+    /// stored title is blank or a default (`NoteDisplayTitle.resolve`). Reads the store only when some note needs it (not
+    /// deleted, a voice note, such a title). `PublishedSummaries.DerivedTitles` for the published summaries' `shown`.
+    public static func derivedTitles(_ vault: Vault, for notes: [NoteSummary]) -> [UUID: String] {
+        let wanted = notes.filter { !$0.deleted && $0.voice != nil && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice) }
+        guard !wanted.isEmpty, FileManager.default.fileExists(atPath: vault.insightsURL.path) else { return [:] }
+        let snapshot = InsightsStore(vault: vault).snapshot()
+        let settings = InsightsSettings.read(vault)
+        var out: [UUID: String] = [:]
+        for n in inputs(vault, summaries: wanted) {
+            if let t = snapshot.bestTitle(for: n.id, hash: n.hash, language: settings.language, format: settings.voiceNoteTitle) {
+                out[n.id] = t
+            }
+        }
+        return out
+    }
+
     /// The vault's recognized-word frequencies (the typo merge's corpus, step 4).
     public static func merger(_ notes: [InsightsNoteInput]) -> TypoMerger { TypoMerger(texts: notes.map(\.text)) }
 

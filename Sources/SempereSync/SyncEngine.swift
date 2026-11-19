@@ -69,6 +69,10 @@ public struct SyncOptions: Sendable {
     /// Where notes are summarized for that file through the summary cache
     /// (format.md §10); nil reads every changed note.
     public var summaryCacheDirectory: URL?
+    /// The titles Note Insights derived, for the `shown` titles of the server's `sempere-summaries.sealed` (format.md
+    /// §12.2, `InsightsNotes.derivedTitles`); nil publishes none. With it a change of the vault's insights or settings
+    /// files (`PublishedSummaries.derivedTitlesStamp`) counts as a change of the listing (§12.4).
+    public var derivedTitles: PublishedSummaries.DerivedTitles?
 
     /// Blob downloads are made of pieces of this size (`Range` requests on
     /// WebDAV), so memory stays bounded by one of them however fast the server is.

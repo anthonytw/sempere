@@ -297,6 +297,100 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertThrowsError(try PublishedSummaries.decode(Data(json.utf8), vaultId: UUID()))
     }
 
+    /// `voice` and `shown` (format.md §12.2, 1.3): optional, each dropped alone when malformed; `shown` only with `voice`.
+    func testVoiceAndShownRoundTripAndAreDroppedAlone() throws {
+        let vid = UUID()
+        let good = #""revisions":["17596320000000000-a1b2c3d4-1.delta.age"],"title":"","tags":[],"favorite":false,"deleted":false,"created":"2026-10-04T16:20:00.000Z","modified":"2026-10-04T16:20:00.000Z","pages":1,"pageTexts":[]"#
+        let voice = #""voice":{"started":"2026-10-07T14:32:00.000Z","tz":"America/New_York","source":"watch"}"#
+        let cases: [(String, Bool, String?)] = [   // (members, voice kept, shown)
+            (#"\#(voice),"shown":"Standup notes""#, true, "Standup notes"),
+            (#""voice":{"started":"x"},"shown":"Standup""#, false, nil),
+            (#""shown":"Standup""#, false, nil),
+            (#"\#(voice),"shown":5"#, true, nil),
+            (#"\#(voice),"shown":"   ""#, true, nil),
+            (#"\#(voice),"shown":"\#(String(repeating: "x", count: PublishedSummaries.maxShownLength + 1))""#, true, nil),
+            (#""voice":7"#, false, nil),
+            ("", false, nil),
+        ]
+        var notes: [String] = []
+        for (i, c) in cases.enumerated() {
+            notes.append(#""33333333-3333-4333-8333-33333333333\#(i)":{\#(good)\#(c.0.isEmpty ? "" : ",")\#(c.0)}"#)
+        }
+        let json = #"{"format":"sempere-summaries/1","vaultId":"\#(vid.uuidString.lowercased())","notes":{\#(notes.joined(separator: ","))}}"#
+        let entries = try PublishedSummaries.decode(Data(json.utf8), vaultId: vid)
+        XCTAssertEqual(entries.count, cases.count, "a malformed `voice` or `shown` never drops the entry")
+        for (i, c) in cases.enumerated() {
+            let e = try XCTUnwrap(entries[UUID(uuidString: "33333333-3333-4333-8333-33333333333\(i)")!])
+            XCTAssertEqual(e.voice != nil, c.1, "case \(i)")
+            XCTAssertEqual(e.shown, c.2, "case \(i)")
+        }
+        let first = try XCTUnwrap(entries[UUID(uuidString: "33333333-3333-4333-8333-333333333330")!])
+        XCTAssertEqual(first.voice, VoiceOrigin(started: try XCTUnwrap(RFC3339.parse("2026-10-07T14:32:00.000Z")),
+                                                tz: "America/New_York", source: "watch"))
+        // A zone longer than a capture's (64 characters) reads as absent; the rest of `voice` stays.
+        let longZone = json.replacingOccurrences(of: "America/New_York", with: String(repeating: "z", count: 65))
+        let zoned = try PublishedSummaries.decode(Data(longZone.utf8), vaultId: vid)
+        XCTAssertNil(zoned[UUID(uuidString: "33333333-3333-4333-8333-333333333330")!]?.voice?.tz)
+        XCTAssertNotNil(zoned[UUID(uuidString: "33333333-3333-4333-8333-333333333330")!]?.voice)
+
+        // Encoding: both members round-trip; `shown` without `voice` is never written; an entry without them has neither key.
+        var e = first
+        let id = UUID()
+        let back = try PublishedSummaries.decode(try PublishedSummaries.encode([id: e], vaultId: vid), vaultId: vid)
+        XCTAssertEqual(back[id], e)
+        e.voice = nil
+        let plain = try PublishedSummaries.encode([id: e], vaultId: vid)
+        XCTAssertNil(String(decoding: plain, as: UTF8.self).range(of: "\"shown\""))
+        XCTAssertNil(String(decoding: plain, as: UTF8.self).range(of: "\"voice\""))
+    }
+
+    /// A blank-titled voice note: its entry carries `voice`, and with derived titles `shown`, looked up again on every write
+    /// (a title derived later changes no revision); an entry an earlier writer made of it (no `voice`) is made again.
+    func testAVoiceNotesEntryCarriesItsOriginAndItsDerivedTitle() throws {
+        let vault = try makeVault(pqIdentity())
+        let blank = UUID(), named = UUID()
+        let started = try XCTUnwrap(RFC3339.parse("2026-10-07T14:32:00.000Z"))
+        for (note, title) in [(blank, ""), (named, "Standup")] {
+            let blob = try vault.writeBlob(note: note, Data("synthetic audio".utf8), type: "audio/mp4")
+            var ops = NoteOps.newNote(title: title, pageId: UUID())
+            ops.append(.addRecording(Recording(blob: blob, started: started,
+                                               captured: CaptureAttribution(device: "aaaaaaaa", recipient: String(repeating: "ab", count: 32)),
+                                               captureInfo: CaptureInfo(tz: "America/New_York", source: "phone"))))
+            try vault.write(rev(note, devA, 1, 0, ops))
+        }
+        // Without derived titles (or with no insights folder): `voice`, no `shown`.
+        let (plain, _) = try vault.publishedSummaryEntries()
+        XCTAssertEqual(plain[blank]?.voice, VoiceOrigin(started: started, tz: "America/New_York", source: "phone"))
+        XCTAssertNil(plain[blank]?.shown)
+        XCTAssertNil(plain[named]?.voice, "a title the user typed is shown as it is")
+        let titles: PublishedSummaries.DerivedTitles = { _, notes in Dictionary(uniqueKeysWithValues: notes.map { ($0.id, "Derived") }) }
+        let (noFolder, _) = try vault.publishedSummaryEntries(derivedTitles: titles)
+        XCTAssertNil(noFolder[blank]?.shown, "no insights folder: no derived title to look up")
+        XCTAssertEqual(try vault.publishedSummaryEntries(reuse: plain, derivedTitles: titles).summarised, 0)
+
+        try FileManager.default.createDirectory(at: vault.insightsURL, withIntermediateDirectories: true)
+        let (first, read) = try vault.publishedSummaryEntries(reuse: plain, derivedTitles: titles)
+        XCTAssertEqual(read, 1, "the blank-titled voice note is looked up again, the other reused")
+        XCTAssertEqual(first[blank]?.shown, "Derived")
+        XCTAssertNil(first[named]?.shown)
+        let later: PublishedSummaries.DerivedTitles = { _, notes in Dictionary(uniqueKeysWithValues: notes.map { ($0.id, "Later") }) }
+        XCTAssertEqual(try vault.publishedSummaryEntries(reuse: first, derivedTitles: later).entries[blank]?.shown, "Later")
+        // Writers without derived titles reuse the entry as it is.
+        XCTAssertEqual(try vault.publishedSummaryEntries(reuse: first).entries[blank]?.shown, "Derived")
+
+        // An earlier writer's entry (no `voice`, blank title) is read again and gains `voice`.
+        var legacy = plain
+        legacy[blank]?.voice = nil
+        let (upgraded, again) = try vault.publishedSummaryEntries(reuse: legacy)
+        XCTAssertEqual(again, 1)
+        XCTAssertNotNil(upgraded[blank]?.voice)
+
+        // The stamp of what titles are made from follows the insights folder.
+        let stamp = PublishedSummaries.derivedTitlesStamp(vault)
+        try Data("x".utf8).write(to: vault.insightsURL.appendingPathComponent("n.aaaaaaaa.insights.age"))
+        XCTAssertNotEqual(PublishedSummaries.derivedTitlesStamp(vault), stamp)
+    }
+
     func testStaleEntriesAreReadAgainAndListingFiltersTheServerView() throws {
         let vault = try makeVault(pqIdentity())
         let (clean, _) = try makeNotes(vault)

@@ -83,12 +83,34 @@ public enum PublishedSummaries {
         public var pages: Int
         /// Searchable text per page with some (1-based page numbers, ascending).
         public var pageTexts: [PageTextEntry]
+        /// `voice` (format.md §12.2, 1.3): where and when a voice note was captured, for a voice note whose stored title
+        /// is no one's choice (blank, or a default stored before 1.3: `NoteDisplayTitle.isStoredDefault`); nil otherwise.
+        /// A reader words the default title from it in its own language (`NoteDisplayTitle.defaultTitle`).
+        public var voice: VoiceOrigin?
+        /// `shown` (format.md §12.2, 1.3): the title Note Insights derived that the writer shows for such a voice note
+        /// (`NoteDisplayTitle.resolve`); nil when it shows none.
+        public var shown: String?
 
         public init(revisions: [String], title: String, tags: [String], notebook: String?, favorite: Bool,
-                    deleted: Bool, created: Date, modified: Date, pages: Int, pageTexts: [PageTextEntry]) {
+                    deleted: Bool, created: Date, modified: Date, pages: Int, pageTexts: [PageTextEntry],
+                    voice: VoiceOrigin? = nil, shown: String? = nil) {
             self.revisions = revisions; self.title = title; self.tags = tags; self.notebook = notebook
             self.favorite = favorite; self.deleted = deleted; self.created = created; self.modified = modified
-            self.pages = pages; self.pageTexts = pageTexts
+            self.pages = pages; self.pageTexts = pageTexts; self.voice = voice; self.shown = shown
+        }
+
+        /// True when the shown title of this entry's note is not its stored one: a voice note whose stored title is
+        /// blank or a default stored before 1.3 (`voice` set). Only such entries carry `shown`.
+        public var showsMadeTitle: Bool { voice != nil }
+
+        /// True when this entry may be one an earlier writer made of such a voice note (no `voice`, which those wrote
+        /// none of, and a title that is blank or has the shape of a stored default): a writer reads the note again rather
+        /// than reuse it, so the entry gains `voice` (and `shown`).
+        var mayLackVoice: Bool {
+            guard voice == nil else { return false }
+            let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty || NoteDisplayTitle.isCaptureDefault(t)
+                || NoteDisplayTitle.localizedPrefixes.contains { t.lowercased().hasPrefix($0) }
         }
 
         /// The entry for a summary made from `revisions`; nil when the summary
@@ -98,11 +120,40 @@ public enum PublishedSummaries {
         public init?(summary s: NoteSummary, revisions: [String]) {
             guard s.problem == nil, s.newer == nil, !revisions.isEmpty, let created = s.created, let modified = s.modified,
                   RFC3339.string(from: created) != nil, RFC3339.string(from: modified) != nil else { return nil }
+            let voice = s.voice.flatMap { NoteDisplayTitle.isStoredDefault(s.title, origin: $0) ? $0 : nil }
             self.init(revisions: revisions.sorted(), title: s.title, tags: s.tags, notebook: s.notebook,
                       favorite: s.favorite, deleted: s.deleted, created: created, modified: modified, pages: s.pages,
-                      pageTexts: s.pageTexts.map { PageTextEntry(page: $0.number, text: $0.text) })
+                      pageTexts: s.pageTexts.map { PageTextEntry(page: $0.number, text: $0.text) },
+                      voice: voice.flatMap { RFC3339.string(from: $0.started) != nil ? $0 : nil })
         }
     }
+
+    /// The titles Note Insights derived for `notes` (voice notes whose stored title is blank or a default), by note id:
+    /// what the writing device shows for each (`NoteDisplayTitle.resolve`'s `generated`), for `shown` (format.md §12.2).
+    /// `SempereInsights` provides it (`InsightsNotes.derivedTitles`); the core package does not read the insight settings.
+    public typealias DerivedTitles = @Sendable (_ vault: Vault, _ notes: [NoteSummary]) -> [UUID: String]
+
+    /// What the shown titles depend on besides the revisions (format.md §12.4): the names, sizes and modification times
+    /// of the vault's `insights/` files and of `settings.age` (the insight language and title format). A writer that
+    /// skips an unchanged listing compares it too, so a derived title that arrives refreshes the summaries.
+    public static func derivedTitlesStamp(_ vault: Vault) -> Data {
+        var lines: [String] = []
+        func add(_ url: URL, _ name: String) {
+            let v = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            lines.append("\(name) \(v?.fileSize ?? -1) \(v?.contentModificationDate?.timeIntervalSince1970 ?? 0)")
+        }
+        let folder = vault.insightsURL
+        for name in ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted() where !name.hasPrefix(".") {
+            add(folder.appendingPathComponent(name), name)
+        }
+        add(vault.url.appendingPathComponent(SharedSettings.fileName), SharedSettings.fileName)
+        return Data(lines.joined(separator: "\n").utf8)
+    }
+
+    /// The longest `shown` a reader takes (format.md §12.2): 1 000 characters.
+    public static let maxShownLength = 1_000
+    /// The longest `voice.tz` a reader takes (format.md §8.3.1 `captureInfo`): 64 characters.
+    public static let maxZoneLength = 64
 
     /// A page's searchable text.
     public struct PageTextEntry: Hashable, Sendable, Codable {
@@ -226,6 +277,16 @@ public enum PublishedSummaries {
         var modified: String
         var pages: Int
         var pageTexts: [PageTextEntry]
+        /// Optional (1.3): a malformed one is dropped alone, not the entry (format.md §12.3).
+        var voice: LenientField<WireVoice>?
+        var shown: LenientField<String>?
+    }
+
+    /// `voice` (format.md §12.2): a voice note's capture start, its zone and its source.
+    fileprivate struct WireVoice: Codable {
+        var started: String
+        var tz: String?
+        var source: String?
     }
 
     private struct WireFile: Encodable {
@@ -248,8 +309,9 @@ public enum PublishedSummaries {
     }
 
     /// A field decoded leniently: nil when absent or malformed (only that field is dropped).
-    private struct LenientField<T: Decodable>: Decodable {
+    fileprivate struct LenientField<T: Decodable>: Decodable {
         var value: T?
+        init(_ value: T?) { self.value = value }
         init(from decoder: Decoder) throws {
             value = try? decoder.singleValueContainer().decode(T.self)
         }
@@ -328,7 +390,11 @@ public enum PublishedSummaries {
             notes[id.uuidString.lowercased()] = WireEntry(
                 revisions: e.revisions.sorted(), title: e.title, tags: e.tags, notebook: e.notebook,
                 favorite: e.favorite, deleted: e.deleted, created: created, modified: modified, pages: e.pages,
-                pageTexts: e.pageTexts)
+                pageTexts: e.pageTexts,
+                voice: e.voice.flatMap { v in
+                    RFC3339.string(from: v.started).map { LenientField(WireVoice(started: $0, tz: v.tz, source: v.source)) }
+                },
+                shown: e.voice == nil ? nil : e.shown.map { LenientField($0) })
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -379,8 +445,20 @@ public enum PublishedSummaries {
             guard p.page > last, p.page <= w.pages else { return nil }
             last = p.page
         }
+        // `voice`: a start that parses, a zone and a source of at most their lengths (a longer one reads as absent).
+        let voice = w.voice?.value.flatMap { v in
+            RFC3339.parse(v.started).map {
+                VoiceOrigin(started: $0, tz: v.tz.flatMap { $0.count <= maxZoneLength ? $0 : nil },
+                            source: v.source.flatMap { $0.count <= 16 ? $0 : nil })
+            }
+        }
+        // `shown`: only with `voice` (the notes whose shown title is not the stored one), not blank, not too long.
+        let shown = voice == nil ? nil : w.shown?.value.flatMap {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.count <= maxShownLength ? $0 : nil
+        }
         return Entry(revisions: w.revisions, title: w.title, tags: w.tags, notebook: w.notebook, favorite: w.favorite,
-                     deleted: w.deleted, created: created, modified: modified, pages: w.pages, pageTexts: w.pageTexts)
+                     deleted: w.deleted, created: created, modified: modified, pages: w.pages, pageTexts: w.pageTexts,
+                     voice: voice, shown: shown)
     }
 }
 
@@ -675,15 +753,21 @@ extension Vault {
     /// - Parameter ownListing: the vault's own listing in the form of
     ///   `webIndexListing()`, when the caller just made it (the vault is not
     ///   listed again); nil lists the vault.
+    /// - Parameter derivedTitles: the titles Note Insights derived (the writer's resolution, `NoteDisplayTitle.resolve`):
+    ///   with it, and an `insights/` folder in the vault, every entry of a voice note whose stored title is blank or a
+    ///   default (`Entry.voice`) is made again and gets `shown` (format.md §12.2), so a title derived since the last
+    ///   write is published though no revision changed. Without it entries carry no new `shown` (reused ones keep theirs).
     /// - Returns: the entries and how many notes had to be summarized.
     public func publishedSummaryEntries(for listing: [String: [String]]? = nil,
                                         reuse: [UUID: PublishedSummaries.Entry] = [:],
                                         cache: SummaryCache? = nil,
-                                        ownListing: [String: [String]]? = nil) throws
+                                        ownListing: [String: [String]]? = nil,
+                                        derivedTitles: PublishedSummaries.DerivedTitles? = nil) throws
         -> (entries: [UUID: PublishedSummaries.Entry], summarised: Int) {
         _ = try requireReadable()
         var out: [UUID: PublishedSummaries.Entry] = [:]
         var toRead: [UUID] = []
+        let titles = derivedTitles.flatMap { FileIO.exists(insightsURL) ? $0 : nil }
         let own: [(UUID, [String])]
         if let ownListing {
             own = ownListing.sorted { $0.key < $1.key }.compactMap { k, v in UUID(uuidString: k).map { ($0, v.sorted()) } }
@@ -693,13 +777,30 @@ extension Vault {
         for (id, names) in own {
             guard !names.isEmpty else { continue }
             if let listing, listing[id.uuidString.lowercased()]?.sorted() != names { continue }
-            if let e = reuse[id], e.revisions == names { out[id] = e } else { toRead.append(id) }
+            // An entry an earlier writer made of a voice note is made again (it gains `voice`), and with derived titles
+            // so is every entry whose shown title may be one (its `shown` is looked up again).
+            if let e = reuse[id], e.revisions == names, !e.mayLackVoice, titles == nil || !e.showsMadeTitle {
+                out[id] = e
+            } else {
+                toRead.append(id)
+            }
         }
+        var voiceNotes: [NoteSummary] = []
         if !toRead.isEmpty {
             for (summary, revisions) in try summaryEntries(of: toRead, cache: cache) {
                 // A note may have changed while it was read: its entry names what was read.
                 if let listing, listing[summary.id.uuidString.lowercased()]?.sorted() != revisions { continue }
-                if let e = PublishedSummaries.Entry(summary: summary, revisions: revisions) { out[summary.id] = e }
+                if let e = PublishedSummaries.Entry(summary: summary, revisions: revisions) {
+                    out[summary.id] = e
+                    if e.showsMadeTitle && !e.deleted { voiceNotes.append(summary) }
+                }
+            }
+        }
+        if let titles, !voiceNotes.isEmpty {
+            for (id, title) in titles(self, voiceNotes) {
+                let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard out[id]?.showsMadeTitle == true, !t.isEmpty, title.count <= PublishedSummaries.maxShownLength else { continue }
+                out[id]?.shown = title
             }
         }
         return (out, toRead.count)
@@ -714,25 +815,36 @@ extension Vault {
     /// manifest); with `cacheDirectory`, notes are summarized through the
     /// summary cache there (format.md §10).
     @discardableResult
-    public func refreshPublishedSummaries(cacheDirectory: URL? = nil, ownListing: [String: [String]]? = nil) throws -> Bool {
+    public func refreshPublishedSummaries(cacheDirectory: URL? = nil, ownListing: [String: [String]]? = nil,
+                                          derivedTitles: PublishedSummaries.DerivedTitles? = nil) throws -> Bool {
         // A read-only vault is never written, not even its summaries (format.md §7.3).
         guard FileIO.exists(publishedSummariesURL), canRead, !isReadOnly,
               let vault = try? Vault.open(at: url, identities: unlockIdentities, signing: signing, trust: trustStore,
                                             root: manifest.root) else { return false }
         return try vault.refreshOpenedPublishedSummaries(
-            cache: cacheDirectory.flatMap { try? SummaryCache(directory: $0, vault: vault) }, ownListing: ownListing)
+            cache: cacheDirectory.flatMap { try? SummaryCache(directory: $0, vault: vault) }, ownListing: ownListing,
+            derivedTitles: derivedTitles)
     }
 
-    private func refreshOpenedPublishedSummaries(cache: SummaryCache?, ownListing: [String: [String]]?) throws -> Bool {
+    private func refreshOpenedPublishedSummaries(cache: SummaryCache?, ownListing: [String: [String]]?,
+                                                 derivedTitles: PublishedSummaries.DerivedTitles?) throws -> Bool {
         guard canRead else { return false }
         let data = try? FileIO.read(publishedSummariesURL, maxBytes: PublishedSummaries.maxFileBytes)
         let current = data.flatMap { try? openPublishedSummaries($0) }
         guard !isReadOnly else { return false }
-        let (entries, _) = try publishedSummaryEntries(reuse: current ?? [:], cache: cache, ownListing: ownListing)
+        let (entries, _) = try publishedSummaryEntries(reuse: current ?? [:], cache: cache, ownListing: ownListing,
+                                                       derivedTitles: derivedTitles)
         // Summarizing may have just read newer content (format.md §7.3).
         guard !isReadOnly else { return false }
         if let current, current == entries { return false }
         try FileIO.writeAtomically(try sealPublishedSummaries(entries), to: publishedSummariesURL, replacing: true)
         return true
+    }
+}
+
+extension PublishedSummaries.LenientField: Encodable where T: Encodable {
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        if let value { try c.encode(value) } else { try c.encodeNil() }
     }
 }

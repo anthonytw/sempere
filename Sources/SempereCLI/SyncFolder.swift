@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 
 struct SyncFolderCommand: ParsableCommand {
@@ -121,6 +122,7 @@ struct SyncFolderCommand: ParsableCommand {
         options.keepServerChanges = keepServerChanges
         options.deleteExtraneous = deleteExtraneous
         options.publishForWebViewer = webViewer
+        options.derivedTitles = { InsightsNotes.derivedTitles($0, for: $1) }
         options.summaryCacheDirectory = SummaryCache.cliDirectory(environment: Env.vars)
         options.retryQuarantined = retryQuarantined
         options.largeBlobs = largeBlobs

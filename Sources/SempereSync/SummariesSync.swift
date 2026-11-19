@@ -29,6 +29,11 @@ extension SyncEngine {
             var hashed = try encodedWebIndex()
             hashed.append(0)
             hashed.append(vault.manifest.epochId)
+            // And what the shown titles are made from (format.md §12.4): a title derived since the last write refreshes it.
+            if options.derivedTitles != nil {
+                hashed.append(0)
+                hashed.append(PublishedSummaries.derivedTitlesStamp(vault))
+            }
             listing = FileDigest.sha256(hashed)
         } catch {
             report.errors.append(.init(path: name, message: Self.describe(error)))
@@ -61,7 +66,8 @@ extension SyncEngine {
                         condition = Self.replaceCondition(etag: got.etag)
                     }
                 }
-                (entries, _) = try vault.publishedSummaryEntries(for: remoteRevisions, reuse: current ?? [:], cache: cache)
+                (entries, _) = try vault.publishedSummaryEntries(for: remoteRevisions, reuse: current ?? [:], cache: cache,
+                                                                derivedTitles: options.derivedTitles)
                 if attempt > 0, let current {
                     for (id, e) in current where entries[id] == nil { entries[id] = e; kept = true }
                 }

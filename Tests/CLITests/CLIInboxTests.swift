@@ -137,6 +137,50 @@ final class CLIInboxTests: CLITestCase {
         XCTAssertEqual(items.first { $0["note"] as? String == note }?["title"] as? String, shown)
     }
 
+    /// 1.3: the published summaries (format.md §12.2) carry what the web viewer needs to show a voice note as `notes list`
+    /// does: `voice` for a blank stored title, and `shown` once Note Insights derived a title; the next command that unlocks
+    /// the vault publishes a title derived since (no revision changed), and a title the user types drops both.
+    func testThePublishedSummariesCarryAVoiceNotesShownTitle() throws {
+        let (vault, identity, keyPath) = try makeVault()
+        let unlocked = ["--vault", vault.url.path, "--identity", keyPath]
+        XCTAssertEqual(try cli(["inbox", "enable", "--notebook", "Voice"] + unlocked).status, 0)
+        let captured = try json(try cli(["inbox", "capture", Self.tone, "--started", "2026-10-07T14:32:00Z", "--json"] + unlocked))
+        let note = try XCTUnwrap(captured["note"] as? String)
+        XCTAssertEqual(try cli(["inbox", "import", "--json"] + unlocked).status, 0)
+        XCTAssertEqual(try cli(["vault", "summaries", "-q"] + unlocked).status, 0)
+        func entry() throws -> [String: Any] {
+            let r = try cli(["vault", "summaries", "--out", "-", "--plaintext"] + unlocked)
+            XCTAssertEqual(r.status, 0, r.err)
+            return try XCTUnwrap(((r.json as? [String: Any])?["notes"] as? [String: [String: Any]])?[note])
+        }
+        var e = try entry()
+        XCTAssertEqual(e["title"] as? String, "")
+        let voice = try XCTUnwrap(e["voice"] as? [String: Any])
+        XCTAssertEqual(voice["started"] as? String, "2026-10-07T14:32:00.000Z")
+        XCTAssertNotNil(voice["tz"] as? String)
+        XCTAssertNil(e["shown"])
+        XCTAssertNil(e["captured"], "no device ids")
+
+        XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + unlocked).status, 0)
+        let titled = try json(try cli(["insights", "title", note, "--format", "Standup {date}", "--json"] + unlocked,
+                                      env: ["SEMPERE_INSIGHTS_FAKE": "1"]))
+        let derived = try XCTUnwrap(titled["title"] as? String, "\(titled)")
+        // `insights title` unlocked the vault: the file was refreshed after it (read here without writing).
+        let reader = try Vault.open(at: vault.url, identities: [identity])
+        let inFile = try XCTUnwrap(try reader.openPublishedSummaries(Data(contentsOf: reader.publishedSummariesURL))[XCTUnwrap(UUID(uuidString: note))])
+        XCTAssertEqual(inFile.shown, derived)
+        e = try entry()
+        XCTAssertEqual(e["shown"] as? String, derived)
+        let list = try XCTUnwrap(try cli(["notes", "list", "--json"] + unlocked).json as? [[String: Any]])
+        XCTAssertEqual(list.first { $0["id"] as? String == note }?["displayTitle"] as? String, derived, "what notes list shows")
+
+        XCTAssertEqual(try cli(["notes", "rename", note, "Typed"] + unlocked).status, 0)
+        e = try entry()
+        XCTAssertEqual(e["title"] as? String, "Typed")
+        XCTAssertNil(e["voice"])
+        XCTAssertNil(e["shown"])
+    }
+
     func testCaptureNeedsAProfileAndForgeriesAreRefused() throws {
         let (vault, _, keyPath) = try makeVault()
         let locked = ["--vault", vault.url.path]

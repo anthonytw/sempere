@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 import SempereWebDAV
 
@@ -208,6 +209,8 @@ extension AppModelCore {
                             strokes: 0, modified: e.modified, problem: nil)
         s.favorite = e.favorite
         s.created = e.created
+        // A voice note with no title of its own shows its default (format.md §12.2 `voice`) until it arrives.
+        s.voice = e.voice
         // Page ids are not published; a search hit opens the note (its page is found once it is read).
         s.pageTexts = e.pageTexts.map { PageText(pageId: UUID(), number: $0.page, text: $0.text) }
         return s
@@ -235,6 +238,7 @@ extension AppModelCore {
                 return try await Task.detached(priority: .utility) { () throws -> SyncReport in
                     var options = SyncOptions(deviceLabel: "app")
                     options.summaryCacheDirectory = cacheDirectory
+                    options.derivedTitles = { InsightsNotes.derivedTitles($0, for: $1) }
                     options.localWriteLock = lock
                     // The vault device's id names its summaries file and sync state, as in the CLI (review nit); the
                     // state file's only when the vault is not open here.

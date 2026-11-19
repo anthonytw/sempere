@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 
 /// `sempere vault index`: the file listing a static web server cannot give
 /// the web viewer (docs/web-viewer.md "Hosting").
@@ -114,7 +115,8 @@ final class OpenedVaults: @unchecked Sendable {
             // Only where it exists and the vault was unlocked (it needs the key); unchanged notes are reused.
             guard let unlockedVault = keys[url] else { continue }
             do {
-                try unlockedVault.refreshPublishedSummaries(cacheDirectory: SummaryCache.cliDirectory(), ownListing: listing)
+                try unlockedVault.refreshPublishedSummaries(cacheDirectory: SummaryCache.cliDirectory(), ownListing: listing,
+                                                         derivedTitles: { InsightsNotes.derivedTitles($0, for: $1) })
             } catch {
                 printStderr("warning: cannot update \(url.appendingPathComponent(PublishedSummaries.fileName).path): "
                     + CLIError.from(error).message)

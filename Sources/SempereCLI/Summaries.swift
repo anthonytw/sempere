@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 
 /// `sempere vault summaries`: the published summaries file (format.md §12)
 /// the web viewer lists a vault from without decrypting every note.
@@ -61,7 +62,8 @@ struct VaultSummaries: ParsableCommand {
             if let device { return (try? vault.openDevicePublishedSummaries(data, device: device).entries) ?? [:] }
             return (try? vault.openPublishedSummaries(data)) ?? [:]
         } ?? [:]
-        let (entries, read) = try vault.publishedSummaryEntries(reuse: reuse, cache: cache.cache(for: vault))
+        let (entries, read) = try vault.publishedSummaryEntries(reuse: reuse, cache: cache.cache(for: vault),
+                                                                derivedTitles: { InsightsNotes.derivedTitles($0, for: $1) })
         let notes = try vault.noteIDs().count
         let data: Data
         if let device {

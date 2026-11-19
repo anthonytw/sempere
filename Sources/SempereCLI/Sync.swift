@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 import SempereWebDAV
 
@@ -185,6 +186,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         options.keepServerChanges = keepServerChanges
         options.deleteExtraneous = deleteExtraneous
         options.publishForWebViewer = webViewer
+        options.derivedTitles = { InsightsNotes.derivedTitles($0, for: $1) }
         options.skipUnchangedNotes = skipUnchanged
         options.deepListing = !noDeepListing
         options.largeBlobs = largeBlobs
