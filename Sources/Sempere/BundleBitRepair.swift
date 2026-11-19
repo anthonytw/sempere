@@ -16,11 +16,21 @@ public enum BundleBitRepair {
     }
 
     /// Clears the flag on `url` when it is a `….sempere` or `….sempere-backup` folder that has it; logs to `log` when
-    /// it did.
+    /// it did (a notice: the same folder logged at every run means something sets the flag again, such as iCloud Drive
+    /// holding the folder as a package, docs/io.md "A vault folder held as a package"), and when it is set and could
+    /// not be cleared (an error, with `errno`).
     @discardableResult
     public static func clear(_ url: URL, _ role: Role, log: any PerfSink) -> Bool {
-        guard FinderBundleBit.appliesTo(url), FinderBundleBit.clear(at: url) else { return false }
-        log.log(.notice, "bundleBit", "cleared kHasBundle on a \(role.rawValue) folder")
-        return true
+        guard FinderBundleBit.appliesTo(url) else { return false }
+        switch FinderBundleBit.clearReporting(at: url) {
+        case .notSet:
+            return false
+        case .cleared:
+            log.log(.notice, "bundleBit", "cleared kHasBundle on a \(role.rawValue) folder")
+            return true
+        case .failed(let code):
+            log.log(.error, "bundleBit", "kHasBundle on a \(role.rawValue) folder could not be cleared (errno \(code))")
+            return false
+        }
     }
 }

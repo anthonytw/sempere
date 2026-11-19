@@ -26,7 +26,7 @@ package enum FileIO {
     ///   destination with `VaultError.alreadyExists`. The check happens right
     ///   before the rename; a writer racing on the very same name is outside
     ///   the format's model (names embed a per-device sequence number).
-    static func writeAtomically(_ data: Data, to url: URL, replacing: Bool) throws {
+    package static func writeAtomically(_ data: Data, to url: URL, replacing: Bool) throws {
         let dir = url.deletingLastPathComponent()
         let tmp = dir.appendingPathComponent(tempPrefix + UUID().uuidString.lowercased())
         do {

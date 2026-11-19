@@ -65,6 +65,7 @@ public final class EvictingFolderProvider: FolderProvider, @unchecked Sendable {
     private var _arrivalDelay = 0
     private var _coordinatedReads = 0, _coordinatedWrites = 0
     private var _requested: [String] = []
+    private var _rootRecord: ProviderItemRecord?
 
     public init(root: URL, cloud: URL) {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
@@ -323,6 +324,25 @@ public final class EvictingFolderProvider: FolderProvider, @unchecked Sendable {
                 if ids.contains($1.version.id) { $0.0.append($1.file) } else { $0.1.append($1) }
             }
             for f in gone { try? FileManager.default.removeItem(at: f) }
+            versionStore[rel] = kept.isEmpty ? nil : kept
+        }
+    }
+
+    /// What `itemRecord(of:)` reports for the root (a folder held as a package, say); nil: nothing.
+    public var rootRecord: ProviderItemRecord? {
+        get { withLock { _rootRecord } }
+        set { withLock { _rootRecord = newValue } }
+    }
+
+    public func itemRecord(of url: URL) -> ProviderItemRecord? {
+        withLock { rel(url) == "" ? _rootRecord : nil }
+    }
+
+    /// Resolved versions leave the list; their files stay in the side store (the system keeps resolved versions).
+    public func markConflictsResolved(of url: URL, ids: Set<String>) throws {
+        withLock {
+            guard let rel = rel(url) else { return }
+            let kept = (versionStore[rel] ?? []).filter { !ids.contains($0.version.id) }
             versionStore[rel] = kept.isEmpty ? nil : kept
         }
     }

@@ -11575,6 +11575,19 @@
         }
       }
     },
+    "How to Fix…" : {
+      "comment" : "Button under the package warning of a sync folder; opens the steps.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo solucionarlo…"
+          }
+        }
+      }
+    },
     "How to make iCloud Drive appear in the folder picker" : {
       "comment" : "Help tag of “Don’t see iCloud Drive?”",
       "extractionState" : "manual",
@@ -11584,6 +11597,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cómo hacer que iCloud Drive aparezca en el selector de carpetas"
+          }
+        }
+      }
+    },
+    "How to move this sync folder to a plain folder" : {
+      "comment" : "Tooltip of the How to Fix button.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo pasar esta carpeta de sincronización a una carpeta normal"
           }
         }
       }
@@ -23970,6 +23996,19 @@
         }
       }
     },
+    "Sync Folder Kept as a Package" : {
+      "comment" : "Title of the alert with the steps to move a sync folder that iCloud Drive treats as a package.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carpeta de sincronización guardada como paquete"
+          }
+        }
+      }
+    },
     "Sync Now" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -27924,6 +27963,19 @@
         }
       }
     },
+    "This folder has conflicting versions from other devices." : {
+      "comment" : "Warning under a sync folder in Sync Targets: iCloud Drive keeps conflict versions of the whole folder.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta carpeta tiene versiones en conflicto de otros dispositivos."
+          }
+        }
+      }
+    },
     "This folder holds another vault (%@). Choose an empty folder or the vault's own sync folder." : {
       "comment" : "Sync targets: the picked folder is another vault's; %@ is that vault's name",
       "extractionState" : "manual",
@@ -30913,6 +30965,19 @@
         }
       }
     },
+    "Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 2. Here, choose Add Folder… and make a new folder with another name in iCloud Drive; this device copies the vault into it. 3. On each other device, add the same new folder, then remove the old target. 4. Once every device syncs with the new folder, move the old one to the Trash. Renaming the old folder does not help: iCloud Drive keeps it a package." : {
+      "comment" : "Steps in the alert for a sync folder iCloud Drive treats as a package. Keep the command text in English.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus notas en este dispositivo están a salvo: viven en la app. Para dar a los otros dispositivos una carpeta normal: 1. En un Mac, recupera lo que guardan las versiones en conflicto con la herramienta de línea de comandos sempere (sempere vault conflicts --merge). 2. Aquí, elige Añadir carpeta… y crea en iCloud Drive una carpeta nueva con otro nombre; este dispositivo copia la bóveda en ella. 3. En cada uno de los otros dispositivos, añade esa misma carpeta nueva y luego quita el destino anterior. 4. Cuando todos los dispositivos se sincronicen con la carpeta nueva, mueve la anterior a la Papelera. Cambiar el nombre de la carpeta anterior no sirve: iCloud Drive la sigue tratando como un paquete."
+          }
+        }
+      }
+    },
     "Your words" : {
       "comment" : "Ask result row: the note matched the words of the question",
       "extractionState" : "manual",
@@ -31157,6 +31222,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud Drive aún no ha entregado todas las notas (faltan: %lld), y una copia debe contenerlas todas. Comprueba que este dispositivo tiene conexión y vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "iCloud Drive syncs this folder as one package, so changes made on two devices at once can hide each other’s files." : {
+      "comment" : "Warning under a sync folder in Sync Targets: iCloud Drive treats the folder as a package.",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Drive sincroniza esta carpeta como un solo paquete, así que los cambios hechos a la vez en dos dispositivos pueden ocultar los archivos del otro."
           }
         }
       }

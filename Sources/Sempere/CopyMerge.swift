@@ -270,12 +270,12 @@ extension Vault {
     }
 
     /// The names in `dir` that are not hidden (format.md §1.1); empty when it cannot be listed.
-    static func visibleEntries(_ dir: URL) -> [String] {
+    package static func visibleEntries(_ dir: URL) -> [String] {
         ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix(".") }.sorted()
     }
 
     /// True when `url` exists, or iCloud Drive holds it as a placeholder (`.<name>.icloud`).
-    static func holds(_ url: URL) -> Bool {
+    package static func holds(_ url: URL) -> Bool {
         if FileIO.exists(url) { return true }
         let placeholder = url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".icloud")
         return FileIO.exists(placeholder)
@@ -283,7 +283,7 @@ extension Vault {
 
     /// Copies the regular file `from` to `to` (a new name) through a temporary
     /// file in `to`'s folder, never replacing an existing file.
-    static func copyNew(_ from: URL, to: URL) throws {
+    package static func copyNew(_ from: URL, to: URL) throws {
         let dir = to.deletingLastPathComponent()
         try FileIO.createDirectory(dir)
         let tmp = FileIO.tempURL(in: dir)

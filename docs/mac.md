@@ -419,6 +419,12 @@ lost a note in TestFlight 1.0.0), so that stays off. A Mac with TestFlight 1.0.0
 keeps that build's package declaration in LaunchServices: there a vault still shows as a package
 and opens in Sempere on a double-click, until the newer build replaces it.
 
+If Sync Targets warns that iCloud Drive syncs a sync folder "as one package", your notes on this Mac are safe (they live
+in the app), but devices writing at once make conflicting copies of the whole folder, and a file only one copy has can go
+missing from it. Merge those back with the `sempere` tool (`sempere vault conflicts "<folder>" --merge --dry-run`, then
+without `--dry-run`), then move the sync folder to a new one: How to Fix… lists the steps, and docs/io.md "Moving to a
+plain folder" has them in full.
+
 What opens a vault in Sempere: File ▸ Open Vault… (⌘O) or Open Recent, the Library window, and
 `open -a Sempere /path/Notes.sempere` in Terminal; the app handles a vault URL it is handed
 (`onOpenURL`, `AppModel.handleOpened`) like a picked folder.

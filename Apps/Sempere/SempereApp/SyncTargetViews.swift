@@ -110,10 +110,15 @@ struct SyncTargetsSheet: View {
 
 /// One target: its kind, place and status line.
 private struct SyncTargetRow: View {
+    @AppModelEnvironment private var model
     let target: SyncTarget
     let session: SyncSession?
     let rechoose: () -> Void
     let remove: () -> Void
+    /// The provider syncs the folder as one item, or it has whole-folder conflict versions (docs/io.md "A vault folder
+    /// held as a package"): a warning, never a block.
+    @State private var packageRecord: ProviderItemRecord?
+    @State private var showingPackageHelp = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -135,6 +140,19 @@ private struct SyncTargetRow: View {
                             .accessibilityIdentifier("syncTargetRechoose")
                     }
                 }
+                if let record = packageRecord {
+                    Label(record.heldAsPackage
+                          ? "iCloud Drive syncs this folder as one package, so changes made on two devices at once can hide each other’s files."
+                          : "This folder has conflicting versions from other devices.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                        .accessibilityIdentifier("syncTargetPackageWarning")
+                    Button("How to Fix…") { showingPackageHelp = true }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                        .help("How to move this sync folder to a plain folder")
+                        .accessibilityIdentifier("syncTargetPackageHelp")
+                }
             }
             Spacer(minLength: 0)
             Button(role: .destructive, action: remove) {
@@ -143,6 +161,12 @@ private struct SyncTargetRow: View {
             .buttonStyle(.borderless)
             .help("Remove this sync target")
             .accessibilityIdentifier("syncTargetRemove")
+        }
+        .task(id: target.id) { packageRecord = await model.folderTargetPackageRecord(target) }
+        .alert("Sync Folder Kept as a Package", isPresented: $showingPackageHelp) {
+            Button("OK") { showingPackageHelp = false }
+        } message: {
+            Text("Your notes on this device are safe: they live in the app. To give the other devices a plain folder: 1. On a Mac, merge back what the conflicting versions hold with the sempere command-line tool (sempere vault conflicts --merge). 2. Here, choose Add Folder… and make a new folder with another name in iCloud Drive; this device copies the vault into it. 3. On each other device, add the same new folder, then remove the old target. 4. Once every device syncs with the new folder, move the old one to the Trash. Renaming the old folder does not help: iCloud Drive keeps it a package.")
         }
     }
 }

@@ -169,6 +169,7 @@ struct SyncFolderCommand: ParsableCommand {
         // A dry run writes nothing, not even the Finder's bundle flag.
         if !dryRun { clearBundleBits([dir, target]) }
         defer { if !dryRun { clearBundleBits([dir, target]) } }
+        warnIfHeldAsPackage(target)
         var report: SyncReport
         do { report = try sync.run() } catch FolderTargetError.missing(let p) {
             // A folder synced before is never made again (`FolderRemote.absentBase`); say how to start over here.

@@ -87,5 +87,19 @@ final class FinderBundleBitTests: TempDirTestCase {
         XCTAssertEqual(attribute(vault), info([8: 0x40, 9: 0x0E]), "other flags kept")
         XCTAssertFalse(FinderBundleBit.clear(at: tmp.appendingPathComponent("missing.sempere")))
     }
+
+    /// The read-only check and the reporting clear (`sempere vault conflicts`, `BundleBitRepair`'s log): a missing
+    /// folder or attribute is "not set", never a failure (that would log an error before a target's first run).
+    func testIsSetAndClearReporting() throws {
+        let vault = tmp.appendingPathComponent("Report.sempere", isDirectory: true)
+        try FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+        XCTAssertEqual(FinderBundleBit.isSet(at: vault), false)
+        XCTAssertEqual(FinderBundleBit.clearReporting(at: vault), .notSet)
+        XCTAssertEqual(FinderBundleBit.clearReporting(at: tmp.appendingPathComponent("missing.sempere")), .notSet)
+        try setAttribute(vault, info([8: 0x20]))
+        XCTAssertEqual(FinderBundleBit.isSet(at: vault), true)
+        XCTAssertEqual(FinderBundleBit.clearReporting(at: vault), .cleared)
+        XCTAssertEqual(FinderBundleBit.isSet(at: vault), false)
+    }
     #endif
 }

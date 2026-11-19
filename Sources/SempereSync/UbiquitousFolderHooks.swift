@@ -1,5 +1,9 @@
 #if canImport(Darwin)
 import Foundation
+import Sempere
+#if canImport(UniformTypeIdentifiers)
+import UniformTypeIdentifiers
+#endif
 
 // MARK: - iCloud Drive and other providers on Apple platforms (docs/io.md "Folder targets in providers")
 //
@@ -133,6 +137,33 @@ public final class UbiquitousFolderHooks: FolderProvider, @unchecked Sendable {
                 try v.remove()
             }
         }
+    }
+
+    /// Marks the versions resolved, in a coordinated write, and keeps them (`NSFileVersion.isResolved` only; never
+    /// `removeOtherVersionsOfItem`, which also drops the item's versions that are no conflict).
+    public func markConflictsResolved(of url: URL, ids: Set<String>) throws {
+        guard managesFiles, !ids.isEmpty else { return }
+        try coordinatedWrite(url) {
+            for v in NSFileVersion.unresolvedConflictVersionsOfItem(at: url) ?? [] where ids.contains(v.url.path) {
+                v.isResolved = true
+            }
+        }
+    }
+
+    public func itemRecord(of url: URL) -> ProviderItemRecord? {
+        var fresh = url
+        fresh.removeAllCachedResourceValues()
+        let keys: Set<URLResourceKey> = [.isPackageKey, .typeIdentifierKey, .isUbiquitousItemKey,
+                                         .ubiquitousItemHasUnresolvedConflictsKey]
+        guard let values = try? fresh.resourceValues(forKeys: keys) else { return nil }
+        var record = ProviderItemRecord(isPackage: values.isPackage, contentType: values.typeIdentifier,
+                                        finderBundleBit: FinderBundleBit.isSet(at: url),
+                                        ubiquitous: ubiquitous || values.isUbiquitousItem == true,
+                                        hasUnresolvedConflicts: values.ubiquitousItemHasUnresolvedConflicts)
+        #if canImport(UniformTypeIdentifiers)
+        if let id = values.typeIdentifier, let type = UTType(id) { record.typeIsPackage = type.conforms(to: .package) }
+        #endif
+        return record
     }
 
     public func changes(below root: URL) -> AsyncStream<RemoteChange>? {

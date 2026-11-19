@@ -439,6 +439,7 @@ sempere vault verify
 sempere vault index [--out PATH|-]
 sempere vault summaries [--out PATH|- | --device-file] [--plaintext] [--no-cache]
 sempere vault merge-copy FROM [--dry-run] [--json]
+sempere vault conflicts [VAULT] [--merge [--dry-run | --remove-versions] [--quarantine DIR]] [--json]
 sempere vault catch-up [--json]
 sempere vault reencrypt --recovery-out FILE (--keep ID | --remove ID)... [--recovery-passphrase | --generate-passphrase]
                         [--allow-unreachable TARGET]... [--no-pull] [--password-env VAR] [--yes] [--json]
@@ -623,6 +624,28 @@ sempere vault reencrypt --status [--json]
   signed with the device's signing keys (from its device key file; a key
   without them cannot write it): the per-device files the apps publish so
   that another device lists a vault's notes before they arrive.
+- `conflicts [VAULT]` (macOS; elsewhere it fails as unsupported) reports a provider's conflict versions of a vault
+  folder in iCloud Drive or another provider, reading only, without a key (docs/io.md "A vault folder held as a
+  package"): whether the provider records the folder as a package (`isPackage`, its type, the Finder's `kHasBundle`
+  flag; `packageCause` `finderBundleBit` or `providerRecord`), the unresolved versions of the folder itself and of its
+  mutable files, and per version the files the folder lacks, by kind, and the mutable files that differ; then the
+  write-once files safe to copy back and the mutable ones that need care. `VAULT` defaults to `--vault` /
+  `$SEMPERE_VAULT`. Exit 0 when there is no version and the folder is not a package, 3 otherwise. `--json`: `folder`,
+  `provider`, `record`, `heldAsPackage`, `packageCause`, `versions` (`id`, `item` ("" for the folder), `modified`,
+  `device`, `files`, `missing` (kind → paths), `differing`), `writeOnceMissing`, `mutableToReview`.
+  With `--merge` it copies back only missing write-once files, each checked under the vault's key as a received file
+  and placed without replacing anything (coordinated); one that fails goes to the quarantine. Mutable files are copied
+  aside into `<quarantine>/kept/`; `settings.age` is merged per key, `vault.json` taken only as a later version by home
+  (an earlier one is superseded), anything else left and listed. Then the versions with nothing left are marked
+  resolved and kept (`--remove-versions`: removed), and the Finder's flag is cleared. The quarantine defaults to
+  `$XDG_STATE_HOME/sempere/conflicts/<vault id>/<time>/` (with `report.json`) and may not be inside the vault. It
+  needs the key (`--identity`, this machine's device key, or `--recovery-key`, which writes no mutable file; exit 4
+  without); `--dry-run` prints the plan, writes nothing, and works locked (structural checks). Exit 0 when everything
+  was merged and resolved, 3 when something was left or quarantined, 1 on a failure. `--json`: `dryRun`, `complete`,
+  `copied`, `quarantined` (path → why), `keptAside`, `written`, `settled`, `unsettled` (path → how or why),
+  `resolved`, `removed`, `left`, `errors`, `quarantine`, `heldAsPackage`, `bundleBit` (`result` `notSet`, `cleared` or
+  `failed`, `errno`, `heldAsPackageAfter`, `recordAfter`). The app warns about such a folder but never merges it; this
+  is the recovery path. `store sync` and `sync folder` print a warning on stderr for a target folder held as a package.
 - `merge-copy FROM` merges another copy of the same vault into the vault
   (`format.md` §1.3): the losing side of an iCloud Drive conflict, a copy taken
   from another device, a folder restored from a backup. Every revision, blob,

@@ -258,6 +258,13 @@ Placed vaults also add two cases that today's code does not have:
   the union rules converge. Stamps are per target, so a file that changes under a second route is seen
   as changed, never assumed unchanged.
 
+**A placed folder held as a package (2026-11-19).** A provider that records a vault folder as a package syncs it as one
+item, and its conflict versions are of the whole folder, which §5.1's per-file rules never see: files only the losing side
+had are missing until merged back. The engine does not merge them (no automatic whole-vault merge in the app): the app
+warns on the target's row (`folderTargetPackageRecord`, resource values only), and `sempere vault conflicts --merge` is
+the recovery path, with the union rule of format.md §1.3 for write-once files and the existing rules for mutable ones. The
+lasting fix is a new folder that the provider records as a plain one; docs/io.md "A vault folder held as a package".
+
 ### 3.4 Extension points for later providers
 
 Other providers go under "Other Folder…" for now. The protocol stays open so that a first-class
