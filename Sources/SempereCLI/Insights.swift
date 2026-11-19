@@ -318,7 +318,8 @@ struct InsightsTopic: ParsableCommand {
             guard notebook == nil, tag == nil, !generate else { throw CLIError.usage("--list takes no --notebook, --tag or --generate") }
             let vault = try access.openVault(.required)
             let inputs = try InsightsCLI.inputs(vault, cache: cache)
-            let all = TopicSummaries.shownAll(inputs: inputs, snapshot: InsightsStore(vault: vault).snapshot()).map(Out.init)
+            let all = TopicSummaries.shownAll(inputs: inputs, snapshot: InsightsStore(vault: vault).snapshot(),
+                                             language: InsightsSettings.read(vault).language).map(Out.init)
             if output.json { return try output.emitJSON(all) }
             if all.isEmpty { print("no notebook or tag has \(TopicSummaries.minMembers) summarized notes yet") }
             for t in all {
@@ -352,7 +353,7 @@ struct InsightsTopic: ParsableCommand {
             }
         } else {
             let snapshot = InsightsStore(vault: vault).snapshot()
-            let members = TopicScopes.members(inputs: inputs, snapshot: snapshot).first { $0.0 == scope }?.1 ?? []
+            let members = TopicScopes.members(inputs: inputs, snapshot: snapshot, language: InsightsSettings.read(vault).language).first { $0.0 == scope }?.1 ?? []
             shown = TopicSummaries.shown(scope, members: members, snapshot: snapshot)
         }
         let out = Out(shown)
@@ -457,7 +458,8 @@ struct InsightsTitle: ParsableCommand {
         let n = try InsightsCLI.input(note, in: inputs, vault: vault)
         let fmt = format ?? InsightsSettings.read(vault).voiceNoteTitle
         let snapshot = InsightsStore(vault: vault).snapshot()
-        var slug = snapshot.bestGen(for: n.id, hash: n.hash).flatMap { $0.current ? $0.gen.slug : nil }
+        let language = InsightsSettings.read(vault).language
+        var slug = snapshot.bestGen(for: n.id, hash: n.hash, language: language).flatMap { $0.current ? $0.gen.slug : nil }
         if slug == nil, fmt.contains("{slug}"), !n.transcript.isEmpty {
             let p = InsightsCLI.providers()
             guard let model = p.model, model.availability.isAvailable else { throw InsightsCLI.unavailable(InsightsCLI.modelReason(p.model)) }
@@ -469,7 +471,6 @@ struct InsightsTitle: ParsableCommand {
         }
         let updater = InsightsUpdater(vault: vault, model: nil, embedder: nil, deviceState: DeviceState.defaultURL(), app: appName)
         let isVoice = try vault.reconstruct(try vault.loadNote(n.id)).recordings.contains { $0.captured != nil }
-        let language = InsightsSettings.read(vault).language
         let title = isVoice ? (dryRun ? try updater.proposedTitle(n, format: fmt, slug: slug, language: language)
                                       : try updater.writeTitle(n, format: fmt, slug: slug, language: language)) : nil
         let id = n.id.uuidString.lowercased()

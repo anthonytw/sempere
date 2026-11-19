@@ -97,7 +97,8 @@ public struct AskEngine: Sendable {
         let byId = Dictionary(pool.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let modified = Dictionary(pool.map { ($0.id, $0.input.modified ?? .distantPast) }, uniquingKeysWith: { a, _ in a })
         let snapshot = reader.snapshot
-        let gens: (InsightsNoteInput) -> InsightsNoteFile.Gen? = { snapshot.bestGen(for: $0.id, hash: $0.hash)?.gen }
+        let insightLanguage = reader.settings.language
+        let gens: (InsightsNoteInput) -> InsightsNoteFile.Gen? = { snapshot.bestGen(for: $0.id, hash: $0.hash, language: insightLanguage)?.gen }
 
         let terms = AskText.terms(question)
         let keyword = AskRetriever.keywordRanking(terms: terms, notes: pool, gens: gens)
@@ -165,7 +166,7 @@ public struct AskEngine: Sendable {
         var scores: [[Double]] = []
         for c in fused.prefix(min(AskRetriever.sourceCount, max(0, o.limit))) {
             guard let note = byId[c.note], let ps = picks[c.note], !ps.isEmpty else { continue }
-            let g = snapshot.bestGen(for: note.id, hash: note.input.hash)
+            let g = snapshot.bestGen(for: note.id, hash: note.input.hash, language: insightLanguage)
             let summary = g.flatMap { $0.current ? $0.gen.summary : nil }.flatMap { $0.isEmpty ? nil : String($0.prefix(240)) }
             sources.append(AskSource(id: "", note: note.id, title: note.input.title, summary: summary, passages: ps.map(\.passage)))
             scores.append(ps.map(\.score))

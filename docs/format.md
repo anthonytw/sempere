@@ -4580,7 +4580,9 @@ one a reader shows.
   shared setting `insights.language` (docs/settings-sync.md §5.1) names one: the writer made them in the note's own language
   (the fact check needs the note's words), then put them into that language; keywords and concepts stay as the note has them.
   A `gen` is current for a reader only when its `outLang` equals the reader's `insights.language` (absent equals null), so a
-  change of the setting makes summaries and titles be made again; the old ones stay shown until the new are there.
+  change of the setting makes summaries and titles be made again; the old ones stay shown until the new are there. Among the
+  files holding a `gen` for the note's hash, a reader takes one whose `outLang` equals its `insights.language` first, then
+  the later `written`, then the larger device id, so a device that rewrites its file in another language never hides it.
 - `emb`: this device's vector of the note (§16.5), little-endian IEEE 754 binary16, base64 (`f16le-base64`),
   `dim` values (1 … 4 096). `key`: model, language, pinned revision, and `input`, the writer's text-cleaning revision.
 - `title` (1.3): the title this device derived for a voice note (§16.8), rendered from `insights.voiceNoteTitle`, for the
@@ -4675,7 +4677,8 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
 
 - **Tombstones.** A device "removes" its note file by replacing it with one without `gen` and `emb` at a later
   `written`, so a device bridging two targets cannot bring the old one back: when the note is deleted (§5.2), and when
-  its `gen` is stale while another device's is current.
+  its `gen` is stale (older text, or the current text in another insight language than `insights.language`) while another
+  device's is current.
 - **A new epoch.** A device deletes its own files that open only under an earlier key and writes them again under the
   current key by its ordinary pass; until then other devices ignore them. The content of such a file is never carried
   over: any holder of that key, a device removed since included, could have written bytes under a device's name.

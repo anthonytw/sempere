@@ -191,8 +191,8 @@ public enum TopicSummaries {
     }
 
     /// Every scope with enough summarized members, as shown.
-    public static func shownAll(inputs: [InsightsNoteInput], snapshot: InsightsSnapshot) -> [Shown] {
-        TopicScopes.members(inputs: inputs, snapshot: snapshot).filter { $0.1.count >= minMembers }
+    public static func shownAll(inputs: [InsightsNoteInput], snapshot: InsightsSnapshot, language: String? = nil) -> [Shown] {
+        TopicScopes.members(inputs: inputs, snapshot: snapshot, language: language).filter { $0.1.count >= minMembers }
             .map { shown($0.0, members: $0.1, snapshot: snapshot) }
     }
 
@@ -325,7 +325,9 @@ public enum InsightsPolicy {
                 let ownCurrent = mine?.gen.map { $0.hash == n.hash && $0.outLang == settings.language && $0.identity.isCurrent(for: model) } ?? false
                 if force ? true : (!ownCurrent && !currentElsewhere) { out.append(.generate(n.id)) }
             }
-            if let g = mine?.gen, g.hash != n.hash, currentElsewhere {
+            // This device's `gen` is for older text, or for this text in another insight language than the one set, while
+            // another device holds a current one: it goes, so a rewrite of this file never brings the old one back.
+            if let g = mine?.gen, g.hash != n.hash || g.outLang != settings.language, currentElsewhere {
                 out.append(.dropStaleGen(n.id))
             }
             if embeds, let key = pinKey {

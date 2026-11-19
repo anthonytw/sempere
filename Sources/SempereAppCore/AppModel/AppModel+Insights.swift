@@ -399,7 +399,7 @@ extension AppModelCore {
         index.outsideGraph = Set(bounded.leftOut)
         let map = reader.mapView(inputs: inputs, me: me, embedder: embedder, set: set)
         index.map = InsightsMapLayout(view: map, edges: index.graph?.edges)
-        for t in TopicSummaries.shownAll(inputs: inputs, snapshot: reader.snapshot) { index.topics[t.scope] = t }
+        for t in TopicSummaries.shownAll(inputs: inputs, snapshot: reader.snapshot, language: reader.settings.language) { index.topics[t.scope] = t }
         var members: [Int: [UUID]] = [:], placed: [Int: Set<UUID>] = [:]
         for node in map.nodes {
             guard let c = node.cluster, let id = UUID(uuidString: node.note) else { continue }

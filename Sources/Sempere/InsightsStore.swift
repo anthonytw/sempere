@@ -134,14 +134,18 @@ public struct InsightsSnapshot: Sendable {
     public init() {}
 
     /// The `gen` a reader shows for a note whose insight text hashes to `hash` (design §3.2): the best file holding a
-    /// `gen` with that hash, else (stale) the latest `gen` of any hash; each time the later `written` first, then the
-    /// device id. A `written` beyond the future window (`InsightsCodec.isOrdered`) is unordered, as in `isLater`: such a
-    /// file comes after every ordered one, then by device id. `current` says whether the hash matched.
-    public func bestGen(for note: UUID, hash: String?, now: Date = Date())
+    /// `gen` with that hash, else (stale) the latest `gen` of any hash. Among those, a `gen` written in the insight
+    /// language `language` (`outLang`, nil: the note's own, format.md §16.2) comes first, so a device that rewrites its
+    /// file in the old language (a new `written`) never hides one in the language now set; then the later `written`,
+    /// then the device id. A `written` beyond the future window (`InsightsCodec.isOrdered`) is unordered, as in `isLater`:
+    /// such a file comes after every ordered one, then by device id. `current` says whether the hash matched. Every
+    /// reader with the same files and `language` takes the same one.
+    public func bestGen(for note: UUID, hash: String?, language: String? = nil, now: Date = Date())
         -> (gen: InsightsNoteFile.Gen, device: DeviceID, written: Int64, current: Bool)? {
         func order(_ w: Int64) -> Int64 { InsightsCodec.isOrdered(w, now: now) ? w : -1 }
+        func rank(_ g: InsightsNoteFile.Gen) -> Int { g.outLang == language ? 1 : 0 }
         let files = (notes[note] ?? [:]).compactMap { d, f in f.gen.map { (d, f.written, $0) } }
-            .sorted { (order($0.1), $0.0.rawValue) > (order($1.1), $1.0.rawValue) }
+            .sorted { (rank($0.2), order($0.1), $0.0.rawValue) > (rank($1.2), order($1.1), $1.0.rawValue) }
         if let hash, let hit = files.first(where: { $0.2.hash == hash }) { return (hit.2, hit.0, hit.1, true) }
         return files.first.map { ($0.2, $0.0, $0.1, false) }
     }

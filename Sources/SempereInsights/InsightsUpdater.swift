@@ -407,7 +407,7 @@ public struct InsightsUpdater: Sendable {
             return nil
         }
         // The slug of the best current `gen` (one written in the insight language now set, else it waits for the new one).
-        let slug = override ?? snapshot.bestGen(for: note.id, hash: note.hash)
+        let slug = override ?? snapshot.bestGen(for: note.id, hash: note.hash, language: language)
             .flatMap { $0.current && $0.gen.outLang == language ? $0.gen.slug : nil }
         let local = VoiceNoteTitleFormat.captureDateAndTime(origin: origin, storedTitle: state.meta.title, started: origin.started)
         guard let title = VoiceNoteTitleFormat.render(format, date: local.date, time: local.time, slug: slug) else { return nil }
@@ -539,8 +539,8 @@ public struct InsightsUpdater: Sendable {
     func updateTopics(store: InsightsStore, snapshot: InsightsSnapshot, inputs: [InsightsNoteInput], model: any ModelProvider,
                       merger: TypoMerger, me: DeviceID, o: InsightsUpdateOptions, limit: Int?,
                       report: inout InsightsUpdateReport) async throws -> [String] {
-        let scopes = TopicScopes.members(inputs: inputs, snapshot: snapshot)
         let language = InsightsSettings.read(vault, type: o.deviceType).language
+        let scopes = TopicScopes.members(inputs: inputs, snapshot: snapshot, language: language)
         let own = snapshot.topics[me]?.topics ?? []
         var memo = o.failureMemo.map { InsightsFailureMemo.load(from: $0, vault: vault) } ?? InsightsFailureMemo()
         var memoChanged = false
@@ -627,10 +627,11 @@ public struct InsightsUpdater: Sendable {
         }
         let store = InsightsStore(vault: vault)
         _ = try store.writer()
-        let members = TopicScopes.members(inputs: inputs, snapshot: store.snapshot()).first { $0.0 == scope }?.1 ?? []
+        let language = InsightsSettings.read(vault).language
+        let members = TopicScopes.members(inputs: inputs, snapshot: store.snapshot(), language: language).first { $0.0 == scope }?.1 ?? []
         guard members.count >= TopicSummaries.minMembers else { throw TopicError.tooFewMembers(members.count) }
         guard try await writeTopic(scope, members: members, inputs: inputs, model: model, merger: InsightsNotes.merger(inputs),
-                                   store: store, language: InsightsSettings.read(vault).language, now: now) else { throw TopicError.factCheck }
+                                   store: store, language: language, now: now) else { throw TopicError.factCheck }
         if let failureMemo {
             var memo = InsightsFailureMemo.load(from: failureMemo, vault: vault)
             let name = TopicScopes.name(scope)
@@ -642,11 +643,13 @@ public struct InsightsUpdater: Sendable {
 
 /// Notebook and tag scopes of topic summaries (D8).
 public enum TopicScopes {
-    /// Per scope, its summarized members (a current `gen` with a summary), sorted by scope name.
-    public static func members(inputs: [InsightsNoteInput], snapshot: InsightsSnapshot) -> [(InsightsTopicsFile.Scope, [TopicSummaries.Member])] {
+    /// Per scope, its summarized members (a current `gen` with a summary, the one in the insight language `language` first:
+    /// `InsightsSnapshot.bestGen`), sorted by scope name.
+    public static func members(inputs: [InsightsNoteInput], snapshot: InsightsSnapshot,
+                               language: String? = nil) -> [(InsightsTopicsFile.Scope, [TopicSummaries.Member])] {
         var byScope: [InsightsTopicsFile.Scope: [TopicSummaries.Member]] = [:]
         for n in inputs where !n.deleted {
-            guard let best = snapshot.bestGen(for: n.id, hash: n.hash), best.current, let summary = best.gen.summary else { continue }
+            guard let best = snapshot.bestGen(for: n.id, hash: n.hash, language: language), best.current, let summary = best.gen.summary else { continue }
             let m = TopicSummaries.Member(note: n.id, hash: n.hash, summary: summary, keywords: best.gen.keywords.map(\.t))
             if let nb = n.notebook.flatMap(NotebookPath.canonical) { byScope[.init(notebook: nb), default: []].append(m) }
             for t in Set(n.tags.map(NoteOps.tagKey)) { byScope[.init(tag: t), default: []].append(m) }
