@@ -32,5 +32,9 @@
     "search.transcripts",
     "transcription.enabled",
     "transcription.language"
+  ],
+  "families": [
+    "palette.tool.",
+    "palette.toolOrder"
   ]
 }

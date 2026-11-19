@@ -96,6 +96,27 @@ final class DrawingToolbox {
         change { $0.setOpacity(opacity, for: ink) }
     }
 
+    /// Picks a saved tool: its ink with its color, width and opacity (`DrawingToolState.apply`).
+    func apply(_ saved: SavedTool) {
+        change { $0.apply(saved) }
+    }
+
+    /// Bumped by Tools > Save Current Tool as Preset...; the palette opens its editor when it sees it
+    /// (`takeSavePresetRequest`), even when it only shows after the request.
+    private(set) var savePresetRequests = 0
+    @ObservationIgnored private var savePresetPending = false
+
+    func requestSavePreset() {
+        savePresetPending = true
+        savePresetRequests &+= 1
+    }
+
+    /// Whether a save was asked for and not yet taken.
+    func takeSavePresetRequest() -> Bool {
+        defer { savePresetPending = false }
+        return savePresetPending
+    }
+
     /// The eraser's mode, remembered as `EraserPreference`.
     func setEraserMode(_ mode: EraserMode) {
         EraserPreference.save(Self.pkEraserType(mode), to: defaults)

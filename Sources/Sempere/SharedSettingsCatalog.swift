@@ -157,6 +157,32 @@ public struct SharedSettingSpec: Sendable {
     }
 }
 
+/// A family of keys (docs/design/1.3-custom-tools.md §3.2): `palette.tool.<uuid>`, one slot per saved tool, and
+/// `palette.toolOrder`. Used by every device, read at the top level only; each slot merges on its own.
+public struct SharedSettingFamily: Sendable {
+    /// `palette.tool.` for the presets; the whole key for the order slot.
+    public let prefix: String
+    /// True when `prefix` is a whole key.
+    public let isExact: Bool
+    public let summary: String
+    let validate: @Sendable (String, JSONValue) -> String?
+
+    /// The family of a saved tool's slots.
+    public static let savedTool = SharedSettingFamily(prefix: SavedTool.keyPrefix, isExact: false,
+        summary: "Saved tool (ink, color, width, opacity)", validate: { SavedTool.slotProblem(key: $0, $1) })
+    /// The slot of the saved tools' order.
+    public static let savedToolOrder = SharedSettingFamily(prefix: SavedTool.orderKey, isExact: true,
+        summary: "Order of the saved tools", validate: { _, v in SavedTool.orderProblem(v) })
+
+    /// Whether `key` is in the family.
+    public func matches(_ key: String) -> Bool { isExact ? key == prefix : key.hasPrefix(prefix) }
+
+    /// What is wrong with `value` at `key`, nil when it is valid (an unknown ink is valid: it is kept and hidden).
+    public func problem(_ key: String, _ value: JSONValue) -> String? { validate(key, value) }
+
+    var isSavedTool: Bool { !isExact }
+}
+
 /// Every setting this version syncs (docs/settings-sync.md §5): the registry
 /// the JSON Schema (`SharedSettingsSchema`) is generated from.
 public enum SharedSettingsCatalog {
@@ -214,6 +240,12 @@ public enum SharedSettingsCatalog {
               "Title of a voice note once its transcript is summarized"),
     ]
 
+    /// The key families: slots named by a pattern rather than one key (saved tools, docs/design/1.3-custom-tools.md).
+    public static let families: [SharedSettingFamily] = [.savedTool, .savedToolOrder]
+
+    /// The family a key belongs to, nil for none.
+    public static func family(of key: String) -> SharedSettingFamily? { families.first { $0.matches(key) } }
+
     /// The setting `name`; nil for a key this version does not know.
     public static func spec(named name: String) -> SharedSettingSpec? { specs.first { $0.name == name } }
 
@@ -263,6 +295,20 @@ public enum SharedSettingsCatalog {
                 out.append(Issue(severity: .info, path: key.description, message: "unknown type block [\(block)]; kept"))
                 continue
             }
+            if let family = family(of: key.key) {
+                if key.block != nil {
+                    out.append(Issue(severity: .info, path: key.description,
+                                     message: "\(family.summary) is read at the top level only; kept, not shown"))
+                } else if let v = s.slots[key]?.value {
+                    if let why = family.problem(key.key, v) {
+                        out.append(Issue(severity: .error, path: key.description, message: "\(why) (devices skip it)"))
+                    } else if family.isSavedTool, let id = SavedTool.id(fromKey: key.key),
+                              case .failure(.unknownInk(let ink)) = SavedTool.parse(id: id, v) {
+                        out.append(Issue(severity: .info, path: key.description, message: "unknown ink '\(ink)'; kept, not shown"))
+                    }
+                }
+                continue
+            }
             guard let spec = spec(named: key.key) else {
                 if !allKeyNames.contains(key.key) {
                     out.append(Issue(severity: .info, path: key.description, message: "unknown key; kept"))
@@ -273,6 +319,11 @@ public enum SharedSettingsCatalog {
                 out.append(Issue(severity: .error, path: key.description,
                                  message: "invalid value; expected \(spec.valuesDescription) (devices use the next level or the default)"))
             }
+        }
+        let live = SavedToolList(settings: s).liveCount
+        if live > SavedTool.maxTools {
+            out.append(Issue(severity: .info, path: "palette.tool.*",
+                             message: "\(live) saved tools; only the first \(SavedTool.maxTools) are shown, the rest are kept"))
         }
         for name in s.extra.keys.sorted() {
             out.append(Issue(severity: name.hasPrefix("$") ? .info : .error, path: SharedSettings.printable(name),
@@ -303,6 +354,7 @@ public enum SharedSettingsSchema {
             ]),
         ])
         var props: [String: JSONValue] = [
+            SavedTool.orderKey: toolOrderSchema,
             "$schemaVersion": .object(["type": .string("integer"), "minimum": .number(1),
                                        "description": .string("version of the keys' names and meanings; \(SharedSettingsMigrations.current) for this one")]),
             "$minReaderVersion": .object(["type": .string("integer"), "minimum": .number(1),
@@ -328,9 +380,40 @@ public enum SharedSettingsSchema {
             "required": .array([.string("$schemaVersion"), .string("$minReaderVersion")]),
             "allOf": .array([.object(["$ref": .string("#/$defs/settings")])]),
             "properties": .object(props),
-            "patternProperties": .object([blockPattern: .object(["type": .string("object")])]),
+            "patternProperties": .object([
+                blockPattern: .object(["type": .string("object")]),
+                toolPattern: toolSchema,
+            ]),
             "$defs": .object(["settings": settings, "meta": meta]),
         ])
+    }
+
+    static let toolPattern = "^palette\\.tool\\.[0-9a-f-]{36}$"
+
+    /// A saved tool's slot (docs/design/1.3-custom-tools.md §3.1). An ink this version does not know is kept and
+    /// hidden, so the schema does not restrict the names.
+    static var toolSchema: JSONValue {
+        let inks = InkTool.allCases.map(\.rawValue).sorted().joined(separator: ", ")
+        return .object([
+            "type": .string("object"),
+            "required": .array(["name", "ink", "color", "width", "opacity", "at"].map { .string($0) }),
+            "description": .string("A saved tool (palette entry). Used by every device; read at the top level only. The width must be inside the ink's range."),
+            "properties": .object([
+                "name": .object(["type": .string("string"), "minLength": .number(1), "maxLength": .number(Double(SavedTool.maxNameLength))]),
+                "ink": .object(["type": .string("string"), "description": .string("one of \(inks); any other is kept and hidden")]),
+                "color": .object(["type": .string("string"), "pattern": .string("^#[0-9A-Fa-f]{6}$")]),
+                "width": .object(["type": .string("number"), "exclusiveMinimum": .number(0)]),
+                "opacity": .object(["type": .string("number"), "minimum": .number(0.05), "maximum": .number(1)]),
+                "at": .object(["type": .string("integer"), "minimum": .number(0), "maximum": .number(Double(SharedSettings.maxModified))]),
+            ]),
+        ])
+    }
+
+    /// `palette.toolOrder`.
+    static var toolOrderSchema: JSONValue {
+        .object(["type": .string("array"), "maxItems": .number(Double(SavedTool.maxTools)),
+                 "items": .object(["type": .string("string"), "pattern": .string("^[0-9a-f-]{36}$")]),
+                 "description": .string("The saved tools' ids, in the user's order. Used by every device.")])
     }
 
     static let blockPattern = "^\\[[a-z][a-z0-9]{0,15}\\]$"

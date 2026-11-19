@@ -2334,6 +2334,42 @@ known}]}`; `get` gives `{key, value, source}`; `set` and `reset` give `{key, val
 block}`; `edit` gives `{changed}`; `validate` gives `{valid, issues: [{severity,
 path, message}]}`.
 
+### Saved tools
+
+```
+sempere tools list   [--json]
+sempere tools add    NAME --ink INK --color '#RRGGBB' --width W [--opacity O] [--json]
+sempere tools edit   TOOL [--name N] [--ink INK] [--color C] [--width W] [--opacity O] [--json]
+sempere tools remove TOOL [--json]
+sempere tools move   TOOL (--to N | --before TOOL | --after TOOL) [--json]
+sempere tools export [--out FILE] [--json]
+sempere tools import FILE [--replace] [--yes] [--json]
+```
+
+The palette's saved tools (`docs/design/1.3-custom-tools.md`): an ink, a color, an exact width and an opacity under a
+name, shown in the palette of every device that follows the vault's shared settings. They are settings
+(`docs/settings-sync.md` §5.1: `palette.tool.<uuid>`, one slot per tool, and `palette.toolOrder`), so the commands write
+`settings.age` the way `settings` does: merged per key, no device type recorded, exit 6 for an untrusted device list, 7
+for a read-only vault or settings that need a newer sempere. `TOOL` is an id, an id prefix (4 or more characters) or an
+exact name; a name or prefix that several tools share is an error (exit 1) naming the ids.
+
+- `list` shows the tools in palette order (`#`, id, name, ink, color, width, opacity). `--json`:
+  `{tools: [{id, name, ink, color, width, opacity, at, order}], hidden, warnings}`; `hidden` counts tools kept in the file but
+  not shown (an ink of a newer version, an invalid slot, or beyond the 64th).
+- `add` checks the values like the app's editor: an ink of `pen`, `monoline`, `fountainPen`, `marker`, `pencil`,
+  `watercolor` or `crayon`; a color `#RRGGBB`; a width inside the ink's range (`DrawingToolState.widthRange`, never clamped);
+  an opacity 0.05 to 1 (default 1); a name of 1 to 40 characters; at most 64 tools. A value that is not valid is exit 3, an
+  unknown ink or a malformed color exit 2. The new tool goes last.
+- `edit` rewrites that tool's slot only (the options given change; nothing given is exit 2). `remove` records a reset of the
+  slot, so a device that still holds the tool does not bring it back. `move` writes the order slot (`--to` is 1-based).
+- `export` writes `{"format": "sempere-tools/1", "tools": [{name, ink, color, width, opacity}]}` (no ids) to `--out` (never
+  overwriting a file) or the standard output. `import` adds the file's tools with fresh ids after the existing ones; an
+  entry that is not valid is skipped and reported on stderr (`--json`: `{added, removed, skipped}`); with `--replace` the
+  vault's tools are removed first, which needs `--yes`. A file that is not `sempere-tools/1` is exit 3; one over 1 MB is read
+  no further. This is the way to share a pen set between vaults and people.
+
+The CLI has no device-local list: it edits the vault's file, and a device with Sync Settings with This Vault off keeps its own.
+
 ### Note insights
 
 ```

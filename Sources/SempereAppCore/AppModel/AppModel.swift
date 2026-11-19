@@ -477,6 +477,9 @@ public final class AppModelCore<Host: AppModelHost> {
     public var settingsSyncProblem: SettingsSyncProblem?
     /// Turning sync on found settings that differ: the choice to ask for.
     public var settingsSyncPrompt: SettingsSyncPrompt?
+    /// The palette's saved tools (`AppModel+SavedTools`): the open vault's with Sync Settings with This Vault on, else
+    /// this device's own list.
+    public var savedTools = SavedToolList()
     /// Bumped whenever values from the vault were applied, so the Settings
     /// sections that hold copies of their values reload them.
     public var settingsAppliedRevision = 0

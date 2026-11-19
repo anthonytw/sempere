@@ -184,7 +184,7 @@ struct NoteWindowView: View {
         context.pageStripVisible = pageStripVisible
         return CommandRouter(context: context, recents: library.recents.map { RecentItem(id: $0.id, name: $0.name) },
                              exportIDs: exportIDs, windowID: ui.id) { command in
-            guard !EditorCommands.perform(command, editor: editor, ui: ui) else { return }
+            guard !EditorCommands.perform(command, editor: editor, ui: ui, savedTools: model.savedTools.tools) else { return }
             guard !WindowCommands.perform(command, model: model, ui: ui, exportIDs: exportIDs) else { return }
             switch command {
             case .renameNote: ui.renameNoteID = value.noteID
