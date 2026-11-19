@@ -5,6 +5,7 @@
 // AES-256-GCM (WebCrypto) under HKDF(K_e, "sempere/1 published
 // summaries key"), the vault id in the associated data.
 
+import { type VoiceOrigin } from "../format/displaytitle.ts";
 import { isLowercaseUUID } from "../format/json.ts";
 import { parseRFC3339 } from "../format/rfc3339.ts";
 import { gunzip } from "./gzip.ts";
@@ -45,6 +46,35 @@ export interface SummaryEntry {
   modified: number;
   pages: number;
   pageTexts: { number: number; text: string }[];
+  /** 1.3: a voice note whose stored title is blank or a default: where and when it was captured. */
+  voice?: VoiceOrigin;
+  /** 1.3: the title Note Insights derived that the writer shows (only with `voice`). */
+  shown?: string;
+}
+
+/** format.md §12.2, §9: the longest `shown` and `voice.tz` read. */
+export const maxShownLength = 1000;
+export const maxZoneLength = 64;
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** True when `s` has at most `max` characters as Swift counts them (grapheme clusters), the limits of §9. */
+function fits(s: string, max: number): boolean {
+  if (s.length <= max) return true;   // never more clusters than UTF-16 code units
+  const it = graphemes.segment(s)[Symbol.iterator]();
+  for (let n = 0; n <= max; n++) if (it.next().done) return true;
+  return false;
+}
+
+/** `voice` (format.md §12.2), or undefined when absent or malformed (only the member is dropped). */
+function decodeVoice(v: unknown): VoiceOrigin | undefined {
+  if (!isObj(v) || typeof v.started !== "string") return undefined;
+  const started = parseRFC3339(v.started);
+  if (started === undefined) return undefined;
+  const out: VoiceOrigin = { started };
+  if (typeof v.tz === "string" && fits(v.tz, maxZoneLength)) out.tz = v.tz;
+  if (typeof v.source === "string") out.source = v.source;
+  return out;
 }
 
 function bytes(b: Uint8Array): Uint8Array<ArrayBuffer> {
@@ -134,6 +164,13 @@ export function decodeEntry(v: unknown): SummaryEntry | undefined {
   }
   const e: SummaryEntry = { revisions, title, tags, favorite, deleted, created, modified, pages, pageTexts };
   if (typeof notebook === "string") e.notebook = notebook;
+  // 1.3, optional: a malformed `voice` or `shown` is dropped alone; `shown` only with `voice`.
+  const voice = decodeVoice(v.voice);
+  if (voice !== undefined) {
+    e.voice = voice;
+    const shown = v.shown;
+    if (typeof shown === "string" && shown.trim() !== "" && fits(shown, maxShownLength)) e.shown = shown;
+  }
   return e;
 }
 
@@ -178,5 +215,7 @@ export function entrySummary(id: string, e: SummaryEntry): NoteSummary {
     modified: e.modified, pageCount: e.pages, pageTexts: e.pageTexts, failures: 0, hasAttachments: false, newer: false,
   };
   if (e.notebook !== undefined) s.notebook = e.notebook;
+  if (e.voice !== undefined) s.voice = e.voice;
+  if (e.shown !== undefined) s.shown = e.shown;
   return s;
 }

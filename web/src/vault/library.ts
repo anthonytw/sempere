@@ -50,8 +50,10 @@ export interface NoteSummary {
   hasAttachments: boolean;
   /** The note holds content a newer version wrote (format.md §7.4). */
   newer: boolean;
-  /** Where and when its voice recording was captured, for the title shown while it stores none (absent: none, or an entry of the published index). */
+  /** Where and when its voice recording was captured, for the title shown while it stores none (absent: none, or an entry of the published summaries without `voice`). */
   voice?: VoiceOrigin;
+  /** The title Note Insights derived that the writing device shows (published summaries' `shown`, format.md §12.2); only from an entry. */
+  shown?: string;
 }
 
 function holdsAttachments(r: Revision): boolean {
