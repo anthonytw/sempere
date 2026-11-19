@@ -83,8 +83,11 @@ cross-folder read therefore fails CI until declared, instead of silently escapin
 
 **Residual risk, bounded.** Not covered: tools installed from apt on Linux (poppler, zbar, zip) under the pinned image,
 the clock, the network, and a path assembled at run time from data the scan cannot see. The forced full runs bound how
-long any of that can hide: `--testflight`, `--release` and `--cli` run every test (`SEMPERE_CI_FORCE_ALL=1`). The owner decided (2026-11-09) against any weekly or post-merge
-full run: a target whose hash has a passing record never reruns, and the release modes are the full proof.
+long any of that can hide: `--cli` and `--force-all` run every test (`SEMPERE_CI_FORCE_ALL=1`). Until 2026-11-19 `--testflight` and `--release` did too;
+the owner then asked for a faster release sweep, so they skip a target whose hash already passed on this machine like the gate does (a skipped
+target's inputs are byte-identical to a run that passed; the posted status still means every step passed for this tree). The owner decided (2026-11-09) against any weekly or post-merge
+full run: a target whose hash has a passing record never reruns. Run `local-ci.sh --release --force-all` to distrust the store (for example after a
+toolchain-neutral environment change the hash cannot see).
 
 **The record.** When a run passed, every target it ran gets a small file `STORE/JOB/TARGET/HASH` with the commit,
 the date and the host. The store is `~/.cache/sempere-ci-pass` on the Mac for the Mac and the Docker jobs alike (`ci-linux.sh docker` mounts it
@@ -106,8 +109,8 @@ passed, has the same hashes and hits the earlier record, so merging costs no run
 - Every skip is logged with the hash and that commit, and the Mac gate prints the lines on the console too:
   `ci-hash: SKIP AgeTests  linux-test: hash 9e7f6532… passed at 3b1c… (2026-11-08 14:02 EST, host)`.
 - An unreadable or missing record means run. `SEMPERE_CI_FORCE_ALL=1` runs everything (and still records). The
-  release-bound Mac modes (`--testflight`, `--release`, `--cli`) set it themselves and pass it into the Docker
-  jobs: a release runs the whole suite.
+  `--cli` and `--force-all` (any mode) set it themselves and pass it into the Docker
+  jobs; `--testflight` and `--release` do not, so they skip like the gate.
 - The store is a claim by the machine that wrote it, not a signed artifact. Anyone who distrusts it forces a run
   or deletes the folder; the release modes bound how long a bad record could hide.
 

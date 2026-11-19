@@ -75,6 +75,7 @@ pick_simulator() {
 # app's accessibility queries timed out ("Failed to get matching snapshots"). Locally a
 # no-op, so a developer's own simulators are left alone.
 settle_simulator() {
+  track_simulator "$1"
   [[ "${CI:-}" == true ]] || return 0
   local sim=$1 limit=${SEMPERE_SIM_SETTLE:-180} cpus load waited=0
   xcrun simctl bootstatus "$sim" -b >/dev/null || true
@@ -96,6 +97,16 @@ xcb() {
   /usr/bin/python3 -I scripts/test-runner.py --kind xcodebuild -- xcodebuild "$@"
 }
 
+# `test` and `test-phone` can run on products built before (`build-sim-unit`), each with a result bundle of its own, so the
+# iPad and iPhone unit suites run side by side (local-ci.sh's `sim-unit` step): SEMPERE_XCB_ACTION=test-without-building,
+# SEMPERE_RESULT_BUNDLE=path. Without them: `xcodebuild test`, no bundle path.
+xc_verb=${SEMPERE_XCB_ACTION:-test}
+result_bundle=()
+if [[ -n ${SEMPERE_RESULT_BUNDLE:-} ]]; then
+  rm -rf "$SEMPERE_RESULT_BUNDLE"   # xcodebuild refuses to write over an earlier run's bundle
+  result_bundle=(-resultBundlePath "$SEMPERE_RESULT_BUNDLE")
+fi
+
 # Whether a step stops at its first failure (test-runner.py's rule): off CI unless SEMPERE_FAIL_FAST=0.
 fail_fast() {
   case "${SEMPERE_FAIL_FAST:-}" in 0) return 1 ;; 1) return 0 ;; esac
@@ -107,6 +118,57 @@ fail_fast() {
 shutdown_simulators() {
   [[ "${CI:-}" == true ]] || return 0
   xcrun simctl shutdown "${1:-all}" >/dev/null 2>&1 || true
+}
+
+# --- Cleanup on every exit path (docs/ci.md "Cleaning up after a run") --------------------------------------------
+# A run leaves the Mac as it found it: the simulators it booted are shut down, a Mac Catalyst test host or app it started
+# and that outlived its xcodebuild is quit, and the run's temp folder is removed. Only what this run made: a simulator
+# that was booted before it started stays booted (it may be someone's), and a process is quit by PID, never by a name
+# pattern, and only when it was not there at the start. Runs in an EXIT trap, so a failed step, `set -e`, SIGINT and
+# SIGTERM (the trap below turns them into an exit) all get it. Idempotent.
+#   SEMPERE_APP_NO_CLEANUP=1   leave simulators and processes alone (to look at a failed run)
+sims_ours=()          # simulator ids this run saw booting (not booted when it first needed them)
+sweep_new_sims=false  # watch runs: any simulator that was not booted at the start is ours (the paired iPhone boots with it)
+sims_before=""
+host_pids_before=""
+derived_abs=$PWD/${derived#./}; [[ $derived == /* ]] && derived_abs=$derived
+# Mac Catalyst processes running from this checkout's build products (the test host, the app under test). The Mac steps
+# are exclusive (scripts' xc-lock kind `mac`), so none of these belongs to another run of this checkout.
+catalyst_pids() { pgrep -f "$derived_abs/Build/Products/[^ ]*-maccatalyst/" 2>/dev/null | grep -vx "$$" || true; }
+booted_sims() { xcrun simctl list devices booted 2>/dev/null | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}' || true; }
+cleanup_started=false
+app_cleanup() {
+  [[ $cleanup_started == false ]] || return 0
+  cleanup_started=true
+  trap - EXIT
+  if [[ ${SEMPERE_APP_NO_CLEANUP:-} != 1 ]]; then
+    local pid sim now
+    for pid in $(catalyst_pids); do
+      grep -qx "$pid" <<<"$host_pids_before" && continue
+      kill -TERM "$pid" 2>/dev/null || true
+      echo "app.sh: cleanup: quit leftover process $pid"
+    done
+    now=$(booted_sims)
+    if [[ $sweep_new_sims == true ]]; then
+      for sim in $now; do grep -qx "$sim" <<<"$sims_before" || sims_ours+=("$sim"); done
+    fi
+    for sim in ${sims_ours[@]+"${sims_ours[@]}"}; do
+      if grep -qx "$sim" <<<"$now"; then
+        xcrun simctl shutdown "$sim" >/dev/null 2>&1 && echo "app.sh: cleanup: shut down simulator $sim (this run booted it)" || true
+      fi
+    done
+  fi
+  run_tmp_end
+}
+trap app_cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+host_pids_before=$(catalyst_pids)
+sims_before=$(booted_sims)
+case "${1:-}" in test-watch|test-watch-ui|test-quarantine) sweep_new_sims=true ;; esac
+# Remember a simulator this run is about to use, when nothing had it booted: the cleanup shuts it down again.
+track_simulator() {
+  grep -qx "$1" <<<"$sims_before" || sims_ours+=("$1")
 }
 
 # Arguments after the subcommand, for xcodebuild. `suites A B …` sets $only to the subcommand's
@@ -229,12 +291,12 @@ tmp_guard_start() {
   sweep_test_defaults
   tmp_before=$(tmp_count)
   prefs_before=$(prefs_count)
-  trap 'tmp_guard_report $?' EXIT
+  trap 'tmp_guard_report $?' EXIT   # runs app_cleanup too
 }
 tmp_guard_report() {
   local rc=$1 after delta max=${SEMPERE_TMP_LEAK_MAX:-20}
   trap - EXIT
-  run_tmp_end
+  app_cleanup
   after=$(tmp_count)
   delta=$((after - tmp_before))
   echo "tmp-guard: app container tmp entries before=$tmp_before after=$after (delta $delta, limit $max)"
@@ -263,8 +325,16 @@ case "${1:-}" in
     settle_simulator "$sim"
     skip=("${perf_skip[@]}"); $narrowed && skip=()   # the benchmarks are the Mac's (test-mac-perf)
     skip+=(${unit_skip_mac[@]+"${unit_skip_mac[@]}"})
-    xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
-      -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${skip[@]+"${skip[@]}"} ${extra[@]+"${extra[@]}"}
+    xcb "$xc_verb" "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
+      -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${result_bundle[@]+"${result_bundle[@]}"} \
+      ${skip[@]+"${skip[@]}"} ${extra[@]+"${extra[@]}"}
+    ;;
+  build-sim-unit)
+    # The app and its unit tests built for the iOS simulator once (no simulator is booted), so `test` and `test-phone` can
+    # run on the products with SEMPERE_XCB_ACTION=test-without-building, side by side. The same products serve every iOS simulator.
+    sim=$(pick_simulator)
+    xcodebuild build-for-testing -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
+      -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     ;;
   test-phone)
     # Same build products as `test` (the simulator SDK is shared), so after it this only runs the suites.
@@ -277,8 +347,8 @@ case "${1:-}" in
       -only-testing:SempereAppTests/PhoneInsertTests -only-testing:SempereAppTests/InsertOptionsTests \
       -only-testing:SempereAppTests/PhoneToolbarTests -only-testing:SempereAppTests/PhonePagelessTests \
       -only-testing:SempereAppTests/PhoneCanvasInteractionTests
-    xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
-      -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO \
+    xcb "$xc_verb" "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
+      -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${result_bundle[@]+"${result_bundle[@]}"} \
       ${only[@]+"${only[@]}"} ${extra[@]+"${extra[@]}"} \
       || { status=$?; shutdown_simulators "$sim"; exit $status; }
     shutdown_simulators "$sim"
@@ -494,7 +564,7 @@ case "${1:-}" in
       -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     ;;
   *)
-    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|test-quarantine|build-ios|build-watch|test-watch|test-watch-ui|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|simulator" >&2
+    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|test-quarantine|build-ios|build-sim-unit|build-watch|test-watch|test-watch-ui|pseudo|pseudo-mac|catalyst|test-mac|test-mac-offline|test-mac-ui|test-mac-smoke|test-mac-perf|simulator" >&2
     exit 2
     ;;
 esac
