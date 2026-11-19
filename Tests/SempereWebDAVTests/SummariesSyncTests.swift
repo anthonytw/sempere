@@ -95,8 +95,13 @@ final class SummariesSyncTests: SyncTestCase {
         let before = server.requests.count
         XCTAssertFalse(try syncSummaries("A", server, derivedTitles: derived).uploaded.contains(PublishedSummaries.fileName))
         XCTAssertFalse(server.requests[before...].contains { $0.path.hasSuffix(PublishedSummaries.fileName) })
-        // A derived title arrives (an insights file): rewritten with it.
-        try Data("x".utf8).write(to: a.insightsURL.appendingPathComponent("probe"))
+        // A map changes no title: not even read.
+        try Data("x".utf8).write(to: a.insightsURL.appendingPathComponent("map.\(devA.rawValue).insights.age"))
+        let beforeMap = server.requests.count
+        XCTAssertFalse(try syncSummaries("A", server, derivedTitles: derived).uploaded.contains(PublishedSummaries.fileName))
+        XCTAssertFalse(server.requests[beforeMap...].contains { $0.path.hasSuffix(PublishedSummaries.fileName) })
+        // A derived title arrives (the note's insights file): rewritten with it.
+        try Data("x".utf8).write(to: a.insightsURL.appendingPathComponent("\(note.uuidString.lowercased()).\(devA.rawValue).insights.age"))
         XCTAssertTrue(try syncSummaries("A", server, derivedTitles: derived).uploaded.contains(PublishedSummaries.fileName))
         XCTAssertEqual(try remote(server, a)?[note]?.shown, "Synthetic standup")
         XCTAssertFalse(try syncSummaries("A", server, derivedTitles: derived).uploaded.contains(PublishedSummaries.fileName))

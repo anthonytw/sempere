@@ -2,6 +2,7 @@ import Age
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereInsights
 import SempereSync
 import SempereWebDAV
 
@@ -321,6 +322,7 @@ struct VaultReencrypt: ParsableCommand {
         var options = SyncOptions()
         options.deviceID = vault.writerDevice ?? SyncCLI.deviceID()
         options.deviceLabel = conflictDeviceLabel
+        options.derivedTitles = { InsightsNotes.derivedTitles($0, for: $1) }
         options.localWriteLock = store.writeLock(for: vault.vaultId)
         options.recordSynced = true
         options.epochTrust = trustStore()

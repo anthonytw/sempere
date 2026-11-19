@@ -385,10 +385,61 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertEqual(again, 1)
         XCTAssertNotNil(upgraded[blank]?.voice)
 
-        // The stamp of what titles are made from follows the insights folder.
+        // ... unless its file carries the `titles` marker: then an entry without `voice` is final.
+        XCTAssertEqual(try vault.publishedSummaryEntries(reuse: legacy, reuseTitled: true).summarised, 0)
+
+        // The stamp of what titles are made from follows the insights note files, not maps, topics or device records.
         let stamp = PublishedSummaries.derivedTitlesStamp(vault)
-        try Data("x".utf8).write(to: vault.insightsURL.appendingPathComponent("n.aaaaaaaa.insights.age"))
+        try Data("x".utf8).write(to: vault.insightsURL.appendingPathComponent("map.aaaaaaaa.insights.age"))
+        XCTAssertEqual(PublishedSummaries.derivedTitlesStamp(vault), stamp)
+        try Data("x".utf8).write(to: vault.insightsURL.appendingPathComponent("\(blank.uuidString.lowercased()).aaaaaaaa.insights.age"))
         XCTAssertNotEqual(PublishedSummaries.derivedTitlesStamp(vault), stamp)
+        // A reader of a few notes' titles reads only those notes' files (the damaged map is never opened).
+        XCTAssertNotNil(InsightsStore(vault: vault).snapshot().ignored["map.aaaaaaaa.insights.age"])
+        let few = InsightsStore(vault: vault).snapshot(notes: [named])
+        XCTAssertTrue(few.ignored.isEmpty && few.files.isEmpty, "\(few.ignored)")
+        XCTAssertNotNil(InsightsStore(vault: vault).snapshot(notes: [blank]).ignored["\(blank.uuidString.lowercased()).aaaaaaaa.insights.age"])
+
+        // With derived titles and no insights folder, a reused entry's `shown` is dropped (no title to show).
+        try FileManager.default.removeItem(at: vault.insightsURL)
+        let gone = try vault.publishedSummaryEntries(reuse: first, reuseTitled: true, derivedTitles: titles)
+        XCTAssertEqual(gone.summarised, 0)
+        XCTAssertNil(gone.entries[blank]?.shown)
+        XCTAssertNotNil(gone.entries[blank]?.voice)
+    }
+
+    /// The refresh after a command (`refreshPublishedSummaries` with a stamp folder) reads nothing while the listing, the file
+    /// and what titles are made from are unchanged: derived titles are not looked up again.
+    func testARefreshWithAnUnchangedStampReadsNothing() throws {
+        let vault = try makeVault(pqIdentity())
+        let note = UUID()
+        let blob = try vault.writeBlob(note: note, Data("synthetic audio".utf8), type: "audio/mp4")
+        var ops = NoteOps.newNote(title: "", pageId: UUID())
+        ops.append(.addRecording(Recording(blob: blob, started: Date(timeIntervalSince1970: 1_791_385_920),
+                                           captured: CaptureAttribution(device: "aaaaaaaa", recipient: String(repeating: "ab", count: 32)))))
+        try vault.write(rev(note, devA, 1, 0, ops))
+        try FileManager.default.createDirectory(at: vault.insightsURL, withIntermediateDirectories: true)
+        try vault.sealPublishedSummaries([:], titles: false).write(to: vault.publishedSummariesURL)
+        let calls = TitleCalls()
+        let titles: PublishedSummaries.DerivedTitles = { _, notes in
+            calls.add()
+            return Dictionary(uniqueKeysWithValues: notes.map { ($0.id, "Derived") })
+        }
+        let stamps = tmp.appendingPathComponent("stamps", isDirectory: true)
+        XCTAssertTrue(try vault.refreshPublishedSummaries(cacheDirectory: stamps, derivedTitles: titles))
+        XCTAssertEqual(calls.value, 1)
+        XCTAssertEqual(vault.readPublishedSummaries()[note]?.shown, "Derived")
+        XCTAssertFalse(try vault.refreshPublishedSummaries(cacheDirectory: stamps, derivedTitles: titles))
+        XCTAssertEqual(calls.value, 1, "unchanged stamp: no insights read")
+        // A derived title arrives: looked up again.
+        try Data("x".utf8).write(to: vault.insightsURL.appendingPathComponent("\(note.uuidString.lowercased()).aaaaaaaa.insights.age"))
+        XCTAssertFalse(try vault.refreshPublishedSummaries(cacheDirectory: stamps, derivedTitles: titles))
+        XCTAssertEqual(calls.value, 2)
+        XCTAssertFalse(try vault.refreshPublishedSummaries(cacheDirectory: stamps, derivedTitles: titles))
+        XCTAssertEqual(calls.value, 2)
+        // The file's `titles` marker: written, so a later writer takes entries without `voice` as final.
+        let data = try Data(contentsOf: vault.publishedSummariesURL)
+        XCTAssertTrue(try vault.openPublishedSummariesContents(data).titles)
     }
 
     func testStaleEntriesAreReadAgainAndListingFiltersTheServerView() throws {
@@ -452,4 +503,12 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertGreaterThan(sealedReport.cases, 0)
         for f in sealedReport.failures { XCTFail("\(f)") }
     }
+}
+
+/// A thread-safe call counter (test closures are `@Sendable`).
+private final class TitleCalls: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    var value: Int { lock.lock(); defer { lock.unlock() }; return n }
+    func add() { lock.lock(); n += 1; lock.unlock() }
 }

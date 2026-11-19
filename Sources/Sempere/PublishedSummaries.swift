@@ -106,7 +106,7 @@ public enum PublishedSummaries {
         /// True when this entry may be one an earlier writer made of such a voice note (no `voice`, which those wrote
         /// none of, and a title that is blank or has the shape of a stored default): a writer reads the note again rather
         /// than reuse it, so the entry gains `voice` (and `shown`).
-        var mayLackVoice: Bool {
+        package var mayLackVoice: Bool {
             guard voice == nil else { return false }
             let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
             return t.isEmpty || NoteDisplayTitle.isCaptureDefault(t)
@@ -134,7 +134,8 @@ public enum PublishedSummaries {
     public typealias DerivedTitles = @Sendable (_ vault: Vault, _ notes: [NoteSummary]) -> [UUID: String]
 
     /// What the shown titles depend on besides the revisions (format.md §12.4): the names, sizes and modification times
-    /// of the vault's `insights/` files and of `settings.age` (the insight language and title format). A writer that
+    /// of the vault's insights note files (`insights/<note>.<device>.insights.age`: maps, topics and device records hold
+    /// no title) and of `settings.age` (the insight language and title format). A writer that
     /// skips an unchanged listing compares it too, so a derived title that arrives refreshes the summaries.
     public static func derivedTitlesStamp(_ vault: Vault) -> Data {
         var lines: [String] = []
@@ -143,8 +144,8 @@ public enum PublishedSummaries {
             lines.append("\(name) \(v?.fileSize ?? -1) \(v?.contentModificationDate?.timeIntervalSince1970 ?? 0)")
         }
         let folder = vault.insightsURL
-        for name in ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted() where !name.hasPrefix(".") {
-            add(folder.appendingPathComponent(name), name)
+        for name in InsightsStore.names(in: folder) where name.kind == .note {
+            add(folder.appendingPathComponent(name.fileName), name.fileName)
         }
         add(vault.url.appendingPathComponent(SharedSettings.fileName), SharedSettings.fileName)
         return Data(lines.joined(separator: "\n").utf8)
@@ -298,6 +299,8 @@ public enum PublishedSummaries {
         var notes: [String: WireEntry]
         /// Per-device files only (format.md §12.5): the end of the device's last complete two-way sync.
         var synced: String?
+        /// `1` (format.md §12.2, 1.3): every entry carries `voice` where it applies, so one without is final.
+        var titles: Int?
     }
 
     /// Decodes an entry, or nil when it is malformed (only that entry is dropped).
@@ -324,6 +327,7 @@ public enum PublishedSummaries {
         var version: LenientField<Int64>?
         var notes: [String: Lenient]
         var synced: LenientField<String>?
+        var titles: LenientField<Int>?
     }
 
     /// The greatest `version` (format.md §12.5): 2^53 − 1, exact in every JSON reader (the web viewer's too).
@@ -339,9 +343,13 @@ public enum PublishedSummaries {
         /// Per-device files: when the writer last completed a two-way sync (`synced`, key-hierarchy design §5.5),
         /// nil when absent or malformed.
         public var synced: Date?
+        /// `titles` (format.md §12.2, 1.3): the writer gave every entry `voice` where it applies, so an entry without one
+        /// is final; false for a file of an earlier writer (its entries that may lack `voice` are made again).
+        public var titles: Bool
 
-        public init(entries: [UUID: Entry], device: DeviceID? = nil, version: Int64? = nil, synced: Date? = nil) {
-            self.entries = entries; self.device = device; self.version = version; self.synced = synced
+        public init(entries: [UUID: Entry], device: DeviceID? = nil, version: Int64? = nil, synced: Date? = nil,
+                    titles: Bool = true) {
+            self.entries = entries; self.device = device; self.version = version; self.synced = synced; self.titles = titles
         }
     }
 
@@ -380,8 +388,10 @@ public enum PublishedSummaries {
     }
 
     /// The JSON content: sorted keys, no escaped slashes, so equal entries give equal bytes.
+    /// `titles` writes the marker of a file whose entries carry `voice` where it applies (format.md §12.2); false only when
+    /// sealing again entries of a file that had none.
     public static func encode(_ entries: [UUID: Entry], vaultId: UUID, device: DeviceID? = nil,
-                              version: Int64? = nil, synced: Date? = nil) throws -> Data {
+                              version: Int64? = nil, synced: Date? = nil, titles: Bool = true) throws -> Data {
         var notes: [String: WireEntry] = [:]
         for (id, e) in entries {
             guard let created = RFC3339.string(from: e.created), let modified = RFC3339.string(from: e.modified) else {
@@ -400,7 +410,7 @@ public enum PublishedSummaries {
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var data = try encoder.encode(WireFile(format: format, vaultId: vaultId.uuidString.lowercased(),
                                                device: device?.rawValue, version: version, notes: notes,
-                                               synced: synced.flatMap { RFC3339.string(from: $0) }))
+                                               synced: synced.flatMap { RFC3339.string(from: $0) }, titles: titles ? 1 : nil))
         data.append(0x0A)
         return data
     }
@@ -432,7 +442,7 @@ public enum PublishedSummaries {
         }
         let version = file.version?.value.flatMap { (1...maxVersion).contains($0) ? $0 : nil }
         return Contents(entries: out, device: file.device?.value.flatMap { DeviceID($0) }, version: version,
-                        synced: file.synced?.value.flatMap { RFC3339.parse($0) })
+                        synced: file.synced?.value.flatMap { RFC3339.parse($0) }, titles: (file.titles?.value ?? 0) >= 1)
     }
 
     private static func validate(_ w: WireEntry) -> Entry? {
@@ -508,8 +518,8 @@ extension Vault {
     }
 
     /// The sealed root file (§12.1) for `entries`.
-    public func sealPublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry]) throws -> Data {
-        let json = try PublishedSummaries.encode(entries, vaultId: vaultId)
+    public func sealPublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], titles: Bool = true) throws -> Data {
+        let json = try PublishedSummaries.encode(entries, vaultId: vaultId, titles: titles)
         return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId)
     }
 
@@ -519,18 +529,18 @@ extension Vault {
     /// - Throws: `PublishedSummariesError.cannotSign` when the vault was not opened as a listed device with
     ///   its signing keys; `VaultError.locked` without the key.
     package func sealDevicePublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], version: Int64,
-                                              synced: Date? = nil) throws -> Data {
+                                              synced: Date? = nil, titles: Bool = true) throws -> Data {
         guard let device = writerDevice, let signing else {
             throw PublishedSummariesError.cannotSign("needs this device's own entry and signing keys")
         }
-        return try sealDeviceFile(entries, device: device, version: version, signer: signing, synced: synced)
+        return try sealDeviceFile(entries, device: device, version: version, signer: signing, synced: synced, titles: titles)
     }
 
     /// `entries` as `device`'s file at `version`, signed by `signer` over the message for `device` and
     /// `version` (tests forge with it; `sealDevicePublishedSummaries` is the writer).
     func sealDeviceFile(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID, version: Int64,
-                        signer: any AuthorSigner, nonce: Data? = nil, synced: Date? = nil) throws -> Data {
-        let sealed = try sealDeviceBody(entries, device: device, version: version, nonce: nonce, synced: synced)
+                        signer: any AuthorSigner, nonce: Data? = nil, synced: Date? = nil, titles: Bool = true) throws -> Data {
+        let sealed = try sealDeviceBody(entries, device: device, version: version, nonce: nonce, synced: synced, titles: titles)
         let message = AuthorMessage.summaries(vaultId: vaultId, epoch: manifest.epoch, epochId: manifest.epochId,
                                               device: device, version: version, sealed: sealed)
         return PublishedSummaries.attach(try signer.sign(message), to: sealed)
@@ -538,9 +548,9 @@ extension Vault {
 
     /// The sealed part of a per-device file (header, nonce, ciphertext, tag), without its signature.
     func sealDeviceBody(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID, version: Int64,
-                        nonce: Data? = nil, synced: Date? = nil) throws -> Data {
+                        nonce: Data? = nil, synced: Date? = nil, titles: Bool = true) throws -> Data {
         let json = try PublishedSummaries.encode(entries, vaultId: vaultId, device: device, version: version,
-                                                 synced: synced)
+                                                 synced: synced, titles: titles)
         return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId,
                                            device: (manifest.epoch, version), nonce: nonce)
     }
@@ -576,7 +586,8 @@ extension Vault {
         contents.version = version
         contents.synced = now
         try FileIO.createDirectory(url.deletingLastPathComponent())
-        try FileIO.writeAtomically(try sealDevicePublishedSummaries(contents.entries, version: version, synced: now), to: url,
+        try FileIO.writeAtomically(try sealDevicePublishedSummaries(contents.entries, version: version, synced: now,
+                                                                    titles: contents.titles), to: url,
                                    replacing: true)
         return true
     }
@@ -589,7 +600,8 @@ extension Vault {
         guard let version = PublishedSummaries.nextVersion(after: previous.version, now: now) else { return }
         let url = devicePublishedSummariesURL(device)
         try FileIO.createDirectory(url.deletingLastPathComponent())
-        try FileIO.writeAtomically(try sealDevicePublishedSummaries(previous.entries, version: version, synced: previous.synced),
+        try FileIO.writeAtomically(try sealDevicePublishedSummaries(previous.entries, version: version, synced: previous.synced,
+                                                                    titles: previous.titles),
                                    to: url, replacing: true)
     }
 
@@ -599,10 +611,15 @@ extension Vault {
     /// - Throws: `PublishedSummariesError.damaged` for a file that is not
     ///   this vault's root file (or is damaged); `VaultError.locked` without the secret.
     public func openPublishedSummaries(_ data: Data) throws -> [UUID: PublishedSummaries.Entry] {
+        try openPublishedSummariesContents(data).entries
+    }
+
+    /// `openPublishedSummaries` with the file's `titles` marker (format.md §12.2), for a writer that reuses its entries.
+    public func openPublishedSummariesContents(_ data: Data) throws -> PublishedSummaries.Contents {
         guard data.starts(with: PublishedSummaries.magic) else {
             throw PublishedSummariesError.damaged("not a root summaries file")
         }
-        return try decryptPublishedSummaries(data).entries
+        return try decryptPublishedSummaries(data)
     }
 
     /// The content of a sealed file of this vault (a per-device file's sealed part, or the whole file:
@@ -756,10 +773,14 @@ extension Vault {
     /// - Parameter derivedTitles: the titles Note Insights derived (the writer's resolution, `NoteDisplayTitle.resolve`):
     ///   with it, and an `insights/` folder in the vault, every entry of a voice note whose stored title is blank or a
     ///   default (`Entry.voice`) is made again and gets `shown` (format.md §12.2), so a title derived since the last
-    ///   write is published though no revision changed. Without it entries carry no new `shown` (reused ones keep theirs).
+    ///   write is published though no revision changed. With it and no `insights/` folder, there is no derived title:
+    ///   reused entries lose their `shown`. Without it entries carry no new `shown` (reused ones keep theirs).
+    /// - Parameter reuseTitled: `reuse` comes from a file with the `titles` marker (format.md §12.2): its entries without
+    ///   `voice` are final. Without the marker, an entry that may be an earlier writer's of a voice note is made again.
     /// - Returns: the entries and how many notes had to be summarized.
     public func publishedSummaryEntries(for listing: [String: [String]]? = nil,
                                         reuse: [UUID: PublishedSummaries.Entry] = [:],
+                                        reuseTitled: Bool = false,
                                         cache: SummaryCache? = nil,
                                         ownListing: [String: [String]]? = nil,
                                         derivedTitles: PublishedSummaries.DerivedTitles? = nil) throws
@@ -767,7 +788,8 @@ extension Vault {
         _ = try requireReadable()
         var out: [UUID: PublishedSummaries.Entry] = [:]
         var toRead: [UUID] = []
-        let titles = derivedTitles.flatMap { FileIO.exists(insightsURL) ? $0 : nil }
+        let hasInsights = derivedTitles != nil && FileIO.exists(insightsURL)
+        let titles = hasInsights ? derivedTitles : nil
         let own: [(UUID, [String])]
         if let ownListing {
             own = ownListing.sorted { $0.key < $1.key }.compactMap { k, v in UUID(uuidString: k).map { ($0, v.sorted()) } }
@@ -779,7 +801,8 @@ extension Vault {
             if let listing, listing[id.uuidString.lowercased()]?.sorted() != names { continue }
             // An entry an earlier writer made of a voice note is made again (it gains `voice`), and with derived titles
             // so is every entry whose shown title may be one (its `shown` is looked up again).
-            if let e = reuse[id], e.revisions == names, !e.mayLackVoice, titles == nil || !e.showsMadeTitle {
+            if var e = reuse[id], e.revisions == names, reuseTitled || !e.mayLackVoice, titles == nil || !e.showsMadeTitle {
+                if derivedTitles != nil && !hasInsights { e.shown = nil }   // no insights: no derived title to show
                 out[id] = e
             } else {
                 toRead.append(id)
@@ -814,6 +837,10 @@ extension Vault {
     /// The vault is opened again first (a command may have changed its
     /// manifest); with `cacheDirectory`, notes are summarized through the
     /// summary cache there (format.md §10).
+    ///
+    /// With `cacheDirectory`, the last refresh's stamp is kept there (`publishedSummariesStampURL`): the vault's listing,
+    /// its epoch, the file's size and modification time and, with `derivedTitles`, `PublishedSummaries.derivedTitlesStamp`.
+    /// A refresh whose stamp is unchanged reads nothing (no note, no insights file) and returns false.
     @discardableResult
     public func refreshPublishedSummaries(cacheDirectory: URL? = nil, ownListing: [String: [String]]? = nil,
                                           derivedTitles: PublishedSummaries.DerivedTitles? = nil) throws -> Bool {
@@ -821,22 +848,56 @@ extension Vault {
         guard FileIO.exists(publishedSummariesURL), canRead, !isReadOnly,
               let vault = try? Vault.open(at: url, identities: unlockIdentities, signing: signing, trust: trustStore,
                                             root: manifest.root) else { return false }
-        return try vault.refreshOpenedPublishedSummaries(
-            cache: cacheDirectory.flatMap { try? SummaryCache(directory: $0, vault: vault) }, ownListing: ownListing,
+        let listing = ownListing ?? (try? vault.webIndexListing())
+        let stampURL = cacheDirectory.map { vault.publishedSummariesStampURL(in: $0) }
+        if let stampURL, let listing, let stamp = vault.publishedSummariesRefreshStamp(listing, titles: derivedTitles != nil),
+           (try? Data(contentsOf: stampURL)) == stamp {
+            return false
+        }
+        let changed = try vault.refreshOpenedPublishedSummaries(
+            cache: cacheDirectory.flatMap { try? SummaryCache(directory: $0, vault: vault) }, ownListing: listing,
             derivedTitles: derivedTitles)
+        if let stampURL, let listing, let stamp = vault.publishedSummariesRefreshStamp(listing, titles: derivedTitles != nil) {
+            try? FileIO.createDirectory(stampURL.deletingLastPathComponent())
+            try? FileIO.writeAtomically(stamp, to: stampURL, replacing: true)
+        }
+        return changed
+    }
+
+    /// Where `refreshPublishedSummaries` keeps its stamp for this vault in `directory` (the summary cache's folder): one
+    /// file per vault folder, named by a digest of the folder's path and the vault id.
+    public func publishedSummariesStampURL(in directory: URL) -> URL {
+        let key = url.standardizedFileURL.path + "\u{0}" + vaultId.uuidString.lowercased()
+        let name = Data(SHA256.hash(data: Data(key.utf8))).prefix(16).map { String(format: "%02x", $0) }.joined()
+        return directory.appendingPathComponent("published-\(name).stamp")
+    }
+
+    /// What a refresh's outcome depends on: `listing` (note → revision names), the epoch, the root file's size and
+    /// modification time and, with `titles`, what the shown titles are made from. Nil when the file cannot be looked at.
+    func publishedSummariesRefreshStamp(_ listing: [String: [String]], titles: Bool) -> Data? {
+        guard let v = try? publishedSummariesURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+              let size = v.fileSize, let modified = v.contentModificationDate else { return nil }
+        var h = SHA256()
+        h.update(data: Data("sempere published summaries refresh 1\n\(manifest.epochId)\n\(size) \(modified.timeIntervalSince1970)\n".utf8))
+        for (id, names) in listing.sorted(by: { $0.key < $1.key }) {
+            h.update(data: Data("\(id) \(names.sorted().joined(separator: " "))\n".utf8))
+        }
+        if titles { h.update(data: PublishedSummaries.derivedTitlesStamp(self)) }
+        return Data(h.finalize())
     }
 
     private func refreshOpenedPublishedSummaries(cache: SummaryCache?, ownListing: [String: [String]]?,
                                                  derivedTitles: PublishedSummaries.DerivedTitles?) throws -> Bool {
         guard canRead else { return false }
         let data = try? FileIO.read(publishedSummariesURL, maxBytes: PublishedSummaries.maxFileBytes)
-        let current = data.flatMap { try? openPublishedSummaries($0) }
+        let current = data.flatMap { try? openPublishedSummariesContents($0) }
         guard !isReadOnly else { return false }
-        let (entries, _) = try publishedSummaryEntries(reuse: current ?? [:], cache: cache, ownListing: ownListing,
-                                                       derivedTitles: derivedTitles)
+        let (entries, _) = try publishedSummaryEntries(reuse: current?.entries ?? [:], reuseTitled: current?.titles ?? false,
+                                                       cache: cache, ownListing: ownListing, derivedTitles: derivedTitles)
         // Summarizing may have just read newer content (format.md §7.3).
         guard !isReadOnly else { return false }
-        if let current, current == entries { return false }
+        // A file without the `titles` marker is rewritten once to gain it.
+        if let current, current.titles, current.entries == entries { return false }
         try FileIO.writeAtomically(try sealPublishedSummaries(entries), to: publishedSummariesURL, replacing: true)
         return true
     }

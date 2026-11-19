@@ -125,6 +125,8 @@ describe("published summaries", () => {
       expect(r.shown).toBe("2026-10-07 10.32 Standup");
       expect(r.voice).toEqual({ started: Date.UTC(2026, 9, 7, 14, 32), tz: "America/New_York", source: "watch" });
       expect(shownTitle(r)).toBe("2026-10-07 10.32 Standup");
+      expect(r.shownFrom).toEqual(base.revisions);   // what opening the note checks before keeping it
+      expect(row({ ...base, voice }).shownFrom).toBeUndefined();
     });
 
     it("renders the default from `voice` in the viewer's language and the capture's zone", () => {
@@ -158,7 +160,10 @@ describe("published summaries", () => {
       for (const shown of [5, "   ", "x".repeat(maxShownLength + 1), null]) expect(row({ ...base, voice, shown }).shown).toBeUndefined();
       expect(row({ ...base, voice, shown: "e\u0301".repeat(maxShownLength) }).shown).toBeDefined();
       expect(row({ ...base, voice: { ...voice, tz: "z".repeat(65) } }).voice).toEqual({ started: Date.UTC(2026, 9, 7, 14, 32), source: "watch" });
-      expect(row({ ...base, voice: { started: voice.started, tz: 3, source: [] } }).voice).toEqual({ started: Date.UTC(2026, 9, 7, 14, 32) });
+      // A `tz` or `source` of another type makes `voice` malformed (Swift decodes the member as a whole); null reads as absent.
+      expect(row({ ...base, voice: { started: voice.started, tz: 3 } }).voice).toBeUndefined();
+      expect(row({ ...base, voice: { started: voice.started, source: [] } }).voice).toBeUndefined();
+      expect(row({ ...base, voice: { started: voice.started, tz: null, source: null } }).voice).toEqual({ started: Date.UTC(2026, 9, 7, 14, 32) });
     });
   });
 });

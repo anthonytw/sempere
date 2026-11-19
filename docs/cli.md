@@ -608,8 +608,9 @@ sempere vault reencrypt --status [--json]
   whose notes did not change are reused (others go through the summary cache
   unless `--no-cache`), so a rerun reads only changed notes. Once it exists it
   is kept current: every command that unlocks the vault rewrites it when a
-  note, or the title a voice note is shown under, changed (such notes' derived
-  titles are looked up again each time; a failure is a warning); commands without the key leave it
+  note, or the title a voice note is shown under, changed (a stamp of the
+  listing, the file and the insights note files kept beside the summary cache
+  skips the work when none changed; a failure is a warning); commands without the key leave it
   alone, so it may lag until the next one. `--plaintext` writes the JSON
   content instead, in the clear (for checks and the web goldens); it needs
   `--out`, so it never lands at the vault's sealed path by default, and a

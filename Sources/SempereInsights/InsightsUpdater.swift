@@ -51,14 +51,18 @@ public enum InsightsNotes {
     /// The title Note Insights derived for each of `notes` that has one for its current text, in the insight language and
     /// title format now set (`InsightsSnapshot.bestTitle`, format.md §16.2, §16.8): what a list shows for a voice note whose
     /// stored title is blank or a default (`NoteDisplayTitle.resolve`). Reads the store only when some note needs it (not
-    /// deleted, a voice note, such a title). `PublishedSummaries.DerivedTitles` for the published summaries' `shown`.
+    /// deleted, a voice note, such a title), and then only those notes' own files (`InsightsStore.snapshot(notes:)`); a
+    /// note's transcripts are read (for its text hash) only when some file holds a title for it.
+    /// `PublishedSummaries.DerivedTitles` for the published summaries' `shown`.
     public static func derivedTitles(_ vault: Vault, for notes: [NoteSummary]) -> [UUID: String] {
         let wanted = notes.filter { !$0.deleted && $0.voice != nil && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice) }
         guard !wanted.isEmpty, FileManager.default.fileExists(atPath: vault.insightsURL.path) else { return [:] }
-        let snapshot = InsightsStore(vault: vault).snapshot()
+        let snapshot = InsightsStore(vault: vault).snapshot(notes: Set(wanted.map(\.id)))
+        let titled = wanted.filter { snapshot.notes[$0.id]?.values.contains { $0.title != nil } == true }
+        guard !titled.isEmpty else { return [:] }
         let settings = InsightsSettings.read(vault)
         var out: [UUID: String] = [:]
-        for n in inputs(vault, summaries: wanted) {
+        for n in inputs(vault, summaries: titled) {
             if let t = snapshot.bestTitle(for: n.id, hash: n.hash, language: settings.language, format: settings.voiceNoteTitle) {
                 out[n.id] = t
             }

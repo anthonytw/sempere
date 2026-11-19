@@ -671,8 +671,13 @@ export class App {
       const before = this.notes.get(id);
       if (gen === this.generation && before) {
         const row = summarize(note);
-        // A derived title comes only from the published summaries (format.md §12.2): kept while the stored title is the same.
-        if (before.shown !== undefined && before.title === row.title && row.voice !== undefined) row.shown = before.shown;
+        // A derived title comes only from the published summaries (format.md §12.2): kept only when the entry was made from
+        // exactly the revisions just decrypted (and so names the same stored title).
+        const from = before.shownFrom, read = note.files;
+        if (before.shown !== undefined && from && read && from.length === read.length && from.every((f, i) => f === read[i])) {
+          row.shown = before.shown;
+          row.shownFrom = from;
+        }
         this.notes.set(id, row);
         this.renderSidebar();
       }

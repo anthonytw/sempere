@@ -66,14 +66,17 @@ function fits(s: string, max: number): boolean {
   return false;
 }
 
-/** `voice` (format.md §12.2), or undefined when absent or malformed (only the member is dropped). */
+/** `voice` (format.md §12.2), or undefined when absent or malformed (only the member is dropped): a `tz` or `source`
+ *  present (not null) but not a string makes the whole member malformed, as in Swift. */
 function decodeVoice(v: unknown): VoiceOrigin | undefined {
   if (!isObj(v) || typeof v.started !== "string") return undefined;
+  const { tz, source } = v;
+  if ((tz != null && typeof tz !== "string") || (source != null && typeof source !== "string")) return undefined;
   const started = parseRFC3339(v.started);
   if (started === undefined) return undefined;
   const out: VoiceOrigin = { started };
-  if (typeof v.tz === "string" && fits(v.tz, maxZoneLength)) out.tz = v.tz;
-  if (typeof v.source === "string") out.source = v.source;
+  if (typeof tz === "string" && fits(tz, maxZoneLength)) out.tz = tz;
+  if (typeof source === "string") out.source = source;
   return out;
 }
 
@@ -216,6 +219,9 @@ export function entrySummary(id: string, e: SummaryEntry): NoteSummary {
   };
   if (e.notebook !== undefined) s.notebook = e.notebook;
   if (e.voice !== undefined) s.voice = e.voice;
-  if (e.shown !== undefined) s.shown = e.shown;
+  if (e.shown !== undefined) {
+    s.shown = e.shown;
+    s.shownFrom = e.revisions;
+  }
   return s;
 }
