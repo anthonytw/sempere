@@ -55,7 +55,7 @@ struct ItemsList: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let state = try vault.reconstruct(try vault.loadNote(id, detail: .withoutStrokePoints))
         if let page { _ = try pageNumbered(page, of: state) }
         struct Row: Encodable {
@@ -145,7 +145,7 @@ struct ItemsMove: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let rect = try parsedFrame()
         let r = try editNote(vault, id) { state in
             try requireLive(state)
@@ -188,7 +188,7 @@ struct ItemsRotate: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
             let (page, found) = try findItem(item, in: state)
@@ -235,7 +235,7 @@ struct ItemsCrop: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
             let (page, found) = try findItem(item, in: state)
@@ -279,7 +279,7 @@ struct ItemsReplace: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let data = try readInput(file, limit: ImageLimits.maxBlobBytes, what: "image (exports draw larger ones as placeholders)")
         let image = try translating { try ImageIngest.prepare(data, privacy: !keepMetadata, converter: nil) }
         let ref = BlobRef(content: image.data, type: image.mediaType)
@@ -337,7 +337,7 @@ struct ItemsFront: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
             let (page, found) = try findItem(item, in: state)
@@ -368,7 +368,7 @@ struct ItemsDelete: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
             let (page, found) = try findItems(items, in: state)
@@ -405,7 +405,7 @@ struct ItemsDuplicate: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let r = try editNote(vault, id) { state in
             try requireLive(state)
             let (page, found) = try findItems(items, in: state)
@@ -442,8 +442,8 @@ struct ItemsCopy: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let source = try vault.resolveNote(note)
-        let target = try vault.resolveNote(to)
+        let source = try vault.resolveShownNote(note)
+        let target = try vault.resolveShownNote(to)
         let (_, found) = try findItems(items, in: try vault.reconstruct(try vault.loadNote(source)))
         var copied = found.sorted(by: Item.drawsBefore)
         if source != target {
@@ -516,7 +516,7 @@ struct ItemsMath: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let latex = try source.read()
         let rendering = try render.map { try MathRenderInput(path: $0) }
         if let rendering {

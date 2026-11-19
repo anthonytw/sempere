@@ -48,7 +48,7 @@ struct ItemsText: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let string = try text ?? readBoxText(file ?? "")
         let r = try editNote(vault, id) { state in
             try requireLive(state)

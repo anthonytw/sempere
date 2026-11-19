@@ -126,3 +126,126 @@ final class NoteDisplayTitleTests: VaultTestCase {
         XCTAssertNil(back.captureInfo, "values of another shape read as absent")
     }
 }
+
+/// The default title's formatters are made once per (locale, time zone) and used from any thread.
+extension NoteDisplayTitleTests {
+    func testDefaultTitlesAreStableAcrossLocalesZonesAndThreads() async {
+        let ny = origin("phone"), tokyo = VoiceOrigin(started: started, tz: "Asia/Tokyo", source: "phone")
+        let want = [NoteDisplayTitle.defaultTitle(for: ny, locale: english), NoteDisplayTitle.defaultTitle(for: tokyo, locale: english),
+                    NoteDisplayTitle.defaultTitle(for: ny, locale: spanish)]
+        XCTAssertEqual(Set(want).count, 3, "each (locale, zone) pair formats on its own: \(want)")
+        XCTAssertTrue(want[0].contains("2:32") && want[1].contains("4:32"), "\(want)")
+        let (e, s) = (english, spanish), (n, t, st) = (ny, tokyo, started)
+        await withTaskGroup(of: [String].self) { group in
+            for _ in 0..<8 {
+                group.addTask {
+                    (0..<50).flatMap { _ in
+                        [NoteDisplayTitle.defaultTitle(for: n, locale: e), NoteDisplayTitle.defaultTitle(for: t, locale: e),
+                         NoteDisplayTitle.defaultTitle(for: VoiceOrigin(started: st, tz: "America/New_York", source: "phone"), locale: s)]
+                    }
+                }
+            }
+            for await titles in group {
+                for (i, title) in titles.enumerated() { XCTAssertEqual(title, want[i % 3]) }
+            }
+        }
+    }
+
+    /// Ask's label words leave out a voice note's default title whether it is made up or was stored by 1.0 through 1.2,
+    /// while display still shows the stored one (`showsDefault` is false for it).
+    func testAStoredDefaultOfAnOlderNoteIsNoChosenTitle() throws {
+        let start = try XCTUnwrap(RFC3339.parse("2026-10-07T14:32:00Z"))
+        let legacy = VoiceOrigin(started: start)   // adopted before 1.3: no zone
+        let stored = "Voice note 2026-10-07 14:32"
+        XCTAssertTrue(NoteDisplayTitle.isUnchosen(stored: stored, origin: legacy, generated: nil))
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: stored, origin: legacy, generated: nil), "display is unchanged")
+        XCTAssertEqual(NoteDisplayTitle.resolve(stored: stored, origin: legacy, generated: nil), stored)
+        XCTAssertTrue(NoteDisplayTitle.isUnchosen(stored: "", origin: legacy, generated: nil))
+        XCTAssertFalse(NoteDisplayTitle.isUnchosen(stored: stored, origin: legacy, generated: "2026-10-07 14.32 Lab"), "a derived title counts")
+        XCTAssertFalse(NoteDisplayTitle.isUnchosen(stored: "Lab", origin: legacy, generated: nil), "the user's title counts")
+        XCTAssertFalse(NoteDisplayTitle.isUnchosen(stored: stored, origin: nil, generated: nil), "no voice note: the stored title is chosen")
+        var s = NoteSummary(id: UUID(), title: stored, tags: [], notebook: nil, deleted: false, pages: 1, strokes: 0, modified: nil, problem: nil)
+        s.voice = legacy
+        XCTAssertTrue(s.hasUnchosenTitle())
+    }
+
+    func testShowsDefaultOnlyForTheMadeUpTitle() {
+        XCTAssertTrue(NoteDisplayTitle.showsDefault(stored: "", origin: origin(), generated: nil))
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: "", origin: origin(), generated: "2026-11-16 14.32 Lab"), "a derived title")
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: "Lab", origin: origin(), generated: nil), "the user's title")
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: "", origin: nil, generated: nil), "no voice recording: Untitled")
+        XCTAssertFalse(NoteDisplayTitle.showsDefault(stored: "Voice note 2026-11-16 14:32", origin: origin(), generated: nil),
+                       "a stored default shows as stored, which is the title the note has")
+    }
+}
+
+/// What exports, Spotlight and `resolveNote` name a voice note by (format.md §16.8).
+extension NoteDisplayTitleTests {
+    func testShowingATitleNamesTheExportAndBlankChangesNothing() {
+        let id = UUID()
+        let s = NoteSummary(id: id, title: "", tags: [], notebook: nil, deleted: false, pages: 1, strokes: 0, modified: nil, problem: nil)
+        XCTAssertEqual(ExportName.stem(title: s.showing(title: "Voice note Nov 16").title, noteId: id), "Voice-note-Nov-16-\(id.uuidString.lowercased().prefix(8))")
+        XCTAssertEqual(s.showing(title: "").title, "")
+        XCTAssertEqual(s.showing(title: nil).title, "")
+        XCTAssertEqual(s.showing(title: "  ").title, "")
+    }
+
+    func testFindTakesTheShownTitleAndACollisionWithAStoredTitleIsAmbiguous() throws {
+        let origin = VoiceOrigin(started: started, tz: "America/New_York", source: "phone")
+        func summary(_ title: String) -> NoteSummary {
+            var s = NoteSummary(id: UUID(), title: title, tags: [], notebook: nil, deleted: false, pages: 1, strokes: 0, modified: nil, problem: nil)
+            s.voice = origin
+            return s
+        }
+        let voice = summary(""), named = summary("Lab")
+        let shown: ([NoteSummary]) -> [UUID: String] = { notes in Dictionary(uniqueKeysWithValues: notes.map { ($0.id, "Voice note X") }) }
+        XCTAssertEqual(try NoteSummary.find("voice note x", in: [voice, named], shown: shown).id, voice.id)
+        XCTAssertEqual(try NoteSummary.find("Lab", in: [voice, named], shown: shown).id, named.id)
+        XCTAssertThrowsError(try NoteSummary.find("voice note x", in: [voice, named]))
+        // One note's stored title that is another's shown title: ambiguous, both listed, never a silent pick.
+        let typed = summary("Voice note X")
+        XCTAssertThrowsError(try NoteSummary.find("Voice note X", in: [voice, typed, named], shown: shown)) { error in
+            guard case NoteSummary.LookupError.ambiguous(_, let ids)? = error as? NoteSummary.LookupError else {
+                return XCTFail("\(error)")
+            }
+            XCTAssertEqual(Set(ids), [voice.id, typed.id])
+        }
+        XCTAssertEqual(try NoteSummary.find("Voice note X", in: [voice, typed, named]).id, typed.id, "without shown titles: the stored one")
+    }
+}
+
+/// What a web page share shows as a voice note's title (docs/design/1.3-share.md): the capture's date and time only when
+/// the share includes dates.
+extension NoteDisplayTitleTests {
+    func share(stored: String = "", origin: VoiceOrigin?, generated: String? = nil,
+               format: String = VoiceNoteTitleFormat.defaultFormat, dates: Bool) -> String {
+        NoteDisplayTitle.shareTitle(stored: stored, origin: origin, generated: generated, format: format, includeDates: dates,
+                                    locale: english)
+    }
+
+    func testAShareWithDatesShowsTheShownTitle() {
+        XCTAssertEqual(share(origin: origin(), dates: true),
+                       NoteDisplayTitle.resolve(stored: "", origin: origin(), generated: nil, locale: english))
+        XCTAssertEqual(share(origin: origin(), generated: "2026-11-16 14.32 Lab", dates: true), "2026-11-16 14.32 Lab")
+        XCTAssertEqual(share(stored: "Voice note 2026-11-16 14:32", origin: origin(), dates: true), "Voice note 2026-11-16 14:32")
+    }
+
+    func testAShareWithoutDatesLeavesTheCaptureTimeOut() {
+        XCTAssertEqual(share(origin: origin(), dates: false), "Voice note")
+        XCTAssertEqual(share(origin: origin("watch"), dates: false), "Watch voice note")
+        XCTAssertEqual(NoteDisplayTitle.shareTitle(stored: "", origin: origin(), generated: nil, format: "{slug}", includeDates: false,
+                                                   locale: spanish), "Nota de voz", "the localized bare words")
+        XCTAssertEqual(share(stored: "Voice note 2026-11-16 14:32", origin: origin(), dates: false), "Voice note",
+                       "a default stored before 1.3 holds the capture time too")
+        // A derived title: kept when its format has no date or time, else the bare words.
+        XCTAssertEqual(share(origin: origin(), generated: "2026-11-16 14.32 Lab", dates: false), "Voice note")
+        XCTAssertEqual(share(origin: origin(), generated: "Lab (14.32)", format: "{slug} ({time})", dates: false), "Voice note")
+        XCTAssertEqual(share(origin: origin(), generated: "Lab", format: "{slug}", dates: false), "Lab")
+        XCTAssertEqual(share(origin: origin(), generated: "2026-11-16 Lab", format: "{slug}", dates: false), "Voice note",
+                       "a fallback title of another format that holds the capture's date")
+        // A title the user entered, and a note that is no voice note, are kept.
+        XCTAssertEqual(share(stored: "Lab 2026-10-01 09:00", origin: origin(), generated: "x", dates: false), "Lab 2026-10-01 09:00")
+        XCTAssertEqual(share(stored: "Physics", origin: nil, dates: false), "Physics")
+        XCTAssertEqual(share(stored: "", origin: nil, dates: false), "")
+    }
+}

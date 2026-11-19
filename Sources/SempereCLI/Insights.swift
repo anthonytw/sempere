@@ -58,7 +58,7 @@ enum InsightsCLI {
     }
 
     static func input(_ query: String, in inputs: [InsightsNoteInput], vault: Vault) throws -> InsightsNoteInput {
-        let id = try vault.resolveNote(query)
+        let id = try vault.resolveShownNote(query)
         guard let n = inputs.first(where: { $0.id == id }) else { throw CLIError.failure("note \(id.uuidString.lowercased()) cannot be read") }
         return n
     }
@@ -117,7 +117,7 @@ struct InsightsUpdate: ParsableCommand {
         if !dryRun { try vault.requireWritable() }
         let inputs = try InsightsCLI.inputs(vault, cache: cache)
         var o = InsightsCLI.updateOptions(for: vault)
-        if let note { o.note = try vault.resolveNote(note) }
+        if let note { o.note = try vault.resolveShownNote(note) }
         o.force = force; o.limit = limit; o.embeddingsOnly = embeddingsOnly; o.dryRun = dryRun
         let updater = InsightsUpdater(vault: vault, model: embeddingsOnly ? nil : p.model, embedder: p.embedder,
                                       deviceState: DeviceState.defaultURL(), app: appName)

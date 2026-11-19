@@ -50,7 +50,7 @@ struct NotesDedupe: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         if all { try vault.requireCompleteCopy() }
-        let ids = all ? try vault.noteIDs() : try notes.map { try vault.resolveNote($0) }
+        let ids = all ? try vault.noteIDs() : try notes.map { try vault.resolveShownNote($0) }
         var items: [Item] = []
         var failures = 0
         var readOnly: String?

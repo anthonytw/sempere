@@ -93,7 +93,7 @@ struct SpotlightPlanCommand: ParsableCommand {
             }
         }
         let plan = SpotlightPlanner.plan(vaultId: vault.vaultId, notes: notes, options: SpotlightOptions(includeText: text),
-                                         transcripts: read)
+                                         transcripts: read, shownTitles: NoteTitles.display(notes, in: vault))
         let records = plan.items.map {
             Record(id: $0.id, note: $0.noteId.uuidString.lowercased(), domain: $0.domain, title: $0.title,
                    description: $0.contentDescription, keywords: $0.keywords, modified: $0.modified,

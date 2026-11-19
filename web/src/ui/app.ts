@@ -16,6 +16,7 @@ import { newerSummary } from "../format/newer.ts";
 import { clear, formatDate, h } from "./dom.ts";
 import { NoteView, hasUnknownPaper } from "./noteview.ts";
 import { NoteCache } from "./notecache.ts";
+import { displayTitle, voiceOrigin } from "../format/displaytitle.ts";
 import { RecordingsPanel } from "./recordings.ts";
 import { VideosPanel } from "./videos.ts";
 import { NoteBlobs } from "../vault/blobs.ts";
@@ -587,7 +588,7 @@ export class App {
       class: "note", attrs: { type: "button" },
       on: { click: () => void this.open(n.id, hit?.page?.number) },
     },
-    h("span", { class: "title", text: n.title || t("Untitled") }),
+    h("span", { class: "title", text: displayTitle(n.title, n.voice) || t("Untitled") }),
     h("span", { class: "sub", text: [formatDate(n.modified), tn("{count} pages", n.pageCount)].filter(Boolean).join(" · ") }),
     meta ? h("span", { class: "sub", text: meta }) : null,
     hit?.snippet ? this.snippet(hit) : null,
@@ -707,7 +708,7 @@ export class App {
     this.view = new NoteView(state, blobs, (id) => void videos.play(id), (id) => recordings.play(id));
     this.detail.replaceChildren(
       h("div", { class: "note-header" },
-        h("h2", { text: m.title || t("Untitled") }), h("p", { class: "sub", text: meta }),
+        h("h2", { text: displayTitle(m.title, voiceOrigin(state.recordings)) || t("Untitled") }), h("p", { class: "sub", text: meta }),
         m.tags.length ? h("p", { class: "tags" }, ...m.tags.map((t) => h("span", { class: "tag", text: `#${t}` }))) : null,
         ...warnings, this.view.problemsEl, this.recordings.root, videos.root),
       this.view.root);

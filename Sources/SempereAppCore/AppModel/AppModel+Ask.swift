@@ -104,6 +104,8 @@ extension AppModelCore {
         let summaries = insightsSummaries
         // Results name notes as the list does (a voice note's derived or default title).
         let titles = Dictionary(summaries.map { ($0.id, displayTitle($0)) }, uniquingKeysWith: { a, _ in a })
+        // A voice note's default title (made up, or stored before 1.3) is no label word.
+        let defaultTitled = Set(summaries.filter { $0.hasUnchosenTitle(generated: insightsIndex.shown[$0.id]?.generatedTitle) }.map(\.id))
         refreshInsightsCapability()
         let model = insightsRuntime.model, embedder = insightsRuntime.embedder
         let me = vault.writerDevice
@@ -116,7 +118,7 @@ extension AppModelCore {
             let work = Task.detached(priority: .userInitiated) { () -> AskResult in
                 let settings = InsightsSettings.read(vault, type: type)
                 let reader = InsightsReader(vault: vault, snapshot: InsightsStore(vault: vault).snapshot(), settings: settings)
-                let notes = AskNote.notes(vault, summaries: summaries, titles: titles)
+                let notes = AskNote.notes(vault, summaries: summaries, titles: titles, defaultTitled: defaultTitled)
                 var options = AskOptions()
                 options.detectLanguage = detect
                 options.onRetrieved = { first in

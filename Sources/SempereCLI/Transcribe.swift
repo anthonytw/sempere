@@ -149,7 +149,7 @@ struct TranscribeCommand: ParsableCommand {
             try vault.requireCompleteCopy()
             ids = try vault.summaries(of: nil).filter { !$0.deleted && $0.recordings > 0 }.map(\.id)
         } else {
-            ids = [try vault.resolveNote(note ?? "")]
+            ids = [try vault.resolveShownNote(note ?? "")]
         }
         let results = ids.map { run(note: $0, vault: vault) }
         // "Also redo insights" (--insights): once the transcripts are replaced, the note's insights are made again with

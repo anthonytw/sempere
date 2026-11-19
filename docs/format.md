@@ -4591,7 +4591,14 @@ one a reader shows.
 - `title` (1.3): the title this device derived for a voice note (§16.8), rendered from `insights.voiceNoteTitle`, for the
   insight text whose hash is `hash`; `text` at most 300 characters; `at` Unix milliseconds, 1 … 2^53 − 1, when it was
   derived (it does not change when the file is rewritten for another reason); `lang` (optional) the `outLang` of the slug it
-  was made from (absent: the note's own), and a reader prefers the title whose `lang` equals its `insights.language`. It is never written into the note. A reader
+  was made from (absent: the note's own);
+  `fmt` (optional) the `insights.voiceNoteTitle` format `text` was rendered from (absent: the default format
+  `{date} {time} {slug}`; a string of at most 200 characters with no control characters, else the file is invalid; a
+  format the reader cannot use, such as one with a token of a later version, does not invalidate the file: the title counts
+  as rendered from another format, never current, and is shown only as a fallback), and a reader prefers the title whose
+  `lang` equals its `insights.language` and whose `fmt` equals the format now set, then one whose `lang` equals it, then any;
+  a device derives again when no file holds a title for the hash in the
+  language and format now set, so changing the format re-derives (the older titles stay shown until then). It is never written into the note. A reader
   takes a note's derived title from the file whose `title.hash` equals the note's current hash, the later `at`, then the
   larger device id; a title for another hash is not shown. 1.2 wrote `titleOp` here (the stamp of a rename it made to the
   note's own title); readers of 1.3 ignore it, and 1.2 readers ignore `title`.
@@ -4737,7 +4744,7 @@ result against the map whose `written` is `against` (`compatible`, `incompatible
   within 14 hours of UTC whose offset is a multiple of 15 minutes; or, ending in no such stamp, "Voice note"/"Nota de voz"
   and the start in the capturing device's language; a title of anyone's choosing, "Lab 2026-10-01 09:00" for a note
   captured at another time, is never judged a default), and only when no file already holds a `title` for the note's current
-  hash, so devices that derive at once settle on the later `at` (then the larger device id) and none rewrites to flip it.
+  hash in the insight language and title format now set (§16.2), so devices that derive at once settle on the later `at` (then the larger device id) and none rewrites to flip it.
   Nothing is written to the note: readers show, in this order, the title the person typed; else (a voice note with a
   blank or default stored title) the derived title; else a default made at display time from the recording's
   `captureInfo.source` and the reader's language ("Voice note <date and time in the capture's zone>", "Watch voice note

@@ -78,11 +78,26 @@ public struct NoteSummary: Hashable, Sendable, Codable {
 
     /// Picks one note by full id, id prefix (4 or more characters) or exact
     /// title (case-insensitive).
-    public static func find(_ query: String, in notes: [NoteSummary]) throws -> NoteSummary {
+    ///
+    /// `shown` makes the lookup also take the title a note is shown with when it has none of its own (a voice note's
+    /// derived or default title, `NoteDisplayTitle`), asked with the notes whose stored title is blank or a default. A
+    /// query that is one note's stored title and another's shown title is ambiguous (both ids), never a silent pick.
+    public static func find(_ query: String, in notes: [NoteSummary],
+                            shown: (([NoteSummary]) -> [UUID: String])? = nil) throws -> NoteSummary {
         if let id = try matchID(query, among: notes.map(\.id)),
            let hit = notes.first(where: { $0.id == id }) { return hit }
         let q = query.lowercased()
-        let hits = notes.filter { $0.title.lowercased() == q }
+        var hits = notes.filter { $0.title.lowercased() == q }
+        if let shown {
+            let stored = Set(hits.map(\.id))
+            let candidates = notes.filter {
+                !$0.deleted && $0.voice != nil && !stored.contains($0.id) && NoteDisplayTitle.isStoredDefault($0.title, origin: $0.voice)
+            }
+            if !candidates.isEmpty {
+                let names = shown(candidates)
+                hits += candidates.filter { names[$0.id]?.lowercased() == q }
+            }
+        }
         guard let first = hits.first else { throw LookupError.notFound(query) }
         guard hits.count == 1 else { throw LookupError.ambiguous(query, hits.map(\.id)) }
         return first
@@ -378,12 +393,13 @@ extension Vault {
     ///
     /// - Throws: `VaultError.noteIncomplete` for a note a partial copy has not
     ///   fetched in full (format.md §1.2): it is neither shown nor edited from part of its log.
-    public func resolveNote(_ query: String) throws -> UUID {
+    /// `shown` as in `NoteSummary.find`.
+    public func resolveNote(_ query: String, shown: (([NoteSummary]) -> [UUID: String])? = nil) throws -> UUID {
         if let id = try NoteSummary.matchID(query, among: try noteIDs()) {
             try requireNoteComplete(id)
             return id
         }
-        return try NoteSummary.find(query, in: try summaries()).id
+        return try NoteSummary.find(query, in: try summaries(), shown: shown).id
     }
 
     /// The revisions `compact` would delete, without deleting them.

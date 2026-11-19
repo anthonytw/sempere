@@ -62,6 +62,58 @@ final class InsightsStoreTests: VaultTestCase {
         XCTAssertNoThrow(try InsightsCodec.decode(data, name: name))
     }
 
+    /// A title rendered from a format of a later version (an unknown token) keeps the file: `gen` and `emb` are taken, the
+    /// title is never current, only a fallback (format.md §16.2 `fmt`). A control character or an overlong `fmt` is invalid.
+    func testATitleOfAnUnknownFormatKeepsTheFileAndIsOnlyAFallback() throws {
+        let d = try XCTUnwrap(DeviceID("a1b2c3d4"))
+        let name = InsightsFileName(note: note, device: d)
+        let hash = String(repeating: "a", count: 32)
+        let e = InsightsNoteFile.Emb(hash: hash, key: EmbeddingKey(model: "nl-sentence", lang: "en", rev: 1, input: 1),
+                                     vector: [0.5, -0.25, 0.125, 1])
+        let file = InsightsNoteFile(noteId: note, device: d, written: 1_790_000_000_000, gen: gen(hash), emb: e,
+                                    title: .init(hash: hash, text: "Lab 2026-09-21", at: 1_790_000_000_000, fmt: "{place} {date}"))
+        guard case .note(let f) = try InsightsCodec.decode(try InsightsCodec.encode(.note(file)), name: name) else {
+            return XCTFail("not a note file")
+        }
+        XCTAssertEqual(f.gen, gen(hash))
+        XCTAssertEqual(f.emb?.vector, [0.5, -0.25, 0.125, 1])
+        XCTAssertEqual(f.title?.text, "Lab 2026-09-21")
+        XCTAssertEqual(f.title?.isRendered(from: "{place} {date}"), false, "a format this reader cannot use is never current")
+        var snap = InsightsSnapshot()
+        snap.notes[note] = [d: f]
+        XCTAssertFalse(snap.hasTitle(for: note, hash: hash, language: nil, format: "{place} {date}"))
+        XCTAssertFalse(snap.hasTitle(for: note, hash: hash, language: nil))
+        XCTAssertEqual(snap.bestTitle(for: note, hash: hash), "Lab 2026-09-21", "shown as a fallback")
+        // A rendered title of the format now set comes first.
+        let e2 = try XCTUnwrap(DeviceID("00000001"))
+        snap.notes[note]?[e2] = InsightsNoteFile(noteId: note, device: e2, written: 1, title: .init(hash: hash, text: "Current", at: 1))
+        XCTAssertEqual(snap.bestTitle(for: note, hash: hash), "Current")
+        for bad in ["{date}\u{7}", String(repeating: "x", count: VoiceNoteTitleFormat.maxLength + 1)] {
+            var t = file; t.title?.fmt = bad
+            XCTAssertThrowsError(try InsightsCodec.decode(try InsightsCodec.encode(.note(t)), name: name)) {
+                XCTAssertEqual($0 as? InsightsFileError, .invalid("title fmt"))
+            }
+        }
+    }
+
+    /// The fallback is tiered and deterministic (format.md §16.2): language and format now set, then that language, then any.
+    func testBestTitleTiersLanguageThenFormat() throws {
+        let hash = String(repeating: "a", count: 32)
+        func file(_ dev: String, _ text: String, at: Int64, lang: String?, fmt: String?) throws -> (DeviceID, InsightsNoteFile) {
+            let d = try XCTUnwrap(DeviceID(dev))
+            return (d, InsightsNoteFile(noteId: note, device: d, written: at,
+                                        title: .init(hash: hash, text: text, at: at, lang: lang, fmt: fmt)))
+        }
+        var snap = InsightsSnapshot()
+        let files = [try file("0000000a", "es, slug format", at: 3, lang: "es", fmt: "{slug}"),
+                     try file("0000000b", "fr, default", at: 9, lang: "fr", fmt: nil),
+                     try file("0000000c", "es, later slug format", at: 2, lang: "es", fmt: "{slug} ({date})")]
+        snap.notes[note] = Dictionary(uniqueKeysWithValues: files)
+        XCTAssertEqual(snap.bestTitle(for: note, hash: hash, language: "es"), "es, slug format", "same language before any")
+        XCTAssertEqual(snap.bestTitle(for: note, hash: hash, language: "es", format: "{slug} ({date})"), "es, later slug format")
+        XCTAssertEqual(snap.bestTitle(for: note, hash: hash, language: "de"), "fr, default", "any: the later at")
+    }
+
     func testOnlyTheCurrentKeyAndTheRightNameOpen() throws {
         let (v, _) = try makeOne()
         let store = InsightsStore(vault: v)

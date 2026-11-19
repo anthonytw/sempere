@@ -75,6 +75,26 @@ final class CLIShareTests: CLITestCase {
         XCTAssertTrue(text.out.contains("matches this release's viewer"), text.out)
     }
 
+    /// A voice note with no title of its own: the page shows its shown title, with the capture's date and time only under
+    /// --dates (docs/design/1.3-share.md), and still never names the file.
+    func testAVoiceNoteSharesItsShownTitleAndItsCaptureTimeOnlyWithDates() throws {
+        let a = try access()
+        let tone = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("SempereTests/Fixtures/audio/tone-aac.m4a").path
+        XCTAssertEqual(try cli(["inbox", "enable", "--notebook", "Voice"] + a).status, 0)
+        let captured = try cli(["inbox", "capture", tone, "--started", "2026-10-07T14:32:00Z", "--json"] + a)
+        let note = try XCTUnwrap((captured.json as? [String: Any])?["note"] as? String, captured.err)
+        XCTAssertEqual(try cli(["inbox", "import", "--json"] + a).status, 0)
+        func title(_ flags: [String], _ file: String) throws -> String? {
+            let r = try cli(["share", note, "--out", path(file), "--passphrase-file", try passphraseFile()] + flags + a)
+            XCTAssertEqual(r.status, 0, r.err)
+            return ((try open(path(file))).json["note"] as? [String: Any]).flatMap { $0["meta"] as? [String: Any] }?["title"] as? String
+        }
+        XCTAssertEqual(try title([], "plain.html"), "Voice note", "no capture time without --dates")
+        let dated = try XCTUnwrap(try title(["--dates"], "dated.html"))
+        XCTAssertTrue(dated.hasPrefix("Voice note Oct 7, 2026"), dated)
+    }
+
     func testVerifyFailsAnEditedPolicyAndAFileThatIsNotAShare() throws {
         let a = try access()
         let out = path("note.html")

@@ -10,7 +10,10 @@ extension ExportCommand {
     func runBulk(_ vault: Vault) throws {
         try vault.requireCompleteCopy()
         // Plan from the summaries (cached), then read each note only when its turn comes.
-        let summaries = try vault.summaries(of: nil, cache: cache.cache(for: vault))
+        var summaries = try vault.summaries(of: nil, cache: cache.cache(for: vault))
+        // A voice note with no title of its own is named by the title `notes list` shows for it.
+        let shownTitles = NoteTitles.display(summaries, in: vault)
+        summaries = summaries.map { $0.showing(title: shownTitles[$0.id]) }
         let scope: BulkExportScope = notebook.map { .notebook($0) } ?? .vault
         let options = BulkExportOptions(format: bulkFormat, layout: layout, paper: !noPaper, dpi: dpi, breaks: breaks,
                                         keepImageMetadata: keepImageMetadata)

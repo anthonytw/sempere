@@ -110,9 +110,12 @@ public enum SpotlightPlanner {
     /// The items for `notes` of vault `vaultId`: no deleted note, none of `notDownloaded` (a partial copy's
     /// notes not fetched yet), never a thumbnail. `transcripts` holds each note's transcript texts, which the
     /// caller supplies only when the user's `search.transcripts` allows them in search (a transcript is a blob,
-    /// not part of `NoteSummary`); they are used only with `includeText`.
+    /// not part of `NoteSummary`); they are used only with `includeText`. `shownTitles` are the titles the list shows
+    /// (`NoteDisplayTitle`: a voice note with no title of its own has a derived or default one); a note without one
+    /// donates its stored title.
     public static func plan(vaultId: UUID, notes: [NoteSummary], options: SpotlightOptions,
-                            transcripts: [UUID: [String]] = [:], notDownloaded: Set<UUID> = []) -> SpotlightPlan {
+                            transcripts: [UUID: [String]] = [:], notDownloaded: Set<UUID> = [],
+                            shownTitles: [UUID: String] = [:]) -> SpotlightPlan {
         var eligible = notes.filter { !$0.deleted && !notDownloaded.contains($0.id) }
         eligible.sort { a, b in
             let (x, y) = (a.modified ?? .distantPast, b.modified ?? .distantPast)
@@ -120,7 +123,7 @@ public enum SpotlightPlanner {
         }
         let omitted = max(0, eligible.count - maxNotes)
         if omitted > 0 { eligible.removeLast(omitted) }
-        let items = eligible.map { item(vaultId: vaultId, note: $0, options: options, transcripts: transcripts[$0.id] ?? []) }
+        let items = eligible.map { item(vaultId: vaultId, note: $0.showing(title: shownTitles[$0.id]), options: options, transcripts: transcripts[$0.id] ?? []) }
         return SpotlightPlan(items: items, omitted: omitted)
     }
 

@@ -16,8 +16,12 @@ public struct AskOptions: Sendable {
     /// Never call the model.
     public var retrieveOnly = false
     public var explain = false
-    /// The platform's language recognizer (NaturalLanguage); nil where there is none.
-    public var detectLanguage: (@Sendable (String) -> String?)?
+    /// The platform's language recognizer (NaturalLanguage); nil where there is none. It gets the question and the
+    /// languages worth choosing among (the vault's note languages and the device's, `AskLanguage.candidates`) and answers
+    /// the one it is confident of, else nil (the vault's main language is used).
+    public var detectLanguage: (@Sendable (_ question: String, _ among: [String]) -> String?)?
+    /// The device's language (BCP 47 primary tag), a candidate for the question's language; nil takes `Locale.current`'s.
+    public var deviceLanguage: String?
     /// The model call's limit (design §4: 30 s, then `retrieval`).
     public var timeout: TimeInterval = 30
     /// Called once with the retrieval's notes (mode `retrieval` or `keyword`) just before the model is asked, so a
@@ -25,6 +29,42 @@ public struct AskOptions: Sendable {
     public var onRetrieved: (@Sendable (AskResult) -> Void)?
 
     public init() {}
+}
+
+/// Which language an Ask question is in, decided from a recognizer's hypotheses (no NaturalLanguage here, so every platform
+/// tests it): only languages the vault's notes or the device use are considered, and below `minConfidence` none is chosen.
+public enum AskLanguage {
+    /// The least confidence a hypothesis needs.
+    public static let minConfidence = 0.5
+
+    /// The device's language as a primary tag, nil when `Locale.current` names none.
+    public static var currentDeviceLanguage: String? {
+        Locale.current.language.languageCode?.identifier.lowercased()
+    }
+
+    /// The languages to choose among: each language some note is written in (most used first) then the device's, once each.
+    public static func candidates(noteLanguages: [String], device: String?) -> [String] {
+        var counts: [String: Int] = [:]
+        for l in noteLanguages { counts[InsightsLanguage.primary(l), default: 0] += 1 }
+        var out = counts.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.map(\.key)
+        if let device {
+            let d = InsightsLanguage.primary(device)
+            if !out.contains(d) { out.append(d) }
+        }
+        return out
+    }
+
+    /// The most confident of `hypotheses` (a language tag and its probability) among `candidates`, nil when none reaches
+    /// `minConfidence` (the caller falls back to the vault's main language). Ties go to the earlier candidate.
+    public static func choose(hypotheses: [(language: String, confidence: Double)], among candidates: [String]) -> String? {
+        var best: (language: String, confidence: Double)?   // the candidate's tag
+        for c in candidates {
+            let p = hypotheses.filter { InsightsLanguage.primary($0.language) == c }.map(\.confidence).max() ?? 0
+            if p > (best?.confidence ?? 0) { best = (c, p) }
+        }
+        guard let best, best.confidence >= minConfidence else { return nil }
+        return best.language
+    }
 }
 
 public struct AskEngine: Sendable {
@@ -86,7 +126,9 @@ public struct AskEngine: Sendable {
         let (question, cut) = AskText.normalize(raw)
         if cut { notices.append("the question was cut to \(AskText.maxQuestion) characters") }
         let main = InsightsUpdater.mainLanguage(notes.map(\.input))
-        let lang = InsightsLanguage.primary(o.language ?? o.detectLanguage?(question) ?? main)
+        let candidates = AskLanguage.candidates(noteLanguages: notes.filter { !$0.input.deleted }.map(\.input.language),
+                                                device: o.deviceLanguage ?? AskLanguage.currentDeviceLanguage)
+        let lang = InsightsLanguage.primary(o.language ?? o.detectLanguage?(question, candidates) ?? main)
 
         // Candidates: live notes inside the filters with text, the most recent 20,000.
         var pool = notes.filter { o.filter.allows($0.input) && !$0.parts.isEmpty }
@@ -168,7 +210,8 @@ public struct AskEngine: Sendable {
             guard let note = byId[c.note], let ps = picks[c.note], !ps.isEmpty else { continue }
             let g = snapshot.bestGen(for: note.id, hash: note.input.hash, language: insightLanguage)
             let summary = g.flatMap { $0.current ? $0.gen.summary : nil }.flatMap { $0.isEmpty ? nil : String($0.prefix(240)) }
-            sources.append(AskSource(id: "", note: note.id, title: note.input.title, summary: summary, passages: ps.map(\.passage)))
+            sources.append(AskSource(id: "", note: note.id, title: note.input.title, summary: summary, passages: ps.map(\.passage),
+                                    labelTitle: note.labelTitle))
             scores.append(ps.map(\.score))
         }
         guard !sources.isEmpty else { return fallback(missing: "I couldn't find that in your notes", kind: "notFound") }

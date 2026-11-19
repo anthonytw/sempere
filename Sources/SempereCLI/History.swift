@@ -59,7 +59,7 @@ struct NotesHistory: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let loaded = try vault.loadNote(id, detail: .withoutStrokePoints)   // restore points need no geometry
         let points = loaded.restorePoints
         if !loaded.failures.isEmpty {
@@ -132,7 +132,7 @@ struct NotesCheckpoint: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let rev = try vault.checkpoint(id, name: name, deviceState: DeviceState.defaultURL(), app: appName)
         let noteName = id.uuidString.lowercased()
         if output.json {
@@ -174,7 +174,7 @@ struct NotesRestore: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let point = try NoteHistory.resolve(to, among: try vault.revisionNames(of: id))
         var file = try DeviceClockFile(url: DeviceState.defaultURL())
         let device = file.device

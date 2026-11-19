@@ -2,6 +2,7 @@
 // and summarize for the note list and search. Unreadable revisions are
 // reported with the note (format.md §4), never silently dropped.
 
+import { type VoiceOrigin, voiceOrigin } from "../format/displaytitle.ts";
 import { type NoteState, type Revision, modifiedDate } from "../format/model.ts";
 import { type NewerContent, emptyNewer, mergeNewer } from "../format/newer.ts";
 import { type JSONObject } from "../format/json.ts";
@@ -49,6 +50,8 @@ export interface NoteSummary {
   hasAttachments: boolean;
   /** The note holds content a newer version wrote (format.md §7.4). */
   newer: boolean;
+  /** Where and when its voice recording was captured, for the title shown while it stores none (absent: none, or an entry of the published index). */
+  voice?: VoiceOrigin;
 }
 
 function holdsAttachments(r: Revision): boolean {
@@ -159,5 +162,7 @@ export function summarize(n: LoadedNote): NoteSummary {
   if (s?.meta.notebook !== undefined) out.notebook = s.meta.notebook;
   if (n.modified !== undefined) out.modified = n.modified;
   if (n.error !== undefined) out.error = n.error;
+  const voice = s ? voiceOrigin(s.recordings) : undefined;
+  if (voice !== undefined) out.voice = voice;
   return out;
 }

@@ -243,6 +243,32 @@ final class InsightsUpdaterTests: TempDirTestCase {
         XCTAssertEqual(again.titled, [])
     }
 
+    /// The title format decides when a derived title is current (format.md §16.2 `fmt`): a changed format derives again, the
+    /// old title stays shown until then, and the new one wins once derived.
+    func testChangingTheTitleFormatDerivesTheTitleAgain() async throws {
+        let id = try capture(transcript: "Spring lab results show the damping ratio near critical damping.")
+        try enable()
+        let first = try await run { $0.force = true }
+        XCTAssertEqual(first.titled, [id.uuidString.lowercased()])
+        let hash = try XCTUnwrap(try inputs().first { $0.id == id }?.hash)
+        XCTAssertTrue(InsightsStore(vault: vault).snapshot().hasTitle(for: id, hash: hash, language: nil))
+        XCTAssertFalse(InsightsStore(vault: vault).snapshot().hasTitle(for: id, hash: hash, language: nil, format: "{slug} ({date})"))
+        try InsightsSettingsWrite.setVoiceNoteTitle("{slug} ({date})", vault: vault, now: now)
+        // Until the new one is derived, the old title is shown.
+        XCTAssertEqual(InsightsStore(vault: vault).snapshot().bestTitle(for: id, hash: hash, format: "{slug} ({date})"),
+                       "2026-09-21 11.26 Spring Lab Results Show")
+        let again = try await run { $0.force = true; $0.now = self.now.addingTimeInterval(60) }
+        XCTAssertEqual(again.titled, [id.uuidString.lowercased()])
+        let snap = InsightsStore(vault: vault).snapshot()
+        XCTAssertEqual(snap.bestTitle(for: id, hash: hash, format: "{slug} ({date})"), "Spring Lab Results Show (2026-09-21)")
+        XCTAssertTrue(snap.hasTitle(for: id, hash: hash, language: nil, format: "{slug} ({date})"))
+        // Back to the default: a device keeps one title per note, so it is derived again and wins again.
+        try InsightsSettingsWrite.setVoiceNoteTitle(nil, vault: vault, now: now.addingTimeInterval(120))
+        let back = try await run { $0.force = true; $0.now = self.now.addingTimeInterval(180) }
+        XCTAssertEqual(back.titled, [id.uuidString.lowercased()])
+        XCTAssertEqual(InsightsStore(vault: vault).snapshot().bestTitle(for: id, hash: hash), "2026-09-21 11.26 Spring Lab Results Show")
+    }
+
     /// A note of 1.0 through 1.2 holds its default as a stored title: it is still a default, and gets a derived title whose
     /// date and time come from that stored title (the capture kept no zone then).
     func testAStoredDefaultTitleOfAnOlderNoteStillGetsADerivedTitle() async throws {

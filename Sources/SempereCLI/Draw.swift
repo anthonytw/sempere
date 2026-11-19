@@ -65,7 +65,7 @@ struct PagesDraw: ParsableCommand {
         guard !input.isEmpty else { throw CLIError.failure("\(file): no strokes") }
 
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(note)
+        let id = try vault.resolveShownNote(note)
         let state = try vault.reconstruct(noteId: id)
         try requireLive(state)
         var pageIDs: [Int: Page] = [:]

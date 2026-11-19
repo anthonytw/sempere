@@ -86,6 +86,7 @@ export class ShareApp {
     this.recordings = recordings;
     this.view?.destroy();
     this.view = new NoteView(state, blobs, undefined, (id) => recordings.play(id));
+    // The writer puts the title it shows in the share (a voice note's too, without the capture time unless it carries dates).
     const title = state.meta.title || t("Untitled");
     const m = state.meta;
     this.root.replaceChildren(h("div", { class: "app" },

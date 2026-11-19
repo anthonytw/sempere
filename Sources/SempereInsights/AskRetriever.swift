@@ -142,7 +142,7 @@ public enum AskRetriever {
                 let f = AskText.form(w)
                 if want.contains(f) { c.tf[f, default: 0] += 1 }
             }
-            let labelText = ([note.input.title, note.input.notebook ?? ""] + note.input.tags).joined(separator: " ")
+            let labelText = ([note.labelTitle, note.input.notebook ?? ""] + note.input.tags).joined(separator: " ")
             for w in InsightsWords.words(labelText) { let f = AskText.form(w); if want.contains(f) { c.label.insert(f) } }
             if let g = gens(note.input) {
                 for w in InsightsWords.words((g.keywords.map(\.t) + g.concepts).joined(separator: " ")) {

@@ -40,6 +40,9 @@ struct NoteListView: View {
         var id: String { "\(kind)-\(note)" }
     }
 
+    /// The search field's focus (Search | Ask keeps it there).
+    @FocusState private var searchFocused: Bool
+
     var body: some View {
         @Bindable var model = model
         @Bindable var ui = ui
@@ -54,7 +57,7 @@ struct NoteListView: View {
         }
         // Search | Ask under the field while it is in use (Ask your notes, docs/design/1.3-ask.md §3.6).
         .safeAreaInset(edge: .top, spacing: 0) {
-            if ui.searchPresented || model.askTarget == .ask { AskTargetPicker().background(.bar) }
+            if ui.searchPresented || model.askTarget == .ask { AskTargetPicker(refocus: { searchFocused = true }).background(.bar) }
         }
         .environment(\.editMode, Binding<EditMode>(get: { model.isSelectingNotes ? .active : .inactive },
                                          set: { setSelecting($0.isEditing) }))
@@ -64,6 +67,7 @@ struct NoteListView: View {
                                   set: { if model.askTarget == .ask { model.askQuestion = $0 } else { model.searchText = $0 } }),
                     isPresented: $ui.searchPresented,
                     prompt: model.askTarget == .ask ? Text("Ask a question about your notes") : Text("Search notes and handwriting"))
+        .searchFocused($searchFocused)
         .searchSuggestions {
             // Recent searches while the field is empty: tap one to search it again (never in Ask mode).
             if model.askTarget == .search, model.searchText.isEmpty, !model.recentSearches.isEmpty {

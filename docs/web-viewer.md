@@ -899,7 +899,9 @@ by `scripts/build-share-template.sh`; the `Web viewer` CI job rebuilds it and fa
 `<meta>` Content-Security-Policy, one `<style>`, one `<script>` (the note view and its renderers, no pdf.js, no vault code), and a data
 block `<script type="text/plain" id="share-data" data-format="sempere-share/1">` holding an **age file with one scrypt
 recipient** (work factor 2^18, armored). The title is always "Shared note" and the default file name `Shared note.html`: the
-note's title is inside the ciphertext only.
+note's title is inside the ciphertext only. That title is the one the writer shows (`NoteDisplayTitle.shareTitle`): a voice note
+with no title of its own carries its derived title or "Voice note" and the capture's date and time, and a share without dates
+carries no title that tells the capture time ("Voice note" instead), so the page shows `meta.title` as it is.
 
 ```
 default-src 'none'; script-src 'sha256-<script>'; style-src 'sha256-<style>'; img-src data: blob:; media-src blob:;
@@ -956,7 +958,7 @@ file and the passphrase by different ways, `--verify`, or use the stock `age` pa
 
 | Release | Script (`script-src`) | Style (`style-src`) | Template (SHA-256 of the page as `ShareViewerTemplate.html`: the file with its data block empty) |
 | --- | --- | --- | --- |
-| 1.3 (unreleased) | `sha256-mhKBIk4j0/y6RqYnb/AKIx3m9D1qlFoE7m9o+y3GC34=` | `sha256-cZL1/KwjSNvC7zebHbw9rRO44PocwPVtFlmx9sv8pAo=` | `249e44790797e2accb4c060d1763c8418ac1056234f0f461f80d161b07f37e9d` |
+| 1.3 (unreleased) | `sha256-CR74HbzQVmCsYzajiaE6p7KcpA/33OYuYwCQWXp3HbI=` | `sha256-cZL1/KwjSNvC7zebHbw9rRO44PocwPVtFlmx9sv8pAo=` | `41adba17f1b228da79fbc9f0f0f49c6b4862ecda3a90eaa80cbe9da98d55e5a0` |
 
 **Tests.** Swift: `WebPageShareTests` (flattening, what leaks, pictures, sizes, audio, encryption, the stock `age` recipe, `--verify`, the
 fixture), `JPEGEncoderTests`, `CLIShareTests`. Web: `web/test/share.test.ts` (the Swift fixture opens, hostile containers, work factor 21

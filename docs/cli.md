@@ -1381,7 +1381,10 @@ blob, whether it has a transcript, id), and the revision history
 `video`, `audio` (recordings or audio cards) and `pdf`, in that order (the
 app's row icons). A note is named by its
 full id, an id prefix of 4 or more characters, or its exact title
-(case-insensitive); an ambiguous name is an error that lists the candidates.
+(case-insensitive); an ambiguous name is an error that lists the candidates. A voice note with no title of its own is
+also named by the title `notes list` shows for it (`displayTitle`: the one Note Insights derived, else "Voice note" and
+the date); a name that is one note's stored title and another's shown title is ambiguous and lists both. `export`,
+`share` and `spotlight plan` name it by that title too (`share` without the capture time unless `--dates`).
 
 `history` lists the note's restore points, one per readable revision, oldest
 first by `(hlc, device, seq)`: kind, wall time, device, app and revision name.
@@ -2937,6 +2940,9 @@ scrypt recipient (2^18). Works on Linux and with a read-only vault (nothing is w
   error). Exactly one of the three.
 - Left out unless asked: tags (`--tags`), the notebook path (`--notebook-path`), the creation date (`--dates`), recordings and their
   transcripts (`--audio`). Recognized text is in unless `--no-text`.
+- The page shows the title `notes list` shows. For a voice note with no title of its own that is its derived title or "Voice note"
+  and the capture's date and time, but without `--dates` a title that tells the capture time (the default, or a derived title whose
+  format has `{date}` or `{time}`) becomes the bare words ("Voice note", "Watch voice note").
 - Pictures are re-encoded (at most 2048 px, JPEG, metadata removed), PDF pages become pictures (Poppler's `pdftoppm`, as for `export`;
   without it they are left out with a warning), videos are never included (the poster frame is shown). `--image-quality` picks how hard.
 - The file is at most `--max-size` MB (default 20, at most 200). A note that cannot fit fails (exit 1) with the breakdown (ink and text,

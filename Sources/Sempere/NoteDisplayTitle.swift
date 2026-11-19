@@ -55,12 +55,36 @@ public enum NoteDisplayTitle {
     /// The default title of a voice note: its words and the capture's date and time, in the capture's time zone and
     /// `locale`'s style ("Voice note Nov 16, 2026, 2:32 PM").
     public static func defaultTitle(for origin: VoiceOrigin, words: Words? = nil, locale: Locale = .current) -> String {
-        let f = DateFormatter()
-        f.locale = locale
-        f.timeZone = origin.timeZone
-        f.setLocalizedDateFormatFromTemplate("yMMMdjmm")
+        let f = formatterCache.formatter(locale: locale, timeZone: origin.timeZone)
         return (words ?? .builtIn(locale: locale)).prefix(origin.source) + " " + f.string(from: origin.started)
     }
+
+    /// `DateFormatter`s by (locale, time zone identifier): one per pair, made once. The key is the `Locale` value, not its
+    /// identifier, so two locales of one identifier with other preferences (a 24-hour override) never share one.
+    /// `DateFormatter.string(from:)` is thread-safe once configured; the lock covers the creation and a first format,
+    /// which builds the ICU formatter lazily (swift-corelibs-foundation does it on first use, unlocked).
+    private final class FormatterCache: @unchecked Sendable {
+        private struct Key: Hashable {
+            var locale: Locale
+            var timeZone: String
+        }
+        private let lock = NSLock()
+        private var formatters: [Key: DateFormatter] = [:]
+
+        func formatter(locale: Locale, timeZone: TimeZone) -> DateFormatter {
+            let key = Key(locale: locale, timeZone: timeZone.identifier)
+            lock.lock(); defer { lock.unlock() }
+            if let f = formatters[key] { return f }
+            let f = DateFormatter()
+            f.locale = locale
+            f.timeZone = timeZone
+            f.setLocalizedDateFormatFromTemplate("yMMMdjmm")
+            _ = f.string(from: .distantPast)
+            formatters[key] = f
+            return f
+        }
+    }
+    private static let formatterCache = FormatterCache()
 
     /// True when `stored` is no title the user chose: blank, or the default 1.0 through 1.2 stored for a voice note
     /// (`CaptureWriter.defaultTitle`'s shape, the Watch's, the app's localized form of 1.1). A title ending in a
@@ -115,6 +139,38 @@ public enum NoteDisplayTitle {
         return stored
     }
 
+    /// True when a voice note's title is no word of anyone's choosing: its stored title is blank or a default stored before
+    /// 1.3 (`isStoredDefault`, "Voice note 2026-10-07 14:32") and Note Insights derived none. Ask leaves such a title out of
+    /// its label words and keyword ranking, whether it shows as the made-up default or as the stored one.
+    public static func isUnchosen(stored: String, origin: VoiceOrigin?, generated: String?) -> Bool {
+        guard let origin, isStoredDefault(stored, origin: origin) else { return false }
+        return (generated?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    }
+
+    /// True when `resolve` would show the made-up default ("Voice note <date>") rather than a title the user entered or
+    /// Note Insights derived: Ask keeps such a title out of its label words and keyword ranking.
+    public static func showsDefault(stored: String, origin: VoiceOrigin?, generated: String?) -> Bool {
+        guard let origin, isStoredDefault(stored, origin: origin) else { return false }
+        if let g = generated?.trimmingCharacters(in: .whitespacesAndNewlines), !g.isEmpty { return false }
+        return stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The title a share shows (an encrypted web page, docs/design/1.3-share.md): `resolve`'s title, except that one which
+    /// tells when the note was captured is left out of a share without dates. A voice note's default ("Voice note
+    /// <date time>", or one that 1.0 through 1.2 stored) and a derived title whose format has `{date}` or `{time}` (or
+    /// whose text holds the capture's date or time, for a title of another format) then become the bare words ("Voice
+    /// note", "Watch voice note"). A title the user entered is kept as it is.
+    public static func shareTitle(stored: String, origin: VoiceOrigin?, generated: String?, format: String,
+                                  includeDates: Bool, words: Words? = nil, locale: Locale = .current) -> String {
+        let shown = resolve(stored: stored, origin: origin, generated: generated, words: words, locale: locale)
+        guard !includeDates, let origin, isStoredDefault(stored, origin: origin) else { return shown }
+        let bare = (words ?? .builtIn(locale: locale)).prefix(origin.source)
+        guard let g = generated?.trimmingCharacters(in: .whitespacesAndNewlines), !g.isEmpty else { return bare }
+        if format.contains("{date}") || format.contains("{time}") { return bare }
+        let capture = VoiceNoteTitleFormat.captureDateAndTime(origin: origin, storedTitle: stored, started: origin.started)
+        return g.contains(capture.date) || g.contains(capture.time) ? bare : g
+    }
+
     // MARK: Shapes of the titles older versions stored
 
     /// True when `title` has the shape of a capture's default title: it ends with the capture's local
@@ -156,7 +212,43 @@ public enum NoteDisplayTitle {
     }
 }
 
+extension NoteState {
+    /// This state with the title it is shown under (an export names its files and heads its pages by it); `title` nil or
+    /// blank leaves it as it is.
+    public func showing(title: String?) -> NoteState {
+        guard let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return self }
+        var copy = self
+        copy.meta.title = title
+        return copy
+    }
+}
+
 extension NoteSummary {
+    /// This summary with the title it is shown under (see `NoteState.showing(title:)`).
+    public func showing(title: String?) -> NoteSummary {
+        guard let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return self }
+        var copy = self
+        copy.title = title
+        return copy
+    }
+
+    /// True when this note's title is no word of anyone's choosing (`NoteDisplayTitle.isUnchosen`): Ask's label words.
+    public func hasUnchosenTitle(generated: String? = nil) -> Bool {
+        NoteDisplayTitle.isUnchosen(stored: title, origin: voice, generated: generated)
+    }
+
+    /// True when `displayTitle` is the made-up default (`NoteDisplayTitle.showsDefault`).
+    public func showsDefaultTitle(generated: String? = nil) -> Bool {
+        NoteDisplayTitle.showsDefault(stored: title, origin: voice, generated: generated)
+    }
+
+    /// The title a share of this note shows (`NoteDisplayTitle.shareTitle`): `format` is `insights.voiceNoteTitle`.
+    public func shareTitle(generated: String? = nil, format: String, includeDates: Bool,
+                           words: NoteDisplayTitle.Words? = nil, locale: Locale = .current) -> String {
+        NoteDisplayTitle.shareTitle(stored: title, origin: voice, generated: generated, format: format,
+                                    includeDates: includeDates, words: words, locale: locale)
+    }
+
     /// The title to show for this note (`NoteDisplayTitle.resolve`): `generated` is the title Note Insights derived for it.
     public func displayTitle(generated: String? = nil, words: NoteDisplayTitle.Words? = nil,
                              locale: Locale = .current) -> String {

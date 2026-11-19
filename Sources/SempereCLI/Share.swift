@@ -138,11 +138,12 @@ struct ShareCommand: ParsableCommand {
         let (passphrase, generated) = try readPassphrase()
         if passphrase.isEmpty { throw CLIError.failure("the passphrase is empty") }
         let vault = try access.openVault(.required)
-        let id = try vault.resolveNote(noteName)
+        let id = try vault.resolveShownNote(noteName)
         let loaded = try vault.loadNote(id)
         let summary = vault.summary(of: id, loaded: loaded)
         if summary.deleted { printStderr("sempere: warning: \(id.uuidString.lowercased()) is deleted") }
-        let state = try vault.reconstruct(loaded)
+        // The page shows the note's shown title, without the capture's date or time unless --dates.
+        let state = try vault.reconstruct(loaded).showing(title: NoteTitles.share(summary, includeDates: dates, in: vault))
 
         var options = WebShareOptions()
         options.includeAudio = audio

@@ -15,10 +15,20 @@ import UIKit
 /// Search | Ask, under the search field.
 struct AskTargetPicker: View {
     @AppModelEnvironment private var model
+    /// Puts the focus back in the search field: a tap on a segment takes it from the field on iPad and Mac.
+    var refocus: () -> Void = {}
 
     var body: some View {
-        @Bindable var model = model
-        Picker("Search or Ask", selection: $model.askTarget) {
+        // The picker's own setter refocuses, not a change of the shared `askTarget`: another window's picker, which sees
+        // the same change, must not ask its field to take the focus.
+        let selection = Binding<AskTarget>(
+            get: { model.askTarget },
+            set: { target in
+                model.askTarget = target
+                // After the field has redrawn for the new mode (its prompt changes), or the focus would be lost again.
+                Task { @MainActor in refocus() }
+            })
+        Picker("Search or Ask", selection: selection) {
             Text("Search", comment: "Segment under the search field: search the notes' words").tag(AskTarget.search)
             Text("Ask", comment: "Segment under the search field: ask the notes a question").tag(AskTarget.ask)
         }

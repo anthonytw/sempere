@@ -32,7 +32,7 @@ public struct InsightsServices: Sendable {
     public var platform: InsightsPlatform
     /// The language of a question (NaturalLanguage's recognizer, which lives outside the package); nil: the vault's main
     /// language (Ask, docs/design/1.3-ask.md §3.1).
-    public var detectLanguage: (@Sendable (String) -> String?)?
+    public var detectLanguage: (@Sendable (_ question: String, _ among: [String]) -> String?)?
 
     public init(model: @escaping @Sendable () -> (any ModelProvider)?, embedder: @escaping @Sendable () -> (any EmbeddingProvider)?,
                 powerWindow: @escaping @MainActor @Sendable () -> Bool, maxGraphNotes: Int = 4000,
@@ -380,6 +380,8 @@ extension AppModelCore {
         if let index = result.3 {
             insightsIndex = index
             insights.revision += 1
+            // A voice note's derived title may have changed: Spotlight donates the title the list shows.
+            spotlightNotesChanged()
         }
         // Turned off here or on another device: this device's memo of failed generations goes with it.
         if result.1 == .off { forgetInsightsFailures(vaultId: vault.vaultId) }
@@ -872,5 +874,18 @@ extension AppModelCore {
     public func displayTitle(_ note: NoteSummary) -> String {
         _ = insights.revision   // the index is not observed: a refresh bumps this, so a view that shows a title redraws
         return note.displayTitle(generated: insightsIndex.shown[note.id]?.generatedTitle, words: displayTitleWords)
+    }
+
+    /// The title a web page share of `note` shows (`NoteDisplayTitle.shareTitle`): `displayTitle(note)`, without the capture's
+    /// date or time unless the share includes dates.
+    func shareTitle(_ note: NoteSummary, includeDates: Bool, vault: Vault) -> String {
+        note.shareTitle(generated: insightsIndex.shown[note.id]?.generatedTitle,
+                        format: InsightsSettings.read(vault, type: settingsDeviceType).voiceNoteTitle,
+                        includeDates: includeDates, words: displayTitleWords)
+    }
+
+    /// True when `displayTitle(note)` is the made-up default ("Voice note <date>"), not a title the user or Insights gave.
+    public func showsDefaultTitle(_ note: NoteSummary) -> Bool {
+        note.showsDefaultTitle(generated: insightsIndex.shown[note.id]?.generatedTitle)
     }
 }

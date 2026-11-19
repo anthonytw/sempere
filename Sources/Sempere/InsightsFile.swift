@@ -252,8 +252,18 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
         public var at: Int64
         /// The insight language the title was derived for (`Gen.outLang` of the slug it came from); absent: the note's own.
         public var lang: String?
-        public init(hash: String, text: String, at: Int64, lang: String? = nil) {
-            self.hash = hash; self.text = text; self.at = at; self.lang = lang
+        /// The `insights.voiceNoteTitle` format `text` was rendered from; absent: the default format. A title is current
+        /// only while this equals the format now set, so a changed format derives the titles again. A format this reader
+        /// cannot use (a token of a later version) is only ever "another format": the title is a fallback, never current.
+        public var fmt: String?
+        public init(hash: String, text: String, at: Int64, lang: String? = nil, fmt: String? = nil) {
+            self.hash = hash; self.text = text; self.at = at; self.lang = lang; self.fmt = fmt
+        }
+
+        /// Whether `text` was rendered from `format`, a format this reader can use.
+        public func isRendered(from format: String) -> Bool {
+            let own = fmt ?? VoiceNoteTitleFormat.defaultFormat
+            return own == format && VoiceNoteTitleFormat.check(own) == nil
         }
     }
 
@@ -307,6 +317,13 @@ public struct InsightsNoteFile: Hashable, Sendable, Codable {
             try InsightsValidate.text(t.text, max: InsightsLimits.maxTitle, "title")
             guard (1...(1 << 53) - 1).contains(t.at) else { throw InsightsFileError.invalid("title at") }
             if let l = t.lang { try InsightsValidate.short(l, "title lang") }
+            // Only bounded: a format of a later version (an unknown token) must not invalidate the file (format.md §16.2).
+            if let f = t.fmt {
+                guard f.count <= VoiceNoteTitleFormat.maxLength, f.utf8.count <= 4 * VoiceNoteTitleFormat.maxLength,
+                      !f.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
+                    throw InsightsFileError.invalid("title fmt")
+                }
+            }
         }
     }
 }

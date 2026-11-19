@@ -29,15 +29,32 @@ public enum AppleInsightsProviders {
         #endif
     }
 
-    /// The language of `text` as a BCP 47 primary tag (NaturalLanguage's recognizer), nil when unknown or unavailable.
-    public static func detectLanguage(_ text: String) -> String? {
+    /// The language of `text` as a BCP 47 primary tag (NaturalLanguage's recognizer), nil when it is none of `candidates`
+    /// (the vault's note languages and the device's) with at least `AskLanguage.minConfidence`, or unavailable.
+    public static func detectLanguage(_ text: String, among candidates: [String]) -> String? {
         #if canImport(NaturalLanguage)
         let r = NLLanguageRecognizer()
+        // Constrained to the languages in play, so a short question is not taken for a language nobody here uses.
+        let constraints = recognizerLanguages(for: candidates).map { NLLanguage(rawValue: $0) }
+        if !constraints.isEmpty { r.languageConstraints = constraints }
         r.processString(text)
-        return r.dominantLanguage.map { InsightsLanguage.primary($0.rawValue) }
+        let hypotheses = r.languageHypotheses(withMaximum: max(5, candidates.count)).map { (language: $0.key.rawValue, confidence: $0.value) }
+        return AskLanguage.choose(hypotheses: hypotheses, among: candidates).map(InsightsLanguage.primary)
         #else
         return nil
         #endif
+    }
+
+    /// The recognizer's languages (`NLLanguage` raw values) for `candidates`: each as it is, except Chinese, which
+    /// NaturalLanguage knows only as its scripts (`zh` is `zh-Hans` and `zh-Hant`; `choose` folds them back to `zh`).
+    public static func recognizerLanguages(for candidates: [String]) -> [String] {
+        var out: [String] = []
+        for c in candidates {
+            let scripts = ["zh-Hans", "zh-Hant"]
+            let expanded = InsightsLanguage.primary(c) == "zh" && !scripts.contains(c) ? scripts : [c]
+            for l in expanded where !out.contains(l) { out.append(l) }
+        }
+        return out
     }
 
     /// Why there is no generation model here (D18), for the CLI's exit 3.
