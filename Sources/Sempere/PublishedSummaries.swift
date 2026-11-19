@@ -445,11 +445,11 @@ public enum PublishedSummaries {
             guard p.page > last, p.page <= w.pages else { return nil }
             last = p.page
         }
-        // `voice`: a start that parses, a zone and a source of at most their lengths (a longer one reads as absent).
+        // `voice`: a start that parses; a zone longer than a capture's reads as absent.
         let voice = w.voice?.value.flatMap { v in
             RFC3339.parse(v.started).map {
                 VoiceOrigin(started: $0, tz: v.tz.flatMap { $0.count <= maxZoneLength ? $0 : nil },
-                            source: v.source.flatMap { $0.count <= 16 ? $0 : nil })
+                            source: v.source)
             }
         }
         // `shown`: only with `voice` (the notes whose shown title is not the stored one), not blank, not too long.
