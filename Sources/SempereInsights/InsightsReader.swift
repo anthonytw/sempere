@@ -62,7 +62,8 @@ public struct InsightsReader: Sendable {
                      written: best.map { Date(timeIntervalSince1970: Double($0.written) / 1000) }, model: best?.gen.model,
                      os: best?.gen.os, prompt: best?.gen.prompt, dropped: best?.gen.dropped, slug: best?.gen.slug,
                      embedded: emb?.hash == note.hash, embeddingKey: emb?.key.description,
-                     generatedTitle: snapshot.bestTitle(for: note.id, hash: note.hash, language: settings.language))
+                     generatedTitle: snapshot.bestTitle(for: note.id, hash: note.hash, language: settings.language,
+                                                      format: settings.voiceNoteTitle))
     }
 
     // MARK: Compatibility

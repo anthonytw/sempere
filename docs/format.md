@@ -4591,7 +4591,11 @@ one a reader shows.
 - `title` (1.3): the title this device derived for a voice note (§16.8), rendered from `insights.voiceNoteTitle`, for the
   insight text whose hash is `hash`; `text` at most 300 characters; `at` Unix milliseconds, 1 … 2^53 − 1, when it was
   derived (it does not change when the file is rewritten for another reason); `lang` (optional) the `outLang` of the slug it
-  was made from (absent: the note's own), and a reader prefers the title whose `lang` equals its `insights.language`. It is never written into the note. A reader
+  was made from (absent: the note's own), and a reader prefers the title whose `lang` equals its `insights.language`;
+  `fmt` (optional) the `insights.voiceNoteTitle` format `text` was rendered from (absent: the default format
+  `{date} {time} {slug}`; a value that is no valid format makes the file invalid), and a reader prefers the title whose `fmt`
+  equals the format now set, as it does for `lang`; a device derives again when no file holds a title for the hash in the
+  language and format now set, so changing the format re-derives (the older titles stay shown until then). It is never written into the note. A reader
   takes a note's derived title from the file whose `title.hash` equals the note's current hash, the later `at`, then the
   larger device id; a title for another hash is not shown. 1.2 wrote `titleOp` here (the stamp of a rename it made to the
   note's own title); readers of 1.3 ignore it, and 1.2 readers ignore `title`.

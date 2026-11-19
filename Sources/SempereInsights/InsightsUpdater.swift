@@ -419,17 +419,18 @@ public struct InsightsUpdater: Sendable {
                     dryRun: Bool, now: Date) throws -> Bool {
         // Once per text and insight language: a title any device derived for this text stands, so devices that race (their
         // slugs differ) leave one winner by `at` and device id, and none rewrites its own to flip it.
-        guard !snapshot.hasTitle(for: note.id, hash: note.hash, language: language),
+        guard !snapshot.hasTitle(for: note.id, hash: note.hash, language: language, format: format),
               let derived = try derivedTitle(note, snapshot: snapshot, format: format, language: language, now: now) else { return false }
         guard !dryRun else { return true }
-        try writeTitle(note, derived, language: language, snapshot: snapshot, me: me, now: now)
+        try writeTitle(note, derived, language: language, format: format, snapshot: snapshot, me: me, now: now)
         return true
     }
 
     func writeTitle(_ note: InsightsNoteInput, _ derived: (title: String, hash: String), language: String?,
-                    snapshot: InsightsSnapshot, me: DeviceID, now: Date) throws {
+                    format: String, snapshot: InsightsSnapshot, me: DeviceID, now: Date) throws {
         var f = snapshot.notes[note.id]?[me] ?? InsightsNoteFile(noteId: note.id, device: me, written: 0)
-        f.title = .init(hash: derived.hash, text: derived.title, at: Int64(now.timeIntervalSince1970 * 1000), lang: language)
+        f.title = .init(hash: derived.hash, text: derived.title, at: Int64(now.timeIntervalSince1970 * 1000), lang: language,
+                         fmt: format == VoiceNoteTitleFormat.defaultFormat ? nil : format)
         try InsightsStore(vault: vault).write(.note(f), now: now)
     }
 
@@ -448,7 +449,7 @@ public struct InsightsUpdater: Sendable {
         let snapshot = store.snapshot()
         guard let derived = try derivedTitle(note, snapshot: snapshot, format: format, slug: slug, language: language, now: now)
         else { return nil }
-        try writeTitle(note, derived, language: language, snapshot: snapshot, me: me, now: now)
+        try writeTitle(note, derived, language: language, format: format, snapshot: snapshot, me: me, now: now)
         return derived.title
     }
 

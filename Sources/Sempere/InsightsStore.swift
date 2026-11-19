@@ -218,21 +218,26 @@ public struct InsightsSnapshot: Sendable {
     /// larger device id, so every reader takes the same one and no device's rewrite of its file flips it; none when no file
     /// has one for that hash (a title made for older text is not shown). A reader that has not hashed the note (a listing)
     /// passes nil and takes the best title of any hash.
-    public func bestTitle(for note: UUID, hash: String?, language: String? = nil, now: Date = Date()) -> String? {
+    ///
+    /// The title in the insight language and title format now set (`language`, `format`) comes first; one in another
+    /// language or format is shown until the new one is derived.
+    public func bestTitle(for note: UUID, hash: String?, language: String? = nil,
+                          format: String = VoiceNoteTitleFormat.defaultFormat, now: Date = Date()) -> String? {
         func order(_ at: Int64) -> Int64 { InsightsCodec.isOrdered(at, now: now) ? at : -1 }
         let all = (notes[note] ?? [:]).compactMap { d, f in
-            f.title.flatMap { hash == nil || $0.hash == hash ? (d, $0.at, $0.text, $0.lang) : nil }
+            f.title.flatMap { hash == nil || $0.hash == hash ? (d, $0.at, $0.text, $0.lang, $0.isRendered(from: format)) : nil }
         }
-        // The title in the insight language now set first (`language`, nil: the note's own); one in another language until it
-        // is derived again.
-        let pool = all.filter { $0.3 == language }
+        let pool = all.filter { $0.3 == language && $0.4 }
         return (pool.isEmpty ? all : pool).sorted { (order($0.1), $0.0.rawValue) > (order($1.1), $1.0.rawValue) }.first?.2
     }
 
-    /// Whether a file holds a title for `hash` in the insight language `language` (nil: the note's own): the check that
-    /// keeps a device from deriving a title that exists.
-    public func hasTitle(for note: UUID, hash: String, language: String?) -> Bool {
-        (notes[note] ?? [:]).values.contains { $0.title.map { $0.hash == hash && $0.lang == language } ?? false }
+    /// Whether a file holds a title for `hash` in the insight language `language` (nil: the note's own) rendered from
+    /// `format`: the check that keeps a device from deriving a title that exists.
+    public func hasTitle(for note: UUID, hash: String, language: String?,
+                         format: String = VoiceNoteTitleFormat.defaultFormat) -> Bool {
+        (notes[note] ?? [:]).values.contains {
+            $0.title.map { $0.hash == hash && $0.lang == language && $0.isRendered(from: format) } ?? false
+        }
     }
 }
 
