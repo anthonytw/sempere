@@ -108,6 +108,20 @@ extension AppModelSuites {
             #expect(SavedToolList(settings: try #require(try vault.readSharedSettings())).tools.map(\.name) == ["Mine"])
         }
 
+        @Test func seedingIsDecidedUnderTheLockSoAToolThatLandedFirstIsKept() async throws {
+            let (model, vault) = try await model()
+            await model.setSettingsSync(true)   // nothing local, nothing in the vault
+            // The tools another device synced land after the seed was decided on, before it is applied.
+            try vault.updateSharedSettings { s in try SavedToolList.add(tool("Theirs"), to: &s, type: .mac, now: Date()) }
+            var mine = SavedToolList()
+            try mine.add(tool("Mine"))
+            #expect(await model.changeSavedTools(.seedIfEmpty(mine)) == .done)
+            #expect(SavedToolList(settings: try #require(try vault.readSharedSettings())).tools.map(\.name) == ["Theirs"])
+            // Replacing is the explicit action and still resets them.
+            #expect(await model.changeSavedTools(.replaceAll(mine)) == .done)
+            #expect(SavedToolList(settings: try #require(try vault.readSharedSettings())).tools.map(\.name) == ["Mine"])
+        }
+
         @Test func turningSyncOffShowsTheDevicesListAgain() async throws {
             let (model, vault) = try await model()
             await model.changeSavedTools(.add(tool("Mine")))

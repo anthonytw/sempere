@@ -10,6 +10,9 @@ public enum SavedToolChange: Sendable {
     case move(String, SavedToolList.Destination)
     /// Replaces every saved tool with this list (Settings ▸ Writing ▸ Saved Tools ▸ Replace the Vault's).
     case replaceAll(SavedToolList)
+    /// Seeds the vault with this list only when it holds no saved-tool slot at all (not even a deleted one), decided
+    /// under the write lock on the settings as they are then: turning sync on, so a sync that landed first is kept.
+    case seedIfEmpty(SavedToolList)
 }
 
 /// What a change did.
@@ -93,6 +96,7 @@ extension AppModelCore {
             case .remove(let id): list.remove(id: id)
             case .move(let id, let to): try list.move(id: id, to: to)
             case .replaceAll(let all): list = all
+            case .seedIfEmpty(let all): if list.isEmpty { list = all }
             }
         } catch let e as SavedToolError {
             return .refused(e)
@@ -111,9 +115,11 @@ extension AppModelCore {
         case .update(let t): try SavedToolList.update(t, in: &settings, type: type, now: now)
         case .remove(let id): try SavedToolList.remove(id: id, from: &settings, type: type, now: now)
         case .move(let id, let to): try SavedToolList.move(id: id, to: to, in: &settings, type: type, now: now)
+        case .seedIfEmpty(let list):
+            guard !SavedToolList.hasSlots(in: settings) else { return }
+            try list.seed(into: &settings, type: type, now: now)
         case .replaceAll(let list):
-            let live = settings.slots.filter { $0.key.block == nil && $0.key.key.hasPrefix(SavedTool.keyPrefix) && $0.value.value != nil }
-            for slot in live.keys { try settings.set(slot, to: nil, type: type, now: now) }
+            try SavedToolList.removeEveryLiveSlot(from: &settings, type: type, now: now)
             try list.seed(into: &settings, type: type, now: now)
         }
     }
@@ -126,7 +132,8 @@ extension AppModelCore {
         let file = try? await offMain { try vault.readSharedSettings() }
         let local = localSavedTools
         if !SavedToolList.hasSlots(in: file ?? SharedSettings()), !local.isEmpty {
-            await changeSavedTools(.replaceAll(local))
+            // Decided again inside the locked update: a sync that landed since the read keeps its tools.
+            await changeSavedTools(.seedIfEmpty(local))
         } else if let file {
             refreshSavedTools(file: file)
         }
