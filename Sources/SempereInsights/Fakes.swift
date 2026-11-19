@@ -24,6 +24,9 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
         public var unsupportedLanguages: Set<String> = []
         /// How many words of the transcript a title takes (a test makes two devices disagree by giving them different counts).
         public var titleWords = 4
+        /// Answers questions (`answer`): given the question and the sources, what the model returns. Nil: the default,
+        /// the best-matching passage sentence of the first two sources, each citing its own source.
+        public var answer: (@Sendable (_ question: String, _ sources: [AskSource]) -> ModelAnswer)?
         public var identity = GenerationIdentity(model: "fake-model", os: "1.0", prompt: InsightsGenerator.promptRevision)
         public init() {}
     }
@@ -33,6 +36,8 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
     private var calls = 0
     /// Every call made, in order: `extract`, `merge`, `summarize`, `title`.
     public private(set) var log: [String] = []
+    /// Every `answer` request: the question and the sources the model was sent.
+    public private(set) var askRequests: [(question: String, sources: [AskSource])] = []
 
     public init(_ script: Script = Script()) { self.script = script }
 
@@ -78,6 +83,23 @@ public final class FakeModelProvider: ModelProvider, @unchecked Sendable {
         try begin("summarize", tokens: summaries.map(InsightsChunker.tokens).reduce(0, +))
         let invented = lock.withLock { script.invented }
         return (summaries.compactMap { InsightsChunker.sentences($0).first }.prefix(5) + invented).joined(separator: " ")
+    }
+
+    public func answer(question: String, sources: [AskSource], language: String?) async throws -> ModelAnswer {
+        try begin("answer", tokens: sources.reduce(0) { $0 + InsightsChunker.tokens(String(repeating: "x", count: $1.characters)) })
+        lock.withLock { askRequests.append((question, sources)) }
+        if let scripted = lock.withLock({ script.answer }) { return scripted(question, sources) }
+        let forms = Set(AskText.terms(question).map(AskText.form))
+        var sentences: [ModelSentence] = []
+        for s in sources.prefix(2) {
+            let candidates = s.passages.flatMap { InsightsChunker.sentences($0.text) }
+            let best = candidates.max { a, b in
+                Set(InsightsWords.words(a).map(AskText.form)).intersection(forms).count
+                    < Set(InsightsWords.words(b).map(AskText.form)).intersection(forms).count
+            }
+            if let best { sentences.append(ModelSentence(text: best, sources: [s.id])) }
+        }
+        return ModelAnswer(enough: !sentences.isEmpty, sentences: sentences)
     }
 
     public func title(transcript: String, language: String?) async throws -> String {

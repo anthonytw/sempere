@@ -96,6 +96,9 @@ public protocol ModelProvider: Sendable {
     func summarize(topic: String, summaries: [String], language: String?) async throws -> String
     /// A 2-6 word title for a voice note's transcript (D14).
     func title(transcript: String, language: String?) async throws -> String
+    /// A short answer to `question` from `sources` only, each sentence naming the sources it uses (docs/design/1.3-ask.md
+    /// §3.1 step 7). Untrusted output: `AskValidator` checks it. The default throws (a provider that cannot answer).
+    func answer(question: String, sources: [AskSource], language: String?) async throws -> ModelAnswer
 }
 
 /// A sentence embedder at explicit revisions (design §3.8): never "the current" one.
