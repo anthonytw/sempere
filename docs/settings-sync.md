@@ -298,6 +298,7 @@ unlock (`security.unlock`); the remembered key itself stays state.
 | Cache size limits, last thinning run, attachment index | this device's disk and bookkeeping |
 | PencilKit's own saved tools (`PKPaletteNamedDefaults`) | PencilKit's state, partly reset by the app |
 | Sync Settings with This Vault, and the local overrides | the sync switch itself |
+| Spotlight indexing (`Sempere.spotlight.<vault id>`: off, metadata or text; the vaults it is on for; vaults whose removal must be retried) | this device's OS index: a synced switch would put plaintext into Spotlight on a device the user never chose |
 
 A new setting is added to the registry (`SharedSettingsCatalog` in
 `Sources/Sempere/SharedSettingsCatalog.swift`) with its types, values and default, a

@@ -149,6 +149,7 @@ struct SettingsGroupPage: View {
             AppearanceSettingsSection().id(model.settingsAppliedRevision)
             GeneralSettings()
             AppIconSettingsSection().id(model.settingsAppliedRevision)
+            SpotlightSettingsSection()
             if Platform.isMac {
                 DragToFinderSettingsSection().id(model.settingsAppliedRevision)
             }

@@ -2370,6 +2370,23 @@ exact name; a name or prefix that several tools share is an error (exit 1) namin
 
 The CLI has no device-local list: it edits the vault's file, and a device with Sync Settings with This Vault off keeps its own.
 
+### Spotlight
+
+```
+sempere spotlight plan [--text [--transcripts]] [--json]
+```
+
+What the app's opt-in Spotlight indexing (Settings ▸ Spotlight) would donate for the vault, from the same planner
+(`SpotlightPlanner`): one record per note that is not deleted, newest first, with its item `id`
+(`<vault id>/<note id>`), `domain`, `title` ("Untitled note" when blank), `description` (notebook and date, or with
+`--text` the notebook and the first 140 characters of text), `keywords` (the tags), `modified` and `textLength`
+(characters of text that would be donated, 0 without `--text`), and the caps (20,000 text characters, 50,000 notes,
+30 days to expiry). `--text` is "Include Note Text": recognized handwriting, typed text, PDF text and equations'
+source; `--transcripts` also reads recording transcripts (the app follows Search Recording Transcripts). It never
+writes anything and never prints note text. Indexing itself is app-only: Core Spotlight items belong to an app's
+bundle identity, which a command-line binary does not have in a form the system can open. `--json`: `{vault, includeText,
+items: [...], omitted, caps}`.
+
 ### Note insights
 
 ```

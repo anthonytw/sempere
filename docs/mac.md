@@ -738,6 +738,16 @@ be checked.
     puts it back. Export the note as "PDF + attachments", then Share… and
     Save…: no crash, the PDF lists the audio in Preview's attachments.
 
+## Spotlight
+
+Opt-in (Settings ▸ Spotlight, docs/design/1.3-spotlight.md): note titles, notebooks, tags and dates, and with Include
+Note Text the notes' text, go into Core Spotlight's named index `sempere`. A Mac has no data protection classes, so
+the app makes the plain named index there (`CSSearchableIndex(name:)`; the `protectionClass:` initializer exists on
+Catalyst 27, but `.complete` means nothing without a lock screen) and the index is readable whenever the user's
+account is; Spotlight can show the items in system search. The opt-in sheet says so. A result opens the note in the
+window that received it. To try by hand: turn it on, search the title in Spotlight, open the result (with the vault
+locked: the unlock follows, then the note); turn it off and search again.
+
 ## Menu parity and the voice note item
 
 Every toolbar-only note command has a menu entry (the table above); page commands act on paged

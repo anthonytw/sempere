@@ -2704,6 +2704,55 @@
         }
       }
     },
+    "%lld older notes are left out of Spotlight (the limit is 50,000 notes per vault)." : {
+      "comment" : "%lld is a count",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld older note is left out of Spotlight (the limit is 50,000 notes per vault)."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld older notes are left out of Spotlight (the limit is 50,000 notes per vault)."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas más antiguas quedan fuera de Spotlight (el límite es de 50 000 notas por bóveda)."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota más antigua queda fuera de Spotlight (el límite es de 50 000 notas por bóveda)."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas más antiguas quedan fuera de Spotlight (el límite es de 50 000 notas por bóveda)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld pages" : {
       "comment" : "A number of pages (note list row)",
       "extractionState" : "manual",
@@ -11811,6 +11860,44 @@
         }
       }
     },
+    "Include Note Text" : {
+      "comment" : "Settings switch: also copies note text into Spotlight",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir el texto de las notas"
+          }
+        }
+      }
+    },
+    "Include Text" : {
+      "comment" : "Button of the Include Note Text confirmation",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir texto"
+          }
+        }
+      }
+    },
+    "Include note text in Spotlight?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Incluir el texto de las notas en Spotlight?"
+          }
+        }
+      }
+    },
     "Include notes in Recently Deleted" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -15570,6 +15657,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No"
+          }
+        }
+      }
+    },
+    "Off by default, for this vault on this device only. Spotlight's index belongs to the system and is not protected by your vault's encryption." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado por defecto, solo para esta bóveda en este dispositivo. El índice de Spotlight pertenece al sistema y no está protegido por el cifrado de tu bóveda."
           }
         }
       }
@@ -21747,6 +21846,19 @@
         }
       }
     },
+    "Show This Vault's Notes in Spotlight" : {
+      "comment" : "Settings switch",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar las notas de esta bóveda en Spotlight"
+          }
+        }
+      }
+    },
     "Show Transcript" : {
       "comment" : "Menu item",
       "extractionState" : "manual",
@@ -21806,6 +21918,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar en la barra de menús pone un icono de Sempere en la barra de menús con Nota de voz rápida y Nueva nota, mientras Sempere está abierto."
+          }
+        }
+      }
+    },
+    "Show notes in Spotlight?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Mostrar las notas en Spotlight?"
           }
         }
       }
@@ -22345,6 +22469,98 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SpeechTranscriber (en el dispositivo)"
+          }
+        }
+      }
+    },
+    "Spotlight" : {
+      "comment" : "Settings section title: Apple's Spotlight search",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "shouldTranslate" : false
+    },
+    "Spotlight is off until this vault's device list checks out on this device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight está desactivado hasta que la lista de dispositivos de esta bóveda se verifique en este dispositivo."
+          }
+        }
+      }
+    },
+    "Spotlight is part of iOS and macOS, not part of Sempere. If you turn this on, your note titles, notebook names and tags are copied into Spotlight's index on this device, where they are not protected by your vault's encryption. Anyone or any app that can read your account's files, and system features such as Siri and Apple Intelligence, can read them. They stay there while this is on, even when Sempere is closed. Sempere removes them when you turn this off, delete the note, change your vault's keys or remove this device. Nothing is sent to us or anyone else." : {
+      "comment" : "Opt-in sheet for Spotlight on a Mac",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight forma parte de iOS y macOS, no de Sempere. Si lo activas, los títulos de tus notas, los nombres de los cuadernos y las etiquetas se copian en el índice de Spotlight de este dispositivo, donde no están protegidos por el cifrado de tu bóveda. Cualquier persona o app que pueda leer los archivos de tu cuenta, y funciones del sistema como Siri y Apple Intelligence, pueden leerlos. Permanecen allí mientras esté activado, incluso con Sempere cerrado. Sempere los elimina cuando lo desactivas, borras la nota, cambias las claves de tu bóveda o quitas este dispositivo. No se envía nada a nosotros ni a nadie más."
+          }
+        }
+      }
+    },
+    "Spotlight is part of iOS and macOS, not part of Sempere. If you turn this on, your note titles, notebook names and tags are copied into Spotlight's index on this device, where they are not protected by your vault's encryption. Anyone who can use this device while it is unlocked, and system features such as Siri and Apple Intelligence, can read them. They stay there while this is on, even when Sempere is closed. Sempere removes them when you turn this off, delete the note, change your vault's keys or remove this device. Nothing is sent to us or anyone else." : {
+      "comment" : "Opt-in sheet for Spotlight on an iPhone or iPad",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight forma parte de iOS y macOS, no de Sempere. Si lo activas, los títulos de tus notas, los nombres de los cuadernos y las etiquetas se copian en el índice de Spotlight de este dispositivo, donde no están protegidos por el cifrado de tu bóveda. Cualquier persona que pueda usar este dispositivo mientras esté desbloqueado, y funciones del sistema como Siri y Apple Intelligence, pueden leerlos. Permanecen allí mientras esté activado, incluso con Sempere cerrado. Sempere los elimina cuando lo desactivas, borras la nota, cambias las claves de tu bóveda o quitas este dispositivo. No se envía nada a nosotros ni a nadie más."
+          }
+        }
+      }
+    },
+    "Spotlight needs this device's own key: it is not available when the vault was opened with the recovery key." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight necesita la clave propia de este dispositivo: no está disponible cuando la bóveda se abrió con la clave de recuperación."
+          }
+        }
+      }
+    },
+    "Spotlight was turned off and its items removed, because this device no longer holds the vault's key." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight se desactivó y sus elementos se eliminaron, porque este dispositivo ya no tiene la clave de la bóveda."
+          }
+        }
+      }
+    },
+    "Spotlight was turned off and its items removed, because this device was removed from the vault." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight se desactivó y sus elementos se eliminaron, porque este dispositivo se quitó de la bóveda."
+          }
+        }
+      }
+    },
+    "Spotlight was turned off and its items removed, because this vault's device list does not check out on this device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight se desactivó y sus elementos se eliminaron, porque la lista de dispositivos de esta bóveda no se verifica en este dispositivo."
           }
         }
       }
@@ -24162,6 +24378,18 @@
         }
       }
     },
+    "That note is not on this device any more." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa nota ya no está en este dispositivo."
+          }
+        }
+      }
+    },
     "That notebook name is too long." : {
       "comment" : "Error: a new notebook's name is too long",
       "extractionState" : "manual",
@@ -24593,6 +24821,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se canceló la copia. No se hizo nada."
+          }
+        }
+      }
+    },
+    "The demo vault is never added to Spotlight." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bóveda de demostración nunca se añade a Spotlight."
           }
         }
       }
@@ -26248,6 +26488,32 @@
         }
       }
     },
+    "This copies the text of your notes into Spotlight's index on this device: recognized handwriting, typed text, PDF text and recording transcripts, up to 20,000 characters per note. It is not protected by your vault's encryption. Anyone or any app that can read your account's files, and system features such as Siri and Apple Intelligence, can read whole notes. It stays there while this is on, even when Sempere is closed. Sempere removes it when you turn this off, delete the note, change your vault's keys or remove this device. Nothing is sent to us or anyone else." : {
+      "comment" : "Opt-in sheet for Include Note Text on a Mac",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto copia el texto de tus notas en el índice de Spotlight de este dispositivo: escritura a mano reconocida, texto escrito, texto de PDF y transcripciones de grabaciones, hasta 20 000 caracteres por nota. No está protegido por el cifrado de tu bóveda. Cualquier persona o app que pueda leer los archivos de tu cuenta, y funciones del sistema como Siri y Apple Intelligence, pueden leer notas enteras. Permanece allí mientras esté activado, incluso con Sempere cerrado. Sempere lo elimina cuando lo desactivas, borras la nota, cambias las claves de tu bóveda o quitas este dispositivo. No se envía nada a nosotros ni a nadie más."
+          }
+        }
+      }
+    },
+    "This copies the text of your notes into Spotlight's index on this device: recognized handwriting, typed text, PDF text and recording transcripts, up to 20,000 characters per note. It is not protected by your vault's encryption. Anyone who can use this device while it is unlocked, and system features such as Siri and Apple Intelligence, can read whole notes. It stays there while this is on, even when Sempere is closed. Sempere removes it when you turn this off, delete the note, change your vault's keys or remove this device. Nothing is sent to us or anyone else." : {
+      "comment" : "Opt-in sheet for Include Note Text on an iPhone or iPad",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto copia el texto de tus notas en el índice de Spotlight de este dispositivo: escritura a mano reconocida, texto escrito, texto de PDF y transcripciones de grabaciones, hasta 20 000 caracteres por nota. No está protegido por el cifrado de tu bóveda. Cualquier persona que pueda usar este dispositivo mientras esté desbloqueado, y funciones del sistema como Siri y Apple Intelligence, pueden leer notas enteras. Permanece allí mientras esté activado, incluso con Sempere cerrado. Sempere lo elimina cuando lo desactivas, borras la nota, cambias las claves de tu bóveda o quitas este dispositivo. No se envía nada a nosotros ni a nadie más."
+          }
+        }
+      }
+    },
     "This copy does not sync with any folder or server, so it cannot join your other devices. To join, open the vault's sync folder again with Open Vault… and keep “Keep syncing with this folder” on." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -26709,6 +26975,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo se quitó de la lista de dispositivos de la bóveda: no toma notas de voz nuevas hasta que se vuelva a añadir."
+          }
+        }
+      }
+    },
+    "This device was removed from the vault, so its notes are not shown in Spotlight." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo se quitó de la bóveda, así que sus notas no se muestran en Spotlight."
           }
         }
       }
@@ -28549,6 +28827,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sin título"
+          }
+        }
+      }
+    },
+    "Untitled note" : {
+      "comment" : "Spotlight result title for a note with no title",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota sin título"
           }
         }
       }

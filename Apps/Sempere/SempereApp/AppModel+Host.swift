@@ -40,6 +40,7 @@ enum AppHost: AppModelHost {
                          nearby: debugNearbyTransport ?? NWNearbyTransport(),
                          describeError: AppModel.describe)
         services.insights = AppInsights.services
+        services.spotlightIndex = CoreSpotlightIndex()
         return services
     }
 

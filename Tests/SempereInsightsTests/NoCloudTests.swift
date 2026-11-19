@@ -57,6 +57,18 @@ final class NoCloudTests: XCTestCase {
         }
     }
 
+    /// Opt-in Spotlight (1.3) is the one place Core Spotlight is allowed: the app's own `Spotlight` folder (and its
+    /// adapter's test), never a package target, so what is donated is decided by `SpotlightPlanner` and stays testable.
+    func testCoreSpotlightIsImportedOnlyByTheAppsSpotlightFolder() {
+        let files = Self.swiftFiles(under: "Sources") + Self.swiftFiles(under: "Apps")
+        XCTAssertGreaterThan(files.count, 100, "the scan found the sources")
+        for (path, text) in files where text.contains("import CoreSpotlight") || text.contains("CSSearchableIndex(") || text.contains("CSSearchableItem(") {
+            let allowed = path.hasPrefix("Apps/Sempere/SempereApp/Spotlight/")
+                || path == "Apps/Sempere/SempereAppTests/SpotlightIndexerTests.swift"
+            XCTAssertTrue(allowed, "\(path) uses Core Spotlight outside Apps/Sempere/SempereApp/Spotlight/")
+        }
+    }
+
     func testNoNetworkSpotlightOrIntentsInTheInsightsTargets() throws {
         for folder in ["Sources/SempereInsights", "Sources/SempereInsightsApple"] {
             let files = Self.swiftFiles(under: folder)
