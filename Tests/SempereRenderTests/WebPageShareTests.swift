@@ -243,6 +243,37 @@ final class WebPageShareTests: XCTestCase {
         XCTAssertNil((math["math"] as? [String: Any])?["render"])
     }
 
+    func testALargePhotoIsDecodedReducedNotAtFullSizeAndKeepsItsDimensions() throws {
+        // 3200 × 2400 with orientation 6 at the low step (1280 long side): DCT scaling brings it to 1/2 before the
+        // oriented copy and the scale, so the full-size bitmap is never made (an iPhone's 48 MP photo would not fit).
+        let rgba = try PNG.decode(try SyntheticImage.png(width: 3200, height: 2400, seed: 11))
+        let jpeg = JPEGEncoder.encode(rgba, quality: 80)
+        let ref = BlobRef(content: jpeg, type: "image/jpeg")
+        let media = ShareMedia(blobs: MemoryBlobSource([jpeg]), rasterizer: nil, decoder: nil)
+        let low = try XCTUnwrap(WebShareOptions.ImageQuality.low.steps.first)
+        let e = try media.image(ref, orientation: 6, step: low).get()
+        XCTAssertTrue(media.store.decoded.isEmpty, "the full-size decode was never made")
+        XCTAssertEqual([e.width, e.height], [960, 1280], "upright, long side at the step")
+        XCTAssertEqual([e.orientedWidth, e.orientedHeight], [2400, 3200], "crops stay measured in the full upright image")
+        // The same image at another quality step decodes nothing new at full size either.
+        _ = try media.image(ref, orientation: 6, step: (side: low.side, quality: low.quality - 10)).get()
+        XCTAssertTrue(media.store.decoded.isEmpty)
+        // (A small image takes no reduction: `testPhotoIsReencodedSmaller...` and `testLongSideIsBounded` pin its sizes.)
+    }
+
+    func testScaledMatchesAWholeImageBoxAverage() throws {
+        // Row-at-a-time scaling gives the whole-image result: checked on an exact 2:1 reduction of a known picture.
+        var px = [UInt8](repeating: 0, count: 8 * 4 * 4)
+        for y in 0..<4 { for x in 0..<8 { let i = (y * 8 + x) * 4; px[i] = UInt8(x * 30); px[i + 1] = UInt8(y * 60); px[i + 2] = 9; px[i + 3] = 255 } }
+        let out = ShareMedia.scaled(try RGBAImage(width: 8, height: 4, pixels: px), to: 4)
+        XCTAssertEqual([out.width, out.height], [4, 2])
+        // Output (0,0) averages source x 0...1, y 0...1: r = (0 + 30) / 2, g = (0 + 60) / 2.
+        XCTAssertEqual(out.pixels[0], 15)
+        XCTAssertEqual(out.pixels[1], 30)
+        XCTAssertEqual(out.pixels[3], 255)
+        XCTAssertEqual(out.pixels[(1 * 4 + 3) * 4], UInt8((6 * 30 + 7 * 30) / 2))
+    }
+
     func testVideoBecomesItsPosterAndAudioCardsGoWithoutRecordings() throws {
         let poster = try SyntheticImage.png(width: 200, height: 100, seed: 1)
         let posterRef = BlobRef(content: poster, type: "image/png")
@@ -292,6 +323,17 @@ final class WebPageShareTests: XCTestCase {
         XCTAssertEqual(items.count, 1, "the card of a skipped recording goes with it")
         let roomy = try share(state, blobs) { $0.includeAudio = true; $0.maxFileBytes = 20 << 20 }.1
         XCTAssertEqual((roomy.json["note"] as? [String: Any])?["recordings"].flatMap { ($0 as? [Any])?.count }, 2)
+    }
+
+    func testSkipNotesAreNotRepeatedWhenAudioIsIncluded() throws {
+        let rec = Recording(id: Self.uuid(940), blob: BlobRef(sha256: String(repeating: "a", count: 64), size: 10, type: "audio/mp4"),
+                            started: Date(timeIntervalSince1970: 5), title: "Lecture")
+        var state = try T.loadSampleNote()
+        state.recordings = [rec]
+        state.pages[0].items = [Item(id: Self.uuid(941), kind: .video, frame: Rect(x: 0, y: 0, w: 100, h: 50), z: "a",
+                                     blob: BlobRef(sha256: String(repeating: "b", count: 64), size: 1, type: "video/mp4"))]
+        let result = try share(state, MemoryBlobSource([])) { $0.includeAudio = true }.0
+        XCTAssertEqual(result.skipped.filter { $0.contains("video was left out") }.count, 1, "\(result.skipped)")
     }
 
     // MARK: Size
@@ -443,10 +485,13 @@ final class WebPageShareTests: XCTestCase {
         let (state, blobs, _) = try Self.sampleNote(images: false)
         let file = try WebPageShare.make(state, blobs: blobs, options: Self.options(), passphrase: Self.passphrase, template: Self.template).file
         let template = Self.template
-        let ok = template.verify(file: file)
+        let ok = template.verify(file: file, minLog2N: 10)
         XCTAssertTrue(ok.ok, "\(ok.problems)")
         XCTAssertTrue(ok.matchesTemplate && ok.policyMatches)
         XCTAssertEqual(ok.scryptLog2N, 10)
+        // The factor is judged too: 10 is below what a share should carry.
+        XCTAssertTrue(template.verify(file: file).problems.contains { $0.contains("scrypt work factor is 10") })
+        XCTAssertFalse(template.verify(file: file).ok)
         XCTAssertEqual(ok.scriptSha256, template.scriptSha256)
         let text = String(decoding: file, as: UTF8.self)
 

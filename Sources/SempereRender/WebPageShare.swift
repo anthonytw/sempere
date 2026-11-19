@@ -158,7 +158,7 @@ public struct ShareTemplate: Sendable, Equatable {
     /// Checks a share file against this template without decrypting anything: the script, the style and the CSP
     /// meta equal the template's (compared as a whole), and the data block is an age file with one scrypt
     /// recipient.
-    public func verify(file: Data) -> Verification {
+    public func verify(file: Data, minLog2N: Int = ShareTemplate.minViewerLog2N) -> Verification {
         var v = Verification()
         v.bytes = file.count
         guard let s = String(data: file, encoding: .utf8) else { v.problems.append("the file is not UTF-8 text"); return v }
@@ -187,11 +187,19 @@ public struct ShareTemplate: Sendable, Equatable {
                 return v
             }
             v.scryptLog2N = n
+            if n < minLog2N || n > Self.maxViewerLog2N {
+                v.problems.append("the scrypt work factor is \(n); the viewer opens only \(minLog2N) to \(Self.maxViewerLog2N)")
+            }
         } catch {
             v.problems.append("the data block is not an armored age file")
         }
         return v
     }
+
+    /// The work factors worth trusting in a share: below 17 the passphrase is cheap to guess, and the viewer refuses
+    /// above 20 (`maxWorkFactor`, web/src/share/open.ts).
+    public static let minViewerLog2N = 17
+    public static let maxViewerLog2N = 20
 
     /// The content of the CSP meta.
     static func policy(in s: String) -> String? {
@@ -334,8 +342,10 @@ public enum WebPageShare {
         var skipped: [String] = []
         if options.includeAudio {
             let smallest = steps[steps.count - 1]
+            // Only a size probe: its notes are repeated by the real build below, so they are dropped here.
+            var probeNotes: [String] = []
             let base = try build(state, options: options, shareId: shareId, media: media, step: smallest, recordings: [],
-                                 skipped: &skipped)
+                                 skipped: &probeNotes)
             var room = options.maxFileBytes - size(base)
             for r in state.recordings.sorted(by: { ($0.started, $0.id.uuidString) < ($1.started, $1.id.uuidString) }) {
                 try Task.checkCancellation()
@@ -544,7 +554,7 @@ final class ShareMedia {
     }
 
     private let blobs: (any BlobSource)?
-    private let store: ImageStore
+    let store: ImageStore
     private let backgrounds: PDFBackgrounds
     private let rasterizer: (any PDFPageRasterizer)?
     private var cache: [String: Result<Encoded, ShareFailure>] = [:]
@@ -582,12 +592,24 @@ final class ShareMedia {
         switch store.load(ref) {
         case .failure(let why): r = .failure(ShareFailure(description: "\(why)"))
         case .success(let loaded):
-            switch store.decodeFull(ref, loaded) {
+            // Decode no larger than the step needs: JPEG DCT scaling and a box average (`forRaster`, cached per
+            // size, so the quality steps of one image decode it once). A format with no known size
+            // (HEIC through the platform decoder) is decoded whole, as before.
+            var reduction = 1.0
+            if loaded.width > 0, loaded.height > 0 { reduction = Double(max(loaded.width, loaded.height)) / Double(max(1, step.side)) }
+            switch store.forRaster(ref, loaded, reduction: max(1, reduction)) {
             case .failure(let why): r = .failure(ShareFailure(description: "\(why)"))
             case .success(let rgba):
                 let o = (2...8).contains(orientation) ? orientation : 1
                 if let oriented = try? LegacyImage.oriented(rgba, o) {
-                    r = .success(Self.encode(oriented, side: step.side, quality: step.quality))
+                    var e = Self.encode(oriented, side: step.side, quality: step.quality)
+                    // The crop is measured in the full image, not the reduced one decoded here.
+                    let full = loaded.width > 0 ? (w: Double(loaded.width), h: Double(loaded.height))
+                        : (w: Double(rgba.width), h: Double(rgba.height))
+                    let upright = o >= 5 ? (w: full.h, h: full.w) : full
+                    e.orientedWidth = upright.w
+                    e.orientedHeight = upright.h
+                    r = .success(e)
                 } else {
                     r = .failure(ShareFailure(description: "it cannot be turned upright"))
                 }
@@ -646,49 +668,59 @@ final class ShareMedia {
                        orientedWidth: ow, orientedHeight: oh)
     }
 
-    /// Area-averaging reduction so the long side is `side`.
+    /// Area-averaging reduction so the long side is `side`. Works a row at a time (each source row is reduced
+    /// across, premultiplied, then folded into the destination row it falls in), so memory is the input plus
+    /// two output-width rows, never a whole-image float buffer.
     static func scaled(_ img: RGBAImage, to side: Int) -> RGBAImage {
         let k = Double(side) / Double(max(img.width, img.height))
         let nw = max(1, Int((Double(img.width) * k).rounded())), nh = max(1, Int((Double(img.height) * k).rounded()))
-        // Horizontal pass, then vertical, each a box average with fractional edges (premultiplied).
-        func pass(_ src: [Float], _ sw: Int, _ sh: Int, _ dw: Int, horizontal: Bool) -> [Float] {
-            let from = horizontal ? sw : sh
-            let outW = horizontal ? dw : sw, outH = horizontal ? sh : dw
-            var out = [Float](repeating: 0, count: outW * outH * 4)
-            let ratio = Double(from) / Double(dw)
-            for o in 0..<dw {
-                let a = Double(o) * ratio, b = a + ratio
-                var s = Int(a)
-                while Double(s) < b && s < from {
-                    let wgt = Float(min(b, Double(s + 1)) - max(a, Double(s)))
-                    if horizontal {
-                        for y in 0..<sh { for c in 0..<4 { out[(y * dw + o) * 4 + c] += src[(y * sw + s) * 4 + c] * wgt } }
-                    } else {
-                        for x in 0..<sw { for c in 0..<4 { out[(o * sw + x) * 4 + c] += src[(s * sw + x) * 4 + c] * wgt } }
+        let sw = img.width, sh = img.height
+        let ratioX = Double(sw) / Double(nw), ratioY = Double(sh) / Double(nh)
+        let normX = Float(1 / ratioX), normY = Float(1 / ratioY)
+        var hrow = [Float](repeating: 0, count: nw * 4)
+        var hrowIndex = -1
+        func reduceRow(_ y: Int) {
+            if hrowIndex == y { return }
+            hrowIndex = y
+            for i in 0..<hrow.count { hrow[i] = 0 }
+            img.pixels.withUnsafeBufferPointer { px in
+                for o in 0..<nw {
+                    let a = Double(o) * ratioX, b = a + ratioX
+                    var x = Int(a)
+                    while Double(x) < b && x < sw {
+                        let wgt = Float(min(b, Double(x + 1)) - max(a, Double(x)))
+                        let base = (y * sw + x) * 4
+                        let al = Float(px[base + 3]) / 255
+                        hrow[o * 4] += Float(px[base]) * al * wgt
+                        hrow[o * 4 + 1] += Float(px[base + 1]) * al * wgt
+                        hrow[o * 4 + 2] += Float(px[base + 2]) * al * wgt
+                        hrow[o * 4 + 3] += al * 255 * wgt
+                        x += 1
                     }
-                    s += 1
+                    for c in 0..<4 { hrow[o * 4 + c] *= normX }
                 }
-                let norm = Float(1 / ratio)
-                if horizontal { for y in 0..<sh { for c in 0..<4 { out[(y * dw + o) * 4 + c] *= norm } } }
-                else { for x in 0..<sw { for c in 0..<4 { out[(o * sw + x) * 4 + c] *= norm } } }
             }
-            return out
         }
-        var f = [Float](repeating: 0, count: img.width * img.height * 4)
-        for p in 0..<(img.width * img.height) {
-            let a = Float(img.pixels[p * 4 + 3]) / 255
-            f[p * 4] = Float(img.pixels[p * 4]) * a; f[p * 4 + 1] = Float(img.pixels[p * 4 + 1]) * a
-            f[p * 4 + 2] = Float(img.pixels[p * 4 + 2]) * a; f[p * 4 + 3] = a * 255
-        }
-        let h = pass(f, img.width, img.height, nw, horizontal: true)
-        let v = pass(h, nw, img.height, nh, horizontal: false)
         var out = [UInt8](repeating: 0, count: nw * nh * 4)
-        for p in 0..<(nw * nh) {
-            let a = v[p * 4 + 3] / 255
-            if a > 0 {
-                for c in 0..<3 { out[p * 4 + c] = UInt8(max(0, min(255, (v[p * 4 + c] / a).rounded()))) }
+        var acc = [Float](repeating: 0, count: nw * 4)
+        for o in 0..<nh {
+            for i in 0..<acc.count { acc[i] = 0 }
+            let a = Double(o) * ratioY, b = a + ratioY
+            var y = Int(a)
+            while Double(y) < b && y < sh {
+                let wgt = Float(min(b, Double(y + 1)) - max(a, Double(y)))
+                reduceRow(y)
+                for i in 0..<acc.count { acc[i] += hrow[i] * wgt }
+                y += 1
             }
-            out[p * 4 + 3] = UInt8(max(0, min(255, v[p * 4 + 3].rounded())))
+            for x in 0..<nw {
+                let al = acc[x * 4 + 3] * normY / 255
+                let p = (o * nw + x) * 4
+                if al > 0 {
+                    for c in 0..<3 { out[p + c] = UInt8(max(0, min(255, (acc[x * 4 + c] * normY / al).rounded()))) }
+                }
+                out[p + 3] = UInt8(max(0, min(255, (acc[x * 4 + 3] * normY).rounded())))
+            }
         }
         return (try? RGBAImage(width: nw, height: nh, pixels: out)) ?? img
     }
