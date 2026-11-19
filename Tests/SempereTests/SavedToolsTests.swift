@@ -17,6 +17,20 @@ final class SavedToolsTests: XCTestCase {
 
     func decoded(_ s: SharedSettings) -> SharedSettings.Decoded { SharedSettings.Decoded(settings: s, warnings: []) }
 
+    func testRemoveEveryLiveSlotResetsHiddenToolsToo() throws {
+        var s = SharedSettings()
+        try SavedToolList.add(tool("A", at: 1), to: &s, now: now)
+        try SavedToolList.add(tool("B", at: 2), to: &s, now: now)
+        // A slot this version cannot show (an ink of a newer version) is live too.
+        try s.set(SettingSlotKey(SavedTool.key(for: "9f9c1a52-7e0b-4d9a-9a54-1d2c8b6e4f99")),
+                  to: .object(["name": .string("Future"), "ink": .string("laser"), "color": .string("#000000"),
+                               "width": .number(2), "at": .number(3)]), type: nil, now: now)
+        XCTAssertEqual(try SavedToolList.removeEveryLiveSlot(from: &s, now: now), 3)
+        XCTAssertTrue(SavedToolList(settings: s).isEmpty)
+        XCTAssertEqual(try SavedToolList.removeEveryLiveSlot(from: &s, now: now), 0, "nothing live is left")
+        XCTAssertTrue(SavedToolList.hasSlots(in: s), "the resets stay, so another device does not bring them back")
+    }
+
     // MARK: The preset
 
     func testTheDocumentedPresetParsesAndRoundTrips() throws {

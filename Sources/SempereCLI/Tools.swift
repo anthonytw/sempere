@@ -279,7 +279,7 @@ struct ToolsImport: ParsableCommand {
             """)
 
     @Argument(help: "The file.") var file: String
-    @Flag(name: .long, help: "Remove the vault's saved tools first.") var replace = false
+    @Flag(name: .long, help: "Remove every saved tool in the vault first (also any this version does not show).") var replace = false
     @Flag(name: .long, help: "Confirm --replace.") var yes = false
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
@@ -296,8 +296,8 @@ struct ToolsImport: ParsableCommand {
         try ToolsText.update(vault) { s, list in
             let now = Date()
             if replace {
-                for t in list.tools { try SavedToolList.remove(id: t.id, from: &s, now: now) }
-                removed = list.tools.count
+                // Every live slot, as the app's Replace does (hidden tools of a newer version too), not only the shown.
+                removed = try SavedToolList.removeEveryLiveSlot(from: &s, now: now)
             }
             var order = replace ? [] : list.tools.map(\.id)
             for t in parsed.tools {

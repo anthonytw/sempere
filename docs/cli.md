@@ -2364,8 +2364,9 @@ exact name; a name or prefix that several tools share is an error (exit 1) namin
   slot, so a device that still holds the tool does not bring it back. `move` writes the order slot (`--to` is 1-based).
 - `export` writes `{"format": "sempere-tools/1", "tools": [{name, ink, color, width, opacity}]}` (no ids) to `--out` (never
   overwriting a file) or the standard output. `import` adds the file's tools with fresh ids after the existing ones; an
-  entry that is not valid is skipped and reported on stderr (`--json`: `{added, removed, skipped}`); with `--replace` the
-  vault's tools are removed first, which needs `--yes`. A file that is not `sempere-tools/1` is exit 3; one over 1 MB is read
+  entry that is not valid is skipped and reported on stderr (`--json`: `{added, removed, skipped}`); with `--replace` every
+  saved tool of the vault is removed first (every live `palette.tool.*` slot, as the app's Replace does, so a tool this
+  version does not show goes too; `removed` counts them), which needs `--yes`. A file that is not `sempere-tools/1` is exit 3; one over 1 MB is read
   no further. This is the way to share a pen set between vaults and people.
 
 The CLI has no device-local list: it edits the vault's file, and a device with Sync Settings with This Vault off keeps its own.

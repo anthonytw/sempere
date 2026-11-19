@@ -281,6 +281,16 @@ public struct SavedToolList: Hashable, Sendable {
         try settings.set(SettingSlotKey(SavedTool.key(for: id)), to: nil, type: type, now: now)
     }
 
+    /// Resets every live `palette.tool.*` slot, shown or not (a hidden one of a newer version too), so a list that
+    /// replaces the vault's leaves nothing of the old one. Returns how many were reset.
+    @discardableResult
+    public static func removeEveryLiveSlot(from settings: inout SharedSettings, type: SettingsDeviceType? = nil,
+                                           now: Date = Date()) throws -> Int {
+        let live = settings.slots.filter { $0.key.block == nil && $0.key.key.hasPrefix(SavedTool.keyPrefix) && $0.value.value != nil }
+        for slot in live.keys { try settings.set(slot, to: nil, type: type, now: now) }
+        return live.count
+    }
+
     /// Writes `ids` (the shown presets, in order) as `palette.toolOrder`.
     public static func writeOrder(_ ids: [String], to settings: inout SharedSettings, type: SettingsDeviceType? = nil,
                                   now: Date = Date()) throws {
