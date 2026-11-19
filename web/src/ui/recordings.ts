@@ -9,7 +9,7 @@ import { type CapturedBy, capturedBy } from "../format/captured.ts";
 import type { JSONObject } from "../format/json.ts";
 import { parseRFC3339 } from "../format/rfc3339.ts";
 import { type Transcript, decodeTranscript, maxTranscriptBytes } from "../format/transcript.ts";
-import { type NoteBlobs, asBlobRef, essence } from "../vault/blobs.ts";
+import { type BlobReader, asBlobRef, essence } from "../vault/blobs.ts";
 import { blobProblem } from "./errors.ts";
 import { formatDate, h } from "./dom.ts";
 
@@ -38,6 +38,11 @@ export function formatDuration(seconds: number): string {
   return hh > 0 ? `${hh}:${two(mm)}:${two(ss)}` : `${mm}:${two(ss)}`;
 }
 
+/** The line under a recording's title: its start (unless the share carries no dates) and its length. */
+export function recordingSub(started: number | undefined, duration: string, showDates: boolean): string {
+  return [showDates ? formatDate(started) : "", duration].filter(Boolean).join(" · ");
+}
+
 function problem(e: unknown): string {
   return blobProblem(e, "audio", maxAudioBytes) ?? (e instanceof Error ? e.message : String(e));
 }
@@ -53,8 +58,10 @@ export class RecordingsPanel {
    * - Parameter recipients: the vault's device entries (key and name), to say which device captured a voice note
    *   (format.md §8.3.1 `captured`); without them a capture's line stays empty.
    */
-  constructor(recordings: JSONObject[], private readonly blobs?: NoteBlobs,
-              private readonly recipients?: readonly { key: string; label: string }[]) {
+  constructor(recordings: JSONObject[], private readonly blobs?: BlobReader,
+              private readonly recipients?: readonly { key: string; label: string }[],
+              /** False for a share written without dates: its start times are the epoch, not a date to show. */
+              private readonly showDates = true) {
     this.root = h("details", { class: "recordings" },
       h("summary", { text: tn("{count} recordings", recordings.length) }),
       h("ul", {}, ...recordings.map((r) => this.row(r))));
@@ -209,7 +216,7 @@ export class RecordingsPanel {
     const row = h("li", { class: "recording" },
       h("div", { class: "rec-head" },
         h("span", { class: "title", text: title }),
-        h("span", { class: "sub", text: [formatDate(started), duration].filter(Boolean).join(" · ") }),
+        h("span", { class: "sub", text: recordingSub(started, duration, this.showDates) }),
         captured),
       h("div", { class: "rec-actions" }, player, showTranscript),
       status, transcriptEl);

@@ -32,6 +32,14 @@ public struct WeightedGraph: Sendable {
         guard i != j, w > 0 else { return }
         adj[i][j, default: 0] += w; adj[j][i, default: 0] += w
     }
+
+    /// Each node's neighbours in ascending order. Every float accumulation over the graph goes through this, never
+    /// through the dictionaries: their order differs from process to process (hash seeding), and a sum taken in
+    /// another order differs in the last bits, which the map's rounded positions can show (design D21: every device
+    /// builds the byte-identical map).
+    public var sortedAdj: [[(node: Int, weight: Double)]] {
+        adj.map { $0.sorted { $0.key < $1.key }.map { (node: $0.key, weight: $0.value) } }
+    }
 }
 
 public enum Louvain {
@@ -41,7 +49,8 @@ public enum Louvain {
     public static func communities(_ g: WeightedGraph, resolution: Double = resolution) -> [Int] {
         let n = g.n
         var comm = Array(0..<n)
-        let k = g.adj.map { $0.values.reduce(0, +) }
+        let sorted = g.sortedAdj
+        let k = sorted.map { $0.reduce(0) { $0 + $1.weight } }
         let m2 = k.reduce(0, +)
         guard m2 > 0 else { return comm }
         var tot = k
@@ -53,7 +62,7 @@ public enum Louvain {
             for i in 0..<n {
                 let ci = comm[i]
                 var links: [Int: Double] = [:]
-                for (j, w) in g.adj[i] { links[comm[j], default: 0] += w }
+                for (j, w) in sorted[i] { links[comm[j], default: 0] += w }
                 tot[ci] -= k[i]
                 var best = ci
                 var bestGain = (links[ci] ?? 0) - resolution * tot[ci] * k[i] / m2
@@ -81,7 +90,7 @@ public enum Louvain {
     /// The graph of communities: one node per community, edge weights summed.
     public static func aggregate(_ g: WeightedGraph, _ comm: [Int]) -> WeightedGraph {
         var out = WeightedGraph(n: (comm.max() ?? -1) + 1)
-        for i in 0..<g.n { for (j, w) in g.adj[i] where i < j { out.add(comm[i], comm[j], w) } }
+        for (i, row) in g.sortedAdj.enumerated() { for (j, w) in row where i < j { out.add(comm[i], comm[j], w) } }
         return out
     }
 }
@@ -235,6 +244,7 @@ public enum MapBuilder {
             anchor[c] = slots.count == 1 ? (0, 0) : (0.6 * cos(a), 0.6 * sin(a))
         }
         let area = 4.0
+        let sortedAdj = g.sortedAdj
         let kk = sqrt(area / Double(n))
         var t = 0.1
         let cool = t / Double(iterations + 1)
@@ -251,7 +261,7 @@ public enum MapBuilder {
                 }
             }
             for i in 0..<n {
-                for (j, w) in g.adj[i] where i < j {
+                for (j, w) in sortedAdj[i] where i < j {
                     let ddx = x[i] - x[j], ddy = y[i] - y[j]
                     let d = max(1e-6, sqrt(ddx * ddx + ddy * ddy))
                     let f = d * d / kk * w

@@ -25,7 +25,8 @@
     ],
     "SempereRenderTests": [
       "Tests/SemperePDFTests/Fixtures",
-      "Tests/SempereTests/Fixtures"
+      "Tests/SempereTests/Fixtures",
+      "docs/web-viewer.md"
     ],
     "SempereWebDAVTests": [
       "Tests/CLITests",

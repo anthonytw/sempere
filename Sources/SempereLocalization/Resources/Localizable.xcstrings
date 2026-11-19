@@ -1,6 +1,19 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    " Copy" : {
+      "comment" : "Saved tools: appended to a duplicated tool's name",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " copia"
+          }
+        }
+      }
+    },
     "%@ (%@)" : {
       "comment" : "A device and what it can do",
       "extractionState" : "manual",
@@ -139,6 +152,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ aún no ha entregado todas las notas (faltan: %2$lld), y una copia debe contenerlas todas. Comprueba que este dispositivo tiene conexión y vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "%@ in all: ink %@, pictures %@, audio %@, viewer %@" : {
+      "comment" : "Export web page: where the file's bytes went, the sizes already worded",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ en total: tinta %@, imágenes %@, audio %@, visor %@"
           }
         }
       }
@@ -2691,6 +2717,55 @@
         }
       }
     },
+    "%lld older notes are left out of Spotlight (the limit is 50,000 notes per vault)." : {
+      "comment" : "%lld is a count",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld older note is left out of Spotlight (the limit is 50,000 notes per vault)."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld older notes are left out of Spotlight (the limit is 50,000 notes per vault)."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas más antiguas quedan fuera de Spotlight (el límite es de 50 000 notas por bóveda)."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota más antigua queda fuera de Spotlight (el límite es de 50 000 notas por bóveda)."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas más antiguas quedan fuera de Spotlight (el límite es de 50 000 notas por bóveda)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld pages" : {
       "comment" : "A number of pages (note list row)",
       "extractionState" : "manual",
@@ -2782,6 +2857,55 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld grabaciones y sus transcripciones se adjuntan al PDF."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld recordings and their transcripts included, as far as they fit." : {
+      "comment" : "Export web page: recordings included while they fit in the size limit",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld recording and its transcript included, if it fits."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld recordings and their transcripts included, as far as they fit."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se incluyen %lld de grabaciones con sus transcripciones, mientras quepan."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se incluye %lld grabación con su transcripción, si cabe."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se incluyen %lld grabaciones con sus transcripciones, mientras quepan."
                 }
               }
             }
@@ -4015,6 +4139,19 @@
         }
       }
     },
+    "A short passphrase can be guessed. Use the generated one if you can." : {
+      "comment" : "Export web page: warning under a short passphrase",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una frase de contraseña corta se puede adivinar. Usa la generada si puedes."
+          }
+        }
+      }
+    },
     "A snapshot for recovery. Not shared; other devices don't sync from it. Back up in Settings ▸ Backups." : {
       "comment" : "New Vault: footer of Back Up To",
       "extractionState" : "manual",
@@ -4196,6 +4333,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Acciones"
+          }
+        }
+      }
+    },
+    "Actions for %@" : {
+      "comment" : "Accessibility label of a saved tool's menu button (its name)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acciones de %@"
           }
         }
       }
@@ -5043,6 +5193,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mientras tanto se ha abierto otra bóveda. No se ha cambiado nada."
+          }
+        }
+      }
+    },
+    "Anyone who has the file and the passphrase can read the note. Send them in different ways." : {
+      "comment" : "Export web page: footer of the export sheet",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cualquiera que tenga el archivo y la frase de contraseña puede leer la nota. Envíalos por vías distintas."
           }
         }
       }
@@ -7195,6 +7358,19 @@
         }
       }
     },
+    "Copy Passphrase" : {
+      "comment" : "Export web page: button, copies the passphrase for this device only",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar la frase de contraseña"
+          }
+        }
+      }
+    },
     "Copy the secret key to the clipboard" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -8301,6 +8477,18 @@
         }
       }
     },
+    "Delete this saved tool?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar esta herramienta guardada?"
+          }
+        }
+      }
+    },
     "Delete “%@” from this device?" : {
       "comment" : "%@ is the vault's name",
       "extractionState" : "manual",
@@ -9183,6 +9371,18 @@
         }
       }
     },
+    "Edit Saved Tool" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar herramienta guardada"
+          }
+        }
+      }
+    },
     "Edit Tags…" : {
       "comment" : "Note menu: edit the note's tags",
       "extractionState" : "manual",
@@ -9222,6 +9422,18 @@
         }
       }
     },
+    "Edit, duplicate, move or delete this saved tool" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar, duplicar, mover o eliminar esta herramienta guardada"
+          }
+        }
+      }
+    },
     "Editing session, %@, %@" : {
       "comment" : "Accessibility label of an editing session row: its time range, then its device and number of saves",
       "extractionState" : "manual",
@@ -9244,6 +9456,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Editor"
+          }
+        }
+      }
+    },
+    "Edit…" : {
+      "comment" : "Saved tools: context menu",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar…"
           }
         }
       }
@@ -10126,6 +10351,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fino"
+          }
+        }
+      }
+    },
+    "Fine red pen" : {
+      "comment" : "Saved tool editor: example name in the empty name field",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bolígrafo rojo fino"
           }
         }
       }
@@ -11723,6 +11961,70 @@
         }
       }
     },
+    "Include Note Text" : {
+      "comment" : "Settings switch: also copies note text into Spotlight",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir el texto de las notas"
+          }
+        }
+      }
+    },
+    "Include Recognized Text" : {
+      "comment" : "Export web page: switch to include the recognized handwriting text",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir el texto reconocido"
+          }
+        }
+      }
+    },
+    "Include Recordings" : {
+      "comment" : "Export web page: switch to include the note's recordings",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir grabaciones"
+          }
+        }
+      }
+    },
+    "Include Text" : {
+      "comment" : "Button of the Include Note Text confirmation",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluir texto"
+          }
+        }
+      }
+    },
+    "Include note text in Spotlight?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Incluir el texto de las notas en Spotlight?"
+          }
+        }
+      }
+    },
     "Include notes in Recently Deleted" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -11744,6 +12046,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Incluir el PDF"
+          }
+        }
+      }
+    },
+    "Ink" : {
+      "comment" : "Saved tool editor: the kind of ink",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tinta"
           }
         }
       }
@@ -13267,6 +13582,19 @@
         }
       }
     },
+    "Manage Saved Tools…" : {
+      "comment" : "Tools menu: open Settings for the saved tools",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestionar herramientas guardadas…"
+          }
+        }
+      }
+    },
     "Manages devices" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -13590,6 +13918,19 @@
         }
       }
     },
+    "Move Left" : {
+      "comment" : "Saved tools: context menu",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover a la izquierda"
+          }
+        }
+      }
+    },
     "Move Note" : {
       "comment" : "Undo action name: one note moved to a notebook",
       "extractionState" : "manual",
@@ -13638,6 +13979,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mover notas"
+          }
+        }
+      }
+    },
+    "Move Right" : {
+      "comment" : "Saved tools: context menu",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover a la derecha"
           }
         }
       }
@@ -14496,6 +14850,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aún no ha llegado ninguna petición con estas palabras. Comprueba las palabras en el dispositivo nuevo. Su petición llega por el destino de sincronización de la bóveda, e iCloud Drive puede tardar un minuto o dos en entregarla: deja esto abierto y Sempere la aprobará cuando llegue."
+          }
+        }
+      }
+    },
+    "No saved tools yet. Set up a pen or highlighter in the palette, then save it here or with + in the palette." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay herramientas guardadas. Configura un bolígrafo o un marcador en la paleta y guárdalo aquí o con + en la paleta."
+          }
+        }
+      }
+    },
+    "No saved tools yet. Set up a pen or highlighter, then save it here." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay herramientas guardadas. Configura un bolígrafo o un marcador y guárdalo aquí."
           }
         }
       }
@@ -15410,6 +15788,18 @@
         }
       }
     },
+    "Off by default, for this vault on this device only. Spotlight's index belongs to the system and is not protected by your vault's encryption." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado por defecto, solo para esta bóveda en este dispositivo. El índice de Spotlight pertenece al sistema y no está protegido por el cifrado de tu bóveda."
+          }
+        }
+      }
+    },
     "Off by default. Transcripts are made on this device and stored encrypted in the note; no audio or text is sent anywhere." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -15709,6 +16099,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Una imagen PNG por página."
+          }
+        }
+      }
+    },
+    "One page that opens in any web browser, encrypted with a passphrase." : {
+      "comment" : "Export web page: what the export contains",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una página que se abre en cualquier navegador web, cifrada con una frase de contraseña."
           }
         }
       }
@@ -17014,6 +17417,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copia con frase (opcional)"
+          }
+        }
+      }
+    },
+    "Passphrase for the Page" : {
+      "comment" : "Export web page: section title",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frase de contraseña de la página"
           }
         }
       }
@@ -19529,6 +19945,18 @@
         }
       }
     },
+    "Replace the Vault's Saved Tools with This Device's" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazar las herramientas guardadas de la bóveda por las de este dispositivo"
+          }
+        }
+      }
+    },
     "Replace the Vault's Settings with This Device's" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -20142,6 +20570,31 @@
         }
       }
     },
+    "Save Current Tool as Preset…" : {
+      "comment" : "Tools menu: save the pen or highlighter setup as a saved tool",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar herramienta actual como preajuste…"
+          }
+        }
+      }
+    },
+    "Save Current Tool…" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar herramienta actual…"
+          }
+        }
+      }
+    },
     "Save Files copies them as they are, encrypted. Opening them takes the recovery kit and the vault.json file and epochs folder from another copy of the vault (with sempere or stock age). Export makes PDFs or images of the notes. The notes stay readable here." : {
       "comment" : "Unlisted screen footer: what Save Files and Export do; vault.json and epochs are file names, not translated",
       "extractionState" : "manual",
@@ -20189,6 +20642,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar kit de recuperación como PDF…"
+          }
+        }
+      }
+    },
+    "Save Tool" : {
+      "comment" : "Saved tool editor title; palette + button",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar herramienta"
           }
         }
       }
@@ -20241,6 +20707,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar el nombre nuevo"
+          }
+        }
+      }
+    },
+    "Save this tool" : {
+      "comment" : "Saved tool editor: tooltip of Save",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar esta herramienta"
           }
         }
       }
@@ -20333,6 +20812,32 @@
         }
       }
     },
+    "Saved Tool %lld" : {
+      "comment" : "Tools menu: the nth saved tool, when its name is not known",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herramienta guardada %lld"
+          }
+        }
+      }
+    },
+    "Saved Tools" : {
+      "comment" : "Tools menu submenu, palette button, alert title and Settings section: the palette's saved tools",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herramientas guardadas"
+          }
+        }
+      }
+    },
     "Saved Version" : {
       "comment" : "History: title of a saved version without a name",
       "extractionState" : "manual",
@@ -20394,6 +20899,80 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En la bandeja de entrada"
+          }
+        }
+      }
+    },
+    "Saved tool: %@, %@, %@, %@" : {
+      "comment" : "Palette: a saved tool's accessibility label (name, ink, width, color)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herramienta guardada: %1$@, %2$@, %3$@, %4$@"
+          }
+        }
+      }
+    },
+    "Saved tools are paused until the vault's device list is checked." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las herramientas guardadas están en pausa hasta que se compruebe la lista de dispositivos de la bóveda."
+          }
+        }
+      }
+    },
+    "Saved tools are paused: this vault is read-only on this device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las herramientas guardadas están en pausa: esta bóveda es de solo lectura en este dispositivo."
+          }
+        }
+      }
+    },
+    "Saved tools are paused: this vault's settings need a newer Sempere. Update the app to resume." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las herramientas guardadas están en pausa: los ajustes de esta bóveda necesitan una versión más reciente de Sempere. Actualiza la app para reanudarlas."
+          }
+        }
+      }
+    },
+    "Saved tools are pen and highlighter setups in the palette. With Sync Settings with This Vault on, they are the vault's and follow you to your other devices; otherwise they stay on this device. At most 64." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las herramientas guardadas son configuraciones de bolígrafo y marcador de la paleta. Con Sincronizar ajustes con esta bóveda activado, son de la bóveda y te siguen a tus otros dispositivos; si no, se quedan en este dispositivo. Máximo 64."
+          }
+        }
+      }
+    },
+    "Saved tools could not be saved: %@" : {
+      "comment" : "Saved tools; the error text follows (English)",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron guardar las herramientas: %@"
           }
         }
       }
@@ -20987,6 +21566,19 @@
         }
       }
     },
+    "Send the passphrase in a different way than the file. The app keeps it nowhere: it is gone when you close this sheet." : {
+      "comment" : "Export web page: footer under the passphrase after the page was made",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envía la frase de contraseña por una vía distinta a la del archivo. La app no la guarda en ningún sitio: desaparece al cerrar esta hoja."
+          }
+        }
+      }
+    },
     "Sending the request to the vault's sync target…" : {
       "comment" : "Join screen: no sync run has carried the join request out yet",
       "extractionState" : "manual",
@@ -21420,6 +22012,19 @@
         }
       }
     },
+    "Show This Vault's Notes in Spotlight" : {
+      "comment" : "Settings switch",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar las notas de esta bóveda en Spotlight"
+          }
+        }
+      }
+    },
     "Show Transcript" : {
       "comment" : "Menu item",
       "extractionState" : "manual",
@@ -21479,6 +22084,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar en la barra de menús pone un icono de Sempere en la barra de menús con Nota de voz rápida y Nueva nota, mientras Sempere está abierto."
+          }
+        }
+      }
+    },
+    "Show notes in Spotlight?" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Mostrar las notas en Spotlight?"
           }
         }
       }
@@ -22018,6 +22635,98 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SpeechTranscriber (en el dispositivo)"
+          }
+        }
+      }
+    },
+    "Spotlight" : {
+      "comment" : "Settings section title: Apple's Spotlight search",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "shouldTranslate" : false
+    },
+    "Spotlight is off until this vault's device list checks out on this device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight está desactivado hasta que la lista de dispositivos de esta bóveda se verifique en este dispositivo."
+          }
+        }
+      }
+    },
+    "Spotlight is part of iOS and macOS, not part of Sempere. If you turn this on, your note titles, notebook names and tags are copied into Spotlight's index on this device, where they are not protected by your vault's encryption. Anyone or any app that can read your account's files, and system features such as Siri and Apple Intelligence, can read them. They stay there while this is on, even when Sempere is closed. Sempere removes them when you turn this off, delete the note, change your vault's keys or remove this device. Nothing is sent to us or anyone else." : {
+      "comment" : "Opt-in sheet for Spotlight on a Mac",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight forma parte de iOS y macOS, no de Sempere. Si lo activas, los títulos de tus notas, los nombres de los cuadernos y las etiquetas se copian en el índice de Spotlight de este dispositivo, donde no están protegidos por el cifrado de tu bóveda. Cualquier persona o app que pueda leer los archivos de tu cuenta, y funciones del sistema como Siri y Apple Intelligence, pueden leerlos. Permanecen allí mientras esté activado, incluso con Sempere cerrado. Sempere los elimina cuando lo desactivas, borras la nota, cambias las claves de tu bóveda o quitas este dispositivo. No se envía nada a nosotros ni a nadie más."
+          }
+        }
+      }
+    },
+    "Spotlight is part of iOS and macOS, not part of Sempere. If you turn this on, your note titles, notebook names and tags are copied into Spotlight's index on this device, where they are not protected by your vault's encryption. Anyone who can use this device while it is unlocked, and system features such as Siri and Apple Intelligence, can read them. They stay there while this is on, even when Sempere is closed. Sempere removes them when you turn this off, delete the note, change your vault's keys or remove this device. Nothing is sent to us or anyone else." : {
+      "comment" : "Opt-in sheet for Spotlight on an iPhone or iPad",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight forma parte de iOS y macOS, no de Sempere. Si lo activas, los títulos de tus notas, los nombres de los cuadernos y las etiquetas se copian en el índice de Spotlight de este dispositivo, donde no están protegidos por el cifrado de tu bóveda. Cualquier persona que pueda usar este dispositivo mientras esté desbloqueado, y funciones del sistema como Siri y Apple Intelligence, pueden leerlos. Permanecen allí mientras esté activado, incluso con Sempere cerrado. Sempere los elimina cuando lo desactivas, borras la nota, cambias las claves de tu bóveda o quitas este dispositivo. No se envía nada a nosotros ni a nadie más."
+          }
+        }
+      }
+    },
+    "Spotlight needs this device's own key: it is not available when the vault was opened with the recovery key." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight necesita la clave propia de este dispositivo: no está disponible cuando la bóveda se abrió con la clave de recuperación."
+          }
+        }
+      }
+    },
+    "Spotlight was turned off and its items removed, because this device no longer holds the vault's key." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight se desactivó y sus elementos se eliminaron, porque este dispositivo ya no tiene la clave de la bóveda."
+          }
+        }
+      }
+    },
+    "Spotlight was turned off and its items removed, because this device was removed from the vault." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight se desactivó y sus elementos se eliminaron, porque este dispositivo se quitó de la bóveda."
+          }
+        }
+      }
+    },
+    "Spotlight was turned off and its items removed, because this vault's device list does not check out on this device." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight se desactivó y sus elementos se eliminaron, porque la lista de dispositivos de esta bóveda no se verifica en este dispositivo."
           }
         }
       }
@@ -23835,6 +24544,18 @@
         }
       }
     },
+    "That note is not on this device any more." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa nota ya no está en este dispositivo."
+          }
+        }
+      }
+    },
     "That notebook name is too long." : {
       "comment" : "Error: a new notebook's name is too long",
       "extractionState" : "manual",
@@ -23905,6 +24626,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ese texto no contiene ningún archivo de clave de dispositivo ni ninguna identidad AGE-SECRET-KEY-PQ-1…."
+          }
+        }
+      }
+    },
+    "That tool cannot be saved: check its name, width and opacity." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede guardar esa herramienta: revisa su nombre, grosor y opacidad."
           }
         }
       }
@@ -24254,6 +24987,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se canceló la copia. No se hizo nada."
+          }
+        }
+      }
+    },
+    "The demo vault is never added to Spotlight." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bóveda de demostración nunca se añade a Spotlight."
           }
         }
       }
@@ -24756,6 +25501,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido dibujar la página para leerla."
+          }
+        }
+      }
+    },
+    "The page opens in a web browser. Mail's preview and most chat apps' previews do not open it: send the file as an attachment." : {
+      "comment" : "Export web page: how the recipient opens the file",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La página se abre en un navegador web. La vista previa de Mail y de la mayoría de las apps de mensajes no la abre: envía el archivo como adjunto."
           }
         }
       }
@@ -25909,6 +26667,32 @@
         }
       }
     },
+    "This copies the text of your notes into Spotlight's index on this device: recognized handwriting, typed text, PDF text and recording transcripts, up to 20,000 characters per note. It is not protected by your vault's encryption. Anyone or any app that can read your account's files, and system features such as Siri and Apple Intelligence, can read whole notes. It stays there while this is on, even when Sempere is closed. Sempere removes it when you turn this off, delete the note, change your vault's keys or remove this device. Nothing is sent to us or anyone else." : {
+      "comment" : "Opt-in sheet for Include Note Text on a Mac",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto copia el texto de tus notas en el índice de Spotlight de este dispositivo: escritura a mano reconocida, texto escrito, texto de PDF y transcripciones de grabaciones, hasta 20 000 caracteres por nota. No está protegido por el cifrado de tu bóveda. Cualquier persona o app que pueda leer los archivos de tu cuenta, y funciones del sistema como Siri y Apple Intelligence, pueden leer notas enteras. Permanece allí mientras esté activado, incluso con Sempere cerrado. Sempere lo elimina cuando lo desactivas, borras la nota, cambias las claves de tu bóveda o quitas este dispositivo. No se envía nada a nosotros ni a nadie más."
+          }
+        }
+      }
+    },
+    "This copies the text of your notes into Spotlight's index on this device: recognized handwriting, typed text, PDF text and recording transcripts, up to 20,000 characters per note. It is not protected by your vault's encryption. Anyone who can use this device while it is unlocked, and system features such as Siri and Apple Intelligence, can read whole notes. It stays there while this is on, even when Sempere is closed. Sempere removes it when you turn this off, delete the note, change your vault's keys or remove this device. Nothing is sent to us or anyone else." : {
+      "comment" : "Opt-in sheet for Include Note Text on an iPhone or iPad",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto copia el texto de tus notas en el índice de Spotlight de este dispositivo: escritura a mano reconocida, texto escrito, texto de PDF y transcripciones de grabaciones, hasta 20 000 caracteres por nota. No está protegido por el cifrado de tu bóveda. Cualquier persona que pueda usar este dispositivo mientras esté desbloqueado, y funciones del sistema como Siri y Apple Intelligence, pueden leer notas enteras. Permanece allí mientras esté activado, incluso con Sempere cerrado. Sempere lo elimina cuando lo desactivas, borras la nota, cambias las claves de tu bóveda o quitas este dispositivo. No se envía nada a nosotros ni a nadie más."
+          }
+        }
+      }
+    },
     "This copy does not sync with any folder or server, so it cannot join your other devices. To join, open the vault's sync folder again with Open Vault… and keep “Keep syncing with this folder” on." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -26370,6 +27154,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este dispositivo se quitó de la lista de dispositivos de la bóveda: no toma notas de voz nuevas hasta que se vuelva a añadir."
+          }
+        }
+      }
+    },
+    "This device was removed from the vault, so its notes are not shown in Spotlight." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo se quitó de la bóveda, así que sus notas no se muestran en Spotlight."
           }
         }
       }
@@ -28214,6 +29010,19 @@
         }
       }
     },
+    "Untitled note" : {
+      "comment" : "Spotlight result title for a note with no title",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota sin título"
+          }
+        }
+      }
+    },
     "Unused Attachments" : {
       "comment" : "Settings ▸ Storage row and screen title",
       "extractionState" : "manual",
@@ -28352,6 +29161,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usar paleta completa"
+          }
+        }
+      }
+    },
+    "Use My Own Passphrase" : {
+      "comment" : "Export web page: switch to type a passphrase instead of the generated one",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar mi propia frase de contraseña"
           }
         }
       }
@@ -29057,6 +29879,45 @@
         }
       }
     },
+    "Web Page (Encrypted)" : {
+      "comment" : "Export format: one note as an encrypted web page",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Página web (cifrada)"
+          }
+        }
+      }
+    },
+    "Web Page (Encrypted)…" : {
+      "comment" : "Export menu item: one note as an encrypted web page file",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Página web (cifrada)…"
+          }
+        }
+      }
+    },
+    "Web page made" : {
+      "comment" : "Export web page: result of the export",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Página web creada"
+          }
+        }
+      }
+    },
     "WebDAV" : {
       "comment" : "Section title: a protocol name",
       "extractionState" : "manual",
@@ -29309,6 +30170,18 @@
         }
       }
     },
+    "You can save up to 64 tools. Delete one to save another." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puedes guardar hasta 64 herramientas. Elimina una para guardar otra."
+          }
+        }
+      }
+    },
     "You may use, study, share and change Sempere under the GPL v3 or any later version. An App Store exception lets the app be distributed under the App Store's terms." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -29379,6 +30252,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tus notas, tu clave"
+          }
+        }
+      }
+    },
+    "Your Passphrase" : {
+      "comment" : "Export web page: placeholder of the field for the user's own passphrase",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu frase de contraseña"
           }
         }
       }

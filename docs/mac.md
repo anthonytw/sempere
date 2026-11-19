@@ -123,6 +123,7 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | Tools | Annotate, Hand (the top bar's mode buttons; "Back to Reading" while that mode is on) | ⇧⌘P, ⌥⌘7 |
 | Tools | Pen, Marker, Pencil, Eraser, Lasso (switch to Annotate) | ⌥⌘1 … ⌥⌘5 |
 | Tools | Text (the toolbar's toggle; switches to Annotate) | ⌥⌘6 |
+| Tools ▸ Saved Tools | the first nine saved tools (⌃⌘1 … ⌃⌘9); Save Current Tool as Preset…; Manage Saved Tools… (Settings) | ⌃⌘1 … ⌃⌘9 |
 | Tools | Smaller / Larger Object Eraser (steps through the presets) | ⌥⌘[, ⌥⌘] |
 | Tools | Ruler (straight lines with a mouse) | ⌥⌘R |
 | Tools | Use Compact / Full Palette | ⌥⇧⌘P |
@@ -736,6 +737,16 @@ be checked.
     mode, delete it; Note > Recordings… lists the recording, Place on This Page
     puts it back. Export the note as "PDF + attachments", then Share… and
     Save…: no crash, the PDF lists the audio in Preview's attachments.
+
+## Spotlight
+
+Opt-in (Settings ▸ Spotlight, docs/design/1.3-spotlight.md): note titles, notebooks, tags and dates, and with Include
+Note Text the notes' text, go into Core Spotlight's named index `sempere`. A Mac has no data protection classes, so
+the app makes the plain named index there (`CSSearchableIndex(name:)`; the `protectionClass:` initializer exists on
+Catalyst 27, but `.complete` means nothing without a lock screen) and the index is readable whenever the user's
+account is; Spotlight can show the items in system search. The opt-in sheet says so. A result opens the note in the
+window that received it. To try by hand: turn it on, search the title in Spotlight, open the result (with the vault
+locked: the unlock follows, then the note); turn it off and search again.
 
 ## Menu parity and the voice note item
 

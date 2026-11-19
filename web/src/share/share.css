@@ -1,0 +1,5 @@
+.share-banner { margin: 0 0 12px; color: var(--muted); font-size: 0.9em; }
+.topbar .share-banner { margin: 0; flex: 1; }
+@media print {
+  .topbar, .zoom-bar { display: none; }
+}

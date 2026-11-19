@@ -31,6 +31,7 @@ let package = Package(
         .library(name: "Age", targets: ["Age"]),
         .library(name: "Sempere", targets: ["Sempere"]),
         .library(name: "SempereRender", targets: ["SempereRender"]),
+        .library(name: "SempereShareViewer", targets: ["SempereShareViewer"]),
         .library(name: "SempereImport", targets: ["SempereImport"]),
         .library(name: "SempereImporters", targets: ["SempereImporters"]),
         .library(name: "SemperePDF", targets: ["SemperePDF"]),
@@ -74,7 +75,7 @@ let package = Package(
         ),
         .target(
             name: "SempereRender",
-            dependencies: ["Sempere", "SemperePDF", "CZlib"],
+            dependencies: ["Sempere", "SemperePDF", "CZlib", "Age", .product(name: "Crypto", package: "swift-crypto")],
             // The rasterizer is 10-30x slower unoptimized: debug-build tests and
             // fuzz cases hit their timeouts (see Age above, docs/ci.md).
             swiftSettings: [.unsafeFlags(["-O"], .when(configuration: .debug))]
@@ -112,7 +113,7 @@ let package = Package(
         // Foundation and Observation only, and no user-facing text: the app words its values.
         .target(name: "SempereAppCore", dependencies: ["Sempere", "Age", "SempereImport", "SempereImporters", "SempereSync", "SempereRender",
                                                        "SempereWebDAV", "SempereCapture", "SempereCaptureShared", "SempereSpeech",
-                                                       "SempereInsights"]),
+                                                       "SempereInsights", "SempereShareViewer"]),
         // What the quick voice note widgets, the control and the Live Activity share with the app (docs/design/thin-app.md
         // "Rules"): the status the widgets read, the links, the tap log and the intents' hooks. No dependencies (Foundation
         // only), so the widget extension links it without the core; the words and the AppIntents/ActivityKit glue stay in
@@ -134,13 +135,17 @@ let package = Package(
         // `@available(macOS 26, iOS 26, *)`, so this target is empty on Linux; the only target that imports either
         // framework (`NoCloudTests`).
         .target(name: "SempereInsightsApple", dependencies: ["SempereInsights", "Sempere"]),
+        // The share viewer page (docs/design/1.3-share.md D5): web/'s build, generated into one Swift string by
+        // scripts/build-share-template.sh and checked by the `web` CI job. No dependencies, so the CLI and the app
+        // embed it without a resource bundle.
+        .target(name: "SempereShareViewer"),
         // Noto fonts for text in CLI exports (OFL 1.1); the app does not link them.
         .target(name: "SempereFonts", resources: [.copy("Fonts")]),
         .executableTarget(
             name: "SempereCLI",
             dependencies: [
                 "Age", "Sempere", "SemperePDF", "SempereRender", "SempereImport", "SempereImporters", "SempereSync", "SempereWebDAV", "SempereFonts",
-                "SempereSpeech", "SempereCapture", "SempereInsights", "SempereInsightsApple",
+                "SempereSpeech", "SempereCapture", "SempereInsights", "SempereInsightsApple", "SempereShareViewer",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
@@ -185,12 +190,12 @@ let package = Package(
                                                        "TempDirSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereAppCoreTests", dependencies: ["SempereAppCore", "SempereCaptureShared", "Sempere", "SempereSync",
                                                          "SempereWebDAV", "SempereRender", "SempereImport", "SempereSpeech", "Age",
-                                                         "SempereInsights", "TempDirSupport", "VaultTestSupport"]),
+                                                         "SempereInsights", "SempereShareViewer", "TempDirSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereCaptureSharedTests", dependencies: ["SempereCaptureShared", "TempDirSupport"]),
         .testTarget(name: "SempereCaptureTests", dependencies: ["SempereCapture", "SempereCaptureShared", "Sempere", "Age", "FuzzSupport",
                                                                 "TempDirSupport", "VaultTestSupport",
                                                                 .product(name: "Crypto", package: "swift-crypto")]),
-        .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport", "VaultTestSupport"]),
+        .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "SempereRender", "CLITestSupport", "FuzzSupport", "VaultTestSupport"]),
         .testTarget(name: "SempereInsightsTests", dependencies: ["SempereInsights", "SempereInsightsApple", "Sempere", "Age", "FuzzSupport",
                                                                  "TempDirSupport", "VaultTestSupport"]),
     ] + appleOnlyTargets + (hasNotability ? [

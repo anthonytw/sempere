@@ -125,6 +125,8 @@ struct RootView: View {
             pickVault()
         }
         .openedVaultAlert($openedVaultToConfirm)
+        .spotlightActivity()
+        .noteLinkProblemAlert()
         .onOpenURL { url in
             switch VoiceNoteLink.route(url) {
             case .link(let link):
@@ -371,7 +373,7 @@ struct RootView: View {
     }
 
     private func perform(_ command: MenuCommand, editor: NoteEditor?, exportIDs: [UUID]) {
-        if EditorCommands.perform(command, editor: editor, ui: ui) { return }
+        if EditorCommands.perform(command, editor: editor, ui: ui, savedTools: model.savedTools.tools) { return }
         if WindowCommands.perform(command, model: model, ui: ui, exportIDs: exportIDs) { return }
         let outcome = LibraryCommands.perform(command, model: model, ui: ui, recents: library.recents,
                                               storedColumns: storedColumns)

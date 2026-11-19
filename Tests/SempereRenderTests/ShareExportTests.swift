@@ -301,7 +301,7 @@ final class ShareExportTests: XCTestCase {
 
     func testProgressReachesTheTotal() throws {
         let notes = [note(1, title: "A"), note(2, title: "B"), note(3, title: "C")]
-        for format in ShareFormat.allCases {
+        for format in ShareFormat.allCases where format != .webPage {   // a web page holds one note: below
             var seen: [Int] = []
             _ = try ShareExport.run(notes, options: ShareOptions(format: format, dpi: 36), into: try scratch(), vaultSource: "s", progress: { done, total in
                 XCTAssertEqual(total, 3, "\(format)")
@@ -318,7 +318,7 @@ final class ShareExportTests: XCTestCase {
         let old = umask(0o000)
         defer { umask(old) }
         let notes = [note(1, title: "A", notebook: "Work"), note(2, title: "B", notebook: "Home")]
-        for format in ShareFormat.allCases {
+        for format in ShareFormat.allCases where format != .webPage {
             let dir = try scratch().appendingPathComponent("out-\(format.rawValue)", isDirectory: true)
             _ = try ShareExport.run(notes, options: ShareOptions(format: format, dpi: 36), into: dir, vaultSource: "s")
             let fm = FileManager.default
@@ -330,5 +330,37 @@ final class ShareExportTests: XCTestCase {
             }
             if format != .media { XCTAssertGreaterThan(seen, 0, "\(format) wrote something") }   // no media: nothing written
         }
+    }
+
+    // MARK: Web page (docs/design/1.3-share.md)
+
+    /// One note, one file with a fixed name (never the title), private like every plaintext export even though this
+    /// one is encrypted, progress to the total, and nothing without a template or for several notes.
+    func testWebPageIsOneFileNamedWithoutTheTitle() throws {
+        let umaskBefore = umask(0o000)
+        defer { umask(umaskBefore) }
+        var options = ShareOptions(format: .webPage)
+        options.webSharePassphrase = "a passphrase for the test"
+        options.webShare.scryptLog2N = 10
+        options.webShareTemplate = WebPageShareTests.template
+        var seen: [Int] = []
+        let dir = try scratch()
+        let r = try ShareExport.run([note(1, title: "Secret plans")], options: options, into: dir, vaultSource: "s",
+                                    progress: { done, total in XCTAssertEqual(total, 1); seen.append(done) })
+        XCTAssertEqual(names(r.items), ["Shared note.html"])
+        XCTAssertEqual(r.exported, 1)
+        XCTAssertEqual(seen.last, 1)
+        XCTAssertNotNil(r.webShareSections)
+        XCTAssertEqual(try listing(dir), ["Shared note.html"])
+        let file = try data(r.items[0])
+        XCTAssertFalse(String(decoding: file, as: UTF8.self).contains("Secret plans"))
+        XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: r.items[0].path)[.posixPermissions] as? Int), 0o600)
+
+        XCTAssertThrowsError(try ShareExport.run([note(1, title: "A"), note(2, title: "B")], options: options, into: try scratch(),
+                                                 vaultSource: "s")) { XCTAssertEqual($0 as? ShareExportError, .webPageNeedsOneNote) }
+        options.webShareTemplate = nil
+        let noTemplate = try ShareExport.run([note(1, title: "A")], options: options, into: try scratch(), vaultSource: "s")
+        XCTAssertTrue(noTemplate.items.isEmpty)
+        XCTAssertEqual(noTemplate.failures.count, 1, "reported as the note's failure, nothing written")
     }
 }

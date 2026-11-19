@@ -5,10 +5,11 @@ import SempereAppCore
 
 /// The export actions, in one place: the note list's toolbar and context menu,
 /// the note's toolbar and the Catalyst menu bar all build their items from
-/// this type, so a title, icon or shortcut changes once. HTML is the CLI's
-/// only (`sempere export --format html`); the app does not offer it.
+/// this type, so a title, icon or shortcut changes once. Plain HTML is the CLI's
+/// only (`sempere export --format html`); the app offers the encrypted web page
+/// (`ShareFormat.webPage`, one note, the same page as `sempere share`).
 enum ExportCommand: String, CaseIterable, Identifiable, Sendable {
-    case pdf, png, markdown, media
+    case pdf, png, markdown, media, webPage
 
     var id: String { rawValue }
 
@@ -18,6 +19,7 @@ enum ExportCommand: String, CaseIterable, Identifiable, Sendable {
         case .png: return .png
         case .markdown: return .markdown
         case .media: return .media
+        case .webPage: return .webPage
         }
     }
 
@@ -28,6 +30,7 @@ enum ExportCommand: String, CaseIterable, Identifiable, Sendable {
         case .png: return String(localized: "PNG Pages…", comment: "Export menu item: one PNG per page")
         case .markdown: return String(localized: "Text (Markdown)…", comment: "Export menu item: recognized text as Markdown")
         case .media: return String(localized: "Media…", comment: "Export menu item: the notes' recordings, videos, images and PDFs as files")
+        case .webPage: return String(localized: "Web Page (Encrypted)…", comment: "Export menu item: one note as an encrypted web page file")
         }
     }
 
@@ -37,6 +40,7 @@ enum ExportCommand: String, CaseIterable, Identifiable, Sendable {
         case .png: return "photo.on.rectangle"
         case .markdown: return "text.document"
         case .media: return "paperclip"
+        case .webPage: return "lock.doc"
         }
     }
 
@@ -56,9 +60,10 @@ enum ExportCommand: String, CaseIterable, Identifiable, Sendable {
     static let menuImage = "square.and.arrow.up"
 }
 
-/// "Export ▸ PDF…, PNG Pages…, Text (Markdown)…, Media…" for `ids` (the notes,
+/// "Export ▸ PDF…, PNG Pages…, Text (Markdown)…, Media…, Web Page (Encrypted)…" for `ids` (the notes,
 /// in the order given). Disabled without notes; the text export is disabled
-/// when no note has recognized handwriting, the media export when none has media.
+/// when no note has recognized handwriting, the media export when none has media,
+/// the web page when more than one note is chosen.
 struct ExportMenu: View {
     @AppModelEnvironment private var model
     /// The window's UI state: the export sheet opens in this window.

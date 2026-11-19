@@ -957,6 +957,12 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   (`web/src/i18n/catalog.ts`, English keys, Spanish complete, typed `t` / `tn`; `docs/web-viewer.md`
   "Languages"): every string `src/ui` shows goes through `t`, counts are plural entries, vault data
   (titles, notebook and tag names) is never translated, and `i18n.test.ts` fails on a key without Spanish.
+  The note view and renderers are also the **share file's** page (`npm run build:share`, `sempere share`, `docs/web-viewer.md`
+  "Share files"): the built page is committed as `Sources/SempereShareViewer/ShareViewerTemplate.swift`, so a change under
+  `web/src` that the share build includes needs `scripts/build-share-template.sh` (the `Web viewer` job runs it with `--check`)
+  and the hashes of the table in `docs/web-viewer.md` updated (`web/test/share.test.ts` fails otherwise). The share payload is a
+  Swift/TypeScript contract pinned by `Tests/SempereRenderTests/Fixtures/share/` (`SEMPERE_WRITE_SHARE_FIXTURE=1 swift test
+  --filter WebPageShareTests/testFixture`); never add a vault key, id, device name or history to it.
 - `RenderOutputVersion.current` (SempereRender) must be bumped in the same change whenever the
   bytes an exporter writes for the same note change (the moment you regenerate goldens or
   fixtures). Tree exports key each note's files on it (and on a hash of the program itself in the

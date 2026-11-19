@@ -2334,6 +2334,60 @@ known}]}`; `get` gives `{key, value, source}`; `set` and `reset` give `{key, val
 block}`; `edit` gives `{changed}`; `validate` gives `{valid, issues: [{severity,
 path, message}]}`.
 
+### Saved tools
+
+```
+sempere tools list   [--json]
+sempere tools add    NAME --ink INK --color '#RRGGBB' --width W [--opacity O] [--json]
+sempere tools edit   TOOL [--name N] [--ink INK] [--color C] [--width W] [--opacity O] [--json]
+sempere tools remove TOOL [--json]
+sempere tools move   TOOL (--to N | --before TOOL | --after TOOL) [--json]
+sempere tools export [--out FILE] [--json]
+sempere tools import FILE [--replace] [--yes] [--json]
+```
+
+The palette's saved tools (`docs/design/1.3-custom-tools.md`): an ink, a color, an exact width and an opacity under a
+name, shown in the palette of every device that follows the vault's shared settings. They are settings
+(`docs/settings-sync.md` §5.1: `palette.tool.<uuid>`, one slot per tool, and `palette.toolOrder`), so the commands write
+`settings.age` the way `settings` does: merged per key, no device type recorded, exit 6 for an untrusted device list, 7
+for a read-only vault or settings that need a newer sempere. `TOOL` is an id, an id prefix (4 or more characters) or an
+exact name; a name or prefix that several tools share is an error (exit 1) naming the ids.
+
+- `list` shows the tools in palette order (`#`, id, name, ink, color, width, opacity). `--json`:
+  `{tools: [{id, name, ink, color, width, opacity, at, order}], hidden, warnings}`; `hidden` counts tools kept in the file but
+  not shown (an ink of a newer version, an invalid slot, or beyond the 64th).
+- `add` checks the values like the app's editor: an ink of `pen`, `monoline`, `fountainPen`, `marker`, `pencil`,
+  `watercolor` or `crayon`; a color `#RRGGBB`; a width inside the ink's range (`DrawingToolState.widthRange`, never clamped);
+  an opacity 0.05 to 1 (default 1); a name of 1 to 40 characters; at most 64 tools. A value that is not valid is exit 3, an
+  unknown ink or a malformed color exit 2. The new tool goes last.
+- `edit` rewrites that tool's slot only (the options given change; nothing given is exit 2). `remove` records a reset of the
+  slot, so a device that still holds the tool does not bring it back. `move` writes the order slot (`--to` is 1-based).
+- `export` writes `{"format": "sempere-tools/1", "tools": [{name, ink, color, width, opacity}]}` (no ids) to `--out` (never
+  overwriting a file) or the standard output. `import` adds the file's tools with fresh ids after the existing ones; an
+  entry that is not valid is skipped and reported on stderr (`--json`: `{added, removed, skipped}`); with `--replace` every
+  saved tool of the vault is removed first (every live `palette.tool.*` slot, as the app's Replace does, so a tool this
+  version does not show goes too; `removed` counts them), which needs `--yes`. A file that is not `sempere-tools/1` is exit 3; one over 1 MB is read
+  no further. This is the way to share a pen set between vaults and people.
+
+The CLI has no device-local list: it edits the vault's file, and a device with Sync Settings with This Vault off keeps its own.
+
+### Spotlight
+
+```
+sempere spotlight plan [--text [--transcripts]] [--json]
+```
+
+What the app's opt-in Spotlight indexing (Settings ▸ Spotlight) would donate for the vault, from the same planner
+(`SpotlightPlanner`): one record per note that is not deleted, newest first, with its item `id`
+(`<vault id>/<note id>`), `domain`, `title` ("Untitled note" when blank), `description` (notebook and date, or with
+`--text` the notebook and the first 140 characters of text), `keywords` (the tags), `modified` and `textLength`
+(characters of text that would be donated, 0 without `--text`), and the caps (20,000 text characters, 50,000 notes,
+30 days to expiry). `--text` is "Include Note Text": recognized handwriting, typed text, PDF text and equations'
+source; `--transcripts` also reads recording transcripts (the app follows Search Recording Transcripts). It never
+writes anything and never prints note text. Indexing itself is app-only: Core Spotlight items belong to an app's
+bundle identity, which a command-line binary does not have in a form the system can open. `--json`: `{vault, includeText,
+items: [...], omitted, caps}`.
+
 ### Note insights
 
 ```
@@ -2789,6 +2843,38 @@ note's attachment files, its file name and the vault, together with the files wr
 alone (its files count as unchanged and survive `--clean`), so a second run of an unchanged
 vault takes a listing, not a render. Notes are read one at a time as they are rendered. (A
 skipped note reports no placeholder warnings; they were printed when it was rendered.)
+
+### Share
+
+```
+sempere share (ID|TITLE) --out PATH (--passphrase-file FILE | --share-passphrase-env VAR | --generate-passphrase)
+              [--audio] [--no-text] [--tags] [--notebook-path] [--dates] [--max-size MB] [--image-quality low|normal|high]
+              [--pdf-renderer auto|poppler|none] [--pdf-timeout SECONDS] [--vault V] [--json]
+sempere share --verify FILE.html [--json]
+```
+
+One note as a single encrypted HTML file with the web viewer built in ([web-viewer.md](web-viewer.md) "Share files", design
+[design/1.3-share.md](design/1.3-share.md)): the recipient opens it in any browser and types the passphrase; nothing is uploaded and no
+server of ours is involved. The note is flattened to its current state (no history, other notes or keys), encrypted with age and one
+scrypt recipient (2^18). Works on Linux and with a read-only vault (nothing is written to the vault).
+
+- `--out` is the file, or a folder (the file is then `Shared note.html` in it); never over an existing file. The name and the page's
+  `<title>` never carry the note's title.
+- The passphrase is never an argument (it would show in `ps`): `--passphrase-file FILE` (`-` for standard input; one trailing
+  newline is dropped), `--share-passphrase-env VAR` (named so as not to clash with the vault's own `--passphrase-env`), or
+  `--generate-passphrase` (seven random words, printed once: as `passphrase` in the JSON, or as a `Passphrase:` line on standard
+  error). Exactly one of the three.
+- Left out unless asked: tags (`--tags`), the notebook path (`--notebook-path`), the creation date (`--dates`), recordings and their
+  transcripts (`--audio`). Recognized text is in unless `--no-text`.
+- Pictures are re-encoded (at most 2048 px, JPEG, metadata removed), PDF pages become pictures (Poppler's `pdftoppm`, as for `export`;
+  without it they are left out with a warning), videos are never included (the poster frame is shown). `--image-quality` picks how hard.
+- The file is at most `--max-size` MB (default 20, at most 200). A note that cannot fit fails (exit 1) with the breakdown (ink and text,
+  pictures, audio, viewer) and writes nothing; pictures shrink first, and a recording that does not fit is skipped with a warning.
+- `--verify FILE.html` checks that the file's script, style and Content-Security-Policy are exactly this release's (the file with its data
+  block taken out equals the shipped template) and reports the scrypt work factor and the script's hash; it never decrypts and needs no
+  vault. Exit 1 when the file is not one this release made.
+- `--json`: `{file, bytes, pages, sections: {ink, images, audio, template}, scryptLog2N, scriptSha256, skipped: [...], passphrase?}`;
+  for `--verify`: `{file, ok, bytes, matchesTemplate, policyMatches, scriptSha256, styleSha256, scryptLog2N, problems}`.
 
 ### Recover
 

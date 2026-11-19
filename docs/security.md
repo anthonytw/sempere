@@ -158,6 +158,23 @@ sent back, with the device list, is encrypted to the new device's key
   a vault opens by itself on the device that holds its key, unless you set it to
   ask for Face ID or Touch ID (Settings ▸ Sync & Devices). A vault handed to the
   app from another app or AirDrop asks before it closes the open one.
+- **Spotlight, if you turn it on.** Settings ▸ Spotlight (off by default, per vault and per device, never synced)
+  copies note titles, notebook names, tags and dates, and with Include Note Text the text of the notes (recognized
+  handwriting, typed text, PDF text, transcripts; 20,000 characters per note), into the system's Core Spotlight
+  index on that device. The index is the operating system's, outside the vault's encryption: the system, Siri and
+  Apple Intelligence can read it, and on a Mac, which has no data protection classes, so can anyone or any app
+  that can read your account's files. On an iPhone or iPad the index is created with complete file protection
+  (unreadable while the device is locked). The items stay while the switch is on, even with the app closed, and
+  go when you turn it off, delete the note, change the vault's keys, remove a device, or remove the vault from
+  the device; any that escape (a crash, a vault deleted in Files) expire after 30 days. Sempere makes no claim
+  about whether the system backs the index up. `sempere spotlight plan` shows exactly what would be donated
+  ([`cli.md`](cli.md)).
+- **A shared web page.** File ▸ Export ▸ Web Page (Encrypted)… and `sempere share` make one note into a file that is encrypted
+  with a passphrase (age, scrypt) and opens in any browser. It is outside the vault: whoever has the file and the passphrase reads
+  that note, and the file cannot be taken back. The app keeps neither the passphrase nor a record of what was shared. The page is
+  its own code, so a person who can change the file in transit can change that code to capture the passphrase when it is typed:
+  send the file and the passphrase by different ways, and `sempere share --verify` checks a file against a release
+  ([web-viewer.md](web-viewer.md) "Share files").
 - **Plaintext the app keeps on the device for speed or safety:** attachments
   opened for display, a recording until it is saved into the note, a voice note
   until it is sealed, and files staged for an export or a drag; on a Mac, the

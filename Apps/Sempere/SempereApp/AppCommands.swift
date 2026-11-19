@@ -54,6 +54,14 @@ struct AppCommands: Commands {
         }
         CommandMenu("Tools") {
             sections(MenuLayout.tools)
+            Divider()
+            // The first nine saved tools (⌃⌘1 to ⌃⌘9), then saving the current tool and Settings.
+            Menu("Saved Tools") {
+                ForEach(MenuCommand.savedToolCommands.filter { ($0.savedToolNumber ?? Int.max) <= (router?.context.savedToolNames.count ?? 0) },
+                        id: \.self) { item($0) }
+                if !(router?.context.savedToolNames.isEmpty ?? true) { Divider() }
+                section(MenuLayout.savedTools[1])
+            }
         }
         // `CommandGroupPlacement.windowList` is macOS-only (unavailable in the Catalyst SDK), so the
         // two window commands sit at the end of the View menu.
@@ -97,7 +105,7 @@ struct AppCommands: Commands {
         switch command {
         case .showKeys: openWindow(id: SceneRestoration.keysSceneID)
         case .showLibrary: openWindow(id: SceneRestoration.librarySceneID)
-        case .showSettings: openWindow(id: MenuRouting.settingsSceneID)
+        case .showSettings, .manageSavedTools: openWindow(id: MenuRouting.settingsSceneID)
         case .toggleVoiceNote where VoiceNoteMenu.opensSettingsWindow(setUp: QuickCapture.shared.isSetUp,
                                                                       state: QuickCapture.shared.state):
             // Not set up: the Settings window (Quick Voice Notes is in it). The model's way, a sheet
@@ -114,8 +122,21 @@ struct AppCommands: Commands {
 enum EditorCommands {
     /// Runs `command` on `editor` and `ui`; false when it is not an editor command.
     @discardableResult
-    static func perform(_ command: MenuCommand, editor: NoteEditor?, ui: WindowUI) -> Bool {
+    static func perform(_ command: MenuCommand, editor: NoteEditor?, ui: WindowUI, savedTools: [SavedTool] = []) -> Bool {
         switch command {
+        // A saved tool is picked like a tool of the Tools menu: the note goes to Annotate (`NoteMode.toolPicked`).
+        case .savedTool1, .savedTool2, .savedTool3, .savedTool4, .savedTool5, .savedTool6, .savedTool7, .savedTool8,
+             .savedTool9:
+            if let n = command.savedToolNumber, n <= savedTools.count, let editor, !editor.isReadOnly {
+                let tool = savedTools[n - 1]
+                DrawingToolbox.shared.apply(tool)
+                if editor.canvasTarget?.select(drawingTool: DrawingTool(ink: tool.ink)) == true { ui.toolRequest = .draw }
+            }
+        case .saveCurrentTool:
+            if let editor, !editor.isReadOnly {
+                ui.toolRequest = .draw
+                DrawingToolbox.shared.requestSavePreset()
+            }
         case .changePaper:
             ui.choosingPaper = true
         case .showRecordings:
@@ -232,5 +253,6 @@ enum WindowCommands {
         context.hasExportTargets = !exportIDs.isEmpty
         context.canMakeCopy = model.canMakeCopy
         context.voiceNote = VoiceNoteMenu.phase(model.quickCapture.state)
+        context.savedToolNames = model.savedTools.tools.map(\.name)
     }
 }

@@ -312,6 +312,47 @@
   "patternProperties" : {
     "^\\[[a-z][a-z0-9]{0,15}\\]$" : {
       "type" : "object"
+    },
+    "^palette\\.tool\\.[0-9a-f-]{36}$" : {
+      "description" : "A saved tool (palette entry). Used by every device; read at the top level only. The width must be inside the ink's range.",
+      "properties" : {
+        "at" : {
+          "maximum" : 9007199254740991,
+          "minimum" : 0,
+          "type" : "integer"
+        },
+        "color" : {
+          "pattern" : "^#[0-9A-Fa-f]{6}$",
+          "type" : "string"
+        },
+        "ink" : {
+          "description" : "one of crayon, fountainPen, marker, monoline, pen, pencil, watercolor; any other is kept and hidden",
+          "type" : "string"
+        },
+        "name" : {
+          "maxLength" : 40,
+          "minLength" : 1,
+          "type" : "string"
+        },
+        "opacity" : {
+          "maximum" : 1,
+          "minimum" : 0.05,
+          "type" : "number"
+        },
+        "width" : {
+          "exclusiveMinimum" : 0,
+          "type" : "number"
+        }
+      },
+      "required" : [
+        "name",
+        "ink",
+        "color",
+        "width",
+        "opacity",
+        "at"
+      ],
+      "type" : "object"
     }
   },
   "properties" : {
@@ -351,6 +392,15 @@
     "[mac]" : {
       "$ref" : "#/$defs/settings",
       "description" : "values for mac devices only; they win over the top level there"
+    },
+    "palette.toolOrder" : {
+      "description" : "The saved tools' ids, in the user's order. Used by every device.",
+      "items" : {
+        "pattern" : "^[0-9a-f-]{36}$",
+        "type" : "string"
+      },
+      "maxItems" : 64,
+      "type" : "array"
     }
   },
   "required" : [
