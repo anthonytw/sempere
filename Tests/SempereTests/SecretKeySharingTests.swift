@@ -41,7 +41,10 @@ final class SecretKeySharingTests: XCTestCase {
         }
         // SecretPasteboard is the one writer; on a Mac it also clears the item itself (Catalyst ignores the
         // expiration date), and the line that sets the item is the one with `setItems`.
-        XCTAssertTrue(writes.allSatisfy { $0.hasPrefix("KeyExportViews.swift:") }, "\(writes)")
+        // The one other write is Ask's explicit Copy button: the answer's text only (docs/design/1.3-ask.md §3.6, §5).
+        let others = writes.filter { !$0.hasPrefix("KeyExportViews.swift:") }
+        XCTAssertEqual(others.count, 1, "\(writes)")
+        XCTAssertTrue(others.first?.hasPrefix("AskViews.swift: UIPasteboard.general.string = result.answer") == true, "\(writes)")
         XCTAssertEqual(writes.filter { $0.contains("UIPasteboard.general.setItems") }.count, 1, "\(writes)")
         let board = try source("KeyExportViews.swift")
         XCTAssertTrue(board.contains("targetEnvironment(macCatalyst)") && board.contains("UIPasteboard.general.items = []"),

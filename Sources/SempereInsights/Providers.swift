@@ -100,6 +100,9 @@ public protocol ModelProvider: Sendable {
     /// numbers kept. For the insight language setting (`insights.language`, format.md §16.8): the summary and the title are
     /// first made and fact-checked in the note's own language, then put into the chosen one.
     func translate(_ text: String, to language: String) async throws -> String
+    /// A short answer to `question` from `sources` only, each sentence naming the sources it uses (docs/design/1.3-ask.md
+    /// §3.1 step 7). Untrusted output: `AskValidator` checks it. The default throws (a provider that cannot answer).
+    func answer(question: String, sources: [AskSource], language: String?) async throws -> ModelAnswer
 }
 
 extension ModelProvider {

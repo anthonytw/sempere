@@ -103,6 +103,7 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | File | Start / Stop Voice Note | ⇧⌘M |
 | Edit | Undo, Redo | ⌘Z, ⇧⌘Z (the system's: the canvas's undo manager, or the text field being edited; the note toolbar's Undo and Redo buttons, after Annotate and Hand, act on the same manager, are disabled when it has nothing to undo or redo, and show the step in their tooltip, "Undo Move") |
 | Edit | Find Notes (focuses the title search) | ⌘F |
+| Edit | Ask Your Notes… (the same field in Ask mode: a question answered from your notes on this Mac, `docs/design/1.3-ask.md`; off without an unlocked vault) | ⌥⌘F |
 | Note | Rename Note… | ⇧⌘R |
 | Note | Edit Tags… | ⌥⌘T |
 | Note | Paper… | ⌥⌘P |

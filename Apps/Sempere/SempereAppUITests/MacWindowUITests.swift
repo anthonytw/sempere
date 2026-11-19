@@ -309,6 +309,26 @@ final class MacWindowUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Touch Alternatives"].exists, "not Catalyst's generated pane")
     }
 
+    /// ⌥⌘F is Edit ▸ Find ▸ Ask Your Notes…: the search field in Ask mode (docs/design/1.3-ask.md §3.6), with the Search | Ask
+    /// control under it; ⌘F goes back to Search. The menu has the item.
+    @MainActor
+    func testOptionCommandFPutsTheSearchFieldInAskMode() throws {
+        let app = launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Cellular Respiration"].firstMatch.waitForExistence(timeout: 60))
+        app.typeKey("f", modifierFlags: [.command, .option])
+        let asking = app.searchFields["Ask a question about your notes"].firstMatch
+        let found = asking.waitForExistence(timeout: 20)
+        if !found { dump(app, "ask-mode") }
+        XCTAssertTrue(found, "the search field asks")
+        XCTAssertTrue(app.descendants(matching: .any)["ask.target"].firstMatch.waitForExistence(timeout: 10), "Search | Ask under the field")
+        app.typeKey("f", modifierFlags: .command)
+        XCTAssertTrue(app.searchFields["Search notes and handwriting"].firstMatch.waitForExistence(timeout: 20), "⌘F searches again")
+        let menu = app.menuBars.menuBarItems["Edit"]
+        menu.click()
+        XCTAssertTrue(app.menuItems["Ask Your Notes…"].waitForExistence(timeout: 10), "Edit has Ask Your Notes…")
+    }
+
     /// The new-note sheet's notebook field lists matching notebooks while typing.
     @MainActor
     func testNewNoteSheetSuggestsNotebooks() throws {

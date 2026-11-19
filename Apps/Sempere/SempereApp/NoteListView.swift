@@ -44,19 +44,29 @@ struct NoteListView: View {
         @Bindable var model = model
         @Bindable var ui = ui
         Group {
-            if model.isSearchActive {
+            if model.askTarget == .ask {
+                AskResultsView()
+            } else if model.isSearchActive {
                 SearchResultsList()
             } else {
                 notesList
             }
         }
+        // Search | Ask under the field while it is in use (Ask your notes, docs/design/1.3-ask.md §3.6).
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if ui.searchPresented || model.askTarget == .ask { AskTargetPicker().background(.bar) }
+        }
         .environment(\.editMode, Binding<EditMode>(get: { model.isSelectingNotes ? .active : .inactive },
                                          set: { setSelecting($0.isEditing) }))
         .navigationTitle(title)
-        .searchable(text: $model.searchText, isPresented: $ui.searchPresented, prompt: "Search notes and handwriting")
+        // In Ask mode the field holds the question, never the search text: Search and the recent searches never see it (D9).
+        .searchable(text: Binding(get: { model.askTarget == .ask ? model.askQuestion : model.searchText },
+                                  set: { if model.askTarget == .ask { model.askQuestion = $0 } else { model.searchText = $0 } }),
+                    isPresented: $ui.searchPresented,
+                    prompt: model.askTarget == .ask ? Text("Ask a question about your notes") : Text("Search notes and handwriting"))
         .searchSuggestions {
-            // Recent searches while the field is empty: tap one to search it again.
-            if model.searchText.isEmpty, !model.recentSearches.isEmpty {
+            // Recent searches while the field is empty: tap one to search it again (never in Ask mode).
+            if model.askTarget == .search, model.searchText.isEmpty, !model.recentSearches.isEmpty {
                 Section {
                     ForEach(model.recentSearches, id: \.self) { query in
                         Label(query, systemImage: "clock.arrow.circlepath").searchCompletion(query)
@@ -69,9 +79,11 @@ struct NoteListView: View {
                 }
             }
         }
-        .onSubmit(of: .search) { model.recordSearch() }
+        .onSubmit(of: .search) { if model.askTarget == .ask { model.submitAsk() } else { model.recordSearch() } }
         .searchScopes($model.searchScope) {
-            ForEach(SearchScope.allCases) { Text($0.title(for: model.sidebarSelection)).tag($0) }
+            if model.askTarget == .search {
+                ForEach(SearchScope.allCases) { Text($0.title(for: model.sidebarSelection)).tag($0) }
+            }
         }
         .toolbar {
             if model.isSelectingNotes {

@@ -28,6 +28,8 @@ public enum MenuCommand: String, CaseIterable, Sendable {
     case duplicateItem, bringItemToFront, deleteItem, toggleRecording
     // Edit
     case find, undo, redo
+    /// Edit ▸ Find ▸ Ask Your Notes… (⌥⌘F): the search field in Ask mode (docs/design/1.3-ask.md §3.6).
+    case askYourNotes
     // Tools
     /// The note's modes (`NoteMode`): the top bar's pencil and Hand.
     case toggleAnnotate, toggleHand
@@ -68,14 +70,14 @@ public enum MenuCommand: String, CaseIterable, Sendable {
     }
 
     /// Commands whose shortcut UIKit's own menu bar already uses on a Mac
-    /// (⌘O for "Open…", ⌘F for "Find…", ⌘, for the app menu's "Settings…").
+    /// (⌘O for "Open…", ⌘F for "Find…", ⌥⌘F for "Find and Replace…", ⌘, for the app menu's "Settings…").
     /// UIKit refuses a SwiftUI menu group holding such a shortcut, and with it
     /// every other command of the group (TestFlight build 6: the File and Edit
     /// commands were missing), so these are not SwiftUI commands: `MacMenus`
     /// turns UIKit's own items into them. UIKit's Settings… opened Catalyst's
     /// generated preferences pane (touch alternatives only), not the app's
     /// settings (TestFlight build 7).
-    public static let nativeOnMac: [MenuCommand] = [.openVault, .find, .showSettings]
+    public static let nativeOnMac: [MenuCommand] = [.openVault, .find, .askYourNotes, .showSettings]
     /// Commands that replace UIKit's own items without a shortcut: Sempere >
     /// About Sempere (UIKit's opens the standard about panel) and the Help menu
     /// (UIKit's "Sempere Help" has no help book to open). `MacMenus` builds them.
@@ -209,6 +211,8 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         // ⇧⌘M is File > Start Voice Note; ⌃⌘M sits next to the note's Recordings (⌃⌘R).
         case .toggleRecording: return Shortcut("m", control)
         case .find: return Shortcut("f", cmd)
+        // ⌥⌘F is free (⇧⌥⌘F is Bring Item to Front), next to ⌘F: checked in `MenuCommandTests`.
+        case .askYourNotes: return Shortcut("f", option)
         case .undo: return Shortcut("z", cmd)
         case .redo: return Shortcut("z", shift)
         case .toolPen: return Shortcut("1", option)
@@ -398,7 +402,7 @@ public enum MenuCommand: String, CaseIterable, Sendable {
         case .toggleRecording: return context.isRecording || (context.canEditNote && context.hasPage)
         case .previousPage: return context.hasPage && context.pageIndex > 0
         case .nextPage: return context.hasPage && context.pageIndex + 1 < context.pageCount
-        case .find, .toggleNoteList: return unlocked && context.hasNoteList
+        case .find, .askYourNotes, .toggleNoteList: return unlocked && context.hasNoteList
         case .undo, .redo: return context.canEditNote
         case .toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso, .toggleRuler,
              .eraserSmaller, .eraserLarger, .toggleCompactPalette:
@@ -464,7 +468,7 @@ public enum MenuLayout {
     /// Help (`MacMenus`).
     public static let help: [[MenuCommand]] = [[.showTour, .showKeyNotice]]
     /// Edit > Find (the system's Undo and Redo stay where UIKit puts them).
-    static let edit: [[MenuCommand]] = [[.find]]
+    static let edit: [[MenuCommand]] = [[.find, .askYourNotes]]
 
     /// Every command a menu shows, in order.
     public static var all: [MenuCommand] {

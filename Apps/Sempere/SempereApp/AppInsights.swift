@@ -14,8 +14,11 @@ import UIKit
 /// never the platform's.
 enum AppInsights {
     @MainActor static var services: InsightsServices {
-        InsightsServices(model: { AppleInsightsProviders.model() }, embedder: { AppleInsightsProviders.embedder() },
-                         powerWindow: { powerWindow }, maxGraphNotes: maxGraphNotes)
+        var services = InsightsServices(model: { AppleInsightsProviders.model() }, embedder: { AppleInsightsProviders.embedder() },
+                                        powerWindow: { powerWindow }, maxGraphNotes: maxGraphNotes)
+        // Ask names the language of a question (docs/design/1.3-ask.md §3.1).
+        services.detectLanguage = { AppleInsightsProviders.detectLanguage($0) }
+        return services
     }
 
     /// The most notes the related graph takes here (review of #50, L7): its three n x n matrices of doubles are about

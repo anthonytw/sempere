@@ -2488,6 +2488,49 @@ slug, embedded, embeddingKey, generatedTitle}`; `related` gives `{basis, compati
 keywordOverlap, why, shared, placed}]}`; `search` gives `[{note, title, field, matched, stale}]`; `topic` gives `{scope, members, summary, generated, stale, device,
 at}` (`--list`: an array of those); `status`, `map`, `title` and `purge` give their fields as named in the text output.
 
+### Ask your notes
+
+```
+sempere ask QUESTION [--vault V] [--limit N] [--notebook PATH] [--tag T] [--since DATE] [--until DATE]
+                     [--lang BCP47] [--retrieve-only] [--require-model] [--explain] [--json]
+```
+
+A question in words, answered from your notes on this machine (`docs/design/1.3-ask.md`): vector matches from Note
+Insights (when this machine's embeddings match the vault's, as for `insights related`) and keyword matches (the question's
+content words, stemmed, over titles, tags, notebooks, insight keywords and text) are fused (reciprocal rank), the best
+passages of the best six notes are picked, and Apple's on-device model (macOS 26 with Apple Intelligence) writes at most five
+sentences from those passages only, each naming its sources. The answer is checked: a sentence with no source, an unknown
+source, a number or name its cited passages do not hold, or too few words in common with them is dropped, and with none left,
+or over 40% dropped, or the model saying the notes do not answer, there is no answer. Nothing leaves the machine and nothing
+is written: no question, answer or history is stored in the vault or anywhere else. Deleted notes and notes outside the
+filters are never candidates; `--since` and `--until` take `YYYY-MM-DD` (local) or RFC 3339 and compare the note's modified
+date. A question over 400 characters is cut (a notice says so).
+
+The first line of text output is the mode (`answer`, `retrieval` or `keyword`) and, when it is not `answer`, what is
+missing in parentheses ("Apple Intelligence is turned off", "I couldn't find that in your notes"). `answer`: the sentences,
+each followed by `[n]` for the notes it came from, then "Notes used" (title, notebook, pages, id) and "Other matching notes".
+`retrieval` (no model, or the model's answer failed or did not pass the check) and `keyword` (also no usable vectors: Note
+Insights off or not set up for the question's language, no embedder here, or embeddings that do not match the vault's) list
+"Best matches", each with why it matched (`your words`, `similar topic`) and its best passage. The mode ladder never ends in
+an error: the exit is 0 whatever the mode. On Linux there is no model and no embedder: `keyword` mode.
+
+- `--limit N` notes are listed (default 6); the model reads at most 6.
+- `--lang` is the question's language (default: detected on macOS, else the vault's main language). The embedder needs a
+  language the vault pins (`insights.embeddingRevision`); otherwise vector matching is skipped (a notice says so) and
+  generation still runs if the model supports the language.
+- `--retrieve-only` never calls the model. `--require-model` exits 3 with the reason when the model cannot run (the
+  insights convention); the two together are a usage error (2).
+- `--explain` adds each candidate's vector and keyword ranks and fused score, the passages sent with a token estimate, and
+  each dropped sentence with the reason.
+- `--json`: `{question, mode, lang, enough, dropped, answer: [{text, sources: [note id]}], notes: [{note, title, notebook,
+  modified, pages, why: ["keywords", "similar"], used, passages: [{page, text}]}], missing, missingKind, vectors, notices,
+  explain?}` (`missingKind`: `noModel`, `disabled`, `notReady`, `deviceNotEligible`, `unsupported`, `language`, `failed` or
+  `notFound`; `vectors`: `used`, or why not: `off`, `noEmbedder`, `language`, `noMap`, `incompatible`, `noVectors`,
+  `unembeddable`, `none`; both are additions to the design's shape). The
+  citations are note ids drawn by the program from validated source ids, never from the model's text.
+- A read-only vault works (nothing is written); a locked or incomplete vault gives the usual exit codes.
+
+
 ### Export
 
 ```

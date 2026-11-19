@@ -72,6 +72,7 @@ extension MenuCommand {
         case .deleteItem: return String(localized: "Delete Item", comment: "Note menu: delete the selected image, text box or other item")
         case .toggleRecording: return String(localized: "Start Recording", comment: "Note menu: start recording audio in the note")
         case .find: return String(localized: "Find Notes", comment: "Edit menu: search the notes")
+        case .askYourNotes: return String(localized: "Ask Your Notes…", comment: "Edit menu: ask a question the notes answer, on this device")
         case .undo: return String(localized: "Undo", comment: "Edit menu: undo")
         case .redo: return String(localized: "Redo", comment: "Edit menu: redo")
         case .toolPen: return String(localized: "Pen", comment: "Tools menu: select the pen")
