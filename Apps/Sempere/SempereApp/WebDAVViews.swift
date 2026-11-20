@@ -429,9 +429,12 @@ struct JoiningWebDAVRows: View {
                         }
                     }
                     .swipeActions {
-                        Button("Remove", role: .destructive) {
+                        // Asks first: no destructive role, or SwiftUI removes the row before the confirmation
+                        // (`StoredVaultsSection`).
+                        Button("Remove") {
                             Task { await prepareRemoval(location) }
                         }
+                        .tint(.red)
                     }
                     .contextMenu {
                         Button("Remove from This Device…", systemImage: "trash", role: .destructive) {

@@ -67,7 +67,50 @@ final class VaultListSwipeUITests: XCTestCase {
         XCTAssertTrue(row.waitForNonExistence(timeout: 30), "the vault left the list")
     }
 
+    /// Cancel keeps the vault (owner, build 112: the row vanished at the tap and Cancel left the list showing the wrong
+    /// vaults, and a second swipe locked it): the row is still there after Cancel, a second swipe and Cancel keep it,
+    /// and the vault still opens.
+    @MainActor
+    func testCancelKeepsTheRow() throws {
+        let app = launch()
+        defer { app.terminate() }
+        closeVault(in: app)
+        let content = app.descendants(matching: .any)["storeVault-\(Self.vaultName)"].firstMatch
+        let row = app.cells.containing(.any, identifier: "storeVault-\(Self.vaultName)").firstMatch
+        require(row, "the vault's row on the welcome list", in: app)
+        for round in 1...2 {
+            row.swipeLeft()
+            let swipeDelete = app.collectionViews.buttons["Delete from This Device…"].firstMatch
+            require(swipeDelete, "the swipe's Delete from This Device… (round \(round))", in: app, timeout: 10)
+            swipeDelete.tap()
+            let alert = app.alerts.firstMatch
+            require(alert, "the Delete confirmation (round \(round))", in: app, timeout: 10)
+            alert.buttons["Cancel"].firstMatch.tap()
+            XCTAssertTrue(alert.waitForNonExistence(timeout: 10), "the confirmation closed (round \(round))")
+            // The row is there and shows this vault, at once and a moment later (a deferred removal or swap).
+            Thread.sleep(forTimeInterval: 2)
+            XCTAssertTrue(content.exists && row.exists, "the vault's row is still listed after Cancel (round \(round))")
+        }
+        content.tap()
+        XCTAssertTrue(app.buttons["sidebar-more"].firstMatch.waitForExistence(timeout: 60)
+                      || app.buttons["Show Sidebar"].firstMatch.exists, "the vault still opens after two Cancels")
+    }
+
     // MARK: - Helpers
+
+    @MainActor
+    private func closeVault(in app: XCUIApplication) {
+        let more = app.buttons["sidebar-more"].firstMatch
+        if !more.waitForExistence(timeout: 60) {
+            let show = app.buttons["Show Sidebar"].firstMatch
+            if show.exists { show.tap() }
+        }
+        require(more, "the sidebar's More menu", in: app)
+        more.tap()
+        let close = app.buttons["Close Vault"].firstMatch
+        require(close, "Close Vault", in: app)
+        close.tap()
+    }
 
     /// Watches for `seconds` (every 0.2 s or so) whether `closed` became true, and how many sync runs finished meanwhile:
     /// the times `runs` (`DebugSyncRuns`, the last success) changed its label. A window with no run proves nothing.

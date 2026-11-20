@@ -34,8 +34,11 @@ struct StoredVaultsSection: View {
                             .equatable()   // a row whose values are the same is not redrawn (it would drop its swipe)
                     }
                         .help(String(localized: "Open this vault"))
-                        .swipeActions { deleteButton(entry) }
-                        .contextMenu { deleteButton(entry) }
+                        // The swipe's button asks first, so it has no destructive role: SwiftUI removes the row of a
+                        // destructive swipe button at the tap, before the confirmation, and a Cancel then left the list
+                        // showing the wrong rows (and a second swipe locked it; TestFlight 1.3.0 build 112).
+                        .swipeActions { deleteButton(entry, swipe: true) }
+                        .contextMenu { deleteButton(entry, swipe: false) }
                 }
                 JoiningWebDAVRows(locations: joining, removals: removals)
             } header: {
@@ -45,9 +48,9 @@ struct StoredVaultsSection: View {
     }
 
     // help-lint: titled
-    private func deleteButton(_ entry: VaultStore.Entry) -> some View {
+    private func deleteButton(_ entry: VaultStore.Entry, swipe: Bool) -> some View {
         Button(String(localized: "Delete from This Device…", comment: "Removes a vault from the in-app store"),
-               systemImage: "trash", role: .destructive) {
+               systemImage: "trash", role: swipe ? nil : .destructive) {
             let store = keys.store
             let ask = removals.newAsk()
             Task {
@@ -55,6 +58,7 @@ struct StoredVaultsSection: View {
                 removals.askToDelete(entry, removal: removal, ask: ask)
             }
         }
+        .tint(.red)
     }
 
     private func recent(of entry: VaultStore.Entry) -> RecentVault? {
