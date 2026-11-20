@@ -203,12 +203,15 @@ ui_ipad=(SidebarDropUITests BulkNotesUITests PadFocusUITests SearchHighlightUITe
          LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote
          LaunchSmokeUITests/testFreshLaunchDoubleColumn LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour
          NewVaultSheetUITests MacImportUITests MacExportUITests FolderPickerUITests PhoneCanvasModeUITests
-         NoteToolbarUITests VaultStoreUITests VaultListSwipeUITests KeyReceiptShareUITests)
+         NoteToolbarUITests VaultStoreUITests VaultListSwipeUITests)
 ui_phone=(PhoneCanvasUITests PhoneParityUITests PhoneReadingScrollUITests PhoneCanvasModeUITests NoteToolbarUITests
-          SearchHighlightUITests AskUITests NotificationPromptPhoneUITests VaultListSwipeUITests
-          KeyReceiptShareUITests)
+          SearchHighlightUITests AskUITests NotificationPromptPhoneUITests VaultListSwipeUITests)
 # 18 launches: only `scripts/app.sh pseudo` (local-ci.sh --release).
 ui_pseudo=(PseudoLanguageUITests)
+# Run by hand only, never in a gate or sweep: they drive other apps or system UI (Contacts' edit menu, the share sheet by
+# screen points), which a simulator update can change. Run one by name, e.g.
+# `scripts/app.sh test-phone-ui -only-testing:SempereAppUITests/KeyReceiptShareUITests` (iPhone; `test-ui` for the iPad).
+ui_manual=(KeyReceiptShareUITests)
 # Screenshot generators (scripts/screenshots.sh): they assert nothing.
 ui_tooling=(ScreenshotTests DocsScreenshotTests InkAfterUndoUITests)
 # ui-lists:end

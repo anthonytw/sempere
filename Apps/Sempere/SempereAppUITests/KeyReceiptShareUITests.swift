@@ -8,6 +8,7 @@ import XCTest
 /// (the test runner itself may not read it: iOS refuses a background process's read, "Operation not authorized").
 ///
 /// iPhone (`scripts/app.sh test-phone-ui -only-testing:SempereAppUITests/KeyReceiptShareUITests`) and iPad (`test-ui`).
+/// Run by hand only (`ui_manual` in scripts/app.sh): it drives Contacts and the share sheet, which a simulator update can change.
 /// The vault is made inside the app (`SEMPERE_DEBUG_FRESH`), never a vault of the owner's.
 final class KeyReceiptShareUITests: XCTestCase {
     override func setUpWithError() throws {
