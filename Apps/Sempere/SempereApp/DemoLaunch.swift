@@ -34,6 +34,11 @@ import UIKit
 /// - `SEMPERE_DEMO_STORE`: copy the built vault into the in-app store (`VaultStore`, replacing an earlier
 ///   launch's demo copy) and open that copy, so store-only controls show (Sync Targets ▸ Add WebDAV Server…,
 ///   Details and Repair; `LaunchSmokeUITests`). The demo data is the same.
+/// - `SEMPERE_DEMO_STORE_EXTRA`: with `SEMPERE_DEMO_STORE`, a count (1 or 2): also creates that many small empty
+///   vaults in the store, "Vault B" and "Vault C", through New Vault's path (`AppModel.createVault`, this device's keys
+///   saved first: open them with `SEMPERE_DEBUG_MEMORY_KEYS`), before the demo opens, with no recent entries, so the
+///   welcome list shows "Sempere Demo", "Vault B", "Vault C" in that order (`storedVaultsByUse`: by name, none of them
+///   recorded as opened; `VaultListSwipeUITests`).
 /// - `SEMPERE_DEMO_SYNC_FOLDER`: with `SEMPERE_DEMO_STORE`, also syncs the store copy with a folder in the temporary
 ///   directory, idle runs every that many seconds (`addSyncFolder`).
 /// - `SEMPERE_DEMO_APPEARANCE`: `light` (the default) or `dark`: what the demo's windows are forced to
@@ -65,7 +70,7 @@ enum DemoLaunch {
     }
 
     @MainActor
-    static func run(_ model: AppModel, keys: RememberedKeys? = nil) async {
+    static func run(_ model: AppModel, library: VaultLibrary, keys: RememberedKeys? = nil) async {
         let env = DebugLaunch.environment
         forceAppearance(sceneWindows, env["SEMPERE_DEMO_APPEARANCE"])
         applyWindowSize(env["SEMPERE_DEMO_MAC_WINDOW"])
@@ -89,6 +94,7 @@ enum DemoLaunch {
             let search = env["SEMPERE_DEMO_SEARCH"] != nil
             let trust = model.trust
             let device = try env["SEMPERE_DEMO_DEVICE_KEY"].map(DeviceKeys.parse)
+            try await createExtraStoreVaults(model, library: library, keys: keys, env: env)
             let built = try await Task.detached {
                 try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png, denseStrokes: dense,
                                           searchNotes: search, insightsText: insights != nil, trust: trust, device: device, app: NoteWriter.appName,
@@ -152,6 +158,38 @@ enum DemoLaunch {
             for old in store.list() where old.name == storeName { try? store.remove(old.vaultId) }
             return try store.importVault(from: url, options: VaultStore.ImportOptions(name: storeName)).url
         }.value
+    }
+
+    /// The names of `SEMPERE_DEMO_STORE_EXTRA`'s vaults, in list order (after the demo's).
+    static let extraStoreNames = ["Vault B", "Vault C"]
+
+    /// `SEMPERE_DEMO_STORE_EXTRA` (with `SEMPERE_DEMO_STORE`): creates the first that many of `extraStoreNames` as New
+    /// Vault does (keys saved first, then `createVault`, which opens each), and drops their recent entries, so the
+    /// list orders them by name after the demo's ("Sempere Demo"). An earlier launch's vaults of these names are
+    /// removed first.
+    @MainActor
+    static func createExtraStoreVaults(_ model: AppModel, library: VaultLibrary, keys: RememberedKeys?,
+                                       env: [String: String]) async throws {
+        guard env["SEMPERE_DEMO_STORE"] != nil, let keys, let count = env["SEMPERE_DEMO_STORE_EXTRA"].flatMap({ Int($0) }),
+              count > 0 else { return }
+        let names = Array(extraStoreNames.prefix(count))
+        let store = library.vaultStore
+        await Task.detached {
+            for old in store.list() where names.contains(old.name) { try? store.remove(old.vaultId) }
+        }.value
+        await library.refreshStoredVaults()
+        var created: [UUID] = []
+        for name in names {
+            var request = NewVaultRequest(name: name, keySource: .generate, passphrase: nil, deviceName: "Demo Device",
+                                          deviceKind: UIDevice.current.userInterfaceIdiom == .phone ? "iphone" : "ipad")
+            let device = try keys.store.generate()
+            request.device = device
+            try await keys.saveCreatedVaultKeys(device, vaultID: request.vaultId, vaultName: name)
+            created.append(try await model.createVault(request, library: library).vaultID)
+        }
+        // Never opened, as far as the list goes: the list orders vaults with no recent entry by name, after the opened
+        // ones, and the demo opened next (`openVault`) records none either, so the order is the names'.
+        for recent in library.recents where recent.storeID.map(created.contains) == true { library.forget(recent) }
     }
 
     /// `SEMPERE_DEMO_SYNC_FOLDER` (with `SEMPERE_DEMO_STORE`): adds a folder in the app's temporary directory as a sync

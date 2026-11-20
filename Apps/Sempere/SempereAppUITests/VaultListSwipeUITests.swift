@@ -96,7 +96,157 @@ final class VaultListSwipeUITests: XCTestCase {
                       || app.buttons["Show Sidebar"].firstMatch.exists, "the vault still opens after two Cancels")
     }
 
+
+    // MARK: - Several vaults (owner, build 112: Cancel or Delete on the first row showed the wrong vaults, then locked
+    // the list until a relaunch)
+
+    /// Three vaults: Cancel on the first row, twice, then on the middle one. After each Cancel the three rows are there
+    /// with their own names in order, and each still answers a swipe; then the first row still opens its own vault.
+    @MainActor
+    func testCancelWithThreeVaultsKeepsEveryRow() throws {
+        let app = launch(extraVaults: 2)
+        defer { app.terminate() }
+        closeVault(in: app)
+        let all = [Self.vaultName] + Self.extraNames
+        expectRows(all, in: app, "at the start")
+        for (round, name) in [Self.vaultName, Self.vaultName, Self.extraNames[0]].enumerated() {
+            swipeDelete(name, in: app, answer: "Cancel", "Cancel round \(round + 1)")
+            Thread.sleep(forTimeInterval: 2)   // a deferred removal or swap shows by now
+            expectRows(all, in: app, "after Cancel round \(round + 1) on \(name)")
+            for row in all { expectSwipeAnswers(row, in: app, "after Cancel round \(round + 1)") }
+        }
+        expectOpens(Self.vaultName, in: app)
+    }
+
+    /// Three vaults: delete the first. The other two stay with their own names, a swipe on the new first row shows
+    /// its button and a Cancel keeps it; then delete the last one, and the remaining vault opens.
+    @MainActor
+    func testDeleteFirstOfThreeKeepsTheOthers() throws {
+        let app = launch(extraVaults: 2)
+        defer { app.terminate() }
+        closeVault(in: app)
+        expectRows([Self.vaultName] + Self.extraNames, in: app, "at the start")
+        swipeDelete(Self.vaultName, in: app, answer: "Delete", "delete the first")
+        XCTAssertTrue(storeRow(Self.vaultName, in: app).waitForNonExistence(timeout: 30), "the deleted vault left the list")
+        Thread.sleep(forTimeInterval: 2)
+        expectRows(Self.extraNames, in: app, "after deleting the first")
+        swipeDelete(Self.extraNames[0], in: app, answer: "Cancel", "Cancel on the new first row")
+        Thread.sleep(forTimeInterval: 2)
+        expectRows(Self.extraNames, in: app, "after Cancel on the new first row")
+        swipeDelete(Self.extraNames[1], in: app, answer: "Delete", "delete the last")
+        XCTAssertTrue(storeRow(Self.extraNames[1], in: app).waitForNonExistence(timeout: 30), "the last vault left the list")
+        Thread.sleep(forTimeInterval: 2)
+        expectRows([Self.extraNames[0]], in: app, "after deleting the last")
+        expectSwipeAnswers(Self.extraNames[0], in: app, "after deleting the last")
+        expectOpens(Self.extraNames[0], in: app)
+    }
+
+    /// Two vaults: delete the first; the other stays, answers a swipe and opens.
+    @MainActor
+    func testDeleteFirstOfTwoKeepsTheOther() throws {
+        let app = launch(extraVaults: 1)
+        defer { app.terminate() }
+        closeVault(in: app)
+        let other = Self.extraNames[0]
+        expectRows([Self.vaultName, other], in: app, "at the start")
+        swipeDelete(Self.vaultName, in: app, answer: "Delete", "delete the first")
+        XCTAssertTrue(storeRow(Self.vaultName, in: app).waitForNonExistence(timeout: 30), "the deleted vault left the list")
+        Thread.sleep(forTimeInterval: 2)
+        expectRows([other], in: app, "after deleting the first")
+        expectSwipeAnswers(other, in: app, "after deleting the first")
+        expectOpens(other, in: app)
+    }
+
+    /// One vault: delete it; the list is empty and New Vault… still opens its sheet.
+    @MainActor
+    func testDeleteTheOnlyVault() throws {
+        let app = launch(extraVaults: 0)
+        defer { app.terminate() }
+        closeVault(in: app)
+        expectRows([Self.vaultName], in: app, "at the start")
+        swipeDelete(Self.vaultName, in: app, answer: "Delete", "delete the only vault")
+        XCTAssertTrue(storeRow(Self.vaultName, in: app).waitForNonExistence(timeout: 30), "the vault left the list")
+        XCTAssertFalse(app.staticTexts["On This Device"].firstMatch.exists, "no On This Device section is left")
+        let newVault = app.buttons["New Vault…"].firstMatch
+        require(newVault, "New Vault…", in: app, timeout: 10)
+        newVault.tap()
+        XCTAssertTrue(app.navigationBars["New Vault"].firstMatch.waitForExistence(timeout: 15)
+                      || app.textFields.firstMatch.waitForExistence(timeout: 5), "New Vault… opens its sheet")
+    }
+
     // MARK: - Helpers
+
+
+    private static let extraNames = ["Vault B", "Vault C"]
+
+    /// A store vault's row content (`storeVault-<name>`).
+    @MainActor
+    private func storeRow(_ name: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)["storeVault-\(name)"].firstMatch
+    }
+
+    /// Exactly the store vaults `names`, top to bottom, and no other.
+    @MainActor
+    private func expectRows(_ names: [String], in app: XCUIApplication, _ when: String,
+                            file: StaticString = #filePath, line: UInt = #line) {
+        let listed = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'storeVault-'"))
+        _ = listed.firstMatch.waitForExistence(timeout: 10)
+        let rows = listed.allElementsBoundByIndex.filter(\.exists)
+            .sorted { $0.frame.minY < $1.frame.minY }
+            .map { String($0.identifier.dropFirst("storeVault-".count)) }
+        XCTAssertEqual(rows, names, "the welcome list's vaults \(when)", file: file, line: line)
+        for name in names {
+            XCTAssertTrue(storeRow(name, in: app).label.hasPrefix(name), "the row of \(name) shows its name \(when): "
+                          + storeRow(name, in: app).label, file: file, line: line)
+        }
+    }
+
+    /// Swipes `name`'s row, taps Delete from This Device… and answers the confirmation with `answer`.
+    @MainActor
+    private func swipeDelete(_ name: String, in app: XCUIApplication, answer: String, _ what: String,
+                             file: StaticString = #filePath, line: UInt = #line) {
+        let row = storeRow(name, in: app)
+        require(row, "the row of \(name) (\(what))", in: app, timeout: 10, file: file, line: line)
+        row.swipeLeft()
+        let button = app.collectionViews.buttons["Delete from This Device…"].firstMatch
+        require(button, "the swipe's Delete from This Device… on \(name) (\(what))", in: app, timeout: 10, file: file, line: line)
+        button.tap()
+        let alert = app.alerts.firstMatch
+        require(alert, "the Delete confirmation for \(name) (\(what))", in: app, timeout: 10, file: file, line: line)
+        XCTAssertTrue(alert.label.contains(name), "the confirmation names \(name) (\(what)): \(alert.label)",
+                      file: file, line: line)
+        alert.buttons[answer].firstMatch.tap()
+        XCTAssertTrue(alert.waitForNonExistence(timeout: 10), "the confirmation closed (\(what))", file: file, line: line)
+    }
+
+    /// The row of `name` answers a swipe (its button shows) and a swipe back (the button goes, the row stays).
+    @MainActor
+    private func expectSwipeAnswers(_ name: String, in app: XCUIApplication, _ when: String,
+                                    file: StaticString = #filePath, line: UInt = #line) {
+        let row = storeRow(name, in: app)
+        row.swipeLeft()
+        let button = app.collectionViews.buttons["Delete from This Device…"].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "a swipe on \(name) shows its button \(when)",
+                      file: file, line: line)
+        row.swipeRight()
+        XCTAssertTrue(button.waitForNonExistence(timeout: 10), "a swipe back on \(name) hides its button \(when)",
+                      file: file, line: line)
+        XCTAssertTrue(row.exists, "the row of \(name) stays after a swipe back \(when)", file: file, line: line)
+    }
+
+    /// A tap on `name`'s row opens that vault (the sidebar's title is its name).
+    @MainActor
+    private func expectOpens(_ name: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        storeRow(name, in: app).tap()
+        let more = app.buttons["sidebar-more"].firstMatch
+        if !more.waitForExistence(timeout: 60) {
+            let show = app.buttons["Show Sidebar"].firstMatch
+            if show.exists { show.tap() }
+        }
+        XCTAssertTrue(more.waitForExistence(timeout: 10), "a tap on \(name) opens a vault", file: file, line: line)
+        XCTAssertTrue(app.navigationBars[name].firstMatch.waitForExistence(timeout: 10), "the vault opened is \(name)",
+                      file: file, line: line)
+    }
 
     @MainActor
     private func closeVault(in app: XCUIApplication) {
@@ -128,13 +278,19 @@ final class VaultListSwipeUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch() -> XCUIApplication {
+    /// The demo's store copy; with `extraVaults` (0, 1 or 2) also "Vault B" and "Vault C" (`SEMPERE_DEMO_STORE_EXTRA`)
+    /// and no sync folder, else the demo syncing with a folder every two seconds.
+    private func launch(extraVaults: Int? = nil) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment = ["SEMPERE_DEBUG_FRESH": "1", "SEMPERE_DEMO": "1", "SEMPERE_DEMO_STORE": "1",
                                  "SEMPERE_DEMO_SYNC_FOLDER": "2", "SEMPERE_DEBUG_COLUMNS": "all",
                                  "SEMPERE_DEBUG_MEMORY_KEYS": "1", "SEMPERE_DEBUG_SYNC_RUNS": "1", "TZ": "UTC"]
+        if let extraVaults {
+            app.launchEnvironment["SEMPERE_DEMO_SYNC_FOLDER"] = nil
+            app.launchEnvironment["SEMPERE_DEMO_STORE_EXTRA"] = String(extraVaults)
+        }
         app.launch()
         return app
     }
