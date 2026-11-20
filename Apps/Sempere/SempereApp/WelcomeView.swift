@@ -13,6 +13,8 @@ struct WelcomeView: View {
 
     @State private var restoring = false
     @State private var connectingWebDAV = false
+    /// The removal being confirmed: the list's own, never a row's (`WelcomeRemovals`).
+    @State private var removals = WelcomeRemovals()
 
     var body: some View {
         NavigationStack {
@@ -27,7 +29,7 @@ struct WelcomeView: View {
                 } footer: {
                     Text("Sempere keeps your vaults on this device, inside the app, so they open without a connection. Open Vault… copies a vault (a .sempere item in Files, iCloud Drive, a backup or an export) onto this device; the original is not changed.")
                 }
-                StoredVaultsSection(open: openStored)
+                StoredVaultsSection(open: openStored, removals: removals)
                 let others = library.recents.filter { $0.storeID == nil }
                 if !others.isEmpty {
                     Section("Recent") {
@@ -46,6 +48,7 @@ struct WelcomeView: View {
                     }
                 }
             }
+            .modifier(WelcomeRemovalDialogs(removals: removals, open: openStored))
             .navigationTitle("Sempere")
             .task { await library.refreshStoredVaults() }
             .sheet(isPresented: $connectingWebDAV) { WebDAVConnectSheet() }

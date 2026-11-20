@@ -34,6 +34,8 @@ import UIKit
 /// - `SEMPERE_DEMO_STORE`: copy the built vault into the in-app store (`VaultStore`, replacing an earlier
 ///   launch's demo copy) and open that copy, so store-only controls show (Sync Targets ▸ Add WebDAV Server…,
 ///   Details and Repair; `LaunchSmokeUITests`). The demo data is the same.
+/// - `SEMPERE_DEMO_SYNC_FOLDER`: with `SEMPERE_DEMO_STORE`, also syncs the store copy with a folder in the temporary
+///   directory, idle runs every that many seconds (`addSyncFolder`).
 /// - `SEMPERE_DEMO_APPEARANCE`: `light` (the default) or `dark`: what the demo's windows are forced to
 ///   (`forceAppearance`), for the website's dark twins; the canvas's paper stays light (CLAUDE.md, `PKCanvasView`).
 /// - `SEMPERE_DEMO_INSIGHTS`: `note`, `map` or `on` (unset: no insights providers at all, so no offer card; `on`: only the
@@ -100,6 +102,7 @@ enum DemoLaunch {
             }
             if env["SEMPERE_DEMO_LOCKED"] == nil { try await model.unlock(identityText: built.identityText) }
             select(model, built: built, env: env)
+            if let pace = env["SEMPERE_DEMO_SYNC_FOLDER"] { try addSyncFolder(model, pace: pace) }
             if env["SEMPERE_DEMO_NEARBY_JOIN"] != nil { try model.debugSeedNearbyRequest(name: "Demo iPhone", kind: "iphone") }
         }
         if insights == "note" || insights == "map", env["SEMPERE_DEMO_LOCKED"] == nil, passphrase == nil { await prepareInsights(model) }
@@ -149,6 +152,24 @@ enum DemoLaunch {
             for old in store.list() where old.name == storeName { try? store.remove(old.vaultId) }
             return try store.importVault(from: url, options: VaultStore.ImportOptions(name: storeName)).url
         }.value
+    }
+
+    /// `SEMPERE_DEMO_SYNC_FOLDER` (with `SEMPERE_DEMO_STORE`): adds a folder in the app's temporary directory as a sync
+    /// target of the demo's store copy, its idle runs every `pace` seconds (a number; else the app's 60), so UI tests see
+    /// the list while runs go (`VaultListSwipeUITests`). Replaced on every launch.
+    @MainActor
+    static func addSyncFolder(_ model: AppModel, pace: String) throws {
+        guard let vaultID = model.vault?.vaultId else { return }
+        let drive = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("DemoSync", isDirectory: true)
+        try? FileManager.default.removeItem(at: drive)
+        try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
+        try model.addPickedFolderTarget(drive, to: vaultID)
+        if let seconds = TimeInterval(pace), seconds > 0 {
+            for session in model.syncSessions {
+                session.schedule.idleInterval = seconds
+                session.schedule.maxIdleInterval = seconds
+            }
+        }
     }
 
     /// The `SEMPERE_DEMO_SIDEBAR` and `SEMPERE_DEMO_NOTE` choices.
