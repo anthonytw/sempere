@@ -22,8 +22,8 @@ final class VaultListSwipeUITests: XCTestCase {
 
     /// Swipe the vault's row and let several runs go by with Delete from This Device… showing; tap it and let several
     /// more go by with the confirmation up; then delete: the row leaves the list.
-    @MainActor
     /// Each window must see sync runs finish (`DebugSyncRuns`), or the test skips: a window with no runs proves nothing.
+    @MainActor
     func testSwipeAndConfirmationStayOpenWhileSyncRuns() throws {
         let app = launch()
         defer { app.terminate() }
@@ -41,6 +41,7 @@ final class VaultListSwipeUITests: XCTestCase {
 
         let content = app.descendants(matching: .any)["storeVault-\(Self.vaultName)"].firstMatch
         let row = app.cells.containing(.any, identifier: "storeVault-\(Self.vaultName)").firstMatch
+        reveal(Self.vaultName, in: app)
         require(row, "the vault's row on the welcome list", in: app)
         // A finished run of the closed vault first, so the runs that follow are the idle ones the owner met.
         XCTAssertTrue(UIWait.until(60, { content.label.contains("Synced with") }), "the closed vault syncs: \(content.label)")
@@ -77,6 +78,7 @@ final class VaultListSwipeUITests: XCTestCase {
         closeVault(in: app)
         let content = app.descendants(matching: .any)["storeVault-\(Self.vaultName)"].firstMatch
         let row = app.cells.containing(.any, identifier: "storeVault-\(Self.vaultName)").firstMatch
+        reveal(Self.vaultName, in: app)
         require(row, "the vault's row on the welcome list", in: app)
         for round in 1...2 {
             row.swipeLeft()
@@ -96,12 +98,12 @@ final class VaultListSwipeUITests: XCTestCase {
                       || app.buttons["Show Sidebar"].firstMatch.exists, "the vault still opens after two Cancels")
     }
 
-
     // MARK: - Several vaults (owner, build 112: Cancel or Delete on the first row showed the wrong vaults, then locked
     // the list until a relaunch)
 
     /// Three vaults: Cancel on the first row, twice, then on the middle one. After each Cancel the three rows are there
-    /// with their own names in order, and each still answers a swipe; then the first row still opens its own vault.
+    /// with their own names in order, and each still answers a swipe; then the first row still opens its own vault (its
+    /// unlock sheet).
     @MainActor
     func testCancelWithThreeVaultsKeepsEveryRow() throws {
         let app = launch(extraVaults: 2)
@@ -115,7 +117,9 @@ final class VaultListSwipeUITests: XCTestCase {
             expectRows(all, in: app, "after Cancel round \(round + 1) on \(name)")
             for row in all { expectSwipeAnswers(row, in: app, "after Cancel round \(round + 1)") }
         }
-        expectOpens(Self.vaultName, in: app)
+        // This launch remembers no key of the demo's (it is unlocked once with its identity, and with no sync folder
+        // nothing keeps that key once it is closed), so its own unlock sheet is what a tap on its row opens.
+        expectOpens(Self.vaultName, in: app, orItsUnlockSheet: true)
     }
 
     /// Three vaults: delete the first. The other two stay with their own names, a swipe on the new first row shows
@@ -157,7 +161,8 @@ final class VaultListSwipeUITests: XCTestCase {
         expectOpens(other, in: app)
     }
 
-    /// One vault: delete it; the list is empty and New Vault… still opens its sheet.
+    /// One vault: delete it; its row leaves the list (other tests' vaults may stay) and New Vault… still opens its
+    /// sheet.
     @MainActor
     func testDeleteTheOnlyVault() throws {
         let app = launch(extraVaults: 0)
@@ -166,18 +171,20 @@ final class VaultListSwipeUITests: XCTestCase {
         expectRows([Self.vaultName], in: app, "at the start")
         swipeDelete(Self.vaultName, in: app, answer: "Delete", "delete the only vault")
         XCTAssertTrue(storeRow(Self.vaultName, in: app).waitForNonExistence(timeout: 30), "the vault left the list")
-        XCTAssertFalse(app.staticTexts["On This Device"].firstMatch.exists, "no On This Device section is left")
+        Thread.sleep(forTimeInterval: 2)
+        expectRows([], in: app, "after deleting the only vault")
         let newVault = app.buttons["New Vault…"].firstMatch
+        if !newVault.waitForExistence(timeout: 5) { scrollList(in: app, up: false) }
         require(newVault, "New Vault…", in: app, timeout: 10)
         newVault.tap()
-        XCTAssertTrue(app.navigationBars["New Vault"].firstMatch.waitForExistence(timeout: 15)
-                      || app.textFields.firstMatch.waitForExistence(timeout: 5), "New Vault… opens its sheet")
+        XCTAssertTrue(app.textFields["newVault.name"].firstMatch.waitForExistence(timeout: 15), "New Vault… opens its sheet")
     }
 
     // MARK: - Helpers
 
-
-    private static let extraNames = ["Vault B", "Vault C"]
+    /// `DemoLaunch.extraStoreNames`. Other UI tests may leave vaults in the simulator's store (the App Group container,
+    /// which `SEMPERE_DEBUG_FRESH` keeps): the checks look only at the vaults these tests own.
+    private static let extraNames = ["Sempere Demo B", "Sempere Demo C"]
 
     /// A store vault's row content (`storeVault-<name>`).
     @MainActor
@@ -185,16 +192,23 @@ final class VaultListSwipeUITests: XCTestCase {
         app.descendants(matching: .any)["storeVault-\(name)"].firstMatch
     }
 
-    /// Exactly the store vaults `names`, top to bottom, and no other.
+    /// Of the vaults these tests own (the demo's and `extraNames`), exactly `names` are listed, top to bottom; other
+    /// tests' leftover vaults are ignored. Each of `names` is scrolled into view first.
     @MainActor
     private func expectRows(_ names: [String], in app: XCUIApplication, _ when: String,
                             file: StaticString = #filePath, line: UInt = #line) {
-        let listed = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'storeVault-'"))
-        _ = listed.firstMatch.waitForExistence(timeout: 10)
+        for name in names { reveal(name, in: app) }
+        let owned = Set([Self.vaultName] + Self.extraNames)
+        let ids = owned.map { "storeVault-\($0)" }
+        let listed = app.descendants(matching: .any).matching(NSPredicate(format: "identifier IN %@", ids))
+        if !names.isEmpty { _ = listed.firstMatch.waitForExistence(timeout: 10) }
         let rows = listed.allElementsBoundByIndex.filter(\.exists)
             .sorted { $0.frame.minY < $1.frame.minY }
             .map { String($0.identifier.dropFirst("storeVault-".count)) }
-        XCTAssertEqual(rows, names, "the welcome list's vaults \(when)", file: file, line: line)
+        let everyRow = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'storeVault-'"))
+            .allElementsBoundByIndex.map { String($0.identifier.dropFirst("storeVault-".count)) }
+        print("SWIPE store rows \(when): \(everyRow)")
+        XCTAssertEqual(rows, names, "the welcome list's own vaults \(when)", file: file, line: line)
         for name in names {
             XCTAssertTrue(storeRow(name, in: app).label.hasPrefix(name), "the row of \(name) shows its name \(when): "
                           + storeRow(name, in: app).label, file: file, line: line)
@@ -206,6 +220,7 @@ final class VaultListSwipeUITests: XCTestCase {
     private func swipeDelete(_ name: String, in app: XCUIApplication, answer: String, _ what: String,
                              file: StaticString = #filePath, line: UInt = #line) {
         let row = storeRow(name, in: app)
+        reveal(name, in: app)
         require(row, "the row of \(name) (\(what))", in: app, timeout: 10, file: file, line: line)
         row.swipeLeft()
         let button = app.collectionViews.buttons["Delete from This Device…"].firstMatch
@@ -213,7 +228,7 @@ final class VaultListSwipeUITests: XCTestCase {
         button.tap()
         let alert = app.alerts.firstMatch
         require(alert, "the Delete confirmation for \(name) (\(what))", in: app, timeout: 10, file: file, line: line)
-        XCTAssertTrue(alert.label.contains(name), "the confirmation names \(name) (\(what)): \(alert.label)",
+        XCTAssertTrue(alert.label.contains("“\(name)”"), "the confirmation names \(name) (\(what)): \(alert.label)",
                       file: file, line: line)
         alert.buttons[answer].firstMatch.tap()
         XCTAssertTrue(alert.waitForNonExistence(timeout: 10), "the confirmation closed (\(what))", file: file, line: line)
@@ -224,6 +239,7 @@ final class VaultListSwipeUITests: XCTestCase {
     private func expectSwipeAnswers(_ name: String, in app: XCUIApplication, _ when: String,
                                     file: StaticString = #filePath, line: UInt = #line) {
         let row = storeRow(name, in: app)
+        reveal(name, in: app)
         row.swipeLeft()
         let button = app.collectionViews.buttons["Delete from This Device…"].firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 10), "a swipe on \(name) shows its button \(when)",
@@ -234,10 +250,36 @@ final class VaultListSwipeUITests: XCTestCase {
         XCTAssertTrue(row.exists, "the row of \(name) stays after a swipe back \(when)", file: file, line: line)
     }
 
-    /// A tap on `name`'s row opens that vault (the sidebar's title is its name).
+    /// Scrolls the welcome list until `name`'s row can be touched: down the list first, then back up (other tests'
+    /// leftover vaults may come before it, or push it below the screen).
     @MainActor
-    private func expectOpens(_ name: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    private func reveal(_ name: String, in app: XCUIApplication) {
+        let row = storeRow(name, in: app)
+        if row.waitForExistence(timeout: 5) && row.isHittable { return }
+        for up in [true, false] {
+            for _ in 0..<6 {
+                if row.exists && row.isHittable { return }
+                scrollList(in: app, up: up)
+            }
+        }
+    }
+
+    /// One slow swipe on the welcome list: `up` moves the content up (shows rows further down).
+    @MainActor
+    private func scrollList(in app: XCUIApplication, up: Bool) {
+        let list = app.collectionViews.containing(NSPredicate(format: "identifier BEGINSWITH 'storeVault-'")).firstMatch
+        let target = list.exists ? list : app.collectionViews.firstMatch
+        if up { target.swipeUp(velocity: .slow) } else { target.swipeDown(velocity: .slow) }
+    }
+
+    /// A tap on `name`'s row opens that vault (the sidebar's title is its name); with `orItsUnlockSheet`, its unlock
+    /// sheet ("Unlock <name>") is enough, for a vault whose key this launch does not remember.
+    @MainActor
+    private func expectOpens(_ name: String, in app: XCUIApplication, orItsUnlockSheet: Bool = false,
+                             file: StaticString = #filePath, line: UInt = #line) {
+        reveal(name, in: app)
         storeRow(name, in: app).tap()
+        if orItsUnlockSheet, app.navigationBars["Unlock \(name)"].firstMatch.waitForExistence(timeout: 30) { return }
         let more = app.buttons["sidebar-more"].firstMatch
         if !more.waitForExistence(timeout: 60) {
             let show = app.buttons["Show Sidebar"].firstMatch
@@ -277,9 +319,9 @@ final class VaultListSwipeUITests: XCTestCase {
         return (nil, changes)
     }
 
+    /// The demo's store copy; with `extraVaults` (0, 1 or 2) also "Sempere Demo B" and "Sempere Demo C"
+    /// (`SEMPERE_DEMO_STORE_EXTRA`) and no sync folder, else the demo syncing with a folder every two seconds.
     @MainActor
-    /// The demo's store copy; with `extraVaults` (0, 1 or 2) also "Vault B" and "Vault C" (`SEMPERE_DEMO_STORE_EXTRA`)
-    /// and no sync folder, else the demo syncing with a folder every two seconds.
     private func launch(extraVaults: Int? = nil) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()

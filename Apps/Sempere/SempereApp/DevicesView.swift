@@ -156,7 +156,10 @@ struct DevicesView: View {
                     .contextMenu { if s.thisIsHome { actions(device) } }
                     .swipeActions(edge: .trailing) {
                         if s.thisIsHome && !device.isHome {
-                            Button("Remove", systemImage: "minus.circle", role: .destructive) { removing = device }
+                            // Asks first: no destructive role, or SwiftUI removes the row before the confirmation
+                            // (`StoredVaultsSection`); the context menu keeps the role.
+                            Button("Remove", systemImage: "minus.circle") { removing = device }
+                                .tint(.red)
                         }
                     }
             }
