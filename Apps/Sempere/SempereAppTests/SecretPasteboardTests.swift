@@ -1,4 +1,5 @@
 import UIKit
+import UniformTypeIdentifiers
 import XCTest
 @testable import SempereApp
 
@@ -8,14 +9,39 @@ import XCTest
 @MainActor
 final class SecretPasteboardTests: XCTestCase {
     override func setUpWithError() throws {
+        UIPasteboard.general.items = []
+    }
+
+    private func requireMac() throws {
         #if !targetEnvironment(macCatalyst)
         throw XCTSkip("Mac Catalyst only")
         #endif
-        UIPasteboard.general.items = []
     }
 
     override func tearDown() async throws {
         UIPasteboard.general.items = []
+    }
+
+    /// What another app (or `pbpaste`, whose `NSPasteboardTypeString` is this type) reads is the concrete UTF-8 text
+    /// type: the abstract `public.plain-text` alone left a pasting app (and `string` readers of other processes) with
+    /// nothing (TestFlight 1.3.0 build 111, "says copied, nothing in the clipboard").
+    func testCopyIsReadableAsUTF8PlainTextByAnotherApp() throws {
+        SecretPasteboard.copy("AGE-SECRET-KEY-TEST")
+        let data = try XCTUnwrap(UIPasteboard.general.data(forPasteboardType: UTType.utf8PlainText.identifier))
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), "AGE-SECRET-KEY-TEST")
+        XCTAssertEqual(UIPasteboard.general.string, "AGE-SECRET-KEY-TEST")
+        XCTAssertTrue(UIPasteboard.general.hasStrings)
+        XCTAssertTrue(UIPasteboard.general.contains(pasteboardTypes: [UTType.plainText.identifier]),
+                      "a reader asking for the abstract text type is served too")
+        let provider = try XCTUnwrap(UIPasteboard.general.itemProviders.first)
+        XCTAssertTrue(provider.canLoadObject(ofClass: NSString.self), "an item provider (a text field's paste) can load it")
+    }
+
+    func testCopyKeepsTheSecretMarkersOnAnyDevice() {
+        SecretPasteboard.copy("AGE-SECRET-KEY-TEST")
+        for marker in SecretPasteboard.markers + [SecretPasteboard.ownMarker] {
+            XCTAssertTrue(UIPasteboard.general.contains(pasteboardTypes: [marker]), marker)
+        }
     }
 
     func testCopyPutsTheKeyOnThePasteboardWithTheConcealedMarkers() {
@@ -25,13 +51,15 @@ final class SecretPasteboardTests: XCTestCase {
         for marker in SecretPasteboard.markers { XCTAssertTrue(types.contains(marker), "\(marker) in \(types)") }
     }
 
-    func testQuittingClearsTheCopiedKey() {
+    func testQuittingClearsTheCopiedKey() throws {
+        try requireMac()
         SecretPasteboard.copy("AGE-SECRET-KEY-TEST")
         NotificationCenter.default.post(name: UIApplication.willTerminateNotification, object: nil)
         XCTAssertNil(UIPasteboard.general.string, "nothing to paste after quitting")
     }
 
-    func testQuittingLeavesSomethingElseTheUserCopiedSince() {
+    func testQuittingLeavesSomethingElseTheUserCopiedSince() throws {
+        try requireMac()
         SecretPasteboard.copy("AGE-SECRET-KEY-TEST")
         UIPasteboard.general.string = "shopping list"
         NotificationCenter.default.post(name: UIApplication.willTerminateNotification, object: nil)

@@ -313,17 +313,18 @@ extension ShareFormat {
 }
 
 /// The system share sheet (AirDrop, Messages, Mail, Save to Files, ...) for files and folders.
-/// `secret` (a vault key): without Copy, which would put it on the general pasteboard with no
-/// expiry and send it to the user's other devices (`SecretSharing`).
+/// `secret` (a vault key): without the system's Copy, which would put it on the general pasteboard with no
+/// expiry and send it to the user's other devices; a Copy that still shows (iOS 27 and the Mac's share menu list
+/// one whatever `excludedActivityTypes` says) copies through `SecretPasteboard` instead (`SecretSharing`).
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
     var secret = false
     let done: () -> Void
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = secret ? SecretSharing.controller(items: items)
-            : UIActivityViewController(activityItems: items, applicationActivities: nil)
         let callback = MainCallback(done)
+        if secret { return SecretSharing.controller(items: items) { callback.run() } }
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
         controller.completionWithItemsHandler = ExportHandOff.completion { callback.run() }
         return controller
     }
@@ -331,9 +332,11 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-/// Sharing a secret key (its text or its key file): the share sheet offers no Copy (the Mac's share
-/// menu still lists one, which is handed nothing: `SecretItem`). Copying goes
-/// through `SecretPasteboard` alone (local only, expiring), and the key's text is never selectable.
+/// Sharing a secret key (its text or its key file): the share sheet is asked to leave Copy out, and a Copy that is
+/// listed anyway is handed nothing (`SecretItem`) and answered by `SecretPasteboard` (local only, expiring) when
+/// it finishes, so it works instead of copying nothing (TestFlight 1.3.0 build 111). The key's text is selectable
+/// in its screen (owner's decision, build 111): the selection's copy is the system's, but Copy Key and Copy here
+/// stay short-lived and local.
 @MainActor
 enum SecretSharing {
     /// Activities a secret is never handed to.
@@ -341,11 +344,39 @@ enum SecretSharing {
 
     /// A share sheet for `items` without the `excluded` activities. On a Mac the share menu
     /// (macOS 27) lists Copy whatever `excludedActivityTypes` says, so each item is also handed
-    /// out through `SecretItem`, which gives a copy activity nothing.
-    static func controller(items: [Any]) -> UIActivityViewController {
+    /// out through `SecretItem`, which gives a copy activity nothing. When a copy activity completes, the text
+    /// items go to `SecretPasteboard`. `done` runs on the main actor when the sheet finishes (shared, copied or
+    /// canceled); it must only close the share sheet, never the screen under it.
+    static func controller(items: [Any], done: @escaping @MainActor @Sendable () -> Void = {})
+        -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: items.map(SecretItem.init), applicationActivities: nil)
         controller.excludedActivityTypes = excluded
+        let texts = items.compactMap { $0 as? String }
+        controller.completionWithItemsHandler = { @Sendable type, completed, _, _ in
+            ExportHandOff.onMain {
+                if completed, copies(type), let text = texts.first { SecretPasteboard.copy(text) }
+                done()
+            }
+        }
         return controller
+    }
+
+    /// The share sheet for a secret, presented by UIKit over the topmost screen of `view` (a popover from it on an
+    /// iPad or a Mac): finishing it dismisses only itself. Hosted as the root of a second SwiftUI sheet it took the
+    /// new-vault sheet with it when its Copy finished (owner, build 111), so the receipt is never left.
+    /// Returns false when `view` has no screen yet (the caller shows `ShareSheet` in a sheet).
+    @discardableResult
+    static func present(_ items: [Any], from view: UIView, done: @escaping () -> Void) -> Bool {
+        guard let presenter = ExportHandOff.presenter(of: view) else { return false }
+        let callback = MainCallback(done)
+        let controller = controller(items: items) { callback.run() }
+        if view.traitCollection.userInterfaceIdiom != .phone { controller.modalPresentationStyle = .popover }
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = view.bounds
+        }
+        presenter.present(controller, animated: true)
+        return true
     }
 
     /// Whether `type` copies to the pasteboard: UIKit's own, or a Mac sharing service named so.

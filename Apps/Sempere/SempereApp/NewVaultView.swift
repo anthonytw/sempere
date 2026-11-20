@@ -408,6 +408,7 @@ struct KeyReceipt<Extra: View>: View {
     private let extra: Extra
     @State private var copied = false
     @State private var sharing = false
+    @State private var anchor = PresentationAnchor.Box()
 
     init(created: CreatedVault, @ViewBuilder extra: () -> Extra) {
         self.created = created
@@ -419,10 +420,12 @@ struct KeyReceipt<Extra: View>: View {
             extra
             Section {
                 Text("“\(created.url.deletingPathExtension().lastPathComponent)” is ready. Save its recovery key now, or print its kit: anyone with it can read the vault, and without it the vault cannot be opened if this device is lost.")
-                // Not selectable, as in the key window: ⌘C would put the secret on the clipboard with no
-                // expiry and let Universal Clipboard sync it; Copy Key below does not.
+                // Selectable (owner, build 111: "I can't just highlight it and copy"). A selection's copy is the
+                // system's, with no expiry and open to Universal Clipboard, unlike Copy Key below (local only,
+                // gone after three minutes); the key is shown only here, to be saved, so that is the owner's call.
                 Text(created.secretKey ?? "")
                     .font(.callout.monospaced())
+                    .textSelection(.enabled)
                 Button(copied ? String(localized: "Copied", comment: "Button after the secret key was copied")
                               : String(localized: "Copy Key", comment: "Button: copy the secret key"),
                        systemImage: "doc.on.doc") {
@@ -431,8 +434,14 @@ struct KeyReceipt<Extra: View>: View {
                     copied = true
                 }
                     .help("Copy the secret key to the clipboard")
-                // The share sheet without its Copy (`SecretSharing`), never a ShareLink.
-                Button("Share…", systemImage: "square.and.arrow.up") { sharing = true }
+                // The share sheet for a secret (`SecretSharing`), never a ShareLink. UIKit presents it over this
+                // sheet, so finishing it (Copy, a cancel) never closes this screen: the key stays copyable.
+                Button("Share…", systemImage: "square.and.arrow.up") {
+                    if let view = anchor.view,
+                       SecretSharing.present([created.secretKey ?? ""], from: view, done: {}) { return }
+                    sharing = true
+                }
+                    .background(PresentationAnchor(box: anchor))
             }
             if let key = created.recoveryKey {
                 KeyFileActions(key: key, vault: created.kitVault)

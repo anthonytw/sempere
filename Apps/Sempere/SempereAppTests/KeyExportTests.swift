@@ -37,6 +37,27 @@ struct KeyExportTests {
         }
     }
 
+    /// A Copy the share sheet lists anyway (iOS 27: the owner chose it on build 111 and nothing was copied, and the
+    /// sheet closed the screen) completes into `SecretPasteboard`, and a finished share only runs `done`.
+    @Test func aCopyFromTheSecretShareSheetLandsOnTheSecretPasteboard() async throws {
+        UIPasteboard.general.items = []
+        var finished = false
+        let controller = SecretSharing.controller(items: ["AGE-SECRET-KEY-PQ-1EXAMPLE"]) { finished = true }
+        let handler = try #require(controller.completionWithItemsHandler)
+        handler(.mail, true, nil, nil)
+        for _ in 0..<50 where !finished { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(finished)
+        #expect(UIPasteboard.general.string != "AGE-SECRET-KEY-PQ-1EXAMPLE", "a mail share copies nothing")
+        finished = false
+        handler(.copyToPasteboard, true, nil, nil)
+        for _ in 0..<50 where !finished { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(finished)
+        #expect(UIPasteboard.general.data(forPasteboardType: "public.utf8-plain-text").map { String(decoding: $0, as: UTF8.self) }
+                == "AGE-SECRET-KEY-PQ-1EXAMPLE")
+        #expect(UIPasteboard.general.contains(pasteboardTypes: [SecretPasteboard.ownMarker]))
+        UIPasteboard.general.items = []
+    }
+
     /// Biometrics when enrolled, never the passcode after a lockout (anyone who
     /// knows it could fail Face ID on purpose); the passcode only without biometrics.
     @Test func ownerCheckNeverFallsBackToThePasscodeAfterALockout() {

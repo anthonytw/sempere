@@ -38,6 +38,7 @@ struct KeyFileActions: View {
     @State private var kit: PDFFile?
     @State private var savingKit = false
     @State private var failure: String?
+    @State private var anchor = PresentationAnchor.Box()
 
     var body: some View {
         // Each presentation on the button that owns it, not on a section: a section's modifier
@@ -58,6 +59,7 @@ struct KeyFileActions: View {
                     }
                 }
             Button("Share…", systemImage: "square.and.arrow.up") { share() }
+                .background(PresentationAnchor(box: anchor))
                 .sheet(isPresented: Binding(get: { shared != nil }, set: { if !$0 { unshare() } })) {
                     if let shared { ShareSheet(items: [shared], secret: true) { unshare() } }
                 }
@@ -93,7 +95,12 @@ struct KeyFileActions: View {
     }
 
     private func share() {
-        do { shared = try KeyShareFile.stage(key) } catch { failure = String(localized: "The key could not be prepared for sharing: \(AppModel.describe(error))") }
+        do {
+            let file = try KeyShareFile.stage(key)
+            // UIKit presents it over the receipt's sheet: finishing it never closes the screen under it.
+            if let view = anchor.view, SecretSharing.present([file], from: view, done: { unshare() }) { return }
+            shared = file
+        } catch { failure = String(localized: "The key could not be prepared for sharing: \(AppModel.describe(error))") }
     }
 
     private func unshare() {
@@ -160,7 +167,9 @@ enum SecretPasteboard {
 
     /// - Parameter lifetime: how long the item stays; a share's passphrase passes two minutes.
     @MainActor static func copy(_ text: String, lifetime: TimeInterval = SecretPasteboard.lifetime) {
-        var item: [String: Any] = [UTType.plainText.identifier: text]
+        // The text under the concrete type other apps read (`public.utf8-plain-text`, `UIPasteboard.string`'s and
+        // `NSPasteboardTypeString`'s): under the abstract `public.plain-text` alone, a paste elsewhere found nothing.
+        var item: [String: Any] = [UTType.utf8PlainText.identifier: text]
         for marker in markers + [ownMarker] { item[marker] = Data([0]) }
         UIPasteboard.general.setItems([item], options: [.localOnly: true,
                                                         .expirationDate: Date().addingTimeInterval(lifetime)])
