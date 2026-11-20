@@ -49,9 +49,10 @@ struct StoredVaultsSection: View {
         Button(String(localized: "Delete from This Device…", comment: "Removes a vault from the in-app store"),
                systemImage: "trash", role: .destructive) {
             let store = keys.store
+            let ask = removals.newAsk()
             Task {
                 let removal = await KeyRemoval.check(vaultID: entry.vaultId, at: entry.url, store: store)
-                removals.askToDelete(entry, removal: removal)
+                removals.askToDelete(entry, removal: removal, ask: ask)
             }
         }
     }
@@ -74,13 +75,24 @@ final class WelcomeRemovals {
     private(set) var webdav: WebDAVLocation?
     private(set) var webdavUnconfirmed = 0
     private(set) var webdavRemoval = KeyRemoval()
+    /// The latest request (`newAsk`): a request's checks run before it asks, so a slow one that finishes after a
+    /// newer request must not replace that one's question. Latest ask wins.
+    @ObservationIgnored private var latestAsk = 0
 
-    func askToDelete(_ entry: VaultStore.Entry, removal: KeyRemoval) {
+    /// A token for a request about to run its checks; pass it to `askToDelete` or `askToRemove`.
+    func newAsk() -> Int {
+        latestAsk += 1
+        return latestAsk
+    }
+
+    func askToDelete(_ entry: VaultStore.Entry, removal: KeyRemoval, ask: Int) {
+        guard ask == latestAsk else { return }
         vaultRemoval = removal
         vault = entry
     }
 
-    func askToRemove(_ location: WebDAVLocation, unconfirmed: Int, removal: KeyRemoval) {
+    func askToRemove(_ location: WebDAVLocation, unconfirmed: Int, removal: KeyRemoval, ask: Int) {
+        guard ask == latestAsk else { return }
         webdavUnconfirmed = unconfirmed
         webdavRemoval = removal
         webdav = location

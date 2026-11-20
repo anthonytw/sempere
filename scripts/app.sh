@@ -203,9 +203,10 @@ ui_ipad=(SidebarDropUITests BulkNotesUITests PadFocusUITests SearchHighlightUITe
          LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote
          LaunchSmokeUITests/testFreshLaunchDoubleColumn LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour
          NewVaultSheetUITests MacImportUITests MacExportUITests FolderPickerUITests PhoneCanvasModeUITests
-         NoteToolbarUITests VaultStoreUITests VaultListSwipeUITests)
+         NoteToolbarUITests VaultStoreUITests VaultListSwipeUITests KeyReceiptShareUITests)
 ui_phone=(PhoneCanvasUITests PhoneParityUITests PhoneReadingScrollUITests PhoneCanvasModeUITests NoteToolbarUITests
-          SearchHighlightUITests AskUITests NotificationPromptPhoneUITests VaultListSwipeUITests)
+          SearchHighlightUITests AskUITests NotificationPromptPhoneUITests VaultListSwipeUITests
+          KeyReceiptShareUITests)
 # 18 launches: only `scripts/app.sh pseudo` (local-ci.sh --release).
 ui_pseudo=(PseudoLanguageUITests)
 # Screenshot generators (scripts/screenshots.sh): they assert nothing.

@@ -49,6 +49,9 @@ struct WelcomeView: View {
                 }
             }
             .modifier(WelcomeRemovalDialogs(removals: removals, open: openStored))
+            #if DEBUG
+            .overlay(alignment: .bottomTrailing) { DebugSyncRuns() }
+            #endif
             .navigationTitle("Sempere")
             .task { await library.refreshStoredVaults() }
             .sheet(isPresented: $connectingWebDAV) { WebDAVConnectSheet() }
@@ -58,3 +61,25 @@ struct WelcomeView: View {
         }
     }
 }
+
+#if DEBUG
+/// UI tests only (`SEMPERE_DEBUG_SYNC_RUNS`, `VaultListSwipeUITests`): an all but invisible element whose label is
+/// when a sync run last succeeded (any session), so a test can tell that runs happened while it watched the list. A view
+/// of its own over the list, reading the sessions itself: a run redraws it alone, never the list or its rows.
+private struct DebugSyncRuns: View {
+    @AppModelEnvironment private var model
+    static let enabled = ProcessInfo.processInfo.environment["SEMPERE_DEBUG_SYNC_RUNS"] != nil
+
+    var body: some View {
+        if Self.enabled {
+            let last = model.syncCoordinator.sessions.values.compactMap(\.lastSuccess).max()
+            Color.clear
+                .frame(width: 2, height: 2)
+                .accessibilityElement()
+                .accessibilityLabel(Text(verbatim: last.map { String(format: "%.3f", $0.timeIntervalSince1970) } ?? "none"))
+                .accessibilityIdentifier("debugSyncRuns")
+                .allowsHitTesting(false)
+        }
+    }
+}
+#endif

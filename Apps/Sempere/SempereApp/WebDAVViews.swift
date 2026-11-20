@@ -444,13 +444,14 @@ struct JoiningWebDAVRows: View {
     /// Counts the changes the server has not confirmed and runs the key check (home, other local copies) on the
     /// location's copy, then asks.
     private func prepareRemoval(_ location: WebDAVLocation) async {
+        let ask = removals.newAsk()
         let unconfirmed = await model.unconfirmedWebDAVChanges(location.id)
         var removal = KeyRemoval()
         if let id = UUID(uuidString: location.vaultId) {
             let folder = model.webdavLocations.copy(of: location).folder
             removal = await KeyRemoval.check(vaultID: id, at: folder, store: keys.store)
         }
-        removals.askToRemove(location, unconfirmed: unconfirmed, removal: removal)
+        removals.askToRemove(location, unconfirmed: unconfirmed, removal: removal, ask: ask)
     }
 }
 
