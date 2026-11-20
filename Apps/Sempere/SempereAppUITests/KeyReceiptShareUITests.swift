@@ -4,7 +4,8 @@ import XCTest
 /// The new vault's receipt (`KeyReceipt`, owner, TestFlight 1.3.0 build 111): Copy Key puts the key where another
 /// process reads it, and the share sheet's Copy copies the key too WITHOUT closing the receipt (hosted as a second
 /// SwiftUI sheet, its Copy took the new-vault sheet with it; `SecretSharing.present` puts it over the receipt with UIKit).
-/// The pasteboard is read here, in the test runner: another process than the app.
+/// The pasteboard is read by another app, as a user would: Contacts' search field, pasted with its Paste command
+/// (the test runner itself may not read it: iOS refuses a background process's read, "Operation not authorized").
 ///
 /// iPhone (`scripts/app.sh test-phone-ui -only-testing:SempereAppUITests/KeyReceiptShareUITests`) and iPad (`test-ui`).
 /// The vault is made inside the app (`SEMPERE_DEBUG_FRESH`), never a vault of the owner's.
@@ -14,12 +15,7 @@ final class KeyReceiptShareUITests: XCTestCase {
         throw XCTSkip("iPhone and iPad: the Mac's share menu is checked by hand")
         #else
         continueAfterFailure = false
-        UIPasteboard.general.items = []
         #endif
-    }
-
-    override func tearDown() {
-        UIPasteboard.general.items = []
     }
 
     @MainActor
@@ -30,7 +26,7 @@ final class KeyReceiptShareUITests: XCTestCase {
         reveal(copy, in: app)
         copy.tap()
         XCTAssertTrue(app.buttons["Copied"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(UIWait.until(5) { UIPasteboard.general.string == key }, "the runner reads the copied key")
+        XCTAssertEqual(pastedInAnotherApp(), key, "another app pastes the copied key")
     }
 
     @MainActor
@@ -40,25 +36,88 @@ final class KeyReceiptShareUITests: XCTestCase {
         let share = app.buttons["Share…"].firstMatch
         reveal(share, in: app)
         share.tap()
-        // The activity sheet's Copy: an action row ("Copy") in the system's sheet.
-        let copy = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ AND elementType IN %@", "Copy",
-            [XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.cell.rawValue])).firstMatch
-        if !copy.waitForExistence(timeout: 20) {
+        // The activity sheet (the system's, in the simulator's language whatever the app's): expanded to show every
+        // action row, then its Copy.
+        let sheet = app.otherElements["ActivityListView"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "the share sheet is up")
+        let target = app.cells["shareCell"].firstMatch
+        XCTAssertTrue(target.waitForExistence(timeout: 10), "the share sheet's targets")
+        Thread.sleep(forTimeInterval: 1.5)   // the sheet's slide in
+        // The sheet is another process's view: XCUITest finds its elements but cannot act on them ("visible frame is
+        // empty"), so it is driven by screen points. Its top edge dragged up shows every action row.
+        let top = point(app, x: target.frame.midX, y: sheet.frame.minY + 12)
+        top.press(forDuration: 0.1, thenDragTo: point(app, x: target.frame.midX, y: 120))
+        Thread.sleep(forTimeInterval: 1)
+        let copy = app.descendants(matching: .any).matching(NSPredicate(format: "label IN %@ AND elementType IN %@",
+            ["Copy", "Copiar"], [XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.cell.rawValue])).firstMatch
+        if !copy.waitForExistence(timeout: 5) {
             // Not listed: then the requirement is only that closing the sheet keeps the receipt.
-            print("KEYSHARE the share sheet lists no Copy:\n\(app.debugDescription.prefix(8000))")
+            print("KEYSHARE the share sheet lists no Copy:\n\(Self.inputs(of: app))")
             let close = app.buttons["Close"].firstMatch
             if close.exists { close.tap() } else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap() }
+            XCTAssertTrue(sheet.waitForNonExistence(timeout: 10), "the share sheet closed")
+            Thread.sleep(forTimeInterval: 2)
             assertReceipt(app, key)
-            throw XCTSkip("the share sheet lists no Copy; closing it kept the receipt")
+            // iPhone simulator, iOS 27: the sheet honors `excludedActivityTypes` and lists no Copy (its rows: Reminders,
+            // More, Save to Files), so the requirement is that closing it keeps the receipt, checked above.
+            print("KEYSHARE no Copy listed; closing the sheet kept the receipt")
+            return
         }
-        copy.tap()
-        XCTAssertTrue(UIWait.until(10) { UIPasteboard.general.string == key }, "the share sheet's Copy copied the key")
-        XCTAssertTrue(copy.waitForNonExistence(timeout: 10), "the share sheet closed itself")
+        point(app, x: copy.frame.midX, y: copy.frame.midY).tap()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 10), "the share sheet closed itself")
         Thread.sleep(forTimeInterval: 2)   // a sheet that would take the receipt with it has gone by now
         assertReceipt(app, key)
+        XCTAssertEqual(pastedInAnotherApp(), key, "the share sheet's Copy copied the key (another app pastes it)")
     }
 
     // MARK: - Helpers
+
+    /// The screen point (`x`, `y`) of `app`'s window.
+    @MainActor
+    private func point(_ app: XCUIApplication, x: CGFloat, y: CGFloat) -> XCUICoordinate {
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: y))
+    }
+
+    /// What another app's text field gets from its Paste command: the pasteboard as another app reads it. Contacts'
+    /// search field (Safari's first-run screen kept XCUITest waiting a minute per tap, past the copy's three minutes).
+    @MainActor
+    private func pastedInAnotherApp() -> String? {
+        let other = XCUIApplication(bundleIdentifier: "com.apple.MobileAddressBook")
+        // In English whatever the simulator's language (the edit menu's Paste is found by name).
+        other.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        other.launch()
+        defer { other.terminate() }
+        let field = other.searchFields.firstMatch
+        guard field.waitForExistence(timeout: 20) else {
+            XCTFail("Contacts' search field:\n\(Self.inputs(of: other))")
+            return nil
+        }
+        field.tap()
+        let named = NSPredicate(format: "label IN %@", ["Paste", "Pegar"])
+        for attempt in 0..<4 {
+            // A tap on the focused field shows the edit menu; a long press does too.
+            if attempt % 2 == 0 { field.tap() } else { field.press(forDuration: 1.2) }
+            for paste in [other.menuItems.matching(named).firstMatch, other.buttons.matching(named).firstMatch]
+            where paste.waitForExistence(timeout: 2) {
+                paste.tap()
+                let allow = other.buttons["Allow Paste"].firstMatch
+                if allow.waitForExistence(timeout: 2) { allow.tap() }
+                Thread.sleep(forTimeInterval: 1)
+                return field.value as? String
+            }
+        }
+        XCTFail("Contacts offered no Paste:\n\(Self.inputs(of: other))")
+        return nil
+    }
+
+    /// The fields, buttons and menu items of `app`'s tree, for a failure message.
+    @MainActor
+    private static func inputs(of app: XCUIApplication) -> String {
+        app.debugDescription.split(separator: "\n")
+            .filter { $0.contains("TextField") || $0.contains("TextView") || $0.contains("MenuItem") || $0.contains("Button")
+                || $0.contains("Cell") || $0.contains("Sheet") || $0.contains("ActivityListView") }
+            .filter { !$0.contains("AGE-SECRET-KEY") }.prefix(120).joined(separator: "\n")
+    }
 
     @MainActor
     private func assertReceipt(_ app: XCUIApplication, _ key: String) {
