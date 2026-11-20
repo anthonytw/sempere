@@ -131,8 +131,11 @@ public final class SyncSession {
     /// Files the runs wrote into a provider's folder that it has not uploaded yet (`ProviderUploads`, offline audit
     /// P15): until they are, the target is not "synced", only written to.
     private(set) var providerPending = 0
-    /// The provider reported an upload error for them (a full iCloud storage): the bar says so, as a problem.
+    /// The provider's upload error for them once it lasted (`ProviderUploads.Persistence`): the bar says so, as a
+    /// problem. Nil while it has not lasted yet: the files are only waiting, as far as the user is told.
     private(set) var providerError: ProviderUploads.State?
+    /// The looks in a row that saw an upload error, and since when.
+    @ObservationIgnored private(set) var providerTrouble = ProviderUploads.Persistence()
     /// Reads them off the main actor (folder targets; nil: none).
     @ObservationIgnored var providerSummary: (@Sendable () async -> ProviderUploads.Summary)?
     /// Asks the provider again about the files still waiting, off the main actor, and returns what remains (nil: could not
@@ -455,14 +458,17 @@ public final class SyncSession {
 
     private func apply(_ summary: ProviderUploads.Summary) {
         providerPending = summary.count
-        // Only an upload error is a problem (`.failed`).
-        if case .failed? = summary.error { providerError = summary.error } else { providerError = nil }
+        // Only an upload error is a problem (`.failed`), and only once it lasted (`ProviderUploads.Persistence`).
+        let at = now()
+        providerTrouble.observe(summary.error, at: at, networkDown: networkDown)
+        let shown = providerTrouble.problem(at: at)
+        if providerError != shown { providerError = shown }
     }
 
     /// While files wait for the provider (or it reports an error), looks at them again between runs, after growing delays;
     /// a fresh count starts the delays over.
     private func planProviderRecheck(fresh: Bool) {
-        guard providerRecheck != nil, providerPending > 0 || providerError != nil else {
+        guard providerRecheck != nil, providerPending > 0 || providerTrouble.isActive else {
             providerRecheckDue = nil
             providerRecheckStep = 0
             return
@@ -516,7 +522,7 @@ public final class SyncSession {
                    providerPending: providerPending, viaICloud: uploadsViaICloud, providerError: providerError)
     }
 
-    /// True when the bar has something to say beyond "synced".
+    /// True when something is definitely wrong (`SyncStatus.needsAttention`): the note list shows its bar only then.
     public var needsAttention: Bool { status.needsAttention }
 }
 
@@ -592,6 +598,12 @@ public struct SyncStatus: Equatable, Sendable {
 
     public var kind: Kind {
         if syncing { return .syncing }
+        return settledKind
+    }
+
+    /// What the status is apart from a run going: a problem the last run (or the provider) reported stays while the next
+    /// run goes, so the bar that shows it does not come and go with every run.
+    public var settledKind: Kind {
         if deviceLocked { return .waitingForUnlock }
         if networkDown || problems.contains(.offline) { return .offline }
         if let problem = problems.first { return .problem(problem) }
@@ -607,9 +619,14 @@ public struct SyncStatus: Equatable, Sendable {
     /// wrote them locally (offline audit P15).
     public var lastSuccessIsSync: Bool { providerPending == 0 && providerError == nil }
 
-    /// True when the user should look at it (offline and waiting are not problems).
+    /// True when something is definitely wrong and the user should look at it; the note list shows its bar only then
+    /// (owner 2026-11-20: the status ever present at the bottom of the notes was annoying). A problem a run reported
+    /// (a refused password or certificate, a folder gone or not writable, files that failed, a device-list conflict) and
+    /// a provider's upload error that lasted (`ProviderUploads.Persistence`) are; syncing, synced, changes not synced
+    /// yet, a run cut short, files waiting for the provider, waiting for the unlock and offline (changes are kept on this
+    /// device, and sync when it is back) are not. Judged on `settledKind`: a problem stays one while the next run goes.
     public var needsAttention: Bool {
-        switch kind {
+        switch settledKind {
         case .problem, .providerFailed: return true
         default: return false
         }

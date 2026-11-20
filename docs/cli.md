@@ -3397,8 +3397,11 @@ are merged, or kept as conflict copies, and removed, so no version picker appear
 In a provider's folder on a Mac (iCloud Drive), the files the run wrote are only on this machine until the provider
 has uploaded them. After a run that is not a `--dry-run`, `sync folder` asks the provider once (`ubiquitousItemIsUploaded`,
 `ubiquitousItemUploadingError`) and, when any are still waiting, prints `waiting: N files written here, not uploaded by the
-provider yet` on stderr (and `provider upload error: …` when iCloud reports one, such as a full storage), and the JSON report
-has `providerPending` (a count) and `providerError`; both are absent otherwise. The exit code is unchanged (the run itself
+provider yet` on stderr. When iCloud reports an upload error it prints `provider upload error: its storage is full: …` only
+when the error says so (`NSFileWriteOutOfSpaceError`, `NSUbiquitousFileNotUploadedDueToQuotaError`, the File Provider's
+insufficient quota); any other error, such as iCloud's "server not available" while it is slow or out of reach, is
+`provider upload delayed: …`, usually temporary. The JSON report has `providerPending` (a count), `providerError` and, for a
+full storage, `providerStorageFull: true`; all are absent otherwise. The exit code is unchanged (the run itself
 succeeded); run `sync folder` again later to see the count fall. The CLI has no separate sync status command, and keeps
 no record between runs, so this is a look at the files of that run only (`store sync` does not report it yet). The app
 keeps the list and rechecks it (docs/io.md "Sync targets in the app").

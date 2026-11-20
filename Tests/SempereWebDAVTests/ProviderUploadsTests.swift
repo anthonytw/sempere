@@ -50,14 +50,85 @@ struct ProviderUploadsTests {
         #expect(!ProviderUploads.files(below: folder, cap: 5).capped)
         #expect(ProviderUploads.files(below: folder, cap: 5).paths.count == 2)
 
-        // iCloud refusing to upload (its storage full): an error the bar shows as a problem.
-        // `CocoaError.ubiquitousFileUbiquityServerNotAvailable` (4355), by its number: the same on every platform.
-        let full = ProviderUploads.State.failed(code: 4355, domain: NSCocoaErrorDomain, message: "full")
+        // iCloud refusing to upload: the record keeps the error (whether it is a problem yet is `Persistence`'s).
+        // `CocoaError.ubiquitousFileNotUploadedDueToQuota` (4354), by its number: the same on every platform.
+        let full = ProviderUploads.State.failed(code: 4354, domain: NSCocoaErrorDomain, message: "full")
         let failing = ProviderUploads.update(folder: folder, stateDirectory: dir, written: ["notes/x/1.delta.age"], check: { _ in full })
         #expect(failing.error == full)
-        #expect(full.isStorageUnavailable)
-        #expect(!ProviderUploads.State.failed(code: 1, domain: "provider", message: "x").isStorageUnavailable)
-        #expect(!ProviderUploads.State.waiting.isStorageUnavailable)
+        #expect(ProviderUploads.summary(in: dir).error == full, "kept across launches")
+    }
+
+    /// TestFlight 1.3.0 (112): iCloud lagging read "its storage may be full". Only an error that says the storage is
+    /// full is one: `fileWriteOutOfSpace` (640), `ubiquitousFileNotUploadedDueToQuota` (4354), the File Provider's
+    /// `insufficientQuota` (-1003). iCloud's `ubiquitousFileUbiquityServerNotAvailable` (4355), which it reports while it is
+    /// slow or out of reach, and every other error are uncertain.
+    @Test func onlyAnErrorThatSaysSoIsAFullStorage() {
+        func failed(_ code: Int, _ domain: String = NSCocoaErrorDomain) -> ProviderUploads.State {
+            .failed(code: code, domain: domain, message: "m")
+        }
+        #expect(failed(640).isStorageFull)
+        #expect(failed(4354).isStorageFull)
+        #expect(failed(-1003, ProviderUploads.fileProviderErrorDomain).isStorageFull)
+        #expect(!failed(4355).isStorageFull, "server not available: a lag, never 'full'")
+        #expect(!failed(4353).isStorageFull, "file unavailable")
+        #expect(!failed(-1004, ProviderUploads.fileProviderErrorDomain).isStorageFull, "server unreachable")
+        #expect(!failed(640, "provider").isStorageFull, "a code means nothing in another domain")
+        #expect(!failed(-1003, NSCocoaErrorDomain).isStorageFull)
+        #expect(!ProviderUploads.State.waiting.isStorageFull)
+        #expect(!ProviderUploads.State.uploaded.isStorageFull)
+    }
+
+    /// An upload error is a problem only once it lasted: every look for `problemAfter` and at least `problemSightings`
+    /// looks saw one. A look with none, or with no network path, starts over; a full storage is held to the same rule.
+    @Test func anUploadErrorIsAProblemOnlyOnceItLasted() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let lag = ProviderUploads.State.failed(code: 4355, domain: NSCocoaErrorDomain, message: "server not available")
+        let after = ProviderUploads.problemAfter
+        var p = ProviderUploads.Persistence()
+        #expect(p.problem(at: start) == nil && !p.isActive)
+
+        // Seen often but briefly (the session's quick looks: 15 s, 30 s, 60 s…): not a problem.
+        for i in 0..<10 { p.observe(lag, at: start.addingTimeInterval(Double(i) * 15)) }
+        #expect(p.isActive)
+        #expect(p.problem(at: start.addingTimeInterval(150)) == nil)
+        // Long but seen too few times: not a problem.
+        var sparse = ProviderUploads.Persistence()
+        sparse.observe(lag, at: start)
+        sparse.observe(lag, at: start.addingTimeInterval(after + 60))
+        #expect(sparse.problem(at: start.addingTimeInterval(after + 60)) == nil)
+        sparse.observe(lag, at: start.addingTimeInterval(after + 120))
+        #expect(sparse.problem(at: start.addingTimeInterval(after + 120)) == lag, "three looks over the whole time")
+
+        // Lasting: a problem, the latest error.
+        p.observe(lag, at: start.addingTimeInterval(after))
+        #expect(p.problem(at: start.addingTimeInterval(after)) == lag)
+        let other = ProviderUploads.State.failed(code: 1, domain: "provider", message: "other")
+        p.observe(other, at: start.addingTimeInterval(after + 30))
+        #expect(p.problem(at: start.addingTimeInterval(after + 30)) == other)
+
+        // One look with no error (uploads went through, or only waiting) starts over.
+        p.observe(.waiting, at: start.addingTimeInterval(after + 60))
+        #expect(!p.isActive && p.problem(at: start.addingTimeInterval(after + 60)) == nil)
+        p.observe(lag, at: start.addingTimeInterval(after + 90))
+        #expect(p.problem(at: start.addingTimeInterval(after + 90)) == nil, "the time starts over")
+        p.observe(nil, at: start.addingTimeInterval(after + 100))
+        #expect(!p.isActive)
+
+        // No network path: the provider cannot upload, which is no fault; the looks then start over too.
+        var offline = ProviderUploads.Persistence()
+        for i in 0...4 { offline.observe(lag, at: start.addingTimeInterval(Double(i) * after / 4)) }
+        #expect(offline.problem(at: start.addingTimeInterval(after)) == lag)
+        offline.observe(lag, at: start.addingTimeInterval(after + 1), networkDown: true)
+        #expect(!offline.isActive && offline.problem(at: start.addingTimeInterval(after + 1)) == nil)
+
+        // A full storage: the same rule (nothing is lost meanwhile: the changes are on this device).
+        let full = ProviderUploads.State.failed(code: 4354, domain: NSCocoaErrorDomain, message: "full")
+        var quota = ProviderUploads.Persistence()
+        quota.observe(full, at: start)
+        #expect(quota.problem(at: start) == nil)
+        quota.observe(full, at: start.addingTimeInterval(after / 2))
+        quota.observe(full, at: start.addingTimeInterval(after))
+        #expect(quota.problem(at: start.addingTimeInterval(after)) == full)
     }
 
     /// The system's answer for a provider's file (TestFlight 1.1.0 (69)): only a provider that says it uploaded the file

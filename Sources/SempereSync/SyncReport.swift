@@ -54,8 +54,11 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// `sync folder` in a provider's folder (iCloud Drive on a Mac): how many files this run wrote that the provider has not
     /// uploaded yet; nil elsewhere. They are on this machine only until it does.
     public var providerPending: Int?
-    /// The provider's upload error for them (a full iCloud storage), nil when it reported none.
+    /// The provider's upload error for them, nil when it reported none. Often temporary (iCloud says its server is not
+    /// available while it catches up): only `providerStorageFull` says the storage is full.
     public var providerError: String?
+    /// True when that error says the provider's storage is full (`ProviderUploads.State.isStorageFull`); nil otherwise.
+    public var providerStorageFull: Bool?
     /// Paths (relative to the vault root) sent to the server.
     public var uploaded: [String] = []
     /// Paths written locally.

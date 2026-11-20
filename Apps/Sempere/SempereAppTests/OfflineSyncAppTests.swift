@@ -1,3 +1,6 @@
+#if canImport(FileProvider) && !targetEnvironment(macCatalyst)
+import FileProvider
+#endif
 import Foundation
 import Sempere
 import SempereAppCore
@@ -118,22 +121,38 @@ struct OfflineSyncAppTests {
 
     // MARK: P15: written into iCloud Drive, not uploaded
 
-    /// The bar's words for a provider's upload error (`ProviderUploads.State`, SempereSync; the record itself is
-    /// tested in `ProviderUploadsTests`): a full iCloud storage in plain words, a problem the user sees.
+    /// The bar's words for a provider's upload error that lasted (`ProviderUploads.State`, SempereSync; the record and
+    /// the persistence rule are tested in `ProviderUploadsTests`): "full" only when the error says so. TestFlight 1.3.0
+    /// (112) said "its storage may be full" for iCloud's "server not available" (4355), which it reports while it lags.
     @Test func aProvidersUploadErrorIsWordedAsAProblem() throws {
-        let full = ProviderUploads.State.failed(code: CocoaError.Code.ubiquitousFileUbiquityServerNotAvailable.rawValue,
+        let full = ProviderUploads.State.failed(code: CocoaError.Code.ubiquitousFileNotUploadedDueToQuota.rawValue,
                                                 domain: NSCocoaErrorDomain, message: "full")
-        let text = try #require(ProviderUploads.errorText(full))
-        #expect(text.contains("storage may be full"))
+        let fullText = try #require(ProviderUploads.errorText(full, viaICloud: true))
+        #expect(fullText.contains("iCloud storage is full"))
+        let lag = ProviderUploads.State.failed(code: CocoaError.Code.ubiquitousFileUbiquityServerNotAvailable.rawValue,
+                                               domain: NSCocoaErrorDomain, message: "the server is not available")
+        let lagText = try #require(ProviderUploads.errorText(lag, viaICloud: true))
+        #expect(!lagText.contains("full"), "a lag is never called a full storage: \(lagText)")
+        #expect(lagText.contains("the server is not available"))
         let other = ProviderUploads.State.failed(code: 1, domain: "provider", message: "the provider's words")
-        #expect(ProviderUploads.errorText(other)?.contains("the provider's words") == true)
-        #expect(ProviderUploads.errorText(.waiting) == nil)
+        #expect(ProviderUploads.errorText(other, viaICloud: false)?.contains("the provider's words") == true)
+        #expect(ProviderUploads.errorText(full, viaICloud: false)?.contains("out of storage") == true)
+        #expect(ProviderUploads.errorText(.waiting, viaICloud: true) == nil)
         // The library's numbers are the system's codes.
         #expect(ProviderUploads.State.failed(code: CocoaError.Code.fileWriteOutOfSpace.rawValue, domain: NSCocoaErrorDomain,
-                                             message: "").isStorageUnavailable)
+                                             message: "").isStorageFull)
+        #if !targetEnvironment(macCatalyst)   // FileProvider's error types are not in Mac Catalyst
+        #expect(ProviderUploads.State.failed(code: NSFileProviderError.Code.insufficientQuota.rawValue,
+                                             domain: NSFileProviderErrorDomain, message: "").isStorageFull)
+        #expect(ProviderUploads.fileProviderErrorDomain == NSFileProviderErrorDomain)
+        #endif
         let status = SyncStatus(syncing: false, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: Date(),
                                 folder: true, providerPending: 1, viaICloud: true, providerError: full)
-        #expect(status.headline == text)
+        #expect(status.headline == fullText && status.attentionHeadline == fullText)
+        // While a run goes the bar keeps the problem's words.
+        let running = SyncStatus(syncing: true, problems: [], unconfirmed: 0, arriving: 0, twoWay: true, lastSuccess: Date(),
+                                 folder: true, providerPending: 1, viaICloud: true, providerError: full)
+        #expect(running.attentionHeadline == fullText && running.headline != fullText)
     }
 
     /// The bar's words while files wait for iCloud (the session's behavior is `SyncSessionTests`): never "Synced".

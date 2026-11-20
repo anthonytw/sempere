@@ -288,7 +288,7 @@ enum VaultListStatus: Equatable {
         if sessions.isEmpty {
             self = .onlyOnThisDevice
         } else if let troubled = sessions.first(where: \.needsAttention) {
-            self = .attention(troubled.headline)
+            self = .attention(troubled.attentionHeadline)
         } else if sessions.contains(where: \.isSyncing) {
             self = .syncing
         } else if let waiting = sessions.first(where: { !$0.status.lastSuccessIsSync }) {

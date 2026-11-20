@@ -25715,6 +25715,19 @@
         }
       }
     },
+    "The folder's provider is out of storage and is not uploading its files. Changes are kept on this device." : {
+      "comment" : "Sync status: a folder target whose provider reports a full storage",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El proveedor de la carpeta no tiene espacio y no está subiendo sus archivos. Los cambios se conservan en este dispositivo."
+          }
+        }
+      }
+    },
     "The format gives no text." : {
       "comment" : "Title pattern field: the pattern produces only spaces",
       "extractionState" : "manual",
@@ -31304,15 +31317,28 @@
         }
       }
     },
-    "iCloud is not uploading this folder's files: its storage may be full, or iCloud is not available. Check iCloud storage in Settings." : {
-      "comment" : "Sync status: a folder target in iCloud Drive whose uploads fail",
+    "iCloud has not uploaded this folder's files for a while. Changes are kept on this device. iCloud reports: %@" : {
+      "comment" : "Sync status; the value is iCloud's error message",
       "extractionState" : "manual",
       "generatesSymbol" : false,
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud no está subiendo los archivos de esta carpeta: puede que su almacenamiento esté lleno o que iCloud no esté disponible. Comprueba el almacenamiento de iCloud en Ajustes."
+            "value" : "iCloud lleva un rato sin subir los archivos de esta carpeta. Los cambios se conservan en este dispositivo. iCloud indica: %@"
+          }
+        }
+      }
+    },
+    "iCloud storage is full, so iCloud is not uploading this folder's files. Changes are kept on this device. Free up iCloud storage in Settings." : {
+      "comment" : "Sync status: a folder target in iCloud Drive whose uploads fail for a full iCloud storage",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El almacenamiento de iCloud está lleno, así que iCloud no está subiendo los archivos de esta carpeta. Los cambios se conservan en este dispositivo. Libera espacio de iCloud en Ajustes."
           }
         }
       }

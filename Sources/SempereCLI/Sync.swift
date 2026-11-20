@@ -402,7 +402,13 @@ enum SyncCLI {
         if let n = r.providerPending {
             printStderr("waiting: \(n) \(n == 1 ? "file" : "files") written here, not uploaded by the provider yet (it holds them only on this machine until it does)")
         }
-        if let e = r.providerError { printStderr("provider upload error: \(e)") }
+        if let e = r.providerError {
+            // One look: only an error that says the storage is full is called that; any other is often a delay that
+            // clears by itself (iCloud's "server not available" while it catches up).
+            printStderr(r.providerStorageFull == true
+                ? "provider upload error: its storage is full: \(e)"
+                : "provider upload delayed: \(e) (usually temporary; run sync folder again later to see it clear)")
+        }
         for a in r.arriving { printStderr("arriving: \(a.path): \(a.message)") }
         for d in r.deferred { printStderr("deferred: \(d.path): \(d.message) (--large-blobs now sends it)") }
         for a in r.setAside { printStderr("set aside: \(a.path): \(a.message); kept on this machine, not placed (sempere set-aside)") }
