@@ -106,11 +106,11 @@ extension AppModelSuites {
                     "a vault in iCloud Drive")
             #expect(CopyInFollowUp.isBackup(backup, bookmarks: bookmarks) && !CopyInFollowUp.isBackup(fixture, bookmarks: bookmarks))
             #expect(CopyInFollowUp.isWritable(fixture, bookmarks: bookmarks))
-            // Add Folder… on the backup's parent: a plain folder of its own (1.3), never the backup.
+            // Add Folder… on the backup's parent: a `….sempere-vault` of its own (1.3), never the backup.
             #expect(try AppModel.folderTargetLocation(picked: drive, vaultFolderName: "sample.sempere", vaultId: vaultId)
-                    .lastPathComponent == "sample Sempere Vault")
+                    .lastPathComponent == "sample.sempere-vault")
             #expect(try AppModel.folderTargetLocation(picked: try scratch.folder("Empty"), vaultFolderName: "sample.sempere",
-                                                      vaultId: vaultId).lastPathComponent == "sample Sempere Vault")
+                                                      vaultId: vaultId).lastPathComponent == "sample.sempere-vault")
             #expect(throws: SyncTargetProblem.isBackup) {
                 _ = try AppModel.folderTargetLocation(picked: backup, vaultFolderName: "sample.sempere", vaultId: vaultId)
             }

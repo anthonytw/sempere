@@ -58,14 +58,14 @@ struct SyncFolderPlacementTests {
         ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0 != ".DS_Store" }.sorted()
     }
 
-    /// Add Folder… on a folder: the vault's files land in a plain `<picked>/<Name> Sempere Vault` (no extension:
-    /// iCloud Drive kept `….sempere` folders as packages) and nowhere else in it; the user's own file there is left as
+    /// Add Folder… on a folder: the vault's files land in `<picked>/<Name>.sempere-vault` (not `.sempere`: iCloud Drive
+    /// kept `….sempere` folders as packages) and nowhere else in it; the user's own file there is left as
     /// it was.
     @Test func addFolderWritesIntoTheVaultsOwnSubfolder() async throws {
         let (device, picked) = try await Self.setUp()
         defer { device.model.close() }
         let name = SyncFolderName.name(forVault: device.folder.lastPathComponent)
-        #expect(name.hasSuffix(" Sempere Vault"))
+        #expect(name.hasSuffix(".sempere-vault") && !name.hasSuffix(".sempere.sempere-vault"))
         let target = try device.model.addPickedFolderTarget(picked, to: device.vaultID)
         #expect(target.subfolder == name)
         #expect(target.path == picked.appendingPathComponent(name).standardizedFileURL.path)
@@ -199,7 +199,7 @@ extension SyncFolderPlacementTests {
         guard Platform.isMac else { return }   // the attribute is set here through the Mac's file system
         let (device, picked) = try await Self.setUp()
         defer { device.model.close() }
-        // The plain folder placement makes (`SyncFolderName`), empty with the bit set: an empty `<vault>.sempere` an
+        // The `….sempere-vault` folder placement makes (`SyncFolderName`), empty with the bit set: an empty `<vault>.sempere` an
         // older build left there is no copy of this vault and is not joined (it would keep the risky extension).
         let target = picked.appendingPathComponent(SyncFolderName.name(forVault: device.folder.lastPathComponent),
                                                    isDirectory: true)
@@ -210,7 +210,7 @@ extension SyncFolderPlacementTests {
         }
         try setBit(target)
         let added = try device.model.addPickedFolderTarget(picked, to: device.vaultID)
-        #expect(added.subfolder == target.lastPathComponent, "the copy goes in the plain folder: \(String(describing: added.subfolder))")
+        #expect(added.subfolder == target.lastPathComponent, "the copy goes in the `….sempere-vault` folder: \(String(describing: added.subfolder))")
         #expect(!Self.isPackage(target), "cleared when the target was added")
 
         try setBit(target)

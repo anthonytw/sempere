@@ -341,7 +341,7 @@ final class LocalizationCatalogTests: XCTestCase {
         let types = try NSRegularExpression(pattern: #"<key>UTTypeDescription</key>\s*<string>([^<]*)</string>"#)
         let p = plist as NSString
         let found = types.matches(in: plist, range: NSRange(location: 0, length: p.length)).map { p.substring(with: $0.range(at: 1)) }
-        XCTAssertEqual(found.count, 4)
+        XCTAssertEqual(found.count, 5)
         for description in found {
             XCTAssertNotNil(c.entries[description], "UTTypeDescription “\(description)” is not in InfoPlist.xcstrings")
         }

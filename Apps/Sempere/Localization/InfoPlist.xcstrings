@@ -134,6 +134,18 @@
           }
         }
       }
+    },
+    "Sempere Vault (sync folder)" : {
+      "comment" : "Name of the .sempere-vault sync folder type in Files (UTTypeDescription).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bóveda de Sempere (carpeta de sincronización)"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

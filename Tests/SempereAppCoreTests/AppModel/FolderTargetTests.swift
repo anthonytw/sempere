@@ -138,11 +138,11 @@ extension AppModelSuites {
             #expect(Self.noteFiles(w.shared) == Self.noteFiles(w.a.folder))
         }
 
-        /// Add Folder… on an ordinary folder makes a plain `<vault> Sempere Vault` (no extension, so no type database
-        /// can make it a package: docs/io.md "A vault folder held as a package"). Another device finds it by its
+        /// Add Folder… on an ordinary folder makes `<vault>.sempere-vault` (not `.sempere`, which iCloud Drive kept as a
+        /// package: docs/io.md "A vault folder held as a package"). Another device finds it by its
         /// `vault.json`: Open Vault… on the folder above it, "Keep syncing", and Add Folder… on either folder all land
         /// in that one folder, and the copy's name in the store is the vault's own.
-        @Test func aPickedFolderGetsAPlainSyncFolderThatOtherDevicesJoin() async throws {
+        @Test func aPickedFolderGetsASyncFolderThatOtherDevicesJoin() async throws {
             let (vault, keyURL) = try await ModelFixture.vault()
             let key = try await ModelFixture.keyText(keyURL)
             let drive = TestTemp.root.appendingPathComponent("drive-\(UUID().uuidString)", isDirectory: true)
@@ -155,7 +155,7 @@ extension AppModelSuites {
             let name = SyncFolderName.name(forVault: a.folder.lastPathComponent)
             let plain = drive.appendingPathComponent(name, isDirectory: true)
             #expect(target.subfolder == name)
-            #expect(!SyncFolderName.hasTypeExtension(name))
+            #expect(name == "\(VaultStore.displayName(of: a.folder)).sempere-vault")
             await a.model.syncAllTargetsNow()
             #expect(FileManager.default.fileExists(atPath: plain.appendingPathComponent("vault.json").path))
             #expect(!FileManager.default.fileExists(atPath: drive.appendingPathComponent(a.folder.lastPathComponent).path),
@@ -223,9 +223,9 @@ extension AppModelSuites {
             let refreshed = try #require(w.a.model.syncSessions.first)
             await refreshed.syncNow()
             #expect(!refreshed.needsAttention, "\(refreshed.status)")
-            // A plain `<vault> Sempere Vault` folder (no extension: iCloud Drive kept `….sempere` folders as packages).
+            // A `<vault>.sempere-vault` folder (not `.sempere`: iCloud Drive kept `….sempere` folders as packages).
             let copy = elsewhere.appendingPathComponent(SyncFolderName.name(forVault: w.a.folder.lastPathComponent))
-            #expect(copy.lastPathComponent.hasSuffix(" Sempere Vault"))
+            #expect(copy.pathExtension == "sempere-vault")
             #expect(Self.noteFiles(copy) == before)
         }
 

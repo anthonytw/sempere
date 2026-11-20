@@ -767,8 +767,8 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   for byte with the source and the source is listed again; only then does the vault appear in the store,
   moved there in one rename. Any failure, or an interruption, leaves nothing listed (what it left in the
   store's staging folder is removed by the next store command). A vault id the store already holds is
-  refused (exit 1). `--name` names the copy (default: the source folder's name without `.sempere` or
-  `.sempere-backup`, or without ` Sempere Vault[ N]` for a plain sync folder); `-q` prints only the new
+  refused (exit 1). `--name` names the copy (default: the source folder's name without `.sempere`,
+  `.sempere-vault` or `.sempere-backup`); `-q` prints only the new
   path; `-v` reports progress on stderr. `--keep-syncing` makes the source a folder target of the copy (the
   app's "Keep syncing with this folder"): `store sync` then syncs the two both ways. The source, which
   holds the vault, is the target itself (`target add`'s rule).
@@ -801,14 +801,14 @@ a unique id prefix (4 characters or more), its name, path or URL.
 - `target add` adds a target. `--folder PATH` places the vault's copy by the app's rule (Add Folder…,
   `FolderTargetPlacement`): a `PATH` that already holds this vault is the copy itself whatever its name (or a
   `vault.json` not downloaded yet: the sync compares vault ids before it writes), as the targets 1.0.0 synced
-  straight into `PATH` and the plain sync folders below do; so is a `PATH` named `….sempere`, or a plain
-  `<name> Sempere Vault` that is empty or not made yet. Any other folder gets the copy in a folder of its own:
-  this vault's copy already in `PATH`, found by its vault id whatever its folder's name (a `… Sempere Vault[ N]`
-  first, then a `….sempere` an older version made, then any other; two of the first kind present are refused:
-  name the one to sync with as `PATH`), else a new plain folder `PATH/<name> Sempere Vault`, or the next free `<name> Sempere Vault N` when that
-  name holds another vault, a backup or other files, so the vault's files never mix with other files in `PATH`.
-  New copies have no extension: iCloud Drive kept `….sempere` sync folders as packages (docs/io.md "A vault folder
-  held as a package"); existing `….sempere` targets keep working unchanged. The copy may be
+  straight into `PATH` do; so is a `PATH` named `….sempere-vault` or `….sempere` that is empty or not made yet.
+  Any other folder gets the copy in a folder of its own: this vault's copy already in `PATH`, found by its vault
+  id whatever its folder's name (a `….sempere-vault` first, then a `….sempere` an older version made, then any
+  other; two of the first kind present are refused: name the one to sync with as `PATH`), else a new folder
+  `PATH/<name>.sempere-vault`, or the next free `<name> N.sempere-vault` when that name holds another vault, a
+  backup or other files, so the vault's files never mix with other files in `PATH`. New copies end in
+  `.sempere-vault`, not `.sempere`: iCloud Drive kept `….sempere` sync folders as packages (docs/io.md "A vault
+  folder held as a package"); existing `….sempere` targets keep working unchanged. The copy may be
   missing or empty (the first sync copies the vault into it) or hold the same vault (the first sync is a
   union: what either side lacks is copied, nothing is deleted). Refused (exit 1): a `PATH` that holds another
   vault (or a `vault.json` that is no manifest, outside a folder named like a sync folder), a `….sempere` holding other files but no vault, a cloud placeholder not downloaded (a
@@ -1188,7 +1188,7 @@ for `--prune` and for a full `verify`.
   through a linked folder is reported and skipped.
 - On macOS, `backup` clears the Finder's bundle flag (`kHasBundle` in `com.apple.FinderInfo`, which makes
   the Finder, Files and iCloud Drive treat a folder as a package) on the vault and the backup folder when
-  they are named `….sempere` / `….sempere-backup` / `… Sempere Vault` or hold a `vault.json` or `backup.json` (the
+  they are named `….sempere` / `….sempere-vault` / `….sempere-backup` or hold a `vault.json` or `backup.json` (the
   flag makes a folder of any name a package), before and after the run, as the app does, and prints
   `Cleared the Finder's bundle flag on NAME: …` on stderr for each one it cleared (stdout and `--json` are
   unchanged). `sync folder` and `store sync` do the same for the vault and a folder target (docs/io.md
@@ -1197,7 +1197,7 @@ for `--prune` and for a full `verify`.
   Back Up names it (`BackupDestination`): the backup is a vault folder that
   `store import`, `restore` and the app's Open Vault… take on any device (always
   as a one-time copy), and its name never looks like the vault's sync folder
-  (`<name>.sempere`), which other devices open to join. What a folder is stays
+  (`<name>.sempere-vault`, or `<name>.sempere` from an older version), which other devices open to join. What a folder is stays
   decided by its content: anything holding `backup.json` (or iCloud's
   `.backup.json.icloud`) is a backup whatever its name. `FOLDER`
   itself is used only when it is named `*.sempere-backup` and is this vault's

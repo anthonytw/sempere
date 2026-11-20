@@ -113,7 +113,7 @@ public enum FinderBundleBit {
     }
 
     /// Whether `url` is a vault or a backup folder, the folders whose flag Sempere clears: named like one
-    /// (`….sempere`, `….sempere-backup`, a plain sync folder `… Sempere Vault`: `BackupDestination.isHolderName`), or
+    /// (`….sempere`, `….sempere-vault`, `….sempere-backup`: `BackupDestination.isHolderName`), or
     /// holding a `vault.json` or `backup.json` whatever its name (a folder sync target of any name: the flag makes a
     /// folder without an extension a package too).
     public static func appliesTo(_ url: URL) -> Bool {

@@ -37,45 +37,45 @@ final class FolderTargetPlacementTests: SyncTestCase {
         }
     }
 
-    /// Any folder that is not a vault's sync folder gets a plain `<picked>/<name> Sempere Vault`, never the folder itself
+    /// Any folder that is not a vault's sync folder gets a `<picked>/<name>.sempere-vault`, never the folder itself
     /// (re-check of #113) and never a `….sempere` (iCloud Drive kept those as packages); a name another vault, a backup or
     /// the user's own files took moves on to the next free one; this vault's copy there is the target.
-    func testAPlainFolderGetsAPlainSubfolder() throws {
+    func testAPlainFolderGetsASyncFolderInside() throws {
         let vault = try makeVault()
         let id = vault.vaultId, other = UUID()
         let drive = try folder("Drive")
         try Data("mine".utf8).write(to: drive.appendingPathComponent("keep.txt"))
-        XCTAssertEqual(try location(drive, id), drive.appendingPathComponent("Notes Sempere Vault", isDirectory: true))
+        XCTAssertEqual(try location(drive, id), drive.appendingPathComponent("Notes.sempere-vault", isDirectory: true))
 
         // Its copy there, a real vault.json: the target.
-        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes Sempere Vault"))
-        XCTAssertEqual(try location(drive, id).lastPathComponent, "Notes Sempere Vault")
+        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes.sempere-vault"))
+        XCTAssertEqual(try location(drive, id).lastPathComponent, "Notes.sempere-vault")
         // The same name for another vault: the next free name, never into the other vault.
-        XCTAssertEqual(try location(drive, other).lastPathComponent, "Notes Sempere Vault 2")
+        XCTAssertEqual(try location(drive, other).lastPathComponent, "Notes 2.sempere-vault")
         // A backup named like the sync folder: skipped too; so is a folder of the user's own files of that name.
         let shelf = try folder("Shelf")
-        try backup(shelf.appendingPathComponent("Notes Sempere Vault"))
-        let mine = try folder("Shelf/Notes Sempere Vault 2")
+        try backup(shelf.appendingPathComponent("Notes.sempere-vault"))
+        let mine = try folder("Shelf/Notes 2.sempere-vault")
         try Data("x".utf8).write(to: mine.appendingPathComponent("letter.txt"))
-        XCTAssertEqual(try location(shelf, id).lastPathComponent, "Notes Sempere Vault 3")
+        XCTAssertEqual(try location(shelf, id).lastPathComponent, "Notes 3.sempere-vault")
         // An empty one (Finder's .DS_Store only) is taken.
-        let emptyOne = try folder("Empty/Notes Sempere Vault")
+        let emptyOne = try folder("Empty/Notes.sempere-vault")
         try Data().write(to: emptyOne.appendingPathComponent(".DS_Store"))
         XCTAssertEqual(try location(emptyOne.deletingLastPathComponent(), id), emptyOne)
-        // A folder not made yet (the CLI's path): `<path>/<name> Sempere Vault` too.
+        // A folder not made yet (the CLI's path): `<path>/<name>.sempere-vault` too.
         let fresh = tmp.appendingPathComponent("Fresh", isDirectory: true)
         XCTAssertEqual(try location(fresh, id, missingIsNew: true),
-                       fresh.appendingPathComponent("Notes Sempere Vault", isDirectory: true))
+                       fresh.appendingPathComponent("Notes.sempere-vault", isDirectory: true))
         XCTAssertFalse(fm.fileExists(atPath: fresh.path), "nothing is written")
     }
 
     /// A folder holding this vault is the target itself whatever its name, in the app too (not only the CLI's
-    /// `missingIsNew`): a plain sync folder another device made, a 1.0.0 CLI target synced bare, or one whose `vault.json`
+    /// `missingIsNew`): a sync folder another device made, a 1.0.0 CLI target synced bare, or one whose `vault.json`
     /// is not downloaded yet (the engine compares ids before a run). Another vault is refused.
     func testAFolderHoldingThisVaultIsTheTargetWhateverItsName() throws {
         let vault = try makeVault()
         let id = vault.vaultId
-        for name in ["Bare", "Notes Sempere Vault", "v1.2 Sempere Vault 4", "Anything.zip"] {
+        for name in ["Bare", "Notes.sempere-vault", "v1.2 4.sempere-vault", "Anything.zip"] {
             let dir = tmp.appendingPathComponent(name, isDirectory: true)
             try fm.copyItem(at: vault.url, to: dir)
             XCTAssertEqual(try location(dir, id), dir, name)
@@ -86,30 +86,37 @@ final class FolderTargetPlacementTests: SyncTestCase {
         try Data().write(to: unread.appendingPathComponent(".vault.json.icloud"))
         XCTAssertEqual(try location(unread, UUID()), unread, "the engine compares ids before a run")
         // A `vault.json` that is no manifest (some other tool's file): the target only in a folder named like a sync
-        // folder; any other folder holding one is refused, never the target (every run would fail) nor nested into.
+        // folder (`….sempere-vault`, `….sempere`); any other folder holding one is refused, never the target (every run would fail) nor nested into.
         let garbled = try folder("Garbled")
         try Data("not json".utf8).write(to: garbled.appendingPathComponent("vault.json"))
         XCTAssertEqual(FolderTargetPlacement.holdsVault(garbled, id), .unreadable)
         XCTAssertEqual(refusal(garbled, id), .otherVault("Garbled"))
-        let torn = try folder("Torn/Notes Sempere Vault")
+        let torn = try folder("Torn/Notes.sempere-vault")
         try Data("not json".utf8).write(to: torn.appendingPathComponent("vault.json"))
         XCTAssertEqual(try location(torn, id), torn)
         let tornOld = try folder("Torn/Old.sempere")
         try Data("not json".utf8).write(to: tornOld.appendingPathComponent("vault.json"))
         XCTAssertEqual(try location(tornOld, id), tornOld)
-        // A plain sync folder picked itself whose files have not arrived (empty), or the CLI's path to one not made yet.
-        let arriving = try folder("Drive/Notes Sempere Vault")
+        // A sync folder picked itself whose files have not arrived (empty), or the CLI's path to one not made yet.
+        let arriving = try folder("Drive/Notes.sempere-vault")
         XCTAssertEqual(try location(arriving, id), arriving)
-        let notYet = tmp.appendingPathComponent("Later/Notes Sempere Vault", isDirectory: true)
+        let notYet = tmp.appendingPathComponent("Later/Notes.sempere-vault", isDirectory: true)
         XCTAssertEqual(try location(notYet, id, missingIsNew: true), notYet)
-        // One holding the user's own files is just a folder: the copy goes inside.
-        let used = try folder("Used/Notes Sempere Vault")
+        // One holding the user's own files is named like a vault but is none: refused, as a `….sempere` is.
+        let used = try folder("Used/Notes.sempere-vault")
         try Data("x".utf8).write(to: used.appendingPathComponent("letter.txt"))
-        XCTAssertEqual(try location(used, id), used.appendingPathComponent("Notes Sempere Vault", isDirectory: true))
+        XCTAssertEqual(refusal(used, id), .notAVault("Notes.sempere-vault"))
+        // A name of no extension that looks like a sync folder's (`… Sempere Vault`, which no release made) means nothing: such a folder is just a folder, and gets
+        // the copy inside, unless it holds this vault (found by its content, above).
+        let oldPlain = try folder("Older/Notes Sempere Vault")
+        XCTAssertEqual(try location(oldPlain, id), oldPlain.appendingPathComponent("Notes.sempere-vault", isDirectory: true))
+        try Data("not json".utf8).write(to: oldPlain.appendingPathComponent("vault.json"))
+        XCTAssertEqual(refusal(oldPlain, id), .otherVault("Notes Sempere Vault"), "no name rule takes an unreadable one")
     }
 
     /// Existing targets keep working unchanged: an older build's `<name>.sempere` copy of this vault in the picked folder
-    /// is joined (devices meet in one folder), a plain copy wins over it, and a `….sempere` picked itself is the target.
+    /// is joined (devices meet in one folder), a `….sempere-vault` copy wins over it, and a `….sempere` picked itself is
+    /// the target.
     func testExistingSempereTargetsAreJoined() throws {
         let vault = try makeVault()
         let id = vault.vaultId
@@ -117,20 +124,20 @@ final class FolderTargetPlacementTests: SyncTestCase {
         try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes.sempere"))
         XCTAssertEqual(try location(drive, id).lastPathComponent, "Notes.sempere")
         XCTAssertEqual(try location(drive.appendingPathComponent("Notes.sempere"), id).lastPathComponent, "Notes.sempere")
-        // Another vault's `.sempere` there: never joined, the new copy is plain.
-        XCTAssertEqual(try location(drive, UUID()).lastPathComponent, "Notes Sempere Vault")
+        // Another vault's `.sempere` there: never joined, the new copy is a `….sempere-vault`.
+        XCTAssertEqual(try location(drive, UUID()).lastPathComponent, "Notes.sempere-vault")
         // `Notes 2.sempere` (an older build's next free name) holding this vault behind another vault's `Notes.sempere`.
         let shelf = try folder("Shelf")
         try manifest(shelf.appendingPathComponent("Notes.sempere"), UUID())
         try fm.copyItem(at: vault.url, to: shelf.appendingPathComponent("Notes 2.sempere"))
         XCTAssertEqual(try location(shelf, id).lastPathComponent, "Notes 2.sempere")
-        // An empty `Notes.sempere` is not this vault's copy: the new one is plain.
+        // An empty `Notes.sempere` is not this vault's copy: the new one is a `….sempere-vault`.
         let bare = try folder("Bare")
         _ = try folder("Bare/Notes.sempere")
-        XCTAssertEqual(try location(bare, id).lastPathComponent, "Notes Sempere Vault")
-        // Both kinds holding this vault: the plain one.
-        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes Sempere Vault 2"))
-        XCTAssertEqual(try location(drive, id).lastPathComponent, "Notes Sempere Vault 2")
+        XCTAssertEqual(try location(bare, id).lastPathComponent, "Notes.sempere-vault")
+        // Both kinds holding this vault: the `….sempere-vault`.
+        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes 2.sempere-vault"))
+        XCTAssertEqual(try location(drive, id).lastPathComponent, "Notes 2.sempere-vault")
     }
 
     /// Review of build 112: devices whose store copies are named differently (`Notes` here, `Notes 2` on a device where
@@ -141,10 +148,10 @@ final class FolderTargetPlacementTests: SyncTestCase {
         let vault = try makeVault()
         let id = vault.vaultId
         let drive = try folder("Drive")
-        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes Sempere Vault"))
-        XCTAssertEqual(try location(drive, id, name: "Notes 2.sempere").lastPathComponent, "Notes Sempere Vault")
+        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes.sempere-vault"))
+        XCTAssertEqual(try location(drive, id, name: "Notes 2.sempere").lastPathComponent, "Notes.sempere-vault")
         XCTAssertEqual(try location(drive, id, name: "Notes 2.sempere", missingIsNew: true).lastPathComponent,
-                       "Notes Sempere Vault")
+                       "Notes.sempere-vault")
         // An older build's `….sempere` of another name, and a bare folder of any name: joined too.
         let shelf = try folder("Shelf")
         try fm.copyItem(at: vault.url, to: shelf.appendingPathComponent("Work.sempere"))
@@ -152,70 +159,64 @@ final class FolderTargetPlacementTests: SyncTestCase {
         let box = try folder("Box")
         try fm.copyItem(at: vault.url, to: box.appendingPathComponent("Old Stuff"))
         XCTAssertEqual(try location(box, id).lastPathComponent, "Old Stuff")
-        // A plain name before a `….sempere` before any other name.
+        // A `….sempere-vault` before a `….sempere` before any other name.
         try fm.copyItem(at: vault.url, to: box.appendingPathComponent("Old Stuff.sempere"))
         XCTAssertEqual(try location(box, id).lastPathComponent, "Old Stuff.sempere")
-        try fm.copyItem(at: vault.url, to: box.appendingPathComponent("Old Stuff Sempere Vault"))
-        XCTAssertEqual(try location(box, id).lastPathComponent, "Old Stuff Sempere Vault")
+        try fm.copyItem(at: vault.url, to: box.appendingPathComponent("Old Stuff.sempere-vault"))
+        XCTAssertEqual(try location(box, id).lastPathComponent, "Old Stuff.sempere-vault")
 
         // Two copies of the same kind: refused, nothing picked for the user.
-        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes 2 Sempere Vault"))
-        XCTAssertEqual(refusal(drive, id), .severalCopies(["Notes 2 Sempere Vault", "Notes Sempere Vault"]))
+        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes 2.sempere-vault"))
+        XCTAssertEqual(refusal(drive, id), .severalCopies(["Notes 2.sempere-vault", "Notes.sempere-vault"]))
         // Either picked itself is taken.
-        XCTAssertEqual(try location(drive.appendingPathComponent("Notes 2 Sempere Vault"), id).lastPathComponent,
-                       "Notes 2 Sempere Vault")
+        XCTAssertEqual(try location(drive.appendingPathComponent("Notes 2.sempere-vault"), id).lastPathComponent,
+                       "Notes 2.sempere-vault")
 
         // Never another vault's folder, a backup, a hidden folder, a stand-in or an unreadable manifest of another name.
         let mixed = try folder("Mixed")
-        try manifest(mixed.appendingPathComponent("Other Sempere Vault"), UUID())
+        try manifest(mixed.appendingPathComponent("Other.sempere-vault"), UUID())
         try manifest(mixed.appendingPathComponent(".Hidden"), id)
         let shelved = mixed.appendingPathComponent("Shelved")
         try manifest(shelved, id)
         try Data("{}".utf8).write(to: shelved.appendingPathComponent("backup.json"))
-        let away = try folder("Mixed/Away Sempere Vault")
+        let away = try folder("Mixed/Away.sempere-vault")
         try Data().write(to: away.appendingPathComponent(".vault.json.icloud"))
         let junk = try folder("Mixed/Junk")
         try Data("not json".utf8).write(to: junk.appendingPathComponent("vault.json"))
-        XCTAssertEqual(try location(mixed, id, name: "Notes 2.sempere").lastPathComponent, "Notes 2 Sempere Vault")
+        XCTAssertEqual(try location(mixed, id, name: "Notes 2.sempere").lastPathComponent, "Notes 2.sempere-vault")
         // This device's own name with its `vault.json` not downloaded yet is still taken (the engine compares ids).
-        XCTAssertEqual(try location(mixed, id, name: "Away.sempere").lastPathComponent, "Away Sempere Vault")
+        XCTAssertEqual(try location(mixed, id, name: "Away.sempere").lastPathComponent, "Away.sempere-vault")
     }
 
-    /// The plain name never ends in anything a system could take for an extension, whatever dots the vault's name holds,
-    /// stays a valid folder name, and is recognized (and its vault name recovered) by shape.
-    func testPlainNamesHaveNoExtension() throws {
+    /// The name is `<vault>.sempere-vault`: the extension is the last component, whatever dots the vault's name holds,
+    /// it stays a valid folder name, and the store's `.sempere` (or a backup's `.sempere-backup`) is never kept in it.
+    func testSyncFolderNames() throws {
         let cases: [(String, String)] = [
-            ("Notes.sempere", "Notes Sempere Vault"), ("v1.2", "v1.2 Sempere Vault"), ("v1.2.sempere", "v1.2 Sempere Vault"),
-            ("Photos.app", "Photos.app Sempere Vault"), ("Work.sempere-backup", "Work Sempere Vault"),
-            (".hidden", "hidden Sempere Vault"), ("a/b:c", "a-b-c Sempere Vault"), ("", "Notes Sempere Vault"),
+            ("Notes.sempere", "Notes.sempere-vault"), ("v1.2", "v1.2.sempere-vault"), ("v1.2.sempere", "v1.2.sempere-vault"),
+            ("Photos.app", "Photos.app.sempere-vault"), ("Work.sempere-backup", "Work.sempere-vault"),
+            ("Again.sempere-vault", "Again.sempere-vault"), (".hidden", "hidden.sempere-vault"), ("a/b:c", "a-b-c.sempere-vault"),
+            ("", "Notes.sempere-vault"),
         ]
         for (vault, expected) in cases {
             let name = SyncFolderName.name(forVault: vault)
             XCTAssertEqual(name, expected, vault)
-            XCTAssertFalse(SyncFolderName.hasTypeExtension(name), name)
-            XCTAssertFalse(SyncFolderName.hasTypeExtension(SyncFolderName.name(forVault: vault, 7)), name)
-            XCTAssertTrue(SyncFolderName.isPlainName(name), name)
-            #if canImport(Darwin)
-            XCTAssertEqual(URL(fileURLWithPath: "/x/\(name)").pathExtension, "", name)
-            #endif
+            XCTAssertTrue(SyncFolderName.isSyncFolderName(URL(fileURLWithPath: "/x/\(name)")), name)
+            XCTAssertEqual(URL(fileURLWithPath: "/x/\(name)").pathExtension, "sempere-vault", name)
         }
+        XCTAssertEqual(SyncFolderName.name(forVault: "v1.2", 7), "v1.2 7.sempere-vault")
         let long = SyncFolderName.name(forVault: String(repeating: "é", count: 200), 100)
         XCTAssertLessThanOrEqual(long.utf8.count, 255)
-        XCTAssertEqual(SyncFolderName.vaultName(fromPlainName: "v1.2 Sempere Vault 12"), "v1.2")
-        XCTAssertEqual(VaultStore.displayName(of: URL(fileURLWithPath: "/x/v1.2 Sempere Vault")), "v1.2")
-        XCTAssertEqual(VaultStore.displayName(of: URL(fileURLWithPath: "/x/My Sempere Vault.sempere")), "My Sempere Vault",
-                       "a store vault's own name is never cut further")
-        for name in ["Sempere Vault", " Sempere Vault", "Notes Sempere Vault 1", "Notes Sempere Vault 02", "Notes Sempere Vaults",
-                     "Notes Sempere Vault x", "Notes Sempere Vault 1000"] {
-            XCTAssertFalse(SyncFolderName.isPlainName(name), name)
-        }
-        XCTAssertTrue(SyncFolderName.hasTypeExtension("Notes.sempere"))
-        XCTAssertTrue(SyncFolderName.hasTypeExtension("Foo.app"))
-        XCTAssertFalse(SyncFolderName.hasTypeExtension(".hidden"))
-        XCTAssertTrue(BackupDestination.isHolderName(URL(fileURLWithPath: "/x/Notes Sempere Vault 2")))
-        XCTAssertTrue(BackupDestination.isVaultName(URL(fileURLWithPath: "/x/Notes Sempere Vault")))
-        XCTAssertEqual(BackupDestination.enclosingNamedHolder(of: URL(fileURLWithPath: "/x/Notes Sempere Vault/notes"))?
-            .lastPathComponent, "Notes Sempere Vault")
+        XCTAssertEqual(VaultStore.displayName(of: URL(fileURLWithPath: "/x/v1.2.sempere-vault")), "v1.2")
+        XCTAssertEqual(VaultStore.displayName(of: URL(fileURLWithPath: "/x/Notes 2.sempere-vault")), "Notes 2")
+        XCTAssertEqual(VaultStore.displayName(of: URL(fileURLWithPath: "/x/Notes Sempere Vault")), "Notes Sempere Vault",
+                       "no suffix but the extensions is cut")
+        XCTAssertFalse(SyncFolderName.isSyncFolderName(URL(fileURLWithPath: "/x/Notes.sempere")))
+        XCTAssertTrue(SyncFolderName.isSyncFolderName(URL(fileURLWithPath: "/x/Notes.SEMPERE-VAULT")))
+        XCTAssertTrue(BackupDestination.isVaultName(URL(fileURLWithPath: "/x/Notes.sempere-vault")))
+        XCTAssertTrue(BackupDestination.isVaultName(URL(fileURLWithPath: "/x/Notes.sempere")))
+        XCTAssertFalse(BackupDestination.isVaultName(URL(fileURLWithPath: "/x/Notes.sempere-backup")))
+        XCTAssertFalse(BackupDestination.isVaultName(URL(fileURLWithPath: "/x/Notes Sempere Vault")))
+        XCTAssertFalse(BackupDestination.isHolderName(URL(fileURLWithPath: "/x/Notes Sempere Vault 2")))
     }
 
     /// TestFlight 1.0.0 (9): a picked `….sempere` folder is the target only when it is THIS vault's, empty, or its
@@ -244,6 +245,17 @@ final class FolderTargetPlacementTests: SyncTestCase {
         let bare = try folder("Bare")
         try manifest(bare, UUID())
         XCTAssertEqual(refusal(bare, id), .otherVault("Bare"))
+
+        // A `….sempere-vault` picked itself follows the same rules.
+        let mine = tmp.appendingPathComponent("Drive/sample.sempere-vault", isDirectory: true)
+        try fm.copyItem(at: vault.url, to: mine)
+        XCTAssertEqual(try location(mine, id), mine)
+        XCTAssertEqual(refusal(mine, UUID()), .otherVault("sample"))
+        let emptySync = try folder("Empty.sempere-vault")
+        XCTAssertEqual(try location(emptySync, id), emptySync)
+        let straySync = try folder("Stray.sempere-vault")
+        try Data("x".utf8).write(to: straySync.appendingPathComponent("note.txt"))
+        XCTAssertEqual(refusal(straySync, id), .notAVault("Stray.sempere-vault"))
     }
 
     /// Review of #108 and #109: a backup is never a sync target, by content or by name, and neither is any folder
@@ -260,7 +272,7 @@ final class FolderTargetPlacementTests: SyncTestCase {
         XCTAssertEqual(refusal(version, id), .insideVault("Old Things"))
         XCTAssertEqual(refusal(try folder("Named.sempere-backup/inner"), id), .insideVault("Named.sempere-backup"))
         XCTAssertEqual(refusal(try folder("Shut.sempere/notes"), id), .insideVault("Shut.sempere"))
-        XCTAssertEqual(refusal(try folder("Shut Sempere Vault/notes"), id), .insideVault("Shut Sempere Vault"), "by name")
+        XCTAssertEqual(refusal(try folder("Shut.sempere-vault/notes"), id), .insideVault("Shut.sempere-vault"), "by name")
         let inVault = try folder("Plain")
         try manifest(inVault, id)
         XCTAssertEqual(refusal(try folder("Plain/sub"), id), .insideVault("Plain"))
@@ -280,6 +292,16 @@ final class FolderTargetPlacementTests: SyncTestCase {
         XCTAssertEqual(refusal(drive, id), .notDownloaded("Notes.sempere"), "its parent picked")
         XCTAssertEqual(refusal(drive, id, missingIsNew: true), .notDownloaded("Notes.sempere"))
         XCTAssertFalse(fm.fileExists(atPath: away.path), "no folder made")
+
+        // The same for a `….sempere-vault`, picked itself or listed only as its stand-in in the picked folder.
+        let cloud = try folder("Cloud")
+        let gone = cloud.appendingPathComponent("Notes.sempere-vault", isDirectory: true)
+        XCTAssertEqual(refusal(gone, id), .notDownloaded("Notes.sempere-vault"))
+        XCTAssertEqual(try location(gone, id, missingIsNew: true), gone)
+        try Data().write(to: cloud.appendingPathComponent(".Notes.sempere-vault.icloud"))
+        XCTAssertEqual(refusal(gone, id, missingIsNew: true), .notDownloaded("Notes.sempere-vault"))
+        XCTAssertEqual(refusal(cloud, id), .notDownloaded("Notes.sempere-vault"), "its parent picked")
+        XCTAssertFalse(fm.fileExists(atPath: gone.path), "no folder made")
     }
 
     /// What lies above a pick goes by name where the app cannot read: `….sempere` and `….sempere-backup`, whatever
@@ -297,7 +319,12 @@ final class FolderTargetPlacementTests: SyncTestCase {
             .lastPathComponent, "My.Work.sempere-backup")
         XCTAssertNil(BackupDestination.enclosingNamedHolder(of: URL(fileURLWithPath: "/Users/me/Notes.sempere")),
                      "never the folder itself")
+        XCTAssertEqual(BackupDestination.enclosingNamedHolder(of: URL(fileURLWithPath: "/Users/me/v1.2.sempere-vault/notes"))?
+            .lastPathComponent, "v1.2.sempere-vault")
+        XCTAssertNil(BackupDestination.enclosingNamedHolder(of: URL(fileURLWithPath: "/Users/me/Notes Sempere Vault/notes")),
+                     "only the extensions name a vault")
         XCTAssertTrue(BackupDestination.isHolderName(URL(fileURLWithPath: "/a/B.SEMPERE")))
+        XCTAssertTrue(BackupDestination.isHolderName(URL(fileURLWithPath: "/a/B.Sempere-Vault")))
         XCTAssertFalse(BackupDestination.isHolderName(URL(fileURLWithPath: "/a/B.sempere.zip")))
     }
 }

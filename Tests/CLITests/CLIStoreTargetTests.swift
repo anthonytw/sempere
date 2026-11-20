@@ -110,9 +110,9 @@ final class CLIStoreTargetTests: CLITestCase {
     }
 
     /// The app's placement rule (`FolderTargetPlacement`, the app's Add Folder…): `--folder` on a folder not named
-    /// `….sempere` puts the copy in a plain `<folder>/<name> Sempere Vault` (no extension: iCloud Drive kept `….sempere`
-    /// folders as packages), never the folder itself, so a user's files there stay apart; a name another vault took moves
-    /// on to the next free one. A source already holding this vault (1.0.0's bare layout, or a plain sync folder) is the
+    /// `….sempere-vault` or `….sempere` puts the copy in `<folder>/<name>.sempere-vault` (not `.sempere`: iCloud Drive kept
+    /// `….sempere` folders as packages), never the folder itself, so a user's files there stay apart; a name another vault
+    /// took moves on to the next free one. A source already holding this vault (1.0.0's bare layout, or a sync folder) is the
     /// copy itself, and an older version's `<name>.sempere` copy of this vault in the folder is joined.
     func testAPlainFolderGetsTheVaultsOwnSubfolder() throws {
         let v = try storeVault()
@@ -121,11 +121,11 @@ final class CLIStoreTargetTests: CLITestCase {
         try Data("mine".utf8).write(to: URL(fileURLWithPath: "\(drive)/keep.txt"))
         let added = try cli(["store", "target", "add", "Notes", "--folder", drive, "--store", store, "--json"])
         XCTAssertEqual(added.status, 0, added.err)
-        let copy = URL(fileURLWithPath: "\(drive)/Notes Sempere Vault").standardizedFileURL.path
+        let copy = URL(fileURLWithPath: "\(drive)/Notes.sempere-vault").standardizedFileURL.path
         XCTAssertEqual((added.json as? [String: Any])?["path"] as? String, copy)
         XCTAssertEqual(try sync(key: v.key).status, 0)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: drive).filter { $0 != ".DS_Store" }.sorted(),
-                       ["Notes Sempere Vault", "keep.txt"])
+                       ["Notes.sempere-vault", "keep.txt"])
         XCTAssertEqual(noteFiles(copy), noteFiles(v.path))
 
         // Another vault in a store of its own, same name, same folder: the next free name.
@@ -135,7 +135,7 @@ final class CLIStoreTargetTests: CLITestCase {
         let second = try cli(["store", "target", "add", "Notes", "--folder", drive, "--store", other, "--json"])
         XCTAssertEqual(second.status, 0, second.err)
         XCTAssertEqual(((second.json as? [String: Any])?["path"] as? String).map { URL(fileURLWithPath: $0).lastPathComponent },
-                       "Notes Sempere Vault 2")
+                       "Notes 2.sempere-vault")
 
         // A bare vault folder (not `….sempere`, as 1.0.0 synced targets) kept syncing: the source itself.
         let bare = path("Bare")
@@ -146,16 +146,16 @@ final class CLIStoreTargetTests: CLITestCase {
             as? [[String: Any]])
         XCTAssertEqual(kept.first?["path"] as? String, URL(fileURLWithPath: bare).standardizedFileURL.path)
 
-        // A plain sync folder another device made, kept syncing: the source itself, and the store copy is named after
+        // A sync folder another device made, kept syncing: the source itself, and the store copy is named after
         // the vault ("Field"), not the folder.
-        let field = path("Field Sempere Vault")
+        let field = path("Field.sempere-vault")
         try FileManager.default.copyItem(atPath: path("b.sempere"), toPath: field)
         XCTAssertEqual(try cli(["store", "import", field, "--keep-syncing", "--store", path("store4")]).status, 0)
         let fieldTargets = try XCTUnwrap(try cli(["store", "target", "list", "Field", "--store", path("store4"), "--json"]).json
             as? [[String: Any]])
         XCTAssertEqual(fieldTargets.first?["path"] as? String, URL(fileURLWithPath: field).standardizedFileURL.path)
 
-        // An older version's `Notes.sempere` copy of this vault in the folder: joined, no plain folder beside it.
+        // An older version's `Notes.sempere` copy of this vault in the folder: joined, no `….sempere-vault` beside it.
         let old = path("Old")
         try FileManager.default.createDirectory(atPath: old, withIntermediateDirectories: true)
         try FileManager.default.copyItem(atPath: v.path, toPath: "\(old)/Notes.sempere")
@@ -167,28 +167,28 @@ final class CLIStoreTargetTests: CLITestCase {
     }
 
     /// Review of build 112: a folder already holding this vault's copy under another name (another machine's store copy
-    /// was `Notes 2`, so its folder is `Notes 2 Sempere Vault`) is joined, never a second `Notes Sempere Vault` beside it;
+    /// was `Notes 2`, so its folder is `Notes 2.sempere-vault`) is joined, never a second `Notes.sempere-vault` beside it;
     /// two copies there are refused with words that say to name one.
     func testAFolderWithADifferentlyNamedCopyJoinsIt() throws {
         let v = try storeVault()
         let drive = path("Drive")
         try FileManager.default.createDirectory(atPath: drive, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(atPath: v.path, toPath: "\(drive)/Notes 2 Sempere Vault")
+        try FileManager.default.copyItem(atPath: v.path, toPath: "\(drive)/Notes 2.sempere-vault")
         let added = try cli(["store", "target", "add", "Notes", "--folder", drive, "--store", store, "--json"])
         XCTAssertEqual(added.status, 0, added.err)
         XCTAssertEqual(((added.json as? [String: Any])?["path"] as? String).map { URL(fileURLWithPath: $0).lastPathComponent },
-                       "Notes 2 Sempere Vault")
+                       "Notes 2.sempere-vault")
         XCTAssertEqual(try sync(key: v.key).status, 0)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: drive).filter { $0 != ".DS_Store" },
-                       ["Notes 2 Sempere Vault"], "no second copy")
+                       ["Notes 2.sempere-vault"], "no second copy")
 
         let id = try XCTUnwrap((added.json as? [String: Any])?["id"] as? String)
         XCTAssertEqual(try cli(["store", "target", "remove", "Notes", id, "--store", store]).status, 0)
-        try FileManager.default.copyItem(atPath: v.path, toPath: "\(drive)/Notes Sempere Vault")
+        try FileManager.default.copyItem(atPath: v.path, toPath: "\(drive)/Notes.sempere-vault")
         let two = try cli(["store", "target", "add", "Notes", "--folder", drive, "--store", store])
         XCTAssertEqual(two.status, 1, two.out + two.err)
         XCTAssertTrue(two.err.contains("more than one copy of this vault"), two.err)
-        XCTAssertTrue(two.err.contains("Notes 2 Sempere Vault, Notes Sempere Vault"), two.err)
+        XCTAssertTrue(two.err.contains("Notes 2.sempere-vault, Notes.sempere-vault"), two.err)
     }
 
     /// Review of #12: a 1.0.0 CLI target was the folder itself, the vault's files straight in it. Re-adding that folder

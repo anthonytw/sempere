@@ -15,7 +15,8 @@ public enum BundleBitRepair {
         case backup
     }
 
-    /// Clears the flag on `url` when it is a `….sempere` or `….sempere-backup` folder that has it; logs to `log` when
+    /// Clears the flag on `url` when it is a vault or backup folder that has it (`FinderBundleBit.appliesTo`: `….sempere`,
+    /// `….sempere-vault`, `….sempere-backup`, or any folder holding a `vault.json` or `backup.json`); logs to `log` when
     /// it did (a notice: the same folder logged at every run means something sets the flag again, such as iCloud Drive
     /// holding the folder as a package, docs/io.md "A vault folder held as a package"), and when it is set and could
     /// not be cleared (an error, with `errno`).

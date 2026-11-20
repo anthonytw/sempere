@@ -181,7 +181,7 @@ extension AppModelCore {
     }
 
     /// "Keep syncing with this folder": the folder `folderTargetLocation` gives for `source`: `source` itself, which
-    /// holds this vault whatever its name (a plain `<vault> Sempere Vault` sync folder, a `….sempere` one, or one build
+    /// holds this vault whatever its name (a `<vault>.sempere-vault` sync folder, a `….sempere` one, or one build
     /// 10 synced bare).
     private func addKeepSyncingTarget(_ source: URL, scope: URL, entry: VaultStore.Entry) throws {
         let folder = try Self.folderTargetLocation(picked: source, vaultFolderName: entry.url.lastPathComponent,

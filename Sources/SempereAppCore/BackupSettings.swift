@@ -177,8 +177,8 @@ public enum BackupLocation {
 
     /// The folder a restore reads for the pick: `picked` when it holds
     /// `backup.json` or `vault.json`, else its one subfolder that does. A backup or vault folder listed only as
-    /// iCloud's stand-in (`.<name>.sempere-backup.icloud`, `.<name>.sempere.icloud`: a package an iPhone has not
-    /// downloaded) counts as such a subfolder; `previewRestore` downloads it (review of #115, F3).
+    /// iCloud's stand-in (`.<name>.sempere-backup.icloud`, `.<name>.sempere.icloud`, `.<name>.sempere-vault.icloud`: a
+    /// package an iPhone has not downloaded) counts as such a subfolder; `previewRestore` downloads it (review of #115, F3).
     static func restoreSource(_ picked: URL, fileManager fm: FileManager = .default) throws -> URL {
         if isBackup(picked, fm) || isVault(picked, fm) { return picked }
         var inside = visibleEntries(picked, fm).sorted().map { picked.appendingPathComponent($0, isDirectory: true) }
@@ -187,7 +187,8 @@ public enum BackupLocation {
         let away = ((try? fm.contentsOfDirectory(atPath: picked.path)) ?? []).compactMap(UbiquitousPlaceholder.realName(of:))
             .filter { name in
                 let ext = (name as NSString).pathExtension.lowercased()
-                return (ext == BackupDestination.vaultExtension || ext == BackupDestination.folderExtension) && !present.contains(name)
+                return (BackupDestination.vaultExtensions.contains(ext) || ext == BackupDestination.folderExtension)
+                    && !present.contains(name)
                     && !fm.fileExists(atPath: picked.appendingPathComponent(name).path)
             }
         inside += away.sorted().map { picked.appendingPathComponent($0, isDirectory: true) }

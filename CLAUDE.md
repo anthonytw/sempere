@@ -325,7 +325,8 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   `PageColorInversion` (never pictures, PDF pages, video), and exports never do.
 - Vaults are plain folders: `SempereInfo.plist` (referenced by `INFOPLIST_FILE`,
   outside the synchronized group so it is not copied as a resource) exports the
-  `.sempere` UTType as `public.folder`, NEVER `com.apple.package`: iCloud Drive syncs a
+  `.sempere` and `.sempere-vault` (sync folders, `io.github.anthonytw.sempere.syncvault`) UTTypes as `public.folder`,
+  NEVER `com.apple.package`: iCloud Drive syncs a
   package as one item, and a whole-vault conflict lost a note in TestFlight 1.0.0
   (`theVaultTypeIsAFolderNeverAPackage`, docs/io.md "Vaults are folders"). The Finder's `kHasBundle` flag in `com.apple.FinderInfo` makes a folder a package too:
   the app clears it on every vault, sync folder and backup it uses (`FinderBundleBit`, `BundleBitRepair`, both in `Sempere`). `VaultLocator.resolve` maps whatever was picked
@@ -921,8 +922,9 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   two-way, every other run is upload-only (nothing unverified is placed in a vault nobody unlocked). Folder runs
   go through `FolderTargetRun` (the CLI's `store sync`); never open a target folder in place. Where a folder target's
   copy goes for a folder the user named is `FolderTargetPlacement.location` (SempereSync: a folder holding this vault, any
-  name, or a `….sempere` one is the copy; any other gets a plain `<name> Sempere Vault` in it, `SyncFolderName`: never
-  make a new sync folder with an extension, iCloud Drive kept `….sempere` ones as packages), for the app's pickers and `sempere store target add --folder` /
+  name, or a `….sempere-vault` / `….sempere` one is the copy; any other gets a `<name>.sempere-vault` in it,
+  `SyncFolderName`: never make a new sync folder named `….sempere`, iCloud Drive kept those as packages; the store's own
+  vaults stay `<name>.sempere`), for the app's pickers and `sempere store target add --folder` /
   `store import --keep-syncing` alike; never decide it in the app or the CLI alone. What a two-way run
   wrote locally (`SyncReport.changed`, `LocalChanges`) goes through `applySyncChanges`: `reconcile(scope:)` for the
   notes (open editors merge in place, RemoteMerge), the settings pass, inbox adoption, notebooks; a changed `vault.json`

@@ -161,7 +161,7 @@ struct StoreImport: ParsableCommand {
         let store = location.open()
         let sourceURL = URL(fileURLWithPath: source, isDirectory: true).standardizedFileURL
         // Where the copy keeps syncing (`FolderTargetPlacement`, as `target add`): the source itself, which holds this
-        // vault (named `….sempere` or, as 1.0.0 synced them, bare). Checked before anything is copied: a backup is never
+        // vault (named `….sempere-vault`, `….sempere` or, as 1.0.0 synced them, bare). Checked before anything is copied: a backup is never
         // a sync target (a sync would write into it).
         func keepSyncingFolder(_ id: UUID, folderName: String) throws -> URL {
             let folder = try FolderTargetPlacement.location(picked: sourceURL, vaultFolderName: folderName, vaultId: id,

@@ -48,7 +48,8 @@ struct BackupAppTests {
     /// Drive syncs a package as one item, and a whole-vault conflict lost a note in TestFlight 1.0.0.
     @Test func theVaultTypeIsAFolderNeverAPackage() throws {
         let declared = try #require(Bundle.main.infoDictionary?["UTExportedTypeDeclarations"] as? [[String: Any]])
-        for (id, ext) in [("io.github.anthonytw.sempere.vault", "sempere"), ("io.github.anthonytw.sempere.backup", "sempere-backup")] {
+        for (id, ext) in [("io.github.anthonytw.sempere.vault", "sempere"), ("io.github.anthonytw.sempere.syncvault", "sempere-vault"),
+                          ("io.github.anthonytw.sempere.backup", "sempere-backup")] {
             let type = try #require(declared.first { $0["UTTypeIdentifier"] as? String == id }, "\(id) is declared")
             let conforms = try #require(type["UTTypeConformsTo"] as? [String])
             #expect(!conforms.contains("com.apple.package"), "\(id)")
@@ -59,6 +60,11 @@ struct BackupAppTests {
         // Not `UTType.sempere.conforms(to:)`: Launch Services may answer from another installed copy of the app
         // (a TestFlight build in /Applications) whose declaration is older than this one.
         #expect(UTType.vaultPickerTypes.contains(.sempereBackup))
+        #expect(UTType.vaultPickerTypes.contains(.sempereSyncVault) && UTType.folderPickerTypes.contains(.sempereSyncVault))
+        // A sync folder opens like a vault: the vault's document type lists both.
+        let documents = try #require(Bundle.main.infoDictionary?["CFBundleDocumentTypes"] as? [[String: Any]])
+        let vaultDocument = try #require(documents.first { ($0["LSItemContentTypes"] as? [String])?.contains("io.github.anthonytw.sempere.vault") == true })
+        #expect((vaultDocument["LSItemContentTypes"] as? [String])?.contains("io.github.anthonytw.sempere.syncvault") == true)
     }
 
     /// The reminder's dates are `BackupReminder`'s, pinned on Linux by `BackupSettingsTests`; here, its text.

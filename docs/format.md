@@ -5,9 +5,9 @@ or a documented compatible extension.
 
 ## 1. Vault layout
 
-A vault is a directory. Only the store's own vault folder must have a name ending in `.sempere`; a sync copy of a vault
-(a folder target, a WebDAV collection) may have any name. Folder targets made by 1.3 or later have no extension; readers
-decide by `vault.json` (docs/io.md "A vault folder held as a package").
+A vault is a directory. The store's own folder ends in `.sempere`; folder targets made by 1.3 or later end in
+`.sempere-vault` (older ones in `.sempere`); a sync copy of a vault (a folder target, a WebDAV collection) may have any
+name, and readers decide by `vault.json`, never by the name alone (docs/io.md "A vault folder held as a package").
 
 ```
 Notes.sempere/
