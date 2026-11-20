@@ -34,7 +34,7 @@ targets per vault in the store's registry (`SyncTargetRegistry`, `<store>/.sync/
 folder", Sync Targets…, the store in the App Group container on iPhone and iPad (the Mac keeps Application
 Support: it has no App Group entitlement), quick capture into the in-app inbox by vault id, and WebDAV vaults as
 store vaults with a WebDAV target (earlier copies carried over with their sync state and quarantine). Not in P6:
-an iCloud Drive default folder (`iCloud Drive/Sempere/<name>.sempere` needs an iCloud container entitlement; the
+an iCloud Drive default folder (`iCloud Drive/Sempere/<name> Sempere Vault` needs an iCloud container entitlement; the
 user picks a folder in iCloud Drive instead), adding a WebDAV target to an existing vault from the app (connecting
 to a server whose vault is already on the device does it), provider change hints (`changes()`; folder targets run
 every minute instead), and one status bar per vault rather than per target.
@@ -264,6 +264,9 @@ had are missing until merged back. The engine does not merge them (no automatic 
 warns on the target's row (`folderTargetPackageRecord`, resource values only), and `sempere vault conflicts --merge` is
 the recovery path, with the union rule of format.md §1.3 for write-once files and the existing rules for mutable ones. The
 lasting fix is a new folder that the provider records as a plain one; docs/io.md "A vault folder held as a package".
+A new `….sempere` folder in the owner's iCloud Drive was held as a package again (2026-11-20), so from 1.3 every new folder
+target is a plain folder with no extension, `<vault> Sempere Vault` (`SyncFolderName`, `FolderTargetPlacement.location`),
+and a folder holding the vault's `vault.json` is the target whatever its name; existing `….sempere` targets keep working.
 
 ### 3.4 Extension points for later providers
 
@@ -660,7 +663,8 @@ they are not.
 ### 8.1 Vault setup and targets
 
 - **New Vault**: a name, then "Keep a copy in: None / iCloud Drive / A Folder… / WebDAV Server…".
-  iCloud Drive defaults to `iCloud Drive/Sempere/<name>.sempere`.
+  iCloud Drive defaults to `iCloud Drive/Sempere/<name> Sempere Vault` (a plain folder, never a `….sempere`: docs/io.md
+  "A vault folder held as a package").
 - **Open Vault…** (welcome screen and File menu) **copies an existing vault into the app**. The user
   picks a vault folder (an export, a backup, a folder in iCloud Drive or another provider, a USB
   drive) or connects to a WebDAV server. The sheet says "Sempere will copy this vault onto this

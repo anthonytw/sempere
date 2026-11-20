@@ -920,8 +920,9 @@ mirror that `scripts/mirror-gitea.sh` keeps up to date, and the fallback if GitH
   (vault, target), every vault open or not, at most two runs at once; only the open, unlocked vault's runs are
   two-way, every other run is upload-only (nothing unverified is placed in a vault nobody unlocked). Folder runs
   go through `FolderTargetRun` (the CLI's `store sync`); never open a target folder in place. Where a folder target's
-  copy goes for a folder the user named is `FolderTargetPlacement.location` (SempereSync: a `….sempere` folder is the
-  copy, any other gets `<name>.sempere` in it), for the app's pickers and `sempere store target add --folder` /
+  copy goes for a folder the user named is `FolderTargetPlacement.location` (SempereSync: a folder holding this vault, any
+  name, or a `….sempere` one is the copy; any other gets a plain `<name> Sempere Vault` in it, `SyncFolderName`: never
+  make a new sync folder with an extension, iCloud Drive kept `….sempere` ones as packages), for the app's pickers and `sempere store target add --folder` /
   `store import --keep-syncing` alike; never decide it in the app or the CLI alone. What a two-way run
   wrote locally (`SyncReport.changed`, `LocalChanges`) goes through `applySyncChanges`: `reconcile(scope:)` for the
   notes (open editors merge in place, RemoteMerge), the settings pass, inbox adoption, notebooks; a changed `vault.json`

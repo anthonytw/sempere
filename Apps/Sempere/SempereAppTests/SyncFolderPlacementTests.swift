@@ -58,12 +58,14 @@ struct SyncFolderPlacementTests {
         ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0 != ".DS_Store" }.sorted()
     }
 
-    /// Add Folder… on a folder: the vault's files land in `<picked>/<Name>.sempere` and nowhere else in it; the
-    /// user's own file there is left as it was.
+    /// Add Folder… on a folder: the vault's files land in a plain `<picked>/<Name> Sempere Vault` (no extension:
+    /// iCloud Drive kept `….sempere` folders as packages) and nowhere else in it; the user's own file there is left as
+    /// it was.
     @Test func addFolderWritesIntoTheVaultsOwnSubfolder() async throws {
         let (device, picked) = try await Self.setUp()
         defer { device.model.close() }
-        let name = device.folder.lastPathComponent
+        let name = SyncFolderName.name(forVault: device.folder.lastPathComponent)
+        #expect(name.hasSuffix(" Sempere Vault"))
         let target = try device.model.addPickedFolderTarget(picked, to: device.vaultID)
         #expect(target.subfolder == name)
         #expect(target.path == picked.appendingPathComponent(name).standardizedFileURL.path)

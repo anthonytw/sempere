@@ -25,7 +25,8 @@ public enum VaultLocator {
 
     /// The vault folder for `picked`:
     /// - a folder with a `vault.json`: itself (a `.sempere-backup` too: a backup is a vault folder);
-    /// - a folder holding exactly one `.sempere` folder: that folder (the
+    /// - a folder holding exactly one vault folder (`.sempere`, or a sync folder of any other name holding a
+    ///   `vault.json`, such as the plain `<vault> Sempere Vault` sync folders: `SyncFolderName`): that folder (the
     ///   picked folder's access covers it); with none, exactly one `.sempere-backup` folder (the sync folder
     ///   wins over a backup next to it: Open Vault… there is how a device joins);
     /// - anything else: `picked` unchanged (opening it reports the problem).
@@ -51,7 +52,16 @@ public enum VaultLocator {
             candidate = parent
         }
         guard isDir.boolValue else { return picked }
-        for found in [VaultLibrary.vaults(in: picked), VaultLibrary.vaults(in: picked, extension: BackupDestination.folderExtension)] {
+        // A sync folder of any name holding a vault counts as one (a plain `<vault> Sempere Vault` the app makes now,
+        // `SyncFolderName`), never a backup (`backup.json`), which comes second.
+        let plain = ((try? fm.contentsOfDirectory(at: picked, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
+            .filter { url in
+                url.pathExtension != BackupDestination.vaultExtension && !BackupDestination.isBackupFolder(url)
+                    && !url.lastPathComponent.hasPrefix(".") && isVault(url) && !BackupDestination.isBackup(url, fileManager: fm)
+            }
+        let vaults = (VaultLibrary.vaults(in: picked) + plain)
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        for found in [vaults, VaultLibrary.vaults(in: picked, extension: BackupDestination.folderExtension)] {
             if found.count == 1 { return found[0] }
             if found.count > 1 { throw LocatorError.severalVaults(found.map(\.lastPathComponent)) }
         }

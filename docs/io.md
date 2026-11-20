@@ -567,13 +567,14 @@ Folder): UIKit's picker there, given the vault type and `public.folder`,
 navigated into folders without letting one be chosen (TestFlight 1.0.0 (8)).
 `VaultLocator.resolve` turns
 what was picked into the vault folder: a folder holding exactly one
-`.sempere` resolves to it (several: an error naming them); with none, one
+vault folder (`.sempere`, or any other subfolder holding a `vault.json` that is not a backup, such as a plain
+sync folder) resolves to it (several: an error naming them); with none, one
 `.sempere-backup` (a backup: a one-time copy). A file or folder
 inside a vault (`vault.json`, `notes/…`) is an error naming the vault: the
 access the picker grants covers the picked item and what is below it, never
 its parents, so the vault could not be read from it. The pickers say so before
 that (`PickedFolderRules`): on a Mac the open panel's delegate (`MacPanelRules`)
-greys out everything inside a `….sempere` or `….sempere-backup` and refuses a
+greys out everything inside a `….sempere`, `… Sempere Vault` or `….sempere-backup` and refuses a
 choice made inside one with words naming the folder to choose; on an iPhone or
 iPad the pick is refused with an alert ("go back to “Wompa.sempere” and tap Open
 there"). Neither picker can choose such a folder as an item without going into it:
@@ -582,8 +583,11 @@ has `canChooseFiles` on with the delegate enabling plain folders only (never a p
 Photos library; an item it cannot read yet stays enabled and is checked after the pick, under the panel's grant): with files off it
 greyed out every `.sempere` (a document type of the app), while a `.sempere-backup`
 (not one) stayed choosable (owner's test of TestFlight build 10).
-New vaults are always created as `<name>.sempere`. Security scope is held on
-the URL the user picked. The CLI and the on-disk layout are unaffected.
+New vaults are always created as `<name>.sempere` (in the app's store, which iCloud Drive never syncs). Folder sync
+targets made from 1.3 on are plain folders with no extension, `<name> Sempere Vault` ("A vault folder held as a
+package" below); the picker takes them like any folder, and `VaultLocator.resolve` finds one in a picked folder by its
+`vault.json` (a subfolder of any name holding one counts as a vault; with several, the error names them). Security
+scope is held on the URL the user picked. The CLI and the on-disk layout are unaffected.
 
 A vault created by a build that still declared the package type may be held
 by iCloud Drive as a package until it is re-created; `sempere vault
@@ -597,8 +601,9 @@ Finder, Files and the pickers show a folder as a package on every device, and iC
 one item, so the whole-vault conflict above comes back, even for a folder the iPad's build 12 had just
 made; Launch Services was clean (only `public.folder`). The app clears that one bit
 (`FinderBundleBit`, core; `BundleBitRepair`, app, logged under the `bundleBit` category) and keeps
-every other byte, removing the attribute when nothing else is left, on every `….sempere` and
-`….sempere-backup` folder it makes or uses:
+every other byte, removing the attribute when nothing else is left, on every vault and backup folder it makes or
+uses (`FinderBundleBit.appliesTo`: named `….sempere`, `….sempere-backup` or `… Sempere Vault`, or holding a
+`vault.json` or `backup.json` whatever its name: the flag makes a folder without an extension a package too):
 - the store's vaults: when one opens (`openVault(at:)`) and whenever the store is listed
   (`refreshStoredVaults`: at launch and after a create, copy-in or restore, which keep the source's
   attributes);
@@ -681,6 +686,43 @@ included; and iCloud Drive records an item's kind when it first records it and k
 per run for the same folder means it comes back. The reliable fix is a new folder that iCloud records as a plain folder
 ("Moving to a plain folder").
 
+**It happened again in a new folder, so new sync folders have no extension (1.3).** Following the steps below, the owner
+deleted the old vaults and made new ones syncing with a new iCloud Drive folder, `notes/`; the new sync folder, named
+`<vault>.sempere` by the placement rule then, was held as a package again (build 111's warning). So on that account any
+`….sempere` folder in iCloud Drive risks it, whichever device makes it: the name is the liability. What the evidence does
+and does not say:
+- The `dyn.ah62d4qmuhk2x465frz2gn6xf` type is a symptom, not the cause. On a Mac with the app's types registered
+  (`public.folder`) a plain `X.sempere` reads `io.github.anthonytw.sempere.vault`, `isPackage` false; set `kHasBundle` on
+  it and the same Mac reports exactly that `dyn` type (filename extension `sempere`, conforming to `com.apple.package`):
+  the system makes it up for any folder that is a package while its extension's declared type is not one (`F.zzqq` gets
+  `dyn.ah62d4qmuhk2x48x4sf2u` the same way). It does not show that a device typed the folder without knowing the app.
+- The flag makes a folder WITHOUT an extension a package too (`com.apple.package`), so no name protects against the flag
+  itself: the app keeps clearing it on every sync folder, whatever its name (`FinderBundleBit.appliesTo` goes by content
+  too), and the warning stays for every target.
+- What points at the extension: on this account `….sempere` folders made after the type was fixed became packages
+  again and again (build 11's "Wompa.sempere", build 12's flagged folders, now `notes/<vault>.sempere`), while `….sempere-backup` folders beside them, made
+  by the same app on the same devices, stayed plain. The two extensions differ only in history: early development builds
+  declared `.sempere` a `com.apple.package`, never `.sempere-backup`. Whatever remembers that (a stale LaunchServices
+  record on one Mac, or iCloud Drive's own record of the account's package extensions; nothing here can tell which), it
+  keys on the extension.
+
+So from 1.3 the app and the CLI make every new folder sync target a plain folder with no extension, `<vault> Sempere Vault`
+(`SyncFolderName`, `FolderTargetPlacement.location`), and `<vault> Sempere Vault N` when that name is taken. The suffix
+always follows a space, so a vault named "v1.2" gives `v1.2 Sempere Vault`, which no system reads as an extension
+(`SyncFolderName.hasTypeExtension`). A folder holding this vault's `vault.json` is the target itself whatever its name (in
+the app too, not only the CLI), so other devices join a plain folder by picking it or the folder above it. Existing
+`….sempere` targets keep working unchanged (no rename, no migration: iCloud Drive keeps a package through a rename
+anyway), and a `<vault>.sempere` of this vault already in a picked folder is joined rather than split from. In-app store
+vaults keep `<name>.sempere` (local, never synced by iCloud Drive). Backups keep `<name>.sempere-backup`: that extension
+was never declared a package, and the account's backup folders stayed plain (a follow-up if one is ever seen as a package).
+
+**Mixed versions.** A 1.2 or 1.3.0 app given a plain sync folder treats it as any folder: Add Folder… on it nests a new
+`<vault>.sempere` INSIDE it, and Add Folder… on the folder above makes a `<vault>.sempere` beside it; either way that
+device syncs a second copy no 1.3 device sees (the 1.2 CLI joins a folder holding the vault, as for 1.0.0's bare
+targets). An older device that keeps syncing an existing `….sempere` target is unaffected, and a 1.3 device picking the
+folder above that target joins it. So update every device of a vault to 1.3 before adding a plain folder target on any
+of them.
+
 **Report: `sempere vault conflicts [V] [--json]`** (macOS; elsewhere it says it is unsupported). Read only, no key:
 `VaultFolderConflicts.inspect` over the folder's `FolderProvider` (`UbiquitousFolderHooks`):
 - `ProviderItemRecord` (`FolderProvider.itemRecord`: resource values only): `isPackage`, the type identifier and whether it
@@ -739,7 +781,9 @@ CLI rewrite `sempere-index.json` or the sealed summaries at exit (`OpenedVaults.
 
 **In the app** (iOS, iPadOS, Mac): no automatic merge of whole-vault versions (CLI-only recovery). Each folder target's row in
 Sync Targets asks `folderTargetPackageRecord` (resource values, off the main actor) and shows a non-blocking warning when the
-provider holds the folder as a package or the folder has unresolved conflict versions, with How to Fix… (the steps below).
+provider holds the folder as a package or the folder has unresolved conflict versions, with How to Fix… (the steps below;
+when the provider reports no conflict versions of the folder, `hasUnresolvedConflicts` false, the short form without the
+merge, steps 4 to 7; Add Folder… there makes the plain folder).
 Each run logs the same under `bundleBit` after the flag is cleared. The CLI's `store sync` and `sync folder` print one stderr
 line (`warnIfHeldAsPackage`). Conflict versions of `vault.json` and `settings.age` inside a plain folder are settled by the
 engine on every run, as before ("Folder targets in providers"): kept and reported (`vault.json`) or merged (`settings.age`).
@@ -747,32 +791,28 @@ engine on every run, as before ("Folder targets in providers"): kept and reporte
 ### Moving to a plain folder
 
 Every vault is a store vault, so a sync folder is only a meeting point: moving it is changing the target, not moving the vault.
+Every device must run 1.3 or later first ("Mixed versions" above). If the old folder has no unresolved conflict versions
+(`sempere vault conflicts` lists none, and the app's How to Fix… shows the short steps, as for a new vault whose sync folder
+was a package from its first run), nothing needs merging back: skip steps 1 to 3.
 1. Pause Sempere on every device (quit it on the Mac, leave it closed on the iPad and iPhone) until step 4. Optionally keep a
    copy of the old folder first: `ditto "$V" "$HOME/Desktop/vault-before-merge.sempere"`.
 2. On the Mac, merge back: `sempere vault conflicts "$V" --merge --dry-run`, then without `--dry-run`. Keep the quarantine
    folder the report names (`report.json`), and note the `copied` paths.
 3. Open Sempere on that Mac only and let it sync once with the old folder, so the recovered files reach its store copy. The
    other devices do not sync with the old folder again.
-4. Remove stale LaunchServices registrations on the Mac before checking a new folder (an old development build that declared
-   the vault type `com.apple.package` makes a new `.sempere` folder a package too). List every registered app that declares
-   it, then unregister each old development build (anything but the installed app) and reopen the Finder:
-
-   ```bash
-   LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-   "$LSREG" -dump | grep -B8 -A8 'io.github.anthonytw.sempere'
-   "$LSREG" -u "/path/to/old/Sempere.app"     # once per stale path the dump shows
-   killall Finder
-   ```
-5. On ONE device (an iPad or iPhone is the safest: no stale LaunchServices records there), Sync Targets ▸ Add Folder… ▸ a new
-   folder in iCloud Drive with another name (`ToneDawgNotes 2` or a new parent folder; the copy goes in as
-   `<vault>.sempere`, `FolderTargetPlacement`). The first run copies the whole store vault into it.
-6. On the Mac, check it: `sempere vault conflicts "<new folder>/<vault>.sempere"` must say `PACKAGE no`. If it says yes,
-   stop: the account still makes `.sempere` folders packages (use a WebDAV target, or a folder outside iCloud Drive).
-7. On each other device: Add Folder… with the same new folder (a target added to a vault with notes copies what either side
-   lacks), sync, then remove the old target (nothing is deleted there). A bookmark of the old folder is never reused.
-8. Before moving the old folder to the Trash: every device syncs with the new folder (Vault Details shows each target's
-   devices), and each path in the merge report's `copied` list exists in the new folder (for example
-   `for p in $(jq -r '.copied[]' report.json); do test -e "<new folder>/<vault>.sempere/$p" || echo "MISSING $p"; done`
+4. On ONE device, Sync Targets ▸ Add Folder… ▸ a folder in iCloud Drive that does not hold the old one (a new folder is
+   simplest). The copy goes in as a plain `<vault> Sempere Vault` (no extension, `FolderTargetPlacement`); the first run
+   copies the whole store vault into it. (Stale LaunchServices registrations of old development builds no longer matter
+   for it: they key on the `.sempere` extension.)
+5. On the Mac, check it: `sempere vault conflicts "<folder>/<vault> Sempere Vault"` must say `PACKAGE no`. If it says yes,
+   stop: something other than the extension makes folders packages on this account (use a WebDAV target, or a folder
+   outside iCloud Drive), and report it.
+6. On each other device: Add Folder… with the same folder (or the `<vault> Sempere Vault` in it; a target added to a vault
+   with notes copies what either side lacks), sync, then remove the old target (nothing is deleted there). A bookmark of
+   the old folder is never reused.
+7. Before moving the old folder to the Trash: every device syncs with the new folder (Vault Details shows each target's
+   devices), and, after a merge, each path in the merge report's `copied` list exists in the new folder (for example
+   `for p in $(jq -r '.copied[]' report.json); do test -e "<folder>/<vault> Sempere Vault/$p" || echo "MISSING $p"; done`
    with the `--json` output saved as `report.json`). Keep the quarantine folder. Never rename the old folder as a fix: iCloud
    Drive keeps the item, and its record, through a rename.
 
@@ -1821,13 +1861,19 @@ syncs with both ways.
   says one is needed first and opens Sync Targets. The copy's subfolder is recorded by comparing the picked
   folder and the copy's folder after the same normalization (`AppModel.subfolder(of:in:)`):
   `standardizedFileURL` drops `/private` from `/private/var/…` only for a path that exists, so the comparison normalizes both. `FolderTargetPlacement.location` (SempereSync; the app's New Vault, Add Folder…, Choose Again…, Keep syncing, and `sempere store target add --folder` and `store import --keep-syncing`) takes a picked
-  `….sempere` folder itself when its `vault.json` names THIS vault (or is not downloaded yet) or it is empty (one
-  holding other files and no vault is refused); any other folder gets `<picked>/<name>.sempere`, never itself (re-check of #113); a picked
+  folder itself when its `vault.json` names THIS vault (or is not downloaded yet, or is not a readable manifest), whatever
+  its name: a plain sync folder another device made, a `….sempere` one, a bare 1.0.0 CLI target. A `….sempere` folder is
+  also taken itself when it is empty (one holding other files and no vault is refused), and so is a plain sync folder
+  (`<vault> Sempere Vault[ N]`) that is empty or, for the CLI, not made yet. A picked
   folder holding another vault is refused
   ("This folder holds another vault (Name)…", an earlier test vault in iCloud Drive took
   a new vault's target); a `vault.json` not downloaded yet (iCloud's stand-in) is taken as a possible match. Any other
-  folder gets the copy in `<picked>/<name>.sempere`, or the next free `<name> N.sempere` when that name holds
-  a backup or another vault, made by the first run. The engine is the last guard: `checkSameVault` compares
+  folder gets the copy in a folder of its own, never itself (re-check of #113): this vault's copy already there
+  (`<name> Sempere Vault[ N]` first, then a `<name>.sempere` or `<name> N.sempere` an older version made, so devices meet
+  in one folder), else a new plain `<picked>/<name> Sempere Vault`, or the next free `<name> Sempere Vault N` when that
+  name holds a backup, another vault or files of the user's, made by the first run (`SyncFolderName`: no extension,
+  "A vault folder held as a package" below). A `<name>.sempere` there only as iCloud's stand-in is refused as not
+  downloaded (an older version's copy, evicted whole), as before. The engine is the last guard: `checkSameVault` compares
   the two `vault.json` ids before every run and refuses another vault (`SyncError.vaultMismatch`, "The
   server folder now holds another vault. Nothing was synced.") before writing anything, two-way or
   upload-only, after waiting for an evicted `vault.json` (`SyncTargetTests.testAFolderHoldingAnotherVaultIsNeverWritten`). Adding

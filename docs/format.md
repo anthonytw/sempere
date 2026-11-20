@@ -5,7 +5,9 @@ or a documented compatible extension.
 
 ## 1. Vault layout
 
-A vault is a directory whose name ends in `.sempere`.
+A vault is a directory whose name ends in `.sempere`. A sync copy of a vault (a folder target, a WebDAV collection)
+may have any name: what makes it one is its `vault.json`, and readers never look at the name. Folder targets made from
+1.3 have no extension (docs/io.md "A vault folder held as a package").
 
 ```
 Notes.sempere/
