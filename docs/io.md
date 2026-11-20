@@ -1861,16 +1861,24 @@ syncs with both ways.
   says one is needed first and opens Sync Targets. The copy's subfolder is recorded by comparing the picked
   folder and the copy's folder after the same normalization (`AppModel.subfolder(of:in:)`):
   `standardizedFileURL` drops `/private` from `/private/var/…` only for a path that exists, so the comparison normalizes both. `FolderTargetPlacement.location` (SempereSync; the app's New Vault, Add Folder…, Choose Again…, Keep syncing, and `sempere store target add --folder` and `store import --keep-syncing`) takes a picked
-  folder itself when its `vault.json` names THIS vault (or is not downloaded yet, or is not a readable manifest), whatever
-  its name: a plain sync folder another device made, a `….sempere` one, a bare 1.0.0 CLI target. A `….sempere` folder is
+  folder itself when its `vault.json` names THIS vault (or is not downloaded yet), whatever
+  its name: a plain sync folder another device made, a `….sempere` one, a bare 1.0.0 CLI target. A `vault.json` that is
+  no manifest makes the folder the target only when it is named `….sempere` or `… Sempere Vault[ N]`; any other folder
+  holding one is refused as another vault (some other tool's file: every run would fail on it). A `….sempere` folder is
   also taken itself when it is empty (one holding other files and no vault is refused), and so is a plain sync folder
   (`<vault> Sempere Vault[ N]`) that is empty or, for the CLI, not made yet. A picked
   folder holding another vault is refused
   ("This folder holds another vault (Name)…", an earlier test vault in iCloud Drive took
   a new vault's target); a `vault.json` not downloaded yet (iCloud's stand-in) is taken as a possible match. Any other
-  folder gets the copy in a folder of its own, never itself (re-check of #113): this vault's copy already there
-  (`<name> Sempere Vault[ N]` first, then a `<name>.sempere` or `<name> N.sempere` an older version made, so devices meet
-  in one folder), else a new plain `<picked>/<name> Sempere Vault`, or the next free `<name> Sempere Vault N` when that
+  folder gets the copy in a folder of its own, never itself (re-check of #113): this vault's copy already there, found
+  by listing the picked folder (at most 4096 entries, 256 `vault.json` reads, hidden entries, files and backups skipped)
+  and reading each folder's `vault.json` id whatever its name, a positive match only (a stand-in or an unreadable
+  manifest is never adopted from the listing): a `… Sempere Vault[ N]` first, then a `….sempere` an older version made,
+  then any other name, so devices meet in one folder even when their store copies are named differently (`Notes` makes
+  `Notes Sempere Vault`, and a device whose copy is `Notes 2` joins it rather than making `Notes 2 Sempere Vault`). Two
+  copies of the first kind present are refused ("This folder holds more than one copy of this vault…",
+  `FolderPlacementProblem.severalCopies`): the user picks one. Then this device's own names whose `vault.json` is not on
+  this device yet (`<name> Sempere Vault[ N]`, `<name>.sempere`, `<name> N.sempere`); else a new plain `<picked>/<name> Sempere Vault`, or the next free `<name> Sempere Vault N` when that
   name holds a backup, another vault or files of the user's, made by the first run (`SyncFolderName`: no extension,
   "A vault folder held as a package" below). A `<name>.sempere` there only as iCloud's stand-in is refused as not
   downloaded (an older version's copy, evicted whole), as before. The engine is the last guard: `checkSameVault` compares

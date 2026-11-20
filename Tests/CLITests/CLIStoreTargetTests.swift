@@ -166,6 +166,31 @@ final class CLIStoreTargetTests: CLITestCase {
                        "Notes.sempere")
     }
 
+    /// Review of build 112: a folder already holding this vault's copy under another name (another machine's store copy
+    /// was `Notes 2`, so its folder is `Notes 2 Sempere Vault`) is joined, never a second `Notes Sempere Vault` beside it;
+    /// two copies there are refused with words that say to name one.
+    func testAFolderWithADifferentlyNamedCopyJoinsIt() throws {
+        let v = try storeVault()
+        let drive = path("Drive")
+        try FileManager.default.createDirectory(atPath: drive, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(atPath: v.path, toPath: "\(drive)/Notes 2 Sempere Vault")
+        let added = try cli(["store", "target", "add", "Notes", "--folder", drive, "--store", store, "--json"])
+        XCTAssertEqual(added.status, 0, added.err)
+        XCTAssertEqual(((added.json as? [String: Any])?["path"] as? String).map { URL(fileURLWithPath: $0).lastPathComponent },
+                       "Notes 2 Sempere Vault")
+        XCTAssertEqual(try sync(key: v.key).status, 0)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: drive).filter { $0 != ".DS_Store" },
+                       ["Notes 2 Sempere Vault"], "no second copy")
+
+        let id = try XCTUnwrap((added.json as? [String: Any])?["id"] as? String)
+        XCTAssertEqual(try cli(["store", "target", "remove", "Notes", id, "--store", store]).status, 0)
+        try FileManager.default.copyItem(atPath: v.path, toPath: "\(drive)/Notes Sempere Vault")
+        let two = try cli(["store", "target", "add", "Notes", "--folder", drive, "--store", store])
+        XCTAssertEqual(two.status, 1, two.out + two.err)
+        XCTAssertTrue(two.err.contains("more than one copy of this vault"), two.err)
+        XCTAssertTrue(two.err.contains("Notes 2 Sempere Vault, Notes Sempere Vault"), two.err)
+    }
+
     /// Review of #12: a 1.0.0 CLI target was the folder itself, the vault's files straight in it. Re-adding that folder
     /// (another machine, or after `target remove`) joins the copy there, never `<folder>/<name>.sempere` (which
     /// `checkFolderTarget` would refuse as inside a vault).

@@ -27989,6 +27989,19 @@
         }
       }
     },
+    "This folder holds more than one copy of this vault: %@. Choose the one to sync with instead of the folder that holds them." : {
+      "comment" : "Sync targets: the picked folder holds several copies of the vault; %@ is the list of their folder names",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta carpeta contiene más de una copia de esta bóveda: %@. Elige la que quieras sincronizar en lugar de la carpeta que las contiene."
+          }
+        }
+      }
+    },
     "This folder’s provider syncs it as one package, so changes made on two devices at once can hide each other’s files." : {
       "comment" : "Warning on a sync folder row when a provider other than iCloud Drive syncs the folder as one package.",
       "extractionState" : "manual",

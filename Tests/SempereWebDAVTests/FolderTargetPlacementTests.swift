@@ -85,9 +85,18 @@ final class FolderTargetPlacementTests: SyncTestCase {
         let unread = try folder("Unread")
         try Data().write(to: unread.appendingPathComponent(".vault.json.icloud"))
         XCTAssertEqual(try location(unread, UUID()), unread, "the engine compares ids before a run")
+        // A `vault.json` that is no manifest (some other tool's file): the target only in a folder named like a sync
+        // folder; any other folder holding one is refused, never the target (every run would fail) nor nested into.
         let garbled = try folder("Garbled")
         try Data("not json".utf8).write(to: garbled.appendingPathComponent("vault.json"))
-        XCTAssertEqual(try location(garbled, id), garbled)
+        XCTAssertEqual(FolderTargetPlacement.holdsVault(garbled, id), .unreadable)
+        XCTAssertEqual(refusal(garbled, id), .otherVault("Garbled"))
+        let torn = try folder("Torn/Notes Sempere Vault")
+        try Data("not json".utf8).write(to: torn.appendingPathComponent("vault.json"))
+        XCTAssertEqual(try location(torn, id), torn)
+        let tornOld = try folder("Torn/Old.sempere")
+        try Data("not json".utf8).write(to: tornOld.appendingPathComponent("vault.json"))
+        XCTAssertEqual(try location(tornOld, id), tornOld)
         // A plain sync folder picked itself whose files have not arrived (empty), or the CLI's path to one not made yet.
         let arriving = try folder("Drive/Notes Sempere Vault")
         XCTAssertEqual(try location(arriving, id), arriving)
@@ -122,6 +131,54 @@ final class FolderTargetPlacementTests: SyncTestCase {
         // Both kinds holding this vault: the plain one.
         try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes Sempere Vault 2"))
         XCTAssertEqual(try location(drive, id).lastPathComponent, "Notes Sempere Vault 2")
+    }
+
+    /// Review of build 112: devices whose store copies are named differently (`Notes` here, `Notes 2` on a device where
+    /// that name was taken) pick the same folder and must meet in one copy: the picked folder's entries are listed and a
+    /// folder holding this vault's id is joined whatever its name, never another vault's, never one whose `vault.json` is
+    /// only a stand-in or unreadable; two copies with no name to prefer are refused.
+    func testThisVaultsCopyIsFoundWhateverItsName() throws {
+        let vault = try makeVault()
+        let id = vault.vaultId
+        let drive = try folder("Drive")
+        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes Sempere Vault"))
+        XCTAssertEqual(try location(drive, id, name: "Notes 2.sempere").lastPathComponent, "Notes Sempere Vault")
+        XCTAssertEqual(try location(drive, id, name: "Notes 2.sempere", missingIsNew: true).lastPathComponent,
+                       "Notes Sempere Vault")
+        // An older build's `….sempere` of another name, and a bare folder of any name: joined too.
+        let shelf = try folder("Shelf")
+        try fm.copyItem(at: vault.url, to: shelf.appendingPathComponent("Work.sempere"))
+        XCTAssertEqual(try location(shelf, id).lastPathComponent, "Work.sempere")
+        let box = try folder("Box")
+        try fm.copyItem(at: vault.url, to: box.appendingPathComponent("Old Stuff"))
+        XCTAssertEqual(try location(box, id).lastPathComponent, "Old Stuff")
+        // A plain name before a `….sempere` before any other name.
+        try fm.copyItem(at: vault.url, to: box.appendingPathComponent("Old Stuff.sempere"))
+        XCTAssertEqual(try location(box, id).lastPathComponent, "Old Stuff.sempere")
+        try fm.copyItem(at: vault.url, to: box.appendingPathComponent("Old Stuff Sempere Vault"))
+        XCTAssertEqual(try location(box, id).lastPathComponent, "Old Stuff Sempere Vault")
+
+        // Two copies of the same kind: refused, nothing picked for the user.
+        try fm.copyItem(at: vault.url, to: drive.appendingPathComponent("Notes 2 Sempere Vault"))
+        XCTAssertEqual(refusal(drive, id), .severalCopies(["Notes 2 Sempere Vault", "Notes Sempere Vault"]))
+        // Either picked itself is taken.
+        XCTAssertEqual(try location(drive.appendingPathComponent("Notes 2 Sempere Vault"), id).lastPathComponent,
+                       "Notes 2 Sempere Vault")
+
+        // Never another vault's folder, a backup, a hidden folder, a stand-in or an unreadable manifest of another name.
+        let mixed = try folder("Mixed")
+        try manifest(mixed.appendingPathComponent("Other Sempere Vault"), UUID())
+        try manifest(mixed.appendingPathComponent(".Hidden"), id)
+        let shelved = mixed.appendingPathComponent("Shelved")
+        try manifest(shelved, id)
+        try Data("{}".utf8).write(to: shelved.appendingPathComponent("backup.json"))
+        let away = try folder("Mixed/Away Sempere Vault")
+        try Data().write(to: away.appendingPathComponent(".vault.json.icloud"))
+        let junk = try folder("Mixed/Junk")
+        try Data("not json".utf8).write(to: junk.appendingPathComponent("vault.json"))
+        XCTAssertEqual(try location(mixed, id, name: "Notes 2.sempere").lastPathComponent, "Notes 2 Sempere Vault")
+        // This device's own name with its `vault.json` not downloaded yet is still taken (the engine compares ids).
+        XCTAssertEqual(try location(mixed, id, name: "Away.sempere").lastPathComponent, "Away Sempere Vault")
     }
 
     /// The plain name never ends in anything a system could take for an extension, whatever dots the vault's name holds,
@@ -182,7 +239,7 @@ final class FolderTargetPlacementTests: SyncTestCase {
         let evicted = try folder("Evicted.sempere")
         try Data().write(to: evicted.appendingPathComponent(".vault.json.icloud"))
         XCTAssertEqual(try location(evicted, UUID()), evicted)
-        XCTAssertEqual(FolderTargetPlacement.holdsVault(evicted, id), .unknown)
+        XCTAssertEqual(FolderTargetPlacement.holdsVault(evicted, id), .notDownloaded)
         // A folder of another name holding another vault: refused, not a subfolder beside it.
         let bare = try folder("Bare")
         try manifest(bare, UUID())

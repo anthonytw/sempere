@@ -803,14 +803,15 @@ a unique id prefix (4 characters or more), its name, path or URL.
   `vault.json` not downloaded yet: the sync compares vault ids before it writes), as the targets 1.0.0 synced
   straight into `PATH` and the plain sync folders below do; so is a `PATH` named `….sempere`, or a plain
   `<name> Sempere Vault` that is empty or not made yet. Any other folder gets the copy in a folder of its own:
-  this vault's copy already in `PATH` (a `<name> Sempere Vault[ N]`, or a `<name>[ N].sempere` an older version
-  made), else a new plain folder `PATH/<name> Sempere Vault`, or the next free `<name> Sempere Vault N` when that
+  this vault's copy already in `PATH`, found by its vault id whatever its folder's name (a `… Sempere Vault[ N]`
+  first, then a `….sempere` an older version made, then any other; two of the first kind present are refused:
+  name the one to sync with as `PATH`), else a new plain folder `PATH/<name> Sempere Vault`, or the next free `<name> Sempere Vault N` when that
   name holds another vault, a backup or other files, so the vault's files never mix with other files in `PATH`.
   New copies have no extension: iCloud Drive kept `….sempere` sync folders as packages (docs/io.md "A vault folder
   held as a package"); existing `….sempere` targets keep working unchanged. The copy may be
   missing or empty (the first sync copies the vault into it) or hold the same vault (the first sync is a
   union: what either side lacks is copied, nothing is deleted). Refused (exit 1): a `PATH` that holds another
-  vault, a `….sempere` holding other files but no vault, a cloud placeholder not downloaded (a
+  vault (or a `vault.json` that is no manifest, outside a folder named like a sync folder), a `….sempere` holding other files but no vault, a cloud placeholder not downloaded (a
   `.<name>.icloud` stand-in), a backup, a folder inside a vault or a backup, one overlapping the store, a
   file. `--json` and `target list` show the copy's path. `--webdav URL [--user NAME]`: https,
   or http to localhost (exit 2 otherwise); no password is stored. A target at the same place (the same

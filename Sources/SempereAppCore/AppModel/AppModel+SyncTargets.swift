@@ -69,6 +69,9 @@ public enum SyncTargetProblem: Error, Equatable, Sendable {
     /// run would make an empty folder of that name over the other devices' (review of #115). The app asks iCloud for
     /// it (`requestDownload`).
     case notDownloaded(String)
+    /// The picked folder holds more than one copy of this vault (their names): the user picks the one to sync with
+    /// (`FolderPlacementProblem.severalCopies`).
+    case severalCopies([String])
     /// This account may not write to the folder (its name): another user's, or read-only.
     case notWritable(String)
     /// The server folder of a new WebDAV target holds another vault or other files.
@@ -451,6 +454,7 @@ extension AppModelCore {
             case .otherVault(let name): throw SyncTargetProblem.otherVault(name)
             case .notAVault(let name): throw SyncTargetProblem.notAVault(name)
             case .notDownloaded(let name): throw SyncTargetProblem.notDownloaded(name)
+            case .severalCopies(let names): throw SyncTargetProblem.severalCopies(names)
             }
         }
     }

@@ -199,15 +199,18 @@ extension SyncFolderPlacementTests {
         guard Platform.isMac else { return }   // the attribute is set here through the Mac's file system
         let (device, picked) = try await Self.setUp()
         defer { device.model.close() }
-        let name = device.folder.lastPathComponent
-        let target = picked.appendingPathComponent(name, isDirectory: true)
+        // The plain folder placement makes (`SyncFolderName`), empty with the bit set: an empty `<vault>.sempere` an
+        // older build left there is no copy of this vault and is not joined (it would keep the risky extension).
+        let target = picked.appendingPathComponent(SyncFolderName.name(forVault: device.folder.lastPathComponent),
+                                                   isDirectory: true)
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
         func setBit(_ url: URL) throws {
             try (url as NSURL).setResourceValue(true, forKey: .isPackageKey)
             #expect(Self.isPackage(url), "set: \(url.lastPathComponent)")
         }
         try setBit(target)
-        _ = try device.model.addPickedFolderTarget(picked, to: device.vaultID)
+        let added = try device.model.addPickedFolderTarget(picked, to: device.vaultID)
+        #expect(added.subfolder == target.lastPathComponent, "the copy goes in the plain folder: \(String(describing: added.subfolder))")
         #expect(!Self.isPackage(target), "cleared when the target was added")
 
         try setBit(target)

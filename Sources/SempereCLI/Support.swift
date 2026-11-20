@@ -118,6 +118,9 @@ enum CLIError: Error {
                 + "folder that holds it, or an empty folder"
         case .notDownloaded(let name):
             return "\(name) is a cloud placeholder, not on this machine yet: download it first"
+        case .severalCopies(let names):
+            return "the folder holds more than one copy of this vault (\(names.joined(separator: ", "))): give the one "
+                + "to sync with as --folder (sempere store target add NAME --folder FOLDER/COPY)"
         }
     }
 }

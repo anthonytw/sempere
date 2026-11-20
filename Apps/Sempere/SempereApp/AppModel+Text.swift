@@ -185,6 +185,10 @@ extension SyncTargetProblem {
         case .notDownloaded(let name):
             return String(localized: "“\(name)” is in iCloud Drive but not on this device yet. Sempere asked iCloud Drive to download it: wait a moment, then choose it again.",
                           comment: "Sync targets: the picked sync folder is not downloaded yet; %@ is its name")
+        case .severalCopies(let names):
+            let list = names.map { "“\($0)”" }.formatted(.list(type: .and))
+            return String(localized: "This folder holds more than one copy of this vault: \(list). Choose the one to sync with instead of the folder that holds them.",
+                          comment: "Sync targets: the picked folder holds several copies of the vault; %@ is the list of their folder names")
         case .notWritable(let name):
             return String(localized: "Sempere cannot write to “\(name)”: this account has no permission to change it (it belongs to another user, or is read-only). Choose a folder you can write to.",
                           comment: "Sync targets: the picked folder is not writable; %@ is its name")
