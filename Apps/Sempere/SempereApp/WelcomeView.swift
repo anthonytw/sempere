@@ -64,7 +64,7 @@ struct WelcomeView: View {
 
 #if DEBUG
 /// UI tests only (`SEMPERE_DEBUG_SYNC_RUNS`, `VaultListSwipeUITests`): an all but invisible element whose label is
-/// when a sync run last succeeded (any session), so a test can tell that runs happened while it watched the list. A view
+/// when a sync run last started (any session), so a test can tell that runs happened while it watched the list. A view
 /// of its own over the list, reading the sessions itself: a run redraws it alone, never the list or its rows.
 private struct DebugSyncRuns: View {
     @AppModelEnvironment private var model
@@ -72,7 +72,7 @@ private struct DebugSyncRuns: View {
 
     var body: some View {
         if Self.enabled {
-            let last = model.syncCoordinator.sessions.values.compactMap(\.lastSuccess).max()
+            let last = model.syncCoordinator.sessions.values.compactMap(\.schedule.lastAttempt).max()
             Color.clear
                 .frame(width: 2, height: 2)
                 .accessibilityElement()

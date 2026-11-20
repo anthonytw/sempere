@@ -62,6 +62,7 @@ final class VaultListSwipeUITests: XCTestCase {
         XCTAssertNil(confirmation.closedAfter,
                      "the confirmation stayed up while sync ran (closed after \(confirmation.closedAfter ?? 0) s)")
         if confirmation.runs == 0 { throw XCTSkip("no sync runs during the window (the confirmation's): nothing was proved") }
+        print("SWIPE runs seen: \(swipe.runs) with the swipe open, \(confirmation.runs) with the confirmation up")
         alert.buttons["Delete"].firstMatch.tap()
         XCTAssertTrue(row.waitForNonExistence(timeout: 30), "the vault left the list")
     }

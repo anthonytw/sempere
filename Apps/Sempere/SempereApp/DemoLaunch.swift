@@ -168,6 +168,7 @@ enum DemoLaunch {
             for session in model.syncSessions {
                 session.schedule.idleInterval = seconds
                 session.schedule.maxIdleInterval = seconds
+                session.schedule.arrivingInterval = seconds   // the first run copies the vault: "active" after it
             }
         }
     }
