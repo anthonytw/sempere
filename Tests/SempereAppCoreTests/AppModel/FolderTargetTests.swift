@@ -1,6 +1,6 @@
 import Age
 import Foundation
-import Sempere
+@testable import Sempere
 @testable import SempereAppCore
 import SempereSync
 import TempDirSupport

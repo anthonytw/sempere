@@ -45,7 +45,7 @@ public enum SyncFolderName {
     /// Whether the last path component `name` ends in something a system could take for a type's filename extension:
     /// a dot followed by text with no space (and no dot) in it, as `Foo.sempere` or `Foo.app`. False for every
     /// `name(forVault:_:)` result. Decided here rather than by `URL.pathExtension`, whose rules differ between platforms.
-    public static func hasTypeExtension(_ name: String) -> Bool {
+    static func hasTypeExtension(_ name: String) -> Bool {
         guard let dot = name.lastIndex(of: ".") else { return false }
         let ext = name[name.index(after: dot)...]
         return !ext.isEmpty && !ext.contains(" ") && dot != name.startIndex
