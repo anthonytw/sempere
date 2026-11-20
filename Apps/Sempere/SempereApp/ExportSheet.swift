@@ -334,9 +334,8 @@ struct ShareSheet: UIViewControllerRepresentable {
 
 /// Sharing a secret key (its text or its key file): the share sheet is asked to leave Copy out, and a Copy that is
 /// listed anyway is handed nothing (`SecretItem`) and answered by `SecretPasteboard` (local only, expiring) when
-/// it finishes, so it works instead of copying nothing (TestFlight 1.3.0 build 111). The key's text is selectable
-/// in its screen (owner's decision, build 111): the selection's copy is the system's, but Copy Key and Copy here
-/// stay short-lived and local.
+/// it finishes, so it works instead of copying nothing (TestFlight 1.3.0 build 111). The key's text is never
+/// selectable: a selection's ⌘C would be the system's copy, with no expiry and open to Universal Clipboard.
 @MainActor
 enum SecretSharing {
     /// Activities a secret is never handed to.
@@ -364,10 +363,12 @@ enum SecretSharing {
     /// The share sheet for a secret, presented by UIKit over the topmost screen of `view` (a popover from it on an
     /// iPad or a Mac): finishing it dismisses only itself. Hosted as the root of a second SwiftUI sheet it took the
     /// new-vault sheet with it when its Copy finished (owner, build 111), so the receipt is never left.
-    /// Returns false when `view` has no screen yet (the caller shows `ShareSheet` in a sheet).
+    /// Returns false when `view` has no screen yet, or its screen is busy presenting or dismissing (`isBusy`): UIKit
+    /// would refuse the presentation and never run `done`, so the caller shows `ShareSheet` in a sheet instead and
+    /// its dismissal unstages what was staged.
     @discardableResult
     static func present(_ items: [Any], from view: UIView, done: @escaping () -> Void) -> Bool {
-        guard let presenter = ExportHandOff.presenter(of: view) else { return false }
+        guard let presenter = ExportHandOff.presenter(of: view), !isBusy(presenter) else { return false }
         let callback = MainCallback(done)
         let controller = controller(items: items) { callback.run() }
         if view.traitCollection.userInterfaceIdiom != .phone { controller.modalPresentationStyle = .popover }
@@ -377,6 +378,19 @@ enum SecretSharing {
         }
         presenter.present(controller, animated: true)
         return true
+    }
+
+    /// Whether a share sheet is already up over `view`'s screen, or a presentation is on its way in or out there (a
+    /// second tap on Share… while the first sheet appears). Callers ignore such a tap before staging anything: a
+    /// second `KeyShareFile.stage` would remove the file the first sheet is sharing.
+    static func isBusy(_ view: UIView) -> Bool {
+        guard let presenter = ExportHandOff.presenter(of: view) else { return false }
+        return isBusy(presenter)
+    }
+
+    private static func isBusy(_ presenter: UIViewController) -> Bool {
+        presenter is UIActivityViewController || presenter.isBeingPresented || presenter.isBeingDismissed
+            || presenter.presentedViewController != nil
     }
 
     /// Whether `type` copies to the pasteboard: UIKit's own, or a Mac sharing service named so.

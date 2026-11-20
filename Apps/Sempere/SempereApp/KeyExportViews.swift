@@ -95,6 +95,9 @@ struct KeyFileActions: View {
     }
 
     private func share() {
+        // A second tap while the first share sheet is on its way: ignored, nothing staged (staging would remove the file
+        // the first sheet shares).
+        if let view = anchor.view, SecretSharing.isBusy(view) { return }
         do {
             let file = try KeyShareFile.stage(key)
             // UIKit presents it over the receipt's sheet: finishing it never closes the screen under it.

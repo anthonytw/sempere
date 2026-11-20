@@ -37,6 +37,22 @@ final class SecretPasteboardTests: XCTestCase {
         XCTAssertTrue(provider.canLoadObject(ofClass: NSString.self), "an item provider (a text field's paste) can load it")
     }
 
+    /// Owner's check that Copy Key works from OUTSIDE the app: with `SEMPERE_PASTEBOARD_HOLD=1` in the test runner's
+    /// environment (`TEST_RUNNER_SEMPERE_PASTEBOARD_HOLD=1 scripts/app.sh test-mac -only-testing:…`), copies a test key
+    /// through `SecretPasteboard.copy` and holds 30 s, while the shell reads it (`pbpaste`, `osascript -e 'the
+    /// clipboard'`, or `xcrun simctl pbpaste <udid>` on a simulator). Skipped otherwise.
+    func testHoldTheCopiedKeyForAnOutsideRead() throws {
+        guard let hold = ProcessInfo.processInfo.environment["SEMPERE_PASTEBOARD_HOLD"] else {
+            throw XCTSkip("set SEMPERE_PASTEBOARD_HOLD=1 (TEST_RUNNER_SEMPERE_PASTEBOARD_HOLD) to hold the copy for a check")
+        }
+        let key = "AGE-SECRET-KEY-PQ-1HOLDCHECK" + String(UUID().uuidString.prefix(8))
+        SecretPasteboard.copy(key)
+        print("PASTEBOARD-HOLD copied \(key)")
+        let deadline = Date().addingTimeInterval(TimeInterval(hold).map { max($0, 30) } ?? 30)
+        while Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.5)) }
+        XCTAssertEqual(UIPasteboard.general.string, key, "still on the pasteboard after the hold")
+    }
+
     func testCopyKeepsTheSecretMarkersOnAnyDevice() {
         SecretPasteboard.copy("AGE-SECRET-KEY-TEST")
         for marker in SecretPasteboard.markers + [SecretPasteboard.ownMarker] {

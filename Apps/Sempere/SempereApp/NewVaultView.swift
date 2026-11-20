@@ -420,12 +420,11 @@ struct KeyReceipt<Extra: View>: View {
             extra
             Section {
                 Text("“\(created.url.deletingPathExtension().lastPathComponent)” is ready. Save its recovery key now, or print its kit: anyone with it can read the vault, and without it the vault cannot be opened if this device is lost.")
-                // Selectable (owner, build 111: "I can't just highlight it and copy"). A selection's copy is the
-                // system's, with no expiry and open to Universal Clipboard, unlike Copy Key below (local only,
-                // gone after three minutes); the key is shown only here, to be saved, so that is the owner's call.
+                // Not selectable, as in the key window: ⌘C would put the secret on the clipboard with no
+                // expiry and let Universal Clipboard sync it; Copy Key below is local only and expires (owner, build
+                // 112: with Copy Key working, the key stays unselectable).
                 Text(created.secretKey ?? "")
                     .font(.callout.monospaced())
-                    .textSelection(.enabled)
                 Button(copied ? String(localized: "Copied", comment: "Button after the secret key was copied")
                               : String(localized: "Copy Key", comment: "Button: copy the secret key"),
                        systemImage: "doc.on.doc") {
@@ -437,6 +436,7 @@ struct KeyReceipt<Extra: View>: View {
                 // The share sheet for a secret (`SecretSharing`), never a ShareLink. UIKit presents it over this
                 // sheet, so finishing it (Copy, a cancel) never closes this screen: the key stays copyable.
                 Button("Share…", systemImage: "square.and.arrow.up") {
+                    if let view = anchor.view, SecretSharing.isBusy(view) { return }   // a second tap: one sheet
                     if let view = anchor.view,
                        SecretSharing.present([created.secretKey ?? ""], from: view, done: {}) { return }
                     sharing = true
