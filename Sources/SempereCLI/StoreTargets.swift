@@ -55,9 +55,10 @@ struct StoreTargetAdd: ParsableCommand {
         commandName: "add",
         abstract: "Add a folder or WebDAV sync target to a store vault.",
         discussion: """
-            --folder PATH: where the vault's copy goes, by the app's rule (Add Folder…): a PATH named ….sempere is the \
-            copy itself; any other folder gets it in PATH/<name>.sempere (or the next free <name> N.sempere). The \
-            copy may be missing or empty (the first sync copies the vault into it), or hold the same vault (the first \
+            --folder PATH: where the vault's copy goes, by the app's rule (Add Folder…): a PATH holding this vault \
+            (any name) or named ….sempere is the copy itself; any other folder gets it in a plain folder of its own, \
+            PATH/<name> Sempere Vault (or the next free <name> Sempere Vault N), unless this vault's copy is already \
+            there (a <name> Sempere Vault, or a <name>.sempere an older version made). The copy may be missing or empty (the first sync copies the vault into it), or hold the same vault (the first \
             sync is a union). Another vault, a backup, a folder inside either, or one overlapping the store is \
             refused (exit 1). --webdav URL [--user NAME]: a server folder (https, or http to localhost); the password is \
             never stored, `store sync` takes it from the environment. A target at the same place is refused (exit 1).
@@ -105,7 +106,8 @@ struct StoreTargetAdd: ParsableCommand {
         var target: SyncTarget
         if let folder {
             let picked = URL(fileURLWithPath: folder, isDirectory: true).standardizedFileURL
-            // The app's rule (Add Folder…): a `….sempere` folder is the copy itself, any other gets `<name>.sempere` in it.
+            // The app's rule (Add Folder…): this vault's copy or a `….sempere` folder is the target itself, any other
+            // folder gets a plain `<name> Sempere Vault` in it (`FolderTargetPlacement`).
             let url = try FolderTargetPlacement.location(picked: picked, vaultFolderName: entry.url.lastPathComponent,
                                                          vaultId: entry.vaultId, missingIsNew: true).standardizedFileURL
             try store.checkFolderTarget(url)

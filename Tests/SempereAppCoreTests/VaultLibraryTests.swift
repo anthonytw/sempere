@@ -237,6 +237,27 @@ struct VaultLibraryTests {
         }
     }
 
+    /// A plain sync folder (`<vault> Sempere Vault`, no extension, `SyncFolderName`) is found by its `vault.json`: picked
+    /// itself or in the folder above, it is the vault; it wins over a backup beside it and counts among several vaults.
+    @Test func aPlainSyncFolderResolvesByItsVaultJSON() throws {
+        let parent = try Self.tempDir()
+        let plain = try VaultLibrary.createVault(Self.request("Notes"), folder: "Notes.sempere", in: parent).url
+        let renamed = parent.appendingPathComponent("v1.2 Sempere Vault", isDirectory: true)
+        try FileManager.default.moveItem(at: plain, to: renamed)
+        let backup = parent.appendingPathComponent("Notes.sempere-backup", isDirectory: true)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: backup.appendingPathComponent("vault.json"))
+        try Data("{}".utf8).write(to: backup.appendingPathComponent("backup.json"))
+        let mine = parent.appendingPathComponent("Letters", isDirectory: true)
+        try FileManager.default.createDirectory(at: mine, withIntermediateDirectories: true)
+        #expect(try VaultLocator.resolve(renamed).path == renamed.path)
+        #expect(try VaultLocator.resolve(parent).lastPathComponent == "v1.2 Sempere Vault", "the vault, not the backup")
+        _ = try VaultLibrary.createVault(Self.request("Other"), folder: "Other.sempere", in: parent)
+        #expect(throws: VaultLocator.LocatorError.severalVaults(["Other.sempere", "v1.2 Sempere Vault"])) {
+            _ = try VaultLocator.resolve(parent)
+        }
+    }
+
     // MARK: - Folder access
 
     @Test func permissionErrorsAreRecognisedWhereverTheyAreNested() {

@@ -156,7 +156,7 @@ extension AppModelCore {
             throw VaultStoreProblem(error: error)
         }
         if followUp == .keepSyncing {
-            // The two are equal now when `source` is the vault's `.sempere` sync folder: the first run finds nothing to do.
+            // The two are equal now when `source` is the vault's sync folder: the first run finds nothing to do.
             try addKeepSyncingTarget(source, scope: url, entry: entry)
         }
         try await openVault(at: entry.url, external: external)
@@ -180,8 +180,9 @@ extension AppModelCore {
         library.rememberStored(entry)
     }
 
-    /// "Keep syncing with this folder": the folder `folderTargetLocation` gives for `source` (the `.sempere` sync
-    /// folder itself; any other folder holding the vault, such as one build 10 synced bare, gets `<source>/<name>.sempere`).
+    /// "Keep syncing with this folder": the folder `folderTargetLocation` gives for `source`: `source` itself, which
+    /// holds this vault whatever its name (a plain `<vault> Sempere Vault` sync folder, a `….sempere` one, or one build
+    /// 10 synced bare).
     private func addKeepSyncingTarget(_ source: URL, scope: URL, entry: VaultStore.Entry) throws {
         let folder = try Self.folderTargetLocation(picked: source, vaultFolderName: entry.url.lastPathComponent,
                                                    vaultId: entry.vaultId)

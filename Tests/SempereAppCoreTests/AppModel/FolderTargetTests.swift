@@ -138,6 +138,47 @@ extension AppModelSuites {
             #expect(Self.noteFiles(w.shared) == Self.noteFiles(w.a.folder))
         }
 
+        /// Add Folder… on an ordinary folder makes a plain `<vault> Sempere Vault` (no extension, so no type database
+        /// can make it a package: docs/io.md "A vault folder held as a package"). Another device finds it by its
+        /// `vault.json`: Open Vault… on the folder above it, "Keep syncing", and Add Folder… on either folder all land
+        /// in that one folder, and the copy's name in the store is the vault's own.
+        @Test func aPickedFolderGetsAPlainSyncFolderThatOtherDevicesJoin() async throws {
+            let (vault, keyURL) = try await ModelFixture.vault()
+            let key = try await ModelFixture.keyText(keyURL)
+            let drive = TestTemp.root.appendingPathComponent("drive-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
+            let a = Self.device(nil), b = Self.device(nil)
+            defer { a.model.close(); b.model.close() }
+            try await a.model.copyIn(picked: vault, library: a.library)
+            try await a.model.unlock(identityText: key)
+            let target = try a.model.addPickedFolderTarget(drive, to: a.vaultID)
+            let name = SyncFolderName.name(forVault: a.folder.lastPathComponent)
+            let plain = drive.appendingPathComponent(name, isDirectory: true)
+            #expect(target.subfolder == name)
+            #expect(!SyncFolderName.hasTypeExtension(name))
+            await a.model.syncAllTargetsNow()
+            #expect(FileManager.default.fileExists(atPath: plain.appendingPathComponent("vault.json").path))
+            #expect(!FileManager.default.fileExists(atPath: drive.appendingPathComponent(a.folder.lastPathComponent).path),
+                    "no `.sempere` folder")
+
+            // Picked itself or its parent: the same folder.
+            for picked in [plain, drive] {
+                #expect(try AppModel.folderTargetLocation(picked: picked, vaultFolderName: a.folder.lastPathComponent,
+                                                          vaultId: a.vaultID).standardizedFileURL.path == plain.standardizedFileURL.path)
+            }
+            // B: Open Vault… on the folder above it, keep syncing.
+            try await b.model.copyIn(picked: drive, library: b.library, followUp: .keepSyncing)
+            try await b.model.unlock(identityText: key)
+            #expect(b.folder.lastPathComponent == a.folder.lastPathComponent, "the store copy keeps the vault's name")
+            let bTarget = try #require(b.model.openVaultTargets.first)
+            #expect(bTarget.path.map { URL(fileURLWithPath: $0).standardizedFileURL.path } == plain.standardizedFileURL.path)
+            #expect(throws: SyncTargetProblem.duplicate) { try b.model.addPickedFolderTarget(drive, to: b.vaultID) }
+            let note = try await b.model.createNote(title: "From B", paper: .ruled, notebook: nil)
+            await b.model.syncAllTargetsNow()
+            await a.model.syncAllTargetsNow()
+            #expect(await TS.waitUntil(timeout: .seconds(30)) { a.model.notes.contains { $0.id == note } })
+        }
+
         // MARK: Failures
 
         /// The target folder deleted after it was synced: the run says so ("choose it again"), recreates
@@ -182,7 +223,9 @@ extension AppModelSuites {
             let refreshed = try #require(w.a.model.syncSessions.first)
             await refreshed.syncNow()
             #expect(!refreshed.needsAttention, "\(refreshed.status)")
-            let copy = elsewhere.appendingPathComponent(w.a.folder.lastPathComponent)
+            // A plain `<vault> Sempere Vault` folder (no extension: iCloud Drive kept `….sempere` folders as packages).
+            let copy = elsewhere.appendingPathComponent(SyncFolderName.name(forVault: w.a.folder.lastPathComponent))
+            #expect(copy.lastPathComponent.hasSuffix(" Sempere Vault"))
             #expect(Self.noteFiles(copy) == before)
         }
 

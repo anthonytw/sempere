@@ -387,8 +387,9 @@ extension AppModelCore {
         SyncTarget.comparablePath(a) == SyncTarget.comparablePath(b)
     }
 
-    /// "Add Folder…": the folder the user picked holds the vault's copy when it is a vault folder;
-    /// otherwise the copy goes into `<picked>/<vault name>.sempere` (made by the first run).
+    /// "Add Folder…": the folder the user picked holds the vault's copy when it is this vault's copy (any name) or a
+    /// `….sempere` folder; otherwise the copy goes into a plain `<picked>/<vault name> Sempere Vault` (made by the first
+    /// run), or this vault's copy already there (`FolderTargetPlacement.location`).
     @discardableResult
     public func addPickedFolderTarget(_ picked: URL, to vaultID: UUID) throws -> SyncTarget {
         guard let entry = syncStore.entry(id: vaultID) else { throw SyncTargetProblem.notAStoreVault }

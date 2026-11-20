@@ -180,14 +180,20 @@ public enum BackupDestination {
 // MARK: - By name
 
 extension BackupDestination {
-    /// Whether `url` is named like a vault (`….sempere`) or a backup folder (`….sempere-backup`). Says nothing about
-    /// what it holds.
+    /// Whether `url` is named like a vault (`….sempere`, or a plain sync folder `… Sempere Vault`, `SyncFolderName`) or a
+    /// backup folder (`….sempere-backup`). Says nothing about what it holds.
     public static func isHolderName(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        return ext == vaultExtension || ext == folderExtension
+        isVaultName(url) || url.pathExtension.lowercased() == folderExtension
     }
 
-    /// The nearest folder above `url` (never `url` itself) named like a vault or a backup, nil when there is none.
+    /// Whether `url` is named like a vault: `….sempere`, or a plain sync folder the app or the CLI made
+    /// (`<vault> Sempere Vault`, `SyncFolderName.isPlainName`). Says nothing about what it holds.
+    public static func isVaultName(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == vaultExtension || SyncFolderName.isPlainName(url.lastPathComponent)
+    }
+
+    /// The nearest folder above `url` (never `url` itself) named like a vault or a backup (`isHolderName`), nil when
+    /// there is none.
     /// For what an app may not read: its security scope covers a picked folder only, so what lies above it goes by
     /// name. An app's container is not a vault, whatever its name: the Mac app's own is
     /// `~/Library/Containers/io.github.anthonytw.sempere` (`isAppContainer`).

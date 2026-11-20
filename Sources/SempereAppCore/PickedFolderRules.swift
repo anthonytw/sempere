@@ -3,7 +3,7 @@ import Sempere
 
 /// What a folder pick may choose (`FolderPicker.swift`, owner's tests of TestFlight build 10).
 ///
-/// A vault (`….sempere`) and a backup (`….sempere-backup`) are plain folders, never packages (`SempereInfo.plist`:
+/// A vault (`….sempere`, or a plain sync folder `… Sempere Vault`) and a backup (`….sempere-backup`) are plain folders, never packages (`SempereInfo.plist`:
 /// iCloud Drive syncs a package as one item), so every system picker goes into them like any folder. What can be done
 /// without making them packages:
 /// - Mac (AppKit's open panel, `MacFolderPanel`): the panel asks its delegate about every item (`canChoose`), so
@@ -117,7 +117,7 @@ public enum PickedFolderRules {
         }
         let ext = url.pathExtension.lowercased()
         if purpose == .syncFolder, ext == BackupDestination.folderExtension { return .backupAsSyncFolder(name: name) }
-        if purpose == .writeFolder, ext == BackupDestination.vaultExtension { return .vaultAsBackupFolder(name: name) }
+        if purpose == .writeFolder, BackupDestination.isVaultName(url) { return .vaultAsBackupFolder(name: name) }
         if purpose == .exportFolder, BackupDestination.isHolderName(url) { return .holderAsExportFolder(name: name) }
         return nil
     }

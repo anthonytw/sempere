@@ -51,6 +51,20 @@ final class FinderBundleBitTests: TempDirTestCase {
         XCTAssertTrue(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/Wompa.SEMPERE-backup")))
         XCTAssertFalse(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/Foo.app")))
         XCTAssertFalse(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/Notes")))
+        // A plain sync folder (`SyncFolderName`), by name, and a folder of any name holding a vault or a backup: the
+        // flag makes a folder without an extension a package too.
+        XCTAssertTrue(FinderBundleBit.appliesTo(URL(fileURLWithPath: "/x/Notes Sempere Vault 2")))
+    }
+
+    func testAFolderOfAnyNameHoldingAVaultApplies() throws {
+        let vault = tmp.appendingPathComponent("Bare", isDirectory: true)
+        let backup = tmp.appendingPathComponent("Kept", isDirectory: true)
+        for dir in [vault, backup] { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
+        XCTAssertFalse(FinderBundleBit.appliesTo(vault))
+        try Data("{}".utf8).write(to: vault.appendingPathComponent("vault.json"))
+        try Data("{}".utf8).write(to: backup.appendingPathComponent("backup.json"))
+        XCTAssertTrue(FinderBundleBit.appliesTo(vault))
+        XCTAssertTrue(FinderBundleBit.appliesTo(backup))
     }
 
     #if canImport(Darwin)
