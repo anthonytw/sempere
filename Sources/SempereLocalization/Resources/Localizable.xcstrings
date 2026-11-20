@@ -7563,6 +7563,19 @@
         }
       }
     },
+    "Copy the passphrase to the clipboard" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar la frase de contraseña al portapapeles"
+          }
+        }
+      }
+    },
     "Copy the secret key to the clipboard" : {
       "comment" : "Help tag",
       "extractionState" : "manual",

@@ -92,6 +92,10 @@ final class MacExportUITests: XCTestCase {
         XCTAssertTrue(sheet.waitForExistence(timeout: 20), "the export sheet opened")
         app.buttons["Export"].firstMatch.click()
         XCTAssertTrue(app.buttons["Save…"].firstMatch.waitForExistence(timeout: 60), "the export finished")
+        // The share picker opens by itself once the file is made; close it so the buttons are the way on.
+        sleep(2)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        XCTAssertTrue(app.buttons["Save…"].firstMatch.waitForExistence(timeout: 10), "the sheet is still there")
     }
 
     @MainActor

@@ -144,9 +144,7 @@ struct ExportSheet: View {
                     .textInputAutocapitalization(.never)
             } else {
                 Text(verbatim: generatedPassphrase).font(.body.monospaced()).accessibilityIdentifier("sharePassphrase")
-                Button("Copy Passphrase", systemImage: "doc.on.doc") {
-                    SecretPasteboard.copy(generatedPassphrase, lifetime: Self.passphraseLifetime)
-                }
+                CopyPassphraseButton(passphrase: generatedPassphrase)
             }
             Toggle("Use My Own Passphrase", isOn: $useOwnPassphrase)
         } header: {
@@ -178,11 +176,11 @@ struct ExportSheet: View {
         } footer: {
             Text("The page opens in a web browser. Mail's preview and most chat apps' previews do not open it: send the file as an attachment.")
         }
+        // Right under the file, not at the bottom of the sheet: the share sheet opens by itself and these stay as the way back.
+        handOffSection(outcome)
         Section {
             Text(verbatim: passphrase).font(.body.monospaced())
-            Button("Copy Passphrase", systemImage: "doc.on.doc") {
-                SecretPasteboard.copy(passphrase, lifetime: Self.passphraseLifetime)
-            }
+            CopyPassphraseButton(passphrase: passphrase)
         } header: {
             Text("Passphrase for the Page")
         } footer: {
@@ -233,8 +231,13 @@ struct ExportSheet: View {
                 ForEach(outcome.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
             }
         }
+        if !(options.format == .webPage && outcome.webShareSections != nil) { handOffSection(outcome) }
+    }
+
+    /// Share… and Save…; the share sheet is up as soon as the files are made (`ExportHandOffButtons.autoShare`).
+    private func handOffSection(_ outcome: ExportJob.Outcome) -> some View {
         Section {
-            ExportHandOffButtons(state: $handOff, items: outcome.items)
+            ExportHandOffButtons(state: $handOff, items: outcome.items, autoShare: true)
         } footer: {
             Text("The files are deleted from the app when you close this sheet.")
         }
@@ -504,11 +507,21 @@ extension View {
 struct ExportHandOffButtons: View {
     @Binding var state: ExportHandOffState
     let items: [URL]
+    /// Present the share sheet (which offers Save to Files) as soon as the buttons appear, once; the buttons stay as
+    /// the way back after it is dismissed (owner, build 112: the file was made at the top and Share was below).
+    var autoShare = false
 
     // help-lint: titled (placed in a Form section, where the titles show)
     var body: some View {
         Button("Share…", systemImage: "square.and.arrow.up") { deliver(save: false) }
             .background(PresentationAnchor(box: state.anchor))
+            .task {
+                guard autoShare, !items.isEmpty else { return }
+                // The anchor needs a moment to be in a window (a Mac presents from it).
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, !state.sharing, !state.saving else { return }
+                deliver(save: false)
+            }
         Button(Platform.isMac ? LocalizedStringKey("Save…") : LocalizedStringKey("Save to Files…"),
                systemImage: "folder") { deliver(save: true) }
     }
@@ -518,6 +531,24 @@ struct ExportHandOffButtons: View {
         ExportHandOff.deliver(items, save: save, anchor: state.anchor) { save in
             if save { state.saving = true } else { state.sharing = true }
         }
+    }
+}
+
+/// Copy for a web page's passphrase: "Copied" after a tap, until the passphrase changes.
+struct CopyPassphraseButton: View {
+    let passphrase: String
+    @State private var copiedPassphrase: String?
+
+    var body: some View {
+        let copied = copiedPassphrase == passphrase
+        Button(copied ? String(localized: "Copied", comment: "Button after the secret key was copied")
+                      : String(localized: "Copy Passphrase"),
+               systemImage: copied ? "checkmark" : "doc.on.doc") {
+            SecretPasteboard.copy(passphrase, lifetime: ExportSheet.passphraseLifetime)
+            copiedPassphrase = passphrase
+        }
+        .help("Copy the passphrase to the clipboard")
+        .accessibilityIdentifier("copyPassphrase")
     }
 }
 
