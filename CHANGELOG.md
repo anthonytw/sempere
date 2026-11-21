@@ -14,7 +14,10 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
   ⌥⌘F) and get a short answer written on your device by Apple's on-device model from your notes, with the notes
   it came from listed under it and numbered buttons that open them at the page. Without Apple Intelligence or Note
   Insights you still get the best-matching notes and passages. Nothing is stored or sent anywhere.
-  `sempere ask "question"` does the same on the command line.
+  `sempere ask "question"` does the same on the command line. A question in another language than your notes
+  (Spanish about English notes) is translated on the device to find them, and the answer comes back in the
+  question's language; after translation, numbers, dates, codes and names are checked against your notes again, so a
+  sentence that changed one of them is dropped (a changed negation or common word is not caught).
 - Note list: Select mode can now Move To a notebook, Delete (to Recently Deleted, with a confirmation) or Restore
   all the selected notes at once, from the toolbar, the context menu or the Mac menu bar, each as one undo step that Redo can bring back (dragging notes onto a notebook in the sidebar can be redone too).
 - CLI: `notes delete` and `notes undelete` take several notes in one command.
@@ -41,7 +44,18 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
   a language you choose (Automatic, or any language the speech recognizer supports), replacing the old transcripts, with
   Also Redo Insights to make the note's summary and title again from the new text. `sempere transcribe NOTE --again
   --language es-ES --insights` does the same from the command line, and `sempere transcribe --languages` lists the
-  languages.
+  languages. Each recording's Transcribe and Transcribe Again offer the same choices, and All Recordings has Transcribe
+  All Again.
+- CLI: `sempere vault conflicts` reports whether iCloud Drive holds a vault folder as a package and lists the
+  folder's conflict versions with the files only they hold; `--merge` copies back the missing write-once files
+  (each checked under the vault's key, quarantined if it fails, nothing overwritten) in one write of the folder,
+  settles `settings.age` and `vault.json` by the usual rules, never judges a version it cannot list whole, then marks
+  the versions resolved and, once everything is merged, clears the Finder's bundle flag.
+- Sync Targets warns when iCloud Drive syncs a sync folder as one package or keeps conflicting versions of the
+  whole folder, with the steps to move to a plain folder.
+- CLI: `sempere notes revisions NOTE` lists every revision file of a note with its ops, stamps and devices, the
+  revisions that do not read here (set aside, pending, unreadable) and which revision set the deleted flag, to tell
+  why a deleted note came back (or went away) on a device.
 
 ### Changed
 
@@ -54,7 +68,6 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 - Settings ▸ Note Insights: changing the summary and title language asks first, and says how many summaries and titles will be made again.
 - Voice notes with no title of their own are named by the title the list shows (the derived one, else "Voice note" and the date) in Spotlight, export file names, `sempere` note lookups by title, the web viewer and shared web pages (which carry the capture time only when they include dates), and that default title no longer counts as a word of the note in Ask.
 - Changing the voice-note title format makes the titles again in the new format.
-- Ask: a question's language is chosen among the languages of your notes and the device, and falls back to your notes' main language when unsure.
 - Web viewer: a quick voice note with no title of its own is listed as in the app, under the title Note Insights
   derived for it or "Voice note" with the capture's date and time, instead of "Untitled". The published summaries
   (`sempere vault summaries`, `sync webdav --web-viewer`) now carry that title inside the encrypted file, and are
@@ -66,6 +79,20 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
   shown. Notes from earlier versions keep the titles they have, and still get a generated title while their title is
   the default one. Update every device that shares the vault to 1.3: a device still on 1.2 keeps writing generated
   titles into notes and shows a blank title for new voice notes.
+- The sync bar at the bottom of the note list now appears only when something is wrong (a refused password or
+  certificate, a sync folder gone or not writable, files that failed, a device-list conflict, an upload problem that
+  lasts, a sync target that could not be reached for a week while the device was online). Syncing, synced, offline
+  and waiting for iCloud show no bar; each target's status stays in Sync Targets….
+- Export: the share sheet (with Save to Files) opens as soon as the file is made, once per export, and not when
+  something was left out, so that list stays in view. A web page's Copy Passphrase button shows Copied after a tap.
+- Sync: a new folder sync target is now named “<vault>.sempere-vault” instead of “<vault>.sempere”: iCloud Drive
+  kept `….sempere` sync folders as packages on some accounts, even new ones, and synced the whole vault as one item.
+  The new extension is declared a plain folder (never a package), and Sempere opens a `….sempere-vault` folder like a
+  `….sempere` one. A folder that holds the vault is taken as the target whatever its name, and a folder picked to hold
+  the copy joins the vault's copy already in it whatever that copy is named (two copies there are refused with a
+  request to choose one). Existing `….sempere` targets keep working unchanged, and the vaults kept in the app stay
+  `….sempere`. Update every device of a vault to 1.3 before adding a `….sempere-vault` folder on any of them. The
+  CLI's `store target add --folder` follows the same rule.
 
 ### Removed
 
@@ -76,18 +103,40 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 - iPad: a tap on a notebook that holds sub-notebooks opens it again instead of only folding it; the
   chevron at the end of its row folds and unfolds its sub-notebooks, as on the iPhone.
+- Sidebar (Mac): a click on a notebook that holds sub-notebooks opens it instead of only unfolding it. The chevron at
+  the end of its row folds and unfolds the sub-notebooks, as on the iPhone and iPad, and → and ← still unfold and fold
+  the selected notebook.
 - Notes: a transcript Sempere writes by itself, when a voice note arrives or finishes, or when you use Transcribe, no
   longer moves the note's modified date or its place in the list sorted by Modified; only your own edits do. (A
   generated voice-note title never touches the note any more either.)
-- Search | Ask: choosing a segment keeps the cursor in the search field on iPad and Mac.
+- Notes: deleting, renaming or moving notes while the daily cleanup of old versions runs is written at once. The cleanup
+  held every edit until it had gone through the whole vault, so notes deleted meanwhile could come back if the app was
+  closed or suspended before it finished.
 - Apple Watch: a note your iPhone holds without a vault yet (saved under an old key, or while "Use on Apple Watch" was
   off) now stays on the watch until you add or delete it on the phone, so deleting and reinstalling the iPhone app no
   longer loses it; the watch sends it again after the reinstall.
+- Apple Watch: after an iPhone restart, before the first unlock, or when the held-notes folder cannot be read, the phone
+  no longer tells the watch it holds nothing, so the watch keeps its copies.
 - Devices: voice notes this device saved under its earlier key, before it was removed and joined again, are now re-sealed
   under the new key instead of being retried at every write (only keys this device itself held, which it now remembers
   from this version on); a note no key this device held can open is given up on once and left in the inbox.
-- Apple Watch: after an iPhone restart, before the first unlock, or when the held-notes folder cannot be read, the phone
-  no longer tells the watch it holds nothing, so the watch keeps its copies.
+- New Vault: Copy Key puts the recovery key on the clipboard where other apps can paste it (it was stored under a
+  type they did not read, so it said Copied and pasted nothing). A Copy from the share sheet copies the key too,
+  without closing the Vault Created screen.
+- Welcome list (iPhone and iPad): Delete from This Device… on a vault stays open while its sync runs; the revealed
+  swipe button and the confirmation no longer close by themselves, so one swipe and one tap delete the vault.
+  Canceling it after a swipe no longer hides the vault or shows the wrong vaults, and a second swipe no longer locks
+  the list. The same goes for removing a WebDAV vault that is still joining, and for the device list's swipe Remove.
+- Sync: a vault in iCloud Drive no longer reads "Synced" while iCloud has not uploaded this device's changes. Every file
+  the sync wrote counts (settings, device records and summaries too), a file iCloud has not taken in yet waits, and the
+  count is checked again between syncs, so the status returns to Synced when iCloud is done. A slow upload is not taken
+  for full storage: an upload error shows only once it has lasted about ten minutes, and "storage is full" only when
+  iCloud says so. `sempere sync folder` says how many files iCloud has not uploaded yet.
+- Sync: a Finder bundle flag on a vault or sync folder that cannot be cleared is now logged instead of failing
+  silently, and `store sync` / `sync folder` warn about a target folder held as a package.
+- Backup reminders: cancelling a pending reminder no longer runs a blocking notification-center call on the main
+  thread (it stalled the app for over a minute after a fresh boot); cancels and schedules now run off the main
+  thread, in order.
 
 ## [1.2.0] - 2026-11-18
 
