@@ -109,6 +109,24 @@ final class CLITranscribeTests: CLITestCase {
         XCTAssertEqual(try revisionCount(vault), before, "a dry run writes nothing")
     }
 
+    /// The real `--again --insights` path (fake transcription and fake model, debug builds): the insights step reads the
+    /// vault's notes through `InsightsCLI.inputs`. It once built an unparsed `CacheOptions()` there and died with
+    /// ArgumentParser's "Can't read a value from a parsable argument definition" after storing the transcript.
+    func testAgainWithInsightsRunsTheRealInsightsStep() throws {
+        let (_, args, _) = try setUp(recordings: ["One"])
+        let env = ["SEMPERE_TRANSCRIBE_FAKE": "1", "SEMPERE_INSIGHTS_FAKE": "1"]
+        XCTAssertEqual(try cli(["settings", "set", "insights.enabled", "true"] + args).status, 0)
+        let r = try cli(["transcribe", physics, "--again", "--language", "es-ES", "--insights", "--json"] + args, env: env)
+        XCTAssertEqual(r.status, 0, r.err + r.out)
+        let json = try XCTUnwrap(r.json as? [String: Any])
+        let insights = try XCTUnwrap(json["insights"] as? [String: Any])
+        XCTAssertEqual(insights["redone"] as? Bool, true, r.out + r.err)
+        XCTAssertNil(insights["error"], r.out)
+        XCTAssertEqual((insights["generated"] as? [String])?.count, 1, "the note's summary is made again")
+        let again = try cli(["transcribe", physics, "--again", "--insights", "--no-cache"] + args, env: env)
+        XCTAssertEqual(again.status, 0, again.err)
+    }
+
     func testAgainAndInsightsAreForOneNote() throws {
         let (_, args, _) = try setUp(recordings: ["One"])
         for bad in [["transcribe", "--all", "--again"], ["transcribe", "--all", "--insights"],
