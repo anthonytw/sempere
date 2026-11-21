@@ -66,13 +66,17 @@ public enum AppleInsightsProviders {
     public static let likelyShare = 0.6
 
     /// The words of `text` NaturalLanguage tags as names of people, places or organizations in `language`, as
-    /// `LanguageFreeCheck` keys (lowercased, accents folded); empty where NaturalLanguage does not exist.
+    /// `LanguageFreeCheck` keys (lowercased, accents folded); nil where NaturalLanguage does not exist or tags no names in
+    /// `language` (Dutch, Swedish, Polish, ...: an empty set would read as "no name here", design §3.8).
     /// `AskOptions.nameTagger`.
-    public static func nameKeys(_ text: String, language: String) -> Set<String> {
+    public static func nameKeys(_ text: String, language: String) -> Set<String>? {
         #if canImport(NaturalLanguage)
+        guard let l = recognizerLanguages(for: [language]).first else { return nil }
+        let nl = NLLanguage(rawValue: l)
+        guard NLTagger.availableTagSchemes(for: .word, language: nl).contains(.nameType) else { return nil }
         let tagger = NLTagger(tagSchemes: [.nameType])
         tagger.string = text
-        if let l = recognizerLanguages(for: [language]).first { tagger.setLanguage(NLLanguage(rawValue: l), range: text.startIndex..<text.endIndex) }
+        tagger.setLanguage(nl, range: text.startIndex..<text.endIndex)
         var out = Set<String>()
         let names: Set<NLTag> = [.personalName, .placeName, .organizationName]
         tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .nameType,
@@ -84,7 +88,7 @@ public enum AppleInsightsProviders {
         }
         return out
         #else
-        return []
+        return nil
         #endif
     }
 

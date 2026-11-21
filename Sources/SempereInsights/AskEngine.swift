@@ -28,10 +28,12 @@ public struct AskOptions: Sendable {
     /// `detectLanguage` (`AskLanguage.openChoice`).
     public var languageHypotheses: (@Sendable (_ question: String, _ among: [String], _ likely: [String]) -> [AskLanguage.Hypothesis])?
     /// The platform's name tagger (NaturalLanguage): the words of `text`, in `language`, that are names of people,
-    /// places or organizations, as `LanguageFreeCheck` keys (lowercased, accents folded); nil where there is none. A
-    /// translated sentence's first word is checked as a name only when the tagger calls it one (design §3.8); without a
-    /// tagger, when it is no common sentence-initial word.
-    public var nameTagger: (@Sendable (_ text: String, _ language: String) -> Set<String>)?
+    /// places or organizations, as `LanguageFreeCheck` keys (lowercased, accents folded); it returns nil for a language
+    /// it tags no names in, and the option is nil where there is none. A translated sentence's first word is checked as
+    /// a name only when the tagger calls it one (design §3.8); without a tagger for the translation's language, when it
+    /// is no common sentence-initial word. The tagger also reads the original sentence in its language: a first word it
+    /// calls a name (in German any word) must survive into the translation.
+    public var nameTagger: (@Sendable (_ text: String, _ language: String) -> Set<String>?)?
     /// The device's language (BCP 47 primary tag), a candidate for the question's language; nil takes `Locale.current`'s.
     public var deviceLanguage: String?
     /// The model call's limit (design §4: 30 s, then `retrieval`).
@@ -393,7 +395,8 @@ public struct AskEngine: Sendable {
                     // The question is no evidence (a translation could swap the note's name for the question's).
                     let titles = cited.map(\.labelTitle).joined(separator: "\n")
                     if let why = AskValidator.checkTranslation(t, original: k.text, evidence: evidence, titles: titles, language: lang,
-                                                               originalLanguage: from, names: o.nameTagger?(t, lang)) {
+                                                               originalLanguage: from, names: o.nameTagger.flatMap { $0(t, lang) },
+                                                               originalNames: o.nameTagger.flatMap { $0(k.text, from) }) {
                         failed.append(.init(text: String(t.prefix(AskValidator.maxSentenceCharacters)), reason: "translation: \(why)"))
                     } else {
                         translatedKept.append(.init(text: AskValidator.clean(t), sources: k.sources))

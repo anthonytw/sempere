@@ -154,14 +154,17 @@ public enum AskValidator {
     ///   capitalized word of `original` or `titles` (`Lisboa` and `Lisbon`);
     /// - every name of `original` (a capitalized word after the first that the passages or titles hold, or a first word
     ///   they hold capitalized inside a sentence) must survive into the translation, exactly or as such a variant;
-    ///   skipped when `originalLanguage` capitalizes every noun (German).
+    ///   skipped when `originalLanguage` capitalizes every noun (German);
+    /// - a first word of `original` that `originalNames` (the name tagger on `original`, in `originalLanguage`) calls a
+    ///   name, and in German any word it calls one, must survive the same way: a tagger that misses the swapped-in name
+    ///   of the translation, or tags no names in its language (nil `names`), cannot let "Pedro" become "Marta".
     ///
     /// The question is no evidence: a name or code it gives is not known for that (a translation could swap the note's
     /// name for the question's). Names in scripts without capitals (Japanese, Chinese) are not checked, nor negation or
     /// common words: a translation that changes those passes.
     public static func checkTranslation(_ translated: String, original: String, evidence: String, titles: String,
                                         language: String? = nil, originalLanguage: String? = nil,
-                                        names: Set<String>? = nil) -> String? {
+                                        names: Set<String>? = nil, originalNames: Set<String>? = nil) -> String? {
         let text = clean(translated)
         guard !text.isEmpty else { return "the translation is empty" }
         if FactCheck.hasLaTeX(text) || FactCheck.isGarbled(text) { return "the translation is not plain text" }
@@ -202,18 +205,26 @@ public enum AskValidator {
         for t in tokens where t.index > 0 && LanguageFreeCheck.isNameShaped(t) && !isKnownName(t.key) {
             return "not in the cited passages: \(t.text)"
         }
-        if !TranslationLexicon.capitalizesNouns(originalLanguage) {
+        let capitalizedHere = tokens.filter { $0.capitalized && $0.key.count >= 4 }.map(\.key)
+        func survives(_ o: LanguageFreeCheck.Token) -> Bool {
+            have.contains(o.key) || (o.key.count >= 4 && capitalizedHere.contains { $0.hasPrefix(o.key.prefix(4)) })
+        }
+        let german = TranslationLexicon.capitalizesNouns(originalLanguage)
+        if !german {
             // Words the passages and titles capitalize inside a sentence: a first word among them is a name.
             var inside = Set(titleTokens.filter { $0.capitalized && $0.index > 0 }.map(\.key))
             for sentence in InsightsChunker.sentences(evidence.replacingOccurrences(of: "\n", with: " ")) {
                 for t in LanguageFreeCheck.tokens(sentence) where t.capitalized && t.index > 0 { inside.insert(t.key) }
             }
-            let capitalizedHere = tokens.filter { $0.capitalized && $0.key.count >= 4 }.map(\.key)
             for o in originalTokens where LanguageFreeCheck.isNameShaped(o) {
                 let isName = o.index > 0 ? inEvidence.contains(o.key) || inTitles.contains(o.key) : inside.contains(o.key)
-                guard isName, !have.contains(o.key) else { continue }
-                if o.key.count >= 4, capitalizedHere.contains(where: { $0.hasPrefix(o.key.prefix(4)) }) { continue }
-                return "the translation lost \(o.text)"
+                if isName, !survives(o) { return "the translation lost \(o.text)" }
+            }
+        }
+        // The tagger's names of the original: its first word (any word in German, where the rule above is skipped).
+        if let originalNames {
+            for o in originalTokens where (o.index == 0 || german) && LanguageFreeCheck.isNameShaped(o) && originalNames.contains(o.key) {
+                if !survives(o) { return "the translation lost \(o.text)" }
             }
         }
         if let first = tokens.first, first.index == 0, LanguageFreeCheck.isNameShaped(first),
@@ -294,7 +305,8 @@ enum TranslationLexicon {
     static let largest = 12
 
     /// Number words 0 and 2-12 of the languages most notes are in. One is left out: in most of these languages it is
-    /// also the article ("un", "une", "ein", "um"); so is a word that also means something common (French "neuf", new).
+    /// also the article ("un", "une", "ein", "um"); so is a word that also means something common (French "neuf", new;
+    /// Italian "sei", you are).
     static let numbers: [String: [String: Int]] = [
         "en": ["zero": 0, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
                "eleven": 11, "twelve": 12],
@@ -304,7 +316,7 @@ enum TranslationLexicon {
                "onze": 11, "douze": 12],
         "de": ["null": 0, "zwei": 2, "drei": 3, "vier": 4, "funf": 5, "sechs": 6, "sieben": 7, "acht": 8, "neun": 9,
                "zehn": 10, "elf": 11, "zwolf": 12],
-        "it": ["zero": 0, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6, "sette": 7, "otto": 8, "nove": 9,
+        "it": ["zero": 0, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sette": 7, "otto": 8, "nove": 9,
                "dieci": 10, "undici": 11, "dodici": 12],
         "pt": ["zero": 0, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5, "seis": 6, "sete": 7, "oito": 8,
                "nove": 9, "dez": 10, "onze": 11, "doze": 12],

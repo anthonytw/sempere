@@ -350,7 +350,7 @@ final class AskTests: TempDirTestCase {
     ]
 
     /// A name tagger that finds no names (the fake translations start with common nouns, "Oscilación").
-    static let noNames: @Sendable (String, String) -> Set<String> = { _, _ in [] }
+    static let noNames: @Sendable (String, String) -> Set<String>? = { _, _ in [] }
 
     /// A fake translator: the Spanish question into `q`, known English sentences into Spanish, anything else tagged.
     func translator(wrong: [String: String] = [:]) -> @Sendable (String, String) -> String {
@@ -473,6 +473,72 @@ final class AskTests: TempDirTestCase {
         // German capitalizes every noun: the original's nouns are not names that must survive.
         XCTAssertNil(AskValidator.checkTranslation("La receta lleva harina.", original: "Das Rezept braucht Mehl.", evidence: "Das Rezept braucht Mehl.",
                                                    titles: "", language: "es", originalLanguage: "de", names: []))
+    }
+
+    /// Review of build 114, S5: a tagger that finds no name in the translation (it missed it, or tags no names in that
+    /// language) cannot let a swapped-in first-word name through.
+    func testTheTaggerCannotSwitchOffTheFirstWordNameCheck() {
+        let pedro = "Pedro returns from Porto on Friday."
+        func check(_ t: String, _ original: String = pedro, _ evidence: String = pedro, language: String = "nl",
+                   from: String = "en", names: Set<String>?, originalNames: Set<String>?) -> String? {
+            AskValidator.checkTranslation(t, original: original, evidence: evidence, titles: "", language: language,
+                                          originalLanguage: from, names: names, originalNames: originalNames)
+        }
+        // Pedro starts the sentence, so the survival rule never counts him; the tagger on the original does.
+        XCTAssertEqual(check("Marta keert vrijdag terug uit Porto.", names: [], originalNames: ["pedro", "porto"]), "the translation lost Pedro")
+        XCTAssertNil(check("Pedro keert vrijdag terug uit Porto.", names: [], originalNames: ["pedro", "porto"]))
+        XCTAssertNil(check("Lisbon: Pedro keert vrijdag terug.", "Lisboa: Pedro vuelve el viernes.", "Lisboa: Pedro vuelve el viernes.",
+                           from: "es", names: [], originalNames: ["lisboa", "pedro"]), "a first-word name may come back as its variant")
+        // No tagger for the translation's language (nil): the sentence-start table, and Marta is no common word there.
+        XCTAssertEqual(check("Marta keert vrijdag terug uit Porto.", names: nil, originalNames: nil), "not in the cited passages: Marta")
+        XCTAssertNil(check("Hij keert vrijdag terug uit Porto.", "He returns from Porto on Friday.", "He returns from Porto on Friday.",
+                           names: [], originalNames: []), "a pronoun is no name")
+        // German: a swap to another name of the passage in first position (the survival rule is skipped for German).
+        let de = "Pedro kommt am Freitag aus Porto zurück. Marta bleibt in Berlin."
+        XCTAssertEqual(check("Marta returns from Porto on Friday.", "Pedro kommt am Freitag aus Porto zurück.", de, language: "en", from: "de",
+                             names: ["marta", "porto"], originalNames: ["pedro", "porto"]), "the translation lost Pedro")
+        XCTAssertEqual(check("On Friday Marta returns from Porto.", "Am Freitag kommt Pedro aus Porto zurück.", de, language: "en", from: "de",
+                             names: ["marta", "porto"], originalNames: ["pedro", "porto"]), "the translation lost Pedro", "any tagged word in German")
+        XCTAssertNil(check("Pedro returns from Porto on Friday.", "Pedro kommt am Freitag aus Porto zurück.", de, language: "en", from: "de",
+                           names: ["pedro", "porto"], originalNames: ["pedro", "porto"]))
+        XCTAssertNil(AskValidator.checkTranslation("La receta lleva harina.", original: "Das Rezept braucht Mehl.", evidence: "Das Rezept braucht Mehl.",
+                                                   titles: "", language: "es", originalLanguage: "de", names: [], originalNames: []),
+                     "German nouns the tagger does not call names need not survive")
+        // Italian "sei" is also "you are": no number word.
+        XCTAssertNil(TranslationLexicon.value(of: "sei", language: "it"))
+    }
+
+    /// S5 through the engine: the tagger reads the original in its language and the translation in the answer's.
+    func testTheEngineTagsTheOriginalSentenceToo() async throws {
+        let source = "Pedro returns from Porto on Friday."
+        var notes = corpusNotes()
+        notes[1] = note("Springs 2", Self.corpus[1].1 + " " + source)
+        let vectors = notes.map { ($0, devA, key) }
+        var s = FakeModelProvider.Script()
+        s.translation = translator(wrong: [source: "Marta vuelve de Porto el viernes."])
+        s.answer = { _, sources in
+            let s1 = sources.first { $0.title == "Springs 1" }?.id ?? "S1", s2 = sources.first { $0.title == "Springs 2" }?.id ?? "S2"
+            return ModelAnswer(enough: true, sentences: [
+                ModelSentence(text: "The damping ratio decides whether a spring mass system oscillates.", sources: [s1]),
+                ModelSentence(text: "Critical damping returns fastest.", sources: [s1]),
+                ModelSentence(text: source, sources: [s2]),
+            ])
+        }
+        let calls = LockedCalls()
+        var o = AskOptions(); o.language = "es"; o.explain = true
+        // The Spanish tagger misses Marta; the English one finds Pedro.
+        o.nameTagger = { text, language in calls.add(language + ": " + text); return language == "en" ? ["pedro", "porto"] : [] }
+        let r = await (try engine(notes, vectors: vectors, model: FakeModelProvider(s))).ask(Self.spanishQuestion, options: o)
+        XCTAssertTrue(r.explain?.droppedSentences.contains { $0.reason == "translation: the translation lost Pedro" } == true,
+                      "\(String(describing: r.explain?.droppedSentences))")
+        XCTAssertFalse(r.answer.contains { $0.text.contains("Marta") }, "\(r.answer)")
+        XCTAssertTrue(calls.all.contains("en: " + source), "\(calls.all)")
+        // No tagger for Spanish (nil): the table catches Marta.
+        o.nameTagger = { _, _ in nil }
+        let r2 = await (try engine(notes, vectors: vectors, model: FakeModelProvider(s))).ask(Self.spanishQuestion, options: o)
+        XCTAssertTrue(r2.explain?.droppedSentences.contains { $0.reason == "translation: not in the cited passages: Marta" } == true,
+                      "\(String(describing: r2.explain?.droppedSentences))")
+        XCTAssertFalse(r2.answer.contains { $0.text.contains("Marta") }, "\(r2.answer)")
     }
 
     /// Review of build 114, S2 and S3: digits next to letters (Japanese, Chinese) and number words.
@@ -889,4 +955,12 @@ final class LockedList: @unchecked Sendable {
     private var list: [String] = []
     func append(_ s: String) { lock.lock(); list.append(s); lock.unlock() }
     var items: [String] { lock.lock(); defer { lock.unlock() }; return list }
+}
+
+/// The calls a fake name tagger saw.
+private final class LockedCalls: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String] = []
+    func add(_ c: String) { lock.lock(); calls.append(c); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return calls }
 }

@@ -36,7 +36,7 @@ public struct InsightsServices: Sendable {
     /// The recognizer's hypotheses for an Ask question among languages (`AskOptions.languageHypotheses`); nil: none.
     public var languageHypotheses: (@Sendable (_ question: String, _ among: [String], _ likely: [String]) -> [AskLanguage.Hypothesis])?
     /// The name tagger for checking a translated answer (`AskOptions.nameTagger`); nil: none.
-    public var nameTagger: (@Sendable (_ text: String, _ language: String) -> Set<String>)?
+    public var nameTagger: (@Sendable (_ text: String, _ language: String) -> Set<String>?)?
 
     public init(model: @escaping @Sendable () -> (any ModelProvider)?, embedder: @escaping @Sendable () -> (any EmbeddingProvider)?,
                 powerWindow: @escaping @MainActor @Sendable () -> Bool, maxGraphNotes: Int = 4000,
