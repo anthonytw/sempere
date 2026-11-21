@@ -3016,7 +3016,10 @@ scrypt recipient (2^18). Works on Linux and with a read-only vault (nothing is w
 - The passphrase is never an argument (it would show in `ps`): `--passphrase-file FILE` (`-` for standard input; one trailing
   newline is dropped), `--share-passphrase-env VAR` (named so as not to clash with the vault's own `--passphrase-env`), or
   `--generate-passphrase` (seven random words, printed once: as `passphrase` in the JSON, or as a `Passphrase:` line on standard
-  error). Exactly one of the three.
+  error). Exactly one of the three. The recipient learns it, so it must not be the vault's: `--share-passphrase-env` naming the
+  variable the vault's passphrase comes from (`--passphrase-env`, else `SEMPERE_PASSPHRASE`), and a passphrase equal to that
+  variable's value or to one the vault was opened with (a recovery key's passphrase copy, a passphrase-wrapped device key), are refused
+  (exit 2) before anything is written.
 - Left out unless asked: tags (`--tags`), the notebook path (`--notebook-path`), the creation date (`--dates`), recordings and their
   transcripts (`--audio`). Recognized text is in unless `--no-text`.
 - The page shows the title `notes list` shows. For a voice note with no title of its own that is its derived title or "Voice note"

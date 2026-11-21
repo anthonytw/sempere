@@ -17,7 +17,9 @@ struct ShareCommand: ParsableCommand {
 
             The passphrase is never an argument (it would show in `ps`): --passphrase-file FILE (or - for \
             standard input), --share-passphrase-env VAR, or --generate-passphrase (seven random words, \
-            printed once: in the JSON as `passphrase`, or on standard error).
+            printed once: in the JSON as `passphrase`, or on standard error). It must not be the vault's: \
+            the variable the vault's passphrase comes from (--passphrase-env, $SEMPERE_PASSPHRASE) and a \
+            passphrase equal to one the vault was opened with are refused (exit 2).
 
             Left out unless asked: tags (--tags), the notebook path (--notebook-path), the creation date \
             (--dates), recordings and their transcripts (--audio). Recognized text is included unless \
@@ -137,7 +139,10 @@ struct ShareCommand: ParsableCommand {
         guard let noteName = note, let outPath = out else { return }
         let (passphrase, generated) = try readPassphrase()
         if passphrase.isEmpty { throw CLIError.failure("the passphrase is empty") }
+        if !generated { try refuseVaultPassphrase(passphrase, read: []) }
+        let readBefore = PassphrasesRead.count
         let vault = try access.openVault(.required)
+        if !generated { try refuseVaultPassphrase(passphrase, read: PassphrasesRead.since(readBefore)) }
         let id = try vault.resolveShownNote(noteName)
         let loaded = try vault.loadNote(id)
         let summary = vault.summary(of: id, loaded: loaded)
@@ -199,6 +204,21 @@ struct ShareCommand: ParsableCommand {
             return url.appendingPathComponent("Shared note.html")
         }
         return url
+    }
+
+    /// The recipient learns the share passphrase, so it must not be one that opens the vault: refused (exit 2) when
+    /// `--share-passphrase-env` names the variable the vault is opened with, and when the passphrase equals a vault
+    /// passphrase this process could read (`--passphrase-env`, `$SEMPERE_PASSPHRASE`) or did read (`read`).
+    private func refuseVaultPassphrase(_ passphrase: String, read: Set<String>) throws {
+        let vaultVariables = Set([access.passphraseEnv, "SEMPERE_PASSPHRASE"].compactMap { $0 })
+        if let name = passphraseEnv, vaultVariables.contains(name) {
+            throw CLIError.usage("--share-passphrase-env \(name) is the variable the vault's passphrase comes from: "
+                + "use a passphrase of its own for the share")
+        }
+        let vaultPassphrases = read.union(vaultVariables.compactMap { Env.vars[$0] }.filter { !$0.isEmpty })
+        if vaultPassphrases.contains(passphrase) {
+            throw CLIError.usage("the share passphrase is the vault's passphrase: choose a different one (the recipient learns it)")
+        }
     }
 
     private func readPassphrase() throws -> (String, Bool) {
